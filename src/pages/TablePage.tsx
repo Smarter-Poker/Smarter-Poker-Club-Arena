@@ -201,6 +201,7 @@ import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { reportError } from '../utils/errorReporter';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
+import { TableModalsLayer } from '../components/table/TableModalsLayer';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CONFIG HELPER — Derives rake config from official chart
@@ -6280,370 +6281,143 @@ export default function TablePage({
       {/* Performance Monitor — dev-only */}
       <TablePerfMonitor />
 
-      {/* Player Notes Modal */}
-      {showPlayerNotes && (
-        <div className="player-notes-overlay" onClick={() => setShowPlayerNotes(false)}>
-          <div className="player-notes-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowPlayerNotes(false)}>
-              ✕
-            </button>
-            <PlayerNotesPanel
-              targetUserId={selectedPlayerForNotes?.id}
-              targetName={selectedPlayerForNotes?.name}
-              onClose={() => setShowPlayerNotes(false)}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Hand Replay Modal */}
-      {showHandReplay && (
-        <div className="player-notes-overlay" onClick={() => setShowHandReplay(false)}>
-          <div
-            className="player-notes-modal hand-replay-modal"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button className="modal-close" onClick={() => setShowHandReplay(false)}>
-              ✕
-            </button>
-            {lastHandId ? (
-              <HandReplay handId={lastHandId} onClose={() => setShowHandReplay(false)} />
-            ) : (
-              <div className="no-hand-history">
-                <span className="empty-icon">♠</span>
-                <p>No recent hand to replay</p>
-                <p className="hint">Complete a hand to view its replay</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Game Rules Modal */}
-      <GameRulesModal
-        isOpen={showGameRules}
-        onClose={() => setShowGameRules(false)}
-        variant={tableState.gameType || "No Limit Hold'em"}
-        stakes={tableState.blinds || '1/2'}
-        minBuyIn={(() => {
-          const bb = safeBB(tableState.blinds);
-          return bb * 40;
-        })()}
-        maxBuyIn={(() => {
-          const bb = safeBB(tableState.blinds);
-          return bb * 100;
-        })()}
-        rakePercentage={tableState.rakePercent ?? 5}
-        rakeCap={tableState.rakeCap ?? 3}
-        isStraddleEnabled={!tableState.isTournament && isStraddleEnabled}
-        isRunItTwiceEnabled={tableState.runItTwice ?? true}
-      />
-
-      {/* Chip Animations */}
-      <ChipAnimationManager
-        animations={chipAnimations}
-        onAnimationComplete={handleAnimationComplete}
-      />
-
-      {/* Sit Out Modal */}
-      <SitOutModal
-        isOpen={showSitOut}
-        onClose={() => setShowSitOut(false)}
-        onReturn={() => {
-          setShowSitOut(false);
-          setSitOutNextHand(false);
-          // Bible V8 §7.12: Tell server player is sitting back in
-          if (tableId) {
-            setSitOut(tableId, false).catch((e) => reportError(e, 'TablePage.Return_failed'));
-          }
-        }}
-        onLeaveTable={() => navigate('/')}
-        timeRemaining={sitOutTimeRemaining}
-        maxSitOutTime={300}
-        tableName={tableState.tableName}
-      />
-
-      {/* Wait List Modal */}
-      <WaitListModal
-        isOpen={showWaitList}
-        onClose={() => setShowWaitList(false)}
+      {/* Player Notes, Hand Replay, Settings, Insurance, RIT, BBJ, Throwables,
+          Confetti, Tip Dealer, Leave Notice, Cashier, Buy-In, Rabbit Hunt,
+          Leaderboard, Session Summary, Tournament Screens — all modals/overlays.
+          Extracted to TableModalsLayer to keep TablePage under control. */}
+      <TableModalsLayer
+        tableId={tableId}
+        userId={userId}
+        username={username}
         tableName={tableState.tableName}
         blinds={tableState.blinds}
-        players={waitListPlayers}
-        myPlayerId={userId}
-        onLeaveWaitList={() => setShowWaitList(false)}
-      />
-
-      {/* Insurance Modal */}
-      {insuranceOffer && (
-        <InsuranceModal
-          isOpen={showInsurance}
-          onClose={() => setShowInsurance(false)}
-          onAccept={handleInsuranceAccept}
-          onDecline={handleInsuranceDecline}
-          onDeclineForHand={handleInsuranceDeclineForHand}
-          offer={insuranceOffer}
-          timeRemaining={15}
-        />
-      )}
-
-      {/* Bible V8 §4.19: Show/Muck prompt when hero wins without showdown */}
-      {showHandRevealModal && tableId && (
-        <HandReveal
-          isOpen={showHandRevealModal}
-          isWinner={handRevealWinnerId === userId}
-          winnerId={handRevealWinnerId}
-          winnerName={handRevealWinnerName}
-          revealedCards={handRevealCards as any}
-          tableId={tableId}
-          handId={handRevealHandId}
-          autoMuckTimer={6}
-          onShow={() => {
-            // Broadcast show to all players via room service
-            if (tableId && userId) {
-              roomService.sendChat(tableId, userId, '[SHOW_CARDS]');
-            }
-            setShowHandRevealModal(false);
-          }}
-          onMuck={() => setShowHandRevealModal(false)}
-          onClose={() => setShowHandRevealModal(false)}
-        />
-      )}
-
-      {/* Run It Twice Prompt — FIX 96: 2-phase flow with chooser model */}
-      <RunItTwicePrompt
-        isOpen={showRIT}
-        isChooser={ritIsChooser}
-        onChooserDecide={handleRITChooserDecide}
-        onAccept={handleRITAccept}
-        onDecline={handleRITDecline}
-        timeRemaining={ritTimer}
-        chosenRuns={ritChosenRuns}
-        maxRuns={ritMaxRuns}
-        playerCount={ritPlayerCount}
-        opponentName={ritOpponent}
-      />
-
-      {/* Hand Reveal DISABLED — no popup overlays after hands, auto-muck silently */}
-      {/* Winner cards are shown directly on the seat during showdown */}
-
-      {/* Bad Beat Jackpot Display */}
-      <BadBeatJackpot amount={bbjAmount} qualifyingHand="Quad 8s or better" isHit={showBBJ} />
-
-      {/* FIX 128: BBJ Celebration Overlay — full-screen explosion when jackpot pays out */}
-      {bbjCelebrationData && (
-        <BBJCelebration
-          visible={showBBJCelebration}
-          totalPayout={bbjCelebrationData.totalPayout}
-          loser={bbjCelebrationData.loser}
-          winner={bbjCelebrationData.winner}
-          tableShare={bbjCelebrationData.tableShare}
-          perPlayerShare={bbjCelebrationData.perPlayerShare}
-          tablePlayerCount={bbjCelebrationData.tablePlayerCount}
-          onComplete={() => {
-            setShowBBJCelebration(false);
-            setBbjCelebrationData(null);
-            setShowBBJ(false);
-          }}
-        />
-      )}
-
-      {/* Bomb Pot Overlay (dramatic announcement) */}
-      {tableId && (
-        <TableErrorBoundary componentName="BombPotOverlay">
-          <BombPotOverlay tableId={tableId} />
-        </TableErrorBoundary>
-      )}
-
-      {/* Final Table Overlay (tournament only) */}
-      {tableId && tableState.isTournament && tableState.tournamentId && (
-        <FinalTableOverlay
-          tournamentId={tableState.tournamentId}
-          tournamentName={tableState.tableName || 'Tournament'}
-          hudStatsProvider={(userId) => {
-            const stats = getPlayerHUDStats(userId);
-            return stats
-              ? {
-                  handsPlayed: stats.handsPlayed,
-                  vpipCount: stats.vpipCount,
-                  pfrCount: stats.pfrCount,
-                }
-              : null;
-          }}
-        />
-      )}
-
-      {/* Heads-Up Overlay (tournament only) */}
-      {tableId && tableState.isTournament && tableState.tournamentId && (
-        <HeadsUpOverlay
-          tournamentId={tableState.tournamentId}
-          tournamentName={tableState.tableName || 'Tournament'}
-        />
-      )}
-
-      {/* Hole Card Reveal DISABLED — showdown cards show directly on seats, no overlay */}
-      {/* {tableId && <HoleCardReveal tableId={tableId} revealDelayMs={600} />} */}
-
-      {/* Quick Chat Presets removed per user request */}
-
-      {/* Throwable Selector — Bible V8 §11.1: emoji_enabled gate. */}
-      {showThrowableSelector && userId && v8Settings.emoji_enabled && (
-        <div className="throwable-selector-overlay" onClick={() => setShowThrowableSelector(false)}>
-          <ThrowableSelector
-            userId={userId}
-            onSelect={handleThrowableSelect}
-            onClose={() => setShowThrowableSelector(false)}
-          />
-        </div>
-      )}
-
-      {/* Throw Animations */}
-      <ThrowAnimationContainer
-        events={activeThrows}
+        gameType={tableState.gameType}
+        isTournament={tableState.isTournament}
+        tournamentId={tableState.tournamentId}
+        heroSeat={tableState.heroSeat}
+        maxPlayers={tableState.maxPlayers}
+        players={tableState.players}
+        heroStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
+        rakePercent={tableState.rakePercent}
+        rakeCap={tableState.rakeCap}
+        runItTwice={tableState.runItTwice}
+        isHandInProgress={tableState.isHandInProgress}
+        boardStage={tableState.boardStage}
+        handNumber={tableState.handNumber}
+        v8Settings={v8Settings}
+        userSettings={userSettings}
+        isSoundEnabled={isSoundEnabled}
+        sitOutNextHand={sitOutNextHand}
+        // Player Notes
+        showPlayerNotes={showPlayerNotes}
+        selectedPlayerForNotes={selectedPlayerForNotes}
+        onClosePlayerNotes={() => setShowPlayerNotes(false)}
+        // Hand Replay
+        showHandReplay={showHandReplay}
+        lastHandId={lastHandId}
+        onCloseHandReplay={() => setShowHandReplay(false)}
+        // Game Rules
+        showGameRules={showGameRules}
+        isStraddleEnabled={isStraddleEnabled}
+        onCloseGameRules={() => setShowGameRules(false)}
+        // Chips
+        chipAnimations={chipAnimations}
+        onAnimationComplete={handleAnimationComplete}
+        // Sit Out
+        showSitOut={showSitOut}
+        sitOutTimeRemaining={sitOutTimeRemaining}
+        onCloseSitOut={() => setShowSitOut(false)}
+        onReturnFromSitOut={() => {
+          setShowSitOut(false);
+          setSitOutNextHand(false);
+        }}
+        // Wait List
+        showWaitList={showWaitList}
+        waitListPlayers={waitListPlayers}
+        onCloseWaitList={() => setShowWaitList(false)}
+        // Insurance
+        showInsurance={showInsurance}
+        insuranceOffer={insuranceOffer}
+        onInsuranceAccept={handleInsuranceAccept}
+        onInsuranceDecline={handleInsuranceDecline}
+        onInsuranceDeclineForHand={handleInsuranceDeclineForHand}
+        // Hand Reveal
+        showHandRevealModal={showHandRevealModal}
+        handRevealWinnerId={handRevealWinnerId}
+        handRevealWinnerName={handRevealWinnerName}
+        handRevealCards={handRevealCards}
+        handRevealHandId={handRevealHandId}
+        onHandRevealShow={() => setShowHandRevealModal(false)}
+        onHandRevealMuck={() => setShowHandRevealModal(false)}
+        onHandRevealClose={() => setShowHandRevealModal(false)}
+        // RIT
+        showRIT={showRIT}
+        ritIsChooser={ritIsChooser}
+        ritOpponent={ritOpponent}
+        ritTimer={ritTimer}
+        ritChosenRuns={ritChosenRuns}
+        ritMaxRuns={ritMaxRuns}
+        ritPlayerCount={ritPlayerCount}
+        onRITChooserDecide={handleRITChooserDecide}
+        onRITAccept={handleRITAccept}
+        onRITDecline={handleRITDecline}
+        // BBJ
+        showBBJ={showBBJ}
+        bbjAmount={bbjAmount}
+        showBBJCelebration={showBBJCelebration}
+        bbjCelebrationData={bbjCelebrationData}
+        onBBJCelebrationComplete={() => {
+          setShowBBJCelebration(false);
+          setBbjCelebrationData(null);
+          setShowBBJ(false);
+        }}
+        // Throwables
+        showThrowableSelector={showThrowableSelector}
+        activeThrows={activeThrows}
         seatPositions={getSeatPositions(tableState.maxPlayers || 6)}
-        onEventComplete={handleThrowComplete}
-      />
-
-      {/* Bible V8 §5.1: Tiered winner celebration — confetti fires on wins >= 10BB */}
-      <ConfettiCanvas
-        active={showConfetti}
-        duration={3500}
-        count={55}
-        onComplete={() => setShowConfetti(false)}
-      />
-      {/* Bible V8 §5.1: Gold spark burst from winner's seat */}
-      <ParticleSystem
-        active={winnerParticle.active}
-        mode="sparks"
-        origin={winnerParticle.origin}
-        duration={1800}
-        count={40}
-        intensity={winnerParticle.intensity}
-        onComplete={() => setWinnerParticle((prev) => ({ ...prev, active: false }))}
-      />
-
-      {/* Tip Dealer Modal */}
-      <TipDealer
-        isOpen={showTipDealer}
-        onClose={() => setShowTipDealer(false)}
-        onTip={handleTipDealer}
-        balance={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-      />
-
-      {/* Straddle Toggle — REMOVED from table overlay.
-          Straddle enable/disable is handled via the hamburger TableMenu.
-          The StraddleEngine still manages the state internally. */}
-
-      {/* Time Bank — REMOVED from table overlay.
-          Time bank activation is now handled inline via the timer UI
-          (handleActivateTimeBank / handleBuyTimeBank are still wired).
-          The floating TimeBank widget was overlapping the action area. */}
-
-      {/* Leave Table Notice (non-blocking replacement for alert()) */}
-      {leaveNotice && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 80,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#1a1a2e',
-            border: '1px solid #e74c3c',
-            borderRadius: 8,
-            padding: '12px 20px',
-            color: '#fff',
-            fontSize: 14,
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            maxWidth: '90vw',
-          }}
-        >
-          <span>{leaveNotice}</span>
-          <button
-            onClick={() => setLeaveNotice(null)}
-            style={{
-              background: '#e74c3c',
-              border: 'none',
-              color: '#fff',
-              borderRadius: 4,
-              padding: '4px 12px',
-              cursor: 'pointer',
-            }}
-          >
-            OK
-          </button>
-        </div>
-      )}
-
-      {/* Diamond Wallet Modal */}
-      <DiamondWalletModal isOpen={showDiamondWallet} onClose={() => setShowDiamondWallet(false)} />
-
-      {/* Cashier Modal */}
-      <CashierModal
-        isOpen={showCashier}
-        onClose={() => setShowCashier(false)}
+        onThrowableSelect={handleThrowableSelect}
+        onThrowableClose={() => setShowThrowableSelector(false)}
+        onThrowComplete={handleThrowComplete}
+        // Confetti
+        showConfetti={showConfetti}
+        winnerParticle={winnerParticle}
+        onConfettiComplete={() => setShowConfetti(false)}
+        onParticleComplete={() => setWinnerParticle((prev) => ({ ...prev, active: false }))}
+        // Tip
+        showTipDealer={showTipDealer}
+        onTipDealer={handleTipDealer}
+        onCloseTipDealer={() => setShowTipDealer(false)}
+        // Leave Notice
+        leaveNotice={leaveNotice}
+        onDismissLeaveNotice={() => setLeaveNotice(null)}
+        // Diamond Wallet
+        showDiamondWallet={showDiamondWallet}
+        onCloseDiamondWallet={() => setShowDiamondWallet(false)}
+        // Cashier
+        showCashier={showCashier}
+        accountBalance={accountBalance}
+        cashoutMinBuyIn={cashoutMinBuyIn}
+        buyInProcessingRef={buyInProcessingRef}
+        onCloseCashier={() => setShowCashier(false)}
         onAddChips={handleAddChips}
         onWithdrawChips={handleWithdrawChips}
-        currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-        accountBalance={accountBalance}
-        minBuyIn={(() => {
-          const bb = safeBB(tableState.blinds);
-          return bb * 40;
-        })()}
-        maxBuyIn={(() => {
-          const bb = safeBB(tableState.blinds);
-          return bb * 100;
-        })()}
-        maxStack={(() => {
-          const bb = safeBB(tableState.blinds);
-          return bb * 200;
-        })()}
-      />
-
-      {/* Bust Rebuy Modal — shown when hero stack hits 0 between hands.
-          Reuses BuyInModal; onConfirm calls atomic_table_rebuy RPC. */}
-      <BuyInModal
-        isOpen={bustRebuyOpen}
-        onClose={cancelBustRebuy}
-        onConfirm={async (amount) => {
-          await confirmBustRebuy(amount);
-        }}
-        tableName={tableState.tableName}
-        minBuyIn={safeBB(tableState.blinds) * 40}
-        maxBuyIn={safeBB(tableState.blinds) * 100}
-        accountBalance={bustWalletBalance ?? 0}
-        bigBlind={safeBB(tableState.blinds)}
-        countdown={undefined}
-      />
-
-      {/* Buy-In Modal */}
-      <BuyInModal
-        isOpen={showBuyInModal}
-        onClose={() => setShowBuyInModal(false)}
-        onConfirm={async (amount, autoRebuy) => {
-          console.debug('[BuyIn] onConfirm FIRED — amount:', amount, 'autoRebuy:', autoRebuy);
-          // Debounce protection: prevent double-click
-          if (buyInProcessingRef.current) {
-            console.warn('[BuyIn] Debounce: buyInProcessingRef is true — ignoring duplicate click');
-            return;
-          }
+        // Bust Rebuy
+        bustRebuyOpen={bustRebuyOpen}
+        bustWalletBalance={bustWalletBalance}
+        bustRebuyProcessing={bustRebuyProcessing}
+        onCancelBustRebuy={cancelBustRebuy}
+        onConfirmBustRebuy={confirmBustRebuy}
+        // Buy-In
+        showBuyInModal={showBuyInModal}
+        selectedSeat={selectedSeat}
+        heroAvatarUrl={heroAvatarUrl}
+        onCloseBuyInModal={() => setShowBuyInModal(false)}
+        onConfirmBuyIn={async (amount, autoRebuy) => {
+          if (buyInProcessingRef.current) return;
           buyInProcessingRef.current = true;
           try {
-            // DEBUG: Log all buy-in conditions
-            console.debug('[BuyIn] onConfirm called:', {
-              amount,
-              autoRebuy,
-              tableId,
-              userId,
-              selectedSeat,
-              isGuest: userId === 'guest',
-            });
-
             if (userId && userId !== 'guest' && tableId && selectedSeat) {
               try {
-                // CRITICAL: Server-side duplicate seat check — prevent same user in 2+ seats
                 const { data: existingSeat } = await supabase
                   .from('table_seats')
                   .select('seat_number')
@@ -6651,25 +6425,11 @@ export default function TablePage({
                   .eq('user_id', userId)
                   .is('left_at', null)
                   .maybeSingle();
-
                 if (existingSeat) {
-                  console.warn(
-                    '[BuyIn] BLOCKED — user already seated at seat',
-                    existingSeat.seat_number
-                  );
                   toast.error(`You're already seated at seat ${existingSeat.seat_number}.`);
                   setShowBuyInModal(false);
                   return;
                 }
-
-                console.debug('[BuyIn] Calling atomic_table_buyin:', {
-                  userId,
-                  tableId,
-                  amount,
-                  selectedSeat,
-                });
-
-                // Execute FULLY ATOMIC buy-in and seat insertion
                 const { data: rpcData, error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
                   p_user_id: userId,
                   p_table_id: tableId,
@@ -6677,13 +6437,10 @@ export default function TablePage({
                   p_amount: amount,
                   p_auto_rebuy: autoRebuy || false,
                 });
-
                 if (rpcErr) {
                   reportError(rpcErr, 'TablePage.atomic_table_buyin_FAILED');
                   throw new Error('Failed to buy-in: ' + rpcErr.message);
                 }
-
-                // Validate RPC return data — the function returns {success, amount}
                 const rpcResult = typeof rpcData === 'string' ? JSON.parse(rpcData) : rpcData;
                 if (rpcResult && rpcResult.success === false) {
                   reportError(rpcResult, 'TablePage.atomic_table_buyin_returned_failure');
@@ -6691,21 +6448,13 @@ export default function TablePage({
                     'Buy-in rejected: ' + (rpcResult.error || 'Unknown server error')
                   );
                 }
-
-                console.debug('[BuyIn] atomic_table_buyin SUCCESS:', rpcResult);
-
                 setAccountBalance((prev) => Math.max(0, prev - amount));
-                totalBuyInRef.current += amount; // Track initial buy-in for session P/L
-                if (amount > peakStackRef.current) peakStackRef.current = amount; // Init peak stack
-
-                // Add player to local table state (use functional updater to preserve
-                // concurrent WebSocket updates during the async RPC call)
+                totalBuyInRef.current += amount;
+                if (amount > peakStackRef.current) peakStackRef.current = amount;
                 setTableState((prev) => {
                   const updatedPlayers = [...prev.players];
-                  // FIX: ONE-SEAT-PER-USER — clear any stale hero entries in other seats
                   for (let j = 0; j < updatedPlayers.length; j++) {
                     if (updatedPlayers[j]?.id === userId && j !== selectedSeat - 1) {
-                      console.debug('[BuyIn] Clearing stale hero from seat', j + 1);
                       updatedPlayers[j] = null as any;
                     }
                   }
@@ -6720,46 +6469,28 @@ export default function TablePage({
                   };
                   return { ...prev, players: updatedPlayers, heroSeat: selectedSeat };
                 });
-
-                // FIX 132: Set heroSeatRef immediately on buy-in success
                 heroSeatRef.current = selectedSeat;
-
-                // Notify Hydra service that a real player joined (triggers horse recede)
                 HydraService.onRealPlayerJoined(tableId, userId);
-
-                // Broadcast seat update to other clients
                 await sendAction('player_seated', {
                   seat: selectedSeat,
                   userId,
                   stack: amount,
                   autoRebuy,
                 });
-
-                // Update RoomService presence state so the user is globally seen as seated
                 roomService.joinRoom(tableId, userId, username || 'Player', selectedSeat, amount);
-
-                // Notify all consumers (MultiTablePage tabs, WaitlistPage, ClubLobby, DailyChallenges, etc.)
-                // userId is included so MultiTablePage only opens a tab for the current user's OWN seating event.
                 masterBus.emit('TABLE_SEATED', {
                   tableId,
                   seat: selectedSeat,
                   tableName: tableState.tableName,
                   userId,
                 });
-
-                // Player seated successfully
               } catch (error) {
                 reportError(error, 'TablePage.Buyin_FAILED');
                 toast.error('Buy-in failed. Please try again or check your balance.');
               }
             } else {
               reportError(
-                {
-                  userId,
-                  isGuest: userId === 'guest',
-                  tableId,
-                  selectedSeat,
-                },
+                { userId, tableId, selectedSeat },
                 'TablePage.FELL_THROUGH__no_branch_matched'
               );
               toast.error('Unable to complete buy-in. Please try again.');
@@ -6771,102 +6502,29 @@ export default function TablePage({
             setShowBuyInModal(false);
           } finally {
             buyInProcessingRef.current = false;
-            setSelectedSeat(null); // Reset to prevent stale seat on future interactions
+            setSelectedSeat(null);
           }
         }}
-        tableName={tableState.tableName}
-        minBuyIn={(() => {
-          const bb = safeBB(tableState.blinds);
-          const standardMin = bb * 40;
-          // FIX 136: If player has a recent cashout at this table, min buy-in is the cashout amount
-          return cashoutMinBuyIn > standardMin ? cashoutMinBuyIn : standardMin;
-        })()}
-        maxBuyIn={(() => {
-          const bb = safeBB(tableState.blinds);
-          return bb * 100;
-        })()}
-        accountBalance={accountBalance}
-        bigBlind={safeBB(tableState.blinds)}
-        cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
-      />
-
-      {/*
-        Rabbit Hunt (post-hand card reveal).
-        2026-04-14 fix: only mount when the hand is FINISHED AND the engine
-        flagged unrevealed streets remaining (isRabbitAvailable). Tester saw
-        the orange "Rabbit Hunt FREE" button during active hands because the
-        component was always mounted and only no-op'd on isAvailable=false —
-        but a stale isRabbitAvailable=true between hands kept it rendered.
-      */}
-      {!tableState.isHandInProgress && isRabbitAvailable && (
-        <RabbitHunt
-          isAvailable={isRabbitAvailable}
-          onReveal={handleRabbitReveal}
-          currentBoard={currentBoard}
-        />
-      )}
-
-      {/* Leaderboard Panel */}
-      <LeaderboardPanel
-        isOpen={showLeaderboard}
-        onClose={() => setShowLeaderboard(false)}
-        title="Session Leaderboard"
-        players={leaderboardPlayers}
-        period={leaderboardPeriod}
-        onPeriodChange={setLeaderboardPeriod}
-      />
-
-      {/* Old TableMenu removed — now rendered inside TableHUD upper-left corner */}
-
-      {/* Leave Table Confirmation */}
-      <LeaveTableConfirm
-        isOpen={showLeaveConfirm}
-        currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-        tableName={tableState.tableName || 'this table'}
-        onConfirm={() => {
-          setShowLeaveConfirm(false);
-          handleLeaveTable();
-        }}
-        onCancel={() => setShowLeaveConfirm(false)}
-      />
-
-      {/* Session Stats Modal (Cash Games) */}
-      {tableId && userId !== 'guest' && (
-        <SessionHUD
-          isOpen={showSessionStats}
-          onClose={() => setShowSessionStats(false)}
-          tableId={tableId}
-          userId={userId}
-          initialStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-          bigBlind={safeBB(tableState.blinds)}
-        />
-      )}
-
-      {/* Settings Panel */}
-      <SettingsPanel
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        settings={{
-          autoMuckLosers: userSettings.autoMuck,
-          autoMuckWinners: userSettings.autoMuckWinners,
-          autoPostBlinds: userSettings.autoPostBlinds,
-          soundEnabled: isSoundEnabled,
-          soundVolume: userSettings.soundVolume,
-          hapticEnabled: userSettings.isHapticEnabled,
-          showPotOdds: userSettings.showPotOdds,
-          animationSpeed:
-            userSettings.animationSpeed === 0.5
-              ? 'slow'
-              : userSettings.animationSpeed === 1.5 || userSettings.animationSpeed === 2
-                ? 'fast'
-                : 'normal',
-          fourColorDeck: userSettings.fourColorDeck,
-          showStackInBB: v8Settings.show_stack_in_bb,
-          showBetSizePresets: true,
-          confirmAllIn: userSettings.confirmAllIn,
-          sitOutNextHand: sitOutNextHand,
-          tableTheme: userSettings.theme,
-        }}
+        // Rabbit Hunt
+        isRabbitAvailable={isRabbitAvailable}
+        currentBoard={currentBoard}
+        onRabbitReveal={handleRabbitReveal}
+        // Leaderboard
+        showLeaderboard={showLeaderboard}
+        leaderboardPlayers={leaderboardPlayers}
+        leaderboardPeriod={leaderboardPeriod}
+        onCloseLeaderboard={() => setShowLeaderboard(false)}
+        onLeaderboardPeriodChange={setLeaderboardPeriod}
+        // Leave Confirm
+        showLeaveConfirm={showLeaveConfirm}
+        onCloseLeaveConfirm={() => setShowLeaveConfirm(false)}
+        onConfirmLeaveTable={handleLeaveTable}
+        // Session Stats
+        showSessionStats={showSessionStats}
+        onCloseSessionStats={() => setShowSessionStats(false)}
+        // Settings
+        showSettings={showSettings}
+        onCloseSettings={() => setShowSettings(false)}
         onSettingsChange={(settingsUpdate) => {
           if (settingsUpdate.soundEnabled !== undefined) {
             setIsSoundEnabled(settingsUpdate.soundEnabled);
@@ -6875,7 +6533,6 @@ export default function TablePage({
           }
           if (settingsUpdate.autoMuckLosers !== undefined)
             updateSetting('autoMuck', settingsUpdate.autoMuckLosers);
-          // FIX 199: showHandStrength handler REMOVED — not allowed for live online gameplay
           if (settingsUpdate.showPotOdds !== undefined)
             updateSetting('showPotOdds', settingsUpdate.showPotOdds);
           if (settingsUpdate.fourColorDeck !== undefined)
@@ -6892,191 +6549,105 @@ export default function TablePage({
                   : 1
             );
           }
-          if (settingsUpdate.showStackInBB !== undefined) {
-            toggleV8Setting('show_stack_in_bb');
-          }
+          if (settingsUpdate.showStackInBB !== undefined) toggleV8Setting('show_stack_in_bb');
           if (settingsUpdate.sitOutNextHand !== undefined) {
             setSitOutNextHand(settingsUpdate.sitOutNextHand);
-            // Bible V8 §7.12: Notify server of sit-out status change
-            if (tableId) {
+            if (tableId)
               setSitOut(tableId, settingsUpdate.sitOutNextHand).catch((e) =>
                 reportError(e, 'TablePage.Failed')
               );
-            }
           }
-          if (settingsUpdate.autoMuckWinners !== undefined) {
+          if (settingsUpdate.autoMuckWinners !== undefined)
             updateSetting('autoMuckWinners', settingsUpdate.autoMuckWinners);
-          }
-          if (settingsUpdate.autoPostBlinds !== undefined) {
+          if (settingsUpdate.autoPostBlinds !== undefined)
             updateSetting('autoPostBlinds', settingsUpdate.autoPostBlinds);
-          }
-          if (settingsUpdate.hapticEnabled !== undefined) {
+          if (settingsUpdate.hapticEnabled !== undefined)
             updateSetting('isHapticEnabled', settingsUpdate.hapticEnabled);
-          }
-          if (settingsUpdate.tableTheme !== undefined) {
+          if (settingsUpdate.tableTheme !== undefined)
             updateSetting('theme', settingsUpdate.tableTheme);
-          }
           if (settingsUpdate.soundVolume !== undefined) {
             updateSetting('soundVolume', settingsUpdate.soundVolume);
             soundService.setMasterVolume(settingsUpdate.soundVolume / 100);
           }
         }}
-      />
-
-      {/* Share Hand */}
-      {showShareHand && sharedHandData && (
-        <ShareHand
-          isOpen={showShareHand}
-          onClose={() => setShowShareHand(false)}
-          hand={sharedHandData}
-        />
-      )}
-
-      {/* Tournament Add-On Period Modal */}
-      {tableState.isTournament && addOnPeriod.active && (
-        <AddOnModal
-          isVisible={addOnPeriod.active}
-          addOnCost={addOnPeriod.addOnCost}
-          addOnChips={addOnPeriod.addOnChips}
-          walletBalance={addOnPeriod.walletBalance}
-          timeRemaining={addOnPeriod.timeRemaining}
-          onAccept={async () => {
-            if (!tableState.tournamentId || !userId || rebuyProcessing) return;
-            setRebuyProcessing(true);
-            try {
-              await tournamentService.processAddOn(tableState.tournamentId, userId);
-              toast?.success('Add-on accepted — chips added to your stack');
-              setAddOnPeriod((prev) => ({ ...prev, active: false }));
-            } catch (err: any) {
-              toast?.error(err.message || 'Add-on failed');
-            } finally {
-              setRebuyProcessing(false);
-            }
-          }}
-          onDecline={() => {
+        // Share Hand
+        showShareHand={showShareHand}
+        sharedHandData={sharedHandData}
+        onCloseShareHand={() => setShowShareHand(false)}
+        // Add-On
+        addOnPeriod={addOnPeriod}
+        rebuyProcessing={rebuyProcessing}
+        onAddOnAccept={async () => {
+          if (!tableState.tournamentId || !userId || rebuyProcessing) return;
+          setRebuyProcessing(true);
+          try {
+            await tournamentService.processAddOn(tableState.tournamentId, userId);
+            toast?.success('Add-on accepted — chips added to your stack');
             setAddOnPeriod((prev) => ({ ...prev, active: false }));
-          }}
-        />
-      )}
-
-      {/* Tournament Rebuy Modal */}
-      {rebuyData && (
-        <RebuyModal
-          isOpen={showRebuyModal}
-          rebuyCost={rebuyData.cost}
-          rebuyChips={rebuyData.chips}
-          walletBalance={accountBalance || 0}
-          onConfirm={async () => {
-            if (!tableState.tournamentId || !userId) return;
-            setRebuyProcessing(true);
-            try {
-              await tournamentService.processRebuy(tableState.tournamentId, userId);
-              toast?.success('Rebuy successful — chips added to your stack');
-              setShowRebuyModal(false);
-            } catch (err: any) {
-              toast?.error(err.message || 'Rebuy failed');
-            } finally {
-              setRebuyProcessing(false);
-            }
-          }}
-          onClose={() => setShowRebuyModal(false)}
-          isProcessing={rebuyProcessing}
-        />
-      )}
-
-      {/* Tournament Break Screen Overlay */}
-      {tableState.isTournament && (
-        <TournamentBreakScreen
-          isVisible={tournamentBreak.active}
-          breakTimeRemaining={tournamentBreak.timeRemaining}
-          tournamentName={tableState.tableName}
-          currentLevel={0}
-          nextLevel={
-            tournamentBreak.nextLevel || { level: 1, smallBlind: 0, bigBlind: 0, duration: 0 }
+          } catch (err: any) {
+            toast?.error(err.message || 'Add-on failed');
+          } finally {
+            setRebuyProcessing(false);
           }
-          playersRemaining={tableState.players.filter(Boolean).length}
-          totalPlayers={tableState.maxPlayers}
-          averageStack={
-            tableState.players.filter(Boolean).reduce((s, p) => s + (p?.stack || 0), 0) /
-            Math.max(tableState.players.filter(Boolean).length, 1)
+        }}
+        onAddOnDecline={() => setAddOnPeriod((prev) => ({ ...prev, active: false }))}
+        // Rebuy
+        showRebuyModal={showRebuyModal}
+        rebuyData={rebuyData}
+        onConfirmRebuy={async () => {
+          if (!tableState.tournamentId || !userId) return;
+          setRebuyProcessing(true);
+          try {
+            await tournamentService.processRebuy(tableState.tournamentId, userId);
+            toast?.success('Rebuy successful — chips added to your stack');
+            setShowRebuyModal(false);
+          } catch (err: any) {
+            toast?.error(err.message || 'Rebuy failed');
+          } finally {
+            setRebuyProcessing(false);
           }
-          topPlayers={[]}
-          prizePool={0}
-        />
-      )}
-
-      {/* Tournament Announcement Overlay */}
-      {tableState.isTournament && (
-        <TournamentAnnouncementOverlay
-          type={announcement?.type as any}
-          data={announcement?.data}
-          onDismiss={() => setAnnouncement(null)}
-        />
-      )}
-
-      {/* Tournament Winner Overlay */}
-      {tableState.isTournament && tournamentWinner && (
-        <TournamentWinnerOverlay
-          isWinner={true}
-          prize={tournamentWinner.prize}
-          tournamentName={tournamentWinner.name}
-          onDismiss={() => setTournamentWinner(null)}
-        />
-      )}
-
-      {/* Hand History Panel */}
-      <HandHistoryPanel
-        isOpen={showHandHistory}
-        onClose={() => setShowHandHistory(false)}
-        hands={handHistory}
-        heroId={userId || ''}
+        }}
+        onCloseRebuyModal={() => setShowRebuyModal(false)}
+        // Tournament Break
+        tournamentBreak={tournamentBreak}
+        // Announcement
+        announcement={announcement}
+        onDismissAnnouncement={() => setAnnouncement(null)}
+        // Tournament Winner
+        tournamentWinner={tournamentWinner}
+        onDismissTournamentWinner={() => setTournamentWinner(null)}
+        // Hand History
+        showHandHistory={showHandHistory}
+        handHistory={handHistory}
+        onCloseHandHistory={() => setShowHandHistory(false)}
+        // Session Summary
+        showSessionSummary={showSessionSummary}
+        sessionStartTime={sessionStartRef.current}
+        handsPlayed={handsPlayedRef.current}
+        handsWon={handsWonRef.current}
+        totalRebuys={totalRebuysRef.current}
+        sessionPL={sessionPLRef.current}
+        biggestPot={biggestPotRef.current}
+        peakStack={peakStackRef.current}
+        onCloseSessionSummary={() => setShowSessionSummary(false)}
+        onResetSessionRefs={() => {
+          handsPlayedRef.current = 0;
+          biggestPotRef.current = 0;
+          peakStackRef.current = 0;
+          sessionPLRef.current = 0;
+          totalBuyInRef.current = 0;
+          handsWonRef.current = 0;
+          totalRebuysRef.current = 0;
+          sessionStartRef.current = Date.now();
+        }}
+        // Session HUD
+        showSessionHUD={showSessionHUD}
+        onCloseSessionHUD={() => setShowSessionHUD(false)}
+        // Helpers
+        safeBB={safeBB}
+        getPlayerHUDStats={getPlayerHUDStats}
+        navigate={navigate}
       />
-
-      {/* Session Summary Modal — shown when player leaves table */}
-      {showSessionSummary && (
-        <SessionSummary
-          duration={Math.floor((Date.now() - sessionStartRef.current) / 1000)}
-          handsPlayed={handsPlayedRef.current}
-          handsWon={handsWonRef.current}
-          totalRebuys={totalRebuysRef.current}
-          profitLoss={sessionPLRef.current}
-          biggestPot={biggestPotRef.current}
-          peakStack={peakStackRef.current}
-          onClose={() => {
-            // #6: Reset all session tracking refs to prevent stale data on re-seat
-            handsPlayedRef.current = 0;
-            biggestPotRef.current = 0;
-            peakStackRef.current = 0;
-            sessionPLRef.current = 0;
-            totalBuyInRef.current = 0;
-            handsWonRef.current = 0;
-            totalRebuysRef.current = 0;
-            sessionStartRef.current = Date.now();
-            setShowSessionSummary(false);
-
-            // Notify system to gracefully unmount tab AFTER user clicks close
-            masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: tableState.heroSeat });
-            masterBus.emit('SESSION_SUMMARY_DISMISSED', { tableId: tableId ?? '' });
-
-            if (window.location.pathname.includes('/table/')) {
-              navigate('/');
-            }
-          }}
-        />
-      )}
-      {/* Session HUD Modal (Cash Games Only) */}
-      {!tableState.isTournament && tableId && userId !== 'guest' && (
-        <TableErrorBoundary componentName="SessionHUD">
-          <SessionHUD
-            isOpen={showSessionHUD}
-            onClose={() => setShowSessionHUD(false)}
-            tableId={tableId}
-            userId={userId}
-            initialStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-            bigBlind={safeBB(tableState.blinds)}
-          />
-        </TableErrorBoundary>
-      )}
     </div>
   );
 }

@@ -64,7 +64,7 @@ export default defineConfig({
       process.env.NODE_ENV === 'production' ? ['console.log', 'console.debug', 'console.info'] : [],
   },
   build: {
-    sourcemap: false, // Disabled to fit in CI disk constraints; re-enable for Sentry in production CI
+    sourcemap: true, // Enabled — Sentry source maps are uploaded for readable production stack traces
     rollupOptions: {
       output: {
         // 2026-04-15 cache-bust: append a build-time tag to every emitted

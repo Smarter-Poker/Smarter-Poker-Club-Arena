@@ -3,13 +3,16 @@
  * premium-style hand history replay with timeline scrubbing
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import type { Card, CardSuit, CardRank } from '../../types/database.types';
 import { CardImage } from '../table/CardImage';
 import type { Card as CardImageCard } from '../table/CardImage';
 import './HandReplay.css';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
+
+// Lazy-load HandReplay3D — Three.js is large and only needed when 3D tab is opened
+const HandReplay3D = lazy(() => import('./HandReplay3D'));
 
 interface PlayerAction {
   player_id: string;
@@ -106,7 +109,8 @@ export default function HandReplay({
   const handId = propHandId || routeHandId;
 
   const [handData, setHandData] = useState<HandData | null>(initialData || null);
-  const [activeTab, setActiveTab] = useState<'summary' | 'detail'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'detail' | '3d'>('summary');
+  const [is3DActive, setIs3DActive] = useState(false);
   const [isLoading, setIsLoading] = useState(!initialData);
   const [currentStep, setCurrentStep] = useState(1);
   const [totalSteps, setTotalSteps] = useState(1);
@@ -448,7 +452,47 @@ export default function HandReplay({
         >
           Hand Detail
         </button>
+        <button
+          className={`replay-tab ${activeTab === '3d' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('3d');
+            setIs3DActive(true);
+          }}
+        >
+          3D Replay
+        </button>
       </div>
+
+      {/* 3D Replay Panel */}
+      {activeTab === '3d' && (
+        <div
+          style={{ height: '400px', marginTop: '12px', borderRadius: '12px', overflow: 'hidden' }}
+        >
+          <Suspense
+            fallback={
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  color: '#b0b3b8',
+                }}
+              >
+                Loading 3D viewer...
+              </div>
+            }
+          >
+            <HandReplay3D
+              active={is3DActive}
+              seatCount={handData ? (Math.max(handData.players.length, 2) as 2 | 6 | 9) : 6}
+              feltColor="#0d5f2f"
+              orbitControls
+              speed={1}
+            />
+          </Suspense>
+        </div>
+      )}
     </div>
   );
 }

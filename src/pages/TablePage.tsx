@@ -3076,14 +3076,8 @@ export default function TablePage({
   useEffect(() => {
     if (!tableId || !userId) return;
 
-    // Join the room
-    roomService.joinRoom(
-      tableId,
-      userId,
-      tableState.players[tableState.heroSeat - 1]?.name || 'Player',
-      tableState.heroSeat,
-      tableState.players[tableState.heroSeat - 1]?.stack || 0
-    );
+    // RoomService now consumes the channel created by TableWebSocket.
+    // We no longer call roomService.joinRoom() here.
 
     // Subscribe to room messages
     const unsubscribe = roomService.onMessage(tableId, (msg: RoomMessage) => {
@@ -6504,7 +6498,8 @@ export default function TablePage({
                   stack: amount,
                   autoRebuy,
                 });
-                roomService.joinRoom(tableId, userId, username || 'Player', selectedSeat, amount);
+                // The game engine's 'player_seated' event will update table state globally.
+                // RoomService presence is no longer needed since TableWebSocket handles connection.
                 masterBus.emit('TABLE_SEATED', {
                   tableId,
                   seat: selectedSeat,

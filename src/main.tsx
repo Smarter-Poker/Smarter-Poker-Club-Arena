@@ -21,6 +21,16 @@
 const __CACHE_BUST_V7__ = '2026-04-15-v7';
 void __CACHE_BUST_V7__;
 
+// ═══════════════════════════════════════════════════════════════════════════════
+//  BOOT SENTINEL (Dan 2026-04-17)
+//  Flip this flag the INSTANT main.tsx's module evaluates. The self-heal script
+//  in index.html checks for this — if it's set, React has started (even if it's
+//  still pulling lazy chunks), and the script stands down instead of reloading.
+//  Without this sentinel, mobile cold boots were reload-looping every ~20s on
+//  phones that took more than 2.5s to mount 100+ code-split chunks.
+// ═══════════════════════════════════════════════════════════════════════════════
+(window as any).__CLUB_ARENA_BOOTING__ = true;
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';

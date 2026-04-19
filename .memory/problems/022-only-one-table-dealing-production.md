@@ -132,6 +132,26 @@ After this: `activeTables` went to 1 on the intended test table (MAINTENANCE_MOD
 
 **Make `cleanupStaleData()` idempotent and safe for tables with existing seats.** It should never clear `table_seats` rows — only reset `tables.status`/`current_players` if the engine map doesn't have a running engine for that table. The TEST_TABLE_ID protected-list is a band-aid; the real fix is to never wipe player seats on boot. Filed as BUG 026 (pending).
 
-## Deploy path note
+## Deploy path note (corrected 2026-04-17)
 
-The older `./server/deploy-hetzner.sh` script uses `/opt/club-arena` and `docker run`. The current/preferred path is `/srv/club-arena-server` with `docker compose build engine && docker compose up -d engine`. Both paths are in play on the VPS — agents should check which docker-compose.yml the `club-arena-engine` container is running against before editing env files.
+The LIVE path is `/opt/club-arena` with plain `docker run` — **not**
+`/srv/club-arena-server`. That `/srv/...` path does not exist on the current VPS
+(verified during BUG 025 redeploy: `ls -lad /srv/club-arena-server` returns
+"No such file or directory"). The earlier claim above that both paths were in
+play was wrong.
+
+Canonical redeploy for any future server-side change:
+
+```
+ssh root@178.156.160.206 'cd /opt/club-arena && git fetch origin main && git reset --hard origin/main'
+# then run whatever build/restart step the repo's server/deploy-hetzner.sh defines
+```
+
+Verify layout before editing env files:
+
+```
+ssh root@178.156.160.206 'docker inspect club-arena-engine --format "{{.Config.WorkingDir}} {{.HostConfig.Binds}}"'
+```
+
+`/opt/club-arena/.env` holds `TEST_TABLE_ID` and `MAINTENANCE_MODE`, both
+load-bearing for the live E2E test table. Never touch them on a routine deploy.

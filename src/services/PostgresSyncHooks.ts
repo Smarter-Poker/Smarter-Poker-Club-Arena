@@ -116,27 +116,12 @@ class PostgresSyncHooksService {
         const unionId = payload.new.id;
         this.debouncedEmit(`union_${unionId}`, 'UNION_UPDATED', { unionId });
       })
-      // 5. Tables — DEBOUNCED (global listener for external table creation/modification)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, (payload) => {
-        const tableId = (payload.new as any)?.id || (payload.old as any)?.id;
-        if (tableId) {
-          console.debug('[PostgresSync] External Table mutation detected:', payload);
-          const status = payload.eventType === 'DELETE' ? 'deleted' : (payload.new as any)?.status;
-          this.debouncedEmit(`table_${tableId}`, 'TABLE_UPDATED', { tableId, status });
-        }
-      })
-      // 6. Tournaments — DEBOUNCED (global listener for external tournament mutations)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, (payload) => {
-        const tournamentId = (payload.new as any)?.id || (payload.old as any)?.id;
-        if (tournamentId) {
-          console.debug('[PostgresSync] External Tournament mutation detected:', payload);
-          const status = payload.eventType === 'DELETE' ? 'deleted' : (payload.new as any)?.status;
-          this.debouncedEmit(`tournament_${tournamentId}`, 'TOURNAMENT_UPDATED', {
-            tournamentId,
-            status,
-          });
-        }
-      })
+      // NOTE: `tables` and `tournaments` global listeners REMOVED (2026-04-18)
+      // These unfiltered listeners fired on EVERY table/tournament mutation globally,
+      // generating ~80% of the 86M realtime messages ($217/mo). The server-side
+      // CashGameOrchestrator and TournamentOrchestrator already discover tables/tournaments
+      // via polling. UI pages that need live table status updates use their own
+      // page-level subscriptions with proper filters.
       // 7. User Settings — debounced (settings toggle spam protection)
       .on(
         'postgres_changes',

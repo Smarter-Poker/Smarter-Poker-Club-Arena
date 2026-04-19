@@ -9,18 +9,19 @@
 
 ## PokerBros Parity (Phases A-H) — ALL SIGNED OFF
 
-| Phase | Surface | Commit | Signoff doc |
-|---|---|---|---|
-| A | Core gameplay (15 rows) | `77d8e3dc` | `2026-04-15-phase-A-signoff.md` |
-| B | Omaha variants & special formats | `77d8e3dc` | `2026-04-15-phase-B-signoff.md` |
-| C | Tournament system (30+ features) | `77d8e3dc` | `2026-04-15-phase-C-signoff.md` |
-| D | Club / agent / union economy | `fcdfd03c` | `2026-04-15-phase-D-signoff.md` |
-| E | VIP / IAP / daily rewards | `58eddd4e` | `2026-04-15-phase-E-signoff.md` |
-| F | Security & anti-cheat | `9f305d8c` | `2026-04-15-phase-F-signoff.md` |
-| G | Real-time & multi-tabling | `20386861` | `2026-04-15-phase-G-signoff.md` |
-| H | Analytics & reporting | `a9700673` | `2026-04-15-phase-H-signoff.md` |
+| Phase | Surface                          | Commit     | Signoff doc                     |
+| ----- | -------------------------------- | ---------- | ------------------------------- |
+| A     | Core gameplay (15 rows)          | `77d8e3dc` | `2026-04-15-phase-A-signoff.md` |
+| B     | Omaha variants & special formats | `77d8e3dc` | `2026-04-15-phase-B-signoff.md` |
+| C     | Tournament system (30+ features) | `77d8e3dc` | `2026-04-15-phase-C-signoff.md` |
+| D     | Club / agent / union economy     | `fcdfd03c` | `2026-04-15-phase-D-signoff.md` |
+| E     | VIP / IAP / daily rewards        | `58eddd4e` | `2026-04-15-phase-E-signoff.md` |
+| F     | Security & anti-cheat            | `9f305d8c` | `2026-04-15-phase-F-signoff.md` |
+| G     | Real-time & multi-tabling        | `20386861` | `2026-04-15-phase-G-signoff.md` |
+| H     | Analytics & reporting            | `a9700673` | `2026-04-15-phase-H-signoff.md` |
 
 ## Key Decisions
+
 - [001] Rake is EQUAL SHARE, never weighted (FIX 144)
 - [002] BBJ requires 3+ players dealt in (FIX 145)
 - [003] Sit-out mid-hand must be deferred (FIX 143)
@@ -28,10 +29,13 @@
 - [005] Formal FSM is a design choice, not a bug — string-based stage progression is functionally correct
 
 ## Key Preferences
+
 - [001] Dan's verification standard: deep line-by-line, no rubber-stamping
 - [002] Rakeback equal share is THE key metric for weekly player/agent earnings
+- [003] NO TERMINAL PROMPTS — Antigravity prompts only. Never tell Dan to run a shell command; emit an AG agent prompt instead. See preferences/002-no-terminal-prompts-only-antigravity.md
 
 ## Key Context
+
 - [001] Three-service architecture (Vercel + Hetzner VPS + Supabase)
 - [002] Git hooks bypassed: `core.hooksPath /dev/null`
 - [003] Migration phase order is SACRED — cannot skip steps
@@ -41,6 +45,7 @@
 - [007] GitHub PAT: REDACTED-USE-LOCAL-ENV-OR-GH-CLI (Antigravity-Fleet-v4, never expires)
 
 ## Problems Solved
+
 - [001] FIX 143 — Sit-out during active hand caused auto-fold
 - [002] FIX 144 — Rakeback was weighted by pot contribution instead of equal share
 - [003] FIX 145 — BBJ minimum players was 4, should be 3
@@ -66,32 +71,35 @@
 Built live-verification harness (c33b3277), ran it against production, then extended with a systematic stranded-writer audit. **Caught 9 silent-failure financial bugs** in sequence (008-016 above). All shipped as engineering fixes within the same session. Engine telemetry remained healthy throughout: 683+ hands dealt at 85 hands/hour, 0 broadcast threshold violations.
 
 **Systemic root cause across all 9 bugs:** Bible V8 server-authoritative migration inventoried "code + DB + UI exists" but never ran "RPC actually completes + data flows end-to-end" validation. Two failure modes:
+
 - Writers stranded in orphaned `src/services/` (client) code with no server replacement (008, 009, 012)
 - RPCs / server writes targeting tables that don't exist in the schema (010, 011, 013, 014, 015, 016)
 
 **Rules of thumb for future agents:**
+
 1. `grep -rln "<table>" server/` for each UI-read table — zero hits = red flag for stranded-writer
 2. For every `.from('<table>')` in server/src, assert that table exists in pg_tables — missing = 42P01 silent-failure
 3. CI should parse both patterns automatically and block merges that violate them
 
 ## Index of Entries
-| ID | Type | File | Summary |
-|----|------|------|---------|
-| D-001 | DECISION | decisions/001-rake-equal-share.md | Rake credit is always equal share |
-| D-002 | DECISION | decisions/002-bbj-min-players.md | BBJ requires 3+ players |
-| D-003 | DECISION | decisions/003-deferred-sitout.md | Sit-out deferred until hand end |
-| D-004 | DECISION | decisions/004-broadcast-await.md | Await broadcast only on TURN_CHANGE |
-| P-001 | PREFERENCE | preferences/001-verification-standard.md | Deep verification, no rubber-stamps |
-| C-001 | CONTEXT | context/001-architecture.md | Platform architecture overview |
-| C-002 | CONTEXT | context/002-migration-status.md | Current migration progress |
-| C-003 | CONTEXT | context/003-hetzner-vps.md | Hetzner VPS credentials and deploy |
-| C-004 | CONTEXT | context/004-vercel-deploy.md | Vercel project and deployment details |
-| PR-001 | PROBLEM | problems/001-fix143-sitout.md | Sit-out mid-hand auto-fold bug |
-| PR-002 | PROBLEM | problems/002-fix144-rakeback.md | Weighted rakeback bug |
-| PR-003 | PROBLEM | problems/003-fix145-bbj.md | BBJ min players wrong |
-| PR-004 | PROBLEM | problems/004-fix217-broadcast.md | Broadcast fire-and-forget timing |
-| PR-005 | PROBLEM | problems/005-fix218-bombpot.md | Bomb pot dead code |
-| PR-006 | PROBLEM | problems/006-fix219-ante.md | Missing ante_enabled toggle |
-| C-005 | CONTEXT | context/2026-04-14-basic-functionality-push.md | Timer ring v1→v5 + rebuy-on-bust + engine audits |
-| PR-007 | PROBLEM | problems/007-v5-drop-orphans-outage.md | v5 push-script drop-orphans deleted vendor-supabase; fixed with hotfix + v6 cache-bust + permanent script rule |
-| C-006 | CONTEXT | context/2026-04-15-phase-A-signoff.md | Phase A core-gameplay verification — 15 rows, 12 GREEN via code+live, 3 deferred to Phase B test-table setup |
+
+| ID     | Type       | File                                           | Summary                                                                                                        |
+| ------ | ---------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| D-001  | DECISION   | decisions/001-rake-equal-share.md              | Rake credit is always equal share                                                                              |
+| D-002  | DECISION   | decisions/002-bbj-min-players.md               | BBJ requires 3+ players                                                                                        |
+| D-003  | DECISION   | decisions/003-deferred-sitout.md               | Sit-out deferred until hand end                                                                                |
+| D-004  | DECISION   | decisions/004-broadcast-await.md               | Await broadcast only on TURN_CHANGE                                                                            |
+| P-001  | PREFERENCE | preferences/001-verification-standard.md       | Deep verification, no rubber-stamps                                                                            |
+| C-001  | CONTEXT    | context/001-architecture.md                    | Platform architecture overview                                                                                 |
+| C-002  | CONTEXT    | context/002-migration-status.md                | Current migration progress                                                                                     |
+| C-003  | CONTEXT    | context/003-hetzner-vps.md                     | Hetzner VPS credentials and deploy                                                                             |
+| C-004  | CONTEXT    | context/004-vercel-deploy.md                   | Vercel project and deployment details                                                                          |
+| PR-001 | PROBLEM    | problems/001-fix143-sitout.md                  | Sit-out mid-hand auto-fold bug                                                                                 |
+| PR-002 | PROBLEM    | problems/002-fix144-rakeback.md                | Weighted rakeback bug                                                                                          |
+| PR-003 | PROBLEM    | problems/003-fix145-bbj.md                     | BBJ min players wrong                                                                                          |
+| PR-004 | PROBLEM    | problems/004-fix217-broadcast.md               | Broadcast fire-and-forget timing                                                                               |
+| PR-005 | PROBLEM    | problems/005-fix218-bombpot.md                 | Bomb pot dead code                                                                                             |
+| PR-006 | PROBLEM    | problems/006-fix219-ante.md                    | Missing ante_enabled toggle                                                                                    |
+| C-005  | CONTEXT    | context/2026-04-14-basic-functionality-push.md | Timer ring v1→v5 + rebuy-on-bust + engine audits                                                               |
+| PR-007 | PROBLEM    | problems/007-v5-drop-orphans-outage.md         | v5 push-script drop-orphans deleted vendor-supabase; fixed with hotfix + v6 cache-bust + permanent script rule |
+| C-006  | CONTEXT    | context/2026-04-15-phase-A-signoff.md          | Phase A core-gameplay verification — 15 rows, 12 GREEN via code+live, 3 deferred to Phase B test-table setup   |

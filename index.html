@@ -62,18 +62,28 @@
   <!-- SELF-HEALING: Detect Next.js soft-navigation black screen and auto-recover.
        When the World Hub navigates here via client-side routing, type="module" scripts
        don't re-execute, leaving #root empty. This inline script detects that condition
-       and forces a full page reload to properly boot the SPA. -->
+       and forces a full page reload to properly boot the SPA.
+
+       Dan 2026-04-17: Mobile cold boot with 100+ lazy chunks can take 5-8s. The
+       old 2500ms check was triggering false-positive reloads every 20s on phones.
+       Raised CHECK_DELAY to 10000ms. Also added a boot sentinel (window.__CLUB_ARENA_BOOTING__)
+       that main.tsx sets on import — if the sentinel is set, the self-heal stands
+       down because React has started (even if mount hasn't finished yet). -->
   <script>
     (function() {
-      var CHECK_DELAY = 2500;
-      var MAX_RETRIES = 3;
+      var CHECK_DELAY = 10000;
+      var MAX_RETRIES = 2;
       var RETRY_KEY = '__club_arena_recovery';
       var retryCount = 0;
       try { retryCount = parseInt(sessionStorage.getItem(RETRY_KEY) || '0', 10); } catch(e) {}
 
       setTimeout(function() {
         var root = document.getElementById('root');
-        if (root && root.childNodes.length === 0 && retryCount < MAX_RETRIES) {
+        // Only reload if: (a) #root is empty, AND (b) main.tsx never even imported.
+        // The sentinel flips to true the moment main.tsx runs. If it's true, React
+        // is booting — just slow. Don't reload, or we'll thrash the chunk loader.
+        var mainNeverStarted = !window.__CLUB_ARENA_BOOTING__;
+        if (root && root.childNodes.length === 0 && mainNeverStarted && retryCount < MAX_RETRIES) {
           try { sessionStorage.setItem(RETRY_KEY, String(retryCount + 1)); } catch(e) {}
 
           // On first retry, nuke stale service worker caches that may be causing blank pages
@@ -92,12 +102,10 @@
 
           // Small delay to let cache/SW cleanup finish before reload
           setTimeout(function() { window.location.reload(); }, retryCount > 0 ? 500 : 100);
-        } else if (retryCount >= MAX_RETRIES) {
+        } else if (retryCount >= MAX_RETRIES && root && root.childNodes.length === 0 && mainNeverStarted) {
           try { sessionStorage.removeItem(RETRY_KEY); } catch(e) {}
           // Last resort: show a visible error so the page isn't just blank
-          if (root && root.childNodes.length === 0) {
-            root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a1a;color:#fff;font-family:Inter,system-ui,sans-serif;text-align:center;padding:2rem"><div><h1 style="font-size:1.5rem;margin-bottom:1rem">Loading failed</h1><p style="color:rgba(255,255,255,0.6);margin-bottom:1.5rem">Please clear your browser cache and reload.</p><button onclick="caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})});location.reload()" style="padding:10px 24px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:1rem;cursor:pointer">Clear Cache & Reload</button></div></div>';
-          }
+          root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a1a;color:#fff;font-family:Inter,system-ui,sans-serif;text-align:center;padding:2rem"><div><h1 style="font-size:1.5rem;margin-bottom:1rem">Loading failed</h1><p style="color:rgba(255,255,255,0.6);margin-bottom:1.5rem">Please clear your browser cache and reload.</p><button onclick="caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})});location.reload()" style="padding:10px 24px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:1rem;cursor:pointer">Clear Cache & Reload</button></div></div>';
         }
       }, CHECK_DELAY);
 

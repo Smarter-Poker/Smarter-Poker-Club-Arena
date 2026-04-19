@@ -275,7 +275,31 @@ export class EngineStateClient {
       case 'EVENT': {
         // Forward the transient event payload to the owning hook so the UI
         // can dispatch by payload.type (insurance_offers, rit_offer, etc).
-        this.opts.onEvent(msg.payload);
+        //
+        // Dan 2026-04-17 (Task 56 — pot shipping / winner acknowledgment):
+        // The server emits `pot_win` and `hand_complete` back-to-back in the
+        // same synchronous code path (HandController.completeHand). On the
+        // client, both WS frames often arrive in the same JS macrotask, so
+        // React 18's automatic batching collapsed the two `setLastEvent(...)`
+        // calls into a single render — only `hand_complete` survived, and
+        // `pot_win` was dropped silently. That's why the pot-shipping
+        // animation + winner banner never fired on production.
+        //
+        // Fix: defer each event dispatch to its own macrotask via
+        // `setTimeout(..., 0)`. That forces a separate React render per
+        // event, so every `useEffect([engineLastEvent])` watcher observes
+        // every event in order. Tiny (<1ms) latency penalty, totally
+        // invisible to the user — the animations now fire every hand.
+        const payload = msg.payload;
+        setTimeout(() => {
+          try {
+            this.opts.onEvent(payload);
+          } catch (err) {
+            // Never let a listener throw propagate back into the WS
+            // message pump — it would kill the connection.
+            console.error('[EngineStateClient] onEvent listener threw', err);
+          }
+        }, 0);
         return;
       }
     }

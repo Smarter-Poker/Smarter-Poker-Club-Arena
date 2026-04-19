@@ -129,6 +129,12 @@ export class ServerTableEngine {
   // (or opt to post the BB immediately via POST /post-bb).
   private knownPlayerIds: Set<string> = new Set();
 
+  // Guard for the dealing loop's first iteration. On the first pass — whether
+  // this is a cold start or a crash-recovery resume — every currently-seated
+  // player is treated as an initial/existing player and is NOT flagged as
+  // waiting-for-BB. Flagging only begins on iteration two and onward.
+  private dealingLoopFirstIteration: boolean = true;
+
   // Bible V8 §6.17: Admin pause/maintenance lock — prevents new hands from starting
   private adminPauseLock: boolean = false;
   private maintenanceLock: boolean = false;
@@ -1938,17 +1944,25 @@ export class ServerTableEngine {
         await this.refreshBlinds();
 
         // Bible V8 §4.2: Detect new joiners. Any userId that appears in
-        // seatedPlayers but wasn't known before is a new player. If the engine
-        // has already dealt at least one hand, new joiners must wait for the
-        // BB to reach their seat (they can opt out via POST /post-bb).
-        // On the very first hand of the engine's life, all seated players are
-        // treated as initial players and no wait is required.
-        for (const p of this.seatedPlayers) {
-          if (!this.knownPlayerIds.has(p.user_id)) {
-            if (this.handCount > 0 && !this.returningFromSitout.has(p.user_id)) {
-              this.registerWaitForBB(p.user_id);
-            }
+        // seatedPlayers but wasn't known before is a new player. After the
+        // first dealingLoop iteration, every such player is flagged as
+        // waiting-for-BB so they can't play until the BB reaches their seat
+        // (they can opt out via POST /post-bb). On the very first iteration
+        // — cold start OR crash recovery — all seated players are treated as
+        // the initial roster and no wait is required.
+        if (this.dealingLoopFirstIteration) {
+          for (const p of this.seatedPlayers) {
             this.knownPlayerIds.add(p.user_id);
+          }
+          this.dealingLoopFirstIteration = false;
+        } else {
+          for (const p of this.seatedPlayers) {
+            if (!this.knownPlayerIds.has(p.user_id)) {
+              if (!this.returningFromSitout.has(p.user_id)) {
+                this.registerWaitForBB(p.user_id);
+              }
+              this.knownPlayerIds.add(p.user_id);
+            }
           }
         }
         // Prune knownPlayerIds for truly-gone players (left_at set → filtered

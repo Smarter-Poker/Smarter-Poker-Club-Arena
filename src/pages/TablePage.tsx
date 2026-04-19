@@ -5602,8 +5602,15 @@ export default function TablePage({
                   />
                 </div>
 
-                {/* Game Info Strip — premium-style: "1/2 NLH" capitalized, table name below */}
+                {/* Game Info Strip — PokerBros-style: table name on top, stakes
+                    below. Name sits just under the community cards so both lines
+                    stay anchored to the center pot/board axis. */}
                 <div className="table-game-info">
+                  {tableState.tableName && (
+                    <span className="table-game-info__name">
+                      {tableState.tableName.toUpperCase()}
+                    </span>
+                  )}
                   <span className="table-game-info__stakes">
                     {(tableState.blinds || '1/2').toUpperCase()}{' '}
                     {(tableState.gameType === "No Limit Hold'em"
@@ -5615,11 +5622,6 @@ export default function TablePage({
                           : tableState.gameType || 'NLH'
                     ).toUpperCase()}
                   </span>
-                  {tableState.tableName && (
-                    <span className="table-game-info__name">
-                      {tableState.tableName.toUpperCase()}
-                    </span>
-                  )}
                 </div>
 
                 {/* Spectator Badge + Overlay REMOVED from table surface.

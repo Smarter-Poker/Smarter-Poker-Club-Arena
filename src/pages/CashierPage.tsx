@@ -115,7 +115,10 @@ const CATEGORY_ICONS: Record<string, string> = {
   bonus: '★',
 };
 
+import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
+
 export default function CashierPage() {
+  useRealtimeFinancials();
   useEffect(() => {
     document.title = 'Cashier | Smarter Poker';
   }, []);
@@ -142,7 +145,9 @@ export default function CashierPage() {
   const RATE_LIMIT_MS = 2000;
 
   // Connection status: track realtime channel health
-  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'reconnecting' | 'error'>('connected');
+  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'reconnecting' | 'error'>(
+    'connected'
+  );
   const [message, setMessage] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
@@ -918,7 +923,9 @@ export default function CashierPage() {
         setAction(next);
         setMessage(null);
         // Focus the new tab button
-        const btn = document.querySelector(`[aria-controls="cashier-panel-${next}"]`) as HTMLElement;
+        const btn = document.querySelector(
+          `[aria-controls="cashier-panel-${next}"]`
+        ) as HTMLElement;
         btn?.focus();
       }
     },
@@ -1335,20 +1342,27 @@ export default function CashierPage() {
       {/* Action Tabs */}
       {/* Connection status indicator */}
       {realtimeStatus !== 'connected' && (
-        <div
-          className={styles.connectionBanner}
-          role="status"
-          aria-live="polite"
-        >
+        <div className={styles.connectionBanner} role="status" aria-live="polite">
           {realtimeStatus === 'reconnecting' ? (
-            <><span className={styles.connectionDot} style={{ background: '#f59e0b' }} /> Reconnecting to live updates…</>
+            <>
+              <span className={styles.connectionDot} style={{ background: '#f59e0b' }} />{' '}
+              Reconnecting to live updates…
+            </>
           ) : (
-            <><span className={styles.connectionDot} style={{ background: '#ef4444' }} /> Live connection lost — data may be stale</>
+            <>
+              <span className={styles.connectionDot} style={{ background: '#ef4444' }} /> Live
+              connection lost — data may be stale
+            </>
           )}
         </div>
       )}
 
-      <nav className={styles.tabNav} role="tablist" aria-label="Cashier actions" onKeyDown={handleTabKeyDown}>
+      <nav
+        className={styles.tabNav}
+        role="tablist"
+        aria-label="Cashier actions"
+        onKeyDown={handleTabKeyDown}
+      >
         {tabs.map((act) => (
           <button
             key={act}
@@ -1965,7 +1979,10 @@ export default function CashierPage() {
                   <button
                     key={f}
                     className={`${styles.txFilterBtn} ${txFilter === f ? styles.txFilterActive : ''}`}
-                    onClick={() => { setTxFilter(f); setTxPage(1); }}
+                    onClick={() => {
+                      setTxFilter(f);
+                      setTxPage(1);
+                    }}
                   >
                     {f === 'all'
                       ? 'All'
@@ -1990,12 +2007,24 @@ export default function CashierPage() {
                     className={styles.txSkeletonRow}
                     style={{ animationDelay: `${i * 0.08}s` }}
                   >
-                    <div className={`${styles.skeletonBar}`} style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0 }} />
+                    <div
+                      className={`${styles.skeletonBar}`}
+                      style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0 }}
+                    />
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div className={styles.skeletonBar} style={{ width: `${55 + i * 5}%`, height: '12px' }} />
-                      <div className={styles.skeletonBar} style={{ width: '40%', height: '10px' }} />
+                      <div
+                        className={styles.skeletonBar}
+                        style={{ width: `${55 + i * 5}%`, height: '12px' }}
+                      />
+                      <div
+                        className={styles.skeletonBar}
+                        style={{ width: '40%', height: '10px' }}
+                      />
                     </div>
-                    <div className={styles.skeletonBar} style={{ width: '60px', height: '14px', flexShrink: 0 }} />
+                    <div
+                      className={styles.skeletonBar}
+                      style={{ width: '60px', height: '14px', flexShrink: 0 }}
+                    />
                   </div>
                 ))}
               </div>

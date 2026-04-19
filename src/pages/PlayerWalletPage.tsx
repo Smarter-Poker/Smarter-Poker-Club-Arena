@@ -168,7 +168,10 @@ function WalletCard({
 // MAIN PAGE COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
+
 export default function PlayerWalletPage() {
+  useRealtimeFinancials();
   useEffect(() => {
     document.title = 'Wallet | Smarter Poker';
   }, []);
@@ -199,7 +202,9 @@ export default function PlayerWalletPage() {
   // Auto-dismiss messages after 8s
   useEffect(() => {
     if (!message) return;
-    const t = setTimeout(() => { if (isMounted.current) setMessage(null); }, 8000);
+    const t = setTimeout(() => {
+      if (isMounted.current) setMessage(null);
+    }, 8000);
     return () => clearTimeout(t);
   }, [message]);
 
@@ -352,7 +357,8 @@ export default function PlayerWalletPage() {
       masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId: user.id });
     } catch (e) {
       reportError(e, 'PlayerWalletPage');
-      if (isMounted.current) setMessage({ type: 'error', text: 'Transfer failed. Please try again.' });
+      if (isMounted.current)
+        setMessage({ type: 'error', text: 'Transfer failed. Please try again.' });
     }
     if (isMounted.current) setIsTransferring(false);
   };
@@ -431,7 +437,12 @@ export default function PlayerWalletPage() {
       </div>
 
       {/* ═══════════ TABS ═══════════ */}
-      <div className="wallet-tabs" role="tablist" aria-label="Wallet sections" onKeyDown={handleTabKeyDown}>
+      <div
+        className="wallet-tabs"
+        role="tablist"
+        aria-label="Wallet sections"
+        onKeyDown={handleTabKeyDown}
+      >
         {(['overview', 'transfer', 'history'] as WalletTab[]).map((tab) => (
           <button
             key={tab}

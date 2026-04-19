@@ -130,6 +130,11 @@ export class TableWebSocket {
         },
       });
 
+      // Register with RoomService to share the channel and prevent duplicate subscriptions
+      import('./RoomService').then(({ roomService }) => {
+        roomService.registerChannel(this.tableId, this.channel!);
+      });
+
       // Set up event listeners
       this.channel
         .on('broadcast', { event: 'game_event' }, ({ payload }) => {
@@ -417,10 +422,7 @@ export class TableWebSocket {
 
     try {
       // FIX: Call authoritative Node.js Engine to get live state instead of static DB
-      const data = await retryAsync(
-        () => GameServerAPI.getTableState(this.tableId),
-        3
-      );
+      const data = await retryAsync(() => GameServerAPI.getTableState(this.tableId), 3);
 
       if (data) {
         // Broadcast the synced state to all handlers

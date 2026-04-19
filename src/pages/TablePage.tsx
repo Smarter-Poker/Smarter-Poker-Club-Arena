@@ -102,6 +102,8 @@ import { useTableModals } from '../hooks/useTableModals';
 import { useTableChat } from '../hooks/useTableChat';
 import { useTableTournament } from '../hooks/useTableTournament';
 import { useTableAnimations } from '../hooks/useTableAnimations';
+import { useTableSound } from '../hooks/useTableSound';
+import { useTableSession } from '../hooks/useTableSession';
 import { GTOQueryService, type GTOSolution } from '../services/GTOQueryService';
 import { RakeService, type RakeCalculation } from '../services/RakeService';
 import { tableService } from '../services/TableService';
@@ -142,6 +144,7 @@ import PlayerCard from '../components/table/PlayerCard';
 import { handPersistenceService } from '../services/HandPersistenceService';
 import { handHistoryService } from '../services/HandHistoryService';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
+import { notificationService } from '../services/NotificationService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
@@ -846,12 +849,11 @@ export default function TablePage({
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
-  // 2026-04-14 per Dan: when the hero busts to 0 chips they used to be
-  // booted from the table. Instead, check their wallet and prompt a rebuy.
+  // 2026-04-14 per Dan: bust rebuy flow
   const [bustRebuyOpen, setBustRebuyOpen] = useState(false);
   const [bustWalletBalance, setBustWalletBalance] = useState<number | null>(null);
   const [bustRebuyProcessing, setBustRebuyProcessing] = useState(false);
-  const bustPromptFiredRef = useRef(false);
+  // bustPromptFiredRef provided by useTableSession hook
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [showPlayerNotes, setShowPlayerNotes] = useState(false);
   const [selectedPlayerForNotes, setSelectedPlayerForNotes] = useState<{
@@ -881,16 +883,20 @@ export default function TablePage({
   const [showSessionSummary, setShowSessionSummary] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showSessionHUD, setShowSessionHUD] = useState(false);
-  const sessionStartRef = useRef(Date.now());
-  const handsPlayedRef = useRef(0);
-  const biggestPotRef = useRef(0);
-  const peakStackRef = useRef(0);
-  const sessionPLRef = useRef(0);
-  const totalBuyInRef = useRef(0); // Track total chips invested for accurate session P/L
-  const handsWonRef = useRef(0); // Session hands won by hero
-  const heroWonCurrentHandRef = useRef(false); // Tracks if hero won current hand (cross-event ref)
-  const hadShowdownRef = useRef(false); // Tracks if current hand reached showdown (cross-event ref)
-  const totalRebuysRef = useRef(0); // Add-chips/rebuy count for session summary
+  const {
+    sessionStartRef,
+    handsPlayedRef,
+    handsWonRef,
+    biggestPotRef,
+    peakStackRef,
+    sessionPLRef,
+    totalBuyInRef,
+    totalRebuysRef,
+    bustPromptFiredRef,
+    heroWonCurrentHandRef,
+    hadShowdownRef,
+    resetSession,
+  } = useTableSession();
   const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
 
   // Previous hand tracking for bottom-left HUD card
@@ -1478,7 +1484,7 @@ export default function TablePage({
         2,
         500
       )
-        .then((result: any) => {
+        .then((result: { error: { message: string } | null } | void) => {
           if (result?.error)
             console.warn('[Cashier] Withdraw chips stack sync failed:', result.error.message);
         })
@@ -1579,35 +1585,16 @@ export default function TablePage({
     }>
   >([]);
 
-  const [isSoundEnabled, setIsSoundEnabled] = useState(() => {
-    try {
-      return localStorage.getItem('ca_sound_enabled') !== 'false';
-    } catch {
-      return true;
-    }
-  });
-  const [isVibrationEnabled, setIsVibrationEnabled] = useState(() => {
-    try {
-      return localStorage.getItem('ca_vibration_enabled') !== 'false';
-    } catch {
-      return true;
-    }
-  });
-  const [isAutoRebuyEnabled, setIsAutoRebuyEnabled] = useState(() => {
-    try {
-      return localStorage.getItem('ca_auto_rebuy') === 'true';
-    } catch {
-      /* localStorage unavailable */ return false;
-    }
-  });
-
-  // Play turn alert when it's hero's turn
-  const playTurnAlert = () => {
-    // NEW-BUG-1 FIX: use dynamic isEnabled() not stale isSoundEnabled closure
-    if (soundService.isEnabled()) {
-      soundService.playTurnAlert();
-    }
-  };
+  // Sound & vibration preferences — extracted to useTableSound hook
+  const {
+    isSoundEnabled,
+    setIsSoundEnabled,
+    isVibrationEnabled,
+    setIsVibrationEnabled,
+    isAutoRebuyEnabled,
+    setIsAutoRebuyEnabled,
+    playTurnAlert,
+  } = useTableSound();
 
   // All-in dramatic mode
   const [isAllInMode, setIsAllInMode] = useState(false);
@@ -1982,6 +1969,23 @@ export default function TablePage({
         // P/L = chips returned to wallet minus total chips invested at table
         sessionPLRef.current = (result.chipsReturned || 0) - totalBuyInRef.current;
         setShowSessionSummary(true);
+
+        // Phase E: Route session end to Notifications tab for async review
+        if (userId && userId !== 'guest') {
+          const pl = sessionPLRef.current;
+          const plText = pl >= 0 ? `+${pl.toLocaleString()}` : pl.toLocaleString();
+          notificationService
+            .create({
+              userId,
+              type: 'system',
+              title: 'Session Complete',
+              message: `Session ended at ${tableState.tableName}. P/L: ${plText} chips over ${handsPlayedRef.current} hands.`,
+              metadata: { tableId: tableId || '', plChips: pl, hands: handsPlayedRef.current },
+            })
+            .catch(() => {
+              /* non-critical — don't block leave flow */
+            });
+        }
       } else {
         reportError(new Error('[Leave] Failed to leave table'), 'TablePage.Failed_to_leave_table');
         setLeaveNotice(
@@ -2428,6 +2432,21 @@ export default function TablePage({
           // NOW trigger the HUD hit animation + full celebration overlay
           setShowBBJ(true);
           setShowBBJCelebration(true);
+
+          // Phase E: Notify all table players via in-app Notifications tab
+          if (userId && userId !== 'guest') {
+            notificationService
+              .create({
+                userId,
+                type: 'bonus',
+                title: '🃏 Bad Beat Jackpot Hit!',
+                message: `The BBJ paid out a total of $${totalPayout.toLocaleString()} at ${tableState.tableName}!`,
+                metadata: { tableId: tableId || '', totalPayout },
+              })
+              .catch(() => {
+                /* non-critical */
+              });
+          }
 
           // Clear the hit ref
           bbjHitDataRef.current = null;
@@ -4941,7 +4960,7 @@ export default function TablePage({
     },
     onRaise: handleRaise,
     onAllIn: handleAllIn,
-    onToggleSound: () => setIsSoundEnabled((prev) => !prev),
+    onToggleSound: () => setIsSoundEnabled(!isSoundEnabled),
     // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
     onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),
     onBetPreset: (preset: number) => {
@@ -6630,16 +6649,7 @@ export default function TablePage({
         biggestPot={biggestPotRef.current}
         peakStack={peakStackRef.current}
         onCloseSessionSummary={() => setShowSessionSummary(false)}
-        onResetSessionRefs={() => {
-          handsPlayedRef.current = 0;
-          biggestPotRef.current = 0;
-          peakStackRef.current = 0;
-          sessionPLRef.current = 0;
-          totalBuyInRef.current = 0;
-          handsWonRef.current = 0;
-          totalRebuysRef.current = 0;
-          sessionStartRef.current = Date.now();
-        }}
+        onResetSessionRefs={resetSession}
         // Session HUD
         showSessionHUD={showSessionHUD}
         onCloseSessionHUD={() => setShowSessionHUD(false)}

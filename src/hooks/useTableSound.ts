@@ -12,7 +12,7 @@
  *       that would make the hook contract very wide for little benefit.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { soundService } from '../services/SoundService';
 
 export interface UseTableSoundReturn {
@@ -90,10 +90,14 @@ export function useTableSound(): UseTableSoundReturn {
     }
   }, [isAutoRebuyEnabled]);
 
-  // Sync soundService singleton when preference changes
-  useEffect(() => {
-    soundService.setEnabled(isSoundEnabled);
-  }, [isSoundEnabled]);
+  // Mount-only sync: align soundService singleton with the stored preference.
+  // We use a ref guard so this only executes once (not on every toggle).
+  // Subsequent changes are handled synchronously inside setIsSoundEnabled().
+  const mountedRef = useRef(false);
+  if (!mountedRef.current) {
+    mountedRef.current = true;
+    soundService.setEnabled(readBool(STORAGE_SOUND, true));
+  }
 
   const setIsSoundEnabled = (v: boolean) => {
     setIsSoundEnabledRaw(v);

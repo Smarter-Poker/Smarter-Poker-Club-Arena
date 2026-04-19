@@ -6554,10 +6554,11 @@ export default function TablePage({
         onCloseSettings={() => setShowSettings(false)}
         onSettingsChange={(settingsUpdate) => {
           if (settingsUpdate.soundEnabled !== undefined) {
+            // setIsSoundEnabled() already calls soundService.setEnabled() internally.
             setIsSoundEnabled(settingsUpdate.soundEnabled);
             updateSetting('isSoundEnabled', settingsUpdate.soundEnabled);
-            soundService.setEnabled(settingsUpdate.soundEnabled);
           }
+
           if (settingsUpdate.autoMuckLosers !== undefined)
             updateSetting('autoMuck', settingsUpdate.autoMuckLosers);
           if (settingsUpdate.showPotOdds !== undefined)

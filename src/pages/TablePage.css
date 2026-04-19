@@ -826,19 +826,23 @@
   outline-offset: 2px;
 }
 
-/* Hand Number Display — positioned top-left of the table felt */
+/* Hand Number Display — top-center of table felt. Tightened to be legible
+   without stealing focus from the pot. JetBrains Mono keeps the casino-tote
+   feel; slight letter-spacing prevents the hashmark and digits from crowding. */
 .hand-number-display {
   position: absolute;
-  top: 12%;
+  top: 11%;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.625rem;
-  font-weight: 500;
+  font-size: 0.68rem;
+  font-weight: 600;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  color: rgba(148, 163, 184, 0.5);
-  letter-spacing: 0.05em;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  z-index: 1;
+  color: rgba(178, 193, 214, 0.72);
+  letter-spacing: 0.08em;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.7),
+    0 0 6px rgba(0, 0, 0, 0.35);
+  z-index: 2;
   pointer-events: none;
   user-select: none;
 }
@@ -964,23 +968,25 @@
   z-index: 10;
   pointer-events: none;
 }
-.table-game-info__stakes {
-  font-size: 0.85rem;
-  font-weight: 900;
-  color: rgba(255, 255, 255, 0.92);
-  letter-spacing: 0.12em;
-  text-shadow:
-    0 1px 4px rgba(0, 0, 0, 0.9),
-    0 0 10px rgba(0, 0, 0, 0.5);
-  text-transform: uppercase;
-}
 .table-game-info__name {
-  font-size: 0.52rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.5);
-  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.82);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(0, 0, 0, 0.45);
+}
+.table-game-info__stakes {
+  font-size: 0.68rem;
+  font-weight: 900;
+  color: rgba(255, 222, 92, 0.92);
+  letter-spacing: 0.16em;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(255, 222, 92, 0.18);
+  text-transform: uppercase;
 }
 
 /* Spectator badge — bottom edge of felt */

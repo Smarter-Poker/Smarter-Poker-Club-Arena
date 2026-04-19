@@ -104,24 +104,13 @@ class PostgresSyncHooksService {
           }
         }
       )
-      // 3. Clubs — DEBOUNCED (global listener, could fire for many clubs)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clubs' }, (payload) => {
-        console.debug('[PostgresSync] External Club mutation detected:', payload);
-        const clubId = payload.new.id;
-        this.debouncedEmit(`club_${clubId}`, 'CLUB_UPDATED', { clubId });
-      })
-      // 4. Unions — DEBOUNCED (global listener, could fire for many unions)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'unions' }, (payload) => {
-        console.debug('[PostgresSync] External Union mutation detected:', payload);
-        const unionId = payload.new.id;
-        this.debouncedEmit(`union_${unionId}`, 'UNION_UPDATED', { unionId });
-      })
-      // NOTE: `tables` and `tournaments` global listeners REMOVED (2026-04-18)
-      // These unfiltered listeners fired on EVERY table/tournament mutation globally,
-      // generating ~80% of the 86M realtime messages ($217/mo). The server-side
-      // CashGameOrchestrator and TournamentOrchestrator already discover tables/tournaments
-      // via polling. UI pages that need live table status updates use their own
-      // page-level subscriptions with proper filters.
+
+      // NOTE: Global unfiltered listeners REMOVED to prevent billing waste:
+      //   - `tables` + `tournaments` REMOVED 2026-04-18: fired on every mutation globally,
+      //     caused ~80% of the 86M realtime messages ($217/mo last cycle).
+      //   - `clubs` + `unions` REMOVED 2026-04-19: same global fan-out pattern.
+      //     CLUB_UPDATED already emitted by filtered club_members listener below.
+      //     Club/union detail pages subscribe directly (page-scoped channel).
       // 7. User Settings — debounced (settings toggle spam protection)
       .on(
         'postgres_changes',

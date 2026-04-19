@@ -3883,6 +3883,14 @@ export default function TablePage({
           communityCards: [],
           boardStage: 'preflop',
         }));
+        // BUG 030 fix: clear prior hand's winner state IMMEDIATELY so the
+        // "Three of a Kind" hand-strength label and winner banner cannot
+        // bleed into the new hand if the table cycles faster than the 3s
+        // HAND_COMPLETE cleanup timeout.
+        setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
+        setWinnerParticle((prev) => ({ ...prev, active: false }));
+        setIsAllInMode(false);
+        setAllInEquities([]);
         // Trigger deal animation (legacy DealAnimation already wired to
         // dealAnimationKey; bump it so the cards fly from the dealer).
         setDealAnimationKey((k) => k + 1);

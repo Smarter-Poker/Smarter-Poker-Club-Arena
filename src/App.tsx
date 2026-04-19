@@ -130,6 +130,7 @@ const NewConversationPage = lazy(() => import('./pages/NewConversationPage'));
 
 // Shared/Public Pages
 const HandReplayerPage = lazy(() => import('./pages/share/HandReplayerPage'));
+const SimPage = lazy(() => import('./pages/SimPage'));
 
 // System Pages
 const HealthCheckPage = lazy(() => import('./pages/HealthCheckPage'));
@@ -345,6 +346,9 @@ export default function App() {
 
               {/* Public Hand Replay — shareable link, no auth required */}
               <Route path="/share/hand/:handId" element={<HandReplayerPage />} />
+
+              {/* Scenario Sim — deterministic UI regression playback, no auth */}
+              <Route path="/sim" element={<SimPage />} />
 
               {/* ═══════════════════════════════════════════════════════════════
                     PROTECTED ROUTES (Auth Required)

@@ -108,44 +108,14 @@ export default function HandHistoryPage() {
     };
   }, [user?.id, filter]);
 
-  // ── Realtime subscription: refresh hands on new entries ──
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channelKey = `hand-history-${user.id}`;
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'hand_history',
-          // BUG 021 FIX (2026-04-15): removed filter `player_ids=cs.{...}` — that column
-          // does not exist on hand_history. The canonical player list is the `players`
-          // JSONB array and Supabase realtime cannot filter on JSONB elements server-side.
-          // We accept all inserts and let the client-side loadHands(true) re-filter via
-          // the `.contains('players', [{userId}])` query.
-        },
-        () => {
-          // New hand added — refresh the hand list. loadHands() will filter to this user.
-          loadHandsRef.current(true);
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'HandHistoryPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[HandHistoryPage] ⏱️ Realtime channel timed out');
-        }
-      });
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [user?.id]);
+  // ── Realtime backstop ──
+  // Removed postgres_changes subscription on public.hand_history (Phase 2 cost
+  // cut): the table is being dropped from the supabase_realtime publication to
+  // save egress. The three existing refresh paths cover this page fully:
+  //   • useVisibilityRefresh → refetch on tab-focus (line 57)
+  //   • masterBus 'HAND_COMPLETED' → refetch when engine finishes a hand
+  //   • masterBus 'TABLE_CREATED' → refetch on cross-table sync
+  // External writers (admin insertions, back-fills) appear on the next focus.
 
   // Keep loadHandsRef in sync so bus listeners always call the latest version
   useEffect(() => {
@@ -153,8 +123,8 @@ export default function HandHistoryPage() {
   });
 
   // ── Bus Listener: debounced refresh when engine completes a hand ──
-  // Debounced at 1s to coalesce with postgres_changes subscription above
-  // (both fire for the same hand — bus fires immediately, postgres 100-2000ms later)
+  // Debounced at 1s in case multiple HAND_COMPLETED events fire in quick
+  // succession (e.g., multi-table rapid-fire finishes).
   useEffect(() => {
     const unsub = masterBus.subscribeDebounced(
       'HAND_COMPLETED',

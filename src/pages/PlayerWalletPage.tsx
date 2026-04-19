@@ -245,21 +245,11 @@ export default function PlayerWalletPage() {
           }
         }
       )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'wallet_transactions',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            loadBalances(user.id);
-            loadDiamonds(user.id);
-          }
-        }
-      )
+      // wallet_transactions subscription removed (Phase 2 cost cut): the
+      // canonical balance lives on public.wallets and every write path that
+      // inserts a transaction also updates wallets — the `wallets` listener
+      // above already covers balance changes. The bus 'BALANCE_UPDATED'
+      // listener below backstops admin-side adjustments.
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
           reportError(err?.message || err, 'PlayerWalletPage._Realtime_channel_error');

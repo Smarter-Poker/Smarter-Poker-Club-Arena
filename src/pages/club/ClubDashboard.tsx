@@ -145,15 +145,12 @@ export default function ClubDashboard() {
     enabled: !!resolvedClubId,
   });
 
-  // Hand history channel
-  useMasterBusChannel({
-    channelName: `club-dashboard-hands-${clubId}`,
-    table: 'hand_history',
-    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
-    event: 'INSERT',
-    onPayload: () => loadDashboardData(),
-    enabled: !!resolvedClubId,
-  });
+  // Hand history channel — DISABLED (Phase 2 cost cut).
+  // hand_history is being dropped from supabase_realtime to save egress. The
+  // dashboard already refreshes on tab-focus (useVisibilityRefresh at line 60)
+  // and every club-scoped bus event below (TABLE_SEATED, TABLE_LEFT,
+  // CHIPS_ADDED, etc.), so cross-client hand counts become eventually
+  // consistent rather than realtime. Accepted trade-off for a dashboard view.
 
   // ── Bus Listeners: cross-page event reactivity (debounced, scoped by clubId) ──
   useEffect(() => {

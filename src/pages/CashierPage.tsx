@@ -690,27 +690,13 @@ export default function CashierPage() {
     enabled: !!user?.id,
   });
 
-  // Wallet transactions channel
-  const handleTransactionUpdate = useCallback(
-    (payload: { eventType: string }) => {
-      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-        if (user?.id) {
-          loadBalances(user.id);
-          loadTransactions();
-        }
-      }
-    },
-    [user?.id, loadBalances, loadTransactions]
-  );
-
-  useMasterBusChannel({
-    channelName: user?.id ? `cashier-realtime-transactions-${user.id}` : null,
-    table: 'wallet_transactions',
-    filter: user?.id ? `user_id=eq.${user.id}` : null,
-    event: '*',
-    onPayload: handleTransactionUpdate,
-    enabled: !!user?.id,
-  });
+  // Wallet transactions channel — DISABLED (Phase 2 cost cut).
+  // wallet_transactions is being dropped from supabase_realtime to save egress.
+  // The page already refreshes on the canonical balance events via
+  // useMasterBusSubscriptions below (BALANCE_UPDATED, CHIPS_ADDED,
+  // CHIPS_WITHDRAWN, CASHIER_BALANCE_CHANGED, RAKEBACK_CLAIMED,
+  // DAILY_REWARD_CLAIMED). The `cashout_requests` subscription still covers
+  // pending-cashout state which is the cashier's primary action surface.
 
   // Cashout requests channel
   const handleCashoutUpdate = useCallback(() => {

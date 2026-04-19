@@ -262,38 +262,15 @@ export default function PlayerStatsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetUserId]);
 
-  // ── Realtime: live stats updates when new hands complete ──
-  useEffect(() => {
-    if (!targetUserId) return;
-    const channelKey = `player-stats-${targetUserId}`;
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'hand_history',
-          filter: `player_ids=cs.{${targetUserId}}`,
-        },
-        () => {
-          loadAllData();
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'PlayerStatsPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[PlayerStatsPage] ⏱️ Realtime channel timed out');
-        }
-      });
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetUserId]);
+  // ── Realtime backstop ──
+  // Removed postgres_changes subscription on public.hand_history (Phase 2 cost
+  // cut): hand_history is being dropped from the supabase_realtime publication
+  // to save egress. Also: the prior filter `player_ids=cs.{userId}` was broken
+  // because hand_history has no `player_ids` scalar column (players live in a
+  // JSONB array) — per BUG 021, realtime cannot filter inside JSONB, so the
+  // subscription wouldn't fire for real anyway. The five engine bus listeners
+  // below (HAND_COMPLETED, BALANCE_UPDATED, CHIPS_DISTRIBUTED, CASHOUT_APPROVED,
+  // CREDIT_UPDATED) already cover the canonical refresh events.
 
   // ── Bus Listeners: debounced refresh from engine events ──
   useEffect(() => {

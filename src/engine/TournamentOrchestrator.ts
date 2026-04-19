@@ -1,5 +1,4 @@
 import { supabase } from '../lib/supabase';
-import type { RealtimeChannel } from '@supabase/supabase-js';
 import { masterBus } from '../core/MasterBus';
 import { TournamentEngine } from './TournamentEngine';
 import { tableBalancer, type BalancerTable } from './TableBalancer';
@@ -10,6 +9,11 @@ import { reportError } from '../utils/errorReporter';
  * Master service that watches for active tournaments, spins up TournamentEngine instances,
  * and manages their lifecycle.
  * Designed to be run from an active Admin / Node context.
+ *
+ * NOTE (2026-04-18): Realtime `postgres_changes` listener on `tournaments` REMOVED.
+ * It was a major driver of 86M realtime messages/month ($217). Polling at 30s
+ * is sufficient for tournament discovery — tournaments have registration periods
+ * measured in minutes/hours, so 30s latency is negligible.
  */
 export class TournamentOrchestrator {
   private activeEngines: Map<string, TournamentEngine> = new Map();
@@ -18,7 +22,6 @@ export class TournamentOrchestrator {
   // Enhancement #3: Dedup notification emissions (with periodic cleanup)
   private notifiedTournaments: Set<string> = new Set();
   private notificationCleanupInterval: ReturnType<typeof setInterval> | null = null;
-  private realtimeChannel: RealtimeChannel | null = null;
   // Guard against concurrent spinUp calls for same tournament
   private spinningUpTournaments: Set<string> = new Set();
 
@@ -43,76 +46,12 @@ export class TournamentOrchestrator {
     // 1. Initial spin up of all running/starting tournaments
     await this.syncActiveTournaments();
 
-    // 2. Set up Supabase Realtime subscription on tournaments
-    try {
-      this.realtimeChannel = supabase
-        .channel('tournament-orchestrator-tournaments')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tournaments',
-          },
-
-          (payload: any) => {
-            const { eventType, new: newRow } = payload;
-            if (eventType === 'INSERT' || eventType === 'UPDATE') {
-              const tournamentId = newRow?.id;
-              const status = newRow?.status;
-              if (!tournamentId) return;
-
-              // Spin up if status is active and not already tracked (idempotent check)
-              if (
-                ['REGISTERING', 'ANNOUNCED', 'RUNNING'].includes(status) &&
-                !this.activeEngines.has(tournamentId) &&
-                !this.spinningUpTournaments.has(tournamentId)
-              ) {
-                if (status === 'RUNNING') {
-                  this.spinUpTournament(tournamentId).catch((err) => {
-                    reportError(err, 'TournamentOrchestrator.Realtime_spinUp_failed_for_tournamentId');
-                  });
-                } else if (newRow?.started_at) {
-                  const startTime = new Date(newRow.started_at).getTime();
-                  if (Date.now() >= startTime - 60_000) {
-                    this.spinUpTournament(tournamentId).catch((err) => {
-                      reportError(err, 'TournamentOrchestrator.Realtime_spinUp_failed_for_tournamentId');
-                    });
-                  }
-                }
-              }
-
-              // Tear down if finished/cancelled
-              if (
-                ['FINISHED', 'CANCELLED'].includes(status) &&
-                this.activeEngines.has(tournamentId)
-              ) {
-                const engine = this.activeEngines.get(tournamentId)!;
-                engine.stop();
-                this.activeEngines.delete(tournamentId);
-                this.spinningUpTournaments.delete(tournamentId);
-              }
-            }
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'TournamentOrchestrator._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[TournamentOrchestrator] ⏱️ Realtime channel timed out');
-          }
-        });
-    } catch (err: unknown) {
-      reportError(err, 'TournamentOrchestrator.Realtime_subscription_failed_relying_on_');
-    }
-
-    // 3. Keep 60s polling as fallback
+    // 2. Poll every 30s for tournament changes (replaces realtime listener)
     this.pollInterval = setInterval(() => {
       this.syncActiveTournaments();
-    }, 60_000);
+    }, 30_000);
 
-    // 4. Periodic cleanup of notification dedup set (every 6 hours)
+    // 3. Periodic cleanup of notification dedup set (every 6 hours)
     this.notificationCleanupInterval = setInterval(
       () => {
         this.notifiedTournaments.clear();
@@ -128,12 +67,6 @@ export class TournamentOrchestrator {
     this.isRunning = false;
     if (this.pollInterval) clearInterval(this.pollInterval);
     if (this.notificationCleanupInterval) clearInterval(this.notificationCleanupInterval);
-
-    // Unsubscribe from Realtime channel
-    if (this.realtimeChannel) {
-      supabase.removeChannel(this.realtimeChannel);
-      this.realtimeChannel = null;
-    }
 
     // Stop all engines (await for clean shutdown)
     const stopPromises: Promise<void>[] = [];
@@ -256,7 +189,10 @@ export class TournamentOrchestrator {
   async handleMultiDayFlight(tournamentId: string): Promise<void> {
     const engine = this.activeEngines.get(tournamentId);
     if (!engine) {
-      reportError(new Error(`[TournamentOrchestrator] No active engine for ${tournamentId}`), 'TournamentOrchestrator.No_active_engine_for_tournamentId');
+      reportError(
+        new Error(`[TournamentOrchestrator] No active engine for ${tournamentId}`),
+        'TournamentOrchestrator.No_active_engine_for_tournamentId'
+      );
       return;
     }
 
@@ -271,7 +207,10 @@ export class TournamentOrchestrator {
       if (error) throw error;
 
       if (!players || players.length === 0) {
-        reportError(new Error(`[TournamentOrchestrator] No active players to bag for ${tournamentId}`), 'TournamentOrchestrator.No_active_players_to_bag_for_tournamentI');
+        reportError(
+          new Error(`[TournamentOrchestrator] No active players to bag for ${tournamentId}`),
+          'TournamentOrchestrator.No_active_players_to_bag_for_tournamentI'
+        );
         return;
       }
 
@@ -337,7 +276,10 @@ export class TournamentOrchestrator {
 
       if (error) throw error;
       if (!flights || flights.length === 0) {
-        reportError(new Error(`[TournamentOrchestrator] No bagged players for ${tournamentId}`), 'TournamentOrchestrator.No_bagged_players_for_tournamentId');
+        reportError(
+          new Error(`[TournamentOrchestrator] No bagged players for ${tournamentId}`),
+          'TournamentOrchestrator.No_bagged_players_for_tournamentId'
+        );
         return;
       }
 
@@ -356,7 +298,12 @@ export class TournamentOrchestrator {
         (r) => r.status === 'rejected' || (r.status === 'fulfilled' && r.value?.error)
       );
       if (restoreFailures.length > 0) {
-        reportError(new Error(`[TournamentOrchestrator] CRITICAL: ${restoreFailures.length}/${flights.length} chip restores failed — aborting Day 2 start to prevent players playing with stale chips`), 'TournamentOrchestrator.CRITICAL');
+        reportError(
+          new Error(
+            `[TournamentOrchestrator] CRITICAL: ${restoreFailures.length}/${flights.length} chip restores failed — aborting Day 2 start to prevent players playing with stale chips`
+          ),
+          'TournamentOrchestrator.CRITICAL'
+        );
         return; // Bail out — flights stay "bagged" so a retry is safe
       }
 
@@ -524,7 +471,10 @@ export class TournamentOrchestrator {
           });
 
           if (insertErr) {
-            reportError(insertErr, 'TournamentOrchestrator.Seat_insert_failed_for_moveplayerId_at_m');
+            reportError(
+              insertErr,
+              'TournamentOrchestrator.Seat_insert_failed_for_moveplayerId_at_m'
+            );
             // Rollback: re-seat player at their original table
             await supabase.from('table_seats').insert({
               table_id: move.fromTableId,

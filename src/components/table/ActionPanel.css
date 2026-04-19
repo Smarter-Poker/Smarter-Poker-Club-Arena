@@ -513,11 +513,38 @@
   }
 }
 
-/* Legacy horizontal slider — unchanged below. */
+/* Legacy horizontal slider — Dan 2026-04-17: used on mobile now since the
+   vertical layout was collapsing into a broken strip below 768px. */
 .raise-slider-wrap {
-  padding: 0 8px;
-  margin-bottom: 14px;
+  padding: 14px 8px 8px;
+  margin-bottom: 10px;
   position: relative;
+  /* Keep the 48px thumb fully inside the panel on mobile. */
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+}
+
+.raise-slider-wrap .raise-slider {
+  width: 100%;
+}
+
+.raise-slider-wrap .raise-slider-ticks {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 6px;
+  pointer-events: none;
+}
+
+.raise-slider-wrap .raise-slider-tick {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateX(-50%);
 }
 
 /* PokerBros premium slider — 2026-04-14 polish.
@@ -852,6 +879,11 @@
     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
   }
 
+  .action-panel--raise {
+    padding: 12px 10px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  }
+
   .action-btn {
     height: 64px;
     border-radius: 10px;
@@ -861,30 +893,48 @@
     font-size: 1rem;
   }
 
+  /* Dan 2026-04-17: shrink +/- buttons + amount pill so 375px doesn't
+     overflow. Previously the 44px adjusts + 120px pill + 32px gaps were
+     pushing the layout past 100% width. */
+  .raise-header {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
   .raise-value {
-    min-width: 100px;
-    padding: 6px 16px;
+    min-width: 0;
+    flex: 1;
+    padding: 6px 10px;
   }
 
   .raise-value__amount {
     font-size: 1.25rem;
   }
 
+  .raise-value__bb {
+    font-size: 0.625rem;
+  }
+
   .raise-adjust {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
+    font-size: 1.25rem;
+    flex-shrink: 0;
   }
 
   .raise-preset {
     height: 38px;
+    font-size: 0.625rem;
   }
 
   .raise-confirm {
     height: 48px;
+    font-size: 0.8125rem;
   }
 
   .raise-cancel {
     height: 48px;
+    padding: 0 12px;
   }
 }
 

@@ -5,7 +5,8 @@
 
 .pre-action-bar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: center;
   padding: 8px 16px;
   background: linear-gradient(180deg, rgba(20, 24, 32, 0.92) 0%, rgba(14, 17, 24, 0.96) 100%);
@@ -13,6 +14,120 @@
   -webkit-backdrop-filter: blur(12px) saturate(1.2);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   animation: preActionSlideUp 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  gap: 6px;
+}
+
+/* Dan 2026-04-17 (BUG 024) — ARMED-STATE HEADER STRIP ══════════════════════
+   A tight pill above the toggle row that appears the instant a pre-action
+   is queued. Makes the "I've armed an action" state unmissable on mobile.
+   Color matches the active button (red / green / amber) via [data-armed]. */
+.pre-action-bar__armed-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 5px 10px;
+  margin: 0 auto;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.82);
+  animation: preActionArmedPulse 1.6s ease-in-out infinite;
+  max-width: fit-content;
+}
+
+.pre-action-bar__armed-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.pre-action-bar__armed-label {
+  white-space: nowrap;
+}
+
+.pre-action-bar__armed-clear {
+  appearance: none;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.75);
+  font: inherit;
+  font-size: 0.625rem;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  margin-left: 4px;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.pre-action-bar__armed-clear:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+.pre-action-bar__armed-clear:active {
+  transform: scale(0.96);
+}
+
+.pre-action-bar[data-armed='fold'] .pre-action-bar__armed-strip {
+  color: #fca5a5;
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.18), rgba(185, 28, 28, 0.14));
+  border-color: rgba(239, 68, 68, 0.55);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.22);
+}
+.pre-action-bar[data-armed='check'] .pre-action-bar__armed-strip {
+  color: #86efac;
+  background: linear-gradient(180deg, rgba(34, 197, 94, 0.18), rgba(22, 163, 74, 0.14));
+  border-color: rgba(34, 197, 94, 0.55);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.22);
+}
+.pre-action-bar[data-armed='call'] .pre-action-bar__armed-strip,
+.pre-action-bar[data-armed='callAny'] .pre-action-bar__armed-strip {
+  color: #fcd34d;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.14));
+  border-color: rgba(245, 158, 11, 0.55);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.22);
+}
+
+@keyframes preActionArmedPulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: translateY(0) scale(1.02);
+    filter: brightness(1.18);
+  }
+}
+
+/* Dan 2026-04-17 — when armed, the whole bar also gets a subtle top border
+   glow in the accent color so the strip doesn't feel like a floating island. */
+.pre-action-bar--armed[data-armed='fold'] {
+  border-top-color: rgba(239, 68, 68, 0.45);
+  box-shadow: 0 -1px 10px rgba(239, 68, 68, 0.18);
+}
+.pre-action-bar--armed[data-armed='check'] {
+  border-top-color: rgba(34, 197, 94, 0.45);
+  box-shadow: 0 -1px 10px rgba(34, 197, 94, 0.18);
+}
+.pre-action-bar--armed[data-armed='call'],
+.pre-action-bar--armed[data-armed='callAny'] {
+  border-top-color: rgba(245, 158, 11, 0.45);
+  box-shadow: 0 -1px 10px rgba(245, 158, 11, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pre-action-bar__armed-strip {
+    animation: none;
+  }
 }
 
 @keyframes preActionSlideUp {

@@ -60,7 +60,9 @@ export function MiniStatsCard({
   isSeated,
   onTap,
   observers = [],
-  showRealTimeResults = true,
+  // Dan 2026-04-17: stats panel was covering 40% of the table by default.
+  // Collapse by default — single-line P&L pill. Tap expands to full panel.
+  showRealTimeResults = false,
 }: MiniStatsCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -73,6 +75,11 @@ export function MiniStatsCard({
   const vpipPct = handsPlayed > 0 ? Math.round((vpipCount / handsPlayed) * 100) : 0;
   const winRate = handsPlayed > 0 ? Math.round((handsWon / handsPlayed) * 100) : 0;
 
+  // Resolve effective expand state. `onTap` (if provided) opens the full
+  // SessionStats modal; internal isExpanded toggle only matters when onTap
+  // is not wired. showRealTimeResults forces expanded display.
+  const expanded = showRealTimeResults || isExpanded;
+
   const handleClick = () => {
     if (onTap) {
       onTap();
@@ -81,9 +88,49 @@ export function MiniStatsCard({
     }
   };
 
+  // ─── Collapsed (default): icon-only stats button (Dan 2026-04-17). The
+  // previous "P&L +$N" pill was text — Dan wanted an icon. Renders a compact
+  // stats/chart SVG with a tiny status dot whose color signals P&L direction.
+  if (!expanded) {
+    const pnlDirection = pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'flat';
+    return (
+      <button
+        type="button"
+        className="mini-stats-card mini-stats-card--icon"
+        onClick={handleClick}
+        aria-label={`Session stats, P&L ${pnlSign}${pnl.toLocaleString()}`}
+        title="Session Stats"
+        data-pnl-direction={pnlDirection}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          {/* Bar-chart icon — 4 vertical bars ascending */}
+          <path d="M3 21h18" />
+          <rect x="5" y="13" width="3" height="6" rx="0.5" />
+          <rect x="10.5" y="9" width="3" height="10" rx="0.5" />
+          <rect x="16" y="5" width="3" height="14" rx="0.5" />
+        </svg>
+        <span
+          className="mini-stats-card__dot"
+          style={{ background: pnlColor }}
+          aria-hidden="true"
+        />
+      </button>
+    );
+  }
+
   return (
     <div
-      className={`mini-stats-card ${isExpanded || showRealTimeResults ? 'mini-stats-card--expanded' : ''}`}
+      className="mini-stats-card mini-stats-card--expanded"
       onClick={handleClick}
       role="button"
       tabIndex={0}
@@ -98,7 +145,8 @@ export function MiniStatsCard({
         <div className="mini-stats-card__row">
           <span className="mini-stats-card__label">P&L</span>
           <span className="mini-stats-card__value" style={{ color: pnlColor, fontWeight: 700 }}>
-            {pnlSign}{pnl.toLocaleString()}
+            {pnlSign}
+            {pnl.toLocaleString()}
           </span>
         </div>
         <div className="mini-stats-card__row">
@@ -111,9 +159,21 @@ export function MiniStatsCard({
         </div>
 
         {/* Observers / Who's watching */}
-        <div className="mini-stats-card__observers" style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
-          <span className="mini-stats-card__label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-             <span className="mini-stats-card__observer-icon" style={{ color: '#22c55e' }}>◉</span>
+        <div
+          className="mini-stats-card__observers"
+          style={{
+            marginTop: '6px',
+            paddingTop: '6px',
+            borderTop: '1px dashed rgba(255,255,255,0.1)',
+          }}
+        >
+          <span
+            className="mini-stats-card__label"
+            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            <span className="mini-stats-card__observer-icon" style={{ color: '#22c55e' }}>
+              ◉
+            </span>
             Who's Watching: {observers.length}
           </span>
         </div>
@@ -130,7 +190,12 @@ export function MiniStatsCard({
           </div>
         ) : (
           <div className="mini-stats-card__observer-list" style={{ opacity: 0.5 }}>
-            <span className="mini-stats-card__observer-name" style={{ fontStyle: 'italic', background: 'transparent', padding: 0 }}>Nobody yet</span>
+            <span
+              className="mini-stats-card__observer-name"
+              style={{ fontStyle: 'italic', background: 'transparent', padding: 0 }}
+            >
+              Nobody yet
+            </span>
           </div>
         )}
       </div>

@@ -41,22 +41,26 @@
    TRIGGER BUTTON
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Dan 2026-04-17: was 64×64 — comically oversized vs. PokerBros reference.
+   Shrunk to 40×40 to match a mobile poker-app hamburger. */
 .table-menu__trigger {
   position: relative;
-  width: 64px;
-  height: 64px;
-  min-width: 64px;
-  min-height: 64px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.78);
   backdrop-filter: blur(8px);
-  border: 2.5px solid rgba(255, 255, 255, 0.5);
-  border-radius: 16px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.6), 0 0 8px rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    0 0 4px rgba(255, 255, 255, 0.06);
 }
 
 .table-menu__trigger:hover {
@@ -69,21 +73,21 @@
   border-color: #1877f2;
 }
 
-/* Hamburger Icon */
+/* Hamburger Icon — sized to fit inside 40×40 trigger */
 .table-menu__hamburger {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  width: 28px;
+  gap: 4px;
+  width: 18px;
 }
 
 .table-menu__hamburger span {
   display: block;
-  height: 3.5px;
+  height: 2px;
   background: #ffffff;
-  border-radius: 2px;
+  border-radius: 1.5px;
   transition: all 0.2s ease;
-  box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 3px rgba(255, 255, 255, 0.25);
 }
 
 .table-menu__trigger--active .table-menu__hamburger span:nth-child(1) {

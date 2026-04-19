@@ -3,7 +3,18 @@
 **Type:** PROBLEM
 **Project:** Smarter Poker Club Arena (server)
 **Date Found:** 2026-04-17 (live E2E, hero table on production)
+**Date Fixed:** 2026-04-17 (commit b556640, Hetzner redeploy via AG)
 **Severity:** MAJOR — renders table unplayable from a user's perspective
+**Status:** FIXED in production — live double-tap repro pending
+
+## Deploy verification (2026-04-17)
+
+AG pulled `main` into `/opt/club-arena` on `178.156.160.206` (the live path — the
+`/srv/club-arena-server` path from BUG 022's note does not exist on this VPS;
+that memo was wrong about the current layout). Fresh compile, new image
+`695480030fa8`. Post-restart: `uptime 20s`, `activeTables 1`, `totalHandsDealt 58`.
+Binary check inside container: `dist/index.js:2654: const RATE_LIMIT_MS = 250;`.
+`.env` (`TEST_TABLE_ID`, `MAINTENANCE_MODE`) untouched.
 
 ## Discovery
 

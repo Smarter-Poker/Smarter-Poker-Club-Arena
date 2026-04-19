@@ -9,19 +9,22 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .bbj-widget {
+  /* Dan 2026-04-17: shrunk — fits between the hamburger/+ on the left
+     and the stats icon on the right at 375px. Padding + font smaller. */
   position: absolute;
-  top: 10px;
+  top: 6px;
   left: 50%;
   transform: translateX(-50%);
   background: linear-gradient(135deg, #2d1b4e 0%, #1a102e 100%);
   border: 1px solid rgba(255, 215, 0, 0.4);
-  border-radius: 10px;
-  padding: 8px 14px;
+  border-radius: 8px;
+  padding: 3px 10px;
   cursor: help;
   z-index: 50;
+  max-width: calc(100% - 200px);
   box-shadow:
-    0 0 16px rgba(0, 0, 0, 0.4),
-    0 0 20px rgba(255, 215, 0, 0.1),
+    0 0 12px rgba(0, 0, 0, 0.4),
+    0 0 14px rgba(255, 215, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition:
     transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275),
@@ -56,22 +59,24 @@
 }
 
 .bbj-widget__label {
-  font-size: 0.5625rem;
+  font-size: 0.5rem;
   font-weight: 700;
   color: #ffd700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   text-align: center;
+  line-height: 1;
 }
 
 .bbj-widget__amount {
-  font-size: 1rem;
+  font-size: 0.8125rem;
   font-weight: 800;
   color: #fff;
   font-family: 'JetBrains Mono', monospace;
-  text-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+  text-shadow: 0 2px 6px rgba(255, 215, 0, 0.28);
   text-align: center;
+  line-height: 1.05;
   background: linear-gradient(135deg, #fff 20%, #ffd700 80%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;

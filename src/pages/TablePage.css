@@ -29,6 +29,134 @@
    PAGE LAYOUT
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Dan 2026-04-17 (Task 56) — Winner acknowledgment banner.
+   Sits above everything but the modals, fades in+scales, hangs for ~2.4s,
+   then fades out. Hero wins → gold/green; opponent win → cool slate. */
+.winner-banner {
+  position: fixed;
+  top: 28vh;
+  left: 50%;
+  transform: translate(-50%, 0) scale(1);
+  z-index: 1250;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 28px;
+  min-width: 220px;
+  max-width: 86vw;
+  border-radius: 18px;
+  text-align: center;
+  color: #fff;
+  font-family: inherit;
+  pointer-events: none;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  animation:
+    winnerBannerEnter 280ms cubic-bezier(0.2, 0.9, 0.35, 1.05) both,
+    winnerBannerExit 400ms ease-in 2400ms both;
+}
+.winner-banner--hero {
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.22), rgba(212, 160, 23, 0.32));
+  border: 1.5px solid rgba(255, 215, 0, 0.55);
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.55),
+    0 0 36px rgba(255, 215, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.winner-banner--opp {
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.78), rgba(15, 23, 42, 0.92));
+  border: 1.5px solid rgba(148, 163, 184, 0.45);
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.55),
+    0 0 20px rgba(30, 41, 59, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.winner-banner__title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+.winner-banner--hero .winner-banner__title {
+  color: #fffbe6;
+  text-shadow:
+    0 2px 6px rgba(107, 70, 0, 0.65),
+    0 0 14px rgba(255, 215, 0, 0.55);
+}
+.winner-banner__hand {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+.winner-banner--hero .winner-banner__hand {
+  color: #fde68a;
+}
+.winner-banner--opp .winner-banner__hand {
+  color: #cbd5e1;
+}
+.winner-banner__amount {
+  font-size: 1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+.winner-banner--hero .winner-banner__amount {
+  color: #fff;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.7);
+}
+.winner-banner--opp .winner-banner__amount {
+  color: #e2e8f0;
+}
+@keyframes winnerBannerEnter {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -12px) scale(0.86);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+@keyframes winnerBannerExit {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .winner-banner {
+    animation: none;
+    opacity: 1;
+  }
+}
+@media (max-width: 480px) {
+  .winner-banner {
+    top: 22vh;
+    padding: 12px 20px;
+    min-width: 180px;
+    border-radius: 16px;
+  }
+  .winner-banner__title {
+    font-size: 1.15rem;
+  }
+  .winner-banner__hand {
+    font-size: 0.75rem;
+  }
+  .winner-banner__amount {
+    font-size: 0.9rem;
+  }
+}
+
 .table-page {
   position: fixed;
   inset: 0;
@@ -54,7 +182,6 @@
   user-select: none;
   overscroll-behavior: none;
 }
-
 
 /* ─── Hero Turn Indicator — subtle border glow when it's your turn ─── */
 .table-page--hero-turn {
@@ -135,18 +262,30 @@
    HEADER BAR — PokerBros compact style
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Dan 2026-04-17: top bar was competing with the TableHUD hamburger and
+   BBJ banner, and its centered game-info duplicated the on-felt "NLH 1/2"
+   title. Trimmed down to a transparent thin strip hosting only the quick
+   back + add-chips buttons on the left; center/right text rows hidden. */
 .table-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  padding-top: calc(6px + env(safe-area-inset-top, 0));
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.7) 100%);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  justify-content: flex-start;
+  padding: 4px 8px;
+  padding-top: calc(4px + env(safe-area-inset-top, 0));
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: none;
   z-index: 100;
-  min-height: 44px;
+  min-height: 0;
+}
+
+/* Hide all three slots of the legacy header — hamburger menu (TableHUD
+   upper-left) already hosts Leave Table + Add Chips. */
+.header-left,
+.header-center,
+.header-right {
+  display: none !important;
 }
 
 .header-btn {
@@ -343,20 +482,25 @@
   flex: 1;
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 64px 12px 100px; /* Extra top room for hamburger; 100px bottom clears action panel for hero seat + hole cards */
+  /* Dan 2026-04-17 (v3): top was clipping under BBJ row. Drop the table ~24px
+     further from the top edge. Align-start pins the scaler to the top so the
+     padding-top alone controls vertical position — no more centered clip. */
+  padding: 76px 12px calc(124px + env(safe-area-inset-bottom, 0));
   overflow: visible;
-  /* Cap height so table never overflows — leaves room for header + action panel */
-  max-height: calc(100dvh - 220px);
+  max-height: calc(100dvh - 60px);
 }
 
-/* Table Wrapper - Scales uniformly via CSS transform */
+/* Phase A (Dan 2026-04-17, flipped): PokerBros is a VERTICAL portrait oval —
+   taller than wide. Aspect ratio ~0.65:1 (0.65 wide per 1 tall). On a 375px
+   phone with the padded container ~335px wide, we hold to ~300px wide and
+   let the table fill vertically up to the available dvh minus header, BBJ,
+   hero cards, and action bar. */
 .table-scaler {
   width: 100%;
-  max-width: min(100%, 390px);
-  aspect-ratio: 1 / 1.15;
-  /* Shorter oval — prevents clipping at top/bottom */
+  max-width: min(calc(100% - 16px), 320px);
+  aspect-ratio: 0.65 / 1;
   position: relative;
   transform-origin: center center;
   max-height: 100%;
@@ -388,7 +532,13 @@
       #3a2a1e 100%
     )
   );
-  border-radius: 50% / 42%;
+  /* Dan 2026-04-17 (v4): egg / teardrop — wider at the hero (bottom), tapered
+     toward the top. Math: top horizontal radii sum to 100% (no flat segment
+     at top → fully curved/tapered top); bottom horizontal radii sum to 90%
+     (10% flat segment along the bottom edge → wider, flatter bottom).
+     Vertical radii 55% top vs 45% bottom deepens the top curve so it rolls
+     inward more, matching the PokerBros reference. */
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
   box-shadow:
         /* Outer double ring */
     0 0 0 2px rgba(0, 0, 0, 0.8),
@@ -407,7 +557,8 @@
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 50% / 42%;
+  /* Dan 2026-04-17 (v3): match egg teardrop rail. */
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
   background: repeating-linear-gradient(
     85deg,
     transparent 0px,
@@ -424,8 +575,9 @@
   content: '';
   position: absolute;
   inset: 4px;
-  border-radius: 49% / 41%;
   border: 1px dashed rgba(255, 255, 255, 0.06);
+  /* Dan 2026-04-17 (v3): match egg teardrop rail. */
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
   pointer-events: none;
   z-index: 2;
 }
@@ -442,7 +594,14 @@
 /* Default: Casino Green (PokerBros-style classic green felt) */
 .table-page:not([data-felt-theme]) {
   --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%);
-  --rail-gradient: linear-gradient(180deg, #5a4232 0%, #4a3728 20%, #3a2a1e 50%, #4a3728 80%, #5a4232 100%);
+  --rail-gradient: linear-gradient(
+    180deg,
+    #5a4232 0%,
+    #4a3728 20%,
+    #3a2a1e 50%,
+    #4a3728 80%,
+    #5a4232 100%
+  );
 }
 
 /* Blue Royale */
@@ -521,30 +680,59 @@
 
 .table-page[data-background-theme='diamond-pattern'] {
   background:
-    repeating-linear-gradient(45deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 12px),
-    repeating-linear-gradient(-45deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 12px),
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 12px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 12px
+    ),
     radial-gradient(ellipse at 50% 50%, #263238 0%, #1a2025 100%);
 }
 .table-page[data-background-theme='stone-concrete'] {
   background:
-    repeating-conic-gradient(rgba(255,255,255,0.008) 0% 25%, transparent 0% 50%) 0 0 / 3px 3px,
+    repeating-conic-gradient(rgba(255, 255, 255, 0.008) 0% 25%, transparent 0% 50%) 0 0 / 3px 3px,
     radial-gradient(ellipse at 50% 50%, #616161 0%, #424242 50%, #2a2a2a 100%);
 }
 .table-page[data-background-theme='galaxy-nebula'] {
   background:
-    radial-gradient(ellipse at 30% 20%, rgba(63,81,181,0.3) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(156,39,176,0.2) 0%, transparent 50%),
+    radial-gradient(ellipse at 30% 20%, rgba(63, 81, 181, 0.3) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(156, 39, 176, 0.2) 0%, transparent 50%),
     radial-gradient(ellipse at 50% 50%, #1a237e 0%, #311b92 50%, #0a0a1a 100%);
 }
 .table-page[data-background-theme='hardwood-floor'] {
   background:
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0px, transparent 2px, transparent 40px),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.02) 0px,
+      transparent 2px,
+      transparent 40px
+    ),
     radial-gradient(ellipse at 50% 50%, #795548 0%, #5d4037 50%, #3e2723 100%);
 }
 .table-page[data-background-theme='teal-tile'] {
   background:
-    repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 50px),
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 50px),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.025) 0px,
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px,
+      transparent 50px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.025) 0px,
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px,
+      transparent 50px
+    ),
     radial-gradient(ellipse at 50% 50%, #00897b 0%, #00695c 50%, #004d40 100%);
 }
 
@@ -617,7 +805,8 @@
     repeating-conic-gradient(rgba(0, 0, 0, 0.02) 0% 25%, transparent 0% 50%) 1px 1px / 4px 4px,
     /* Main radial felt gradient — uses theme tokens */
     var(--felt-gradient, radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%));
-  border-radius: 50% / 42%;
+  /* Dan 2026-04-17 (v3): match egg teardrop rail. */
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -663,7 +852,12 @@
   width: 70%;
   height: 50%;
   transform: translateX(-50%);
-  background: radial-gradient(ellipse at 50% 40%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 40%, transparent 70%);
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 40%,
+    transparent 70%
+  );
   pointer-events: none;
   z-index: 0;
 }
@@ -754,10 +948,13 @@
   transform: translate(-50%, -50%);
 }
 
-/* Game Info Strip — Capitalized stakes + variant below community cards: "1/2 NLH" */
+/* Game Info Strip — Dan 2026-04-17 v2: PokerBros-style on-felt title. Sits
+   directly UNDER the community cards (flop). Community area is at top:45%
+   with card height ~60px in scaler; so place this at ~54% to sit right
+   beneath the board rather than floating in the felt middle. */
 .table-game-info {
   position: absolute;
-  top: 58%;
+  top: 54%;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -768,19 +965,22 @@
   pointer-events: none;
 }
 .table-game-info__stakes {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 900;
   color: rgba(255, 255, 255, 0.92);
   letter-spacing: 0.12em;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  text-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.9),
+    0 0 10px rgba(0, 0, 0, 0.5);
   text-transform: uppercase;
 }
 .table-game-info__name {
-  font-size: 0.5rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.45);
-  letter-spacing: 0.06em;
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
 /* Spectator badge — bottom edge of felt */
@@ -850,10 +1050,87 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .action-panel-wrapper {
+  /* POKERBROS-spec (Dan 2026-04-17 v3): action bar is LOCKED to the
+     absolute bottom of the viewport in a fixed position. ALL action buttons
+     render here and nowhere else. */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
   display: flex;
   flex-direction: column;
-  background: transparent;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 10, 16, 0.85) 0%,
+    rgba(8, 10, 16, 0.99) 40%,
+    rgba(8, 10, 16, 1) 100%
+  );
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  min-height: calc(96px + env(safe-area-inset-bottom, 0px));
+  justify-content: flex-end;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Spectator footer bar — shown when hero is not seated.
+   Lives at the bottom of the flex column so it's always flush with the
+   viewport bottom. POKERBROS-spec: footer present at all times. */
+.spectator-footer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  background: linear-gradient(180deg, rgba(15, 18, 25, 0.95) 0%, rgba(8, 10, 16, 0.99) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+.spectator-footer-bar__label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+/* Single-button action bar — used for footer-pinned prompts like Show Hand,
+   post-fold offers, etc. Dan rule 2026-04-17: ALL action buttons on footer. */
+.footer-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 16px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
+  background: linear-gradient(180deg, rgba(15, 18, 25, 0.95) 0%, rgba(8, 10, 16, 0.99) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+.footer-action-bar__btn {
+  flex: 1;
+  max-width: 360px;
+  min-height: 48px;
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.06) 100%);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.footer-action-bar__btn:active {
+  transform: scale(0.98);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%);
 }
 
 /* ─── SPECTATOR MODE — REMOVED (seats already show "+ SIT") ─── */
@@ -1174,11 +1451,16 @@
 
 @media (max-width: 768px) {
   .table-container {
-    padding: 4px 8px 4px;
+    /* Dan 2026-04-17 (v3): lowered table so top doesn't clip BBJ. Extra 24px
+       from the top edge; align-start pins scaler to top padding baseline. */
+    align-items: flex-start;
+    padding: 80px 10px calc(128px + env(safe-area-inset-bottom, 0));
   }
 
   .table-scaler {
-    max-width: 100%;
+    max-width: min(calc(100% - 12px), 320px);
+    /* Portrait vertical oval — taller than wide (PokerBros layout). */
+    aspect-ratio: 0.65 / 1;
   }
 
   .table-rail {
@@ -1253,7 +1535,9 @@
 
 @media (max-width: 380px) {
   .table-container {
-    padding: 2px 2px 2px;
+    /* Phase A (Dan 2026-04-17): narrow-phone landscape racetrack. Tighter side
+       gutters keep the table wide; top/bottom padding still covers chrome. */
+    padding: 48px 6px calc(120px + env(safe-area-inset-bottom, 0));
   }
 
   .table-header {
@@ -1653,20 +1937,22 @@
    Activated via document[data-enhanced-view="1"]
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-[data-enhanced-view="1"] .table-felt {
+[data-enhanced-view='1'] .table-felt {
   filter: contrast(1.08) saturate(1.15);
 }
 
-[data-enhanced-view="1"] .seat__card--face {
+[data-enhanced-view='1'] .seat__card--face {
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
 }
 
-[data-enhanced-view="1"] .pot-display__amount {
+[data-enhanced-view='1'] .pot-display__amount {
   text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
 }
 
-[data-enhanced-view="1"] .seat--active .seat__info-box {
-  box-shadow: 0 0 16px 4px rgba(255, 215, 0, 0.25), 0 0 4px 1px rgba(255, 215, 0, 0.5);
+[data-enhanced-view='1'] .seat--active .seat__info-box {
+  box-shadow:
+    0 0 16px 4px rgba(255, 215, 0, 0.25),
+    0 0 4px 1px rgba(255, 215, 0, 0.5);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1696,18 +1982,24 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   cursor: pointer;
   z-index: 100;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .diamond-purple-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(124,58,237,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+  box-shadow:
+    0 6px 16px rgba(124, 58, 237, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 .diamond-ico {
   font-size: 16px;
-  filter: drop-shadow(0 0 2px rgba(255,255,255,0.5));
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
 }
 
 /* spectator-join-bar REMOVED — no observer join bar */
@@ -1722,33 +2014,44 @@
 }
 
 .hud-ul-column {
+  /* Dan 2026-04-17: hamburger + "+" sit side-by-side now, not stacked. */
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  flex-direction: row;
+  gap: 8px;
   align-items: center;
 }
 
+.hud-ul-column--stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .add-chips-icon-btn {
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   color: #fff;
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
-  backdrop-filter: blur(4px);
-  transition: background 0.2s, transform 0.1s;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    background 0.2s,
+    transform 0.1s;
 }
 .add-chips-icon-btn:active {
   transform: scale(0.95);
   background: rgba(255, 255, 255, 0.25);
 }
 
-.floating-im-back, .floating-post-blind {
+.floating-im-back,
+.floating-post-blind {
   background: linear-gradient(180deg, #10b981 0%, #059669 100%);
   border: 1px solid #34d399;
   color: white;
@@ -1756,7 +2059,7 @@
   border-radius: 8px;
   padding: 10px 16px;
   font-size: 14px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   text-transform: uppercase;
 }
@@ -1795,7 +2098,10 @@
 }
 
 @keyframes slideInChat {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
-

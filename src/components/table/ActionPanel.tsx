@@ -126,6 +126,12 @@ export default function ActionPanel({
 
   const isDesktop = windowWidth >= 768;
 
+  // Dan 2026-04-17: the vertical slider was breaking on narrow phones — ticks
+  // piled up, progress fill looked empty at min, BB labels overlapped the
+  // amount. Force the legacy horizontal slider on mobile; keep vertical on
+  // desktop/tablet where there's room to breathe.
+  const effectiveVerticalSlider = verticalSlider && isDesktop;
+
   // Phase 2 T1-02 + T1-09: PokerBros §5.2 + §5.5 ("MUST IMPROVE").
   //   Preflop:  BB multipliers (2X / 3X / 4X) per §5.2 OBSERVED.
   //   Postflop: 33% / 50% / 75% / POT GTO Wizard quartet per §5.5 — replaces
@@ -317,13 +323,13 @@ export default function ActionPanel({
         // Firefox-specific: native vertical orientation.
         // WebKit/Blink rotate the horizontal slider via CSS in the
         // .raise-slider--vertical wrapper.
-        {...(verticalSlider ? { orient: 'vertical' as const } : {})}
+        {...(effectiveVerticalSlider ? { orient: 'vertical' as const } : {})}
       />
     );
 
     return (
       <div
-        className={`action-panel action-panel--raise${verticalSlider ? ' action-panel--raise-vertical' : ''}`}
+        className={`action-panel action-panel--raise${effectiveVerticalSlider ? ' action-panel--raise-vertical' : ''}`}
       >
         {/* Phase 2 T1-02: vertical layout splits the panel — main column on
             the left holds amount + presets + confirm; slider sits on the right
@@ -390,7 +396,7 @@ export default function ActionPanel({
             </div>
 
             {/* Horizontal slider — only rendered in legacy mode. */}
-            {!verticalSlider && (
+            {!effectiveVerticalSlider && (
               <div className="raise-slider-wrap">
                 {sliderEl}
                 <div className="raise-slider-ticks">
@@ -448,7 +454,7 @@ export default function ActionPanel({
               Uses a CSS-rotated <input type="range"> wrapped in a fixed-height
               column. Tick marks correspond to 25/50/75/100% of the legal range.
               Hidden when verticalSlider is false. */}
-          {verticalSlider && (
+          {effectiveVerticalSlider && (
             <div className="raise-slider-vertical">
               <div className="raise-slider-vertical__rail">
                 {sliderEl}

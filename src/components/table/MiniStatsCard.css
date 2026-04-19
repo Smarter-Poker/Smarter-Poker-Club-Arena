@@ -17,6 +17,43 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ─── Collapsed icon (Dan 2026-04-17 v3) — default state. Icon-only button;
+   text is gone. Tap to open the full session-stats modal. A tiny colored
+   status dot signals P&L direction (green up / red down). Shrunk to 32px
+   per Dan's feedback — the 38px version was too dominant in the top-right. */
+.mini-stats-card--icon {
+  width: 32px;
+  height: 32px;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #e4e6eb;
+  position: relative;
+  cursor: pointer;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.mini-stats-card--icon:active {
+  transform: scale(0.95);
+}
+.mini-stats-card__dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.65);
+}
+
 .mini-stats-card:hover {
   background: rgba(0, 0, 0, 0.75);
   border-color: rgba(255, 255, 255, 0.18);

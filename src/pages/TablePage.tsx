@@ -376,30 +376,31 @@ interface TableState {
 // SEAT POSITIONS — Fixed percentages for vertical table layout (never move)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Seat positions — premium-style tight oval hugging the felt edge
-// Players positioned at the EDGE of the table — avatars/info sit OFF the felt
-// Only action (chips, community cards, pot) on the actual table surface
-// Seat positions — pushed OUTSIDE the felt edge so avatars/info boxes
-// are off the table. Only chips and action labels on the felt surface.
+// Phase A rebuild (Dan 2026-04-17, VERTICAL FLIP): seats distributed evenly
+// around a VERTICAL portrait oval (aspect ~0.65:1, taller than wide) to match
+// PokerBros exactly. Hero at bottom-center (seat 1), remaining seats step CCW
+// around the perimeter so seat 2 lands at lower-left.
+//   Parametric: x = 50 + a*cos(θ), y = 50 + b*sin(θ)   (a=33, b=44 in % of scaler)
+// Narrower x radius + taller y radius pins avatars to the portrait rail.
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 97 }, // Seat 1 (Hero — bottom center, pulled up slightly for card clearance)
-  { x: 5, y: 75 }, // Seat 2 (lower left)
-  { x: 5, y: 25 }, // Seat 3 (upper left)
-  { x: 50, y: 3 }, // Seat 4 (top center)
-  { x: 95, y: 25 }, // Seat 5 (upper right)
-  { x: 95, y: 75 }, // Seat 6 (lower right)
+  { x: 50, y: 94 }, // Seat 1 (Hero)          θ= 90°
+  { x: 22, y: 72 }, // Seat 2 (lower-left)    θ=150°
+  { x: 22, y: 28 }, // Seat 3 (upper-left)    θ=210°
+  { x: 50, y: 6 }, // Seat 4 (top-center)    θ=270°
+  { x: 78, y: 28 }, // Seat 5 (upper-right)   θ=330°
+  { x: 78, y: 72 }, // Seat 6 (lower-right)   θ= 30°
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 97 }, // Seat 1 (Hero — bottom center, pulled up slightly for card clearance)
-  { x: 15, y: 90 }, // Seat 2 (bottom left)
-  { x: 2, y: 68 }, // Seat 3 (left middle-low)
-  { x: 2, y: 35 }, // Seat 4 (left middle-high)
-  { x: 20, y: 5 }, // Seat 5 (top left)
-  { x: 50, y: 0 }, // Seat 6 (top center)
-  { x: 80, y: 5 }, // Seat 7 (top right)
-  { x: 98, y: 35 }, // Seat 8 (right middle-high)
-  { x: 98, y: 68 }, // Seat 9 (right middle-low)
+  { x: 50, y: 94 }, // Seat 1 (Hero)          θ= 90°
+  { x: 29, y: 84 }, // Seat 2 (lower-left)    θ=130°
+  { x: 18, y: 58 }, // Seat 3 (left-low)      θ=170°
+  { x: 22, y: 28 }, // Seat 4 (left-high)     θ=210°
+  { x: 39, y: 9 }, // Seat 5 (top-left)      θ=250°
+  { x: 61, y: 9 }, // Seat 6 (top-right)     θ=290°
+  { x: 78, y: 28 }, // Seat 7 (right-high)    θ=330°
+  { x: 82, y: 58 }, // Seat 8 (right-low)     θ= 10°
+  { x: 71, y: 84 }, // Seat 9 (lower-right)   θ= 50°
 ];
 
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
@@ -2981,42 +2982,27 @@ export default function TablePage({
                 horseProfile: undefined,
               } as any;
 
-              // Restore hero seat if this is the current user — UNLESS they're
-              // a stuck-bust row (stack=0, still marked active, never got left_at
-              // stamped). BUG 017 FIX 2026-04-15: treating stack=0 seats as
-              // "seated" causes handleSeatClick to silently bail on the `already
-              // seated` guard forever — user can never sit again until the DB is
-              // manually cleaned. Fix-forward: mark the stuck row as left right
-              // now, exclude it from the local tableState, AND leave heroSeat=0
-              // so the user sees empty seats and can re-buy-in fresh.
+              // Restore hero seat for the current user.
+              //
+              // BUG 027 FIX 2026-04-17: previously auto-released hero seats with
+              // stack=0 on mount (calling it a "stuck-bust row"). That kicked
+              // legitimately-busted users off the table BEFORE the bust-rebuy
+              // useEffect had a chance to pop the RebuyModal, so the user was
+              // booted with no chance to top up. New policy: keep the hero
+              // seated with stack=0. The bust-rebuy useEffect watches for
+              // stack=0 + !isHandInProgress and pops the RebuyModal; if the
+              // user declines, cancelBustRebuy → handleLeaveTable stamps
+              // left_at. If they rebuy, atomic_table_rebuy refills the stack
+              // and play resumes.
               if (isHero) {
                 const heroStack = Number(seat.stack || 0);
+                resolvedHeroSeat = seat.seat_number;
                 if (heroStack <= 0) {
                   console.warn(
-                    '[Seat] BUG 017 FIX — detected stuck-bust row for hero at seat',
+                    '[Seat] Hero seat at',
                     seat.seat_number,
-                    '(stack=0, left_at=null); marking as left and releasing so user can sit fresh'
+                    'has stack=0 — bust-rebuy flow will prompt rebuy or clean up on decline'
                   );
-                  // Fire-and-forget — don't block mount
-                  Promise.resolve(
-                    supabase
-                      .from('table_seats')
-                      .update({ left_at: new Date().toISOString(), status: 'left' })
-                      .eq('table_id', table.id)
-                      .eq('user_id', userId)
-                      .eq('seat_number', seat.seat_number)
-                      .is('left_at', null)
-                  )
-                    .then(({ error }) => {
-                      if (error) reportError(error, 'TablePage.Stuck_bust_cleanup_failed');
-                    })
-                    .catch((e) => reportError(e, 'TablePage.Stuck_bust_cleanup_error'));
-                  // Remove from local rendering and DON'T set resolvedHeroSeat
-                  updatedPlayers[seatIdx] = null;
-                  heroAlreadyAssigned = false; // allow re-assignment in unlikely dup case
-                  // continue without setting resolvedHeroSeat
-                } else {
-                  resolvedHeroSeat = seat.seat_number;
                 }
               }
             }
@@ -4394,7 +4380,7 @@ export default function TablePage({
       action: string,
       amount?: number,
       callsite?: string
-    ): Promise<void> => {
+    ): Promise<boolean> => {
       try {
         const res = await submitAction(tid, uid, action, amount);
         if (!res.success) {
@@ -4404,13 +4390,98 @@ export default function TablePage({
             hint: res.hint as ActionErrorData['hint'],
           });
           if (callsite) console.warn(`[Table] Server ${action} rejected (${callsite}):`, res);
+          return false;
         }
+        return true;
       } catch (err) {
         setActionErrorData({ error: 'Server unreachable' });
         if (callsite) console.warn(`[Table] Server ${action} threw (${callsite}):`, err);
+        return false;
       }
     },
     []
+  );
+
+  /**
+   * BUG 026 FIX — restore instant "real-time feel" on action buttons.
+   *
+   * Rather than wait for the server's WS PLAYER_ACTION broadcast to paint the
+   * hero's last-action tag and bet amount (which adds ~150-500ms of perceived
+   * lag), we mutate tableState optimistically the moment hero clicks. When
+   * the WS echo arrives (same value) it's idempotent — no flicker. If the
+   * server rejects, the caller invokes the returned revert() to restore the
+   * prior snapshot so the UI doesn't show a phantom fold/call.
+   *
+   * Returns a revert() thunk. Always safe to call: no-op if seat/index is out
+   * of range.
+   */
+  const applyOptimisticHeroAction = useCallback(
+    (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number): (() => void) => {
+      const heroSeat = tableState.heroSeat;
+      const idx = heroSeat - 1;
+      if (idx < 0) return () => {};
+
+      // Map UI action name → server's lastAction enum (what the WS event writes).
+      const labelMap: Record<string, string> = {
+        fold: 'fold',
+        check: 'check',
+        call: 'call',
+        raise: 'raise',
+        allin: 'all_in',
+      };
+      const label = labelMap[action] || action;
+
+      let prevLastAction: any = null;
+      let prevLastBet: number | null = null;
+      let prevStatus: any = null;
+
+      setTableState((prev) => {
+        const players = [...prev.players];
+        const hero = players[idx];
+        prevLastAction = prev.lastActions[idx] ?? null;
+        prevLastBet = prev.lastBetAmounts[idx] ?? 0;
+        prevStatus = hero?.status ?? null;
+
+        const newActions = [...prev.lastActions];
+        newActions[idx] = label as any;
+
+        const newBets = [...prev.lastBetAmounts];
+        if (action === 'call' || action === 'raise' || action === 'allin') {
+          if (typeof amount === 'number' && amount > 0) newBets[idx] = amount;
+        }
+
+        if (action === 'fold' && hero) {
+          players[idx] = { ...hero, status: 'folded' as any };
+        }
+
+        return {
+          ...prev,
+          lastActions: newActions,
+          lastBetAmounts: newBets,
+          players,
+        };
+      });
+
+      return () => {
+        setTableState((prev) => {
+          const newActions = [...prev.lastActions];
+          newActions[idx] = prevLastAction;
+          const newBets = [...prev.lastBetAmounts];
+          newBets[idx] = prevLastBet ?? 0;
+          const players = [...prev.players];
+          if (players[idx] && prevStatus != null) {
+            players[idx] = { ...players[idx]!, status: prevStatus };
+          }
+          return {
+            ...prev,
+            lastActions: newActions,
+            lastBetAmounts: newBets,
+            players,
+          };
+        });
+      };
+    },
+    [tableState.heroSeat]
   );
 
   const handleTimerAutoFold = useCallback(() => {
@@ -4517,8 +4588,13 @@ export default function TablePage({
     }, 300);
     setShowRaiseSlider(false);
     soundService.playFold(); // Bible V8 §5.4 — fold = light haptic
-    if (tableId) await submitActionWithToast(tableId, userId, 'fold', undefined, 'commitFold');
-  }, [tableId, userId, submitActionWithToast]);
+    // BUG 026: optimistic update for instant visual feedback
+    const revert = applyOptimisticHeroAction('fold');
+    if (tableId) {
+      const ok = await submitActionWithToast(tableId, userId, 'fold', undefined, 'commitFold');
+      if (!ok) revert();
+    }
+  }, [tableId, userId, submitActionWithToast, applyOptimisticHeroAction]);
 
   const handleFold = async () => {
     if (actionLockRef.current) return;
@@ -4542,7 +4618,12 @@ export default function TablePage({
     setShowRaiseSlider(false);
     //Local engine call removed — server is authoritative
     soundService.playCheck(); // SoundService handles haptic (light) per Bible V8 §5.4
-    if (tableId) await submitActionWithToast(tableId, userId, 'check', undefined, 'handleCheck');
+    // BUG 026: optimistic update for instant visual feedback
+    const revert = applyOptimisticHeroAction('check');
+    if (tableId) {
+      const ok = await submitActionWithToast(tableId, userId, 'check', undefined, 'handleCheck');
+      if (!ok) revert();
+    }
   };
 
   const handleCall = async () => {
@@ -4556,7 +4637,13 @@ export default function TablePage({
     setShowRaiseSlider(false);
     //Local engine call removed — server is authoritative
     soundService.playChips(); // SoundService handles haptic (light) per Bible V8 §5.4
-    if (tableId) await submitActionWithToast(tableId, userId, 'call', undefined, 'handleCall');
+    // BUG 026: optimistic update for instant visual feedback
+    const callAmt = tableState.currentBet || 0;
+    const revert = applyOptimisticHeroAction('call', callAmt);
+    if (tableId) {
+      const ok = await submitActionWithToast(tableId, userId, 'call', undefined, 'handleCall');
+      if (!ok) revert();
+    }
   };
 
   const handleBet = () => {
@@ -4628,6 +4715,9 @@ export default function TablePage({
       }
 
       //All local engine calls removed — server is authoritative
+      // BUG 026: each branch now applies an optimistic UI update BEFORE awaiting
+      // the server round-trip so the action tag / bet amount paint instantly.
+      // If the server rejects, revert() restores the prior snapshot.
       switch (action) {
         case 'fold':
           // Spec §5.6: when Check is free, route through the protection dialog
@@ -4639,20 +4729,54 @@ export default function TablePage({
           }
           if (!validateAndExecuteAction('fold')) return;
           soundService.playFold(); // SoundService handles haptic per Bible V8 §5.4
-          if (tableId)
-            await submitActionWithToast(tableId, userId, 'fold', undefined, 'panel-fold');
+          {
+            const revert = applyOptimisticHeroAction('fold');
+            if (tableId) {
+              const ok = await submitActionWithToast(
+                tableId,
+                userId,
+                'fold',
+                undefined,
+                'panel-fold'
+              );
+              if (!ok) revert();
+            }
+          }
           break;
         case 'check':
           if (!validateAndExecuteAction('check')) return;
           soundService.playCheck();
-          if (tableId)
-            await submitActionWithToast(tableId, userId, 'check', undefined, 'panel-check');
+          {
+            const revert = applyOptimisticHeroAction('check');
+            if (tableId) {
+              const ok = await submitActionWithToast(
+                tableId,
+                userId,
+                'check',
+                undefined,
+                'panel-check'
+              );
+              if (!ok) revert();
+            }
+          }
           break;
         case 'call':
           if (!validateAndExecuteAction('call')) return;
           soundService.playChips();
-          if (tableId)
-            await submitActionWithToast(tableId, userId, 'call', undefined, 'panel-call');
+          {
+            const callAmt = tableState.currentBet || 0;
+            const revert = applyOptimisticHeroAction('call', callAmt);
+            if (tableId) {
+              const ok = await submitActionWithToast(
+                tableId,
+                userId,
+                'call',
+                undefined,
+                'panel-call'
+              );
+              if (!ok) revert();
+            }
+          }
           break;
         case 'raise':
           if (amount) {
@@ -4660,8 +4784,19 @@ export default function TablePage({
             if (clamped <= 0) return;
             if (!validateAndExecuteAction('raise', clamped)) return;
             soundService.playRaise(); // SoundService handles haptic (medium) per Bible V8 §5.4
-            if (tableId)
-              await submitActionWithToast(tableId, userId, 'raise', clamped, 'panel-raise');
+            {
+              const revert = applyOptimisticHeroAction('raise', clamped);
+              if (tableId) {
+                const ok = await submitActionWithToast(
+                  tableId,
+                  userId,
+                  'raise',
+                  clamped,
+                  'panel-raise'
+                );
+                if (!ok) revert();
+              }
+            }
           }
           break;
         case 'allin':
@@ -4669,8 +4804,19 @@ export default function TablePage({
           if (!validateAndExecuteAction('allin')) return;
           soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
           setIsAllInMode(true);
-          if (tableId)
-            await submitActionWithToast(tableId, userId, 'allin', heroStack, 'panel-allin');
+          {
+            const revert = applyOptimisticHeroAction('allin', heroStack);
+            if (tableId) {
+              const ok = await submitActionWithToast(
+                tableId,
+                userId,
+                'allin',
+                heroStack,
+                'panel-allin'
+              );
+              if (!ok) revert();
+            }
+          }
           break;
       }
     },
@@ -4699,8 +4845,18 @@ export default function TablePage({
     try {
       //Local engine call removed — server is authoritative
       soundService.playRaise(); // SoundService handles haptic (medium) per Bible V8 §5.4
-      if (tableId)
-        await submitActionWithToast(tableId, userId, 'raise', clampedRaise, 'confirmRaise');
+      // BUG 026: optimistic update for instant visual feedback
+      const revert = applyOptimisticHeroAction('raise', clampedRaise);
+      if (tableId) {
+        const ok = await submitActionWithToast(
+          tableId,
+          userId,
+          'raise',
+          clampedRaise,
+          'confirmRaise'
+        );
+        if (!ok) revert();
+      }
     } catch (err) {
       console.warn('[TablePage] Raise error:', err);
     }
@@ -4721,7 +4877,12 @@ export default function TablePage({
       //Local engine call removed — server is authoritative
       soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
       setIsAllInMode(true);
-      if (tableId) await submitActionWithToast(tableId, userId, 'allin', heroStack, 'handleAllIn');
+      // BUG 026: optimistic update for instant visual feedback
+      const revert = applyOptimisticHeroAction('allin', heroStack);
+      if (tableId) {
+        const ok = await submitActionWithToast(tableId, userId, 'allin', heroStack, 'handleAllIn');
+        if (!ok) revert();
+      }
     } catch (err) {
       console.warn('[TablePage] All-in error:', err);
     }
@@ -5051,6 +5212,46 @@ export default function TablePage({
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
       <DisconnectToast heroUserId={userId} disconnectStates={disconnectStates} />
+
+      {/* Dan 2026-04-17 (Task 56) — Winner acknowledgment banner.
+          Dan's exact words: "acknowledging who won the pot, and shipping the pot."
+          The seat-glow + hand-name float are subtle on mobile, so add a center
+          banner that screams the result for ~2s. Hero win → "YOU WIN" + hand
+          name + net amount. Opponent win → "<Name> wins <hand>". Keyed on
+          hand number so each new hand re-triggers the entrance animation.
+          Auto-dismisses with the 3s winnerInfo cleanup in HAND_COMPLETE. */}
+      {winnerInfo.playerIds.length > 0 &&
+        (() => {
+          const heroWon = winnerInfo.playerIds.includes(userId);
+          const primaryWinnerId = winnerInfo.playerIds[0];
+          const primaryWinner = tableState.players.find((p) => p?.id === primaryWinnerId);
+          const winnerName = heroWon ? 'YOU WIN' : `${primaryWinner?.name || 'Opponent'} wins`;
+          const chopSuffix =
+            winnerInfo.playerIds.length > 1 ? ` (split ${winnerInfo.playerIds.length} ways)` : '';
+          const amount = winnerInfo.amounts[heroWon ? userId : primaryWinnerId || ''] || 0;
+          return (
+            <div
+              key={`winner-banner-${tableState.handNumber || 0}-${primaryWinnerId || 'x'}`}
+              className={`winner-banner${heroWon ? ' winner-banner--hero' : ' winner-banner--opp'}`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className="winner-banner__title">
+                {winnerName}
+                {chopSuffix}
+              </div>
+              {winnerInfo.handName && (
+                <div className="winner-banner__hand">{winnerInfo.handName}</div>
+              )}
+              {amount > 0 && (
+                <div className="winner-banner__amount">
+                  {heroWon ? '+' : ''}
+                  {amount.toLocaleString()}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       {/* Phase 2 T2-01 (spec §5.6): Fold Protection Dialog.
           handleFold / panel-fold defer to this when canCheckRightNow() is
           true. onCheck dismisses + executes the free check; onFold dismisses
@@ -5292,14 +5493,13 @@ export default function TablePage({
             />
             <button
               className="add-chips-icon-btn"
-              style={{ marginTop: 12 }}
               onClick={() => {
                 soundService.playButtonClick();
                 if (tableState.players[tableState.heroSeat - 1]) setShowBuyInModal(true);
               }}
               title="Add Chips"
             >
-              <svg width="24" height="24" viewBox="0 0 18 18" fill="none">
+              <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
                 <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
                 <path
                   d="M9 6v6M6 9h6"
@@ -5323,7 +5523,7 @@ export default function TablePage({
           />
         }
         bottomLeft={
-          <div className="hud-ul-column" style={{ alignItems: 'flex-start' }}>
+          <div className="hud-ul-column hud-ul-column--stack">
             <PreviousHandCard
               handNumber={prevHandResult?.handNumber ?? null}
               result={prevHandResult?.result ?? 0}
@@ -5657,9 +5857,24 @@ export default function TablePage({
           BOTTOM CONTROLS + ACTION PANEL
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="action-panel-wrapper">
-        {/* Spectator Mode - hidden (seats already show "+ SIT") */}
+        {/* POKERBROS-spec: persistent footer bar — NEVER empty. Dan rule
+            2026-04-17: action bar fixed to footer at all times, every state. */}
         {!tableState.players[tableState.heroSeat - 1] ? (
-          <>{/* No spectator banner — empty seats already invite players to sit */}</>
+          <div className="spectator-footer-bar">
+            <span className="spectator-footer-bar__label">
+              Spectating — tap an open seat to join
+            </span>
+          </div>
+        ) : !tableState.isHandInProgress && !isRabbitAvailable ? (
+          <div className="spectator-footer-bar" data-state="waiting">
+            <span className="spectator-footer-bar__label">Waiting for next hand…</span>
+          </div>
+        ) : tableState.isHandInProgress &&
+          (getPlayerAtSeat(tableState.heroSeat)?.status === 'folded' ||
+            getPlayerAtSeat(tableState.heroSeat)?.status === 'away') ? (
+          <div className="spectator-footer-bar" data-state="folded">
+            <span className="spectator-footer-bar__label">Folded — waiting for next hand…</span>
+          </div>
         ) : (
           <>
             {/* ─── CONTROL STRIP — Minimal: Time Bank + Timer during hand, Rabbit Hunt after hand ─── */}
@@ -5759,36 +5974,26 @@ export default function TablePage({
                 })()
               : null}
 
-            {/* ─── SHOW HAND BUTTON — Bible V8 §4.21: Voluntary show at showdown ─── */}
+            {/* ─── SHOW HAND BUTTON — Bible V8 §4.21: Voluntary show at showdown.
+                 Dan rule 2026-04-17: ALL action buttons live in the footer, never
+                 floating above it. Rendered as a footer bar, flow positioned. */}
             {tableState.boardStage === 'showdown' &&
               tableState.heroSeat > 0 &&
               tableId &&
               getPlayerAtSeat(tableState.heroSeat)?.status !== 'folded' && (
-                <button
-                  className="show-hand-btn"
-                  onClick={async () => {
-                    const result = await serverShowHand(tableId);
-                    if (!result.success) {
-                      reportError(result.error, 'TablePage.Failed');
-                    }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    bottom: '100px',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    padding: '8px 20px',
-                    borderRadius: '20px',
-                    background: 'rgba(255, 255, 255, 0.15)',
-                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                    color: '#fff',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    zIndex: 20,
-                  }}
-                >
-                  Show Hand
-                </button>
+                <div className="footer-action-bar">
+                  <button
+                    className="footer-action-bar__btn"
+                    onClick={async () => {
+                      const result = await serverShowHand(tableId);
+                      if (!result.success) {
+                        reportError(result.error, 'TablePage.Failed');
+                      }
+                    }}
+                  >
+                    Show Hand
+                  </button>
+                </div>
               )}
 
             {/* ─── PRE-ACTION BAR — Show when hero is seated AND not their turn.
@@ -5799,7 +6004,11 @@ export default function TablePage({
             {tableState.isHandInProgress &&
               tableState.heroSeat > 0 &&
               tableState.currentPlayerSeat > 0 &&
-              tableState.currentPlayerSeat !== tableState.heroSeat && (
+              tableState.currentPlayerSeat !== tableState.heroSeat &&
+              /* Dan 2026-04-17: after hero folds, hide PreActionBar — the
+                 "weird lingering bar" bug. Folded hero has no pre-turn action. */
+              getPlayerAtSeat(tableState.heroSeat)?.status !== 'folded' &&
+              getPlayerAtSeat(tableState.heroSeat)?.status !== 'away' && (
                 <PreActionBar
                   canCheck={
                     // Bible V8: Check is available when there's no outstanding bet to call

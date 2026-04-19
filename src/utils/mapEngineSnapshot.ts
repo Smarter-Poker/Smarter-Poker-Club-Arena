@@ -146,19 +146,41 @@ const STATUS_FROM_PLAYER = (
 };
 
 /**
- * Compute the most recent action + amount for each seat, considering the
- * action history for the current hand only. Returns two arrays indexed by
- * seatNumber-1 (length maxPlayers).
+ * Compute the most recent action + amount for each seat on the CURRENT STREET
+ * only. When the street advances (preflop -> flop -> turn -> river) the engine
+ * carries the full hand's action history forward, but the per-seat "last
+ * action" label and "bet chips in front of seat" must represent the NEW
+ * street only. Filtering by currentStage is what guarantees the turn bet
+ * amount clears when the river begins (BUG 031 root cause).
+ *
+ * Folds are preserved across streets (a folded player stays folded for the
+ * rest of the hand, so the FOLD label must remain visible).
+ *
+ * Returns two arrays indexed by seatNumber-1 (length maxSeats).
  */
 function derivePerSeatLastAction(
   actionHistory: EngineActionRecord[],
-  maxSeats: number
+  maxSeats: number,
+  currentStage: string
 ): { lastActions: Array<string | null>; lastBetAmounts: number[] } {
   const lastActions: Array<string | null> = Array(maxSeats).fill(null);
   const lastBetAmounts: number[] = Array(maxSeats).fill(0);
+  // First pass: record folds across the whole hand (they persist).
   for (const a of actionHistory) {
     const idx = a.seat - 1;
     if (idx < 0 || idx >= maxSeats) continue;
+    if (a.action === 'fold') {
+      lastActions[idx] = 'fold';
+      lastBetAmounts[idx] = 0;
+    }
+  }
+  // Second pass: only consider actions from the current street.
+  for (const a of actionHistory) {
+    const idx = a.seat - 1;
+    if (idx < 0 || idx >= maxSeats) continue;
+    if (a.stage !== currentStage) continue;
+    // Don't overwrite a fold with a same-street (impossible but defensive).
+    if (lastActions[idx] === 'fold' && a.action !== 'fold') continue;
     lastActions[idx] = a.action;
     if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in') {
       lastBetAmounts[idx] = a.amount;
@@ -207,7 +229,8 @@ export function mapEngineSnapshot(
 
   const { lastActions, lastBetAmounts } = derivePerSeatLastAction(
     s.action_history ?? [],
-    maxSeats
+    maxSeats,
+    s.stage ?? 'preflop'
   );
 
   const sidePots = (s.pots ?? []).map((p) => ({

@@ -14,7 +14,7 @@ It deploys through the World Hub repo, NOT directly.
 
 ```bash
 # 1. Build in Club Arena repo
-cd ~/Documents/Smarter-Poker-Club-Arena
+cd ~/Documents/club-arena
 npm run build
 
 # 2. Sync to World Hub
@@ -152,7 +152,7 @@ NO iframe. NO postMessage. NO proxy. Everything from smarter.poker.
 
 ## 8. TECH STACK
 
-Vite + React 18 + TypeScript, React Router v6, Supabase (PostgreSQL + Auth + Realtime),
+Vite + React 19 + TypeScript, React Router v7, Supabase (PostgreSQL + Auth + Realtime),
 CSS Modules + global CSS.
 
 ---

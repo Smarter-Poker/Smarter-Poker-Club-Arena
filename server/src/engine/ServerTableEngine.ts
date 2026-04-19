@@ -123,6 +123,12 @@ export class ServerTableEngine {
   // Bible V8 §4.2: Players waiting for BB position before they can play
   private waitingForBB: Set<string> = new Set();
 
+  // Bible V8 §4.2: Track every userId we've ever seen seated at this table.
+  // Used by the dealing loop to detect new joiners after the engine has started
+  // dealing hands — new joiners must wait for the BB to reach their seat
+  // (or opt to post the BB immediately via POST /post-bb).
+  private knownPlayerIds: Set<string> = new Set();
+
   // Bible V8 §6.17: Admin pause/maintenance lock — prevents new hands from starting
   private adminPauseLock: boolean = false;
   private maintenanceLock: boolean = false;
@@ -1930,6 +1936,31 @@ export class ServerTableEngine {
         // Reload players + refresh blinds before each hand
         this.seatedPlayers = await loadSeatedPlayers(this.tableId);
         await this.refreshBlinds();
+
+        // Bible V8 §4.2: Detect new joiners. Any userId that appears in
+        // seatedPlayers but wasn't known before is a new player. If the engine
+        // has already dealt at least one hand, new joiners must wait for the
+        // BB to reach their seat (they can opt out via POST /post-bb).
+        // On the very first hand of the engine's life, all seated players are
+        // treated as initial players and no wait is required.
+        for (const p of this.seatedPlayers) {
+          if (!this.knownPlayerIds.has(p.user_id)) {
+            if (this.handCount > 0 && !this.returningFromSitout.has(p.user_id)) {
+              this.registerWaitForBB(p.user_id);
+            }
+            this.knownPlayerIds.add(p.user_id);
+          }
+        }
+        // Prune knownPlayerIds for truly-gone players (left_at set → filtered
+        // out of loadSeatedPlayers). If they come back later they'll be treated
+        // as a brand-new joiner again.
+        const currentIds = new Set(this.seatedPlayers.map((p) => p.user_id));
+        for (const id of this.knownPlayerIds) {
+          if (!currentIds.has(id)) {
+            this.knownPlayerIds.delete(id);
+            this.waitingForBB.delete(id);
+          }
+        }
 
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);

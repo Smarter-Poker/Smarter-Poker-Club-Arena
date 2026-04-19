@@ -214,11 +214,68 @@ jobs:
           echo "✅ Bundle size: ${TOTAL_KB}kB (limit: 5120kB)"
 
   # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 3: Playwright E2E Tests against production — ALWAYS ON
+  # Tests run against https://smarter.poker (not a local dev server) to avoid
+  # auth/session complexity in CI and to catch real production regressions.
+  # ─────────────────────────────────────────────────────────────────────────────
+  e2e:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    # Only run E2E on push to main (not PRs) to avoid running against a pre-deploy build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for Production Deploy
+        run: |
+          echo "Waiting 60s for Vercel deploy to propagate..."
+          sleep 60
+
+      - name: Run E2E Tests (Production)
+        run: npx playwright test --project=chromium
+        env:
+          # Point tests at production — set PLAYWRIGHT_BASE_URL in the test config
+          BASE_URL: https://smarter.poker/hub/club-arena
+          CI: true
+        continue-on-error: false
+
+      - name: Upload Playwright Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Report E2E Status
+        if: always()
+        run: |
+          echo "## 🎭 Playwright E2E Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tests ran against: [smarter.poker/hub/club-arena](https://smarter.poker/hub/club-arena)" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────────
   # STEP 4: Post-deploy smoke test on smarter.poker
   # ─────────────────────────────────────────────────────────────────────────────
   post-deploy-check:
     name: Post-Deploy Verification
-    needs: deploy
+    needs: build
     if: success()
     runs-on: ubuntu-latest
     timeout-minutes: 5

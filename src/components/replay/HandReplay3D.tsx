@@ -61,11 +61,7 @@ function getSeatPosition(seatIndex: number, totalSeats: number): THREE.Vector3 {
   const angle = (seatIndex / totalSeats) * Math.PI * 2 - Math.PI / 2;
   const rx = TABLE_RADIUS * 1.3; // Ellipse X radius
   const rz = TABLE_RADIUS * 0.85; // Ellipse Z radius
-  return new THREE.Vector3(
-    Math.cos(angle) * rx,
-    TABLE_HEIGHT + 0.01,
-    Math.sin(angle) * rz
-  );
+  return new THREE.Vector3(Math.cos(angle) * rx, TABLE_HEIGHT + 0.01, Math.sin(angle) * rz);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -365,13 +361,21 @@ function HandReplay3DComponent({
     };
   }, [active, seatCount, feltColor, onReady]);
 
-  // Listen for replay events from HandReplayEngine via MasterBus
+  // Listen for replay step events from HandReplayEngine via MasterBus
+  // HAND_REPLAY_STEP includes the current snapshot — drive the 3D scene from it
   useEffect(() => {
     if (!isReady || !sceneRef.current) return;
 
     const scene = sceneRef.current;
 
-    const handleSnapshot = (snapshot: ReplaySnapshot) => {
+    const handleReplayStep = (payload: {
+      handId: string;
+      step: number;
+      totalSteps: number;
+      action: unknown;
+      snapshot: ReplaySnapshot;
+    }) => {
+      const { snapshot } = payload;
       scene.clearTable();
 
       // Deal community cards
@@ -392,11 +396,10 @@ function HandReplay3DComponent({
       }
     };
 
-    // TODO: Wire up when HAND_REPLAY_SNAPSHOT is added to BusEventType
-    // const unsub = masterBus.subscribe('HAND_REPLAY_SNAPSHOT', handleSnapshot);
-    // return () => { unsub(); };
-    const _handler = handleSnapshot; // Suppress unused warning
-    void _handler;
+    const unsub = masterBus.subscribe('HAND_REPLAY_STEP', handleReplayStep as any);
+    return () => {
+      unsub();
+    };
   }, [isReady]);
 
   if (!active) return null;
@@ -417,10 +420,7 @@ function HandReplay3DComponent({
       role="img"
       aria-label="3D hand replay viewer"
     >
-      <canvas
-        ref={canvasRef}
-        style={{ width: '100%', height: '100%', display: 'block' }}
-      />
+      <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
       {!isReady && (
         <div
           style={{

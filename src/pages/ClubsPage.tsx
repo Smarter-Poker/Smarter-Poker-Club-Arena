@@ -219,33 +219,14 @@ export default function ClubsPage() {
     let isMounted = true;
     loadMyClubs(() => isMounted);
 
-    // Realtime: refresh clubs when membership data changes or clubs are modified
-    const channelKey = 'clubs-page-realtime';
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'club_members' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clubs' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'unions' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'union_clubs' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'ClubsPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[ClubsPage] ⏱️ Realtime channel timed out');
-        }
-      });
+    // NOTE (2026-04-19): Realtime `postgres_changes` listeners on club_members, clubs,
+    // unions, union_clubs REMOVED. These were unfiltered global listeners (event: '*',
+    // no filter) that fired on EVERY mutation across ALL clubs/unions, generating massive
+    // realtime message volume. The MasterBus event listeners below (CLUB_JOINED, CLUB_LEFT,
+    // CLUB_UPDATED, UNION_UPDATED, etc.) already handle all cross-page refresh needs.
+
     return () => {
       isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
     };
   }, []);
 

@@ -391,24 +391,37 @@ export default function TableOperationsPanel({ clubId }: Props) {
     const channelKey = 'table-ops-live';
 
     const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
+    const sub = channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
+      () => loadTables()
+    );
+
+    // NOTE (2026-04-19): table_seats listener is now conditionally added with a
+    // table_id filter ONLY when a table is expanded. Previously this was a global
+    // listener (no filter) that fired on every seat change across the entire platform.
+    // table_seats is the engine's highest-write table — filtering is critical.
+    if (expandedTable) {
+      sub.on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
-        () => loadTables()
-      )
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'table_seats' }, () => {
-        // Refresh seated players for expanded table
-        if (expandedTable) loadSeatedPlayers(expandedTable);
-      })
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'TableOperationsPanel._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[TableOperationsPanel] ⏱️ Realtime channel timed out');
-        }
-      });
+        {
+          event: '*',
+          schema: 'public',
+          table: 'table_seats',
+          filter: `table_id=eq.${expandedTable}`,
+        },
+        () => loadSeatedPlayers(expandedTable)
+      );
+    }
+
+    sub.subscribe((status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR') {
+        reportError(err?.message || err, 'TableOperationsPanel._Realtime_channel_error');
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn('[TableOperationsPanel] ⏱️ Realtime channel timed out');
+      }
+    });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

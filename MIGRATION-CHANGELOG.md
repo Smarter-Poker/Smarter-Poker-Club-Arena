@@ -7,6 +7,54 @@
 
 ---
 
+## Phase 6.1.13 — CORS wildcard lockdown across 21 API routes (2026-04-19)
+
+### Context
+
+Pre-audit, 21 World Hub API routes echoed `Access-Control-Allow-Origin: *`. That bypasses every browser's same-origin protection on the response body, which means any site a user happened to visit (including ad frames embedded on third-party pages) could fire authenticated `fetch` calls at our endpoints and read the response. For a public-data endpoint that's merely ugly. For `pages/api/poker/engine/state.js` — which returns **private hole cards** — it was a serious leak: if a malicious page tricked a signed-in user into visiting it, that page could read the user's hand state in real time. `engine/action.js` (betting) and `engine/seat.js` (sit/stand) had the same wildcard.
+
+A previous patch on `pages/api/admin/execute-sql.js` had already locked that endpoint to same-origin with the comment "// [HARDENED] No CORS — same-origin only. No cross-origin access allowed." — so the pattern and risk were known. This phase extends it to the rest of the API surface.
+
+### Shared helper
+
+`src/lib/cors.js` exports two functions:
+
+- `applyCors(req, res, opts)` — sets `Access-Control-Allow-Origin` to the incoming `Origin` header **only if that origin is in the allowlist**. Otherwise the header is not set at all, and the browser drops the response. Also sets `Vary: Origin` (critical for CDN caching), `Allow-Credentials`, `Allow-Methods`, `Allow-Headers`. Returns `true` for real requests, `false` after short-circuiting OPTIONS preflights.
+- `corsHeaders(req, opts)` — same logic, returns a plain headers object for routes that already compose a headers dict (e.g. `venue-schedules.js`).
+
+Allowlist defaults: `https://smarter.poker`, `https://www.smarter.poker`, `https://club.smarter.poker`, `https://app.smarter.poker`. Extended via `CORS_ALLOWED_ORIGINS` env (comma-separated). Always allowed: `http(s)://localhost:*`, `http(s)://127.0.0.1:*`, and `https://*-smarter-poker.vercel.app` (Vercel preview URLs for our team). No regexes against arbitrary user input — origin comparison is exact-match or tightly-bounded regex.
+
+### Mechanical conversion
+
+Two Python scripts walked the 21 routes and replaced the old `const CORS = {...}` / `Object.entries(CORS).forEach(...)` / `if (req.method === 'OPTIONS')` triplet with a single `if (!applyCors(req, res, { methods, headers })) return;` at the top of each handler. Converted files:
+
+```
+link-preview.js, club-arena/anti-cheat.js,
+poker/{checkins, claim-page, live-games, follow, results, notifications,
+       venue-schedules, tournament-alerts, promotions, create-live-table,
+       activity, reviews, venue-tournament-calendar}.js,
+poker/engine/{tables, action, state, club-connect, seat, connect}.js
+```
+
+`poker/venue-schedules.js` was a special case — it already had an origin-aware helper that allowed `*` for GETs and an explicit allowlist for writes. That split is gone; the whole endpoint is allowlist-only now. GET requests from third-party origins that used to work will now be dropped by the browser (same-origin and API clients with no Origin header still work).
+
+### Verification
+
+`node --check` against every converted file: 21 pass, 0 fail. `grep -r "Access-Control-Allow-Origin" pages/api` after the change returns zero hits.
+
+### Files touched
+
+```
+# World Hub
+src/lib/cors.js                                        (new)
+pages/api/link-preview.js
+pages/api/club-arena/anti-cheat.js
+pages/api/poker/{14 handlers, see above}
+pages/api/poker/engine/{tables,action,state,club-connect,seat,connect}.js
+```
+
+---
+
 ## Phase 6.1.12 — Email verification gate on purchase endpoints (2026-04-19)
 
 ### Context

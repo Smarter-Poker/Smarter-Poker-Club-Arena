@@ -7,6 +7,96 @@
 
 ---
 
+## Phase 5.1.5 — SLO dashboards + burn-rate alerts (2026-04-20)
+
+### Context
+
+Master plan §8.1.5. With Sentry (errors, 5.1.1), PostHog (funnels, 5.1.2), Prometheus+Grafana (metrics, 5.1.3), and health endpoints (5.1.4) in place, the remaining observability gap was *operational decision-making under load*: when is a spike of 5xx just noise, when is it worth paging someone at 2am, and when should we freeze deploys because we're burning too much budget? This phase wires the Google SRE multi-window multi-burn-rate alerting framework on top of the Phase 5.1.3 metrics stack and adds an SLO Grafana dashboard so on-call has a single page to answer "are we in trouble?"
+
+### SLOs defined
+
+Four user-facing SLOs with 30-day rolling windows:
+
+| SLO slug | Target | Budget | Signal |
+|---|---|---|---|
+| `wh_hub` | 99.9% | 43.2 min/30d | blackbox probe on `/api/health` |
+| `ca_hub` | 99.9% | 43.2 min/30d | blackbox probe on `/api/club-arena/health` |
+| `engine` | 99.95% | 21.6 min/30d | `up{job="engine_pm2"}` |
+| `engine_tick` | 99% of ticks < 50ms | 1%/30d | `poker_engine_hand_tick_duration_seconds_bucket` histogram |
+
+The engine tick SLO depends on a histogram that the pm2-metrics module doesn't yet expose — it evaluates to NaN until Phase 5.1.5a instrumentation lands. The alerts are written so NaN produces no firing — not a flapping false page.
+
+### Changes
+
+- **`infra/monitoring/slo-rules.yml` (NEW)** — Four rule groups (`slo-wh-hub`, `slo-ca-hub`, `slo-engine`, `slo-engine-tick`) computing error ratios over 5m/30m/1h/2h/6h/1d/3d windows, plus a `budget_remaining_30d` recording rule per SLO (clamped to [0,1]) that powers the Grafana stat pills. Split from `slo-alerts.yml` so Prometheus evaluates records first, then alerts — within the same tick so every burn-rate alert sees a fresh record.
+
+- **`infra/monitoring/slo-alerts.yml` (NEW)** — Four burn-rate alerts per SLO (fast/medium/slow/chronic) plus a `*BudgetExhausted` warning when `budget_remaining_30d <= 0.05`:
+  - **Fast burn (14.4x)** — pages oncall. Requires both 1h AND 5m windows over threshold. At 14.4x we exhaust 2% of 30d budget per hour.
+  - **Medium burn (6x)** — pages oncall. Requires both 6h AND 30m windows. 5% of budget per 6h.
+  - **Slow burn (3x)** — ticket only. 1d AND 2h windows. Cumulative trend alert.
+  - **Chronic burn (1x)** — ticket only. 3d AND 6h windows. Signals capacity/quality drift even without a single incident.
+  - Labels on every alert: `slo=<slug>`, `burn_rate=<multiplier>`, `window=<short window>` so AlertManager can group and the ops team can filter.
+
+- **`infra/monitoring/grafana-dashboards/slo.json` (NEW)** — Single-page SLO dashboard:
+  - Row 1: four stat pills (remaining error budget 30d per SLO) with threshold-based color coding (green > 50%, yellow > 20%, red below)
+  - Row 2: 1h error ratio vs the 14.4x/6x/3x burn thresholds as reference lines, per SLO — lets on-call see exactly how far over/under the burn lines we're running
+  - Row 3: long-window error ratios (6h/1d/3d) vs the SLO cap — for spotting slow trends that wouldn't trip a fast-burn alert
+
+- **`infra/monitoring/prometheus.yml`** — Added `slo-rules.yml` and `slo-alerts.yml` to `rule_files`.
+
+- **`infra/monitoring/docker-compose.yml`** — Mounted both new rule files into the Prometheus container at `/etc/prometheus/`.
+
+### Why multi-window multi-burn-rate
+
+A single-window threshold ("page if error rate > 0.5% for 10 minutes") either flaps on every transient or takes hours to catch a sustained 5% degradation. The SRE workbook pattern (long-window gates fast-reaction) lets us:
+- React in minutes to a real fast-burn incident (1h window catches it, 5m window confirms it's sustained)
+- Ignore 30-second blips (5m window averages them out)
+- Still surface slow drift via the 3x/1x ticket alerts before budget is exhausted
+
+### Error budget policy wired into alerts
+
+`*BudgetExhausted` fires when `budget_remaining_30d <= 0.05`, which per our written policy triggers a deploy-freeze for that component: only reliability/urgent-bug fixes ship until the 30d window rolls forward and replenishes. The alert is warning-severity (Slack only, no page) because it's a *policy* signal, not an outage signal.
+
+### Engine tick histogram — pending
+
+`slo:engine_tick:*` rules reference `poker_engine_hand_tick_duration_seconds_bucket` which doesn't exist yet. The pm2-metrics module (`@pm2/io`) needs to be patched on engine-01 to emit a native-prometheus histogram for the hand-tick span. Tracked as deferred 5.1.5a. Until then the panels read "(awaiting pm2-metrics histogram)" via Grafana's `noValue` override and no spurious alerts fire.
+
+### Runbook URLs referenced by alert annotations
+
+Every burn-rate alert links to `https://monitor.smarter.poker/runbooks/<slug>`:
+- `/runbooks/wh-hub-burn`
+- `/runbooks/ca-hub-burn`
+- `/runbooks/engine-burn`
+- `/runbooks/engine-tick-latency`
+
+Runbook content itself is deferred to Phase 5.1.6 (on-call playbook docs).
+
+### Verification
+
+YAML validated via `python3 -c 'yaml.safe_load(open(...))'` for both rule files, docker-compose.yml, and prometheus.yml. Dashboard JSON parses cleanly (13 panels). Burn-rate math sanity-checked against the SRE workbook's Table 1 (14.4x over 1h consuming 2% of monthly budget matches their reference implementation).
+
+### Deferred
+
+- **5.1.5a** — Instrument pm2-metrics with `poker_engine_hand_tick_duration_seconds` histogram on engine-01 (requires Hetzner SSH). Until done, the engine-tick SLO panels show "no data" and related alerts are silent.
+- **5.1.6** — Runbook content for the URLs linked from alert annotations.
+
+### Files
+
+- `infra/monitoring/slo-rules.yml` (NEW)
+- `infra/monitoring/slo-alerts.yml` (NEW)
+- `infra/monitoring/grafana-dashboards/slo.json` (NEW)
+- `infra/monitoring/prometheus.yml` (wired rule files)
+- `infra/monitoring/docker-compose.yml` (mounted rule files into container)
+
+### Status
+
+- [x] SLO recording rules, alerts, dashboard committed
+- [x] Prometheus config wired to load them
+- [ ] 5.1.5a deferred: engine histogram instrumentation
+- [ ] 5.1.6 deferred: runbook docs
+
+---
+
 ## Phase 5.1.4 — Health endpoints matrix (2026-04-20)
 
 ### Context

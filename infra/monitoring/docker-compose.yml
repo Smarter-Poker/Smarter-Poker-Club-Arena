@@ -50,6 +50,9 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      # Phase 5.1.5 SLO rule + alert files
+      - ./slo-rules.yml:/etc/prometheus/slo-rules.yml:ro
+      - ./slo-alerts.yml:/etc/prometheus/slo-alerts.yml:ro
       - prometheus-data:/prometheus
     networks:
       - monitoring

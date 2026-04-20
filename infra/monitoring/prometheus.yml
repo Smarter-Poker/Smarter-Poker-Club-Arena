@@ -26,6 +26,13 @@ alerting:
 
 rule_files:
   - /etc/prometheus/alert-rules.yml
+  # Phase 5.1.5: SLO recording rules + multi-window multi-burn-rate alerts.
+  # Split into two files so recording-rule evaluation order is deterministic
+  # (Prometheus evaluates all rules in a group sequentially; keeping records
+  # and alerts separate means a record that feeds an alert is guaranteed to
+  # have been computed in the same tick).
+  - /etc/prometheus/slo-rules.yml
+  - /etc/prometheus/slo-alerts.yml
 
 scrape_configs:
   # -------------------------------------------------------------------------

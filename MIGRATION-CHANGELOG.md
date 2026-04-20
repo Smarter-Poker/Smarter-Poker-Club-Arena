@@ -4338,3 +4338,10 @@ Every "PASS" verdict from prior rounds was re-examined with one question: **Is t
 - `server/src/engine/HandController.ts` — FIX 157: raiseSize calculation
 - `server/src/engine/TimeBankEngine.ts` — FIX 158: secondsPerUse 20→15, totalBankSeconds 2400→1800
 - `MIGRATION-CHANGELOG.md` — This entry
+
+## 2026-04-19 — BETA FREEZE
+- Hetzner engine stopped via \`docker stop club-arena-engine\`
+- Env cleared: TEST_TABLE_ID removed, DISABLE_HORSE_FLEET=true persisted to PM2 ecosystem / docker .env
+- Supabase state wiped: 0 tables running, 0 seats occupied, 0 hole cards, 0 live tournaments
+- Lobby banner deployed pointing users to /sim
+- Re-enable: reverse step 5 (re-add TEST_TABLE_ID if wanted, remove DISABLE_HORSE_FLEET), \`docker start club-arena-engine\`, remove banner

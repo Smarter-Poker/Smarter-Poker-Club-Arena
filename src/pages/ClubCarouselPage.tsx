@@ -120,6 +120,7 @@ export default function ClubCarouselPage() {
 
   // #5: Search/filter
   const [searchQuery, setSearchQuery] = useState('');
+  const [isBetaBannerVisible, setIsBetaBannerVisible] = useState(true);
 
   // #3: Offline banner
   const [isOnline, setIsOnline] = useState(
@@ -754,6 +755,14 @@ export default function ClubCarouselPage() {
         {!isOnline && (
           <div className="carousel-offline-banner" role="alert">
             <span>⚠ Offline — showing cached data</span>
+          </div>
+        )}
+
+        {/* BETA FREEZE BANNER */}
+        {isBetaBannerVisible && (
+          <div style={{ padding: '14px', backgroundColor: 'rgba(255, 170, 0, 0.1)', borderBottom: '1px solid rgba(255,170,0,0.3)', color: '#ffaa00', fontFamily: 'Inter, sans-serif', fontSize: '14px', textAlign: 'center', position: 'relative', zIndex: 100 }}>
+            Live tables temporarily offline for beta testing. <a href="/hub/club-arena/sim" style={{ color: '#fff', textDecoration: 'underline', fontWeight: '500' }}>Try the scenario stepper: /hub/club-arena/sim</a>
+            <button onClick={() => setIsBetaBannerVisible(false)} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#ffaa00', fontSize: '20px', cursor: 'pointer', padding: '4px' }}>×</button>
           </div>
         )}
 

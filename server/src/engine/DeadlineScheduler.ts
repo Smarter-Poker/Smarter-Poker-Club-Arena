@@ -31,6 +31,8 @@
  * `.memory/specs/phase-1.2-deadline-timer-disconnect-grace.md`.
  */
 
+import { reportError } from '../services/errorReporter.js';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface Deadline {
@@ -302,11 +304,13 @@ export class DeadlineScheduler {
       try {
         top.callback();
       } catch (err) {
-        // Scheduler stays up even on throwing callbacks. Log to stderr
-        // for visibility. In production we'll send to Sentry from the
-        // caller's side.
-        // eslint-disable-next-line no-console
-        console.error('[DeadlineScheduler] callback threw:', err);
+        // Scheduler stays up even on throwing callbacks. Route through
+        // reportError so Sentry captures it alongside the console log.
+        reportError(err, 'DeadlineScheduler.callback_threw', {
+          tableId: top.tableId,
+          eventId: top.eventId,
+          deadlineMs: top.deadlineMs,
+        });
       }
       fired++;
     }

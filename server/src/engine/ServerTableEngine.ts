@@ -1108,7 +1108,12 @@ export class ServerTableEngine {
             .eq('user_id', userId)
             .is('left_at', null)
             .then(({ error }: { error: any }) => {
-              if (error) console.error(`[ServerTableEngine] addChips db update failed:`, error);
+              if (error) {
+                reportError(error, `ServerTableEngine.${this.tableId}.addChips_db_update_failed`, {
+                  userId,
+                  amount,
+                });
+              }
             });
         }
       });
@@ -1195,7 +1200,11 @@ export class ServerTableEngine {
       const { supabase } = require('../services/supabase.js');
       const clubId = this.tableInfo?.club_id;
       if (!clubId) {
-        console.error(`[ServerTableEngine:${this.tableId}] Cannot refund add-on — no club_id`);
+        reportError(
+          new Error('Cannot refund add-on — no club_id'),
+          `ServerTableEngine.${this.tableId}.refund_missing_club_id`,
+          { userId, amount }
+        );
         return;
       }
 
@@ -1219,7 +1228,10 @@ export class ServerTableEngine {
         );
       }
     } catch (err) {
-      console.error(`[ServerTableEngine:${this.tableId}] Add-on refund failed for ${userId}:`, err);
+      reportError(err, `ServerTableEngine.${this.tableId}.addon_refund_failed`, {
+        userId,
+        amount,
+      });
     }
   }
 

@@ -11,6 +11,18 @@ REPO_DIR="/opt/club-arena"
 
 echo "🚀 Deploying Club Arena to Hetzner ($HETZNER_IP)..."
 
+# 0. Pre-flight — warn if Sentry DSN is not set in the host .env.
+# initSentry() handles this gracefully but a production engine without Sentry
+# means no error telemetry. Surface it loudly at deploy time.
+echo "🔎 Pre-flight: checking SENTRY_DSN on host..."
+if ssh "$REMOTE" "grep -q '^SENTRY_DSN=..' /opt/club-arena/server/.env 2>/dev/null"; then
+  echo "   ✅ SENTRY_DSN present"
+else
+  echo "   ⚠️  SENTRY_DSN is EMPTY or missing in /opt/club-arena/server/.env"
+  echo "      Engine errors will NOT reach Sentry. Set before the next deploy:"
+  echo "      ssh $REMOTE 'echo SENTRY_DSN=https://... >> /opt/club-arena/server/.env'"
+fi
+
 # 1. Pull latest code on server
 echo "📦 Pulling latest code..."
 ssh "$REMOTE" "cd $REPO_DIR && git pull origin main"

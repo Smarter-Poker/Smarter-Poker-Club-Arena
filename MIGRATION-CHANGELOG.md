@@ -7,6 +7,116 @@
 
 ---
 
+## Phase 6.1.10 — GDPR right-to-erasure (2026-04-19)
+
+### Context
+
+Plan §6.1.10 requires a self-serve GDPR deletion path. A user must be able to say "delete my account" and have every piece of personal data either removed or anonymised beyond re-identification — within a bounded window and with a complete audit trail. Before this phase, there was no endpoint for either self-service or admin-initiated GDPR deletion; the only option was manual SQL in the Supabase dashboard, which (a) violates RLS-lockdown hygiene and (b) produces no auditable record of who deleted whom and why.
+
+The public schema has ~200 tables that reference `auth.users(id)`. About three quarters use `ON DELETE CASCADE` — those disappear for free when the auth-user row is dropped. The remaining 25+ tables use `ON DELETE NO ACTION` or `ON DELETE SET NULL` and would block a straight `auth.admin.deleteUser()` call; examples include `chip_ledger.performed_by` (financial audit trail, must retain amount/reason but not identity), every `*_audit_log`, chat tables, tournament registrations, `unions.owner_id`, and the `arcade_duels` winner/player pointers. Those need explicit NULL-out before auth-user deletion will succeed.
+
+### Migration
+
+`phase6_1_10_gdpr_deletion` adds the request table, deletion RPC, and completion RPC:
+
+```sql
+CREATE TABLE public.gdpr_deletion_requests (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       uuid NOT NULL,
+  requested_by  uuid NOT NULL,
+  reason        text,
+  status        text NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending','anonymized','completed','failed','cancelled')),
+  anonymized_at timestamptz,
+  completed_at  timestamptz,
+  error_detail  text,
+  summary       jsonb DEFAULT '{}'::jsonb,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.gdpr_deletion_requests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY gdpr_requests_self_or_admin_select
+  ON public.gdpr_deletion_requests FOR SELECT TO authenticated
+  USING (user_id = auth.uid() OR public.fn_is_platform_admin());
+-- No write policies — service_role (BYPASSRLS) and the two RPCs write.
+
+CREATE OR REPLACE FUNCTION public.fn_delete_user_gdpr(
+  p_user_id      uuid,
+  p_requested_by uuid,
+  p_reason       text DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$ ... $$;
+-- Auth-checks (self OR platform admin), opens a request row, NULLs
+-- auth.users references on chip_ledger.performed_by, bus_event_log,
+-- admin_audit_log, club_arena_audit_logs, club_arena_messages,
+-- club_chat, table_chat, tournament_entries, tournament_registrations,
+-- arcade_duels.{player1_id,player2_id,winner_id}, social_post_comments,
+-- unions.owner_id, union_announcements, union_wallet_transactions,
+-- geeves_analytics, live_help_analytics, content_schedule,
+-- commander_buyin_transactions, commander_home_seats,
+-- commander_sessions, opponent_profiles, player_notes,
+-- poy_leaderboard, arcade_jackpot; anonymises the profiles row
+-- (display_name = 'Deleted User', username = 'deleted_<prefix>',
+-- email/avatar/bio/phone → NULL, metadata → {}); marks the request
+-- 'anonymized'; logs via fn_log_admin_action.
+-- EXCEPTION block traps errors, sets status = 'failed', records
+-- error_detail, and re-raises structured JSON.
+
+CREATE OR REPLACE FUNCTION public.fn_mark_gdpr_completed(p_request_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$ ... $$;
+-- Flips the request row to status = 'completed', stamps completed_at.
+
+GRANT EXECUTE ON FUNCTION public.fn_delete_user_gdpr(uuid, uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_mark_gdpr_completed(uuid) TO service_role;
+```
+
+### World Hub wiring
+
+Two new endpoints in `Smarter-Poker-World-Hub/pages/api/`:
+
+- `account/delete-gdpr.js` — self-serve. POST with `{ confirm: true, reason? }`, Bearer-authenticated. Rate-limited 2/day per IP. Calls `fn_delete_user_gdpr` → `supabase.auth.admin.deleteUser(user.id)` (cascades the remaining 175 CASCADE FKs) → `fn_mark_gdpr_completed`. Returns 200 on full success; 207 + `partial: true` if stage 2 failed (PII is already gone, so still "successful" from the user's standpoint — operator follow-up is required only to drop the auth row).
+- `admin/users/delete-gdpr.js` — admin variant. Requires role ∈ `admin|superadmin|god`, a non-empty `reason`, `confirm: true`, and `user_id`. Same three-stage flow. Writes a second audit entry on `admin_audit_log` (`gdpr.user_deleted` / `gdpr.user_anonymized`) in addition to the one the RPC itself creates.
+
+Both endpoints treat stage 1 as the atomic success point: once the public-schema anonymisation and `gdpr_deletion_requests` row are committed, the user's PII is off the site. Stage 2 (`auth.admin.deleteUser`) is best-effort on that path because the remaining data is just the auth-user row itself.
+
+### Why not a single `DELETE FROM auth.users`?
+
+We never touch `auth.*` directly. Supabase's GoTrue owns that table and expects deletes to flow through `auth.admin.deleteUser()` so that related records in `auth.identities`, `auth.sessions`, `auth.refresh_tokens`, `auth.mfa_factors`, etc. get cleaned up atomically. Hence the two-stage shape: anonymise public first, then let GoTrue cascade the rest.
+
+### Verification
+
+Smoke-tested on a throwaway auth user:
+
+```sql
+INSERT INTO auth.users (id, email) VALUES (gen_random_uuid(), 'gdpr-smoke@test.local') RETURNING id;
+-- returns <uuid>
+SELECT public.fn_delete_user_gdpr('<uuid>'::uuid, '<uuid>'::uuid, 'smoke test');
+-- returns {"status":"anonymized","request_id":"...","nulled":{...},"log_id":"..."}
+SELECT id, status, anonymized_at FROM public.gdpr_deletion_requests WHERE user_id = '<uuid>';
+-- status = 'anonymized', anonymized_at = now()
+SELECT public.fn_mark_gdpr_completed('<request-id>');
+-- true; status → 'completed', completed_at stamped.
+```
+
+The RPC correctly refuses when called by a non-admin for a different user (`EXCEPTION 'not_authorized'`), and the EXCEPTION block flips status → 'failed' if any NULL-out statement trips a constraint (tested by temporarily adding a `NOT NULL` guard to a nulled column).
+
+### Files touched
+
+```
+# DB
+phase6_1_10_gdpr_deletion                (migration)
+
+# World Hub
+pages/api/account/delete-gdpr.js         (new)
+pages/api/admin/users/delete-gdpr.js     (new)
+```
+
+---
+
 ## Phase 6.1.8 — Admin audit log (2026-04-19)
 
 ### Context

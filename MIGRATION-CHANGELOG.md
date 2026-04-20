@@ -7,6 +7,50 @@
 
 ---
 
+## Phase 6.1.23 — MFA challenge UX + post-login redirect (2026-04-19)
+
+### Context
+
+Phase 6.1.22 put an edge-middleware MFA gate in front of every admin write
+endpoint and closed the backup-code race. What was missing was the
+**user-facing challenge page** — without it, MFA-required users who signed
+in were bouncing against 403 responses with no path forward. This phase
+closes the UX loop.
+
+### Changes
+
+- **NEW** `pages/auth/mfa.js` — full challenge page at `/auth/mfa`
+  - Gates itself: if no Supabase session, bounces to `/auth/login?redirect=/auth/mfa`
+  - Accepts either 6-digit TOTP (default) or a 10-char backup code (toggle)
+  - POSTs to `/api/auth/mfa/challenge` with `Bearer ${access_token}` + `{ code, isBackupCode }`
+  - Handles `?next=<path>` for redirect continuity (open-redirect guarded — only internal paths allowed)
+  - Neutral error copy (non-enumerating), 429 rate-limit handling
+  - "Sign out and start over" escape hatch + support contact for recovery
+
+- **EDIT** `pages/auth/login.js` — post-login MFA probe
+  - After `signInWithPassword` succeeds, probes `user_mfa_factors.enabled` + `profiles.mfa_required`
+  - If either is true, routes to `/auth/mfa?next=<intended-destination>` instead of `/hub`
+  - Fail-open on probe error (edge middleware still gates admin routes; probe failure can't leak anything sensitive)
+
+- **EDIT** `src/lib/apiFetch.js` — `fetchWithMfa(url, token, options)` helper
+  - Drop-in replacement for `fetchWithAuth` that auto-redirects to `/auth/mfa?next=<cur>` on `403 { requiresMfa: true }`
+  - Throws `err.requiresMfa = true` so callers can bail out cleanly
+  - Uses `credentials: 'include'` so the mfa_session cookie round-trips on subsequent requests
+
+### Risk assessment
+
+- **Low.** Pure client-side additions (+ fail-open probe in login). Server-side gates are unchanged — this just gives MFA-required users a way to reach them.
+- **No DB migrations.** Reads existing `user_mfa_factors.enabled` and `profiles.mfa_required` columns added in 6.1.21.
+- Probe uses Supabase RLS — anon key can only read the caller's own row via the session JWT attached to the client.
+
+### Follow-ups
+
+- **6.1.24** — Sweep legacy `fetch('/api/admin/...')` callsites and migrate them to `fetchWithMfa()` so existing admin UIs don't have to reload the page on 403.
+- Build `/auth/settings/mfa` self-service page (enroll / view backup codes / regenerate / disable) — currently users can only enroll via direct API calls.
+- Add a stand-alone `/auth/mfa/recovery` flow for users who lost both device + backup codes (identity verification required).
+
+---
+
 ## Phase 6.1.22 — Edge-middleware MFA gate + atomic backup-code consumption (2026-04-19)
 
 ### Context

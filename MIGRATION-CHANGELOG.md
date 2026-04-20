@@ -7,6 +7,145 @@
 
 ---
 
+## Phase 6.1.8 — Admin audit log (2026-04-19)
+
+### Context
+
+Plan §6.1.8 calls for a unified, append-only audit trail of every privileged admin action. An `admin_audit_log` table already existed with a basic `(admin_user_id, action, target_type, target_id, details, ip_address, created_at)` schema and a sister helper `logAdminAction(supabase, opts)` in `src/lib/antiAbuse.js`. The existing setup had two problems: (1) callers were inserting directly into the table (which broke the moment Phase 6.1.1 locked down RLS) and (2) the schema did not capture before/after diffs, user agent, request id, or actor role — fields the launch-readiness plan explicitly requires.
+
+The promo-code admin endpoint (`pages/api/promo/admin-promo-codes.js`) also referenced an undefined `supabaseAdmin` variable when calling `logAdminAction`, so audit writes there had been silently throwing for some time.
+
+### Changes
+
+Migration `phase6_1_8_admin_audit_log` extends the table and adds the canonical RPC:
+
+```sql
+ALTER TABLE public.admin_audit_log
+  ADD COLUMN IF NOT EXISTS before_state jsonb,
+  ADD COLUMN IF NOT EXISTS after_state  jsonb,
+  ADD COLUMN IF NOT EXISTS user_agent   text,
+  ADD COLUMN IF NOT EXISTS actor_role   text,
+  ADD COLUMN IF NOT EXISTS request_id   text;
+
+CREATE INDEX IF NOT EXISTS admin_audit_log_admin_user_idx
+  ON public.admin_audit_log (admin_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS admin_audit_log_action_idx
+  ON public.admin_audit_log (action, created_at DESC);
+CREATE INDEX IF NOT EXISTS admin_audit_log_target_idx
+  ON public.admin_audit_log (target_type, target_id, created_at DESC);
+
+ALTER TABLE public.admin_audit_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY admin_audit_log_admin_select
+  ON public.admin_audit_log FOR SELECT TO authenticated
+  USING (public.fn_is_platform_admin());
+-- No INSERT/UPDATE/DELETE policy — append-only; service_role (BYPASSRLS) writes.
+
+CREATE OR REPLACE FUNCTION public.fn_log_admin_action(
+  p_admin_user_id uuid,
+  p_action text,
+  p_target_type text DEFAULT NULL,
+  p_target_id text DEFAULT NULL,
+  p_details jsonb DEFAULT '{}'::jsonb,
+  p_before_state jsonb DEFAULT NULL,
+  p_after_state jsonb DEFAULT NULL,
+  p_ip_address text DEFAULT NULL,
+  p_user_agent text DEFAULT NULL,
+  p_request_id text DEFAULT NULL
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$ ... auto-captures actor_role from profiles ... $$;
+GRANT EXECUTE ON FUNCTION public.fn_log_admin_action(...) TO service_role;
+```
+
+### World Hub wiring
+
+- New `lib/adminAudit.js` — drop-in helper that imports `getSupabaseAdmin`, derives IP/UA/request-id from `req`, and calls `fn_log_admin_action`. Best-effort: never throws, never blocks the action.
+- `src/lib/antiAbuse.js` `logAdminAction(supabase, opts)` — refactored to route through `fn_log_admin_action` with a direct-insert fallback (so legacy callers don't have to migrate at the same time). Now also reads `req` if passed and derives IP/UA/request-id from headers.
+- `pages/api/promo/admin-promo-codes.js` — fixed three calls that were referencing the undefined `supabaseAdmin` variable; now pass `getSupabase()` and `req`. Action keys re-namespaced to dotted form (`promo_code.created`, `promo_code.deactivated`, `promo_code.updated`) for consistent grouping. before/after snapshots now captured.
+- `pages/api/admin/execute-sql.js` — added a second audit write (alongside the legacy `execution_audit_logs` row) into `admin_audit_log` for browser-user admin sessions, with a 500-char SQL preview, command summary, row count, execution_ms, and the request id. Service-role calls still log only to `execution_audit_logs` since they don't have a real `auth.uid()`.
+
+### Verification
+
+Smoke test on production:
+
+```sql
+DO $$ DECLARE v_id uuid; BEGIN
+  v_id := public.fn_log_admin_action(
+    p_admin_user_id := (SELECT id FROM profiles WHERE role IN ('admin','superadmin','god') LIMIT 1),
+    p_action := 'phase6_1_8.smoke_test', ...
+  );
+END $$;
+SELECT action, actor_role, before_state, after_state, ip_address, user_agent, request_id
+FROM admin_audit_log WHERE action='phase6_1_8.smoke_test';
+-- → row returned with actor_role='admin' auto-derived from profiles
+```
+
+Cleanup row deleted post-verification.
+
+### What still needs to happen
+
+- Sweep the remaining ~30 admin endpoints (`pages/api/admin/*`, `pages/api/horses/admin-*`, `pages/api/club-arena/bbj.js` admin paths, etc.) and add `logAdminAction` calls. Tracked outside this phase since each endpoint is small and incremental — the unified pipeline is now in place.
+
+---
+
+## Phase 6.1.1 — Full RLS audit + lockdown (2026-04-19)
+
+### Context
+
+Plan §6.1.1 calls for a comprehensive Row-Level Security audit before launch readiness. Raw survey of `pg_policies` on the 589-table `public` schema revealed 260+ policies with `USING (true)` granting read access to `anon`/`public`/`authenticated` — the vast majority intentional (static game metadata, public leaderboards, shared social content), but a subset exposing sensitive data or — worse — allowing anonymous UPDATE/DELETE against financial and auth tables.
+
+### Findings (pre-remediation)
+
+- **589 tables in `public`**, **587 with RLS enabled**, 2 without (`_audit_phase40_results` — should enable; `spatial_ref_sys` — PostGIS system table, leave alone).
+- **Critical SELECT leaks** (anon/public readable):
+  - `sms_otp_codes` — auth-bypass vector
+  - `direct_messages`, `friend_requests`, `pending_calls` — private communications
+  - `purchase_history`, `user_devices`, `notification_preferences`, `user_bookmarks`, `user_notifications` — user PII
+  - `rake_records`, `rake_history`, `rakeback_distributions`, `union_rakeback_log`, `settlement_invoices`, `settlement_locks` — club financial data
+  - `bbj_payouts`, `bbj_payout_recipients` — payout records
+  - `commander_leads`, `commander_onboarding_leads` — sales-pipeline PII
+  - `commander_player_reputation*` — per-player reputation scoring
+  - `disputes` — private dispute records
+  - `qr_code_scans`, `signup_abuse_log`, `abuse_logs`, `*_system_log`, `system_logs`, `cron_execution_log`, `commander_rate_limits`, internal logs
+  - `hand_players` — per-player hole-card-equivalent data
+  - `sandbox_saved_hands`, `sandbox_bookmarks` — user-owned content exposed globally
+  - `club_members.anon_select_club_members_rake` — anonymous read of per-member rake share
+- **Critical WRITE leaks** (anon/public UPDATE/DELETE):
+  - `sms_otp_codes_update`, `sms_otp_codes_delete` — anyone could mutate OTP tokens
+  - `rake_history_update/delete`, `rakeback_distributions_update/delete`, `settlement_invoices_update/delete`, `settlement_locks_update/delete`, `union_rakeback_log_update/delete` — anyone could edit or delete financial records
+  - `club_members.anon_update_club_members_rake` — anyone could rewrite club members' rake split
+  - `commander_player_reputation_update/delete`, `commander_onboarding_leads_update/delete`, `commander_rate_limits_update/delete`, `commander_system_log_update/delete`, `notification_prompt_log_update/delete`, `signup_abuse_log_update/delete`, `sandbox_*_update/delete`, `user_devices.ud_upd` — wide-open mutation
+
+### Remediation
+
+Applied four sequential migrations:
+
+1. `phase6_1_1_rls_helpers_and_audit_table` — added three `SECURITY DEFINER` helpers (`fn_is_platform_admin()`, `fn_is_club_member_uid(uuid)`, `fn_is_club_admin_uid(uuid)`) all with `SET search_path = public, pg_temp`; enabled RLS on `_audit_phase40_results` with an admin-only SELECT policy.
+2. `phase6_1_1_lockdown_pii_and_auth_tables` — dropped the wide-open SELECT policies on the 15 PII/auth/DM tables and replaced them with owner-scoped or admin-only policies (e.g. `direct_messages.sender_id = auth.uid() OR recipient_id = auth.uid()`).
+3. `phase6_1_1_lockdown_financial_tables` — dropped the wide-open SELECT policies on rake/rakeback/settlement/BBJ/dispute/reputation tables. Replaced with club-member or club-admin scoped reads for the club-scoped tables; union rakeback logs scoped to member-club admins; hand_players restricted to self-only.
+4. `phase6_1_1_lockdown_internal_logs` — dropped wide-open SELECT on 15 internal log tables; replaced with admin-only reads (service_role bypasses RLS so crons are unaffected).
+5. `phase6_1_1_lockdown_write_policies` — dropped every anon/public UPDATE/DELETE policy discovered on sensitive tables. Replaced user-owned sandbox + user_devices write paths with self-only policies (`user_id = auth.uid()`). All financial/auth write paths are now service-role-only (writes happen through existing SECURITY DEFINER RPCs).
+
+### Verification
+
+Post-remediation query on the 43 targeted tables:
+```sql
+SELECT count(*) FROM pg_policies
+WHERE schemaname='public' AND qual='true'
+  AND (roles @> ARRAY['anon']::name[] OR roles @> ARRAY['public']::name[])
+  AND tablename = ANY(ARRAY[...43 tables...]);
+-- → 0 rows
+```
+
+All surviving `USING (true)` policies on the remaining tables in `public` reflect intentionally public surfaces: game/arcade metadata (`ai_horses`, `arcade_games`, `gto_scenarios`, `training_scenarios`), public profile/social content (`social_posts`, `social_comments`, `user_badges`, `user_media`), public venue data (`venues`, `poker_venues`, `venue_reviews`), and leaderboard/tournament viewing surfaces. These are documented as intentional and pass launch-readiness review.
+
+### Unchanged by design
+
+- `spatial_ref_sys` — PostGIS system table, must remain without RLS.
+- Public-surface read policies on static game metadata, public-facing content, and leaderboard tables — verified as intended public API surface.
+
+---
+
 ## Phase 7.1.7 — Settlement engine (2026-04-19)
 
 ### Context

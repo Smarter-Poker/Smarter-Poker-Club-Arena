@@ -7,6 +7,38 @@
 
 ---
 
+## Phase 6.1.24 — MFA self-service settings page (2026-04-19)
+
+### Context
+
+Phases 6.1.21-23 delivered the MFA *enforcement* layer (DB column + trigger,
+backup-code RPC, edge gate, challenge endpoint, challenge UX) but left the
+*onboarding* path as raw API calls. Without a settings page, a user could
+not enroll without curl — and admin/VIP accounts marked `mfa_required=true`
+were effectively locked out of admin writes until someone enrolled them
+through the back door.
+
+### Changes
+
+- **NEW** `pages/auth/settings/mfa.js` — three-state self-service page at `/auth/settings/mfa`
+  - **Off / Pending**: "Enable" button → `POST /api/auth/mfa/setup` returns QR + secret → scan → enter 6-digit TOTP → `POST /api/auth/mfa/verify` → backup codes rendered once (copy-to-clipboard + download .txt buttons) → user acknowledges → status flips to On
+  - **On**: shows enabled state, expandable disable panel requires current TOTP or backup code → `POST /api/auth/mfa/disable`
+  - One-time backup-code display uses blob download + `navigator.clipboard.writeText` with a visible "saved" acknowledgement gate so users can't accidentally navigate away
+  - Not behind the MFA edge gate itself (users need to reach it before they've MFA'd)
+
+### Risk assessment
+
+- **Low.** Pure client-side addition. All three existing API endpoints (setup / verify / disable) are unchanged — this page is a thin wrapper over them.
+- **Known follow-up risk**: `pages/api/auth/mfa/disable.js` still has the old non-atomic backup-code consumption pattern (select → splice → update). Same TOCTOU class as 6.1.22 but lower severity — worst case is one backup code consumed twice during a disable attempt, which just means one fewer code remains. Migrating disable.js onto `fn_consume_mfa_backup_code` is queued for Phase 6.1.25.
+
+### Follow-ups
+
+- **6.1.25** — Migrate `disable.js` backup-code branch onto `fn_consume_mfa_backup_code` RPC so both consumption paths share the same locked code path.
+- **6.1.26** — Add a "Regenerate backup codes" button to the settings page (requires current TOTP) — currently users are stuck with their initial ten until they disable-and-re-enroll.
+- Eventually migrate to Supabase native MFA and delete most of this code.
+
+---
+
 ## Phase 6.1.23 — MFA challenge UX + post-login redirect (2026-04-19)
 
 ### Context

@@ -7,6 +7,47 @@
 
 ---
 
+## Phase 4.1.6a — Wallet-balance / Club-chip-pool write-protection trigger (2026-04-19)
+
+### Context
+
+Phase 4.1.2 nightly reconciliation surfaced \$804.5M aggregate positive drift across 586 wallets + 2 club treasuries — classic legacy-seed residue: someone ran `UPDATE wallets SET balance = ...` directly against the DB, bypassing `chip_ledger`. The drift was remediated (see Phase 4.1.2 drift-finding doc), but **without a DB-level block, the same class of residue can recur at any time** (Supabase dashboard edit, ad-hoc migration, `execute_sql` from an MCP, etc.).
+
+### What we built
+
+Migration `phase4_wallet_balance_guard` installs:
+
+1. **`public.guard_wallet_balance_write()`** — trigger function that rejects any direct `INSERT`/`UPDATE` on `wallets.balance` or `clubs.chip_pool` unless one of the following is true:
+   - PL/pgSQL call stack (`GET DIAGNOSTICS v_stack = PG_CONTEXT`) contains a whitelisted SECURITY DEFINER function (atomic_\*, fn_idempotent_\*, distribute_chips, mint_club_chips, etc.).
+   - Session GUC `app.bypass_wallet_guard = 'on'` (admin escape hatch for legitimate migrations).
+
+2. **Four triggers** firing only when the protected column actually changes:
+   - `trg_guard_wallets_balance_ins` / `_upd` on `public.wallets`
+   - `trg_guard_clubs_chip_pool_ins` / `_upd` on `public.clubs`
+
+### Why PG_CONTEXT instead of `ALTER FUNCTION … SET`
+
+Supabase's `supautils` extension blocks `ALTER FUNCTION … SET` for the `app.*` GUC prefix. PG_CONTEXT stack inspection requires **no per-function edits** and applies automatically to every existing and future whitelisted RPC — a single source of truth in one trigger function.
+
+### Whitelist (34 functions)
+
+Every SECURITY DEFINER function that legitimately mutates `wallets.balance` or `clubs.chip_pool`, grouped by role: atomic wrappers, idempotent wrappers, table lifecycle, tournament lifecycle, rakeback/commission, cashout flow, club chip pool, misc wallet mutators, user signup trigger.
+
+### Verification
+
+End-to-end tests run against production:
+- Direct `UPDATE wallets SET balance = balance + 1` → **blocked** with `42501 insufficient_privilege`.
+- Direct `UPDATE clubs SET chip_pool = chip_pool + 1` → **blocked**.
+- `atomic_credit_wallet_and_log` + `atomic_deduct_wallet_and_log` (net zero) → **allowed** via PG_CONTEXT whitelist.
+- `SELECT set_config('app.bypass_wallet_guard', 'on', true); UPDATE wallets …;` → **allowed** (escape hatch).
+- Post-install reconcile: `critical_count=0, worst_drift=\$1.00` (sub-dollar rounding only).
+
+### Follow-on
+
+This closes the follow-on flagged in Phase 4.1.2's drift-finding doc. The guard is now a permanent invariant: every chip movement must flow through a ledger-writing RPC.
+
+---
+
 ## Round 50 — 14 Animation Bugs Fixed for PokerBros Parity (2026-04-16)
 
 ### Context:

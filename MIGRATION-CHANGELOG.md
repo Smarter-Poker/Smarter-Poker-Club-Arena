@@ -7,6 +7,87 @@
 
 ---
 
+## Phase 6.1.20 — Password strength + HIBP breach-list check (2026-04-19)
+
+### Context
+
+Signup previously accepted passwords as short as 6 characters with no
+complexity or reuse check. Per OWASP + NIST SP 800-63B §5.1.1.2, the
+correct policy is:
+
+- Minimum length 10+ (NIST floor is 8; we pick 10 for a real-money-adjacent
+  product).
+- No forced character-class rules (the "1 upper, 1 number, 1 symbol"
+  ruleset biases users to `Password1!`-style strings that look complex
+  but are trivially guessable — NIST explicitly deprecates it).
+- Check the password against a breach corpus. HIBP's pwned-passwords API
+  exposes the full 1B+ password corpus via k-anonymity: SHA-1 the
+  password, send the first 5 hex chars, check if the 35-char suffix
+  appears in the response. The full password never leaves the browser.
+
+### Changes
+
+`Smarter-Poker-World-Hub/src/lib/passwordStrength.js` (new):
+
+- Exports `validatePassword(pw)` which runs:
+  1. Length check (10 ≤ len ≤ 72 — bcrypt's 72-byte truncation point).
+  2. Dictionary check against a 30-entry list of the most abused bases
+     (`password`, `qwerty`, `letmein`, `smarter`, `poker`, etc.) plus a
+     stripped-suffix variant that catches `password1`, `poker123`, etc.
+  3. Shannon-ish entropy estimate using character-class pool expansion,
+     with penalties for low unique-character ratio (catches `aaaaaaaa!`-
+     style padding that passes naive poolsize math).
+  4. HIBP k-anonymity lookup against `api.pwnedpasswords.com/range/{5}`
+     with the `Add-Padding: true` header so response size doesn't leak
+     whether our suffix hit. 3-second timeout; fails OPEN on
+     network/DNS error (we don't want HIBP downtime to block signup).
+- Also exports `validatePasswordLocal(pw)` (local-only, no network) and
+  `entropyToScore(bits)` for UI strength meters.
+- Works in both browser (Web Crypto `subtle.digest`) and Node
+  (`crypto.createHash('sha1')`).
+
+`Smarter-Poker-World-Hub/pages/auth/signup.js`:
+
+- Import the new validator.
+- Replace the 6-char length check (`formData.password.length < 6`) with
+  `await validatePassword(formData.password)` — runs entropy + HIBP in
+  ~300ms on a normal connection, displays the reason string to the user
+  on failure.
+- Bump the HTML `minLength` attribute from 6 → 10 on the password input
+  (and confirm-password input via the shared constant import) so the
+  browser's native validation UI matches our policy.
+
+### Risk assessment
+
+- **HIBP failure-open:** if HIBP is unreachable we let the signup
+  proceed with entropy + length checks only. The alternative — block
+  all signups when a third party is unreachable — is worse.
+- **Client-only enforcement (for now):** Supabase's JS SDK allows
+  `signUp` to be called directly from the browser, so the validator
+  lives client-side. A determined attacker can bypass it. Mitigations:
+  (a) we also set Supabase dashboard password policy to minimum 10
+  chars server-side (manual config, documented in
+  `docs/supabase-auth-policy.md` — see follow-up below); (b) Phase
+  7.x already gates purchases + real-money features behind additional
+  verification; (c) any signup that bypasses the check still has to
+  pass all other rate limits + KYC.
+- **bcrypt truncation warning:** passwords > 72 bytes are refused up
+  front with a clear error instead of silently truncated by Supabase's
+  backend bcrypt.
+
+### Follow-ups
+
+- **Dashboard-level password policy:** set Supabase Auth → Settings →
+  "Minimum password length" to 10 and enable "Password strength
+  requirement" to `strong`. This is a dashboard toggle that can't be
+  set from SQL; flagged for manual sign-off.
+- Phase 6.1.21 — **MFA / 2FA enrolment** for admin + VIP accounts.
+  Supabase supports TOTP via `supabase.auth.mfa.enroll()`; already have
+  `otplib` + `speakeasy` as deps from the SMS OTP work, so
+  infrastructure exists.
+
+---
+
 ## Phase 6.1.19 — Account enumeration defense on auth endpoints (2026-04-19)
 
 ### Context

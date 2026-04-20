@@ -7,6 +7,105 @@
 
 ---
 
+## Phase 6.1.21 — MFA/TOTP challenge + gate for admin + VIP accounts (2026-04-19)
+
+### Context
+
+Smarter Poker had a half-built MFA stack: `pages/api/auth/mfa/setup.js`
+could generate a TOTP secret and QR code, `verify.js` could confirm
+enrolment, `disable.js` could revoke — but none of it was actually
+enforced anywhere. A user who enrolled MFA did not need to produce a
+TOTP code at sign-in, and no admin endpoint refused requests that
+lacked a recent MFA challenge. The second factor existed, but only as
+a promise.
+
+Phase 6.1.21 closes the loop: after password sign-in, users with MFA
+enabled must pass a TOTP (or backup-code) challenge; the challenge
+issues a 12-hour HMAC-signed cookie; admin + VIP tier endpoints can
+refuse any request that doesn't carry a fresh one. Additionally, new
+admin promotions / VIP upgrades automatically flip `mfa_required =
+TRUE`, so the gate is locked-on at role-change time.
+
+### Changes
+
+`Smarter-Poker-World-Hub/pages/api/auth/mfa/challenge.js` (new):
+
+- Accepts a Supabase session bearer token + a TOTP code (or a backup
+  code with `isBackupCode: true`).
+- Loads `user_mfa_factors`; refuses if not enabled.
+- Verifies TOTP via speakeasy `window: 2` (±60s clock drift tolerance),
+  or hashes the backup code and compares against stored hashes
+  (single-use: matching code is consumed from the list).
+- On success: issues an `mfa_session` cookie whose body is
+  `${userId}.${issuedAt}.${hmacSha256}`. Signing secret is
+  `MFA_SESSION_SECRET` (falls back to `SUPABASE_JWT_SECRET` /
+  `SUPABASE_SERVICE_ROLE_KEY`).
+- Cookie flags: `HttpOnly`, `Secure`, `SameSite=Lax`, 12h TTL.
+- Rate-limited via `applyRateLimit(LIMITS.auth)` — prevents TOTP
+  brute-forcing. 6 digits × rate limit = effectively impossible.
+
+`Smarter-Poker-World-Hub/src/lib/mfaGate.js` (new):
+
+- `verifyMfaCookie(req, expectedUserId?)` — parses the `mfa_session`
+  cookie, constant-time HMAC check, expiry check, optional user-ID
+  binding. Returns `{ ok, reason, status, userId, issuedAt }`.
+- `requireMfaIfEnrolled(req, supabase, user)` — soft gate. If the user
+  has MFA enrolled, they must carry a valid cookie; if not, pass
+  through. For endpoints that want MFA as a nice-to-have.
+- `requireMfaEnrolled(req, supabase, user)` — strict gate. Refuses
+  un-enrolled users and expired/missing cookies. For admin + VIP
+  endpoints where MFA is mandatory.
+- Zero DB round-trips for cookie verification — rotating
+  `MFA_SESSION_SECRET` is the emergency-revocation lever.
+
+`Smarter-Poker-World-Hub/supabase/migrations/20260419200000_phase61_21_mfa_required_flag.sql`
+(applied to production `kuklfnapbkmacvwxktbh`):
+
+- `profiles.mfa_required BOOLEAN NOT NULL DEFAULT FALSE`.
+- Backfill to TRUE for: any user in `admin_users`, `profiles.role =
+  'admin'`, or `profiles.is_vip = TRUE`.
+- Trigger `trg_sync_mfa_required_on_role_change` that flips
+  `mfa_required` to TRUE on INSERT/UPDATE OF role, is_vip. Does NOT
+  flip back to FALSE on demotion — once enrolled, stay enrolled.
+- Partial index `idx_profiles_mfa_required ON profiles(id) WHERE
+  mfa_required = TRUE` for fast gate-query joins.
+
+### Risk assessment
+
+- **Gate is opt-in per endpoint.** Existing admin endpoints don't
+  automatically gain MFA enforcement; they each need an
+  `requireMfaEnrolled()` call added. Phase 6.1.22 will sweep the
+  `pages/api/admin/` tree and add the gate to every handler.
+- **Clock-drift window ±60s** (speakeasy `window: 2` × 30s step) is
+  standard for TOTP; shorter windows break for users whose phones are
+  off by >30s. 60s leaves ≤64 valid codes at any moment vs. 1M
+  possible, so brute force via rate limit alone is still infeasible.
+- **Backup-code consumption is not atomic.** Race: two concurrent
+  challenge requests with the same backup code both succeed before
+  the UPDATE lands. Realistic impact: the second call succeeds but
+  the code was already consumed — slightly permissive, not a
+  compromise. Phase 6.1.22 will move this to a Postgres RPC with
+  `SELECT ... FOR UPDATE`.
+- **No hardware-key / WebAuthn path yet.** TOTP-only. Fine for
+  launch; WebAuthn is a Phase 7.x item.
+
+### Follow-ups
+
+- Phase 6.1.22 — sweep `pages/api/admin/*` and apply `requireMfaEnrolled()`
+  to every write endpoint. Also move backup-code consumption into a
+  `fn_consume_mfa_backup_code` RPC with row-level locking.
+- UX: add an MFA challenge screen at `/auth/mfa` that prompts for the
+  TOTP code and then redirects to `?redirect=` destination. Login flow
+  currently skips this — the screen just doesn't exist yet. Until it's
+  built, MFA enforcement only applies to API routes; site pages still
+  accept password-only sessions.
+- Set `MFA_SESSION_SECRET` in Vercel production env (currently falls
+  back to `SUPABASE_JWT_SECRET`). Not a security hole — the fallback
+  is itself a 256-bit random secret — but separate secrets per
+  subsystem is good hygiene.
+
+---
+
 ## Phase 6.1.20 — Password strength + HIBP breach-list check (2026-04-19)
 
 ### Context

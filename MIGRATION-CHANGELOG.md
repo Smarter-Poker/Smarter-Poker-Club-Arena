@@ -7,6 +7,52 @@
 
 ---
 
+## Phase 6.1.26 — Step-up reauth gate for high-risk actions (2026-04-19)
+
+### Context
+
+The 12h `mfa_session` cookie TTL is appropriate for everyday admin CRUD,
+but not for the highest-risk actions where someone could do irreversible
+damage in a single request:
+
+- Change account email or phone
+- Withdraw funds / initiate payout
+- Delete account (GDPR erase)
+- Disable MFA itself
+- Export all user data
+- Change password
+
+Industry standard for these is a "step-up" reauth requirement — the MFA
+session must have been issued within the last 5 minutes, not just
+any-time-in-the-last-12h. Google, AWS, and GitHub all cluster around
+3-15 min for these windows.
+
+### Changes
+
+- **EDIT** `src/lib/mfaGate.js`
+  - Export `STEP_UP_MAX_AGE_SEC = 5 * 60` (tunable)
+  - New `requireRecentMfa(req, supabase, user, maxAgeSec?)` helper — wraps `requireMfaEnrolled` and additionally checks `Date.now() - issuedAt <= maxAgeSec * 1000`
+  - Returns `{ ok: false, requiresStepUp: true, requiresMfa: true, maxAgeSec, currentAgeSec }` so the client can route correctly
+
+- **EDIT** `src/lib/apiFetch.js` — `fetchWithMfa` now reads `json.requiresStepUp` and routes to `/auth/mfa?next=<cur>&stepUp=1` on step-up failures (vs. bare `/auth/mfa?next=...` on ordinary MFA fails). Exposes `err.requiresStepUp` to callers.
+
+- **EDIT** `pages/auth/mfa.js` — detects `?stepUp=1` and changes the header / subtitle to "Confirm it's you / This action requires a fresh second-factor check" instead of "Two-Factor Authentication / Enter the 6-digit code". Backend flow is identical — it's purely copy that makes it clear to users why they're being re-challenged.
+
+- **EDIT** `pages/api/auth/mfa/disable.js` — documentation comment noting that disable.js may want step-up in a future iteration; implementing now would break the recovery path for users whose cookies have expired (they'd need to re-challenge to disable an MFA they've already lost access to).
+
+### Risk assessment
+
+- **Low.** All additions. Zero routes currently call `requireRecentMfa` — it's wiring for future use. Existing `requireMfaEnrolled` and `requireMfaIfEnrolled` callers are unchanged.
+- Step-up is opt-in per route, not enforced globally.
+
+### Follow-ups
+
+- **6.1.27** — Identify the 5-10 routes that should be step-up gated (starting with KYC-write, withdrawal-request, account-delete, email-change) and add `requireRecentMfa` calls.
+- Add a `requireRecentMfa` call to the edge middleware for a curated list of route patterns (similar to how admin routes are handled today), so the enforcement decision is centralized.
+- Revisit `MFA_TOKEN_TTL_MS` — 12h may be too long for some orgs. Add a `MFA_TOKEN_TTL_MS` env override so we can tune per-environment.
+
+---
+
 ## Phase 6.1.25 — Atomic backup-code consumption in disable.js (2026-04-19)
 
 ### Context

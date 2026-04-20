@@ -7,6 +7,99 @@
 
 ---
 
+## Phase 6.1.19 — Account enumeration defense on auth endpoints (2026-04-19)
+
+### Context
+
+Account enumeration = "tell me which email/phone is registered here" via
+differential responses. It's a prerequisite for credential stuffing,
+targeted phishing, and most SIM-swap / account-takeover playbooks. Three
+endpoints leaked enumeration signals in Smarter Poker:
+
+1. **`pages/api/sms/send-otp.js` (the biggest leak)** — the handler queried
+   `profiles` for the submitted phone and returned HTTP 409 `"This phone
+   number is already registered to a verified account."` before generating
+   an OTP. Anyone — unauthenticated — could probe any phone number and
+   distinguish "registered" from "not registered" in a single request.
+2. **`pages/auth/signup.js`** — on signUp failure the catch block rendered
+   `err.message` directly. Supabase responds with `"User already
+   registered"` for duplicate emails, which the UI helpfully displayed in
+   a red banner to any attacker who typed a guess into the email field.
+3. **`pages/auth/login.js`** — the error copy said `"Invalid Password. If
+   You Forgot It, Use The Magic Link Below..."`. Supabase actually returns
+   the same `invalid login credentials` error for both "no such email"
+   and "wrong password", so the backend itself is enumeration-safe — but
+   the frontend copy implied the email was valid whenever the error
+   appeared, effectively leaking enumeration via UI wording.
+
+### Changes
+
+`Smarter-Poker-World-Hub/pages/api/sms/send-otp.js`:
+
+- Removed the upstream phone-uniqueness check. The duplicate-phone guard
+  still runs at `verify-otp` step (line ~165) inside an authenticated
+  context after OTP verification — which is the correct place for
+  business-logic deduping anyway. The rate limit (5 codes / hour / phone)
+  caps the quota drain from pointless enumeration probes.
+
+`Smarter-Poker-World-Hub/pages/auth/signup.js`:
+
+- Catch block now detects the "already registered" family of Supabase
+  error messages (`user already`, `email already`, `duplicate key`,
+  `identity already exists`) and normalises the UX to show the same
+  `email_pending` success state that a fresh signup would. Legitimate
+  duplicate attempts are indistinguishable from fresh signups; the real
+  account owner can still use magic-link / password-reset from
+  `/auth/login`.
+- All other errors collapse to a single generic "Failed to create
+  account. Please check your details and try again." — no raw
+  `err.message` rendering.
+
+`Smarter-Poker-World-Hub/pages/auth/login.js`:
+
+- Error copy rewritten so the banner never implies the email was
+  recognised. `invalid login credentials` → `"Email Or Password Doesn't
+  Match..."`; `email not confirmed` → generic confirmation-link nudge;
+  `rate limit` / `too many` → rate-limit message; everything else
+  → generic "Unable To Sign In Right Now."
+
+### Endpoints re-audited as OK
+
+- Magic link (`supabase.auth.signInWithOtp`) — Supabase returns the same
+  success response whether or not the email exists (sends email if it
+  does, no-op if not). No change needed.
+- Password reset (`supabase.auth.resetPasswordForEmail`) — same
+  enumeration-safe default. Code path exists in `_legacy_backups/` only;
+  not wired up in production routes.
+- Phone verify at `pages/api/sms/verify-otp.js` line 166 (rejects OTP
+  verification if phone is already linked to another account) — kept as
+  legitimate UX. Attacker would need physical possession of the phone to
+  complete OTP verification before reaching this branch, so it's not an
+  enumeration vector.
+
+### Risk assessment
+
+- **SMS quota drain:** removing the early-exit means unverified probes
+  now consume a Twilio SMS per request. Rate limit (5/hour/phone) plus
+  applyRateLimit(LIMITS.write) plus Twilio's own per-phone spend cap
+  means realistic blast radius is < $1/day even under sustained attack.
+- **Magic-link enumeration fallback:** Supabase's default
+  `signInWithOtp` is enumeration-safe; no-op if no account exists. We
+  do not leak via that path.
+- **Log monitoring:** attempts with duplicate emails still log
+  `Signup error` with the Supabase error in the server-side console,
+  so SOC/monitoring tooling can flag spray attempts without leaking to
+  the client.
+
+### Follow-ups
+
+- Phase 6.1.20 — **Password strength enforcement + breach-list check**:
+  the signup form currently allows passwords as short as 6 characters
+  and does not check against HIBP's pwned-passwords API. Low-effort,
+  high-value hardening.
+
+---
+
 ## Phase 6.1.18 — Production env guardrails / fail-fast boot check (2026-04-19)
 
 ### Context

@@ -24,7 +24,7 @@ on:
       sentry_project:
         description: 'Sentry project slug'
         required: true
-        default: 'club-arena-client'
+        default: 'javascript-react'
       attempt_id:
         description: 'autofix_attempts.id (uuid) — optional for manual runs'
         required: false
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      SENTRY_ORG_SLUG: ${{ github.event.client_payload.sentry_org || 'smarter-poker' }}
+      SENTRY_ORG_SLUG: ${{ github.event.client_payload.sentry_org || 'smarter-software-inc' }}
       SENTRY_PROJECT: ${{ github.event.client_payload.sentry_project || github.event.inputs.sentry_project }}
       SENTRY_ISSUE_ID: ${{ github.event.client_payload.issue_id || github.event.inputs.issue_id }}
       SENTRY_SHORT_ID: ${{ github.event.client_payload.short_id || github.event.inputs.short_id }}
@@ -70,13 +70,13 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
     steps:
-      - name: Guard — only run on club-arena-* projects
+      - name: Guard — only run on Club Arena's Sentry project
         # Belt-and-suspenders: the receiver filters by SENTRY_ALLOWED_PROJECTS
         # + project→repo mapping, but we also reject here so a misrouted
         # dispatch can't rewrite Club Arena from a world-hub issue.
-        if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sentry_project != 'club-arena-client' && github.event.client_payload.sentry_project != 'club-arena-engine' }}
+        if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sentry_project != 'javascript-react' }}
         run: |
-          echo "Rejected: project '${{ github.event.client_payload.sentry_project }}' is not a club-arena-* project"
+          echo "Rejected: project '${{ github.event.client_payload.sentry_project }}' is not javascript-react (Club Arena)"
           exit 2
 
       - name: Checkout main

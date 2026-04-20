@@ -13,7 +13,7 @@ export default defineConfig({
     !!(process.env.NODE_ENV === 'production' && process.env.SENTRY_AUTH_TOKEN) &&
       sentryVitePlugin({
         org: process.env.SENTRY_ORG || 'smarter-software-inc',
-        project: process.env.SENTRY_PROJECT || 'club-arena-client',
+        project: process.env.SENTRY_PROJECT || 'javascript-react',
         authToken: process.env.SENTRY_AUTH_TOKEN,
 
         // Upload source maps

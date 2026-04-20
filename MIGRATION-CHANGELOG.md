@@ -7,6 +7,89 @@
 
 ---
 
+## Phase 6.1.15 — Rate-limit coverage on write endpoints (2026-04-19)
+
+### Context
+
+Pre-audit grep of every POST/PUT/PATCH/DELETE handler in `pages/api/` showed
+18 files with no call to `applyRateLimit`. A write endpoint without a rate
+limit is trivially abuseable: an attacker can hammer it with stolen creds
+(credential stuffing), enumerate IDs (referral-code harvesting), drain
+diamonds (repeatedly redeeming promo codes), spam sessions, or DoS the DB
+by firing thousands of writes per second from a single IP. Defense-in-depth
+matters because the rest of our stack (Supabase RLS, JWT verification,
+email-verified gate, admin-secret middleware) only blocks *individual*
+malicious requests — not the volume of them.
+
+Special case: `pages/api/poker/player-notes.js` had a call to an older
+rate-limit helper with wrong options (`maxRequests` instead of `max`) and
+checked truthiness of a result object that's always truthy, so the endpoint
+effectively returned `HTTP 429` on every single request. After the
+`rateLimit` export renamed, the symbol became undefined and it started
+500'ing instead. Nobody noticed because the UI apparently swallowed the
+error. Fixed properly in this phase.
+
+### Changes
+
+Injected the canonical gate
+
+```js
+if (['POST','PUT','PATCH','DELETE'].includes(req.method)) {
+  if (!applyRateLimit(req, res, LIMITS.write)) return;
+}
+```
+
+at the top of each of these 16 handlers (applying `LIMITS.write` = 30/min):
+
+- `pages/api/assistant/sandbox/sandbox-templates.js`
+- `pages/api/assistant/sandbox/sandbox-analytics.js`
+- `pages/api/assistant/sandbox/sandbox-quiz.js`
+- `pages/api/geeves/analytics.js`
+- `pages/api/poker/player-notes.js` (also removed broken legacy call)
+- `pages/api/poker/engine/hand-history.js`
+- `pages/api/training/horse-opponent.js`
+- `pages/api/admin/load-test.js`
+- `pages/api/admin/trivia-pool-status.js`
+- `pages/api/rg/limits.js`
+- `pages/api/social/live-session.js`
+- `pages/api/social/referral.js`
+- `pages/api/horses/grinder-stats.js`
+- `pages/api/horses/admin-reviews.js`
+- `pages/api/poker-brain/calibration.js`
+- `pages/api/promo/admin-promo-codes.js`
+
+Imports were added/merged at the top of each file, preserving the existing
+ESM vs CommonJS style per file. A mechanical patcher (`/tmp/ratelimit_patch.py`)
+computed the correct relative path to `src/lib/apiRateLimit` for each file
+based on depth.
+
+Skipped intentionally:
+
+- `pages/api/cron/license-reminders.js` — a Vercel cron protected by
+  `CRON_SECRET` with built-in per-dealer `last_reminder_sent_at` throttle
+  (7 days) inside the DB. External abuse requires the cron secret.
+- `pages/api/commander/exports/index.js` — already wrapped in
+  `withRateLimit(handler, 'export')` from the commander-specific
+  rate limiter (`src/lib/commander/rateLimit.js`).
+
+### Verification
+
+`node --check` on all 16 patched files passes cleanly.
+
+`grep -lrE 'req\.method...(POST|PUT|PATCH|DELETE)' pages/api/ | xargs -I{} sh -c
+'grep -L applyRateLimit {}'` now returns only the two intentionally-skipped
+files above.
+
+### Next
+
+Rate limits are in-memory and per-serverless-instance — a horizontally scaled
+deploy can leak past the nominal limit. That's acceptable for a soft-launch
+(Vercel gives ~1-2 warm instances per region most of the time), but for
+scale we'll need to graduate to Upstash Redis or a Supabase-backed sliding
+window. Tracked as a follow-up, not in this phase.
+
+---
+
 ## Phase 6.1.14 — Security headers (HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy, frame-ancestors) (2026-04-19)
 
 ### Context

@@ -46,3 +46,6 @@ dist.dead.*/
 # Uncomment below if you want to gitignore all .memory files:
 # .memory/
 .ssh/
+
+*.stale.*
+**/*.stale.*/

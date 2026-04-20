@@ -29,7 +29,14 @@ export function reportError(
   console.error(`[${context}]`, error);
 
   // Send to Sentry for production alerting
-  const err = error instanceof Error ? error : new Error(String(error));
+  let err: Error;
+  if (error instanceof Error) {
+    err = error;
+  } else if (typeof error === 'object' && error !== null) {
+    err = new Error((error as any).message || (error as any).code || JSON.stringify(error));
+  } else {
+    err = new Error(String(error));
+  }
   err.message = `[${context}] ${err.message}`;
 
   captureException(err, {

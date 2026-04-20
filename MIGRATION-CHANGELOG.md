@@ -7,6 +7,46 @@
 
 ---
 
+## Phase 6.1.27 — Wire step-up gate to 3 highest-risk routes (2026-04-19)
+
+### Context
+
+Phase 6.1.26 shipped the `requireRecentMfa(req, user, maxAgeSec=300)`
+helper but didn't wire it to any concrete route. This phase picks the
+three highest-impact routes where a stolen 12h cookie is the difference
+between "oops" and "call the lawyers" and gates them.
+
+### Routes gated (all require fresh <5min MFA)
+
+1. **`DELETE /api/auth/delete-account`** — user self-deletes their account. 30-day grace window exists but can be insufficient if the attacker has mailbox access. Falls back to no-MFA if the user never enrolled (preserves the existing rate-limit + confirm-link pattern).
+
+2. **`POST /api/admin/users/delete-gdpr`** — admin-initiated GDPR erasure of another user. The most destructive admin action available. Also implies the acting admin has MFA enrolled (they always do under policy post-6.1.21).
+
+3. **`POST /api/club-arena/approve-cashout` (action='approve' only)** — approving a cashout transfers real chips off-player and off-platform. Gated on approve, NOT on cancel (cancel is reversible and we don't want to friction-slow the rollback path).
+
+Each gate returns `403 { error, requiresMfa: true, requiresStepUp: true, maxAgeSec }`. The `fetchWithMfa` helper on the client routes to `/auth/mfa?next=<cur>&stepUp=1` which re-presents the challenge page with "Confirm it's you" copy.
+
+### Changes
+
+- **EDIT** `pages/api/auth/delete-account.js` — import + gate. Skip gate if user has no MFA enrolled (compat with pre-6.1.21 users).
+- **EDIT** `pages/api/admin/users/delete-gdpr.js` — import + gate after the admin-role check.
+- **EDIT** `pages/api/club-arena/approve-cashout.js` — import + gate conditional on `action === 'approve'`.
+
+### Risk assessment
+
+- **Medium.** These are user-facing breakages if the mfa_session cookie isn't present. Mitigations:
+  - Only the admin delete-GDPR route has a hard-fail path (admins are always enrolled under policy).
+  - The other two routes check `user_mfa_factors.enabled` first and skip the gate for unenrolled users.
+  - Clients using `fetchWithMfa` are auto-redirected to `/auth/mfa` on 403 — no change in UX except an extra challenge prompt.
+
+### Follow-ups
+
+- **6.1.28** — Make MFA mandatory for any user with a cashout-approval permission (owner/admin role on a club). Currently they can skip the gate by not enrolling.
+- Survey remaining write routes: `PUT /api/user/email`, `PUT /api/user/phone`, password-change, `POST /api/bankroll/export` for whether they warrant step-up too.
+- Add edge-middleware step-up patterns so the enforcement list lives in one file.
+
+---
+
 ## Phase 6.1.26 — Step-up reauth gate for high-risk actions (2026-04-19)
 
 ### Context

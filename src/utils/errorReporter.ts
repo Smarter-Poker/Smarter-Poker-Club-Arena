@@ -15,6 +15,32 @@
 import { captureException, addBreadcrumb } from '../core/SentryInit';
 
 /**
+ * Convert an unknown error value to a meaningful string.
+ * Handles Error instances, objects with .message, and plain objects
+ * (avoids the infamous "[object Object]" output).
+ */
+function errorToString(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (
+    error !== null &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as any).message === 'string'
+  ) {
+    return (error as any).message;
+  }
+  try {
+    const json = JSON.stringify(error);
+    // Only use JSON if it's more informative than "[object Object]"
+    if (json && json !== '{}') return json;
+  } catch {
+    // circular reference or other stringify failure — fall through
+  }
+  return String(error);
+}
+
+/**
  * Report an error to both console and Sentry.
  * @param error - The error object or message string
  * @param context - A short string identifying where the error occurred (e.g. 'WalletService.lockForBuyIn')
@@ -29,7 +55,7 @@ export function reportError(
   console.error(`[${context}]`, error);
 
   // Send to Sentry for production alerting
-  const err = error instanceof Error ? error : new Error(String(error));
+  const err = error instanceof Error ? error : new Error(errorToString(error));
   err.message = `[${context}] ${err.message}`;
 
   captureException(err, {

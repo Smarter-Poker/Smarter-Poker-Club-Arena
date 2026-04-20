@@ -7,6 +7,91 @@
 
 ---
 
+## Phase 6.1.22 — Edge-middleware MFA gate + atomic backup-code consumption (2026-04-19)
+
+### Context
+
+Phase 6.1.21 shipped the MFA challenge endpoint + the `mfaGate.js` helper
+but left two gaps open:
+
+1. **27 admin endpoints** under `pages/api/admin/*` each needed a manual
+   `requireMfaEnrolled()` call. Editing every one is error-prone — one
+   forgotten file = one bypass route.
+2. **Backup-code consumption was non-atomic** (select → check → update in
+   three round-trips, no lock held across the gap). Two concurrent requests
+   with the same backup code could both succeed before the UPDATE landed.
+
+Phase 6.1.22 fixes both.
+
+### Changes
+
+`Smarter-Poker-World-Hub/middleware.ts` (edge runtime):
+
+- The existing admin-route guard already demanded `x-admin-secret` for
+  programmatic access. Extended: if the request arrives WITHOUT the admin
+  secret, it's assumed to be a human session, which now also requires:
+  - A `Bearer` auth header (handler still fully validates it).
+  - For any non-GET/HEAD/OPTIONS method, a valid `mfa_session` cookie —
+    correctly structured (3 dot-separated parts) and not older than 12h.
+- Full HMAC verification stays in the handler (`mfaGate.js`) where Node
+  crypto is available; the edge does a shape + expiry check to cheaply
+  reject obviously-invalid cookies. Defense-in-depth: both layers check.
+- Net effect: every admin endpoint is now MFA-gated without touching any
+  handler files. GET endpoints (health, check-*, list-*) remain
+  unaffected since they're read-only introspection.
+
+`Smarter-Poker-World-Hub/supabase/migrations/20260419210000_phase61_22_consume_mfa_backup_code.sql`
+(applied to production):
+
+- `fn_consume_mfa_backup_code(p_user_id UUID, p_hashed_code TEXT)` RPC.
+  Holds a `SELECT ... FOR UPDATE` lock on `user_mfa_factors` for the
+  user, checks membership, removes via `array_remove`, and UPDATEs —
+  all in one transaction. Returns `(consumed BOOLEAN, remaining_count
+  INTEGER)`. Execute privilege restricted to `service_role`.
+- Concurrent callers block on the FOR UPDATE; exactly one sees
+  `consumed = TRUE`, the rest see `consumed = FALSE` because the code
+  was already removed by the time their lock is granted.
+
+`Smarter-Poker-World-Hub/pages/api/auth/mfa/challenge.js`:
+
+- Backup-code branch switched from "SELECT then UPDATE" to the new RPC.
+  Single round-trip, race-free.
+
+### Risk assessment
+
+- **Middleware edge runtime doesn't ship Node crypto** — we do a shape +
+  expiry check there, and the full HMAC verification runs in the handler.
+  The edge check catches the common case (missing / expired / malformed
+  cookie) before it hits the API handler; anyone who forges a cookie with
+  a valid shape but invalid HMAC still gets rejected by the handler
+  layer. Not a regression — handlers always did the full check.
+- **GET endpoints are intentionally un-gated.** They expose read-only
+  info (health, check-*, list-*). If any GET endpoint ever returns
+  sensitive data that warrants MFA, it should be rewritten to return it
+  via POST with the MFA gate picking it up automatically.
+- **`x-admin-secret` header is unchanged**. Programmatic access via the
+  secret bypasses both Bearer auth and the MFA cookie check — this is
+  intentional for Vercel crons and trusted tooling. The secret itself is
+  on the Phase 6.1.18 required-in-production list, so it can't be blank.
+- **No migration rollback pain**: the RPC is additive and the column
+  add (`updated_at`) is idempotent (`IF NOT EXISTS`). Middleware change
+  is TypeScript and backwards-compatible with existing admin-secret
+  clients.
+
+### Follow-ups
+
+- Phase 6.1.23 — **MFA challenge UX**: build the React page at
+  `/auth/mfa` so users can complete the challenge after sign-in. Until
+  it's built, MFA enforcement only applies to direct API calls;
+  website-rendered admin pages still work with password-only sessions
+  because they all call API routes that now refuse the request.
+  Non-blocking for launch: admin UI is staff-only and we use direct
+  API access for most operations anyway.
+- Sweep `pages/api/commander/*` for any admin-equivalent write routes
+  that aren't under `/api/admin/*` and should also be MFA-gated.
+
+---
+
 ## Phase 6.1.21 — MFA/TOTP challenge + gate for admin + VIP accounts (2026-04-19)
 
 ### Context

@@ -20,16 +20,27 @@ import { captureException, addBreadcrumb } from '../core/SentryInit';
  * @param context - A short string identifying where the error occurred (e.g. 'WalletService.lockForBuyIn')
  * @param extra - Optional additional data to attach to the Sentry event
  */
-export function reportError(
-  error: unknown,
-  context: string,
-  extra?: Record<string, any>
-): void {
+export function reportError(error: unknown, context: string, extra?: Record<string, any>): void {
   // Always log to console for dev visibility
   console.error(`[${context}]`, error);
 
-  // Send to Sentry for production alerting
-  const err = error instanceof Error ? error : new Error(String(error));
+  // Coerce any non-Error (e.g. Supabase {message, code} plain objects) into real Errors
+  // so Sentry gets a useful message instead of "[object Object]"
+  let err: Error;
+  if (error instanceof Error) {
+    err = error;
+  } else if (error && typeof error === 'object') {
+    // Supabase errors: { message, code, details, hint }
+    const obj = error as Record<string, unknown>;
+    const msg = (obj.message as string) || (obj.details as string) || JSON.stringify(obj);
+    err = new Error(msg);
+    // Preserve extra fields as properties on the Error object
+    if (obj.code) (err as any).code = obj.code;
+    if (obj.details) (err as any).details = obj.details;
+    if (obj.hint) (err as any).hint = obj.hint;
+  } else {
+    err = new Error(String(error));
+  }
   err.message = `[${context}] ${err.message}`;
 
   captureException(err, {

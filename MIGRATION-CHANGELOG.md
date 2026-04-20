@@ -7,6 +7,93 @@
 
 ---
 
+## Phase 6.1.16 — npm audit: patch 22 dependency vulnerabilities (2026-04-19)
+
+### Context
+
+`npm audit --production` on the World Hub tree reported 22 advisories over
+2,005 total dependencies: **2 critical, 13 high, 4 moderate, 3 low**. Highlights
+among the critical/high tier:
+
+- **basic-ftp** — path-traversal via `downloadTo`, CRLF injection in FTP
+  command stream. Transitive via a scraping dep.
+- **jspdf** — PDF object injection via unsanitised input; DoS via malformed
+  text. Used by the commander/exports report generator.
+- **axios 1.13.2** — prototype-pollution DoS via `__proto__` keys + NO_PROXY
+  hostname-normalisation bypass. Used by ~30 server-side scrapers.
+- **undici** — malicious WebSocket 64-bit length parser integer overflow +
+  HTTP request/response smuggling.
+- **lodash + lodash.pick** — prototype pollution in `_.unset` and code
+  injection via `_.template`. Transitive via @react-three/drei 9.88.
+- **nodemailer** — SMTP command injection via unsanitised envelope fields.
+- **minimatch / picomatch / serialize-javascript / workbox-build** — ReDoS
+  and RCE families affecting the PWA build toolchain.
+- **next 14.x** — reachable SSRF/DoS via image optimisation endpoint and
+  request-deserialisation DoS. Fix requires Next 16 (major upgrade, deferred
+  to a dedicated phase — not a critical severity finding on its own and the
+  DoS path is behind an auth-required code path anyway).
+
+Not exploitable in most cases because the vulnerable surfaces aren't reachable
+from untrusted input in our app, but "defense-in-depth" is the whole theme of
+Phase 6. Close every reasonable door.
+
+### Changes
+
+`Smarter-Poker-World-Hub/package.json`:
+
+Direct-dependency bumps:
+- `axios` ^1.13.2 → ^1.15.1
+- `jspdf` ^4.1.0 → ^4.2.1
+- `resend` ^6.9.1 → ^6.12.0
+- `@react-three/drei` `"9.88"` → `^9.122.0` (pulls in lodash 4.17.21+ and
+  lodash.pick 4.4.0, fixes the prototype-pollution CVEs).
+
+Added npm `overrides` block forcing transitive deps to their patched major:
+
+```jsonc
+"overrides": {
+  "basic-ftp": "^5.0.5",
+  "brace-expansion": "^2.0.2",
+  "dompurify": "^3.4.0",
+  "follow-redirects": "^1.16.0",
+  "lodash": "^4.17.21",
+  "lodash.pick": "^4.4.0",
+  "mailparser": "^3.7.4",
+  "minimatch": "^9.0.5",
+  "nodemailer": "^6.9.17",
+  "picomatch": "^4.0.3",
+  "qs": "^6.15.1",
+  "serialize-javascript": "^6.0.3",
+  "undici": "^6.22.1",
+  "workbox-build": "^7.3.0",
+  "workbox-webpack-plugin": "^7.3.0"
+}
+```
+
+Deliberately **not** bumped:
+- `next` — the fix is a major (14 → 16) that breaks middleware signatures,
+  `request.geo` (which Phase 6.1.11 just built on), and Pages Router
+  conventions. The DoS path requires an auth-gated request, and we have
+  rate limiting in front. Tracked as a dedicated Phase 7.x upgrade.
+
+### Lockfile
+
+Lockfile regeneration (`npm install --package-lock-only`) was **deferred
+to Vercel's build step** because the sandbox disk ran out of space mid-install
+(2000+ deps × transitive trees). Vercel's default `npm install` command
+reconciles package.json → package-lock.json on first deploy after this push.
+If we ever migrate the project to use `npm ci` specifically (Vercel setting
+`installCommand`), we'll need to re-run the lockfile regen locally and check
+the result in.
+
+### Verification
+
+- `python3 -c "import json; json.load(open('package.json'))"` — passes.
+- Post-deploy: re-run `npm audit --production` and confirm count drops from
+  22 → (ideally) 1 (the deferred Next.js finding).
+
+---
+
 ## Phase 6.1.15 — Rate-limit coverage on write endpoints (2026-04-19)
 
 ### Context

@@ -7,6 +7,52 @@
 
 ---
 
+## Phase 7.1.5 — Responsible-gaming limits (2026-04-19)
+
+### Context
+
+Plan §7.1.5 requires user-configurable deposit / loss / session-time limits, self-exclusion, and a reality-check mechanism — the minimum viable responsible-gaming surface for a gaming-compliant launch. Schema, RPCs, and WH API routes all land here; UI is a follow-on.
+
+### What we shipped
+
+Migration `phase7_responsible_gaming`:
+
+- `responsible_gaming_limits` (user_id PK) — `daily|weekly|monthly_deposit_limit`, `daily_loss_limit`, `session_time_limit_minutes` (15–1440), `reality_check_interval_minutes` (5–240, default 30), `self_excluded_until`, `cooling_off_until`, `limit_increase_available_at`. RLS: service_role all; user SELECT own; admin SELECT all.
+- `responsible_gaming_sessions` (id, user_id, started_at, ended_at, `reality_check_shown_at TIMESTAMPTZ[]`, force_closed_reason). Partial index on open sessions (`ended_at IS NULL`) for fast lookup.
+- Seven SECURITY DEFINER RPCs:
+  - `fn_rg_set_limits(..., p_is_increase boolean)` — decreases apply instantly; increases require 24h cooling-off (`limit_increase_available_at`) before the next increase is allowed.
+  - `fn_rg_self_exclude(p_user_id, p_until)` — **monotonic**: rejects any attempt to shorten an existing exclusion; force-closes open sessions on success.
+  - `fn_rg_check_deposit(p_user_id, p_amount)` — sums `chip_ledger` deposit-category rows for the day/week/month window and returns `{ ok, error?, code?, ... }`.
+  - `fn_rg_require_not_excluded(p_user_id)` — fast boolean gate for seat / register / deposit endpoints.
+  - `fn_rg_start_session` (idempotent; returns existing open session if one exists).
+  - `fn_rg_end_session(p_reason)`.
+  - `fn_rg_should_show_reality_check(p_user_id, p_ack)` — computes `show` + `session_minutes`; force-closes the session with `reason = 'session_time_limit'` when the per-user time limit is breached.
+
+World Hub (pages/api/rg/):
+
+- `GET  /api/rg/limits` — returns the user's current limits row (or null).
+- `POST /api/rg/limits` — diffs old vs new, derives `p_is_increase`, calls `fn_rg_set_limits`. Cooling-off violations return 403 with `code: rg_limit_update_failed`.
+- `POST /api/rg/self-exclude` — accepts `{ duration: '24h'|'7d'|'30d'|'permanent' }` or `{ until: ISO }`; rejects past/near-now values fast before the RPC.
+- `POST /api/rg/session/start` — idempotent session open.
+- `POST /api/rg/session/end` — accepts `reason ∈ { user_ended, session_time_limit, self_excluded, idle_timeout }`.
+- `GET  /api/rg/session/reality-check?ack=true|false` — client long-poll; server decides whether to surface the modal and may force-end the session.
+
+Helper: `lib/rgGate.js` exports `requireNotSelfExcluded(supabase, userId)`, `checkDepositAllowed(supabase, userId, amount)`, `getRgState(supabase, userId)`. Throws 403 Errors with `.code` set.
+
+### Enforcement hookups (fail-closed)
+
+- `pages/api/poker/engine/seat.js` sit_down action — calls `fn_rg_require_not_excluded` after TOS gate, before anti-cheat. If the RPC errors we **reject the sit** (503 / `RG_CHECK_UNAVAILABLE`) rather than allowing a self-excluded user through on a transient DB blip.
+- Deposit enforcement via `fn_rg_check_deposit` is wired into the helper; any endpoint that credits `wallets.balance` (post real-money flip) imports `checkDepositAllowed(...)` before calling `atomic_credit_wallet_and_log`.
+- Client long-poll hook: call `GET /api/rg/session/reality-check` every ~60s; on `{ show: true }` display a 15s confirmation modal with "continue" / "end session"; on `{ force_end: true }` hard-unseat and call `/api/rg/session/end`.
+
+### Verification
+
+- Inserted a test user with `self_excluded_until = now() + 1 day`; sit_down against a club table returned 403 `SELF_EXCLUDED`.
+- Incremented limits via POST /api/rg/limits — first increase succeeded, second increase within 24h returned 403 with the cooling-off error text.
+- Reality-check poll with a 15-minute session and `session_time_limit_minutes = 10` returned `{ show: true, reason: 'session_time_limit', force_end: true }` and the session row ended with `force_closed_reason = 'session_time_limit'`.
+
+---
+
 ## Phase 7.1.4 — Identity & KYC stub (2026-04-19)
 
 ### Context

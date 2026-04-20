@@ -1,0 +1,21 @@
+{
+  "name": "sentry-autofix-webhook",
+  "version": "1.0.0",
+  "description": "Sentry webhook receiver that dispatches autofix jobs to GitHub Actions",
+  "type": "module",
+  "main": "src/index.mjs",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "dev": "node --watch src/index.mjs",
+    "test": "node --test src/*.test.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "express": "^4.21.1",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

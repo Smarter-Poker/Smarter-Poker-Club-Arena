@@ -7,6 +7,154 @@
 
 ---
 
+## Phase 6.1.18 — Production env guardrails / fail-fast boot check (2026-04-19)
+
+### Context
+
+Phase 6.1.17's audit of webhook handlers revealed one soft-fail pattern:
+the Twilio webhook logs `'TWILIO_AUTH_TOKEN not set — signature validation
+DISABLED'` and continues processing unsigned requests if the env var is
+unset. This is intentional for dev/staging (venues not yet configured with
+Twilio), but dangerous in production: a typo in Vercel env config, a
+rotated token not re-applied, or a forgotten staging import would silently
+open every Twilio webhook to spoofed delivery statuses without anyone
+noticing until a security audit — or an attack.
+
+The fix is to refuse to boot at all if production is missing any
+security-critical secret.
+
+### Changes
+
+`Smarter-Poker-World-Hub/src/lib/envGuard.js` (new):
+
+- Exports `checkProductionEnv()` which inspects `process.env.VERCEL_ENV`
+  and, when equal to `'production'`, throws a fatal Error if any of the
+  following are missing: `STRIPE_WEBHOOK_SECRET`, `TWILIO_AUTH_TOKEN`,
+  `KYC_WEBHOOK_SECRET`, `DEPLOY_WEBHOOK_SECRET`,
+  `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`,
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+- Recommended-but-not-fatal list: `OPENAI_API_KEY`, `RESEND_API_KEY`,
+  `SENTRY_DSN` — logs a warning in production if missing, doesn't block
+  boot.
+- Non-production environments get a warning log only — never blocks dev
+  or preview deployments.
+- Idempotent (guarded by a module-level `_checked` flag) and safe to
+  import multiple times.
+- Executes the check as a side-effect on module import, so it fires even
+  if the instrumentation hook is disabled.
+
+`Smarter-Poker-World-Hub/src/instrumentation.js` (new):
+
+- Next.js instrumentation hook — canonical "runs once at server boot"
+  entry point. Calls `checkProductionEnv({ force: true })` to re-run the
+  check after module caching (ensures the latest env is checked even if
+  envGuard was imported earlier with partial env). Gated on
+  `NEXT_RUNTIME === 'nodejs'` to skip the Edge runtime.
+
+`Smarter-Poker-World-Hub/next.config.js`:
+
+- Added `experimental.instrumentationHook: true` so Next.js 14 loads
+  `src/instrumentation.js` at server start. Becomes default-on in Next.js
+  15+; safe to remove the flag after that upgrade.
+
+### Risk assessment
+
+- **Boot-time failure is the intended behaviour in production.** Vercel
+  marks the deployment as failed and rolls back to the previous good
+  deployment automatically — no downtime, no silent exposure.
+- **Dev/preview stays permissive**, so local development with
+  `.env.local` missing half the vars still works. A loud warning is
+  logged to surface the drift.
+- Three env vars are pre-seeded with fallback defaults in the codebase
+  (`NEXT_PUBLIC_SUPABASE_URL` has a hardcoded fallback to the project
+  URL, anon key from build-time secrets). The env-guard treats these as
+  required anyway — we want explicit env config, not accidental
+  reliance on hardcoded fallbacks.
+
+### Follow-ups
+
+None. The guardrail is a pure defensive check; every required env var
+already has to be present for the app to function correctly at all.
+
+---
+
+## Phase 6.1.17 — Webhook signature verification audit (2026-04-19)
+
+### Context
+
+Any public `/api/*/webhook` endpoint is an unauthenticated write surface. If
+signatures aren't verified, an attacker who knows the URL can POST spoofed
+events: fake a Stripe `checkout.session.completed` to credit themselves
+diamonds, fake a Twilio delivery receipt to poison SMS analytics, fake a KYC
+outcome to flip `kyc_status` from `rejected` to `approved`. None of these
+require compromising any secret — just knowing the URL shape.
+
+Phase 6 mandates a full sweep: every webhook handler must prove the caller
+holds the shared secret (HMAC verification or equivalent).
+
+### Endpoints audited
+
+All 5 public webhook handlers in `Smarter-Poker-World-Hub/pages/api/`:
+
+1. `commander/webhooks/stripe/events.js` — **OK**. Uses
+   `stripe.webhooks.constructEvent(rawBody, sig, endpointSecret)` with
+   `bodyParser: false` (raw body required by Stripe's scheme).
+2. `store/webhooks/stripe.js` — **OK**. Same `constructEvent` pattern, raw
+   body, endpoint secret from env.
+3. `commander/webhooks/twilio/status.js` — **OK**. HMAC-SHA1 over
+   `URL + sorted(paramKey + paramValue)`, constant-time compare against
+   `x-twilio-signature`. Rejects with 403 if `TWILIO_AUTH_TOKEN` is set and
+   signature is missing or invalid. `bodyParser: true` is **correct** for
+   Twilio — the signature is computed over parsed form parameters, not raw
+   request bytes (unlike Stripe). Confirmed against Twilio webhook docs.
+4. `kyc/webhook.js` — **OK**. Dispatches per `?provider=` query param. Stub
+   provider requires `Authorization: Bearer ${KYC_WEBHOOK_SECRET}`. Real
+   providers (`persona` / `veriff` / `jumio` / `onfido`) intentionally
+   return HTTP 401 with `"${provider} webhook signature verification not
+   yet implemented"` — fail-closed until each integration's HMAC check is
+   wired up. No provider can land KYC outcomes into
+   `fn_kyc_resolve_inquiry` without either the bearer secret (stub) or an
+   implementation that would be code-reviewed when added.
+5. `deploy-monitor.js` — **OK**. HMAC-SHA1 of raw body against
+   `x-vercel-signature` header, secret = `DEPLOY_WEBHOOK_SECRET`.
+   `bodyParser: false`. Falls back to a query-param shared secret for
+   Vercel's legacy integration slot, but documents the HMAC path as
+   preferred.
+
+### Changes
+
+None — all webhook handlers already implement correct signature verification
+for their respective providers. Phase 6.1.17 is an audit-only phase.
+
+### Risk assessment
+
+- **Stripe webhooks (commander + store):** Raw body is read via a
+  `getRawBody(req)` helper; `bodyParser: false` prevents Next.js from
+  mutating bytes. `constructEvent` throws if the timestamp is skewed by
+  more than 5 minutes, preventing replay attacks.
+- **Twilio webhook:** URL reconstruction uses
+  `x-forwarded-proto` / `x-forwarded-host`. Vercel sets both correctly for
+  all inbound traffic, but if we ever proxy through a custom edge, the
+  host/proto would need to match exactly what Twilio used to sign. Low
+  risk today — flagged as a note for future infra changes.
+- **Twilio `TWILIO_AUTH_TOKEN` env:** If the env var is missing, the
+  handler logs a warning and processes anyway. This is intentional for
+  venues not yet configured with Twilio (dev/staging), but we should
+  **require** the token in production. Added a follow-up task (see
+  Phase 6.1.18 — Production env guardrails below).
+- **KYC webhook fail-closed stance:** Persona/Veriff/Jumio/Onfido handlers
+  returning `not yet implemented` is the correct default. Once we choose
+  a provider we'll wire the HMAC check in that specific verifier.
+
+### Follow-ups
+
+- Phase 6.1.18 — **Production env guardrails**: write a startup check that
+  fails hard if `TWILIO_AUTH_TOKEN` / `KYC_WEBHOOK_SECRET` /
+  `DEPLOY_WEBHOOK_SECRET` / `STRIPE_WEBHOOK_SECRET` are missing when
+  `VERCEL_ENV === 'production'`. Prevents silent signature-skip in prod.
+
+---
+
 ## Phase 6.1.16 — npm audit: patch 22 dependency vulnerabilities (2026-04-19)
 
 ### Context

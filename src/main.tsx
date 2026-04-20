@@ -44,6 +44,7 @@ import { initMasterBus } from './core/MasterBus';
 import { initIdentityDNA } from './core/IdentityDNA';
 import { initSentry } from './core/SentryInit';
 import { initWebVitals } from './core/WebVitals';
+import { startFunnelTracker } from './lib/funnelTracker';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 import { reportError } from './utils/errorReporter';
@@ -87,6 +88,16 @@ if (bootStatus.antigravityOk) {
   const identityPromise = initIdentityDNA().catch((err) => {
     reportError(err, 'main.IdentityDNA_init_error_app_already_rende');
   });
+
+  // PHASE 4: Activation-funnel tracker (Phase 5.1.2b). Fire-and-forget;
+  // subscribes to MasterBus + IdentityDNA for first_table_seat,
+  // first_hand_played, first_session_of_30min. No-ops if VITE_POSTHOG_KEY
+  // is unset. Never throws out — all handlers swallow their own errors.
+  try {
+    startFunnelTracker();
+  } catch (err) {
+    reportError(err, 'main.FunnelTracker_init_error_non_blocking');
+  }
 
   // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
   // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline

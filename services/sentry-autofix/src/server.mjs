@@ -18,6 +18,7 @@ import { verifySentrySignature } from './verify.mjs';
 import { gate } from './policy.mjs';
 import { reserveAttempt, markStatus } from './circuit-breaker.mjs';
 import { dispatch } from './github.mjs';
+import { resolveRepo } from './router.mjs';
 
 function log(level, fields) {
   console.log(JSON.stringify({ level, ts: new Date().toISOString(), ...fields }));
@@ -71,7 +72,12 @@ export function createServer() {
       const title = String(issue.title || issue.metadata?.type || '').slice(0, 500);
       const level = String(issue.level || '');
 
-      const repo = process.env.GITHUB_REPO;
+      const routed = resolveRepo(projectSlug);
+      if (!routed.ok) {
+        log('warn', { msg: 'no repo for project', project: projectSlug, reason: routed.reason });
+        return res.status(202).json({ ok: false, reason: routed.reason });
+      }
+      const repo = routed.repo;
       const reservation = await reserveAttempt({
         repo, issueId, fingerprint, projectSlug, title, level,
       });

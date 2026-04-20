@@ -70,6 +70,15 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
     steps:
+      - name: Guard — only run on club-arena-* projects
+        # Belt-and-suspenders: the receiver filters by SENTRY_ALLOWED_PROJECTS
+        # + project→repo mapping, but we also reject here so a misrouted
+        # dispatch can't rewrite Club Arena from a world-hub issue.
+        if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sentry_project != 'club-arena-client' && github.event.client_payload.sentry_project != 'club-arena-engine' }}
+        run: |
+          echo "Rejected: project '${{ github.event.client_payload.sentry_project }}' is not a club-arena-* project"
+          exit 2
+
       - name: Checkout main
         uses: actions/checkout@v4
         with:
@@ -86,6 +95,10 @@ jobs:
       - name: Install autofix runner deps
         working-directory: scripts/sentry-autofix
         run: npm ci --no-audit --no-fund
+
+      - name: Unit test policy + patch modules
+        working-directory: scripts/sentry-autofix
+        run: node --test policy.test.mjs patch.test.mjs
 
       - name: Run autofix
         id: run

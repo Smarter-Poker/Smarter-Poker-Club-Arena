@@ -250,6 +250,18 @@ class GameServer {
     }
 
     return {
+      // ── Phase 5.1.4: spec-compliant top-level fields (master plan §8.1.4)
+      //   status: 'ok' while the dealer loop is running, 'degraded' otherwise
+      //   version: git SHA baked in at build time (GIT_COMMIT_SHA env var)
+      //   uptime: seconds since process start
+      //   activeTables: live count (also duplicated below for back-compat)
+      status: this.running ? 'ok' : 'degraded',
+      version:
+        process.env.GIT_COMMIT_SHA?.substring(0, 8) ||
+        process.env.ENGINE_VERSION ||
+        'local',
+      // Existing fields preserved — clients reading `running` / aggregate
+      // metrics keep working without change.
       running: this.running,
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
       activeTables: this.tableEngines.size,

@@ -74,6 +74,21 @@ scrape_configs:
     scrape_timeout: 4s
 
   # -------------------------------------------------------------------------
+  # cron-01 systemd timer state — served by cron-health-server.js on :4002.
+  # /metrics exposes `cron_last_run_timestamp{job_name=...}` per tracked
+  # timer. Alert rules in alert-rules.yml (group cron-health) fire on lag.
+  # -------------------------------------------------------------------------
+  - job_name: cron_timers
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:4002
+        labels:
+          host: cron-01
+          role: cron
+    scrape_interval: 30s
+
+  # -------------------------------------------------------------------------
   # Supabase Postgres — scraped through the read-only postgres_exporter
   # sidecar we deploy alongside the pooler. Slow scrape to avoid warming
   # the pooler pool with synthetic traffic.

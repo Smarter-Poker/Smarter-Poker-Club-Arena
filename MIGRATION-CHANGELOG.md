@@ -7,6 +7,48 @@
 
 ---
 
+## Phase 7.1.7 — Settlement engine (2026-04-19)
+
+### Context
+
+Plan §7.1.7 requires a replay-safe weekly settlement cycle. The existing `/api/cron/union-rakeback` Vercel handler was computing weekly rakeback correctly but had **no idempotency guard** — a cron retry after a transient Vercel timeout would re-distribute the same rake twice, double-crediting clubs and double-debiting the union wallet. This phase lands the journal-backed idempotency the plan calls for.
+
+### What we shipped
+
+Migration `phase7_1_7_settlement_journal`:
+
+- `settlement_journal` table: `id`, `idempotency_key UNIQUE`, `period_kind ∈ {union_rakeback, club_weekly, club_daily, tournament_payout, manual}`, `period_start`, `period_end`, `clubs_affected`, `players_affected`, `total_rake`, `total_rakeback`, `union_id`, `status ∈ {pending, settled, failed, rolled_back}`, `started_at`, `settled_at`, `error_detail`, `summary JSONB`, plus a CHECK that `period_end > period_start`.
+- Two indexes: `(union_id, period_start DESC)` and `(period_kind, status, started_at DESC)`.
+- RLS: `service_role` all; platform admins (`role IN admin|superadmin|god`) SELECT.
+- `fn_claim_settlement_period(key, kind, union_id, start, end)` SECURITY DEFINER — atomic "reserve this slot or tell me it's taken". Returns `{ ok: true, id }` on success or `{ ok: false, code: 'already_claimed', existing_status, id }` if the key already exists.
+- `fn_finalize_settlement_period(id, status, clubs, players, rake, rakeback, summary, error_detail?)` — transitions a pending row to settled/failed/rolled_back. Rejects double-finalize (only moves rows that are currently `pending`).
+
+World Hub (`pages/api/cron/union-rakeback.js`):
+
+- New helper `lastMondayUtc()` computes the canonical period_start (most recent Monday 00:00 UTC).
+- Before any writes for each union, the handler calls `fn_claim_settlement_period` with key `union_rakeback:${union_id}:${period_start_iso}`.
+  - On `already_claimed`: the union is skipped and counted in `results.unions_already_settled`.
+  - On success: the claim id is stashed and threaded through the rest of the loop.
+- After writes, `fn_finalize_settlement_period(claim_id, 'settled', …)` records `clubs_affected`, `total_rake`, `total_rakeback`, and a per-club `distributions` summary JSON.
+- On any thrown error in the union branch, the claim is marked `failed` with the error message so the next weekly run can proceed on a fresh slot.
+
+### Verification
+
+End-to-end idempotency smoke test against production (single `DO` block):
+
+1. First `fn_claim_settlement_period(key)` → `{ ok: true, id }`.
+2. Second claim with same key → `{ ok: false, code: 'already_claimed' }` (as expected).
+3. `fn_finalize_settlement_period(id, 'settled', …)` → ok.
+4. Double-finalize on the same id → `{ ok: false, code: 'not_pending' }` (as expected).
+5. Cleanup row deleted. NOTICE "OK: settlement_journal idempotency works end-to-end" fired.
+
+### Residual work (non-blocking)
+
+- Hetzner cron-01 migration for `/api/cron/union-rakeback` is not yet executed; the Vercel schedule `20 10 * * 1` remains the primary trigger. With idempotency now landed, a double-fire is safe.
+- `players_affected` is always recorded as 0 at the union layer — it will be populated when the per-player rakeback expansion (currently out of scope for this phase) lands.
+
+---
+
 ## Phase 7.1.6 — Chip pool segregation (2026-04-19)
 
 ### Context

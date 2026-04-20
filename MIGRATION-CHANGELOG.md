@@ -7,6 +7,52 @@
 
 ---
 
+## Phase 6.1.12 — Email verification gate on purchase endpoints (2026-04-19)
+
+### Context
+
+Trust & Safety item §1.3.4 of the launch-readiness plan: "Email verification required before chip purchase." The play-money signup flow grants a 500-diamond welcome package immediately (gated on disposable-domain blocklist). Without a second gate on *spending* those diamonds, a determined attacker can still burn through signup bonuses with real-looking but uncontrolled inboxes — and once real-money purchases go live, the same vector becomes a chargeback-shield. Supabase already populates `auth.users.email_confirmed_at` when a user clicks the confirmation link; we just weren't enforcing it.
+
+### Changes
+
+New shared helper `src/lib/emailVerifiedGate.js` with two exports:
+
+- `requireEmailVerified(user)` — synchronous, for routes that already have the Supabase user object in scope. Returns `{ ok, status?, body? }` and a ready-to-return 403 JSON payload when `email_confirmed_at` is null. `{ code: 'email_not_verified' }` in the body lets the client detect the state cleanly and surface the "check your inbox" prompt without string-matching.
+- `requireEmailVerifiedByUserId(supabase, userId)` — async variant for routes that only have a user id (e.g. `diamond-transfer.js`, which accepts both cookie-session and Bearer-token auth and unifies on `userId` before doing work). Uses `auth.admin.getUserById` under service-role.
+
+Both fail-closed on error (unexpected Supabase error → 500 with refusal, not 200). The helper reuses the existing `getSupabase()` service-role client — no new env vars, no new DB reads in the common (verified) path.
+
+Applied to four purchase endpoints:
+
+```
+pages/api/store/purchase-daily-vip.js        — 150💎 VIP day pass
+pages/api/store/purchase-with-diamonds.js    — cart checkout w/ diamonds
+pages/api/store/diamond-transfer.js          — peer-to-peer diamond transfer
+pages/api/club-arena/marketplace-purchase.js — chip-priced marketplace items
+```
+
+Placement: the gate runs *after* auth but *before* rate-limit consumption and DB writes. This means:
+- unverified users get a clear 403 with `code: 'email_not_verified'`,
+- rate limits aren't burned by unverified attempts,
+- no chip_ledger / idempotency rows are written for rejected calls.
+
+### What's not gated
+
+Read endpoints (balance, history, inventory) remain open to unverified users so they can still see what they have. Signup-bonus landing, welcome package claim, and daily diamond drip are also ungated — otherwise users would be blocked from the very bonus we want them to receive *before* verifying. Once they try to *spend*, the gate catches them.
+
+### Files touched
+
+```
+# World Hub
+src/lib/emailVerifiedGate.js                      (new)
+pages/api/store/purchase-daily-vip.js             (gate)
+pages/api/store/purchase-with-diamonds.js         (gate)
+pages/api/store/diamond-transfer.js               (gate)
+pages/api/club-arena/marketplace-purchase.js      (gate)
+```
+
+---
+
 ## Phase 6.1.11 — Jurisdiction / geo-blocking edge middleware (2026-04-19)
 
 ### Context

@@ -7,6 +7,55 @@
 
 ---
 
+## Phase 5.1.3 — Prometheus + Grafana monitoring stack (2026-04-20)
+
+### Context
+
+Master plan §8.1.3 calls for a proper metrics layer on Hetzner cron-01 to complement Sentry (errors, Phase 5.1.1) and PostHog (product funnels, Phase 5.1.2). Without it we'd be blind to systemic-but-not-erroring degradation: engine CPU saturation, Supabase pool exhaustion, cron lag, replication lag — the stuff that tends to cascade into a 5xx storm if you don't catch it at the metric layer first.
+
+### Changes
+
+New `infra/monitoring/` directory in Club Arena with a one-command Docker Compose deploy for cron-01:
+
+- **`docker-compose.yml`** — Prometheus v2.55 + AlertManager v0.27 + Grafana 11.3 + node_exporter v1.8. All ports bound to 127.0.0.1 so only Caddy (w/ TLS + basic-auth at monitor.smarter.poker) can reach them. Prometheus keeps 15-day local retention; we'll ship to R2 via Thanos if we ever need longer.
+
+- **`prometheus.yml`** — Scrape config covering 5 jobs: cron-01 node_exporter, engine-01 node_exporter, engine-01 pm2-metrics (5s interval for fast alerting on the hand-tick loop), Supabase postgres_exporter (30s, read-only), and a blackbox probe of Vercel's `/api/health` endpoints for both World Hub and Club Arena.
+
+- **`alert-rules.yml`** — 16 alert rules across 5 groups: engine-health (engine down, hands/sec dropped, table count anomaly), cron-health (cron lag > 15min, failure rate > 5%), postgres-health (connection pool > 80%, replication lag > 30s, down), vercel-health (API probe failures, p95 > 2s), and host-health (disk < 10%, CPU > 85%, memory < 10%). Uses the Google SRE multi-window multi-burn-rate pattern on latency alerts to avoid flapping.
+
+- **`alertmanager.yml`** — Routes `severity=critical` to PagerDuty and `warning|critical` to Slack `#alerts-ops`. Two inhibit rules prevent page storms: (1) EngineDown silences downstream engine alerts, (2) PostgresDown silences WorldHub/ClubArena API alarms that would cascade.
+
+- **`grafana-provisioning/`** — Auto-registers the Prometheus datasource and mounts `grafana-dashboards/` as a provider. On container restart dashboards are re-imported from disk so their JSON is the source of truth (no silent UI edits).
+
+- **`grafana-dashboards/`** — Three seed dashboards: `poker-engine.json` (hands/sec, active tables, seated players, engine CPU/mem), `postgres.json` (connection pool %, replication lag, tx/sec, cache hit ratio), `cron-health.json` (seconds-since-last-run per job with 600s/900s thresholds, failure rate).
+
+- **`.env.example`** — Template for `GRAFANA_ADMIN_PASSWORD`, `SLACK_ALERT_URL`, `PAGERDUTY_SERVICE_KEY`.
+
+- **`README.md`** — Deploy runbook, engine-side setup instructions (node_exporter + pm2-metrics module, expose custom engine metrics on :9256), how to add a new alert, and how to silence during deploys via `amtool`.
+
+### Engine-side metric instrumentation (precondition)
+
+The scrape config expects the engine to expose:
+- `poker_engine_hands_played_total` (counter)
+- `poker_engine_active_tables` (gauge)
+- `poker_engine_seated_players` (gauge)
+
+These are already emitted by `club-arena/src/engine/metrics.js` and registered on the pm2 Prometheus registry. On engine-01, installing `@pm2/io` + setting `pm2 set pm2-metrics:http-port 9256` is the only remaining step — documented in the README.
+
+### Deploy — pending Hetzner SSH
+
+The stack is fully built and committed. Execution on cron-01 requires Hetzner SSH credentials which are not available in the current session. The README contains the full deploy runbook for when creds are rotated in. This is the same gating condition as Phase 5.1.1a (Sentry on the engine process).
+
+### Follow-ups
+
+- Deploy the stack on cron-01 (gated on Hetzner SSH)
+- Install node_exporter + pm2-metrics on engine-01
+- Add Caddy config to expose monitor.smarter.poker with basic-auth + TLS
+- Point AlertManager at the real PagerDuty service key (currently `.env.example` placeholder)
+- Add an SLO dashboard once we have 14 days of history to seed the baselines
+
+---
+
 ## Phase 5.1.2 — PostHog activation funnels (2026-04-20)
 
 ### Context

@@ -7,6 +7,55 @@
 
 ---
 
+## Phase 5.1.1 — Sentry coverage across all World Hub API routes (2026-04-19)
+
+### Context
+
+Prior to this work, only 8 of 755 World Hub API handlers were wrapped for Sentry error capture — the commander/notifications crons an earlier contributor had manually hand-wrapped. Every other route — admin GDPR deletion, club-arena approve-cashout, MFA disable, bankroll export, cron health, the 243 commander routes, and so on — swallowed unhandled exceptions into a bare `console.error('[API Error]', err)` and a 500 response. Those errors landed in Vercel runtime logs (which purge after a few days and aren't searchable by tag), never in Sentry. When a user reported a failed cashout we had no way to correlate their report to a stack trace.
+
+Phase 5.1.1 per the launch-readiness master plan §8.1.1 called for closing this gap on the way to the soft launch.
+
+### Changes
+
+**`Smarter-Poker-World-Hub/src/lib/sentryWrap.js`** — NEW helper. Two exports:
+
+- `reportApiError(err, req, { userId?, tags?, context? })` — synchronous fire-and-forget for existing catch blocks. Uses `Sentry.withScope` to tag the event with `route` (URL stripped of query), `method`, and anything the caller adds. Non-Error throws fall back to `captureMessage(JSON.stringify(...), 'error')` so we never lose the signal. Wrapped in an inner try/catch so a broken Sentry install can never take down a route.
+
+- `withSentryRoute(handler, routeName?)` — wraps a full handler so any unhandled throw is captured and a `{ success:false, error:'Internal server error' }` 500 is returned. Intended for new routes; existing routes use `reportApiError` inside their existing catch to preserve their bespoke error-message shape.
+
+We don't reuse the existing `src/lib/sentry.js` `withSentry` wrapper because it uses a runtime-dynamic `new Function('import(...)')` to lazy-load the SDK — pragmatic when Sentry was optional, but adds async overhead on every invocation and hides errors from static analysis. `@sentry/nextjs` is now a first-class dependency, so the new helper imports it statically.
+
+**Two-pass codemod** over `pages/api/**/*.{js,ts}` (755 files):
+
+- Pass 1: inject `reportApiError(VAR, req)` into the last `} catch (VAR) {` of each file, plus add the `import { reportApiError }` line. Instrumented 718 files.
+
+- Pass 2: specifically target the handler-level catch that precedes `console.error('[API Error]', ...)` — pass 1's "last catch" heuristic occasionally landed in helper-function catches (e.g. the `notifyPlayer` helper at the bottom of `approve-cashout.js`), missing the actual top-level catch. Pass 2 scanned upward from every `[API Error]` log and injected above it if no `reportApiError` already existed in the same scope. Instrumented 96 additional files.
+
+**Two pre-existing syntax bugs repaired** (not caused by the codemod, but exposed by it when `@babel/parser` flagged the files):
+
+- `pages/api/poker/follow.js` — outer `try {` at L35 had no matching `catch`; the handler dispatch `try/catch` at L43 was a sibling, not a child. The codemod's injected `} catch (err)` at L56 therefore dangled. Repaired by removing the spurious `}` at L41 so the outer try wraps the inner dispatch try.
+- `pages/api/poker/results.js` — same shape of bug, same repair.
+
+Both files now parse cleanly. All 755 routes pass `@babel/parser` validation.
+
+**`next.config.js`** already had the `withSentryConfig` wrapper, `widenClientFileUpload: true`, `hideSourceMaps: true`, and `autoInstrumentServerFunctions: true`. Source-map upload is gated on `SENTRY_AUTH_TOKEN` being present in the Vercel env — which it is in production. No config changes were needed here.
+
+**Club Arena (`src/`)** — already has 1347 `reportError(err, context, { tableId, userId })` call sites across the engine (HeadlessTableEngine, HandController, FlashPoolEngine, RunItTwiceEngine, WalletService, etc.). CA's `src/utils/errorReporter.ts` already routes all of these to `@sentry/react` via the lazy-loaded `SentryInit.ts`. No CA code changes required for this phase.
+
+### Risk assessment
+
+Low. The codemod only added code, never removed. Each injection is wrapped in its own inner try/catch (`try { reportApiError(...); } catch (_sentryErr) {}`), so a throwing Sentry SDK cannot fault the request. `@sentry/nextjs` is already installed and working in the 8 pre-existing hand-wrapped routes.
+
+Sentry's own `autoInstrumentServerFunctions: true` (via `withSentryConfig`) already captures unhandled throws at the Next.js framework layer. Our `reportApiError` call is additive and provides richer scope (route + method + optional userId tags) on top of the framework's automatic capture. Sentry deduplicates events with the same fingerprint, so the double-capture produces no duplicate alerts.
+
+### Follow-ups
+
+- Wire `reportApiError(err, req, { userId: user.id, tags: { tableId } })` onto the hot-path Club Arena routes (approve-cashout, distribute-chips, clawback-chips, mint-chips) for richer scoping — currently they just pass `(err, req)` which only tags route+method.
+- Track the per-route error rate in Sentry and set a burn-rate alert on `/api/club-arena/approve-cashout` and `/api/auth/mfa/*` — any regression on those paths should page Dan immediately.
+- Engine (Hetzner pm2 processes) — install `@sentry/node` on cron-01 and tourn-01, wrap the pm2 entrypoints, tag events with `{server, pm2_name}`. Not in scope for this phase — tracked as Phase 5.1.1a.
+
+---
+
 ## Phase 6.1.28 — Mandatory MFA for cashout-approval role holders (2026-04-19)
 
 ### Context

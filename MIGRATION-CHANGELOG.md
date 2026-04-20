@@ -7,6 +7,45 @@
 
 ---
 
+## Phase 6.1.28 — Mandatory MFA for cashout-approval role holders (2026-04-19)
+
+### Context
+
+Phase 6.1.21 backfilled `profiles.mfa_required=true` for platform admins and VIPs. Phase 6.1.27 wired the step-up gate onto `/api/club-arena/approve-cashout`. But club-level owners/admins/managers/agents — the actual users who approve cashouts in production — were still free to opt out of MFA entirely, which let them skip the step-up gate via the `factor?.enabled` early-return in approve-cashout.js.
+
+This phase closes that hole by extending the `mfa_required` backfill + trigger family to cover every user with cashout-approval authority.
+
+### Changes
+
+- **NEW** `supabase/migrations/20260419220000_phase61_28_cashout_role_mfa.sql` — applied to prod (`kuklfnapbkmacvwxktbh`)
+  - Backfills `profiles.mfa_required=TRUE` for:
+    - Every user referenced by `clubs.owner_id`
+    - Every user with `club_members.role IN ('owner','admin','manager','agent')`
+  - `fn_sync_mfa_required_on_club_role()` + AFTER INSERT/UPDATE trigger on `club_members` — flips new cashout-capable members on insert or role-change
+  - `fn_sync_mfa_required_on_club_owner()` + AFTER INSERT/UPDATE trigger on `clubs.owner_id` — flips new owners when created or transferred
+  - Both triggers are SECURITY DEFINER, search_path-locked, and one-way (never un-set)
+
+### Verification
+
+Post-apply counts:
+- `profiles.mfa_required=TRUE`: **516** (up from 464 at 6.1.21 baseline)
+- `clubs.owner_id` distinct: 1
+- `club_members` with cashout role distinct: 54
+
+### Risk assessment
+
+- **Medium.** Users flipped to `mfa_required=true` will now hit the MFA edge gate on admin writes and the step-up gate on approve-cashout. Until they enrol via `/auth/settings/mfa` (Phase 6.1.24), they'll see 403 `requiresMfa:true` responses which auto-redirect to the challenge page, which then routes them to enrol via the support-contact or direct-API fallback.
+- **Ops mitigation**: send a one-time broadcast to all impacted club-role users pointing them at `/auth/settings/mfa` before their next cashout-approval session. If this triggers a support spike, the trigger can be disabled with `ALTER TABLE club_members DISABLE TRIGGER trg_sync_mfa_required_on_club_role;` as a kill-switch (column values already backfilled are not rolled back).
+- Does NOT affect ordinary players — only the 54 cashout-approving members + the 1 owner.
+
+### Follow-ups
+
+- Send the broadcast (Resend template) — one-liner + link to `/auth/settings/mfa`.
+- **6.1.29** — Add a refusal path on approve-cashout that instead of returning 403 when `mfa_required=true && !factor.enabled`, redirects to an onboarding URL so agents can enrol without losing their action context.
+- Track agent-level MFA enrolment rate in PostHog dashboard so we can see adoption.
+
+---
+
 ## Phase 6.1.27 — Wire step-up gate to 3 highest-risk routes (2026-04-19)
 
 ### Context

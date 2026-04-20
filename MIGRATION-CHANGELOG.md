@@ -4345,3 +4345,41 @@ Every "PASS" verdict from prior rounds was re-examined with one question: **Is t
 - Supabase state wiped: 0 tables running, 0 seats occupied, 0 hole cards, 0 live tournaments
 - Lobby banner deployed pointing users to /sim
 - Re-enable: reverse step 5 (re-add TEST_TABLE_ID if wanted, remove DISABLE_HORSE_FLEET), \`docker start club-arena-engine\`, remove banner
+
+## 2026-04-19 — Phase 3.3: Nightly anti-collusion scan (Plan § 6.1.8)
+
+**Scope:** First Phase-3 engine-integrity deliverable that can ship autonomously
+without the Hetzner game engine — a Supabase table + Vercel cron handler that
+scans the last 24h of hand_history/action_log for suspicious patterns and files
+findings for admin review.
+
+**Database (migration `phase3_collusion_tracking`, applied live):**
+- `public.collusion_tracking` table with scan_date, player_a, player_b,
+  pattern_type, suspicion_score (0-100), evidence jsonb, window_start/end,
+  status (`open`/`reviewed`/`cleared`/`actioned`), reviewer fields
+- 4 indexes (scan_date desc, pair, status+score desc, pattern+date desc)
+- RLS: service_role writes; admin/owner/super_agent reads + updates
+- Pattern types allowed: `FOLD_TO_PLAYER`, `CHIP_DUMP`, `COORDINATED_SEATING`,
+  `SOFT_PLAY`, `WIN_RATE_ANOMALY`, `CONCURRENT_IP`, `TIMING_CORRELATION`
+
+**Cron handler (World Hub `pages/api/cron/collusion-scan.js`, commit 561286b8f):**
+- Bearer `CRON_SECRET` auth, `maxDuration: 300`s
+- Pulls last-24h hand_history rows (545 rows currently = well under 50k cap)
+  and action_log rows (200k cap) from Supabase via `getSupabaseAdmin()`
+- Four scanners:
+  - **CHIP_DUMP** — A loses to B in ≥ 80% of ≥ 15 co-played hands
+  - **SOFT_PLAY** — ≥ 3 mutual check-downs on turn/river with no raises
+  - **TIMING_CORRELATION** — adjacent actions < 500 ms ≥ 35%, z ≥ 2.5
+  - **WIN_RATE_ANOMALY** — pair bb/100 ≥ 80 over ≥ 30 hands together
+- All findings inserted with `status='open'` for admin review
+- Schedule: `30 3 * * *` (03:30 UTC nightly) — added to `vercel.json`
+
+**Deploy:** Vercel `dpl_HsNwZWYBQsDWySh8q2zyCkaBEgRD` (hub-vanguard, READY,
+aliased to smarter.poker). Cron will execute at the next 03:30 UTC rollover.
+
+**What's still open for Phase 3:** 6.1.1 engine migration, 6.1.2 server-auth
+actions, 6.1.4 deterministic-shuffle seed generation, 6.1.5 time-bank state
+machine, 6.1.6 disconnect-and-protect, 6.1.9 V8 Bible fixes — all need
+Hetzner-engine access. The DB schema for 6.1.2/6.1.3/6.1.4 (action_log,
+engine_state_snapshot, hand_history.seed/version/started_at/ended_at) is
+already in place from migration `phase3_engine_integrity`.

@@ -7,6 +7,44 @@
 
 ---
 
+## Phase 7.1.6 — Chip pool segregation (2026-04-19)
+
+### Context
+
+Plan §7.1.6 requires the four-pool model to be intact: **player wallets** (`wallets.balance`), **club chip pool** (`clubs.chip_pool`), **union chip balance** (`unions.chip_balance` — plan called it `chip_pool`, implementation uses `chip_balance`), and **diamonds** (separate economy, never mixable with chips). Every cross-scope transfer in `chip_ledger` must carry an operator in `performed_by`. Exit criterion: "no ledger row has `from_entity_type = 'WALLET'` and a diamond category."
+
+### Pre-migration audit
+
+- `chip_ledger.performed_by` is already `NOT NULL` — the four atomic RPCs thread `userId` on every write, so no rows are missing the operator.
+- Live `from_type` / `to_type` values are the six expected types only: `player_wallet`, `club_treasury`, `union_bank`, `agent_wallet`, `system_mint`, `system_burn`. No typoed / injected entity types in 88k+ rows.
+- Live `category` values are the nine expected categories. **Zero** rows with a diamond-flavoured category, confirming diamonds and chips are already segregated at the data level.
+- Diamonds live in their own ledger (`diamond_ledger`) and their own wallet tables (`diamond_wallets`, `user_diamonds`, `club_diamond_wallets`). Single-scope (user → user), so no cross-pool invariant is required on that side.
+
+### What we shipped
+
+Migration `phase7_1_6_chip_pool_segregation`:
+
+- `chip_ledger.from_type` and `.to_type` — CHECK constraint pinning them to the six valid entity types. Any future typo (e.g. `WALLET` instead of `player_wallet`) is rejected at INSERT time with a clear `check_violation`.
+- `chip_ledger.category` — CHECK allow-list of 17 categories (the nine in live use + eight reserved for upcoming settlement / tournament work: `rakeback`, `settlement`, `tournament_buyin`, `tournament_prize`, `bounty`, `adjustment`, `refund`, `burn`).
+- `chip_ledger_no_diamond_category_check` — rejects any category matching `^diamond` or `_diamond`. Enforces the exit criterion in schema, not just convention.
+- `trg_chip_ledger_performed_by` (BEFORE INSERT trigger) — rejects the all-zero UUID sentinel that careless callers sometimes use when they forget to thread the real operator. Throws `invalid_parameter_value`.
+
+### Verification
+
+Smoke test (single `DO` block; all three branches passed):
+
+1. Insert with `category = 'diamond_grant'` → rejected with `check_violation`.
+2. Insert with `from_type = 'WALLET'` → rejected with `check_violation`.
+3. Insert with `performed_by = '00000000-…-000000000000'` → rejected with `invalid_parameter_value`.
+
+The four atomic RPCs (`atomic_credit_wallet_and_log`, `atomic_debit_wallet_and_log`, `atomic_lock_chips_and_log`, `atomic_unlock_chips_and_log`) were already passing every valid type/category pair — no application-code changes needed.
+
+### Known residual fragmentation (non-blocking)
+
+`profiles.diamonds` and `profiles.diamond_balance` both exist (legacy drift) along with `user_diamonds.balance`, `user_diamond_balance.balance`, `diamond_wallets.balance`. These are read by different code paths but all write through `diamond_ledger`. Consolidation is a separate tech-debt item and does not block launch — diamonds cannot leak into chip pools regardless, because of the CHECK constraints above.
+
+---
+
 ## Phase 7.1.5 — Responsible-gaming limits (2026-04-19)
 
 ### Context

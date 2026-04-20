@@ -1,4 +1,4 @@
-# smarter.poker monitoring stack — Phase 5.1.3
+# smarter.poker monitoring stack — Phase 5.1.3 / 5.1.3a
 
 Prometheus + AlertManager + Grafana, containerised for deployment to the
 Hetzner `cron-01` host. Scrapes `engine-01` (poker engine pm2 + node_exporter),
@@ -13,13 +13,40 @@ through PagerDuty (critical) and Slack (warning/info).
 - `alert-rules.yml` — 16 alert rules across engine, cron, database, Vercel,
   and host-level concerns
 - `alertmanager.yml` — routing tree + PagerDuty inhibit rules
+- `slo-rules.yml` / `slo-alerts.yml` — Phase 5.1.5 SLO recording rules + burn alerts
+- `Caddyfile` — TLS + basic-auth reverse proxy at monitor.smarter.poker (Phase 5.1.3a)
+- `deploy.sh` — one-shot idempotent deploy script (Phase 5.1.3a)
 - `.env.example` — template for secrets (Grafana admin pw, Slack webhook,
   PagerDuty service key)
 - `grafana-provisioning/` — auto-registers the Prometheus datasource and
   mounts the `grafana-dashboards/` folder as a dashboard provider
-- `grafana-dashboards/` — three seed dashboards (engine, postgres, cron)
+- `grafana-dashboards/` — four seed dashboards (engine, postgres, cron, slo)
 
-## First deploy on cron-01
+## First deploy on cron-01 (Phase 5.1.3a — one-shot)
+
+```bash
+# as root on cron-01 — single pipe'd install
+curl -fsSL https://raw.githubusercontent.com/Smarter-Poker/Smarter-Poker-Club-Arena/main/infra/monitoring/deploy.sh | sudo bash
+```
+
+The script will:
+1. Verify docker / docker compose / git / caddy are installed
+2. Clone (or fast-forward) the club-arena + world-hub repos under `/opt/`
+3. Symlink stack config into `/opt/smarter-poker-monitoring/`
+4. Copy the Caddyfile to `/etc/caddy/Caddyfile` (backing up any existing)
+5. Seed `.env` from `.env.example` on first run (edit after)
+6. `docker compose up -d` and run health checks
+
+After first run, you still need two manual touches:
+- Edit `/opt/smarter-poker-monitoring/.env` with real credentials
+- Generate a basic-auth hash (`caddy hash-password --plaintext 'pw'`) and replace
+  the two `REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT` placeholders in
+  `/etc/caddy/Caddyfile`, then `systemctl reload caddy`
+
+Re-running `deploy.sh` is safe and will pick up any repo updates without
+clobbering those local edits.
+
+## Manual deploy (historic — use deploy.sh instead)
 
 ```bash
 # as root on cron-01

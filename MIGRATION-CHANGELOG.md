@@ -7,6 +7,39 @@
 
 ---
 
+## Phase 7.1.4 — Identity & KYC stub (2026-04-19)
+
+### Context
+
+Plan §7.1.4 requires a KYC plumbing layer ready for flip to real-money: schema columns on `profiles`, an event audit trail, and stubbed API routes that can be swapped to a real provider (Persona, Veriff, Jumio, Onfido) by setting `KYC_PROVIDER` in the env.
+
+### What we shipped
+
+Migration `phase7_kyc_stub`:
+
+- `profiles.kyc_status` (NONE | PENDING | APPROVED | REJECTED | EXPIRED), `kyc_provider`, `kyc_inquiry_id`, `kyc_completed_at`, `kyc_rejection_reason`, `age_verified`, `age_verified_at`, `jurisdiction_country` — backfilled from existing `country` column where shape matches ISO alpha-2.
+- `kyc_events` audit table with RLS (service-role writes; user reads own; admin reads all) — every inquiry_created, inquiry_approved, inquiry_rejected, age_gate_passed, status_overridden event is immutably logged.
+- Five SECURITY DEFINER RPCs: `fn_kyc_start_inquiry`, `fn_kyc_resolve_inquiry`, `fn_set_age_verified`, `fn_require_kyc_approved`, `fn_require_age_verified`.
+
+World Hub (pages/api/kyc/):
+
+- `POST /api/kyc/start` — Bearer auth + rate-limit (10/hr). Calls `fn_kyc_start_inquiry`, returns `{ inquiry_id, inquiry_url, provider, is_stub }`.
+- `POST /api/kyc/webhook?provider=stub|persona|veriff|jumio|onfido` — per-provider signature verifier (stub uses `KYC_WEBHOOK_SECRET` bearer; others are stubbed out pending provider selection). Calls `fn_kyc_resolve_inquiry`.
+- `GET /api/kyc/status` — Bearer auth. Returns the user's KYC + age-gate state plus derived `can_play_money` / `can_real_money` booleans.
+
+Helper: `lib/kycGate.js` exports `requireAgeVerified(supabase, userId)`, `requireKycApproved(supabase, userId)`, `getKycState(supabase, userId)`. Throws 403 Errors for use in deposit / cashout endpoints.
+
+### Gating policy
+
+- Play-money launch: `fn_require_age_verified` (signup checkbox).
+- Real-money (post-launch flip): `fn_require_kyc_approved` — belt-and-suspenders also re-checks `age_verified`.
+
+### Verification
+
+End-to-end stub lifecycle tested against production: start → inquiry_id → resolve(approved) → age_gate → `fn_require_kyc_approved` all passed; teardown reset the test user and cleared audit rows.
+
+---
+
 ## Phase 4.1.6a — Wallet-balance / Club-chip-pool write-protection trigger (2026-04-19)
 
 ### Context

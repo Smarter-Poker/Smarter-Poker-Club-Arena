@@ -4383,3 +4383,53 @@ machine, 6.1.6 disconnect-and-protect, 6.1.9 V8 Bible fixes — all need
 Hetzner-engine access. The DB schema for 6.1.2/6.1.3/6.1.4 (action_log,
 engine_state_snapshot, hand_history.seed/version/started_at/ended_at) is
 already in place from migration `phase3_engine_integrity`.
+
+---
+
+## 2026-04-19 — Phase 4.1.1 + 4.1.2: Ledger audit + nightly reconciliation
+
+**Scope:** Phase 4 money-trust-layer deliverables per launch plan § 7.1.1 and § 7.1.2.
+
+**Phase 4.1.1 — Double-entry ledger audit (commit `75a04ab4`):**
+- Audited every `UPDATE` against `public.wallets` and `public.clubs` in live app code.
+- Result: **PASS, zero violations.** All balance mutations flow through atomic
+  Postgres RPCs (`atomic_credit_wallet_and_log`, `atomic_deduct_wallet_and_log`,
+  `atomic_wallet_transfer`, `increment_club_chip_pool`, `fn_union_credit_wallet`,
+  `fn_union_debit_wallet`, `increment_union_chip_balance`).
+- Five `.from('clubs').update(...)` sites in WH all touch non-balance columns
+  only (`status`, `union_id`, `bbj_enabled`, `table_count`).
+- Finding recorded at `docs/audit/phase4-1-1-ledger-audit.md`.
+- Plan-name drift: the readiness plan references `increment_player_wallet` /
+  `increment_club_wallet` / `increment_union_wallet` but the live DB uses more
+  descriptive names (documented in the audit).
+
+**Phase 4.1.2 — Nightly ledger reconciliation (commit `1b0ee50a3`):**
+- `public.ledger_reconcile_log` table with `drift` as GENERATED column
+  (stored_balance − ledger_balance), severity `ok`/`warn`/`critical`,
+  run_date + metadata + notes. RLS: service-role write + admin read.
+- `public.reconcile_ledger_nightly()` SECURITY DEFINER function: FULL OUTER
+  JOINs `chip_ledger` sums against `wallets.balance` (player wallets) and
+  `clubs.chip_pool` (club treasuries), inserts one row per entity.
+  Thresholds: drift=0 → ok, |drift| ≤ $1.00 → warn, else critical.
+  Returns (total_checked, ok_count, warn_count, critical_count, worst_drift).
+- `pages/api/cron/ledger-reconcile.js` — Vercel cron, `0 8 * * *` (04:00 ET),
+  `maxDuration: 300s`, Bearer `CRON_SECRET` auth. Logs at ERROR level when
+  `critical_count > 0` so Vercel's log pipeline picks it up.
+
+**CRITICAL FINDING — $804.5M aggregate drift discovered:**
+First run surfaced **586 critical-severity drift findings** across player wallets
+(worst: +$143.1M; aggregate: +$804.5M) plus 2 small club-treasury findings
+(+$32.5k). Pattern: every top offender has huge positive stored balance
+($2.7M–$140.8M) paired with negative chip-ledger sum (−$1.45M to −$9.74M) —
+the signature of synthetic-horse-wallet seeding that bypassed `chip_ledger`
+before the atomic RPCs were enforced. This is **legacy data residue**, not a
+bug in the cron, and not a violation of any live code path (Phase 4.1.1
+confirmed no app code writes balance directly today). Remediation requires
+human judgment (snapshot → decide source of truth per-wallet → adjust or
+catch-up-credit → lock with a trigger). Full finding doc at
+`docs/audit/phase4-1-2-ledger-drift-finding.md`. **This is a launch blocker.**
+
+**What's still open for Phase 4:** 4.1.3 idempotency keys on every mutation,
+4.1.4 identity/KYC stub, 4.1.5 responsible-gaming limits, 4.1.6 chip-pool
+segregation, 4.1.7 settlement engine, plus the drift-remediation follow-up
+created by 4.1.2's finding.

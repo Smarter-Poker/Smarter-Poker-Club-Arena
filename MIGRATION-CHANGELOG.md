@@ -7,6 +7,76 @@
 
 ---
 
+## Phase 5.1.4 — Health endpoints matrix (2026-04-20)
+
+### Context
+
+Master plan §8.1.4 requires every service in the smarter.poker topology to expose a machine-readable `/health` endpoint with a consistent contract so that Prometheus (scrape), AlertManager (page routing), the `/admin/health` dashboard, and human operators all reason about uptime from the same surface. Prior to this phase: World Hub had a services-config dump at `/api/admin/health` (no live probes), the engine `getStatus()` emitted an engine-shaped payload but was missing the spec-mandated top-level `status` and `version` fields, and cron-01 had no health endpoint at all — meaning Prometheus couldn't scrape per-timer freshness and we were relying on Sentry to catch cron failures after the fact.
+
+### Changes
+
+World Hub — public + admin endpoints (`Smarter-Poker-World-Hub`, commit 8e8d8b8a6):
+
+- **`pages/api/club-arena/health.js` (NEW)** — Public Club Arena service health with `{status, service, version, uptime, responseMs, timestamp}`. Serves as the target of the `vercel_health` blackbox scrape in `prometheus.yml` job targeting `https://smarter.poker/api/club-arena/health`. Returns `Cache-Control: public, s-maxage=10, stale-while-revalidate=30` so Vercel edges absorb the scrape traffic without pinging the Next.js runtime on every probe.
+
+- **`pages/api/admin/health.js`** — Added three live probes wired via `Promise.all` so total response time is bounded by the slowest probe rather than the sum:
+  - `probeDb()` — Supabase `SELECT id FROM profiles LIMIT 1` with `maybeSingle()`. Tolerates the `PGRST116` (no-rows) code since an empty `profiles` table shouldn't mark the DB degraded.
+  - `probeRealtime()` — GET `/realtime/v1/` with a 1.5s `AbortController` timeout. A 200 OR 404 both count as reachable (404 just means wrong path — the service is up).
+  - `probeEngine()` — GET `ENGINE_HEALTH_URL` (default `https://engine.smarter.poker/health`) with a 2s `AbortController` timeout. Extracts `engineVersion` and `activeTables` from the response body for surfacing in the admin UI.
+  - Overall `status` now aggregates: any `error` from db or engine drops the response to `degraded` and HTTP 503. A realtime error is reported in the payload but doesn't drop the status — realtime is a nice-to-have for broadcast channels but not a hard dep for auth, hub, or the engine's authoritative socket path.
+
+Club Arena engine (`club-arena/server/src/index.ts`):
+
+- **`getStatus()`** — Added spec-mandated top-level `status: 'ok' | 'degraded'`, `version` (from `GIT_COMMIT_SHA` or `ENGINE_VERSION`), and `uptime` (seconds since server start). The existing shape with `running`, `activeTables`, `metrics`, etc. is preserved so no downstream consumer breaks. This is the payload `probeEngine()` above reads.
+
+Cron-01 health surface (`club-arena/infra/monitoring/`):
+
+- **`cron-health-server.js` (NEW, 165 lines)** — Tiny Node HTTP server on `127.0.0.1:4002`. Reads systemd timer state via `systemctl show <unit> -p LastTriggerUSec` (no need to instrument individual cron scripts). Serves:
+  - `GET /health` → JSON `{status, service, version, uptime, timestamp, timerLastRun: {<unit>: {status, lastRunUnix, ageSec}}}`. 200 when all timers are readable, 503 when any are in `error` or `parse-error` state.
+  - `GET /metrics` → Prometheus text format, emits `cron_last_run_timestamp{job_name="<unit>"} <unix>` per tracked timer. The alert rules in `alert-rules.yml` (group `cron-health`) fire on `time() - cron_last_run_timestamp > 900` so Prometheus does the staleness math, not this server.
+  - Tracked timers: `hard-stop.timer`, `scheduled-table-opener.timer`, `nightly-ledger-reconciliation.timer`, `venue-review-prompts.timer`, `anti-collusion-scan.timer`.
+  - Graceful shutdown on SIGTERM/SIGINT so systemd doesn't kill in-flight requests.
+
+- **`cron-health.service` (NEW)** — Hardened systemd unit (`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`, `ReadOnlyPaths=/`). `Restart=always` + 5s backoff. `EnvironmentFile=-/opt/cron-health/.env` so the deploy script can pass through `GIT_COMMIT_SHA`.
+
+- **`prometheus.yml`** — Added `cron_timers` scrape job at `host.docker.internal:4002/metrics`, 30s interval. Labels fix `host=cron-01, role=cron` so the cron-health Grafana dashboard (provisioned Phase 5.1.3) filters cleanly.
+
+### Why live probes instead of just returning service config
+
+The pre-5.1.4 `/api/admin/health` answered "is Supabase *configured*?" — not "is it *reachable*?". The service-config dump is still useful (env-var sanity check post-deploy), but without the live probes a Vercel deploy that loses connectivity to Supabase would still return 200 "healthy" until a user-facing request failed. The three-probe fan-out closes that gap: the admin dashboard and any external uptime check (Pingdom, UptimeRobot, the Prometheus `vercel_health` job) now fail fast when the dependency graph is broken, not when the first user complains.
+
+### Security posture
+
+- Both World Hub endpoints sanitize env-var presence to `[SET]` / `[NOT SET]` — no secret values leak even to an admin.
+- `cron-health-server.js` binds to `127.0.0.1` only; Caddy on cron-01 is the only process that can reach it, and Caddy fronts it behind the same basic-auth as the Prometheus UI.
+- The engine `/health` endpoint returns `version` as the short SHA (8 chars) — same surface we already ship in Vercel responses, so no net-new exposure.
+
+### Deferred
+
+- **5.1.4a** — Wire `/admin/health` into an on-page React dashboard with per-probe status pills and latency sparklines. Currently the JSON is consumed by the Prometheus blackbox scrape; the human-facing view is still a raw-JSON page.
+- **5.1.4b** — Add `probeR2()` (HEAD on a known asset) once Phase 1.8 (R2 migration) lands — until assets move off Vercel there's nothing to probe.
+
+### Files
+
+**World Hub** (`Smarter-Poker-World-Hub`):
+- `pages/api/club-arena/health.js` (NEW)
+- `pages/api/admin/health.js` (+3 probe helpers, `Promise.all` fan-out, 503 on hard-fail)
+
+**Club Arena** (`club-arena`):
+- `server/src/index.ts` (getStatus: added `status`, `version`, `uptime` top-level fields)
+- `infra/monitoring/cron-health-server.js` (NEW)
+- `infra/monitoring/cron-health.service` (NEW)
+- `infra/monitoring/prometheus.yml` (added `cron_timers` scrape job)
+
+### Status
+
+- [x] Committed to WH (`8e8d8b8a6`) and pushed
+- [x] Committed to CA (this commit) with engine + cron-01 artifacts
+- [ ] 5.1.4a deferred: React admin dashboard for /admin/health
+- [ ] 5.1.4b deferred: probeR2 (blocked on Phase 1.8)
+
+---
+
 ## Phase 5.1.3 — Prometheus + Grafana monitoring stack (2026-04-20)
 
 ### Context

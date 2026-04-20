@@ -7,6 +7,91 @@
 
 ---
 
+## Phase 6.1.14 — Security headers (HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy, frame-ancestors) (2026-04-19)
+
+### Context
+
+Audit of the site's response headers showed the common class of browser-layer
+defenses was partially missing or set weakly:
+
+- **No HSTS.** Vercel redirects http→https at the edge, but browsers had no
+  `Strict-Transport-Security` header telling them to refuse plaintext in
+  future. A network attacker on shared Wi-Fi could intercept the very first
+  request of a new session and strip HTTPS.
+- **`X-Frame-Options: SAMEORIGIN`.** Permits embedding of smarter.poker inside
+  *our own* iframes — but also doesn't help at all on third-party origins
+  because the "same origin" test is per-document. Since we render **zero**
+  same-origin iframes of the app (the whole product is full-page), the correct
+  policy is `DENY`. This blocks clickjacking of the login, diamond-transfer,
+  marketplace-purchase, and club-commander admin flows.
+- **`X-XSS-Protection: 1; mode=block`.** Deprecated and actively harmful — in
+  older Chrome versions it enabled a reflected-XSS filter that itself had XSS
+  bugs (CVE-2018-6150 family). Modern guidance is to remove this header and
+  rely on CSP.
+- **Narrow `Permissions-Policy`.** We only named four features
+  (camera/mic/geo/display-capture). That means every other powerful feature
+  — USB, Serial, Bluetooth, MIDI, motion sensors, Topics API, FLoC, payment
+  APIs, etc. — was allowed by default to any third-party iframe that ever
+  makes it into the page. Explicit `()` denials lock them out.
+- **No `frame-ancestors` in CSP.** CSP-level clickjacking defense is
+  independent of XFO and is the only one respected on modern browsers.
+- **No `upgrade-insecure-requests`.** Inline `http://` URLs in user content
+  (chat messages, venue imports) silently passed through as mixed-content
+  warnings instead of being upgraded.
+
+These aren't CVEs by themselves — they're the belt-and-braces layer that
+catches bugs we missed elsewhere. Adding them now means a future SQL-injected
+`<iframe src=smarter.poker>` attempt or a forgotten `http://` image can't
+escalate into full account takeover.
+
+### Changes
+
+**`Smarter-Poker-World-Hub/vercel.json` — edge-applied baseline headers.**
+Vercel's `headers` run at the CDN layer *before* Next.js touches the request,
+which is the right place for static platform-wide values. Updated the `/(.*)`
+block:
+
+- `X-Frame-Options: DENY` (was `SAMEORIGIN`).
+- Added `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
+  — 2 years, propagates to every `*.smarter.poker` subdomain, and flagged for
+  submission to the Chromium/Firefox HSTS preload list.
+- Added `X-DNS-Prefetch-Control: on` — small perf win, no security cost.
+- Removed `X-XSS-Protection: 1; mode=block` (deprecated, replaced by CSP).
+- Expanded `Permissions-Policy` to 18 explicit directives — denies payment,
+  USB, serial, bluetooth, MIDI, magnetometer, gyroscope, accelerometer,
+  ambient-light-sensor, browsing-topics, interest-cohort; keeps camera/mic/
+  geolocation/display-capture/autoplay/fullscreen/picture-in-picture scoped to
+  `(self)` so the club arena's voice chat and screen share still work.
+
+**`Smarter-Poker-World-Hub/next.config.js` — CSP + extra-strict block page.**
+
+- Added `frame-ancestors 'none'` to the CSP directive list. This is the modern
+  equivalent of `X-Frame-Options: DENY` and is what browsers actually enforce
+  now — XFO is legacy-compat only.
+- Added `upgrade-insecure-requests` to auto-upgrade any lingering `http://`
+  subresource requests in user-generated content.
+- Duplicated the baseline security headers inside `headers()` for environments
+  that bypass vercel.json (local `next start`, non-Vercel hosts).
+- Added a tighter header block for `/jurisdiction-blocked` specifically:
+  `X-Robots-Tag: noindex, nofollow` (so geo-blocked page doesn't SEO-rank) and
+  `Cache-Control: no-store` (the page is legally informative, never cache it).
+
+### Verification
+
+- `node --check next.config.js` — passes.
+- `python3 -c "import json; json.load(open('vercel.json'))"` — passes.
+- CSP report-only mode preserved intact, so the new frame-ancestors + upgrade
+  directives are observed without breaking anything until monitored.
+
+### Next
+
+Run `https://securityheaders.com/?q=smarter.poker` after the Vercel deploy and
+confirm grade ≥ A. Submit the root domain to `https://hstspreload.org/`. The
+preload list is append-only, so that's a one-way decision — defer to a human
+sign-off before submitting.
+
+---
+
 ## Phase 6.1.13 — CORS wildcard lockdown across 21 API routes (2026-04-19)
 
 ### Context

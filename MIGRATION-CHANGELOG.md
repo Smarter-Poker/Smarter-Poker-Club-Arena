@@ -4433,3 +4433,44 @@ catch-up-credit → lock with a trigger). Full finding doc at
 4.1.4 identity/KYC stub, 4.1.5 responsible-gaming limits, 4.1.6 chip-pool
 segregation, 4.1.7 settlement engine, plus the drift-remediation follow-up
 created by 4.1.2's finding.
+
+---
+
+## 2026-04-19 — Phase 4.1.2 drift remediation: $804.5M → $0 critical
+
+**Commit:** `cc54817e` (Club Arena). No Club Arena code change; SQL only.
+
+After the drift finding, classified all 586 critical rows:
+- 577 wallets never signed in → synthetic seed data (aggregate +$810M)
+- 2 wallets with null role (−$5M) + 2 club treasuries (+$32k) → unattributable legacy
+- 7 wallets belonged to users active in last 365 days (welcome-bonus-sized drifts + one internal god account at −$5.5M)
+
+**Remediation:** two-round autonomous catch-up using `chip_ledger` inserts with `category='legacy_seed_reconcile'`. For `drift > 0`: `system_mint → entity`, amount = drift. For `drift < 0`: `entity → system_burn`, amount = |drift|. No `wallets.balance` or `clubs.chip_pool` value was modified — only the ledger side was brought into alignment. `performed_by` = `SmarterPoker` god UUID. Each row carries a `notes` field with the pre-remediation stored/ledger/drift snapshot for forensic audit.
+
+**Result:** `reconcile_ledger_nightly()` now returns `total_checked=584 ok=582 warn=2 critical=0 worst_drift=$1.00`. Every chip in the system is now matched by a ledger entry. Follow-on requirement: Phase 4.1.6 trigger on `wallets.balance` to prevent recurrence.
+
+Full remediation record: `docs/audit/phase4-1-2-ledger-drift-finding.md` (updated).
+
+---
+
+## 2026-04-19 — Phase 4.1.3: Idempotency keys on balance mutations
+
+**Scope:** Launch plan § 7.1.3. Prevents duplicate-credit / double-debit when a client retries a balance-mutation RPC (fast-click, webhook redelivery, network timeout, tournament settlement restart).
+
+**Database (migration `phase4_idempotency_keys`, applied live):**
+- `public.idempotency_keys` table with PK `key` (TEXT, 1-128 chars), `rpc_name`, `result JSONB`, `status` (`in_flight`/`completed`/`errored`), `error`, `created_at`, `completed_at`. Service-role-only RLS.
+- `public.claim_idempotency_key(p_key, p_rpc_name)` — concurrency-safe; returns `(claimed BOOLEAN, cached_result JSONB, cached_status TEXT)`. Uses `INSERT … ON CONFLICT DO NOTHING` then `SELECT` to resolve races. Enforces per-key RPC binding (same key cannot be reused with a different RPC).
+- `public.store_idempotency_result(p_key, p_result, p_error)` — writes final result.
+- `public.fn_idempotent_credit_wallet(p_idempotency_key, …)` — one-shot wrapper around `atomic_credit_wallet_and_log`. Returns cached result on replay, runs the underlying RPC and stores the result on first call, stores the error payload and re-raises on exception.
+- `public.fn_idempotent_deduct_wallet(p_idempotency_key, …)` — same pattern around `atomic_deduct_wallet_and_log`.
+- `public.fn_idempotent_wallet_transfer(p_idempotency_key, …)` — same pattern around `atomic_wallet_transfer`.
+- `public.purge_idempotency_keys()` — DELETEs rows > 7 days old; returns count.
+
+**Cron handler (World Hub `pages/api/cron/purge-idempotency-keys.js`):**
+- Bearer `CRON_SECRET` auth, `maxDuration: 60`s
+- Calls `purge_idempotency_keys()` RPC and logs deletion count
+- Schedule: `30 8 * * *` — 30 min after the ledger-reconcile cron
+
+**Caller contract:** callers should pass a stable deterministic key — e.g., `tournament:${tid}:payout:${uid}`, `hand:${hid}:rake:${cid}`, `addon:${tid}:${uid}:${seq}`. NOT a random UUID. Retention window is 7 days which is far longer than any realistic retry horizon.
+
+**Migration done; caller updates (tournament settlement, rake collection, addon purchase) are the remaining engineering work.** The infrastructure is deployed and any new caller can immediately start using `fn_idempotent_*`. Old callers continue to work unchanged against the non-wrapped RPCs.

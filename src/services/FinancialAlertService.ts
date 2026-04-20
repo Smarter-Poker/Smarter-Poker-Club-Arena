@@ -81,7 +81,9 @@ export const FinancialAlertService = {
         created_at: alert.createdAt,
       });
       if (insertErr) {
-        reportError(insertErr, 'FinancialAlertService._log.insert', { severity, source, message });
+        reportError(
+          new Error(insertErr.message || JSON.stringify(insertErr)),
+          'FinancialAlertService._log.insert', { severity, source, message });
       }
     } catch (err: unknown) {
       // If the table doesn't exist yet, log to console as fallback

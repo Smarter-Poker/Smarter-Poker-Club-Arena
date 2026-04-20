@@ -7,6 +7,70 @@
 
 ---
 
+## Phase 6.1.11 — Jurisdiction / geo-blocking edge middleware (2026-04-19)
+
+### Context
+
+Trust & Safety item §1.3.3 of the launch-readiness plan: "Vercel edge middleware blocks disallowed jurisdictions by IP country. Denylist maintained in `config/geo-blocks.json`." Without this, we'd be serving the app (including sign-up) to users in jurisdictions where online poker — even play-money — is either explicitly illegal or sufficiently ambiguous that the legal risk to the operator is unacceptable. The existing `middleware.ts` handled the www → root redirect, an admin-route gate, and a JWT-presence gate, but not geo.
+
+### Config
+
+`config/geo-blocks.json` encodes the denylist and the policy:
+
+```json
+{
+  "version": 1,
+  "mode": "deny",
+  "denied_countries": [
+    "CN", "IR", "KP", "SY", "CU", "AF", "SD", "SS", "LY",
+    "YE", "VE", "BY", "MM", "RU"
+  ],
+  "restricted_us_states": [
+    "WA", "UT", "LA", "ID", "MT", "SD", "IN", "MI", "MS", "TN"
+  ],
+  "allow_paths": [
+    "/_next/", "/api/health", "/api/og", "/api/sitemap",
+    "/jurisdiction-blocked", "/legal/", "/terms", "/privacy",
+    "/favicon.ico", "/robots.txt", "/sitemap.xml"
+  ],
+  "admin_bypass_header": "x-geo-bypass"
+}
+```
+
+Countries: sanctions + jurisdictions where online gambling is criminal. US states: the subset that either ban online poker outright (WA, UT) or have recent enforcement that makes play-money + chip-sale models risky. The real-money list will extend this; we only ship the play-money denylist at launch.
+
+### Middleware wiring
+
+`middleware.ts` stage 2 reads `request.geo` (Vercel edge injects `{ country, region, city }` derived from Cloudflare/MaxMind). On a block it either:
+
+- returns **451 Unavailable For Legal Reasons** (RFC 7725) with a JSON body `{ error, reason }` for `/api/*`,
+- or 307-redirects to `/jurisdiction-blocked?reason=<country:XX|us-state:XX>` for browser navigation.
+
+Three escape hatches keep the site operable:
+
+1. `allow_paths` — the block page itself, Next static chunks, legal pages, `/api/health`, OG/sitemap endpoints. Without this the block page would also be blocked, leaving a bewildered user.
+2. `x-geo-bypass` header matching `ADMIN_ROUTE_SECRET` — lets QA test from blocked regions behind a VPN without locking themselves out. Reuses the existing admin secret so we don't grow env vars.
+3. Fail-open when `request.geo` is undefined (local `next dev`, non-Vercel infra) — we never want dev builds to be unreachable because MaxMind didn't resolve the request.
+
+### User-facing page
+
+`pages/jurisdiction-blocked.js` is an inert, `noindex` page. No login, sign-up, or game CTAs. Shows the detected region (e.g. "country code IR" or "US state WA") and a `mailto:support@smarter.poker?subject=Jurisdiction%20block%20appeal` link. Keeping it inert matters: if a user can still click "Sign Up" from this page the whole point of the gate is defeated.
+
+### Why 451 and not 403?
+
+RFC 7725 is explicitly the right status code for "this content is legally unavailable to you" — it gives automated clients (monitoring, VPN detectors, partner dashboards) an unambiguous signal. A plain 403 would conflate legal denial with auth failure and show up as an auth incident in error dashboards.
+
+### Files touched
+
+```
+# World Hub
+config/geo-blocks.json              (new)
+middleware.ts                       (added stage 2 geo-block)
+pages/jurisdiction-blocked.js       (new — inert block page)
+```
+
+---
+
 ## Phase 6.1.10 — GDPR right-to-erasure (2026-04-19)
 
 ### Context

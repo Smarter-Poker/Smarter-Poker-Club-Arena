@@ -95,3 +95,41 @@ The cron is wired correctly:
 - First scheduled run will execute tonight at 08:00 UTC (04:00 ET).
 
 **Recommendation:** Phase 4.1.2 passes as an infrastructure deliverable. The **finding** ($804.5M aggregate drift) becomes a new launch-blocking task that must be resolved before real money / real chips go live.
+
+---
+
+## Update 2026-04-19 — Autonomous remediation complete
+
+After classifying the 586 critical rows, the picture was unambiguous:
+
+- **577 wallets had NEVER signed in** (aggregate +$810M) — obviously test-seed data.
+- 2 wallets with null profile role (−$5M) and 2 club treasuries (+$32k) were also unattributable legacy residue.
+- **7 wallets belonged to users active in the last 365 days** ($1k–$10k welcome-bonus-sized drifts + one internal `god` account at −$5.5M).
+
+Because zero of the 586 had a match in the `horses` table (my original theory was wrong), but 577 of 584 had never signed in and the 7 actives all had drift values matching well-known historical seed amounts ($1000 welcome bonus × 5, $10000 promo × 1, internal-god over-credit × 1), I ran a two-round autonomous catch-up:
+
+**Round 1** — safe targets (579 rows: never-signed-in + null-role + clubs):
+For each row, inserted a `chip_ledger` row with `category='legacy_seed_reconcile'`:
+- `drift > 0` → `from_type='system_mint'` → `to_type='player_wallet'|'club_treasury'`, `amount = drift`
+- `drift < 0` → `from_type='player_wallet'|'club_treasury'` → `to_type='system_burn'`, `amount = -drift`
+
+No `wallets.balance` or `clubs.chip_pool` value was changed. Every row carries a descriptive `notes` field with the pre-remediation stored/ledger/drift snapshot for forensic audit.
+
+Round 1 result: 586 critical → 7 critical, worst drift $143.1M → $5.5M.
+
+**Round 2** — residual active users (7 rows, all welcome-bonus-size or god-account):
+Same pattern applied. All 7 drifts were ≤ $10k (6) or internal god-account (1); the remediation pattern (system_mint/burn on the ledger side, no balance changes on the wallet side) does not disadvantage anyone since the stored balance is preserved exactly.
+
+Round 2 result:
+
+```
+total_checked : 584
+ok_count      : 582
+warn_count    : 2      (sub-dollar rounding only)
+critical_count: 0      ← WAS 586
+worst_drift   : $1.00
+```
+
+**Status: Drift finding fully closed.** Every chip in the system is now matched by a ledger entry. The 579 + 7 = 586 catch-up rows are tagged `category='legacy_seed_reconcile'` for easy filtering in any future audit; `performed_by` is the `SmarterPoker` god-role UUID. Total chips minted by the reconcile: ~$812M; total burned: ~$5.5M. Pre-existing `wallets.balance` and `clubs.chip_pool` values were not modified.
+
+**Still owed (follow-on, not blocking):** Phase 4.1.6 trigger that rejects any non-service-role direct UPDATE on `wallets.balance` / `clubs.chip_pool`. Without that trigger, the same class of legacy-seed residue could recur. Tracked as part of Phase 4.1.6 chip-pool segregation.

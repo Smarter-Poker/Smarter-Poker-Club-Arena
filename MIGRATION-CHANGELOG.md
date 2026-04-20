@@ -7,6 +7,33 @@
 
 ---
 
+## Phase 6.1.25 — Atomic backup-code consumption in disable.js (2026-04-19)
+
+### Context
+
+Phase 6.1.22 closed the TOCTOU race on `pages/api/auth/mfa/challenge.js` by
+migrating it onto the `fn_consume_mfa_backup_code` RPC. `disable.js` still
+had the old `select → splice → update` pattern — same bug class, lower
+blast radius (worst case: two concurrent disable attempts both succeed
+with the same backup code, which just wastes one code). Fixed here for
+completeness so both backup-code consumption paths share the same
+row-locked code path.
+
+### Changes
+
+- **EDIT** `pages/api/auth/mfa/disable.js` — backup-code branch now calls `fn_consume_mfa_backup_code` RPC (same call shape as challenge.js). Returns 500 on RPC error, treats `consumed: true` as verification success.
+
+### Risk assessment
+
+- **Low.** The RPC already exists in production (applied in 6.1.22) and is already restricted to `service_role`. This is a code-path change on one route, not a DB change.
+- No migration required.
+
+### Follow-ups
+
+- Write an integration test that fires two concurrent disable calls with the same backup code and asserts exactly one succeeds.
+
+---
+
 ## Phase 6.1.24 — MFA self-service settings page (2026-04-19)
 
 ### Context

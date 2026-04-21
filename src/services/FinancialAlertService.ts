@@ -81,7 +81,10 @@ export const FinancialAlertService = {
         created_at: alert.createdAt,
       });
       if (insertErr) {
-        reportError(insertErr, 'FinancialAlertService._log.insert', { severity, source, message });
+        // Convert Supabase PostgrestError (plain object with .message) to a real Error
+        // so reportError doesn't produce "[object Object]" via String()
+        const err = new Error(insertErr.message || JSON.stringify(insertErr));
+        reportError(err, 'FinancialAlertService._log.insert', { severity, source, message });
       }
     } catch (err: unknown) {
       // If the table doesn't exist yet, log to console as fallback

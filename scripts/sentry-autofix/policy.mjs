@@ -1,59 +1,99 @@
-// Code-modification policy for the autofix runner.
+// Code-modification policy for the Club Arena autofix runner.
 //
-// DENYLIST: paths Claude may NEVER touch. Matches by glob substring.
-// If *any* changed file matches, the PR is opened as diagnostic-only
-// (explanation + Sentry link) with no code changes, labelled
-// `sentry-autofix-blocked` for human attention.
+// Club Arena is the Vite + React 19 poker SPA. Critical surfaces are:
+//   - server/src/engine/        — V8 Bible-governed game engine (Hetzner)
+//   - server/src/transport/     — WebSocket + HTTP contract
+//   - src/engine/ + src/engines/ — client-side legacy engine being ripped out
+//   - supabase/migrations/      — irreversible
+//   - any money/ledger/wallet path
 //
-// ALLOWLIST (for future auto-merge): if every changed file matches,
-// the PR may be auto-merged after CI passes. Otherwise PR waits for
-// human merge. Controlled by AUTOFIX_MODE env — 'dry-run' forces PR
-// regardless. (Phase 5.2.0 sets AUTOFIX_MODE=dry-run in the workflow.)
+// Per V8 Bible + Migration Law, engine changes require explicit human review.
+// DENYLIST = Claude may NEVER touch. ALLOWLIST (for Phase 5.2.2 auto-merge).
+// Phase 5.2.1 is dry-run only → every fix lands as a draft PR.
 
 const DENYLIST = [
-  // Engine core — stake/pot/showdown correctness. Never auto-fix.
-  'CA/src/engine/',
+  // V8 Bible-governed game engine — server + client copies.
   'server/src/engine/',
+  'server/src/transport/',
+  'server/src/services/',
+  'src/engine/',
+  'src/engines/',
+  'src/sim/',
+
+  // Money / balance surface — never auto-fix.
+  '/ledger/',
+  '/wallet/',
+  '/rake/',
+  '/purchase/',
+  '/diamonds/',
+  '/payouts/',
+  '/chip-pool',
+  '/kyc/',
+  '/mfa/',
+
+  // Auth + session surfaces.
+  'src/services/auth',
+  'src/lib/auth',
+  'src/lib/supabaseAdmin',
+  'src/lib/supabase-admin',
+  'src/lib/serviceRole',
+
   // Database migrations (irreversible).
   'supabase/migrations/',
-  // Middleware / RLS / auth surface.
-  'middleware.ts',
-  '/auth/',
-  '/ledger/',
-  // Admin / debug / emergency API endpoints.
-  'pages/api/admin/',
-  'pages/api/debug/',
-  'pages/api/emergency/',
+  'sql/',
+
   // Infra configs.
-  'vercel.json',
+  'vite.config',
+  'vitest.config',
+  'tsconfig',
   '.github/workflows/',
+  '.husky/',
+  'infra/',
+
   // Dependency manifests.
   'package.json',
   'package-lock.json',
   'pnpm-lock.yaml',
   'yarn.lock',
+
   // Env + secrets.
   '.env',
   '.env.local',
   '.env.production',
-  // Supabase admin helpers.
-  'lib/supabaseAdmin',
-  'lib/supabase-admin',
-  // Webhook secrets verifiers (security-critical).
-  'services/sentry-autofix/',
+
+  // Autofix pipeline self-modification (loop risk).
   'scripts/sentry-autofix/',
+
+  // V8 Bible skill surface — not code.
+  'skills/',
+  'AGENT_SKILLS/',
+
+  // Build outputs.
+  'dist/',
+  'dist-fix/',
+  'dist-fix2/',
+  'dist.dead',
 ];
 
 const ALLOWLIST = [
-  'pages/hub/',
-  'components/',
-  'styles/',
-  'public/hub/club-arena/',
-  'docs/',
-  'src/components/',
+  // UI layer only.
   'src/pages/',
+  'src/components/',
   'src/hooks/',
-  'src/lib/',
+  'src/stores/',
+  'src/i18n/',
+  'src/styles/',
+  'src/utils/',
+  'src/core/',            // Sentry init + ErrorBoundary; OK for non-security fixes
+  'src/content-engine/',  // GTO content generation, not money
+
+  // Generic config surfaces (non-security).
+  'src/constants/',
+  'src/types/',
+
+  // Tests.
+  'tests/',
+  'e2e/',
 ];
 
 export function isDenied(path) {
@@ -65,7 +105,7 @@ export function isAllowedForAutoMerge(path) {
 }
 
 /**
- * @param {string[]} paths  file paths Claude's patch touches
+ * @param {string[]} paths
  * @returns {{ok:boolean, denied:string[], allowMerge:boolean}}
  */
 export function assessPaths(paths) {

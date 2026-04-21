@@ -1,4 +1,4 @@
-// Entry point for the GH Action step. Orchestrates the full loop:
+// Entry point for the WH GH Action step. Orchestrates the full loop:
 //
 //   1. Load Sentry issue + latest event.
 //   2. Extract stack + in_app source files.
@@ -39,6 +39,39 @@ async function updateAttempt(attemptId, fields) {
   if (error) log({ level: 'warn', msg: 'updateAttempt failed', err: error.message });
 }
 
+// ---------------------------------------------------------------------------
+// Supabase gates (kill-switch, per-loop budget). Shared contract with the
+// Vercel autofix pipeline: we exit 0 (not failure) when the pipeline is
+// administratively paused or when the daily budget is spent — both are
+// "expected" non-errors and shouldn't noise up the GH Actions history.
+// ---------------------------------------------------------------------------
+async function isPaused() {
+  const s = sb(); if (!s) return false;
+  const { data, error } = await s.rpc('autofix_is_paused');
+  if (error) {
+    log({ level: 'warn', msg: 'pause check failed — proceeding', err: error.message });
+    return false;
+  }
+  return !!data;
+}
+
+async function budgetExhausted(source = 'sentry') {
+  const s = sb(); if (!s) return false;
+  // Check the global cap first, then per-loop. Either one flipping stops us.
+  for (const src of ['_global', source]) {
+    const { data, error } = await s.rpc('autofix_budget_exhausted', { p_source: src });
+    if (error) {
+      log({ level: 'warn', msg: 'budget check failed — proceeding', src, err: error.message });
+      continue;
+    }
+    if (data === true) {
+      log({ level: 'info', msg: 'budget exhausted', bucket: src });
+      return true;
+    }
+  }
+  return false;
+}
+
 function repoRoot() {
   // The checkout action lands us at GITHUB_WORKSPACE; the runner script
   // itself lives at scripts/sentry-autofix/ — cwd might be either.
@@ -50,45 +83,34 @@ function repoRoot() {
 
 function resolveFiles(root, filenames) {
   const out = [];
-  const SUBDIRS = ["", "src", "CA/src", "server/src", "src/engine", "src/services", "src/utils", "src/components", "src/hooks"];
-  const EXTS = ['', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
-  const INDEX_EXTS = ['.js', '.jsx', '.ts', '.tsx'];
-  const seen = new Set();
   for (const f of filenames) {
-    if (!f) continue;
-    // Strip framework / webpack prefixes Sentry emits.
+    // Sentry filenames can be relative, absolute, or webpack-style
+    // (like "webpack-internal:///(app-pages)/src/components/Foo.tsx").
+    // Strip prefixes and try variants.
     let clean = f
       .replace(/^webpack-internal:\/\/\//, '')
       .replace(/^webpack:\/\//, '')
       .replace(/^\(app-pages\)\//, '')
-      .replace(/^app:\/\/\//, '')
-      .replace(/^\/+/, '')
-      .replace(/^(\.\.?\/)+/, '')
+      .replace(/^\.\//, '')
       .split('?')[0];
-    if (!clean || seen.has(clean)) continue;
-    seen.add(clean);
-    const hasExt = /\.[a-z0-9]+$/i.test(clean);
-    const base = hasExt ? clean.replace(/\.[a-z0-9]+$/i, '') : clean;
-    const candidates = [];
-    for (const sub of SUBDIRS) {
-      for (const ext of EXTS) {
-        if (ext === '' && !hasExt) continue;
-        candidates.push(path.join(root, sub, ext === '' ? clean : base + ext));
-      }
-      // `./foo` → `./foo/index.ts` etc.
-      for (const ext of INDEX_EXTS) {
-        candidates.push(path.join(root, sub, base, 'index' + ext));
-      }
-    }
-    let picked = null;
+    const candidates = [
+      path.join(root, clean),
+      path.join(root, 'pages', clean),
+      path.join(root, 'lib', clean),
+      path.join(root, 'components', clean),
+      path.join(root, 'src', clean),
+      path.join(root, 'src/pages', clean),
+      path.join(root, 'src/components', clean),
+      path.join(root, 'src/lib', clean),
+    ];
     for (const p of candidates) {
       try {
         const stat = fs.statSync(p);
-        if (stat.isFile() && stat.size < 200_000) { picked = p; break; }
+        if (stat.isFile() && stat.size < 200_000) {
+          out.push({ path: path.relative(root, p), content: fs.readFileSync(p, 'utf8') });
+          break;
+        }
       } catch {}
-    }
-    if (picked) {
-      out.push({ path: path.relative(root, picked), content: fs.readFileSync(picked, 'utf8') });
     }
   }
   return out;
@@ -100,13 +122,26 @@ async function main() {
   const mode = process.env.AUTOFIX_MODE || 'dry-run';
   const model = process.env.ANTHROPIC_MODEL || 'claude-opus-4-6';
   const root = repoRoot();
-  const repoEnv = process.env.GITHUB_REPOSITORY || 'Smarter-Poker/Smarter-Poker-Club-Arena';
+  const repoEnv = process.env.GITHUB_REPOSITORY || 'Smarter-Poker/Smarter-Poker-World-Hub';
   const [owner, repo] = repoEnv.split('/');
   const baseBranch = process.env.GITHUB_REF_NAME || 'main';
 
   if (!issueId) { log({ level: 'error', msg: 'SENTRY_ISSUE_ID not set' }); process.exit(2); }
 
   log({ level: 'info', msg: 'autofix start', issueId, attemptId, mode, model, root, repo: repoEnv });
+
+  // Kill-switch + budget gates. Skip the expensive Claude call entirely
+  // if the pipeline is paused or out of money.
+  if (await isPaused()) {
+    log({ level: 'info', msg: 'autofix paused — skipping' });
+    await updateAttempt(attemptId, { status: 'skipped_paused', error_message: 'autofix_is_paused=true' });
+    process.exit(0);
+  }
+  if (await budgetExhausted('sentry')) {
+    log({ level: 'info', msg: 'sentry budget exhausted — skipping' });
+    await updateAttempt(attemptId, { status: 'skipped_budget', error_message: 'autofix_budget_exhausted' });
+    process.exit(0);
+  }
 
   await updateAttempt(attemptId, { status: 'running', run_id: process.env.GITHUB_RUN_ID || null });
 
@@ -155,7 +190,7 @@ async function main() {
 
   // Apply patch.
   let changed;
-  try { changed = applyPatch(root, parsed.filesUpdated); }
+  try { changed = applyPatch(root, parsed.patch); }
   catch (err) {
     log({ level: 'error', msg: 'apply failed', err: String(err).slice(0, 500) });
     await updateAttempt(attemptId, { status: 'errored', error_message: `apply: ${err.message}`.slice(0, 500), claude_tokens_in: reply.usage?.input_tokens, claude_tokens_out: reply.usage?.output_tokens });

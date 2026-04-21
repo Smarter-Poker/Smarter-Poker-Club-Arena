@@ -27,6 +27,22 @@ export interface FinancialAlert {
   createdAt: string;
 }
 
+/**
+ * Convert a Supabase error (or any unknown value) into a proper Error instance.
+ * Supabase PostgrestError objects have a `.message` property but no useful
+ * toString(), so String(err) produces "[object Object]".
+ */
+function toError(err: unknown): Error {
+  if (err instanceof Error) return err;
+  if (err && typeof err === 'object' && 'message' in err && typeof (err as any).message === 'string') {
+    const e = new Error((err as any).message);
+    // Preserve any extra fields (code, details, hint) for Sentry context
+    Object.assign(e, err);
+    return e;
+  }
+  return new Error(String(err));
+}
+
 export const FinancialAlertService = {
   /**
    * Log a critical financial error — persists to DB and emits bus event.
@@ -81,11 +97,11 @@ export const FinancialAlertService = {
         created_at: alert.createdAt,
       });
       if (insertErr) {
-        reportError(insertErr, 'FinancialAlertService._log.insert', { severity, source, message });
+        reportError(toError(insertErr), 'FinancialAlertService._log.insert', { severity, source, message });
       }
     } catch (err: unknown) {
       // If the table doesn't exist yet, log to console as fallback
-      reportError(err, 'FinancialAlertService._log.catch', { severity, source, message });
+      reportError(toError(err), 'FinancialAlertService._log.catch', { severity, source, message });
     }
 
     // 2. Emit bus event for real-time dashboard
@@ -149,7 +165,7 @@ export const FinancialAlertService = {
     );
 
     if (error) {
-      reportError(error, 'FinancialAlertService.resolve', { alertId });
+      reportError(toError(error), 'FinancialAlertService.resolve', { alertId });
       throw error;
     }
   },

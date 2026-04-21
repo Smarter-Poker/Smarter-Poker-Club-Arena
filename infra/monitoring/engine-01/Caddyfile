@@ -32,7 +32,7 @@ engine.smarter.poker {
     # ─── Prometheus (basic-auth) ─────────────────────────────────────────
     handle_path /prometheus/* {
         basic_auth {
-            monitor $2a$14$YGWxPG5pXgb0W.wSb1XtXeQP.Ej7dGHz0Vh5zMeX0jz/txh/MbUbq
+            monitor REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT
         }
         reverse_proxy 127.0.0.1:9090
     }
@@ -41,7 +41,7 @@ engine.smarter.poker {
     # ─── AlertManager (basic-auth) ───────────────────────────────────────
     handle_path /alertmanager/* {
         basic_auth {
-            monitor $2a$14$YGWxPG5pXgb0W.wSb1XtXeQP.Ej7dGHz0Vh5zMeX0jz/txh/MbUbq
+            monitor REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT
         }
         reverse_proxy 127.0.0.1:9093
     }

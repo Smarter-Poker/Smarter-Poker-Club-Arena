@@ -2612,7 +2612,7 @@ export default function TablePage({
           // Tournament tables don't have static small_blind/big_blind columns —
           // blinds come from the blind_structure array at current_level.
           if (tournData) {
-            const blindStructure = tournData.blind_structure as Array<{
+            let blindStructure = tournData.blind_structure as Array<{
               level?: number;
               smallBlind?: number;
               small_blind?: number;
@@ -2620,8 +2620,18 @@ export default function TablePage({
               big_blind?: number;
               ante?: number;
             }> | null;
+            
+            // Fix D.find TypeError: Supabase REST can return JSONB as a string
+            if (typeof blindStructure === 'string') {
+                try {
+                    blindStructure = JSON.parse(blindStructure as unknown as string);
+                } catch (e) {
+                    blindStructure = null;
+                }
+            }
+
             const currentLevel = (tournData.current_level as number) ?? 1;
-            if (blindStructure && blindStructure.length > 0) {
+            if (Array.isArray(blindStructure) && blindStructure.length > 0) {
               // Find the matching level (1-indexed) or fall back to first entry
               const levelEntry =
                 blindStructure.find((bl) => bl.level === currentLevel) ||

@@ -1,7 +1,14 @@
 # Club Arena -- Agent Instructions
 
 ALL agents (Claude, AntiGravity, Cowork, any AI) MUST read this file at session start.
-This is the single source of truth. Updated 2026-04-16.
+This is the single source of truth for **this repo**. Updated 2026-04-21.
+
+**Platform-level plan** (CA + CE + Supabase + Hetzner + WH integration):
+`~/Documents/Smarter-Poker-World-Hub/CLUB-ARENA-OFFICIAL-UPGRADE-INTEGRATION.md`
+
+That document supersedes the old `POKERBROS_UPGRADE_PLAN.md`, `PHASE_3/4_*_PLAN.md`,
+`MASTER_BLUEPRINT.md`, and every `ANTIGRAVITY-HANDOFF-*.md` in this repo root.
+If any of those conflict with the platform plan, the platform plan wins.
 
 ---
 

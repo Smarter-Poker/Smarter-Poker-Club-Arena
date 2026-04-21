@@ -15,6 +15,31 @@
 import { captureException, addBreadcrumb } from '../core/SentryInit';
 
 /**
+ * Extract a meaningful message string from an unknown error value.
+ * Handles Error instances, objects with a .message property (e.g. Supabase
+ * PostgrestError), and falls back to JSON.stringify for other objects to
+ * avoid the unhelpful "[object Object]" output from String().
+ */
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (
+    error !== null &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as any).message === 'string'
+  ) {
+    return (error as any).message;
+  }
+  // For other objects, try JSON so we get useful detail instead of "[object Object]"
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+/**
  * Report an error to both console and Sentry.
  * @param error - The error object or message string
  * @param context - A short string identifying where the error occurred (e.g. 'WalletService.lockForBuyIn')
@@ -29,7 +54,7 @@ export function reportError(
   console.error(`[${context}]`, error);
 
   // Send to Sentry for production alerting
-  const err = error instanceof Error ? error : new Error(String(error));
+  const err = error instanceof Error ? error : new Error(toErrorMessage(error));
   err.message = `[${context}] ${err.message}`;
 
   captureException(err, {

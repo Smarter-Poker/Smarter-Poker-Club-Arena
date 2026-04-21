@@ -274,12 +274,15 @@
 .inline-msg-btn {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 6px 10px;
+  border-radius: 20px;
+  padding: 6px 12px;
   font-size: 0.75rem;
   cursor: pointer;
   color: #e8eaed;
   transition: all 0.2s;
+  min-width: 80px;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .inline-add-btn {
@@ -301,10 +304,14 @@
 .friend-sent-badge {
   font-size: 0.7rem;
   color: #34c759;
-  padding: 4px 8px;
+  padding: 6px 12px;
   background: rgba(52, 199, 89, 0.1);
-  border-radius: 8px;
+  border-radius: 20px;
   font-weight: 600;
+  min-width: 80px;
+  text-align: center;
+  box-sizing: border-box;
+  border: 1px solid rgba(52, 199, 89, 0.25);
 }
 /* ─────────────────────────────────────────────────────────────────────────────
    MOBILE RESPONSIVE

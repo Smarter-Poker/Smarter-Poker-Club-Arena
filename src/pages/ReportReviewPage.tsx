@@ -129,29 +129,62 @@ export default function ReportReviewPage() {
     setLoading(false);
   };
 
-  const handleAction = async (reportId: string, action: 'actioned' | 'dismissed') => {
+  const handleAction = (reportId: string, action: 'actioned' | 'dismissed') => {
     setProcessing(true);
-    try {
-      const { error } = await supabase
-        .from('player_reports')
-        .update({
-          status: action,
-          reviewed_at: new Date().toISOString(),
-          reviewed_by: user?.id,
-          admin_notes: sanitizeInput(adminNotes),
-        })
-        .eq('id', reportId);
 
-      if (error) throw error;
+    // EAGER STATE SYNCHRONIZATION: Update report status and close modal immediately (BFCache-safe)
+    const prevReports = reports;
+    const prevSelected = selectedReport;
+    const prevNotes = adminNotes;
+    const sanitizedNotes = sanitizeInput(adminNotes);
 
-      toast.success(action === 'actioned' ? 'Player action taken' : 'Report dismissed');
-      setSelectedReport(null);
-      setAdminNotes('');
-      loadReports();
-    } catch (error) {
-      toast.error('Failed to update report');
-    }
-    setProcessing(false);
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === reportId
+          ? {
+              ...r,
+              status: action,
+              reviewed_at: new Date().toISOString(),
+              reviewed_by: user?.id,
+              admin_notes: sanitizedNotes,
+            }
+          : r
+      )
+    );
+    setSelectedReport(null);
+    setAdminNotes('');
+    toast.success(action === 'actioned' ? 'Player action taken' : 'Report dismissed');
+
+    // Fire-and-forget DB mutation with rollback on failure
+    supabase
+      .from('player_reports')
+      .update({
+        status: action,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: user?.id,
+        admin_notes: sanitizedNotes,
+      })
+      .eq('id', reportId)
+      .then(({ error }) => {
+        if (error) {
+          // Rollback on failure
+          setReports(prevReports);
+          setSelectedReport(prevSelected);
+          setAdminNotes(prevNotes);
+          toast.error('Failed to update report');
+          reportError(error, 'ReportReviewPage.Failed_to_update_report');
+        }
+      })
+      .catch((error) => {
+        setReports(prevReports);
+        setSelectedReport(prevSelected);
+        setAdminNotes(prevNotes);
+        toast.error('Failed to update report');
+        reportError(error, 'ReportReviewPage.Failed_to_update_report');
+      })
+      .finally(() => {
+        setProcessing(false);
+      });
   };
 
   const getReasonIcon = (reason: string) => {

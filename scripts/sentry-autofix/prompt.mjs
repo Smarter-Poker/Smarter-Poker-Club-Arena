@@ -1,13 +1,18 @@
 // Prompt construction for the autofix Claude call.
 //
+// Contract v2 (2026-04-20): Claude returns WHOLE file contents in JSON, not a diff.
+// Unified-diff output was failing `git apply` with "corrupt patch at line N" too often
+// because Claude's hunk math isn't perfectly reliable. Structured file replacement
+// removes the whole class of parse failures.
+//
 // We tell Claude:
 //   - What the bug is (Sentry issue summary + stack).
 //   - The source files it's allowed to read (we supply the content).
 //   - The hard rules (never touch denylisted paths, must include a test,
-//     must respond with a single unified diff in <patch>…</patch>).
+//     must respond in the structured JSON block).
 //
 // We force a structured XML response so the parser is trivial and we
-// never eval or guess where the diff ends.
+// never eval or guess where the response ends.
 
 export const SYSTEM_PROMPT = `You are the autonomous autofix agent for smarter.poker's Club Arena
 production codebase. You receive a real Sentry-captured error and must
@@ -30,10 +35,14 @@ You are not a general assistant here. You are a code-fix agent. You must:
 4.  NEVER modify any file under:
     - CA/src/engine/**, server/src/engine/**
     - supabase/migrations/**
-    - middleware.ts, **/auth/**, **/ledger/**
-    - pages/api/admin/**, pages/api/debug/**, pages/api/emergency/**
-    - vercel.json, .github/workflows/**, package.json, yarn.lock,
-      package-lock.json, .env*, lib/supabaseAdmin*
+    - middleware.ts, **/auth/**, **/ledger/**, **/wallet/**, **/rake/**,
+      **/purchase/**, **/diamonds/**, **/payouts/**, **/kyc/**, **/mfa/**,
+      **/step-up/**
+    - pages/api/admin/**, pages/api/debug/**, pages/api/emergency/**,
+      pages/api/webhooks/**, pages/api/cron/**
+    - vercel.json, next.config.*, .github/workflows/**, .husky/**,
+      package.json, yarn.lock, package-lock.json, .env*
+    - lib/supabaseAdmin*, lib/serviceRole*, lib/stripe*
     - services/sentry-autofix/**, scripts/sentry-autofix/**
     If the bug requires changes to any of these, STOP. Respond only with:
     <cannot_fix>reason: denylisted path XYZ must change to fix this</cannot_fix>

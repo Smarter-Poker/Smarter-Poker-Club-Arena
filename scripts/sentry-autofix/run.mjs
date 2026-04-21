@@ -1,26 +1,54 @@
-// Entry point for the GH Action step. Orchestrates the full loop:
+// Entry point for the Club Arena GH Action step. Orchestrates the full loop:
 //
 //   1. Load Sentry issue + latest event.
-//   2. Extract stack + in_app source files.
-//   3. Read those files from the checked-out repo.
+//   2. Extract stack + in_app source files + symbol hints (NEW).
+//   3. Resolve those to real files on disk via the shared resolver (NEW module).
 //   4. Call Claude with the structured prompt.
-//   5. Parse response; either <cannot_fix> or apply <patch>.
-//   6. Check paths against denylist. If any hit, open blocked PR.
+//   5. Parse response; either <cannot_fix> or apply <files_updated>.
+//   6. Post-apply denylist check.
 //   7. Open PR with labels, link Sentry issue.
 //   8. Update Supabase autofix_attempts row.
 //
-// All failures propagate — the workflow's post-step marks the attempt
-// errored if this node exits non-zero.
+// Hardening (Phase 5.2.0 bug-hunt):
+//   * resolveFiles moved to ./resolve.mjs with (a) recursive basename fallback
+//     so symbol hints like "CreditService" still map to real files, (b) 500KB
+//     size ceiling (was 200KB — real culprits were getting excluded).
+//   * extractStack is now called with issue.title so reportError-captured errors
+//     (top frame = errorReporter.ts helper) still produce usable source_files
+//     via the class-name symbol extractor.
+//   * main().catch now writes `errored` to the ledger before exit so a mid-run
+//     crash cannot leave a row stranded in `running`. This runs in addition to
+//     the workflow's mark-errored step (belt + suspenders).
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fetchIssue, fetchLatestEvent, extractStack } from './fetch-issue.mjs';
+import { resolveFiles } from './resolve.mjs';
 import { callClaude } from './claude.mjs';
 import { buildMessages, SYSTEM_PROMPT } from './prompt.mjs';
 import { parseClaudeResponse, applyPatch } from './patch.mjs';
 import { assessPaths, DENYLIST } from './policy.mjs';
 import { openAutofixPR } from './pr.mjs';
 import { createClient } from '@supabase/supabase-js';
+
+// Club Arena repo layout. Ordering matters — the resolver tries these in
+// order and takes the first hit (then falls back to a recursive basename
+// walk). Most-specific first so src/engine/... wins over src/.
+const SUBDIRS = [
+  "",
+  "src",
+  "CA/src",
+  "server/src",
+  "src/engine",
+  "src/services",
+  "src/utils",
+  "src/components",
+  "src/hooks",
+  "src/pages",
+  "src/lib",
+  "src/store",
+  "src/context",
+];
 
 function log(o) { console.log(JSON.stringify({ ts: new Date().toISOString(), ...o })); }
 
@@ -48,52 +76,6 @@ function repoRoot() {
   return process.env.GITHUB_WORKSPACE || here;
 }
 
-function resolveFiles(root, filenames) {
-  const out = [];
-  const SUBDIRS = ["", "src", "CA/src", "server/src", "src/engine", "src/services", "src/utils", "src/components", "src/hooks"];
-  const EXTS = ['', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
-  const INDEX_EXTS = ['.js', '.jsx', '.ts', '.tsx'];
-  const seen = new Set();
-  for (const f of filenames) {
-    if (!f) continue;
-    // Strip framework / webpack prefixes Sentry emits.
-    let clean = f
-      .replace(/^webpack-internal:\/\/\//, '')
-      .replace(/^webpack:\/\//, '')
-      .replace(/^\(app-pages\)\//, '')
-      .replace(/^app:\/\/\//, '')
-      .replace(/^\/+/, '')
-      .replace(/^(\.\.?\/)+/, '')
-      .split('?')[0];
-    if (!clean || seen.has(clean)) continue;
-    seen.add(clean);
-    const hasExt = /\.[a-z0-9]+$/i.test(clean);
-    const base = hasExt ? clean.replace(/\.[a-z0-9]+$/i, '') : clean;
-    const candidates = [];
-    for (const sub of SUBDIRS) {
-      for (const ext of EXTS) {
-        if (ext === '' && !hasExt) continue;
-        candidates.push(path.join(root, sub, ext === '' ? clean : base + ext));
-      }
-      // `./foo` → `./foo/index.ts` etc.
-      for (const ext of INDEX_EXTS) {
-        candidates.push(path.join(root, sub, base, 'index' + ext));
-      }
-    }
-    let picked = null;
-    for (const p of candidates) {
-      try {
-        const stat = fs.statSync(p);
-        if (stat.isFile() && stat.size < 200_000) { picked = p; break; }
-      } catch {}
-    }
-    if (picked) {
-      out.push({ path: path.relative(root, picked), content: fs.readFileSync(picked, 'utf8') });
-    }
-  }
-  return out;
-}
-
 async function main() {
   const issueId = process.env.SENTRY_ISSUE_ID;
   const attemptId = process.env.AUTOFIX_ATTEMPT_ID || '';
@@ -112,19 +94,30 @@ async function main() {
 
   const issue = await fetchIssue(issueId);
   const event = await fetchLatestEvent(issueId);
-  const stack = extractStack(event);
-  log({ level: 'info', msg: 'issue fetched', short_id: issue.shortId, culprit: issue.culprit, frames: stack.frames.length, files: stack.source_files });
+  // Thread the issue title into extractStack so the symbol-hint extractor has
+  // access to "[CreditService.getAgentInvoices]" style context even when the
+  // exception.value omits it.
+  const stack = extractStack(event, issue.title);
+  log({
+    level: 'info', msg: 'issue fetched',
+    short_id: issue.shortId, culprit: issue.culprit,
+    frames: stack.frames.length,
+    files: stack.source_files,
+    symbol_hints: stack.symbol_hints || [],
+  });
 
   // Pre-gate: does the stack point at any denylisted file?
+  // NOTE: symbol-only hints (bare identifiers) don't match denylist substrings,
+  //       so the pre-gate is unchanged; the post-apply gate is what enforces.
   const prePaths = stack.source_files.map(f => f.replace(/^\.?\//, ''));
   const preAssess = assessPaths(prePaths);
   if (!preAssess.ok) {
     log({ level: 'info', msg: 'issue originates in denylist — opening diagnostic PR', denied: preAssess.denied });
   }
 
-  const files = resolveFiles(root, stack.source_files).slice(0, 8);
+  const files = resolveFiles(root, stack.source_files, SUBDIRS, { maxFiles: 8, maxSize: 500_000 });
   if (files.length === 0) {
-    log({ level: 'warn', msg: 'no in-app source files resolved — Claude cannot propose a diff' });
+    log({ level: 'warn', msg: 'no in-app source files resolved — Claude cannot propose a diff', tried: stack.source_files });
     await updateAttempt(attemptId, { status: 'rejected', error_message: 'no in-app source files to show Claude' });
     process.exit(0);
   }
@@ -167,7 +160,6 @@ async function main() {
   const postAssess = assessPaths(changed);
   if (!postAssess.ok) {
     log({ level: 'warn', msg: 'post-apply denylist hit — aborting', denied: postAssess.denied });
-    // Don't push; just record.
     await updateAttempt(attemptId, { status: 'rejected', error_message: `denylisted paths: ${postAssess.denied.join(',')}`.slice(0, 500), claude_tokens_in: reply.usage?.input_tokens, claude_tokens_out: reply.usage?.output_tokens });
     process.exit(0);
   }
@@ -191,7 +183,19 @@ async function main() {
   });
 }
 
-main().catch(err => {
+main().catch(async (err) => {
+  const attemptId = process.env.AUTOFIX_ATTEMPT_ID || '';
   log({ level: 'error', msg: 'fatal', err: String(err?.stack || err).slice(0, 1500) });
+  // Belt-and-suspenders: write `errored` to the ledger BEFORE exit so the row
+  // can't be stranded in `running` if the workflow's mark-errored step itself
+  // fails (e.g. network hiccup during cleanup).
+  try {
+    await updateAttempt(attemptId, {
+      status: 'errored',
+      error_message: `fatal: ${String(err?.message || err)}`.slice(0, 500),
+    });
+  } catch (e) {
+    log({ level: 'warn', msg: 'fatal-handler updateAttempt also failed', err: String(e) });
+  }
   process.exit(1);
 });

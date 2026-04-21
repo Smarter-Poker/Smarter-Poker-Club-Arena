@@ -106,7 +106,7 @@
 .addBtn {
   width: 100%;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: 20px;
   font-size: 0.7rem;
   font-weight: 700;
   background: rgba(0, 212, 255, 0.1);
@@ -115,6 +115,8 @@
   cursor: pointer;
   transition: all 0.2s;
   margin-top: 4px;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .addBtn:hover:not(:disabled) {

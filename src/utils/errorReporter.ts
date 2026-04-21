@@ -15,6 +15,25 @@
 import { captureException, addBreadcrumb } from '../core/SentryInit';
 
 /**
+ * Convert an unknown error value to a readable string.
+ * Handles Error instances, plain objects (e.g. Supabase error responses),
+ * and primitive values.
+ */
+function errorToString(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error !== null && typeof error === 'object') {
+    // Supabase errors are plain objects with message/code/details properties
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return Object.prototype.toString.call(error);
+    }
+  }
+  return String(error);
+}
+
+/**
  * Report an error to both console and Sentry.
  * @param error - The error object or message string
  * @param context - A short string identifying where the error occurred (e.g. 'WalletService.lockForBuyIn')
@@ -29,7 +48,7 @@ export function reportError(
   console.error(`[${context}]`, error);
 
   // Send to Sentry for production alerting
-  const err = error instanceof Error ? error : new Error(String(error));
+  const err = error instanceof Error ? error : new Error(errorToString(error));
   err.message = `[${context}] ${err.message}`;
 
   captureException(err, {

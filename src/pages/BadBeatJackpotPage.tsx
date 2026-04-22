@@ -106,7 +106,8 @@ export default function BadBeatJackpotPage() {
           )
           .subscribe((status: string, err?: Error) => {
             if (status === 'CHANNEL_ERROR') {
-              reportError(err?.message || err, 'BadBeatJackpotPage._Realtime_channel_error');
+              if (err)
+                reportError(err?.message || err, 'BadBeatJackpotPage._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
               console.warn('[BadBeatJackpotPage] ⏱️ Realtime channel timed out');

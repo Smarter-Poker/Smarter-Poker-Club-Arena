@@ -274,7 +274,8 @@ export default function TournamentLobbyPage() {
         })
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'TournamentLobbyPage._Realtime_channel_error');
+            if (err)
+              reportError(err?.message || err, 'TournamentLobbyPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[TournamentLobbyPage] ⏱️ Realtime channel timed out');

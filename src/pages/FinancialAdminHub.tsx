@@ -315,7 +315,7 @@ export default function FinancialAdminHub() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'disputes' }, loadStats)
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'FinancialAdminHub._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'FinancialAdminHub._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[FinancialAdminHub] ⏱️ Realtime channel timed out');

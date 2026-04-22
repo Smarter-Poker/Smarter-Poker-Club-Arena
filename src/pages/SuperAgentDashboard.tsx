@@ -108,7 +108,8 @@ export default function SuperAgentDashboard() {
           )
           .subscribe((status: string, err?: Error) => {
             if (status === 'CHANNEL_ERROR') {
-              reportError(err?.message || err, 'SuperAgentDashboard._Realtime_channel_error');
+              if (err)
+                reportError(err?.message || err, 'SuperAgentDashboard._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
               console.warn('[SuperAgentDashboard] ⏱️ Realtime channel timed out');

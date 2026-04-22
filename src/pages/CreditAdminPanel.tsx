@@ -185,7 +185,7 @@ export default function CreditAdminPanel() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'CreditAdminPanel._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'CreditAdminPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[CreditAdminPanel] ⏱️ Realtime channel timed out');

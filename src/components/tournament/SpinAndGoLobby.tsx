@@ -42,7 +42,7 @@ const MULTIPLIER_PROBABILITIES: { [key: number]: number } = {
   10: 2.38,
   25: 0.95,
   50: 0.38,
-  100: 0.10,
+  100: 0.1,
 };
 
 export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
@@ -89,7 +89,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'SpinAndGoLobby._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'SpinAndGoLobby._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[SpinAndGoLobby] ⏱️ Realtime channel timed out');
@@ -225,9 +225,19 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
                       const prob = MULTIPLIER_PROBABILITIES[multiplier] || 0;
                       // Prize = 2× buy_in base + bonus buy-ins from pool
                       const bonusBuyIns =
-                        multiplier === 2 ? 0 : multiplier === 3 ? 1 :
-                        multiplier === 5 ? 3 : multiplier === 10 ? 8 :
-                        multiplier === 25 ? 23 : multiplier === 50 ? 48 : 98;
+                        multiplier === 2
+                          ? 0
+                          : multiplier === 3
+                            ? 1
+                            : multiplier === 5
+                              ? 3
+                              : multiplier === 10
+                                ? 8
+                                : multiplier === 25
+                                  ? 23
+                                  : multiplier === 50
+                                    ? 48
+                                    : 98;
                       const prize = Math.trunc(t.buyIn * (2 + bonusBuyIns));
                       return (
                         <div key={multiplier} className="prize-tier">

@@ -163,7 +163,7 @@ export default function SessionHistoryPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'SessionHistoryPage._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'SessionHistoryPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[SessionHistoryPage] ⏱️ Realtime channel timed out');

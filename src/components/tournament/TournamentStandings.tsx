@@ -60,7 +60,7 @@ export default function TournamentStandings({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'TournamentStandings.Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'TournamentStandings.Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TournamentStandings] Realtime channel timed out');

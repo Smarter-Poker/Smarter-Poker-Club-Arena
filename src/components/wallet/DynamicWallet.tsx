@@ -396,7 +396,7 @@ export default function DynamicWallet({
           retryCountRef.current = 0;
         }
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'DynamicWallet._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'DynamicWallet._Realtime_channel_error');
           scheduleReconnect();
         }
         if (status === 'TIMED_OUT') {

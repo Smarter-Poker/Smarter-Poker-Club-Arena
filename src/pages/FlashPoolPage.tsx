@@ -196,7 +196,7 @@ export default function FlashPoolPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'FlashPoolPage._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'FlashPoolPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[FlashPoolPage] ⏱️ Realtime channel timed out');

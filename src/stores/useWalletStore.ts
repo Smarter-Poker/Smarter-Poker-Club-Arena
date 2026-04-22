@@ -13,6 +13,33 @@ import { DiamondService } from '../services/DiamondService';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// MODULE-LEVEL CIRCUIT BREAKERS — prevent repeated Sentry floods on persistent RLS errors
+// Each breaker trips after 3 failures and resets after 5 min cooldown.
+// ═══════════════════════════════════════════════════════════════════════════════
+function makeCircuitBreaker(cooldownMs = 5 * 60_000) {
+  let failures = 0,
+    trippedAt = 0;
+  return {
+    isOpen(): boolean {
+      if (failures < 3) return false;
+      if (Date.now() - trippedAt > cooldownMs) {
+        failures = 0;
+        trippedAt = 0;
+        return false;
+      }
+      return true;
+    },
+    trip(): void {
+      failures++;
+      if (failures >= 3 && trippedAt === 0) trippedAt = Date.now();
+    },
+  };
+}
+const _txBreaker = makeCircuitBreaker();
+const _balanceBreaker = makeCircuitBreaker();
+const _diamondBreaker = makeCircuitBreaker();
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // 📦 TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -142,7 +169,10 @@ export const useWalletStore = create<WalletState>()(
 
           set({ balances });
         } catch (error) {
-          reportError(error, 'useWalletStore.Load_balances_failed');
+          if (!_balanceBreaker.isOpen()) {
+            _balanceBreaker.trip();
+            reportError(error, 'useWalletStore.Load_balances_failed');
+          }
         } finally {
           set({ isLoadingWallet: false });
         }
@@ -155,7 +185,10 @@ export const useWalletStore = create<WalletState>()(
           const wallet = await DiamondService.getBalance(userId);
           set({ diamonds: wallet.balance || 0 });
         } catch (error) {
-          reportError(error, 'useWalletStore.Load_diamonds_failed');
+          if (!_diamondBreaker.isOpen()) {
+            _diamondBreaker.trip();
+            reportError(error, 'useWalletStore.Load_diamonds_failed');
+          }
           set({ diamonds: 0 });
         } finally {
           set({ isLoadingDiamonds: false });
@@ -178,7 +211,10 @@ export const useWalletStore = create<WalletState>()(
           }));
           set({ transactions });
         } catch (error) {
-          reportError(error, 'useWalletStore.Load_transactions_failed');
+          if (!_txBreaker.isOpen()) {
+            _txBreaker.trip();
+            reportError(error, 'useWalletStore.Load_transactions_failed');
+          }
         } finally {
           set({ isLoadingTransactions: false });
         }
@@ -201,7 +237,10 @@ export const useWalletStore = create<WalletState>()(
 
         const { balances } = get();
         if (balances.PLAYER.available < amount) {
-          reportError(new Error('[Store] Insufficient balance for buy-in'), 'useWalletStore.Insufficient_balance_for_buyin');
+          reportError(
+            new Error('[Store] Insufficient balance for buy-in'),
+            'useWalletStore.Insufficient_balance_for_buyin'
+          );
           return false;
         }
 
@@ -275,7 +314,12 @@ export const useWalletStore = create<WalletState>()(
           return true;
         } catch (error) {
           // Revert optimistic update on failure + release mutex
-          set({ _operationInFlight: false, balances: previousBalances, pendingBuyIn: null, pendingTableId: null });
+          set({
+            _operationInFlight: false,
+            balances: previousBalances,
+            pendingBuyIn: null,
+            pendingTableId: null,
+          });
           reportError(error, 'useWalletStore.Unlock_from_table_failed');
           return false;
         }
@@ -295,7 +339,10 @@ export const useWalletStore = create<WalletState>()(
 
         const { balances } = get();
         if (balances[fromWallet].available < amount) {
-          reportError(new Error('[Store] Insufficient balance for transfer'), 'useWalletStore.Insufficient_balance_for_transfer');
+          reportError(
+            new Error('[Store] Insufficient balance for transfer'),
+            'useWalletStore.Insufficient_balance_for_transfer'
+          );
           return false;
         }
 

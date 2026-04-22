@@ -82,7 +82,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       })
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'AgentCashoutPanel._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'AgentCashoutPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AgentCashoutPanel] ⏱️ Realtime channel timed out');
@@ -187,7 +187,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                   width: '36px',
                   height: '36px',
                   borderRadius: '50%',
-                  background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                  background:
+                    'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                   backgroundSize: '200px 100%',
                   animation: 'shimmerSlide 1.4s ease-in-out infinite',
                   flexShrink: 0,
@@ -199,7 +200,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                     width: `${50 + Math.random() * 30}%`,
                     height: '12px',
                     borderRadius: '4px',
-                    background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    background:
+                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                     backgroundSize: '200px 100%',
                     animation: 'shimmerSlide 1.4s ease-in-out infinite',
                     marginBottom: '6px',
@@ -210,7 +212,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                     width: '40%',
                     height: '10px',
                     borderRadius: '4px',
-                    background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    background:
+                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                     backgroundSize: '200px 100%',
                     animation: 'shimmerSlide 1.4s ease-in-out infinite',
                   }}

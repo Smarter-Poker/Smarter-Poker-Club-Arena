@@ -99,7 +99,7 @@ export default function PresenceIndicator({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'PresenceIndicator._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'PresenceIndicator._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PresenceIndicator] ⏱️ Realtime channel timed out');

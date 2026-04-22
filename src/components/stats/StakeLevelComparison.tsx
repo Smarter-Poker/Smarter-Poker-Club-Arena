@@ -155,7 +155,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'StakeLevelComparison._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'StakeLevelComparison._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[StakeLevelComparison] ⏱️ Realtime channel timed out');

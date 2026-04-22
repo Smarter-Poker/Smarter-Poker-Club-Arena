@@ -143,33 +143,36 @@ export default function CashoutRequestModal({
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // ── Focus Trap: trap focus inside modal when open ──
-  const handleFocusTrap = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-      return;
-    }
-    if (e.key !== 'Tab' || !modalRef.current) return;
-
-    const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    );
-    if (focusable.length === 0) return;
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-
-    if (e.shiftKey) {
-      if (document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
+  const handleFocusTrap = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
       }
-    } else {
-      if (document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
+      if (e.key !== 'Tab' || !modalRef.current) return;
+
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
-    }
-  }, [onClose]);
+    },
+    [onClose]
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -243,7 +246,7 @@ export default function CashoutRequestModal({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[CashoutRequestModal] ⏱️ Realtime channel timed out');
@@ -341,7 +344,13 @@ export default function CashoutRequestModal({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="cashout-modal-title">
+    <div
+      className="modal-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cashout-modal-title"
+    >
       <div className="cashout-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         {/* Bottom-sheet drag handle */}
         <div className="cashout-drag-handle" />

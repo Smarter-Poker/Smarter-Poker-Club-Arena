@@ -129,7 +129,8 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'ClubFinancialDashboard._Realtime_channel_error');
+          if (err)
+            reportError(err?.message || err, 'ClubFinancialDashboard._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ClubFinancialDashboard] ⏱️ Realtime channel timed out');

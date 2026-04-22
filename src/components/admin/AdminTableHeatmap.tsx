@@ -101,7 +101,7 @@ export default function AdminTableHeatmap({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'AdminTableHeatmap._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'AdminTableHeatmap._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AdminTableHeatmap] ⏱️ Realtime channel timed out');

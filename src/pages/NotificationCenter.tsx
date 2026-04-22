@@ -141,7 +141,7 @@ export default function NotificationCenter() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'NotificationCenter._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'NotificationCenter._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[NotificationCenter] ⏱️ Realtime channel timed out');

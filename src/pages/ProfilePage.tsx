@@ -578,7 +578,7 @@ export default function ProfilePage() {
       500
     );
     const unsubDiamond = masterBus.subscribeDebounced(
-      "DIAMOND_BALANCE_CHANGED",
+      'DIAMOND_BALANCE_CHANGED',
       () => {
         invalidateProfileCache();
         supabase.auth
@@ -590,7 +590,7 @@ export default function ProfilePage() {
               });
             }
           })
-          .catch((e) => console.warn("[Profile] Refreshing diamond balance failed:", e));
+          .catch((e) => console.warn('[Profile] Refreshing diamond balance failed:', e));
       },
       500
     );
@@ -678,7 +678,8 @@ export default function ProfilePage() {
           .getUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
-              dailyChallengeService.getAllChallenges(authUser.id)
+              dailyChallengeService
+                .getAllChallenges(authUser.id)
                 .then(({ daily, weekly, monthly }) => {
                   if (!isMounted) return;
                   const allMissions = [...daily, ...weekly, ...monthly];
@@ -800,7 +801,7 @@ export default function ProfilePage() {
           )
           .subscribe((status: string, err?: Error) => {
             if (status === 'CHANNEL_ERROR') {
-              reportError(err?.message || err, 'ProfilePage._Realtime_channel_error');
+              if (err) reportError(err?.message || err, 'ProfilePage._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
               console.warn('[ProfilePage] ⏱️ Realtime channel timed out');
@@ -904,9 +905,9 @@ export default function ProfilePage() {
           >
             Change Avatar
           </button>
-            <button className={styles.editButton} onClick={() => setShowProfileEdit(true)}>
-              Edit Profile
-            </button>
+          <button className={styles.editButton} onClick={() => setShowProfileEdit(true)}>
+            Edit Profile
+          </button>
           <button
             className={styles.editButton}
             onClick={() => navigate('/vip')}
@@ -1466,23 +1467,23 @@ export default function ProfilePage() {
                 .update({
                   username: data.username,
                   display_name: data.displayName,
-                  bio: data.bio
+                  bio: data.bio,
                 })
                 .eq('id', user.id);
-                
+
               if (error) throw error;
-              
+
               const { error: userError } = await supabase
                 .from('users')
                 .update({ username: data.username })
                 .eq('id', user.id);
-                
+
               if (userError) throw userError;
-              
+
               setUser({
                 ...user,
                 username: data.username,
-                displayName: data.displayName
+                displayName: data.displayName,
               });
               setShowProfileEdit(false);
             } catch (err) {

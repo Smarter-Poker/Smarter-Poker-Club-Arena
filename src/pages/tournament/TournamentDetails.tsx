@@ -274,7 +274,7 @@ export default function TournamentDetails() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'TournamentDetails._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'TournamentDetails._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TournamentDetails] ⏱️ Realtime channel timed out');
@@ -837,7 +837,9 @@ export default function TournamentDetails() {
               </div>
               <div className="stat">
                 <span className="stat-label">Current Level</span>
-                <span className="stat-value">{tournament.current_level || (tournament.status === 'RUNNING' ? 1 : '-')}</span>
+                <span className="stat-value">
+                  {tournament.current_level || (tournament.status === 'RUNNING' ? 1 : '-')}
+                </span>
               </div>
               <div className="stat">
                 <span className="stat-label">Remaining</span>

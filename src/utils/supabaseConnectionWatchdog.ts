@@ -192,7 +192,11 @@ class SupabaseConnectionWatchdog {
             try {
               channel.subscribe((status: string, err?: Error) => {
                 if (status === 'CHANNEL_ERROR') {
-                  reportError(err?.message || err, 'supabaseConnectionWatchdog._Channel_resubscribe_error');
+                  if (err)
+                    reportError(
+                      err?.message || err,
+                      'supabaseConnectionWatchdog._Channel_resubscribe_error'
+                    );
                 }
                 if (status === 'TIMED_OUT') {
                   console.warn('[Watchdog] ⏱️ Channel re-subscribe timed out');

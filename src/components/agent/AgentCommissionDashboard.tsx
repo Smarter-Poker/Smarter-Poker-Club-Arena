@@ -102,7 +102,8 @@ export function AgentCommissionDashboard() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'AgentCommissionDashboard._Realtime_channel_error');
+          if (err)
+            reportError(err?.message || err, 'AgentCommissionDashboard._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AgentCommissionDashboard] ⏱️ Realtime channel timed out');

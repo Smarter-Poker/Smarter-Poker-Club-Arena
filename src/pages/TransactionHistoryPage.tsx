@@ -141,7 +141,8 @@ export default function TransactionHistoryPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'TransactionHistoryPage._Realtime_channel_error');
+          if (err)
+            reportError(err?.message || err, 'TransactionHistoryPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TransactionHistoryPage] ⏱️ Realtime channel timed out');

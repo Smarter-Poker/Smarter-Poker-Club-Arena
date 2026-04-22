@@ -82,7 +82,7 @@ export default function ReportReviewPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'ReportReviewPage._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'ReportReviewPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ReportReviewPage] ⏱️ Realtime channel timed out');

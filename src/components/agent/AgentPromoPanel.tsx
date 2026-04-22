@@ -161,7 +161,7 @@ export default function AgentPromoPanel({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'AgentPromoPanel._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'AgentPromoPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AgentPromoPanel] ⏱️ Realtime channel timed out');
@@ -323,7 +323,8 @@ export default function AgentPromoPanel({
                   width: 32,
                   height: 32,
                   borderRadius: '50%',
-                  background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                  background:
+                    'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                   backgroundSize: '200px 100%',
                   animation: 'shimmerSlide 1.4s ease-in-out infinite',
                   flexShrink: 0,
@@ -335,7 +336,8 @@ export default function AgentPromoPanel({
                     width: `${50 + i * 10}%`,
                     height: 12,
                     borderRadius: 4,
-                    background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    background:
+                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                     backgroundSize: '200px 100%',
                     animation: 'shimmerSlide 1.4s ease-in-out infinite',
                     marginBottom: 5,
@@ -346,7 +348,8 @@ export default function AgentPromoPanel({
                     width: '40%',
                     height: 10,
                     borderRadius: 4,
-                    background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    background:
+                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                     backgroundSize: '200px 100%',
                     animation: 'shimmerSlide 1.4s ease-in-out infinite',
                   }}

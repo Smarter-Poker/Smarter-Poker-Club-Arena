@@ -63,7 +63,8 @@ export function TournamentRegistration({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'TournamentRegistration._Realtime_channel_error');
+          if (err)
+            reportError(err?.message || err, 'TournamentRegistration._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TournamentRegistration] ⏱️ Realtime channel timed out');

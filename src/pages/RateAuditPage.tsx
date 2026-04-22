@@ -76,7 +76,7 @@ export default function RateAuditPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'RateAuditPage._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'RateAuditPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[RateAuditPage] ⏱️ Realtime channel timed out');

@@ -436,7 +436,7 @@ export default function AgentDashboardPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'AgentDashboardPage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'AgentDashboardPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AgentDashboardPage] ⏱️ Realtime channel timed out');

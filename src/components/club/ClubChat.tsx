@@ -138,7 +138,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'ClubChat._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'ClubChat._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ClubChat] ⏱️ Realtime channel timed out');

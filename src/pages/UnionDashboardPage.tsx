@@ -484,7 +484,7 @@ export default function UnionDashboardPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'UnionDashboardPage._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'UnionDashboardPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[UnionDashboardPage] ⏱️ Realtime channel timed out');

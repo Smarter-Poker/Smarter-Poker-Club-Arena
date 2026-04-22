@@ -465,7 +465,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'AdminDashboardPage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'AdminDashboardPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AdminDashboardPage] ⏱️ Realtime channel timed out');
@@ -971,7 +971,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'AdminDashboardPage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'AdminDashboardPage._Realtime_channel_error');
           }
         });
     };
@@ -1041,7 +1041,10 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                 a.click();
                 URL.revokeObjectURL(url);
               } catch (e: unknown) {
-                reportError(e instanceof Error ? e.message : String(e), 'AdminDashboardPage.CSV_export_failed');
+                reportError(
+                  e instanceof Error ? e.message : String(e),
+                  'AdminDashboardPage.CSV_export_failed'
+                );
               }
             }}
             className="admin-btn admin-btn-ghost admin-btn-sm"

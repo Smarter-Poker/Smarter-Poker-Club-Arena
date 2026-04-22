@@ -732,7 +732,7 @@ export function useBBJ(clubId: string | null) {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'BBJDisplay._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'BBJDisplay._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[BBJDisplay] ⏱️ Realtime channel timed out');

@@ -289,15 +289,14 @@ export default function ClubHomePage() {
         );
       }
 
-      channel
-        .subscribe((status: string, err?: Error) => {
-          setWsConnected(status === 'SUBSCRIBED');
-          if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
-          } else if (status === 'TIMED_OUT') {
-            console.warn('[ClubHomePage] ⏱️ Tables RT channel timed out');
-          }
-        });
+      channel.subscribe((status: string, err?: Error) => {
+        setWsConnected(status === 'SUBSCRIBED');
+        if (status === 'CHANNEL_ERROR') {
+          if (err) reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
+        } else if (status === 'TIMED_OUT') {
+          console.warn('[ClubHomePage] ⏱️ Tables RT channel timed out');
+        }
+      });
     };
 
     setupRealtime().catch((e) => console.warn('[ClubHomePage] Table realtime setup failed:', e));
@@ -728,7 +727,7 @@ export default function ClubHomePage() {
 
   // Filter tables
   const showTournaments = activeMainFilter === 'TOURNAMENTS';
-  
+
   const filteredTables = useMemo(
     () =>
       tables.filter((table) => {
@@ -749,11 +748,11 @@ export default function ClubHomePage() {
 
         // Cash game status filter (skip if ALL tab is active)
         if (activeMainFilter === 'ALL') return true;
-        
+
         if (cashSubFilter === 'live') return table.current_players > 0;
         if (cashSubFilter === 'empty') return table.current_players === 0;
         if (cashSubFilter === 'full') return table.current_players >= table.max_players;
-        return true; 
+        return true;
       }),
     [tables, activeMainFilter, cashVariant, cashSubFilter]
   );
@@ -773,7 +772,7 @@ export default function ClubHomePage() {
         if (tournVariant === 'MTT') passesGameFilter = isMTT;
         else if (tournVariant === 'SN') passesGameFilter = isSNG;
         else if (tournVariant === 'Spin-It') passesGameFilter = isSpin;
-        
+
         if (!passesGameFilter) return false;
 
         // Tournament status filter (skip if ALL tab is active)
@@ -971,7 +970,7 @@ export default function ClubHomePage() {
       <div className="club-home__club-section">
         <div className="club-home__club-card">
           <div className="club-card__avatar">
-            {(club.logo_url || club.avatar_url) ? (
+            {club.logo_url || club.avatar_url ? (
               <img src={club.logo_url || club.avatar_url} alt={club.name} loading="lazy" />
             ) : Number(club.club_id) === SHARK_CLUB_ID ? (
               <img src={SHARK_CLUB_FALLBACK_LOGO} alt="Shark Club" loading="lazy" />
@@ -1016,10 +1015,10 @@ export default function ClubHomePage() {
                 }}
               >
                 <span className="icon-link"></span>
-                </button>
-              </div>
+              </button>
             </div>
           </div>
+        </div>
 
         {/* ── Wallet — upper-right, always rendered ── */}
         {currentUserId && resolvedClubId && (

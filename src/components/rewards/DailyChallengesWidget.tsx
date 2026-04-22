@@ -75,7 +75,8 @@ export const DailyChallengesWidget: React.FC = () => {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'DailyChallengesWidget._Realtime_channel_error');
+            if (err)
+              reportError(err?.message || err, 'DailyChallengesWidget._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[DailyChallengesWidget] ⏱️ Realtime channel timed out');
@@ -112,8 +113,11 @@ export const DailyChallengesWidget: React.FC = () => {
     // happen silently to avoid distracting UI flashes on every hand played
     if (!initialLoadDoneRef.current) setLoading(true);
     try {
-      const { daily: dailyData, weekly: weeklyData, monthly: monthlyData } =
-        await dailyChallengeService.getAllChallenges(user.id);
+      const {
+        daily: dailyData,
+        weekly: weeklyData,
+        monthly: monthlyData,
+      } = await dailyChallengeService.getAllChallenges(user.id);
 
       if (!isMounted.current) return;
       loadErrorRef.current = false;

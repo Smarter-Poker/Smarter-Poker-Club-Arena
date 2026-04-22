@@ -117,7 +117,8 @@ class NotificationServiceClass {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'NotificationService._Channel_error_on_notifications');
+          if (err)
+            reportError(err?.message || err, 'NotificationService._Channel_error_on_notifications');
         }
         if (status === 'TIMED_OUT') {
           console.warn(`[NotificationService] ⏱️ Channel notifications:${userId} timed out`);

@@ -32,8 +32,16 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
   } else if (error && typeof error === 'object') {
     // Supabase errors: { message, code, details, hint }
     const obj = error as Record<string, unknown>;
-    const msg = (obj.message as string) || (obj.details as string) || JSON.stringify(obj);
-    err = new Error(msg);
+    let msg =
+      obj.message || obj.details || obj.error_description || obj.error || JSON.stringify(obj);
+    if (typeof msg === 'object') {
+      try {
+        msg = JSON.stringify(msg);
+      } catch (e) {
+        msg = 'Circular or Un-stringifyable Object';
+      }
+    }
+    err = new Error(String(msg));
     // Preserve extra fields as properties on the Error object
     if (obj.code) (err as any).code = obj.code;
     if (obj.details) (err as any).details = obj.details;
@@ -41,6 +49,16 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
   } else {
     err = new Error(String(error));
   }
+
+  // Guard against errors that ALREADY had an "[object Object]" message
+  if (err.message === '[object Object]') {
+    try {
+      err.message = JSON.stringify(error);
+    } catch (e) {
+      err.message = 'Unknown Object Error';
+    }
+  }
+
   err.message = `[${context}] ${err.message}`;
 
   captureException(err, {

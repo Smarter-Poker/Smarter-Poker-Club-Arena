@@ -87,7 +87,10 @@ export const OfflineQueueService = {
     // Check for duplicate operation
     const existing = await this.findByOperationId(mutation.operationId);
     if (existing) {
-      reportError(new Error(`[OfflineQueue] Duplicate operation ${mutation.operationId} — skipping`), 'OfflineQueueService.Duplicate_operation_mutationoperationId_');
+      reportError(
+        new Error(`[OfflineQueue] Duplicate operation ${mutation.operationId} — skipping`),
+        'OfflineQueueService.Duplicate_operation_mutationoperationId_'
+      );
       return false;
     }
 
@@ -128,7 +131,7 @@ export const OfflineQueueService = {
 
     // Concurrency guard — prevent double-execution from rapid 'online' events
     if (this._isReplaying) {
-      reportError(new Error('[OfflineQueue] Replay already in progress — skipping'), 'OfflineQueueService.Replay_already_in_progress__skipping');
+      console.debug('[OfflineQueue] Replay already in progress — skipping (not an error)');
       return { replayed: 0, failed: 0 };
     }
     this._isReplaying = true;
@@ -155,7 +158,10 @@ export const OfflineQueueService = {
           } else {
             mutation.retries++;
             if (mutation.retries >= 3) {
-              reportError(new Error(`[OfflineQueue] Mutation ${mutation.id} failed 3 times — dropping`), 'OfflineQueueService.Mutation_mutationid_failed_3_times__drop');
+              reportError(
+                new Error(`[OfflineQueue] Mutation ${mutation.id} failed 3 times — dropping`),
+                'OfflineQueueService.Mutation_mutationid_failed_3_times__drop'
+              );
               await this.remove(mutation.id);
               failed++;
             } else {
@@ -281,7 +287,10 @@ export const OfflineQueueService = {
         return !error;
       }
       default:
-        reportError(new Error(`[OfflineQueue] Unknown action: ${mutation.action}`), 'OfflineQueueService.Unknown_action');
+        reportError(
+          new Error(`[OfflineQueue] Unknown action: ${mutation.action}`),
+          'OfflineQueueService.Unknown_action'
+        );
         return false;
     }
   },

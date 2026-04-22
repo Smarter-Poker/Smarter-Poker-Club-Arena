@@ -252,7 +252,7 @@ export default function PlayerWalletPage() {
       // listener below backstops admin-side adjustments.
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'PlayerWalletPage._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'PlayerWalletPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PlayerWalletPage] ⏱️ Realtime channel timed out');

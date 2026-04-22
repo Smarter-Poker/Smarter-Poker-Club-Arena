@@ -391,7 +391,7 @@ export default function AchievementsPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'AchievementsPage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'AchievementsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AchievementsPage] ⏱️ Realtime channel timed out');

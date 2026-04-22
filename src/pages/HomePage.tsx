@@ -428,7 +428,7 @@ function HomePageInner() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'HomePage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[HomePage] ⏱️ Realtime channel timed out');
@@ -707,7 +707,7 @@ function HomePageInner() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'HomePage._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[HomePage] ⏱️ Realtime channel timed out');

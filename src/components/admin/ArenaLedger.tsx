@@ -178,7 +178,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'ArenaLedger._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'ArenaLedger._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ArenaLedger] ⏱️ Realtime channel timed out');

@@ -488,7 +488,7 @@ export default function ClubMembersPage() {
   const loadMembers = useCallback(
     async (getIsMounted?: () => boolean) => {
       if (!clubId) return;
-      
+
       loadingRef.current = true;
       if (!getIsMounted || getIsMounted()) setLoading(true);
       try {
@@ -661,25 +661,25 @@ export default function ClubMembersPage() {
     onPayload: (payload) => {
       if (!payload) return;
       const { eventType, new: newRec, old: oldRec } = payload;
-      
+
       if (eventType === 'DELETE' && oldRec) {
-        setMembers(prev => prev.filter(m => m.user_id !== oldRec.user_id));
+        setMembers((prev) => prev.filter((m) => m.user_id !== oldRec.user_id));
       } else if (eventType === 'UPDATE' && newRec) {
         if (newRec.status === 'banned' || newRec.status === 'suspended') {
-          setMembers(prev => prev.filter(m => m.user_id !== newRec.user_id));
+          setMembers((prev) => prev.filter((m) => m.user_id !== newRec.user_id));
         } else {
-          setMembers(prev => {
-            const idx = prev.findIndex(m => m.user_id === newRec.user_id);
+          setMembers((prev) => {
+            const idx = prev.findIndex((m) => m.user_id === newRec.user_id);
             if (idx === -1) {
               setTimeout(() => loadMembers(() => true), 100);
               return prev;
             }
             const next = [...prev];
-            next[idx] = { 
-              ...next[idx], 
-              role: newRec.role, 
+            next[idx] = {
+              ...next[idx],
+              role: newRec.role,
               chip_balance: newRec.chip_balance,
-              parent_agent_id: newRec.parent_agent_id
+              parent_agent_id: newRec.parent_agent_id,
             };
             return next;
           });
@@ -711,7 +711,7 @@ export default function ClubMembersPage() {
         if (status === 'SUBSCRIBED') {
           await channel.track({ user_id: user.id, club_id: clubId });
         } else if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'ClubMembersPage._Presence_channel_error');
+          if (err) reportError(err?.message || err, 'ClubMembersPage._Presence_channel_error');
         } else if (status === 'TIMED_OUT') {
           console.warn('[ClubMembersPage] ⏱️ Presence channel timed out');
         }

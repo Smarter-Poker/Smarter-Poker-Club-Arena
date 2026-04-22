@@ -99,7 +99,7 @@ class MessagingServiceClass {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'MessagingService._Channel_error_on_messages');
+          if (err) reportError(err?.message || err, 'MessagingService._Channel_error_on_messages');
         }
         if (status === 'TIMED_OUT') {
           console.warn(`[MessagingService] ⏱️ Channel messages:${userId} timed out`);
@@ -312,7 +312,10 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (membershipError || !userMembership) {
-      reportError(new Error('[Messaging] User is not a member of this club'), 'MessagingService.User_is_not_a_member_of_this_club');
+      reportError(
+        new Error('[Messaging] User is not a member of this club'),
+        'MessagingService.User_is_not_a_member_of_this_club'
+      );
       throw new Error('You must be a member of the club to start conversations');
     }
 
@@ -432,7 +435,10 @@ class MessagingServiceClass {
   async toggleReaction(messageId: string, reaction: string): Promise<boolean> {
     const userId = (await getAuthUser()).data?.user?.id;
     if (!userId) {
-      reportError(new Error('[Messaging] No user ID available for reaction'), 'MessagingService.No_user_ID_available_for_reaction');
+      reportError(
+        new Error('[Messaging] No user ID available for reaction'),
+        'MessagingService.No_user_ID_available_for_reaction'
+      );
       return false;
     }
 
@@ -460,7 +466,10 @@ class MessagingServiceClass {
       });
 
       if (error) {
-        reportError(new Error('[Messaging] get_message_reactions RPC not available - returning empty array'), 'MessagingService.get_message_reactions_RPC_not_available_');
+        reportError(
+          new Error('[Messaging] get_message_reactions RPC not available - returning empty array'),
+          'MessagingService.get_message_reactions_RPC_not_available_'
+        );
         return [];
       }
 
@@ -569,11 +578,17 @@ class MessagingServiceClass {
   ): Promise<Conversation | null> {
     // INPUT VALIDATION: Prevent abuse via oversized inputs
     if (!name || name.trim().length === 0 || name.trim().length > 100) {
-      reportError(new Error('[Messaging] Invalid group name: must be 1-100 characters'), 'MessagingService.Invalid_group_name');
+      reportError(
+        new Error('[Messaging] Invalid group name: must be 1-100 characters'),
+        'MessagingService.Invalid_group_name'
+      );
       return null;
     }
     if (participantIds.length > 100) {
-      reportError(new Error('[Messaging] Too many participants: maximum 100'), 'MessagingService.Too_many_participants');
+      reportError(
+        new Error('[Messaging] Too many participants: maximum 100'),
+        'MessagingService.Too_many_participants'
+      );
       return null;
     }
 
@@ -757,7 +772,10 @@ class MessagingServiceClass {
         .eq('id', originalMsg.conversation_id)
         .maybeSingle();
       if (sourceConv && !(sourceConv.participant_ids as string[]).includes(senderId)) {
-        reportError(new Error('[Messaging] Sender is not a participant in the source conversation'), 'MessagingService.Sender_is_not_a_participant_in_the_sourc');
+        reportError(
+          new Error('[Messaging] Sender is not a participant in the source conversation'),
+          'MessagingService.Sender_is_not_a_participant_in_the_sourc'
+        );
         return null;
       }
     }
@@ -770,7 +788,10 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (!original) {
-      reportError(new Error('[Messaging] Original message not found for forward'), 'MessagingService.Original_message_not_found_for_forward');
+      reportError(
+        new Error('[Messaging] Original message not found for forward'),
+        'MessagingService.Original_message_not_found_for_forward'
+      );
       return null;
     }
 
@@ -878,7 +899,10 @@ class MessagingServiceClass {
   async cancelScheduledMessage(messageId: string, senderId?: string): Promise<boolean> {
     // SECURITY FIX: senderId is mandatory — prevent unauthorized cancellation
     if (!senderId) {
-      reportError(new Error('[Messaging] senderId required for cancelScheduledMessage'), 'MessagingService.senderId_required_for_cancelScheduledMes');
+      reportError(
+        new Error('[Messaging] senderId required for cancelScheduledMessage'),
+        'MessagingService.senderId_required_for_cancelScheduledMes'
+      );
       return false;
     }
     const { error } = await supabase
@@ -1048,7 +1072,10 @@ class MessagingServiceClass {
   async pinMessage(messageId: string, conversationId: string, userId?: string): Promise<boolean> {
     // SECURITY FIX: userId is now mandatory for auth — reject if not provided
     if (!userId) {
-      reportError(new Error('[Messaging] userId required for pinMessage authorization'), 'MessagingService.userId_required_for_pinMessage_authoriza');
+      reportError(
+        new Error('[Messaging] userId required for pinMessage authorization'),
+        'MessagingService.userId_required_for_pinMessage_authoriza'
+      );
       return false;
     }
     // Get the conversation and message to verify access
@@ -1060,7 +1087,10 @@ class MessagingServiceClass {
 
     // Verify user is a participant (mandatory check)
     if (!conv || !(conv.participant_ids as string[]).includes(userId)) {
-      reportError(new Error('[Messaging] User not a participant of this conversation'), 'MessagingService.User_not_a_participant_of_this_conversat');
+      reportError(
+        new Error('[Messaging] User not a participant of this conversation'),
+        'MessagingService.User_not_a_participant_of_this_conversat'
+      );
       return false;
     }
 
@@ -1080,7 +1110,10 @@ class MessagingServiceClass {
   ): Promise<boolean> {
     // SECURITY FIX: Require both conversationId and userId for authorization
     if (!conversationId || !userId) {
-      reportError(new Error('[Messaging] conversationId and userId required for unpinMessage'), 'MessagingService.conversationId_and_userId_required_for_u');
+      reportError(
+        new Error('[Messaging] conversationId and userId required for unpinMessage'),
+        'MessagingService.conversationId_and_userId_required_for_u'
+      );
       return false;
     }
     {
@@ -1091,7 +1124,10 @@ class MessagingServiceClass {
         .maybeSingle();
 
       if (!conv || !(conv.participant_ids as string[]).includes(userId)) {
-        reportError(new Error('[Messaging] User not a participant of this conversation'), 'MessagingService.User_not_a_participant_of_this_conversat');
+        reportError(
+          new Error('[Messaging] User not a participant of this conversation'),
+          'MessagingService.User_not_a_participant_of_this_conversat'
+        );
         return false;
       }
     }
@@ -1151,7 +1187,12 @@ class MessagingServiceClass {
       .eq('id', conversationId)
       .maybeSingle();
     if (!conv || conv.category !== 'club_announcement') {
-      reportError(new Error('[Messaging] postAnnouncement: Invalid conversation or not an announcement channel'), 'MessagingService.postAnnouncement');
+      reportError(
+        new Error(
+          '[Messaging] postAnnouncement: Invalid conversation or not an announcement channel'
+        ),
+        'MessagingService.postAnnouncement'
+      );
       return false;
     }
     // Verify admin is a club owner/admin
@@ -1163,7 +1204,10 @@ class MessagingServiceClass {
         .eq('user_id', adminId)
         .maybeSingle();
       if (!membership || !['owner', 'admin'].includes(membership.role)) {
-        reportError(new Error('[Messaging] postAnnouncement: User is not a club admin'), 'MessagingService.postAnnouncement');
+        reportError(
+          new Error('[Messaging] postAnnouncement: User is not a club admin'),
+          'MessagingService.postAnnouncement'
+        );
         return false;
       }
     }
@@ -1299,7 +1343,7 @@ class MessagingServiceClass {
 
     channel.subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        reportError(err?.message || err, 'MessagingService._Typing_channel_error');
+        if (err) reportError(err?.message || err, 'MessagingService._Typing_channel_error');
       }
       if (status === 'TIMED_OUT') {
         console.warn(`[MessagingService] ⏱️ Typing channel timed out`);

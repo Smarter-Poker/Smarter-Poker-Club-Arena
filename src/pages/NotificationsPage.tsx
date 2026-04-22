@@ -167,7 +167,7 @@ export default function NotificationsPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'NotificationsPage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'NotificationsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[NotificationsPage] ⏱️ Realtime channel timed out');

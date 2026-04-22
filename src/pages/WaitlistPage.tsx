@@ -67,7 +67,7 @@ export default function WaitlistPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'WaitlistPage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'WaitlistPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[WaitlistPage] ⏱️ Realtime channel timed out');

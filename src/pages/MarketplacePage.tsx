@@ -240,7 +240,7 @@ export default function MarketplacePage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'MarketplacePage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'MarketplacePage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[MarketplacePage] ⏱️ Realtime channel timed out');

@@ -83,7 +83,7 @@ export default function ClubRulesPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'ClubRulesPage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'ClubRulesPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[ClubRulesPage] ⏱️ Realtime channel timed out');

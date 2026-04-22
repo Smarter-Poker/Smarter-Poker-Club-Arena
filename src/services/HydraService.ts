@@ -29,6 +29,33 @@ import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// MODULE-LEVEL CIRCUIT BREAKERS — prevent Sentry flood on persistent DB errors
+// These reset after a cooldown so transient errors still get reported.
+// ═══════════════════════════════════════════════════════════════════════════════
+const _cb = {
+  seatQueryFailures: 0,
+  seatQueryTrippedAt: 0,
+  /** Returns true if the seat query circuit is open (silenced) */
+  isSeatQueryOpen(): boolean {
+    if (this.seatQueryFailures < 3) return false;
+    if (Date.now() - this.seatQueryTrippedAt > 5 * 60_000) {
+      // 5 min cooldown — allow one retry pass
+      this.seatQueryFailures = 0;
+      this.seatQueryTrippedAt = 0;
+      return false;
+    }
+    return true;
+  },
+  recordSeatQueryFailure(): void {
+    this.seatQueryFailures++;
+    if (this.seatQueryFailures >= 3 && this.seatQueryTrippedAt === 0) {
+      this.seatQueryTrippedAt = Date.now();
+      console.debug('[HydraService] Seat query circuit OPEN — silencing repeated errors for 5 min');
+    }
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -92,7 +119,7 @@ export interface HandContext {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const DEFAULT_CONFIG: HydraConfig = {
-  maxHorsesPerTable: 4,          // Max 4 horses at any cash game table
+  maxHorsesPerTable: 4, // Max 4 horses at any cash game table
   minHorsesPerTable: 0,
   fleetSize: 308,
   entryDelayRange: [1, 3],
@@ -243,7 +270,10 @@ export const HydraService = {
       .is('left_at', null);
 
     if (seatError || !seatData?.length) {
-      if (seatError) reportError(seatError, 'HydraService.HydraServicegetActiveHorses_seat_query');
+      if (seatError && !_cb.isSeatQueryOpen()) {
+        _cb.recordSeatQueryFailure();
+        reportError(seatError, 'HydraService.HydraServicegetActiveHorses_seat_query');
+      }
       return [];
     }
 
@@ -303,7 +333,8 @@ export const HydraService = {
       .select('max_players')
       .eq('id', tableId)
       .maybeSingle();
-    if (tableInfoErr) reportError(tableInfoErr, 'HydraService.getTableLiquidityStatus_tableInfo_error');
+    if (tableInfoErr)
+      reportError(tableInfoErr, 'HydraService.getTableLiquidityStatus_tableInfo_error');
     const maxPlayers = tableInfo?.max_players || 9;
 
     // Simple seat count query — only active seats
@@ -348,7 +379,11 @@ export const HydraService = {
    * Seed a table with horse players (up to 4 for cash games).
    * Tournaments have no horse cap — handled separately.
    */
-  async seedTable(tableId: string, bigBlind: number = 2, isTournament: boolean = false): Promise<HorsePlayer[]> {
+  async seedTable(
+    tableId: string,
+    bigBlind: number = 2,
+    isTournament: boolean = false
+  ): Promise<HorsePlayer[]> {
     const status = await this.getTableLiquidityStatus(tableId);
     // Cash games: hard cap of 4 horses. Tournaments: no limit.
     const maxHorses = isTournament ? 9 : Math.min(this.config.maxHorsesPerTable, 4);
@@ -378,7 +413,9 @@ export const HydraService = {
         .eq('table_id', tableId)
         .is('left_at', null);
       if ((currentSeats?.length || 0) >= maxHorses) {
-        console.debug(`[Hydra] Table ${tableId} already has ${currentSeats?.length} seats (max ${maxHorses}) — stopping seed`);
+        console.debug(
+          `[Hydra] Table ${tableId} already has ${currentSeats?.length} seats (max ${maxHorses}) — stopping seed`
+        );
         break;
       }
 
@@ -616,12 +653,7 @@ export const HydraService = {
 
     // 2. Remove ALL seat rows for this horse at this table (active + departed)
     const { error: deleteErr } = await retryAsync(
-      () =>
-        supabase
-          .from('table_seats')
-          .delete()
-          .eq('table_id', tableId)
-          .eq('user_id', horseId),
+      () => supabase.from('table_seats').delete().eq('table_id', tableId).eq('user_id', horseId),
       3
     );
 
@@ -698,7 +730,9 @@ export const HydraService = {
         randomInRange(this.config.entryDelayRange[0], this.config.entryDelayRange[1]) * 1000; // Convert seconds to milliseconds
 
       setTimeout(() => {
-        this.seedTable(tableId, bigBlind).catch((err) => reportError(err, 'HydraService.Failed_to_reseed'));
+        this.seedTable(tableId, bigBlind).catch((err) =>
+          reportError(err, 'HydraService.Failed_to_reseed')
+        );
       }, delay);
     }
   },

@@ -87,12 +87,11 @@ export default function VIPPage() {
               setDiamonds(newData.diamonds);
             }
             // xp has been removed
-
           }
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'VIPPage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'VIPPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[VIPPage] ⏱️ Realtime channel timed out');

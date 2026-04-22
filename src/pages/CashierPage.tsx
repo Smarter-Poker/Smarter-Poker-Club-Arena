@@ -818,7 +818,7 @@ export default function CashierPage() {
           if (isMounted.current) setRealtimeStatus('connected');
         }
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'CashierPage._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'CashierPage._Realtime_channel_error');
           if (isMounted.current) setRealtimeStatus('error');
         }
         if (status === 'TIMED_OUT') {

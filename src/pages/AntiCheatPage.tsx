@@ -499,7 +499,7 @@ export default function AntiCheatPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'AntiCheatPage._Realtime_channel_error');
+            if (err) reportError(err?.message || err, 'AntiCheatPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AntiCheatPage] ⏱️ Realtime channel timed out');

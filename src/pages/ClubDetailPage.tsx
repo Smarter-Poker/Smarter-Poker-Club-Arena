@@ -635,7 +635,8 @@ export default function ClubDetailPage() {
         .subscribe((status: string, err?: Error) => {
           setWsConnected(status === 'SUBSCRIBED');
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'ClubDetailPage._Club_detail_RT_channel_error');
+            if (err)
+              reportError(err?.message || err, 'ClubDetailPage._Club_detail_RT_channel_error');
           } else if (status === 'TIMED_OUT') {
             console.warn('[ClubDetailPage] ⏱️ Club detail RT channel timed out');
           }

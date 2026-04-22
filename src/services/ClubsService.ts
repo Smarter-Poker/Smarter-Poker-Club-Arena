@@ -11,6 +11,27 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+
+// Module-level circuit breaker — resets after 5 min cooldown
+const _membershipBreaker = (() => {
+  let failures = 0,
+    trippedAt = 0;
+  return {
+    isOpen(): boolean {
+      if (failures < 3) return false;
+      if (Date.now() - trippedAt > 5 * 60_000) {
+        failures = 0;
+        trippedAt = 0;
+        return false;
+      }
+      return true;
+    },
+    trip(): void {
+      failures++;
+      if (failures >= 3 && trippedAt === 0) trippedAt = Date.now();
+    },
+  };
+})();
 import type {
   Club,
   ClubWithDistance,
@@ -431,7 +452,10 @@ export async function getUserMemberships(
     .eq('user_id', userId);
 
   if (error) {
-    reportError(error, 'ClubsService.Get_memberships_failed');
+    if (!_membershipBreaker.isOpen()) {
+      _membershipBreaker.trip();
+      reportError(error, 'ClubsService.Get_memberships_failed');
+    }
     throw new Error('Failed to get memberships');
   }
 
@@ -670,7 +694,12 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
   }
 
   if (club.owner_id !== user.user.id) {
-    reportError(new Error(`[ClubsService] Unauthorized updateClub attempt by ${user.user.id} on club ${clubId}`), 'ClubsService.Unauthorized_updateClub_attempt_by_useru');
+    reportError(
+      new Error(
+        `[ClubsService] Unauthorized updateClub attempt by ${user.user.id} on club ${clubId}`
+      ),
+      'ClubsService.Unauthorized_updateClub_attempt_by_useru'
+    );
     throw new Error('Only the club owner can update club settings');
   }
 

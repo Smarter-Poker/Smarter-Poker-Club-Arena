@@ -68,7 +68,7 @@ export default function FinancialAlertsPage() {
       })
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'FinancialAlertsPage._Realtime_channel_error');
+          if (err) reportError(err?.message || err, 'FinancialAlertsPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[FinancialAlertsPage] ⏱️ Realtime channel timed out');

@@ -123,7 +123,12 @@ class RealtimeChannelService {
         });
 
         if (staleKeys.length > 0) {
-          reportError(new Error(`[RealtimeChannelService] Found ${staleKeys.length} stale subscriptions (>30 min old). Cleaning up...`), 'RealtimeChannelService.Found_staleKeyslength_stale_subscription');
+          reportError(
+            new Error(
+              `[RealtimeChannelService] Found ${staleKeys.length} stale subscriptions (>30 min old). Cleaning up...`
+            ),
+            'RealtimeChannelService.Found_staleKeyslength_stale_subscription'
+          );
           staleKeys.forEach((key) => {
             const sub = this.subscriptions.get(key);
             if (sub) {
@@ -284,7 +289,8 @@ class RealtimeChannelService {
           joinedAt: new Date().toISOString(),
         });
       } else if (status === 'CHANNEL_ERROR') {
-        reportError(err?.message || err, 'RealtimeChannelService._Club_channel_error_for_clubId');
+        if (err)
+          reportError(err?.message || err, 'RealtimeChannelService._Club_channel_error_for_clubId');
       } else if (status === 'TIMED_OUT') {
         console.warn(`[RealtimeChannel] ⏱️ Club channel ${clubId} timed out`);
       }
@@ -329,7 +335,10 @@ class RealtimeChannelService {
     const subscription = this.subscriptions.get(channelName);
 
     if (!subscription) {
-      reportError(new Error(`Not subscribed to ${channelName}`), 'RealtimeChannelService.Not_subscribed_to_channelName');
+      reportError(
+        new Error(`Not subscribed to ${channelName}`),
+        'RealtimeChannelService.Not_subscribed_to_channelName'
+      );
       return;
     }
 
@@ -406,7 +415,11 @@ class RealtimeChannelService {
 
     channel.subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        reportError(err?.message || err, 'RealtimeChannelService._Tournament_channel_error_for_tournament');
+        if (err)
+          reportError(
+            err?.message || err,
+            'RealtimeChannelService._Tournament_channel_error_for_tournament'
+          );
       }
       if (status === 'TIMED_OUT') {
         console.warn(`[RealtimeChannel] ⏱️ Tournament channel ${tournamentId} timed out`);
@@ -458,7 +471,11 @@ class RealtimeChannelService {
       try {
         await channel.subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'RealtimeChannelService._Broadcast_channel_error_for_tournament');
+            if (err)
+              reportError(
+                err?.message || err,
+                'RealtimeChannelService._Broadcast_channel_error_for_tournament'
+              );
           }
         });
         await channel.send({
@@ -520,7 +537,11 @@ class RealtimeChannelService {
 
     channel.subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        reportError(err?.message || err, 'RealtimeChannelService._Hand_replay_channel_error_for_handId');
+        if (err)
+          reportError(
+            err?.message || err,
+            'RealtimeChannelService._Hand_replay_channel_error_for_handId'
+          );
       }
       if (status === 'TIMED_OUT') {
         console.warn(`[RealtimeChannel] ⏱️ Hand replay channel ${handId} timed out`);
@@ -569,7 +590,11 @@ class RealtimeChannelService {
     try {
       await channel.subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'RealtimeChannelService._Hand_replay_stream_channel_error_for_ha');
+          if (err)
+            reportError(
+              err?.message || err,
+              'RealtimeChannelService._Hand_replay_stream_channel_error_for_ha'
+            );
         }
       });
       for (const event of events) {

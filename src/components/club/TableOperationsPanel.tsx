@@ -416,7 +416,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
 
     sub.subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        reportError(err?.message || err, 'TableOperationsPanel._Realtime_channel_error');
+        if (err) reportError(err?.message || err, 'TableOperationsPanel._Realtime_channel_error');
       }
       if (status === 'TIMED_OUT') {
         console.warn('[TableOperationsPanel] ⏱️ Realtime channel timed out');

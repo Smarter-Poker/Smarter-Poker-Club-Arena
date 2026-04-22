@@ -139,7 +139,7 @@ export default function FriendsPage() {
         if (status === 'SUBSCRIBED') {
           await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
         } else if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'FriendsPage._Presence_channel_error');
+          if (err) reportError(err?.message || err, 'FriendsPage._Presence_channel_error');
         } else if (status === 'TIMED_OUT') {
           console.warn('[FriendsPage] ⏱️ Presence channel timed out');
         }

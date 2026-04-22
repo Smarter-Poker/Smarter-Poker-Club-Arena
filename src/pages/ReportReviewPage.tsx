@@ -156,15 +156,17 @@ export default function ReportReviewPage() {
     toast.success(action === 'actioned' ? 'Player action taken' : 'Report dismissed');
 
     // Fire-and-forget DB mutation with rollback on failure
-    supabase
-      .from('player_reports')
-      .update({
-        status: action,
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: user?.id,
-        admin_notes: sanitizedNotes,
-      })
-      .eq('id', reportId)
+    void Promise.resolve(
+      supabase
+        .from('player_reports')
+        .update({
+          status: action,
+          reviewed_at: new Date().toISOString(),
+          reviewed_by: user?.id,
+          admin_notes: sanitizedNotes,
+        })
+        .eq('id', reportId)
+    )
       .then(({ error }) => {
         if (error) {
           // Rollback on failure
@@ -174,15 +176,14 @@ export default function ReportReviewPage() {
           toast.error('Failed to update report');
           reportError(error, 'ReportReviewPage.Failed_to_update_report');
         }
+        setProcessing(false);
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         setReports(prevReports);
         setSelectedReport(prevSelected);
         setAdminNotes(prevNotes);
         toast.error('Failed to update report');
         reportError(error, 'ReportReviewPage.Failed_to_update_report');
-      })
-      .finally(() => {
         setProcessing(false);
       });
   };

@@ -97,11 +97,13 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
     toast.success(`Unblocked ${player.username}`);
 
     // Fire-and-forget delete with rollback on failure
-    supabase
-      .from('user_blocks')
-      .delete()
-      .eq('id', player.id)
-      .eq('user_id', user?.id || '')
+    void Promise.resolve(
+      supabase
+        .from('user_blocks')
+        .delete()
+        .eq('id', player.id)
+        .eq('user_id', user?.id || '')
+    )
       .then(({ error }) => {
         if (error) {
           // Rollback on failure
@@ -109,13 +111,12 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
           toast.error('Failed to unblock player');
           reportError(error, 'BlockedPlayersList.Failed_to_unblock');
         }
+        setUnblocking(null);
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         setBlockedPlayers(prevBlocked);
         toast.error('Failed to unblock player');
         reportError(error, 'BlockedPlayersList.Failed_to_unblock');
-      })
-      .finally(() => {
         setUnblocking(null);
       });
   };

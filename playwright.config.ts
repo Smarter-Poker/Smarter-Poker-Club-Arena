@@ -5,6 +5,12 @@ const baseURL = process.env.BASE_URL || 'http://localhost:5173';
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Only pick up Playwright `.spec.ts` files. Vitest test files use `.test.ts`
+  // and must never be loaded by Playwright — both runners register a global
+  // `Symbol($$jest-matchers-object)` and the second loader throws
+  // `TypeError: Cannot redefine property` and halts with "No tests found".
+  // See task #169 for the incident that prompted this guard.
+  testMatch: /.*\.spec\.ts$/,
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,

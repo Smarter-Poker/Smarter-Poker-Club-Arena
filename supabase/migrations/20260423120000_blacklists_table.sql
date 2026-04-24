@@ -2,17 +2,22 @@
 -- BLACKLISTS — club and union-level player bans
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
--- Created 2026-04-23 (Phase U4 finding triage — see docs/U4-INVARIANT-FINDINGS.md)
+-- Applied to production Supabase (kuklfnapbkmacvwxktbh) on 2026-04-23 via the
+-- Supabase Management API — Phase U4 finding triage (see docs/U4-INVARIANT-FINDINGS.md).
 --
 -- Why this migration exists:
 -- `src/pages/BlacklistManagerPage.tsx` is an active admin feature (routed at
 -- `/clubs/:clubId/blacklist`) that performs full CRUD against a `blacklists`
 -- table. The table was never created, so the page has been silently returning
 -- empty lists and swallowing `42P01 undefined_table` errors on insert/delete.
--- This migration creates the table with the shape the UI expects (matches
+-- This migration creates it with the shape the UI expects (matches
 -- `BlacklistEntry` in `src/types/club.types.ts`) plus indexes + RLS.
 --
--- The invariant CI gate (`scripts/ci/check-phantom-tables.mjs`) surfaced this.
+-- History note: first apply attempted partial unique indexes with
+-- `WHERE expires_at IS NULL OR expires_at > NOW()`; Postgres rejected because
+-- NOW() is VOLATILE and cannot appear in index predicates. Simplified to
+-- enforce uniqueness only on PERMANENT bans (expires_at IS NULL). App-level
+-- validation in BlacklistManagerPage guards against overlapping temporary bans.
 
 -- ─── Table ─────────────────────────────────────────────────────────────────
 
@@ -38,25 +43,26 @@ CREATE INDEX IF NOT EXISTS idx_blacklists_club ON public.blacklists(club_id)
 CREATE INDEX IF NOT EXISTS idx_blacklists_union ON public.blacklists(union_id)
     WHERE union_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_blacklists_user ON public.blacklists(user_id);
-CREATE INDEX IF NOT EXISTS idx_blacklists_active ON public.blacklists(user_id, club_id)
-    WHERE expires_at IS NULL OR expires_at > NOW();
+CREATE INDEX IF NOT EXISTS idx_blacklists_expires ON public.blacklists(expires_at)
+    WHERE expires_at IS NOT NULL;
 
--- Prevent duplicate active bans for the same (club, user) or (union, user).
--- Allow repeated entries only if prior ones have expired.
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_blacklists_club_user_active
+-- Uniqueness enforced only on PERMANENT bans (expires_at IS NULL). Postgres
+-- forbids volatile functions (NOW()) in index predicates, so we can't express
+-- "unique active ban" at the DB layer; app logic in BlacklistManagerPage must
+-- reject overlapping temporary bans before insert.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_blacklists_club_user_permanent
     ON public.blacklists(club_id, user_id)
-    WHERE club_id IS NOT NULL AND (expires_at IS NULL OR expires_at > NOW());
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_blacklists_union_user_active
+    WHERE club_id IS NOT NULL AND expires_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_blacklists_union_user_permanent
     ON public.blacklists(union_id, user_id)
-    WHERE union_id IS NOT NULL AND (expires_at IS NULL OR expires_at > NOW());
+    WHERE union_id IS NOT NULL AND expires_at IS NULL;
 
 -- ─── RLS ───────────────────────────────────────────────────────────────────
 
 ALTER TABLE public.blacklists ENABLE ROW LEVEL SECURITY;
 
--- Read: club admins/owners and agents with manage_players permission can see
--- bans for their clubs. Banned users themselves cannot see their entry (avoid
--- leaking ban reasons or who banned them).
+-- Read: club admins/owners and active agents can see bans for their clubs.
+-- Banned users themselves cannot see their entry (avoid leaking ban reasons).
 DROP POLICY IF EXISTS blacklists_select ON public.blacklists;
 CREATE POLICY blacklists_select ON public.blacklists
     FOR SELECT
@@ -75,8 +81,7 @@ CREATE POLICY blacklists_select ON public.blacklists
         )
     );
 
--- Insert: only club owners/admins can ban. Inserted row must have
--- banned_by = auth.uid().
+-- Insert: only club owners/admins. `banned_by` must equal auth.uid().
 DROP POLICY IF EXISTS blacklists_insert ON public.blacklists;
 CREATE POLICY blacklists_insert ON public.blacklists
     FOR INSERT
@@ -90,7 +95,7 @@ CREATE POLICY blacklists_insert ON public.blacklists
         )
     );
 
--- Delete: only club owners/admins can unban.
+-- Delete: only club owners/admins.
 DROP POLICY IF EXISTS blacklists_delete ON public.blacklists;
 CREATE POLICY blacklists_delete ON public.blacklists
     FOR DELETE

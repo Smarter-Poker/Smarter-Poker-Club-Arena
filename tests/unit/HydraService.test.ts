@@ -50,9 +50,9 @@ vi.mock('../../src/services/WalletService', () => ({
   },
 }));
 
-vi.mock('../../src/engine/HorseLogic', () => ({
-  // HorseDecision type is just used as a type-import — no runtime needed
-}));
+// NOTE (2026-04-23, Phase U2): `vi.mock('../../src/engine/HorseLogic', ...)` removed —
+// src/engine/HorseLogic no longer exists. HydraService now imports `HorseDecision` as
+// a pure type from `src/types/engine/horse`, so nothing to mock at runtime.
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 

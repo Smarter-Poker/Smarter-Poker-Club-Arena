@@ -4078,7 +4078,7 @@ export default function TablePage({
             cardIndices: winCardIndices,
             amounts,
           });
-          // Bible V8 §5.1: Tiered celebration per POKERBROS_UPGRADE_PLAN §3.7
+          // Bible V8 §5.1: Tiered celebration per docs/_archive/POKERBROS_UPGRADE_PLAN.md §3.7
           // < 10 BB = gold glow only (default), 10-50 BB = confetti,
           // 50+ BB = confetti + screen shake + bigWin sound
           if (winnerIds.includes(userId)) {

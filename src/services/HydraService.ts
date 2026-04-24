@@ -97,10 +97,10 @@ export interface TableLiquidityStatus {
   needsFewerHorses: boolean;
 }
 
-// HorseDecision is defined in HorseLogic.ts — use that canonical version
-import type { HorseDecision } from '../engine/HorseLogic';
+// HorseDecision canonical shape (extracted from engine/HorseLogic.ts in Phase U2 Stage A.4)
+import type { HorseDecision } from '../types/engine/horse';
 import { retryAsync } from '../utils/retryAsync';
-export type { HorseDecision } from '../engine/HorseLogic';
+export type { HorseDecision } from '../types/engine/horse';
 
 export interface HandContext {
   pot: number;

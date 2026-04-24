@@ -9,17 +9,24 @@ export default defineConfig({
   plugins: [
     react(),
 
-    // Sentry plugin for source maps and release tracking (production only + auth token required)
+    // Sentry source-map upload + release tagging (Phase U5.1, task #133).
+    // Gated on NODE_ENV=production AND SENTRY_AUTH_TOKEN so dev builds stay fast.
+    // CI passes both via GitHub Actions secrets (`.github/workflows/ci.yml`).
+    // Org/project slugs default to the canonical `smarter-poker` / `club-arena`
+    // (aligned with task #108). Overridable via env for local testing.
     !!(process.env.NODE_ENV === 'production' && process.env.SENTRY_AUTH_TOKEN) &&
       sentryVitePlugin({
-        org: process.env.SENTRY_ORG || 'smarter-software-inc',
-        project: process.env.SENTRY_PROJECT || 'javascript-react',
+        org: process.env.SENTRY_ORG || 'smarter-poker',
+        project: process.env.SENTRY_PROJECT || 'club-arena',
         authToken: process.env.SENTRY_AUTH_TOKEN,
 
-        // Upload source maps
+        // Upload source maps, then DELETE them from dist/ so they don't ship
+        // to end users (saves ~3 MB per deploy + avoids exposing source code).
+        // Sentry keeps its own copy on the server side for symbolication.
         sourcemaps: {
           assets: './dist/**',
           ignore: ['node_modules'],
+          filesToDeleteAfterUpload: ['./dist/**/*.js.map', './dist/**/*.css.map'],
         },
 
         // Release management

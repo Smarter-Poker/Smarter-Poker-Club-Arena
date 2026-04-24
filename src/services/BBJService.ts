@@ -16,7 +16,7 @@
 import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
-import type { EvaluatedHand } from '../engine/PokerEngine';
+import type { EvaluatedHand } from '../types/engine/poker';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';

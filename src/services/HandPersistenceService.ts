@@ -16,7 +16,7 @@
  */
 
 import { supabase } from '../lib/supabase';
-import type { HandController, HandEvent } from '../engine/HandController';
+import type { HandController, HandEvent } from '../types/engine/handController';
 import { reportError } from '../utils/errorReporter';
 
 interface HandRecord {
@@ -150,11 +150,7 @@ export class HandPersistence {
       try {
         await this.handleEvent(event, config);
       } catch (err: unknown) {
-        reportError(
-          err,
-          'HandPersistence.enqueueEvent',
-          { eventType: event.type }
-        );
+        reportError(err, 'HandPersistence.enqueueEvent', { eventType: event.type });
       }
     });
   }
@@ -254,11 +250,7 @@ export class HandPersistence {
       .maybeSingle();
 
     if (error) {
-      reportError(
-        error,
-        'HandPersistence.onHandStart.insertFailed',
-        { handNumber }
-      );
+      reportError(error, 'HandPersistence.onHandStart.insertFailed', { handNumber });
       // Retry once
       try {
         const { data: retryData, error: retryError } = await supabase
@@ -366,11 +358,7 @@ export class HandPersistence {
         .eq('id', this.currentHand.id);
 
       if (error) {
-        reportError(
-          error,
-          'HandPersistence.onHandComplete.updateFailed',
-          { handNumber }
-        );
+        reportError(error, 'HandPersistence.onHandComplete.updateFailed', { handNumber });
         // Retry once
         try {
           const { error: retryErr } = await supabase
@@ -425,11 +413,7 @@ export class HandPersistence {
         const { error: hpError } = await supabase.from('hand_players').insert(handPlayerRows);
 
         if (hpError) {
-          reportError(
-            hpError,
-            'HandPersistence.onHandComplete.insertPlayers',
-            { handNumber }
-          );
+          reportError(hpError, 'HandPersistence.onHandComplete.insertPlayers', { handNumber });
         }
       }
 

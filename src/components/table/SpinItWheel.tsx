@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { SpinPrizeConfig, SpinMultiplier } from '../../engine/SpinItEngine';
+import type { SpinPrizeConfig, SpinMultiplier } from '../../types/engine/spinIt';
 import { haptic, soundService } from '../../services/SoundService';
 import './SpinItWheel.css';
 

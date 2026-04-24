@@ -18,23 +18,30 @@ platform plan wins.
 Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
 It deploys through the World Hub repo, NOT directly.
 
-### 1.1 The Only Deploy Path
+### 1.1 The Only Deploy Path (Phase U5.4 — one script, one push)
 
 ```bash
-# 1. Build in Club Arena repo
-cd ~/Documents/club-arena
-npm run build
-
-# 2. Sync to World Hub
-bash scripts/sync-to-world-hub.sh ~/Documents/Smarter-Poker-World-Hub
-
-# 3. Push World Hub (this triggers Vercel deploy)
 cd ~/Documents/Smarter-Poker-World-Hub
-bash scripts/git-safe-push.sh "sync club-arena: <describe what changed>"
+bash scripts/sync-club-arena.sh "feat(ca): <describe what changed>"
 ```
 
-The push script handles everything: build gate, push, and post-deploy verification.
-It exits 0 ONLY when production is verified serving your commit.
+That single script: builds CA with NODE_ENV=production + Sentry sourcemap upload,
+wipes WH `public/hub/club-arena/{index.html,assets/}`, copies the new build,
+stages additions + deletions, commits, and pushes to `main` (which triggers
+the Vercel deploy).
+
+`SENTRY_AUTH_TOKEN/ORG/PROJECT` are read from `~/Documents/club-arena/.env` if
+not already exported. Bulky static dirs (`cards/`, `images/`, `club-logos/`,
+`videos/`) are preserved — they're not in a fresh build.
+
+**Legacy names** still work but just forward to the canonical script:
+
+- `WH scripts/build-club-arena.sh` → `sync-club-arena.sh`
+- `CA scripts/sync-to-world-hub.sh` → `sync-club-arena.sh`
+
+For post-deploy verification that production is serving your commit, follow up
+with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
+already exits non-zero on build/push failure.
 
 ### 1.2 Vercel Project
 

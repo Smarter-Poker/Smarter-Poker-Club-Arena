@@ -65,15 +65,26 @@ test.describe('Club Arena — Smoke Tests', () => {
       await page.waitForTimeout(1000);
     }
 
-    // Filter out known non-critical errors (Supabase auth when not logged in)
+    // Filter out known non-critical errors (not app bugs):
+    // - AuthSessionMissing: Supabase auth when not logged in (expected)
+    // - Failed to fetch / net::ERR_ / CORS: unreachable backends from CI runner
+    // - upgrade-insecure-requests ignored in report-only: Chrome notice about
+    //   our CSP report-only header, not an app error. WH ships CSP report-only
+    //   intentionally; the notice would only go away by switching to enforce
+    //   mode (tracked in task #72). Chrome logs this as console.error.
     const realErrors = consoleErrors.filter(
       (e) =>
         !e.includes('AuthSessionMissing') &&
         !e.includes('Failed to fetch') &&
         !e.includes('net::ERR_') &&
-        !e.includes('CORS')
+        !e.includes('CORS') &&
+        !e.includes("directive 'upgrade-insecure-requests' is ignored")
     );
 
+    if (realErrors.length > 0) {
+      // Surface them in CI logs so any future regression is easy to triage.
+      console.error('Unexpected console errors:', JSON.stringify(realErrors, null, 2));
+    }
     expect(realErrors).toHaveLength(0);
   });
 

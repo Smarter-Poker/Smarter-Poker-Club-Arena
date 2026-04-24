@@ -12,12 +12,14 @@ export default defineConfig({
     // Sentry source-map upload + release tagging (Phase U5.1, task #133).
     // Gated on NODE_ENV=production AND SENTRY_AUTH_TOKEN so dev builds stay fast.
     // CI passes both via GitHub Actions secrets (`.github/workflows/ci.yml`).
-    // Org/project slugs default to the canonical `smarter-poker` / `club-arena`
-    // (aligned with task #108). Overridable via env for local testing.
+    // Org/project slugs default to the LIVE Sentry values verified 2026-04-23
+    // via the Sentry API: org `smarter-software-inc`, project `javascript-react`.
+    // The earlier defaults (smarter-poker / club-arena) referenced a non-existent
+    // org slug and uploads silently no-op'd — see task #133.
     !!(process.env.NODE_ENV === 'production' && process.env.SENTRY_AUTH_TOKEN) &&
       sentryVitePlugin({
-        org: process.env.SENTRY_ORG || 'smarter-poker',
-        project: process.env.SENTRY_PROJECT || 'club-arena',
+        org: process.env.SENTRY_ORG || 'smarter-software-inc',
+        project: process.env.SENTRY_PROJECT || 'javascript-react',
         authToken: process.env.SENTRY_AUTH_TOKEN,
 
         // Upload source maps, then DELETE them from dist/ so they don't ship

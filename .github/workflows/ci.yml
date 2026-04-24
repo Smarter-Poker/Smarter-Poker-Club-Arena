@@ -214,6 +214,8 @@ jobs:
 
           TOTAL_JS=0
           TOTAL_CSS=0
+          TOTAL_JS_GZ=0
+          TOTAL_CSS_GZ=0
 
           for f in dist/assets/*.js; do
             if [ -f "$f" ]; then
@@ -222,6 +224,7 @@ jobs:
               SIZE_KB=$((SIZE / 1024))
               GZIP_KB=$((GZIP / 1024))
               TOTAL_JS=$((TOTAL_JS + SIZE))
+              TOTAL_JS_GZ=$((TOTAL_JS_GZ + GZIP))
               BASENAME=$(basename "$f")
               echo "| \`${BASENAME}\` | ${SIZE_KB}kB | ${GZIP_KB}kB |" >> $GITHUB_STEP_SUMMARY
             fi
@@ -234,6 +237,7 @@ jobs:
               SIZE_KB=$((SIZE / 1024))
               GZIP_KB=$((GZIP / 1024))
               TOTAL_CSS=$((TOTAL_CSS + SIZE))
+              TOTAL_CSS_GZ=$((TOTAL_CSS_GZ + GZIP))
               BASENAME=$(basename "$f")
               echo "| \`${BASENAME}\` | ${SIZE_KB}kB | ${GZIP_KB}kB |" >> $GITHUB_STEP_SUMMARY
             fi
@@ -242,16 +246,28 @@ jobs:
           TOTAL_JS_KB=$((TOTAL_JS / 1024))
           TOTAL_CSS_KB=$((TOTAL_CSS / 1024))
           TOTAL_KB=$(( (TOTAL_JS + TOTAL_CSS) / 1024 ))
+          TOTAL_GZ_KB=$(( (TOTAL_JS_GZ + TOTAL_CSS_GZ) / 1024 ))
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Total JS:** ${TOTAL_JS_KB}kB | **Total CSS:** ${TOTAL_CSS_KB}kB | **Grand Total:** ${TOTAL_KB}kB" >> $GITHUB_STEP_SUMMARY
+          echo "**Total JS:** ${TOTAL_JS_KB}kB | **Total CSS:** ${TOTAL_CSS_KB}kB | **Grand Total:** ${TOTAL_KB}kB raw / ${TOTAL_GZ_KB}kB gzipped" >> $GITHUB_STEP_SUMMARY
 
-          if [ $TOTAL_KB -gt 5120 ]; then
-            echo "::error::Bundle size exceeds 5MB limit (${TOTAL_KB}kB). Investigate code splitting."
+          # Gate on gzipped size — that's what users actually download and what
+          # Sentry/CDN bandwidth costs scale with. Raw size is still tracked in
+          # the summary for visibility but does not fail the build on its own.
+          # Current baseline (post-U3.5): ~1641kB gzipped. Gate at 2048kB gives
+          # ~25% headroom and will fire before any material regression slips in.
+          GZ_LIMIT=2048
+          RAW_LIMIT=6144  # soft ceiling — only fails if BOTH raw and gzipped balloon together
+          if [ $TOTAL_GZ_KB -gt $GZ_LIMIT ]; then
+            echo "::error::Gzipped bundle size ${TOTAL_GZ_KB}kB exceeds limit ${GZ_LIMIT}kB. Investigate code splitting."
+            exit 1
+          fi
+          if [ $TOTAL_KB -gt $RAW_LIMIT ] && [ $TOTAL_GZ_KB -gt $((GZ_LIMIT * 9 / 10)) ]; then
+            echo "::error::Raw bundle ${TOTAL_KB}kB exceeds ${RAW_LIMIT}kB AND gzipped is >90% of limit — real bloat."
             exit 1
           fi
 
-          echo "✅ Bundle size: ${TOTAL_KB}kB (limit: 5120kB)"
+          echo "✅ Bundle size: ${TOTAL_GZ_KB}kB gzipped (limit ${GZ_LIMIT}kB) / ${TOTAL_KB}kB raw"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 3: Playwright E2E Tests against production — ALWAYS ON

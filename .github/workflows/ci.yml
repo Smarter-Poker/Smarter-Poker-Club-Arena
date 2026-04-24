@@ -101,6 +101,38 @@ jobs:
             echo "✅ No dead code detected" >> $GITHUB_STEP_SUMMARY
           fi
 
+      # ── Supabase Invariants (Phase U4 — BLOCKING) ──
+      # Catches the silent-failure class of bugs from the 2026-04-15 audit:
+      #   1. phantom tables: `.from('<name>')` where <name> isn't in migrations
+      #   2. stranded writers: UI reads a table that no server path writes
+      # Cross-orb tables (defined in sibling repos) are in the ALLOWLIST of each
+      # script. Remove an ALLOWLIST entry once CI mounts that orb's migrations.
+      # See docs/U4-INVARIANT-FINDINGS.md for triage history.
+      - name: Supabase Invariants — Phantom Tables
+        run: |
+          echo "## 🗃️ Supabase Phantom-Table Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          node scripts/ci/check-phantom-tables.mjs 2>&1 | tee /tmp/phantom.log
+          if grep -q "PHANTOM TABLES DETECTED" /tmp/phantom.log; then
+            COUNT=$(grep "phantoms:" /tmp/phantom.log | awk '{print $NF}')
+            echo "❌ **${COUNT} phantom table reference(s)** — see log for sites" >> $GITHUB_STEP_SUMMARY
+            echo "If the finding is a legitimate cross-orb table, add it to the ALLOWLIST in scripts/ci/check-phantom-tables.mjs." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ all \`.from()\` references resolve to a migration-declared table" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Supabase Invariants — Stranded Writers
+        run: |
+          echo "## ✍️ Supabase Stranded-Writer Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          node scripts/ci/check-stranded-writers.mjs 2>&1 | tee /tmp/stranded.log
+          if grep -q "STRANDED WRITERS DETECTED" /tmp/stranded.log; then
+            COUNT=$(grep "stranded" /tmp/stranded.log | head -1 | awk -F': ' '{print $NF}')
+            echo "❌ **${COUNT} client-read table(s) with no server writer**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ every client-read table has a server-side writer" >> $GITHUB_STEP_SUMMARY
+          fi
+
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 2: Full production build + bundle metrics (depends on typecheck)
   # ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +169,14 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
+          # Phase U5.1 (task #133): wire Sentry sourcemap upload at build time.
+          # Without these, the sentry-vite-plugin in vite.config.ts skips (the
+          # `!!(NODE_ENV === 'production' && SENTRY_AUTH_TOKEN)` gate is false)
+          # and CA stack traces come back minified from production.
+          # SENTRY_AUTH_TOKEN is a GitHub Actions secret (rotated 2026-04-21 — task #118).
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: smarter-poker
+          SENTRY_PROJECT: club-arena
 
       - name: Report Build Time
         if: always()

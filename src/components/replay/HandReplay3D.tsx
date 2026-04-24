@@ -19,7 +19,7 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import * as THREE from 'three';
 import { masterBus } from '../../core/MasterBus';
-import type { ReplaySnapshot, ReplaySpeed } from '../../engine/HandReplayEngine';
+import type { ReplaySnapshot, ReplaySpeed } from '../../types/engine/handReplay';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

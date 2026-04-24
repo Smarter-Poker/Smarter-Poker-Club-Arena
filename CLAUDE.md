@@ -1,7 +1,15 @@
 # Club Arena -- Agent Instructions
 
 ALL agents (Claude, AntiGravity, Cowork, any AI) MUST read this file at session start.
-This is the single source of truth. Updated 2026-04-16.
+This is the single source of truth for **this repo**. Updated 2026-04-23.
+
+**Platform-level plan** (CA + CE + Supabase + Hetzner + WH integration):
+`~/Documents/Smarter-Poker-World-Hub/CLUB-ARENA-OFFICIAL-UPGRADE-INTEGRATION.md`
+
+That document supersedes the old `POKERBROS_UPGRADE_PLAN.md`, `PHASE_3/4_*_PLAN.md`,
+`MASTER_BLUEPRINT.md`, and every `ANTIGRAVITY-HANDOFF-*.md` (now in
+`docs/_archive/handoffs/`). If any of those conflict with the platform plan, the
+platform plan wins.
 
 ---
 
@@ -52,19 +60,21 @@ Never say "should be live in a few minutes" or "deploy triggered."
 
 ## 2. INFRASTRUCTURE
 
-| Service    | Purpose                          | Location                                            |
-|------------|----------------------------------|------------------------------------------------------|
-| Vercel     | Frontend hosting (smarter.poker) | World Hub repo -> auto-deploys via hub-vanguard      |
-| Hetzner    | Poker engine server (Node.js)    | `server/` directory, deployed via SSH + PM2          |
-| Supabase   | Database + Auth + Realtime       | `kuklfnapbkmacvwxktbh.supabase.co`                   |
+| Service  | Purpose                          | Location                                        |
+| -------- | -------------------------------- | ----------------------------------------------- |
+| Vercel   | Frontend hosting (smarter.poker) | World Hub repo -> auto-deploys via hub-vanguard |
+| Hetzner  | Poker engine server (Node.js)    | `server/` directory, deployed via SSH + PM2     |
+| Supabase | Database + Auth + Realtime       | `kuklfnapbkmacvwxktbh.supabase.co`              |
 
 ### Hetzner VPS (Poker Engine Server)
+
 - Runs server-authoritative game engine: `server/src/index.ts`
 - ALL game logic lives here: HandController, ServerTableEngine, all engines
 - HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
 - Uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS)
 
 ### Supabase
+
 - PostgreSQL: tables, table_seats, table_hole_cards, hand_history
 - Auth: JWT-based, shared with smarter.poker frontend
 - Realtime: WebSocket broadcasts to connected clients
@@ -82,6 +92,7 @@ There is a server-authoritative migration in progress. Before ANY code work, rea
 3. `MIGRATION-CHANGELOG.md` -- What's done, where to resume
 
 Phase order (sacred):
+
 ```
 STEP 1: RIP OUT client-side engine code
 STEP 2: VERIFY CLEAN (grep confirms zero local authoritative state)
@@ -100,6 +111,7 @@ You CANNOT skip ahead. Every change: READ -> DOCUMENT -> CHANGE -> VERIFY -> LOG
 ## 4. FIX-FIRST PROCEDURE
 
 When auditing or reviewing code:
+
 1. FIND an issue
 2. FIX IT FULLY -- write the actual code, not just a note
 3. MOVE ON to the next item
@@ -141,6 +153,7 @@ API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 ## 7. ARCHITECTURE
 
 Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
+
 - Production: `smarter.poker/hub/club-arena/*` served from World Hub's `public/` directory
 - Build: Vite produces `dist/`, copied to World Hub's `public/hub/club-arena/`
 - Routing: SPA fallback rewrites unmatched routes to `index.html`

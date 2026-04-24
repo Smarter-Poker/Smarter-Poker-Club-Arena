@@ -80,7 +80,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   } = useUserTableSettings(user?.id);
   const [showTableSettings, setShowTableSettings] = useState(false);
   const [showThemeSettings, setShowThemeSettings] = useState(false);
-  
+
   const location = useLocation();
   const [clubLevelInfo, setClubLevelInfo] = useState<ClubLevelInfo | null>(null);
 
@@ -99,25 +99,33 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         if (!isMounted) return;
         const { data } = await supabase
           .from('clubs')
-          .select('member_count, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next')
+          .select(
+            'member_count, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+          )
           .eq('id', resolvedId)
           .maybeSingle();
-        
+
         if (data && isMounted) {
-          setClubLevelInfo(getClubLevel({
-            level: data.level || 1,
-            playerCount: data.member_count || 0,
-            hierarchyUnits: data.hierarchy_units_rounded_up || 0,
-            playerThresholdCurrent: data.player_threshold_current || 0,
-            playerThresholdNext: data.player_threshold_next || 0,
-            hierarchyThresholdCurrent: data.hierarchy_threshold_current || 0,
-            hierarchyThresholdNext: data.hierarchy_threshold_next || 0,
-          }));
+          setClubLevelInfo(
+            getClubLevel({
+              level: data.level || 1,
+              playerCount: data.member_count || 0,
+              hierarchyUnits: data.hierarchy_units_rounded_up || 0,
+              playerThresholdCurrent: data.player_threshold_current || 0,
+              playerThresholdNext: data.player_threshold_next || 0,
+              hierarchyThresholdCurrent: data.hierarchy_threshold_current || 0,
+              hierarchyThresholdNext: data.hierarchy_threshold_next || 0,
+            })
+          );
         }
-      } catch (err) {}
+      } catch {
+        /* club-level fetch is best-effort; silent fallback to defaults above */
+      }
     };
     fetchClubLevel();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, clubId]);
 
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -201,7 +209,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           if (data) {
             // Avatar is consumed from useHeaderDataStore — no need to set locally
             const prefUseRealName = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
-            setUserName(prefUseRealName ? (data.display_name || data.username || 'Player') : (data.username || data.display_name || 'Player'));
+            setUserName(
+              prefUseRealName
+                ? data.display_name || data.username || 'Player'
+                : data.username || data.display_name || 'Player'
+            );
             // These columns may not exist on profiles — use optional chaining with defaults
             if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
               setSoundsEnabled(data.sounds_enabled);
@@ -344,13 +356,21 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       setUseRealName(!newValue)
     );
     masterBus.emit('SETTINGS_CHANGED', { setting: 'useRealName', value: newValue });
-    
+
     // Switch the local preview
     if (user?.id) {
-      supabase.from('profiles').select('username, display_name').eq('id', user.id).maybeSingle()
-        .then(({data}) => {
+      supabase
+        .from('profiles')
+        .select('username, display_name')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
           if (data) {
-             setUserName(newValue ? (data.display_name || data.username || 'Player') : (data.username || data.display_name || 'Player'));
+            setUserName(
+              newValue
+                ? data.display_name || data.username || 'Player'
+                : data.username || data.display_name || 'Player'
+            );
           }
         });
     }
@@ -557,48 +577,64 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         {clubLevelInfo && (
           <>
             <div style={{ padding: '8px 16px 16px' }}>
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column',
-                gap: '10px'
-               }}>
-                  <div style={{
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <div
+                  style={{
                     display: 'flex',
                     alignItems: 'center',
-                    background: clubLevelInfo.gradient || 'linear-gradient(to right, #4b5563, #374151)',
+                    background:
+                      clubLevelInfo.gradient || 'linear-gradient(to right, #4b5563, #374151)',
                     padding: '4px 10px',
                     borderRadius: '12px',
                     color: 'white',
                     fontWeight: 700,
                     width: 'fit-content',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-                  }}>
-                    <span style={{ fontSize: '13px', marginRight: '6px' }}>Lv.{clubLevelInfo.level}</span>
-                    <span style={{ fontSize: '11px', opacity: 0.9 }}>{clubLevelInfo.tierLabel}</span>
-                  </div>
-                  <div style={{
+                  }}
+                >
+                  <span style={{ fontSize: '13px', marginRight: '6px' }}>
+                    Lv.{clubLevelInfo.level}
+                  </span>
+                  <span style={{ fontSize: '11px', opacity: 0.9 }}>{clubLevelInfo.tierLabel}</span>
+                </div>
+                <div
+                  style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '10px'
-                  }}>
-                    <div style={{
+                    gap: '10px',
+                  }}
+                >
+                  <div
+                    style={{
                       flex: 1,
                       height: '8px',
                       background: 'rgba(255,255,255,0.1)',
                       borderRadius: '4px',
                       overflow: 'hidden',
-                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)'
-                    }}>
-                      <div style={{
+                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)',
+                    }}
+                  >
+                    <div
+                      style={{
                         width: `${clubLevelInfo.progressPercent}%`,
                         height: '100%',
-                        background: clubLevelInfo.gradient || 'linear-gradient(to right, #4b5563, #374151)',
+                        background:
+                          clubLevelInfo.gradient || 'linear-gradient(to right, #4b5563, #374151)',
                         borderRadius: '4px',
-                        boxShadow: '0 0 10px rgba(255,255,255,0.2)'
-                      }} />
-                    </div>
-                    <span style={{ fontSize: '12px', color: colors.textSecondary, fontWeight: 700 }}>{clubLevelInfo.progressPercent}%</span>
+                        boxShadow: '0 0 10px rgba(255,255,255,0.2)',
+                      }}
+                    />
                   </div>
+                  <span style={{ fontSize: '12px', color: colors.textSecondary, fontWeight: 700 }}>
+                    {clubLevelInfo.progressPercent}%
+                  </span>
+                </div>
               </div>
             </div>
             <div style={dividerStyle} />
@@ -769,29 +805,29 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             <span style={{ color: colors.textSecondary }}>›</span>
           </div>
         ))}
-        
+
         {/* Avatar Customization Trigger */}
         <div
-            onClick={() => setShowAvatarGallery(true)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(12 + 17) * 30}ms both`
-                : 'none',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
-            }}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              Change Avatar
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
+          onClick={() => setShowAvatarGallery(true)}
+          style={{
+            ...menuItemStyle,
+            animation: isOpen
+              ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(12 + 17) * 30}ms both`
+              : 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = colors.bgHover;
+            e.currentTarget.style.transform = 'translateX(4px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.transform = 'translateX(0)';
+          }}
+        >
+          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
+            Change Avatar
+          </span>
+          <span style={{ color: colors.textSecondary }}>›</span>
         </div>
 
         <div style={dividerStyle} />
@@ -914,7 +950,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
         {/* Use Real Name Toggle */}
         <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Use Real Name (vs Alias)</span>
+          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>
+            Use Real Name (vs Alias)
+          </span>
           <button
             onClick={handleUseRealNameToggle}
             aria-checked={useRealName}

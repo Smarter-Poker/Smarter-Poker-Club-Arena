@@ -175,8 +175,12 @@ jobs:
           # and CA stack traces come back minified from production.
           # SENTRY_AUTH_TOKEN is a GitHub Actions secret (rotated 2026-04-21 — task #118).
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: smarter-poker
-          SENTRY_PROJECT: club-arena
+          # Verified 2026-04-23 via Sentry API: the live org is `smarter-software-inc`
+          # and the CA project is `javascript-react`. `smarter-poker` as an org slug
+          # does not resolve (404), which is why prior uploads were silent no-ops
+          # even though the errorHandler in vite.config.ts warned. (Task #133)
+          SENTRY_ORG: smarter-software-inc
+          SENTRY_PROJECT: javascript-react
 
       - name: Report Build Time
         if: always()

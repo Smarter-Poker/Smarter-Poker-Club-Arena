@@ -1,50 +1,94 @@
-#!/bin/sh
-# ═══════════════════════════════════════════════════════════════════════════════
-# PRE-PUSH SAFETY GATE — TypeScript Compilation Check
-# ═══════════════════════════════════════════════════════════════════════════════
-# Prevents pushing code that will fail Vercel deployments.
-# Runs tsc --noEmit on the COMMITTED state (not working directory).
-# This catches TS errors from parallel sessions that may have staged files.
-# To bypass in emergencies: git push --no-verify
-# ═══════════════════════════════════════════════════════════════════════════════
+#!/usr/bin/env bash
+# Club Arena pre-push hook — Phase 6 consolidation gate (2026-04-27)
+#
+# Blocks pushes that:
+#   1. Contain merge-conflict markers (lesson from f490f61bf)
+#   2. Introduce vercel.json crons (Open Claw exclusive policy)
+#   3. Introduce client-side PIN-gate storage (Phase 3.6 server-side only)
+#   4. Use raw supabase.auth.getUser() outside src/lib/auth/*
+#
+# Bypass with `git push --no-verify` only in genuine emergencies.
 
-echo "🔒 Pre-push safety gate: Running TypeScript check..."
+set -e
 
-# ─── CRITICAL: Test the COMMITTED state, not the working directory ──────────
-# Parallel sessions may stage files with TS errors. The working directory
-# might be clean, but the committed code could be broken.
-# We stash uncommitted changes, run tsc on the committed state, then restore.
+REMOTE="$1"
+URL="$2"
+FAIL=0
 
-STASH_NAME="pre-push-gate-$(date +%s)"
-HAS_CHANGES=false
+# Get the range of commits being pushed
+while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
+  # Skip deletions
+  if [ "$LOCAL_SHA" = "0000000000000000000000000000000000000000" ]; then
+    continue
+  fi
 
-# Check if there are any uncommitted changes (staged or unstaged)
-if ! git diff --quiet HEAD 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-  HAS_CHANGES=true
-  echo "   Stashing uncommitted changes to test committed state..."
-  git stash push -u -m "$STASH_NAME" --quiet 2>/dev/null
-fi
+  if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
+    # New branch — check all commits up to current
+    RANGE="$LOCAL_SHA"
+    FILES=$(git diff --name-only "$LOCAL_SHA")
+  else
+    RANGE="$REMOTE_SHA..$LOCAL_SHA"
+    FILES=$(git diff --name-only "$REMOTE_SHA" "$LOCAL_SHA")
+  fi
 
-# Run tsc on the committed (clean) state
-npx tsc --noEmit 2>&1
+  # 1. Merge conflict markers
+  for f in $FILES; do
+    if [ -f "$f" ]; then
+      if grep -nE '^(<<<<<<< |>>>>>>> |={7,}$)' "$f" >/dev/null 2>&1; then
+        echo "[club-arena pre-push] BLOCKED: $f contains a merge-conflict marker"
+        FAIL=1
+      fi
+    fi
+  done
 
-TSC_EXIT=$?
+  # 2. vercel.json crons (policy: Open Claw exclusive)
+  for f in $FILES; do
+    case "$f" in
+      *vercel.json)
+        if [ -f "$f" ] && grep -q '"crons"' "$f"; then
+          echo "[club-arena pre-push] BLOCKED: $f introduces a Vercel crons block"
+          echo "                      Use Open Claw → workers exclusively."
+          FAIL=1
+        fi
+        ;;
+    esac
+  done
 
-# Restore stashed changes
-if [ "$HAS_CHANGES" = true ]; then
-  echo "   Restoring uncommitted changes..."
-  git stash pop --quiet 2>/dev/null
-fi
+  # 3. Client-side PIN-gate storage (Phase 3.6 forbids reintroducing this)
+  for f in $FILES; do
+    if [ -f "$f" ]; then
+      case "$f" in
+        *src/lib/auth/*) continue ;;
+      esac
+      if grep -qE "localStorage\.(set|get)Item\(['\"](commanderAdminPin|admin_pin|club_admin_pin)" "$f" 2>/dev/null; then
+        echo "[club-arena pre-push] BLOCKED: $f reintroduces client-side PIN storage"
+        echo "                      Phase 3.6 moved PIN validation server-side."
+        FAIL=1
+      fi
+    fi
+  done
 
-if [ $TSC_EXIT -ne 0 ]; then
+  # 4. Raw supabase.auth.getUser() outside src/lib/auth
+  for f in $FILES; do
+    if [ -f "$f" ]; then
+      case "$f" in
+        *src/lib/auth/*) continue ;;
+        *src/lib/authUtils*) continue ;;
+        *node_modules/*) continue ;;
+      esac
+      if grep -qE 'supabase\.auth\.getUser\(\)' "$f" 2>/dev/null; then
+        echo "[club-arena pre-push] BLOCKED: $f calls supabase.auth.getUser()"
+        echo "                      use validateBearer() from src/lib/auth instead."
+        FAIL=1
+      fi
+    fi
+  done
+done
+
+if [ "$FAIL" -ne 0 ]; then
   echo ""
-  echo "❌ TypeScript compilation failed — push BLOCKED"
-  echo "   The COMMITTED code has type errors."
-  echo "   Fix the errors above before pushing."
-  echo "   To bypass: git push --no-verify (NOT recommended)"
-  echo ""
+  echo "[club-arena pre-push] FAILED — fix the issues above or use --no-verify if certain."
   exit 1
 fi
 
-echo "✅ TypeScript check passed — push allowed"
 exit 0

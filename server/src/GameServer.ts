@@ -1502,6 +1502,28 @@ export class TournamentManager {
               ),
               'TournamentthistournamentIdslic.Blind_update_failed_for_table_'
             );
+
+          // Phase X5 (2026-04-28): emit level_up discrete event so clients
+          // can trigger the level-up popup + sound + haptic per Bible V8 §5
+          // (UI/Popup/Animation/Sound/Haptic Doctrine). Without this, clients
+          // must infer level escalation from a state-snapshot diff, which
+          // violates Law 1.16 Real-Time Delivery.
+          try {
+            tableStateHub.emitEvent(tableId, {
+              type: 'level_up',
+              table_id: tableId,
+              tournament_id: this.tournamentId,
+              new_level: this.currentLevel,
+              previous_level: prevLevel,
+              small_blind: level.smallBlind,
+              big_blind: level.bigBlind,
+              ante: level.ante || 0,
+              duration_minutes: level.durationMinutes,
+              timestamp: Date.now(),
+            });
+          } catch {
+            /* hub broadcast failure is non-fatal */
+          }
         }
 
         const { error: levelErr } = await supabase

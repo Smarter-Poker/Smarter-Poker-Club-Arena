@@ -2603,6 +2603,22 @@ export class ServerTableEngine {
             hand_ranking: r.handRanking,
           })),
         });
+        // Phase X5 (2026-04-28): explicit cards-revealed event so clients
+        // can run the per-card flip animation without inferring from
+        // hand_history.winners[].hand parsing. Bible V8 §1.16 + §5
+        // (Animation Doctrine) require a discrete reveal trigger.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'showdown_cards_revealed',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          reveals: this.currentHandShowdownResults.map((r) => ({
+            user_id: r.userId,
+            cards: r.holeCards ?? [],
+            best_hand_label: r.handName,
+            best_hand_rank: r.handRanking,
+          })),
+          timestamp: Date.now(),
+        });
         break;
 
       case 'WINNERS':
@@ -2682,6 +2698,17 @@ export class ServerTableEngine {
 
         // SETTLEMENT STEP 1: Lock table (actionLock prevents new actions)
         // Already enforced — handController completes hand, no more actions accepted
+        // Phase X5 (2026-04-28): emit explicit table_locked event so the
+        // client knows to suppress the action panel until table_unlocked.
+        // Bible V8 §1.16 Real-Time Delivery: every state transition gets a
+        // discrete named event, never inferred from a state-snapshot diff.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'table_locked',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          reason: 'settlement',
+          timestamp: Date.now(),
+        });
 
         // SETTLEMENT STEP 14 (early broadcast): Notify clients hand is complete
         // Bible V8 §1.16: discrete hand_complete event
@@ -4234,6 +4261,17 @@ export class ServerTableEngine {
       .is('left_at', null);
     const finalCount = dbPlayerCount ?? 0;
     await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+
+    // Phase X5 (2026-04-28): emit table_unlocked event paired with the
+    // table_locked emitted at the start of settlement. Bible V8 §1.16.
+    this.hub?.emitEvent(this.tableId, {
+      type: 'table_unlocked',
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      seated_count: finalCount,
+      next_state: finalCount >= 2 ? 'running' : 'waiting',
+      timestamp: Date.now(),
+    });
 
     // Settlement pipeline complete — table unlocked for next hand
   }

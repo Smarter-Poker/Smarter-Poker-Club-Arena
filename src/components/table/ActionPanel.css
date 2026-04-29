@@ -23,14 +23,14 @@
   -webkit-tap-highlight-color: transparent;
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  /* Slide-up entrance when it's hero's turn */
-  animation: actionPanelSlideUp 0.35s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  /* X6.2e: cross-fade entrance when hero's turn starts (300ms per spec §5.4) */
+  animation: actionPanelCrossFade 0.3s ease-out both;
 }
 
-@keyframes actionPanelSlideUp {
+@keyframes actionPanelCrossFade {
   0% {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(12px);
   }
   100% {
     opacity: 1;
@@ -474,7 +474,7 @@
 /* Mobile (<768px): collapse the right-side rail back into the main column —
    the absolute-positioned rail can extend off-screen on narrow phones, so we
    render the rail inline above the presets instead. */
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .action-panel--raise-vertical {
     padding-right: 16px;
   }

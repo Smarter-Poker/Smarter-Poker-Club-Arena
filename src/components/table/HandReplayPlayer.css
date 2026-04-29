@@ -393,6 +393,44 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   X6.2d — STREET NAVIGATION BUTTONS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.replay-player__streets {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px 6px;
+  justify-content: center;
+}
+
+.replay-player__street-btn {
+  padding: 5px 12px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.replay-player__street-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.replay-player__street-btn--active {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  border-color: #3b82f6;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════════════════════ */
 

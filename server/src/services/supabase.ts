@@ -178,8 +178,16 @@ export async function updateTableStatus(
 }
 
 /**
- * Auto-rebuy a horse from their Player Wallet atomically
- * FIX 208: Replaced RPC with direct queries to avoid PostgREST schema cache "text = uuid" errors
+ * Auto-rebuy a horse from their Player Wallet atomically.
+ * ROUND 34 FIX: Direct UPDATE on public.wallets is rejected by the
+ * Phase 4.1.6a wallet guard. All balance changes must flow through
+ * whitelisted SECURITY DEFINER RPCs that log to chip_ledger. Replaced
+ * the manual 4-step sequence (select + update wallet + update seat +
+ * insert audit row) with the atomic_table_rebuy RPC, which performs
+ * all 4 atomically and is whitelisted.
+ *
+ * Caller signature kept stable; clubId is passed but not consumed —
+ * the RPC resolves it from tables(id) transitively.
  */
 export async function autoRebuyHorse(
   tableId: string,
@@ -187,11 +195,12 @@ export async function autoRebuyHorse(
   rebuyAmount: number,
   clubId: string
 ): Promise<boolean> {
+  void clubId;
   try {
-    // 1. Verify active seat exists and get current stack
+    // Verify the seat first so we can compute new_stack for the RPC.
     const { data: seat } = await supabase
       .from('table_seats')
-      .select('id, stack')
+      .select('stack')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .is('left_at', null)
@@ -199,48 +208,22 @@ export async function autoRebuyHorse(
 
     if (!seat) return false;
 
-    // 2. Check and deduct wallet
-    const { data: wallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
+    const newStack = (seat.stack ?? 0) + rebuyAmount;
 
-    if (!wallet || wallet.balance < rebuyAmount) return false;
+    const { error: rpcErr } = await supabase.rpc('atomic_table_rebuy', {
+      p_user_id: userId,
+      p_table_id: tableId,
+      p_amount: rebuyAmount,
+      new_stack: newStack,
+    });
 
-    const newBalance = wallet.balance - rebuyAmount;
-    const { error: deductErr } = await supabase
-      .from('wallets')
-      .update({ balance: newBalance, updated_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('wallet_type', 'PLAYER');
-
-    if (deductErr) {
-      reportError(deductErr, 'DB.Rebuy_wallet_deduct_failed_for');
+    if (rpcErr) {
+      const msg = rpcErr.message || '';
+      if (!msg.includes('Insufficient balance') && !msg.includes('Active seat not found')) {
+        reportError(rpcErr, 'DB.atomic_table_rebuy_failed');
+      }
       return false;
     }
-
-    // 3. Add to seat stack (read current + add)
-    const currentStack = seat.stack ?? 0;
-    await supabase
-      .from('table_seats')
-      .update({ stack: currentStack + rebuyAmount })
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .is('left_at', null);
-
-    // 4. Log transaction (BUG 018 FIX: balance_after now populated for audit reconciliation)
-    await supabase.from('wallet_transactions').insert({
-      user_id: userId,
-      wallet_type: 'PLAYER',
-      type: 'debit',
-      amount: rebuyAmount,
-      category: 'rebuy',
-      description: 'Auto-rebuy topup at table',
-      table_id: tableId,
-      balance_after: newBalance,
-    });
 
     return true;
   } catch (err: any) {

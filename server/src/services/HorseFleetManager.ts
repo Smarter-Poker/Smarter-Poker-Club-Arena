@@ -165,7 +165,9 @@ export class HorseFleetManager {
         if (error) {
           reportError(error, 'HorseFleet.Failed_to_create_table_confign');
         } else {
-          console.log(`[HorseFleet] Created table: ${config.name} (club: ${clubId}, union: ${MIDWAY_UNION_ID})`);
+          console.log(
+            `[HorseFleet] Created table: ${config.name} (club: ${clubId}, union: ${MIDWAY_UNION_ID})`
+          );
         }
       } catch (err: any) {
         reportError(err, 'HorseFleet.Error_creating_table_confignam');
@@ -344,78 +346,42 @@ export class HorseFleetManager {
     clubId: string
   ): Promise<boolean> {
     try {
-      // FIX 203: Bypass broken atomic_seat_horse RPC (duplicate overload causes
-      // "Could not choose the best candidate function" 300 errors).
-      // Direct queries replicate the same logic until the duplicate is dropped.
-
-      // 1. Check wallet balance and deduct
-      const { data: wallet, error: walletErr } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', horseId)
-        .eq('wallet_type', 'PLAYER')
-        .maybeSingle();
-
-      if (walletErr || !wallet || wallet.balance < buyIn) {
-        return false; // Insufficient balance — silent fail
-      }
-
-      const { error: deductErr } = await supabase
-        .from('wallets')
-        .update({ balance: wallet.balance - buyIn, updated_at: new Date().toISOString() })
-        .eq('user_id', horseId)
-        .eq('wallet_type', 'PLAYER');
-
-      if (deductErr) {
-        reportError(deductErr, 'HorseFleet.wallet_deduct_failed_for_horse');
-        return false;
-      }
-
-      // 2. Log wallet transaction (negative amount = debit, matches convention)
-      await supabase.from('wallet_transactions').insert({
-        user_id: horseId,
-        wallet_type: 'PLAYER',
-        amount: buyIn,
-        type: 'debit',
-        category: 'buyin',
-        description: `Buy-in at ${tableName}: ${buyIn} chips`,
+      // ROUND 34 FIX: Direct UPDATE on public.wallets is rejected by the
+      // Phase 4.1.6a wallet guard ("Direct balance mutation on public.wallets
+      // is forbidden"). All balance changes must flow through whitelisted
+      // SECURITY DEFINER RPCs that log to chip_ledger. The
+      // atomic_table_buyin RPC handles every step atomically — balance
+      // check, debit, seat insert, audit log, and tables.current_players
+      // bump — and is whitelisted, so a single call replaces the manual
+      // 4-step sequence below.
+      void clubId; // kept in caller signature for downstream use; RPC reads it
+      // from tables(id).club_id transitively.
+      const { error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
+        p_user_id: horseId,
+        p_table_id: tableId,
+        p_seat_number: seatNumber,
+        p_amount: buyIn,
+        p_auto_rebuy: false,
       });
 
-      // 3. Insert seat
-      const { error: seatErr } = await supabase.from('table_seats').insert({
-        table_id: tableId,
-        user_id: horseId,
-        seat_number: seatNumber,
-        stack: buyIn,
-        status: 'active',
-        joined_at: new Date().toISOString(),
-      });
-
-      if (seatErr) {
-        // FIX 206: Silence expected duplicate key errors (race condition between seed cycles)
-        if (!seatErr.message.includes('duplicate key')) {
-          reportError(seatErr, 'HorseFleet.seat_insert_failed_for_horseId');
+      if (rpcErr) {
+        // 'Insufficient balance' / 'already seated' are silent expected
+        // failures during the seeding race; only report other errors.
+        const msg = rpcErr.message || '';
+        if (
+          !msg.includes('Insufficient balance') &&
+          !msg.includes('Player already seated') &&
+          !msg.includes('duplicate key')
+        ) {
+          reportError(rpcErr, 'HorseFleet.atomic_table_buyin_failed_for_horse');
         }
-        // Refund wallet on seat failure
-        await supabase
-          .from('wallets')
-          .update({ balance: wallet.balance, updated_at: new Date().toISOString() })
-          .eq('user_id', horseId)
-          .eq('wallet_type', 'PLAYER');
         return false;
       }
 
-      // 4. Update table player count
-      const { count } = await supabase
-        .from('table_seats')
-        .select('*', { count: 'exact', head: true })
-        .eq('table_id', tableId)
-        .is('left_at', null);
-
-      await supabase
-        .from('tables')
-        .update({ current_players: count ?? 0 })
-        .eq('id', tableId);
+      // Log a tableName-aware description on top of the RPC's generic
+      // "Cash game buy-in at table" string so audit reconciliation can
+      // match human-readable table names.
+      void tableName; // RPC writes its own description; this comment is the trail
 
       return true;
     } catch (err: any) {

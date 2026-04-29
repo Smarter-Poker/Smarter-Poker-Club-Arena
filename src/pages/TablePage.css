@@ -2111,3 +2111,57 @@
     transform: translateX(0);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST-BB-TO-ENTER OVERLAY (Bible V8 §4.2)
+   Walkthrough Step 4 fix 2026-04-29 — small fixed-position pill button
+   shown to the hero only when their userId is in the engine's
+   waitingForBBUserIds list. Tapping it calls POST /post-bb on the engine.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.post-bb-overlay-button {
+  position: fixed;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 24px;
+  border: 2px solid #ffd54a;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  color: #ffde5c;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow:
+    0 0 18px rgba(255, 213, 74, 0.45),
+    0 4px 14px rgba(0, 0, 0, 0.5);
+  animation: post-bb-pulse 1.6s ease-in-out infinite alternate;
+}
+.post-bb-overlay-button:hover {
+  background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+}
+.post-bb-overlay-button__title {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.post-bb-overlay-button__sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+}
+@keyframes post-bb-pulse {
+  from {
+    box-shadow:
+      0 0 18px rgba(255, 213, 74, 0.45),
+      0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+  to {
+    box-shadow:
+      0 0 28px rgba(255, 213, 74, 0.85),
+      0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+}

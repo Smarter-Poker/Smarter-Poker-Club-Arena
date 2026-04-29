@@ -161,6 +161,7 @@ import GameServerAPI, {
   setSitOut,
   showHand as serverShowHand,
   toggleStraddle as serverToggleStraddle,
+  postBBToEnter as serverPostBBToEnter,
 } from '../services/GameServerAPI';
 import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import { retryAsync } from '../utils/retryAsync';
@@ -345,6 +346,10 @@ interface TableState {
   // net profit precomputed (winnings - totalInvested). Drives the +N
   // yellow floating text above each winner's seat.
   engineWinners?: Array<{ userId: string; seat: number; amount: number; netAmount: number }>;
+  // Bible V8 §4.2 — User IDs of players currently waiting for the BB to
+  // rotate. The hero sees a "Post BB to enter" button when their userId
+  // is in this list. Walkthrough Step 4 fix 2026-04-29.
+  waitingForBBUserIds?: string[];
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
   /** Wall-clock turn start (server-authoritative). Drives the CSS ring
@@ -729,6 +734,8 @@ export default function TablePage({
           (mapped.handNumber > 0 || mapped.players.some((p) => p !== null)),
         // Phase 2 T1-01: winners map for +N floating text.
         engineWinners: mapped.winners,
+        // Walkthrough Step 4 fix 2026-04-29: waiting-for-BB user IDs.
+        waitingForBBUserIds: mapped.waitingForBBUserIds,
       };
     });
   }, [engineSnapshot, USE_ENGINE_WS, userId, tableState.maxPlayers]);
@@ -6053,6 +6060,36 @@ export default function TablePage({
           </>
         )}
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          POST-BB-TO-ENTER OVERLAY (Bible V8 §4.2)
+          Walkthrough Step 4 fix 2026-04-29 — engine has tracked waiting-for-BB
+          state for a long time but had no client UI control. This overlay
+          renders a small button when the hero is in waitingForBBUserIds, so
+          they can pay the BB to enter the next hand instead of waiting for
+          the BB to rotate to their seat naturally.
+          ═══════════════════════════════════════════════════════════════════════ */}
+      {userId &&
+        tableId &&
+        Array.isArray(tableState.waitingForBBUserIds) &&
+        tableState.waitingForBBUserIds.includes(userId) && (
+          <button
+            type="button"
+            className="post-bb-overlay-button"
+            onClick={async () => {
+              const result = await serverPostBBToEnter(tableId);
+              if (!result.success) {
+                toast?.error(result.error || 'Could not post BB');
+              } else {
+                toast?.success('Will be dealt in next hand');
+              }
+            }}
+            aria-label="Post the big blind to enter the next hand"
+          >
+            <span className="post-bb-overlay-button__title">Post BB to Enter</span>
+            <span className="post-bb-overlay-button__sub">Skip the wait — pay the BB now</span>
+          </button>
+        )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
           SIDE MENU (Slide-in)

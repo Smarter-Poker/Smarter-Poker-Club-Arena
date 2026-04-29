@@ -3959,6 +3959,11 @@ export class ServerTableEngine {
       // Phase 1.2 PR-F: per-user disconnect FSM map for client UI toasts
       // (MISSING / DISCONNECTED). Same shape the DB stores.
       disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
+      // Bible V8 §4.2 — Wait-for-BB user-id list. Walkthrough Step 4 fix
+      // 2026-04-29. Players who joined mid-hand are flagged here until the
+      // BB rotates to them OR they call POST /post-bb. Frontend reads this
+      // to render the "Post BB to enter" button on the hero seat.
+      waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       // Bible V8 §2.4: Side pot information for multi-way all-ins
       pots: (state.pots ?? []).map((p) => ({
         amount: p.amount,
@@ -4011,6 +4016,12 @@ export class ServerTableEngine {
             position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
             avatar_url: p.avatar_url ?? '', // Bible V8 §2.3
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
+            // Bible V8 §4.2 — Wait-for-BB flag exposed to clients so the
+            // post-BB UI button can render. Walkthrough Step 4 fix
+            // 2026-04-29: previously the engine tracked this internally but
+            // never published it; frontend had no way to know the player was
+            // waiting and no way to call POST /post-bb to skip the wait.
+            is_waiting_for_bb: this.waitingForBB.has(p.user_id),
             // Bible V8 §5.1 + §2.7: Hand name at showdown for winner label display
             hand_name: showCards
               ? (this.currentHandShowdownResults.find((r) => r.userId === p.user_id)?.handName ??

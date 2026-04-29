@@ -560,6 +560,31 @@ export async function notifyServerLeave(tableId: string): Promise<ActionResult> 
   }
 }
 
+/**
+ * POST /post-bb — Bible V8 §4.2: Post the BB to enter the next hand
+ * immediately, skipping the normal "wait for BB to rotate to your seat" delay.
+ *
+ * Walkthrough Step 4 fix 2026-04-29: previously the engine accepted this
+ * request but the frontend had no way to call it. Now the SeatSlot renders
+ * a "Post BB" button when the hero player is in the engine's
+ * waiting_for_bb_user_ids list, and that button calls this function.
+ */
+export async function postBBToEnter(tableId: string): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/post-bb`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId }),
+    });
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return (await resp.json()) as ActionResult;
+  } catch (err: unknown) {
+    console.warn('[GameServerAPI] postBBToEnter failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // WEBSOCKET CONNECTIVITY — Real-time table state sync
 // ═══════════════════════════════════════════════════════════════════════════════

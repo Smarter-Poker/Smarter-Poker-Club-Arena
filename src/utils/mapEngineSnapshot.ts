@@ -129,6 +129,14 @@ export interface MappedTableStatePatch {
    * floating text above each winner.
    */
   winners: Array<{ userId: string; seat: number; amount: number; netAmount: number }>;
+  /**
+   * Bible V8 §4.2 — User IDs of players who joined the table mid-hand and
+   * are currently waiting for the BB to rotate to their seat. The hero
+   * sees a "Post BB" button if their own userId is in this list. Walkthrough
+   * Step 4 fix 2026-04-29 — previously the engine tracked this internally
+   * but never exposed it to clients.
+   */
+  waitingForBBUserIds: string[];
 }
 
 // ─── Mapping ──────────────────────────────────────────────────────────────────
@@ -282,5 +290,8 @@ export function mapEngineSnapshot(
         netAmount: Math.max(0, w.amount - invested),
       };
     }),
+    // Bible V8 §4.2 — Waiting-for-BB user IDs (Walkthrough Step 4 fix 2026-04-29)
+    waitingForBBUserIds:
+      (s as unknown as { waiting_for_bb_user_ids?: string[] }).waiting_for_bb_user_ids ?? [],
   };
 }

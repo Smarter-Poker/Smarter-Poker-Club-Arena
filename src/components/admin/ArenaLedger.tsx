@@ -5,7 +5,7 @@
  *
  * Consolidated from World Hub `components/commander/admin/ArenaLedger.jsx`.
  *
- * Displays a real-time feed of `club_arena_audit_logs` and `club_arena_messages`
+ * Displays a real-time feed of `audit_trail` and `club_arena_messages`
  * with filtering, search, and live streaming via Supabase Realtime.
  *
  * Used in: Commander admin panels, Financial Admin Hub
@@ -76,7 +76,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
     try {
       // Fetch audit logs
       const { data: auditData } = await supabase
-        .from('club_arena_audit_logs')
+        .from('audit_trail')
         .select('id, action, actor_id, details, created_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })
@@ -137,7 +137,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'club_arena_audit_logs',
+          table: 'audit_trail',
           filter: `club_id=eq.${clubId}`,
         },
         (payload) => {

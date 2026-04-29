@@ -438,7 +438,10 @@ class AgentServiceClass {
     }
     if (input.isPrepaid && creditLimit > 0) {
       // Pre-paid agents don't get credit lines — force to 0
-      reportError('Pre-paid agent has credit limit, setting to 0', 'AgentService.updateCreditLimit');
+      reportError(
+        'Pre-paid agent has credit limit, setting to 0',
+        'AgentService.updateCreditLimit'
+      );
     }
 
     // 1. Validate the user exists
@@ -565,11 +568,10 @@ class AgentServiceClass {
       .eq('club_id', resolvedClubId);
 
     if (error) {
-      reportError(
-        error,
-        'AgentService.linkPlayerByReferral',
-        { playerId, agentUsername: agentProfile.username }
-      );
+      reportError(error, 'AgentService.linkPlayerByReferral', {
+        playerId,
+        agentUsername: agentProfile.username,
+      });
       return { success: false };
     }
 
@@ -641,7 +643,7 @@ class AgentServiceClass {
     const { data: currentUser } = await supabase.auth.getUser();
     const assignedBy = currentUser?.user?.id || 'system';
     await supabase
-      .from('club_arena_audit_logs')
+      .from('audit_trail')
       .insert({
         action: 'ASSIGN_PLAYER_TO_AGENT',
         performed_by: assignedBy,
@@ -977,7 +979,10 @@ class AgentServiceClass {
           // Agent → Sub-Agent: Get sub-agent's user_id
           const subAgent = await this.getAgent(dist.toId);
           if (!subAgent) {
-            reportError(`Sub-agent ${dist.toId} not found`, 'AgentService.distributeChips.subAgentMissing');
+            reportError(
+              `Sub-agent ${dist.toId} not found`,
+              'AgentService.distributeChips.subAgentMissing'
+            );
             continue;
           }
           await ChipFlowService.transfer(

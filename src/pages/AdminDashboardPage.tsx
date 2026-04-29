@@ -876,7 +876,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
         const to = from + PAGE_SIZE - 1;
 
         const { data, error, count } = await supabase
-          .from('club_arena_audit_logs')
+          .from('audit_trail')
           .select('id, action, actor_id, target_type, target_id, details, ip_address, created_at', {
             count: 'exact',
           })
@@ -961,7 +961,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
           {
             event: 'INSERT',
             schema: 'public',
-            table: 'club_arena_audit_logs',
+            table: 'audit_trail',
             filter: `club_id=eq.${uuid}`,
           },
           () => {
@@ -1017,7 +1017,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
               try {
                 const uuid = await resolveClubUUID(clubId);
                 const { data, error } = await supabase
-                  .from('club_arena_audit_logs')
+                  .from('audit_trail')
                   .select(
                     'id, action, actor_id, target_type, target_id, details, ip_address, created_at'
                   )

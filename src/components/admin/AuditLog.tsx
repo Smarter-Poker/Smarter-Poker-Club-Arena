@@ -54,7 +54,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
 
     try {
       const query = supabase
-        .from('club_arena_audit_logs')
+        .from('audit_trail')
         .select('id, action, actor_id, target_type, target_id, details, ip_address, created_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })

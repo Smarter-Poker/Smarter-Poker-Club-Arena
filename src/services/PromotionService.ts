@@ -352,8 +352,7 @@ class PromotionServiceClass {
         }),
       3
     );
-    if (rankErr)
-      reportError(rankErr, 'PromotionService.Leaderboard_rank_recalc_failed');
+    if (rankErr) reportError(rankErr, 'PromotionService.Leaderboard_rank_recalc_failed');
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -392,10 +391,10 @@ class PromotionServiceClass {
     // Add bonus to promo wallet with audit trail
     const { error: bonusErr } = await retryAsync(
       () =>
+        // Round 19: prod sig (p_user_id, p_amount). p_description silently 404'd.
         supabase.rpc('add_to_promo_wallet', {
           p_user_id: userId,
           p_amount: finalBonus,
-          p_description: `Deposit bonus: ${promo.title}`,
         }),
       3
     );
@@ -454,10 +453,10 @@ class PromotionServiceClass {
     const referralBonus = Math.trunc((promo.prizePool || 10) * 100) / 100;
     const { error: refErr } = await retryAsync(
       () =>
+        // Round 19: drop p_description (not a prod param).
         supabase.rpc('add_to_promo_wallet', {
           p_user_id: referrer.id,
           p_amount: referralBonus,
-          p_description: 'Referral bonus',
         }),
       3
     );

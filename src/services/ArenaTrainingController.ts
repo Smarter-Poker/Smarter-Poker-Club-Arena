@@ -184,9 +184,9 @@ export async function checkLevelAccess(userId: string, targetLevel: number): Pro
 
   const { data, error } = await retryAsync(
     () =>
+      // Round 19: prod sig (p_user_id) — RPC computes target level itself.
       supabase.rpc('fn_check_level_advancement', {
         p_user_id: userId,
-        p_target_level: targetLevel,
       }),
     3
   );
@@ -275,8 +275,7 @@ async function recordSessionCompletion(
       }),
     3
   );
-  if (rewardErr)
-    reportError(rewardErr, 'ArenaTrainingController.CRITICAL');
+  if (rewardErr) reportError(rewardErr, 'ArenaTrainingController.CRITICAL');
 }
 
 /**

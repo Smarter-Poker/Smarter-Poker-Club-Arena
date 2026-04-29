@@ -55,12 +55,21 @@ export async function discoverNearbyClubs(
   location: ClubLocation,
   radiusKm: number = 50
 ): Promise<ClubWithDistance[]> {
+  // Round 19: prod fn_discover_clubs is search-based, not lat/lng/radius
+  // (signatures: (p_search, p_limit) and (p_search, p_limit, p_offset)).
+  // The location-based discover doesn't exist in production. Until a real
+  // PostGIS-backed location RPC ships, fall back to a search-based discover
+  // and let the caller order/filter client-side. location + radiusKm are
+  // accepted to keep the public API stable but only used for client-side
+  // distance annotation when the clubs table grows lat/lng columns.
+  void location; // kept for future PostGIS upgrade
+  void radiusKm;
   const { data, error } = await retryAsync(
     () =>
       supabase.rpc('fn_discover_clubs', {
-        user_lat: location.latitude,
-        user_lng: location.longitude,
-        radius_km: radiusKm,
+        p_search: '',
+        p_limit: 50,
+        p_offset: 0,
       }),
     3
   );
@@ -70,7 +79,7 @@ export async function discoverNearbyClubs(
     throw new Error('Failed to discover nearby clubs');
   }
 
-  return data || [];
+  return (data as ClubWithDistance[]) || [];
 }
 
 /**

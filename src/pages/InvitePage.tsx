@@ -204,8 +204,11 @@ export default function InvitePage() {
       // Update member count
       const { error: countErr } = await retryAsync(
         () =>
+          // Round 19: prod sig (p_club_id, p_delta). Caller used to pass
+          // unprefixed `club_id` and was missing required p_delta — silent 404.
           supabase.rpc('increment_member_count', {
-            club_id: club.id,
+            p_club_id: club.id,
+            p_delta: 1,
           }),
         3
       );

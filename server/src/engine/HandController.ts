@@ -253,6 +253,16 @@ export class HandController {
           this.state.currentBet = straddleAmount;
           // Straddle is live — straddler can raise when action comes back (§4.4)
           if (straddler.stack === 0) straddler.is_all_in = true;
+
+          // Phase X5 (2026-04-29) — Bible V8 §1.16 discrete event so the
+          // client can render the "STRADDLE" tag + chip-to-pot animation
+          // without inferring it from a state-snapshot diff.
+          this.emit({
+            type: 'STRADDLE_POSTED',
+            seat: straddle.seat,
+            amount: straddleAmount,
+            user_id: straddler.user_id,
+          } as never);
         }
       }
     }
@@ -266,7 +276,8 @@ export class HandController {
     const blindsPostings: Array<{ seat: number; type: string; amount: number }> = [];
     if (sbPlayer) {
       const sbAmount = Math.min(smallBlind, sbPlayer.bet); // bet has been set to actual paid
-      if (sbAmount > 0) blindsPostings.push({ seat: sbSeat, type: 'small_blind', amount: sbAmount });
+      if (sbAmount > 0)
+        blindsPostings.push({ seat: sbSeat, type: 'small_blind', amount: sbAmount });
     }
     if (bbPlayer) {
       const bbAmount = Math.min(bigBlind, bbPlayer.bet);
@@ -301,6 +312,17 @@ export class HandController {
     for (const player of this.state.players.filter((p) => !p.is_sitting_out)) {
       player.cards = deck.deal(cardsPerPlayer);
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: player.cards });
+      // Phase X5 (2026-04-29) — Bible V8 §1.16 hole_cards_dealt private event.
+      // ServerTableEngine fans this through to the WS hub as a per-user
+      // private message (NOT a public broadcast — only the holder sees the
+      // values; spectators see a count-only mask).
+      this.emit({
+        type: 'HOLE_CARDS_DEALT',
+        seat: player.seat,
+        user_id: player.user_id,
+        cards: player.cards,
+        card_count: player.cards.length,
+      } as never);
     }
   }
 
@@ -833,7 +855,12 @@ export class HandController {
 
     // If still no winners (impossible edge case), skip distribution to prevent chip loss
     if (winners.length === 0 || totalWinnerAmount === 0) {
-      reportError(new Error(`[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`), 'HandController.CRITICAL');
+      reportError(
+        new Error(
+          `[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`
+        ),
+        'HandController.CRITICAL'
+      );
       this.emit({ type: 'WINNERS', winners: [] });
       this.handFSM.transition('settlement');
       this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake: 0, bbjFee: 0 });

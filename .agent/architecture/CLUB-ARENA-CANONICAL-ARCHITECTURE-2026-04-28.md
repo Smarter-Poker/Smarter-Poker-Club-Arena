@@ -191,12 +191,21 @@ The standalone `club-arena` Vercel project builds and deploys to `club-arena.ver
 
 These are intentionally namespaced; not duplicates. Documented to prevent confusion.
 
-### Duplicate #5 — Member tables: `club_members` vs `club_memberships`
+### Duplicate #5 — Member tables: `club_members` (BASE) vs `club_memberships` (VIEW) ⚠ CORRECTED 2026-04-29
 
-| Table              | Purpose                                                            | Status                                     |
-| ------------------ | ------------------------------------------------------------------ | ------------------------------------------ |
-| `club_memberships` | Active per-(user, club) row with chip_balance, agent_id, role      | **CANONICAL** — every ops route reads this |
-| `club_members`     | Older flat list of (user, club) pairs without per-row chip balance | LEGACY — drop after dashboard verification |
+**Original audit had the canonical pick BACKWARDS.** Verification on 2026-04-29 found:
+
+- `club_members` is the **base table** (1480 rows; all writes go here)
+- `club_memberships` is a **VIEW** over `club_members` (`SELECT club_id, user_id, role, agent_id, ... FROM club_members;`)
+
+So `club_members` IS canonical. The 280+ production references to `club_members` are correct. The earlier "canonical = club_memberships" claim was based on naming convention guesswork rather than schema introspection. AG correctly refused the refactor when it detected the mismatch on 2026-04-29.
+
+**Action:** no refactor needed. Both names will keep working — code can read either; writes must go to `club_members`. Architecture-doc table below corrected.
+
+| Table              | Purpose                                                      | Status                                              |
+| ------------------ | ------------------------------------------------------------ | --------------------------------------------------- |
+| `club_members`     | **BASE TABLE** — all writes; 1480 rows; 280+ code references | **CANONICAL**                                       |
+| `club_memberships` | **VIEW** over `club_members` (1:1 SELECT, all 25 columns)    | Compat alias — readable, but writes must go to base |
 
 **Canonical:** `club_memberships`. New code never reads `club_members`.
 

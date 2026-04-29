@@ -731,6 +731,10 @@ export async function logHandHistory(params: {
   rakeAmount: number;
   bbjAmount?: number;
   communityCards: string[];
+  // Round 38 — wall-clock timestamps. startedAt is captured at HAND_START
+  // in ServerTableEngine; endedAt is stamped here at write time.
+  startedAt?: number;
+  endedAt?: number;
   winners: {
     userId: string;
     amount: number;
@@ -753,7 +757,7 @@ export async function logHandHistory(params: {
     kickers: number[];
     holeCards: { rank: string; suit: string }[];
   }[];
-}): Promise<void> {
+}): Promise<{ handId: string | null }> {
   // ── Tier 1: Raw Events ──────────────────────────────────────────────
   const rawEvents = params.actions.map((a, idx) => ({
     seq: idx,
@@ -812,55 +816,79 @@ export async function logHandHistory(params: {
     integrity_hash: `${params.tableId}:${params.handNumber}:${Date.now()}`,
   };
 
-  const { error } = await supabase.from('hand_history').insert({
-    table_id: params.tableId,
-    tournament_id: params.tournamentId || null,
-    hand_number: params.handNumber,
-    game_variant: params.gameVariant,
-    small_blind: params.smallBlind,
-    big_blind: params.bigBlind,
-    pot_size: params.potSize,
-    rake_amount: params.rakeAmount,
-    bbj_amount: params.bbjAmount || 0,
-    community_cards: params.communityCards,
-    winners: params.winners,
-    players: params.players,
-    actions: params.actions,
-    // Bible V8 §2.18: 4-tier hand history layers (stored as JSONB)
-    raw_events: rawEvents,
-    audit_log: auditLog,
-    player_summaries: playerSummaries,
-    dispute_review: disputeReview,
-  });
+  // Round 38 fix: stamp started_at/ended_at + RETURNING id so the caller
+  // can FK rake_records.hand_id back to this hand_history row.
+  const startedAtIso = params.startedAt
+    ? new Date(params.startedAt).toISOString()
+    : new Date().toISOString();
+  const endedAtIso = params.endedAt
+    ? new Date(params.endedAt).toISOString()
+    : new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from('hand_history')
+    .insert({
+      table_id: params.tableId,
+      tournament_id: params.tournamentId || null,
+      hand_number: params.handNumber,
+      game_variant: params.gameVariant,
+      small_blind: params.smallBlind,
+      big_blind: params.bigBlind,
+      pot_size: params.potSize,
+      rake_amount: params.rakeAmount,
+      bbj_amount: params.bbjAmount || 0,
+      community_cards: params.communityCards,
+      started_at: startedAtIso,
+      ended_at: endedAtIso,
+      winners: params.winners,
+      players: params.players,
+      actions: params.actions,
+      // Bible V8 §2.18: 4-tier hand history layers (stored as JSONB)
+      raw_events: rawEvents,
+      audit_log: auditLog,
+      player_summaries: playerSummaries,
+      dispute_review: disputeReview,
+    })
+    .select('id')
+    .maybeSingle();
   if (error) {
     // Non-fatal: the 4-tier columns may not exist yet in the DB schema.
     // Fall back to legacy insert without the new columns if the error is about unknown columns.
     if (error.message?.includes('column') || error.code === '42703') {
-      const { error: fallbackError } = await supabase.from('hand_history').insert({
-        table_id: params.tableId,
-        tournament_id: params.tournamentId || null,
-        hand_number: params.handNumber,
-        game_variant: params.gameVariant,
-        small_blind: params.smallBlind,
-        big_blind: params.bigBlind,
-        pot_size: params.potSize,
-        rake_amount: params.rakeAmount,
-        bbj_amount: params.bbjAmount || 0,
-        community_cards: params.communityCards,
-        winners: params.winners,
-        players: params.players,
-        actions: params.actions,
-      });
+      const { data: fbData, error: fallbackError } = await supabase
+        .from('hand_history')
+        .insert({
+          table_id: params.tableId,
+          tournament_id: params.tournamentId || null,
+          hand_number: params.handNumber,
+          game_variant: params.gameVariant,
+          small_blind: params.smallBlind,
+          big_blind: params.bigBlind,
+          pot_size: params.potSize,
+          rake_amount: params.rakeAmount,
+          bbj_amount: params.bbjAmount || 0,
+          community_cards: params.communityCards,
+          started_at: startedAtIso,
+          ended_at: endedAtIso,
+          winners: params.winners,
+          players: params.players,
+          actions: params.actions,
+        })
+        .select('id')
+        .maybeSingle();
       if (fallbackError) {
         console.warn(
           `[DB] Failed to log hand history #${params.handNumber}:`,
           fallbackError.message
         );
+        return { handId: null };
       }
-    } else {
-      console.warn(`[DB] Failed to log hand history #${params.handNumber}:`, error.message);
+      return { handId: fbData?.id ?? null };
     }
+    console.warn(`[DB] Failed to log hand history #${params.handNumber}:`, error.message);
+    return { handId: null };
   }
+  return { handId: data?.id ?? null };
 }
 
 /**

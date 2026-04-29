@@ -157,6 +157,10 @@ export class ServerTableEngine {
   private currentHandRake: number = 0;
   private currentHandBBJFee: number = 0;
   private currentHandCommunityCards: string[] = [];
+  // Round 38: track wall-clock start so logHandHistory can write started_at +
+  // ended_at (was missing — every completed hand_history row had null
+  // ended_at, breaking replay timestamps and audit reconciliation).
+  private currentHandStartedAt: number = 0;
   // Bible V8 §2.5: Action Record requires seat, userId, action, amount, timestamp, stage
   private currentHandActions: {
     seat: number;
@@ -2436,6 +2440,11 @@ export class ServerTableEngine {
   private async handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
+        // Round 38 fix: capture wall-clock start so logHandHistory can stamp
+        // started_at correctly. Without this, the row's started_at defaulted
+        // to the INSERT time (which is hand-end), making replay timestamps
+        // and audit reconciliation impossible.
+        this.currentHandStartedAt = Date.now();
         // Bible V8 §1.16 (Real-Time Law): emit a discrete hand_started event
         // so the client can immediately reset visual state (clear last action
         // badges, clear community cards, trigger the deal animation) without
@@ -4087,6 +4096,40 @@ export class ServerTableEngine {
       );
     }
 
+    // ─── ROUND 38 FIX: REORDERED — hand_history first, then rake_records ───
+    // Was: rake_records inserted with hand_id=NULL because logHandHistory
+    // ran AFTER and the hand_history.id wasn't available. That broke the
+    // FK chain rake_records.hand_id → hand_history.id and orphaned every
+    // rake event from its hand. Now: log hand_history first, capture the
+    // returned id, pass it to rake_records.
+    let v_handHistoryId: string | null = null;
+    if (this.tableInfo) {
+      const result = await logHandHistory({
+        tableId: this.tableId,
+        tournamentId: this.tableInfo.tournament_id || undefined,
+        handNumber: this.handCount,
+        gameVariant: this.tableInfo.game_variant || 'nlh',
+        smallBlind: this.tableInfo.small_blind,
+        bigBlind: this.tableInfo.big_blind,
+        potSize: this.currentHandPotSize,
+        rakeAmount: this.currentHandRake,
+        bbjAmount: this.currentHandBBJFee,
+        communityCards: this.currentHandCommunityCards,
+        startedAt: this.currentHandStartedAt || Date.now(),
+        endedAt: Date.now(),
+        winners: this.currentHandWinners,
+        players: players.map((p) => ({
+          userId: p.user_id,
+          username: p.username,
+          seat: p.seat_number,
+          stack: p.stack,
+          cards: [],
+        })),
+        actions: this.currentHandActions,
+      });
+      v_handHistoryId = result.handId;
+    }
+
     // SETTLEMENT STEP 12: Calculate rakeback (EQUAL-SHARE, FIX 144)
     // Each dealt-in player gets credited with an EQUAL share of the total rake.
     // This is the key metric for weekly player/agent earnings.
@@ -4113,6 +4156,9 @@ export class ServerTableEngine {
           await supabase.from('rake_records').insert({
             table_id: this.tableId,
             club_id: this.tableInfo.club_id,
+            // Round 38 fix: link rake → hand for the FK chain
+            // (rake_attributions.hand_id, audit reconciliation, replay).
+            hand_id: v_handHistoryId,
             rake_amount: this.currentHandRake,
             bbj_contribution: this.currentHandBBJFee,
             pot_size: this.currentHandPotSize,
@@ -4127,31 +4173,6 @@ export class ServerTableEngine {
           console.warn('[Engine] rake_records durable write failed (non-fatal):', rrErr);
         }
       }
-    }
-
-    // SETTLEMENT STEP 13: Log complete hand history
-    if (this.tableInfo) {
-      await logHandHistory({
-        tableId: this.tableId,
-        tournamentId: this.tableInfo.tournament_id || undefined,
-        handNumber: this.handCount,
-        gameVariant: this.tableInfo.game_variant || 'nlh',
-        smallBlind: this.tableInfo.small_blind,
-        bigBlind: this.tableInfo.big_blind,
-        potSize: this.currentHandPotSize,
-        rakeAmount: this.currentHandRake,
-        bbjAmount: this.currentHandBBJFee,
-        communityCards: this.currentHandCommunityCards,
-        winners: this.currentHandWinners,
-        players: players.map((p) => ({
-          userId: p.user_id,
-          username: p.username,
-          seat: p.seat_number,
-          stack: p.stack,
-          cards: [],
-        })),
-        actions: this.currentHandActions,
-      });
     }
 
     // 3b. Bible V8 §4.19: Log insurance settlements (settled in HAND_COMPLETE handler)

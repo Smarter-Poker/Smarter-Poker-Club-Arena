@@ -2616,9 +2616,23 @@ export class ServerTableEngine {
       case 'COMMUNITY_CARDS': {
         if (event.stage === 'flop') this.currentHandWentToFlop = true;
         if (event.cards) {
-          this.currentHandCommunityCards = event.cards.map((c: any) =>
+          // Round 39 audit Pass 3 fix: HandController.dealCommunityCards()
+          // emits ONLY the new cards for the current stage (3 for flop, 1 for
+          // turn, 1 for river — see HandController.ts:597/622/629). Previously
+          // we REPLACED currentHandCommunityCards with event.cards, so a hand
+          // that went to the river persisted only the 1 river card to
+          // hand_history.community_cards (verified live: hand 268 had 19
+          // actions ending on the river but only ["6spades"] stored). Fix:
+          // flop resets, turn/river APPEND. This now mirrors HandController's
+          // own state.communityCards which already accumulates correctly.
+          const newCards = event.cards.map((c: any) =>
             typeof c === 'string' ? c : `${c.rank}${c.suit}`
           );
+          if (event.stage === 'flop') {
+            this.currentHandCommunityCards = newCards;
+          } else {
+            this.currentHandCommunityCards = [...this.currentHandCommunityCards, ...newCards];
+          }
         }
         // Bible V8 §1.16 (Real-Time Law): emit discrete community_cards_dealt
         // so the client slides the flop/turn/river cards onto the board with

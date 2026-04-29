@@ -135,29 +135,30 @@ If you can't SSH to a VM, that's the SSH key not being in the sandbox. AG (on Da
 
 **Archived (do not push to):** `Smarter-Poker/Club-Arena-Design`. Anything else with "club" or "arena" in the name is decommissioned.
 
-### Vercel projects (canonical 7, post-consolidation from 18)
+### Vercel projects (canonical 6, post-consolidation from 18 → 7 → 6)
 
-| Project ID                         | Project name            | Purpose                                              | Custom domain                                        |
-| ---------------------------------- | ----------------------- | ---------------------------------------------------- | ---------------------------------------------------- |
-| `prj_oaCq8RYhExLRUYizLG93li0uX468` | club-arena              | Standalone Vite build (orphan — see §5 duplicate #1) | (none — orphan)                                      |
-| `prj_vIeaVMjyHZIPgBzTZuzcaPwFlpbP` | smarter-poker-commander | Commander dashboard                                  | commander.smarter.poker                              |
-| `prj_op66GkZyZcygXQKm76iyycfVFAQx` | hub-vanguard            | World Hub apex (smarter.poker)                       | smarter.poker, www.smarter.poker, club.smarter.poker |
-| `prj_uGmblGipHWcpL7lLrCDggK1zP9V8` | master-bus              | Internal                                             | —                                                    |
-| `prj_3gktr9r6k34oscYINykmPnxmzprw` | identity-dna-engine     | Separate product                                     | —                                                    |
-| `prj_EVHAwaqYFl694Qrl60NEO8iyAQYL` | gto-training-engine     | Separate product                                     | —                                                    |
-| `prj_FlECbqntQtrjJaJ2VTdrD501YHCG` | social-hub-v2           | Separate product                                     | —                                                    |
+The orphan `club-arena` Vercel project (was `prj_oaCq8RYhExLRUYizLG93li0uX468`) was deleted on 2026-04-29 by AG. Verified live: `club-arena.vercel.app` returns 404 (project gone), `smarter.poker/hub/club-arena` still 200 (canonical URL unaffected). Local `~/Documents/club-arena/.vercel/` directory removed.
+
+| Project ID                         | Project name            | Purpose                        | Custom domain                                        |
+| ---------------------------------- | ----------------------- | ------------------------------ | ---------------------------------------------------- |
+| `prj_vIeaVMjyHZIPgBzTZuzcaPwFlpbP` | smarter-poker-commander | Commander dashboard            | commander.smarter.poker                              |
+| `prj_op66GkZyZcygXQKm76iyycfVFAQx` | hub-vanguard            | World Hub apex (smarter.poker) | smarter.poker, www.smarter.poker, club.smarter.poker |
+| `prj_uGmblGipHWcpL7lLrCDggK1zP9V8` | master-bus              | Internal                       | —                                                    |
+| `prj_3gktr9r6k34oscYINykmPnxmzprw` | identity-dna-engine     | Separate product               | —                                                    |
+| `prj_EVHAwaqYFl694Qrl60NEO8iyAQYL` | gto-training-engine     | Separate product               | —                                                    |
+| `prj_FlECbqntQtrjJaJ2VTdrD501YHCG` | social-hub-v2           | Separate product               | —                                                    |
 
 ---
 
 ## §5 — Duplicates found (and what's canonical)
 
-### Duplicate #1 — Vercel `club-arena` project is an orphan
+### Duplicate #1 — Vercel `club-arena` project is an orphan ✅ RESOLVED 2026-04-29
 
 The standalone `club-arena` Vercel project builds and deploys to `club-arena.vercel.app` on every push to main. But that URL has zero real traffic — the canonical Club Arena is served from `smarter.poker/hub/club-arena` (World Hub apex serves the Vite build statically from `public/hub/club-arena/`).
 
 **Canonical:** Vite source in `~/Documents/club-arena/` → `npm run build` → output copied to `Smarter-Poker-World-Hub/public/hub/club-arena/` → Vercel deploy of World Hub.
 
-**Action recommended:** delete the orphan Vercel project (`prj_oaCq8RYhEx...`) to remove the confusing duplicate build pipeline. Or repurpose by flipping to it as the canonical (rewriting World Hub config to proxy `/hub/club-arena/*` to `club-arena.vercel.app`). Asked Dan; pending decision.
+**Status:** ✅ DELETED 2026-04-29 by AG. `club-arena.vercel.app` returns 404 (project removed). Canonical `smarter.poker/hub/club-arena` still 200. Local `.vercel/` config directory removed from repo. Vercel project count went 7 → 6.
 
 ### Duplicate #2 — Audit log tables (4 of them; one canonical)
 
@@ -199,14 +200,14 @@ These are intentionally namespaced; not duplicates. Documented to prevent confus
 
 **Canonical:** `club_memberships`. New code never reads `club_members`.
 
-### Duplicate #6 — Tournaments: `tournaments` vs `club_tournaments`
+### Duplicate #6 — Tournaments: `tournaments` vs `club_tournaments` ✅ RESOLVED 2026-04-29
 
-| Table              | Purpose                                                                                     | Status                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `tournaments`      | Bible V8 §11 schema — `clubs.id` FK, `late_reg_levels`, `is_pko`, `is_mystery_bounty`, etc. | **CANONICAL**                                                 |
-| `club_tournaments` | Older schema referenced by `fn_tournament_atomic_register` RPC                              | Legacy — RPC writes here; need migration to use `tournaments` |
+| Table              | Purpose                                                                                     | Status                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `tournaments`      | Bible V8 §11 schema — `clubs.id` FK, `late_reg_levels`, `is_pko`, `is_mystery_bounty`, etc. | **CANONICAL** + `fn_tournament_atomic_register` writes here as of `ba67354e` |
+| `club_tournaments` | Older schema; no longer written by any RPC                                                  | Held for read-check before drop (consumer-refactor sweep)                    |
 
-**Canonical:** `tournaments`. Open follow-up: refactor `fn_tournament_atomic_register` to write to `tournaments` then drop `club_tournaments`.
+**Status:** ✅ `fn_tournament_atomic_register` refactored to write canonical `tournaments` (migration `20260429000001_x7_refactor_tournament_register.sql`, commit `ba67354e`). RPC verdict probe confirms no `club_tournaments` writes. The legacy table itself stays until a consumer-refactor sweep verifies no live reads.
 
 ### Duplicate #7 — Hand history: `hand_history` vs `hand_histories` vs `hands`
 

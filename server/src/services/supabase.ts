@@ -533,11 +533,15 @@ export async function logRakeCollection(
 
       // Log union transaction for audit trail (BUG 013 FIX — was union_transactions, that
       // table doesn't exist; actual audit table is union_wallet_transactions with required
-      // fields amount + wallet + direction + tx_type + balance_after)
+      // fields amount + wallet + direction + tx_type + balance_after).
+      // ROUND 16 FIX: wallet must be one of {chip_balance, rake_wallet, bbj_wallet,
+      // promo_wallet} per union_wallet_transactions_wallet_check; 'main' was rejected
+      // by the CHECK constraint, silently dropping every union rake audit row. Rake
+      // collection credits the rake_wallet sub-account.
       {
         const { data: wallet } = await supabase
           .from('union_wallets')
-          .select('chip_balance')
+          .select('rake_wallet')
           .eq('union_id', club.union_id)
           .maybeSingle();
         await supabase.from('union_wallet_transactions').insert({
@@ -545,9 +549,9 @@ export async function logRakeCollection(
           club_id: clubId,
           amount: rakeAmount,
           tx_type: 'rake',
-          wallet: 'main',
+          wallet: 'rake_wallet',
           direction: 'credit',
-          balance_after: wallet?.chip_balance ?? null,
+          balance_after: wallet?.rake_wallet ?? null,
           notes: `Cash game rake: hand #${handNumber} (${club.name || 'club'})`,
         });
       }

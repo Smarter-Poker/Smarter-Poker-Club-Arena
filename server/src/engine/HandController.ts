@@ -868,16 +868,36 @@ export class HandController {
       return;
     }
 
-    // Integer-cents arithmetic to prevent floating-point distribution errors
-    const totalCents = Math.trunc(totalWinnings * 100);
-    const totalWinnerCents = Math.trunc(totalWinnerAmount * 100) || 1;
+    // Round 40 audit Pass 3 fix: Integer-cents arithmetic. Use Math.round
+    // (NOT Math.trunc) for the float→cents conversion — IEEE 754 drift can
+    // make state.pot of "$140.30" actually be 140.29999..., so
+    // Math.trunc(140.299... * 100) = 13479, not 13480, leaking exactly 1¢
+    // per chop pot whose total had any drift. distributePot already uses
+    // Math.round (FIX 179, PokerEngine.ts:652); completeHand was the
+    // outlier still on Math.trunc. Verified live: hand 254 (chop pot
+    // $134.80 → recorded as 67.40 + 67.39 = $134.79, missing 1¢) is
+    // exactly this case.
+    //
+    // After Math.round, adjustedCents.sum may be over OR under totalCents.
+    // Two separate distribute loops handle both directions so the post
+    // condition `sum(adjustedCents) === totalCents` always holds.
+    const totalCents = Math.round(totalWinnings * 100);
+    const totalWinnerCents = Math.round(totalWinnerAmount * 100) || 1;
     const adjustedCents = winners.map((w) =>
-      Math.trunc((Math.trunc(w.amount * 100) * totalCents) / totalWinnerCents)
+      Math.round((Math.round(w.amount * 100) * totalCents) / totalWinnerCents)
     );
     let remainderCents = totalCents - adjustedCents.reduce((s, a) => s + a, 0);
     for (let i = 0; i < adjustedCents.length && remainderCents > 0; i++) {
       adjustedCents[i]++;
       remainderCents--;
+    }
+    // Round can also overshoot by 1-2 cents on multi-winner pots; pull
+    // back evenly without going below 0.
+    for (let i = 0; i < adjustedCents.length && remainderCents < 0; i++) {
+      if (adjustedCents[i] > 0) {
+        adjustedCents[i]--;
+        remainderCents++;
+      }
     }
     const adjustedAmounts = adjustedCents.map((c) => c / 100);
     const adjustedWinners = winners.map((w, i) => ({ ...w, amount: adjustedAmounts[i] }));

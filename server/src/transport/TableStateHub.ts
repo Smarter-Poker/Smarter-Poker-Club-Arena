@@ -106,12 +106,16 @@ export class TableStateHub {
       message = { type: 'SNAPSHOT', tableId, seq: next, state };
     } else {
       const patch = compare(room.lastSnapshot, state) as JsonPatchOperation[];
-      // No-op publish — nothing changed. Still increment seq so the client
-      // can detect liveness, but skip broadcasting empty patches.
+      // ROUND 25 FIX (Bible V8 §6 reconnect FSM): no-op publishes (empty patch)
+      // MUST NOT advance seq, otherwise the next real DELTA carries
+      // prev=lastSeq+N which the client sees as a gap — triggering a spurious
+      // resync (full snapshot resend) on every "engine ticked but state didn't
+      // change" cycle. Liveness is signalled by lastPublishedAt + the next
+      // real DELTA, not by seq numbers the client never sees. Just bump
+      // the timestamp and bail.
       if (patch.length === 0) {
-        room.lastSeq = next;
         room.lastPublishedAt = Date.now();
-        return next;
+        return prev;
       }
       message = { type: 'DELTA', tableId, seq: next, prev, patch };
     }

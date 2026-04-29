@@ -166,9 +166,10 @@ class CashoutServiceClass {
   async cancelCashout(cashoutId: string, playerId: string): Promise<boolean> {
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: prod signature is (p_cashout_id, p_user_id) not (p_cashout_id, p_player_id).
         supabase.rpc('fn_cancel_cashout', {
           p_cashout_id: cashoutId,
-          p_player_id: playerId,
+          p_user_id: playerId,
         }),
       3
     );
@@ -209,10 +210,12 @@ class CashoutServiceClass {
   async approveCashout(cashoutId: string, agentId: string, note?: string): Promise<boolean> {
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: prod signature is (p_agent_note, p_agent_user_id, p_cashout_id);
+        // caller used to pass (p_agent_id, p_note) which silently 404'd in PostgREST.
         supabase.rpc('fn_agent_approve_cashout', {
           p_cashout_id: cashoutId,
-          p_agent_id: agentId,
-          p_note: note || null,
+          p_agent_user_id: agentId,
+          p_agent_note: note || null,
         }),
       3
     );
@@ -257,9 +260,11 @@ class CashoutServiceClass {
   async completeCashout(cashoutId: string, agentId: string): Promise<boolean> {
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: prod signature is (p_cashout_id, p_completed_by) — the param
+        // is generic 'completed_by' not agent-specific because admins can also complete.
         supabase.rpc('fn_complete_cashout', {
           p_cashout_id: cashoutId,
-          p_agent_id: agentId,
+          p_completed_by: agentId,
         }),
       3
     );
@@ -325,10 +330,11 @@ class CashoutServiceClass {
     // Delegate entirely to the atomic Supabase RPC to prevent race conditions
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: prod signature uses p_reason not p_note for the rejection reason.
         supabase.rpc('fn_reject_cashout', {
           p_cashout_id: cashoutId,
           p_agent_id: agentId,
-          p_note: reason || null,
+          p_reason: reason || null,
         }),
       3
     );
@@ -627,8 +633,9 @@ class CashoutServiceClass {
   async expireStale(maxHours = 72): Promise<{ expired: number; playersRefunded: string[] }> {
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: my Round 9 RPC param is p_ttl_hours, caller used p_max_hours.
         supabase.rpc('fn_expire_stale_cashouts', {
-          p_max_hours: maxHours,
+          p_ttl_hours: maxHours,
         }),
       3
     );

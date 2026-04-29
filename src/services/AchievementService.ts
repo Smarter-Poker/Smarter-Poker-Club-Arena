@@ -498,10 +498,10 @@ class AchievementServiceClass {
     if (achievement.chipReward && achievement.chipReward > 0) {
       const { error: rewardErr } = await retryAsync(
         () =>
+          // Round 19: drop p_description (not a prod param).
           supabase.rpc('add_to_promo_wallet', {
             p_user_id: userId,
             p_amount: achievement.chipReward,
-            p_description: `Achievement: ${achievement.name}`,
           }),
         3
       );

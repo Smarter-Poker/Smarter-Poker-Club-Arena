@@ -49,3 +49,7 @@ dist.dead.*/
 
 *.stale.*
 **/*.stale.*/
+
+# Round 19 — local-only artifacts that shouldn't ship
+.agent/openclaw-dispatcher-live-*.py
+playwright-report/

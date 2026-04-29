@@ -179,10 +179,11 @@ class ReferralService {
 
         // Award bonus chips
         try {
+          // Round 19: prod sig is (p_user_id, p_amount). p_reason isn't a param;
+          // RPC doesn't audit. Caller used to silently 404 on the extra param.
           await supabase.rpc('add_chips', {
             p_user_id: userId,
             p_amount: m.reward,
-            p_reason: `Referral milestone: ${m.label}`,
           });
 
           if (typeof window !== 'undefined') {

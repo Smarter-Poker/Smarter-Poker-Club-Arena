@@ -230,11 +230,16 @@ class VIPServiceClass {
     feature: VIPFeature,
     quantity: number = 1
   ): Promise<{ success: boolean; charged: number; error?: string }> {
+    // Round 19: prod sig (p_user_id, p_feature, p_cost integer DEFAULT 0).
+    // Caller used to pass p_quantity which silently 404'd. Quantity isn't a
+    // real concept at the RPC layer (user_features is unique on user+feature),
+    // so just drop it and rely on p_cost defaulting to 0 (admin-comped) for now.
+    // Future: look up cost from a vip_features pricing table and pass p_cost.
     const { data, error } = await supabase.rpc('fn_purchase_feature', {
       p_user_id: userId,
       p_feature: feature,
-      p_quantity: quantity,
     });
+    void quantity; // explicitly acknowledge unused param at FE layer
 
     if (error) {
       return { success: false, charged: 0, error: error.message };
@@ -332,7 +337,10 @@ class VIPServiceClass {
       );
       if (rpcErr) {
         // If the RPC fails (e.g., row doesn't exist yet), fall back to upsert
-        console.warn('[VIPService] fn_increment_vip_usage error, falling back to upsert:', rpcErr.message);
+        console.warn(
+          '[VIPService] fn_increment_vip_usage error, falling back to upsert:',
+          rpcErr.message
+        );
         const startOfMonth = new Date();
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);

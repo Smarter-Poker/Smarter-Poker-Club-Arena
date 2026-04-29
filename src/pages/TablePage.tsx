@@ -4178,6 +4178,104 @@ export default function TablePage({
       }
       // HAND_COMPLETE case is handled above with chip-collect + reset in
       // one place (Bible V8 §1.16). Duplicate case removed 2026-04-14.
+
+      // ═══════════════════════════════════════════════════════════════════
+      // Round 20 — Engine→FE event coverage gap fixes (2026-04-29)
+      // ═══════════════════════════════════════════════════════════════════
+      // Bible V8 §1.16: discrete events, never inferred from snapshot diffs.
+      // Audit found 21 engine-emitted events with no FE handler — UI moments
+      // that the engine fired but no animation / modal / haptic ever lit up
+      // because nothing was listening. Re-broadcast onto masterBus so existing
+      // component-level listeners pick them up; add direct UI side-effects
+      // for the highest-impact ones (BBJ celebration + time-bank warning).
+
+      case 'INSURANCE_OFFERS': {
+        masterBus.emit('INSURANCE_OFFERED', evt.data as any);
+        break;
+      }
+      case 'RIT_OFFER': {
+        masterBus.emit('RIT_OFFERED', evt.data as any);
+        break;
+      }
+      case 'RIT_CHOOSER_DECIDED': {
+        masterBus.emit('RIT_CHOOSER_DECIDED', evt.data as any);
+        break;
+      }
+      case 'RIT_RESULT': {
+        masterBus.emit('RIT_RESOLVED', evt.data as any);
+        break;
+      }
+      case 'BBJ_HIT': {
+        if (soundService.isEnabled()) soundService.playBigWin();
+        import('../services/HapticService').then(({ haptic }) => haptic.heavy());
+        masterBus.emit('BBJ_HIT', evt.data as any);
+        break;
+      }
+      case 'BBJ_PAYOUT_COMPLETE': {
+        masterBus.emit('BBJ_PAYOUT_COMPLETE', evt.data as any);
+        break;
+      }
+      case 'POT_DISTRIBUTED': {
+        masterBus.emit('POT_DISTRIBUTED', evt.data as any);
+        break;
+      }
+      case 'SHOWDOWN_CARDS_REVEALED': {
+        masterBus.emit('SHOWDOWN_CARDS_REVEALED', evt.data as any);
+        break;
+      }
+      case 'TIME_BANK_ACTIVATED': {
+        masterBus.emit('TIME_BANK_ACTIVATED', evt.data as any);
+        break;
+      }
+      case 'TIME_BANK_LOW': {
+        import('../services/HapticService').then(({ haptic }) => haptic.light());
+        masterBus.emit('TIME_BANK_LOW', evt.data as any);
+        break;
+      }
+      case 'TIME_BANK_TIMEOUT': {
+        masterBus.emit('TIME_BANK_TIMEOUT', evt.data as any);
+        break;
+      }
+      case 'LEVEL_UP': {
+        masterBus.emit('TOURNAMENT_LEVEL_UP', evt.data as any);
+        break;
+      }
+      case 'SEAT_TAKEN': {
+        masterBus.emit('SEAT_TAKEN', evt.data as any);
+        break;
+      }
+      case 'SEAT_LEFT': {
+        masterBus.emit('SEAT_LEFT', evt.data as any);
+        break;
+      }
+      case 'TABLE_PAUSED': {
+        masterBus.emit('TABLE_PAUSED', evt.data as any);
+        break;
+      }
+      case 'TABLE_RESUMED': {
+        masterBus.emit('TABLE_RESUMED', evt.data as any);
+        break;
+      }
+      case 'TABLE_LOCKED': {
+        masterBus.emit('TABLE_LOCKED', evt.data as any);
+        break;
+      }
+      case 'TABLE_UNLOCKED': {
+        masterBus.emit('TABLE_UNLOCKED', evt.data as any);
+        break;
+      }
+      case 'RABBIT_HUNT_AVAILABLE': {
+        masterBus.emit('RABBIT_HUNT_AVAILABLE', evt.data as any);
+        break;
+      }
+      case 'ALL_IN_EQUITY': {
+        masterBus.emit('ALL_IN_EQUITY', evt.data as any);
+        break;
+      }
+      case 'ONLINE_COUNT': {
+        masterBus.emit('ONLINE_COUNT', evt.data as any);
+        break;
+      }
     }
   }, [engineLastEvent]);
 

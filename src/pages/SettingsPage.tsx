@@ -467,12 +467,15 @@ export default function SettingsPage() {
           .from('training_user_achievements')
           .select('id, user_id, achievement_id, unlocked_at, progress')
           .eq('user_id', user.id),
+        // Round 38 audit Pass 1 fix: hand_history has no player_id column.
+        // .eq('player_id', user.id) returned an error/empty for every export.
+        // Players live in the JSONB players array — use contains().
         supabase
           .from('hand_history')
           .select(
             'id, hand_number, game_variant, small_blind, big_blind, pot_size, community_cards, winners, players, created_at'
           )
-          .eq('player_id', user.id)
+          .contains('players', [{ userId: user.id }])
           .limit(100),
       ]);
 

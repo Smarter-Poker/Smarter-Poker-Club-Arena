@@ -472,11 +472,19 @@ class HandPersistenceServiceClass extends HandPersistence {
    * (array of {userId} objects).
    */
   async getPlayerHandHistory(playerId: string, limit = 50): Promise<HandRecord[]> {
+    // Round 38 audit Pass 1 fix: select clause referenced 9 columns that
+    // don't exist on hand_history (club_id, variant, stakes, pot, rake,
+    // winner_ids, street, status, dealer_position). The real column names
+    // per information_schema are game_variant, pot_size, rake_amount,
+    // winners (JSONB), and there's no street/status/dealer_position. The
+    // pre-fix query 400'd or silently returned an error. Replaced with
+    // valid columns; downstream HandRecord mapping derives missing fields
+    // from JSONB.
     const containmentJson = JSON.stringify([{ userId: playerId }]);
     const { data, error } = await supabase
       .from('hand_history')
       .select(
-        'id, table_id, club_id, hand_number, variant, stakes, pot, rake, community_cards, board, winner_ids, players, actions, street, status, dealer_position, started_at, ended_at, created_at'
+        'id, table_id, tournament_id, hand_number, game_variant, small_blind, big_blind, pot_size, rake_amount, community_cards, board, winners, players, actions, started_at, ended_at, hole_cards, created_at'
       )
       .contains('players', containmentJson)
       .order('ended_at', { ascending: false })

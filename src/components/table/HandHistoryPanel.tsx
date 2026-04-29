@@ -178,17 +178,7 @@ function HandEntry({
       {/* Expanded detail */}
       {isExpanded && (
         <div className="hh-entry__detail">
-          {/* Winners */}
-          <div className="hh-entry__winners">
-            {hand.winners.map((w, i) => (
-              <span key={i} className="hh-entry__winner">
-                {w.playerName} won {formatAmount(w.amount)}
-                {w.hand && <span className="hh-entry__hand"> — {w.hand}</span>}
-              </span>
-            ))}
-          </div>
-
-          {/* Street actions */}
+          {/* Street actions — grouped by street per spec §10.4 */}
           {hand.streets.map((street, si) => (
             <div key={si} className="hh-entry__street">
               <div className="hh-entry__street-header">
@@ -215,6 +205,23 @@ function HandEntry({
               </div>
             </div>
           ))}
+
+          {/* X6.2g: Showdown section header per spec §10.4 */}
+          {hand.winners.length > 0 && (
+            <div className="hh-entry__street">
+              <div className="hh-entry__street-header">
+                <span className="hh-entry__street-name">Showdown</span>
+              </div>
+              <div className="hh-entry__winners">
+                {hand.winners.map((w, i) => (
+                  <span key={i} className="hh-entry__winner">
+                    {w.playerName} won {formatAmount(w.amount)}
+                    {w.hand && <span className="hh-entry__hand"> — {w.hand}</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

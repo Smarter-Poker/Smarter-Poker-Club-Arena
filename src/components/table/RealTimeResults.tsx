@@ -49,6 +49,8 @@ export interface RealTimeResultsProps {
   sessionStats: SessionStats;
   observers: Observer[];
   currency?: string;
+  /** X6.2f: per-hand result rows showing winnings - buyIn per hand */
+  handResults?: Array<{ handNumber: number; result: number }>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -80,7 +82,10 @@ function formatAmount(amount: number, currency: string = ''): string {
   if (Math.abs(amount - Math.round(amount)) < 0.005) {
     formatted = Math.round(amount).toLocaleString('en-US');
   } else {
-    formatted = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    formatted = amount.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   }
   return `${currency}${formatted}`;
 }
@@ -96,6 +101,7 @@ export function RealTimeResults({
   sessionStats,
   observers,
   currency = '',
+  handResults = [],
 }: RealTimeResultsProps) {
   const [sessionDuration, setSessionDuration] = useState('00:00:00');
   const [mounted, setMounted] = useState(false);
@@ -199,6 +205,30 @@ export function RealTimeResults({
             <span className="rtr-value">{sessionStats.handsPlayed}</span>
           </div>
         </div>
+
+        {/* X6.2f: Per-Hand Results */}
+        {handResults.length > 0 && (
+          <div className="rtr-section">
+            <div className="rtr-section-header">Per-Hand Results</div>
+            {handResults
+              .slice(-10)
+              .reverse()
+              .map((hr) => {
+                const isWin = hr.result >= 0;
+                return (
+                  <div key={hr.handNumber} className="rtr-row">
+                    <span className="rtr-label">Hand #{hr.handNumber}:</span>
+                    <span
+                      className={`rtr-value ${isWin ? 'rtr-value--positive' : 'rtr-value--negative'}`}
+                    >
+                      {isWin ? '+' : ''}
+                      {formatAmount(hr.result, currency)}
+                    </span>
+                  </div>
+                );
+              })}
+          </div>
+        )}
 
         {/* Profit/Loss Summary */}
         <div className="rtr-summary">

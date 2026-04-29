@@ -194,6 +194,20 @@ export function HandReplayPlayer({
   const steps = useMemo(() => generateReplaySteps(hand), [hand]);
   const progress = steps.length > 0 ? (currentStep / steps.length) * 100 : 0;
 
+  // X6.2d: compute step indices for the start of each street
+  const streetBoundaries = useMemo(() => {
+    const boundaries: { label: string; stepIndex: number }[] = [];
+    // Preflop always starts at 0
+    boundaries.push({ label: 'Preflop', stepIndex: 0 });
+    for (let i = 0; i < steps.length; i++) {
+      if (steps[i].type === 'DEAL_FLOP') boundaries.push({ label: 'Flop', stepIndex: i });
+      if (steps[i].type === 'DEAL_TURN') boundaries.push({ label: 'Turn', stepIndex: i });
+      if (steps[i].type === 'DEAL_RIVER') boundaries.push({ label: 'River', stepIndex: i });
+      if (steps[i].type === 'SHOWDOWN') boundaries.push({ label: 'Showdown', stepIndex: i });
+    }
+    return boundaries;
+  }, [steps]);
+
   // Execute a step
   const executeStep = useCallback(
     (stepIndex: number) => {
@@ -319,14 +333,58 @@ export function HandReplayPlayer({
     }
   }, [state]);
 
+  // X6.2d: re-simulate all steps up to a target index to rebuild display state
+  const jumpToStep = useCallback(
+    (targetStep: number) => {
+      // Reset state
+      setVisibleCards({});
+      setBoard([]);
+      setPot(0);
+      setActiveAction(null);
+      setWinningSeats([]);
+      // Re-execute every step up to (but not including) targetStep
+      const nextCards: Record<number, ShareableCard[]> = {};
+      let nextBoard: ShareableCard[] = [];
+      let nextPot = 0;
+      let nextAction: { seat: number; text: string } | null = null;
+      const nextWinners: number[] = [];
+      for (let i = 0; i < targetStep && i < steps.length; i++) {
+        const s = steps[i];
+        if (s.type === 'DEAL_HOLE' && s.seat !== undefined && s.cards) {
+          nextCards[s.seat] = s.cards;
+        } else if (s.type === 'ACTION' && s.action) {
+          const txt = s.action.amount ? `${s.action.action} ${s.action.amount}` : s.action.action;
+          nextAction = { seat: s.seat!, text: txt };
+          if (s.action.amount) nextPot += s.action.amount;
+        } else if (s.type === 'DEAL_FLOP' && s.cards) {
+          nextBoard = [...s.cards];
+          nextAction = null;
+        } else if ((s.type === 'DEAL_TURN' || s.type === 'DEAL_RIVER') && s.card) {
+          nextBoard = [...nextBoard, s.card];
+          nextAction = null;
+        } else if (s.type === 'SHOWDOWN') {
+          nextAction = null;
+        } else if (s.type === 'AWARD_POT' && s.seat !== undefined) {
+          nextWinners.push(s.seat);
+        }
+      }
+      setVisibleCards(nextCards);
+      setBoard(nextBoard);
+      setPot(nextPot);
+      setActiveAction(nextAction);
+      setWinningSeats(nextWinners);
+      setCurrentStep(targetStep);
+      setState('PAUSED');
+    },
+    [steps]
+  );
+
   const handleSeek = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const targetStep = Math.floor((parseInt(e.target.value) / 100) * steps.length);
-      setCurrentStep(targetStep);
-      // Re-execute up to this step
-      // For simplicity, just jump (full implementation would re-simulate)
+      jumpToStep(targetStep);
     },
-    [steps.length]
+    [steps.length, jumpToStep]
   );
 
   // Hide controls after delay
@@ -429,6 +487,25 @@ export function HandReplayPlayer({
               Share
             </button>
           )}
+        </div>
+
+        {/* X6.2d: Street Navigation Buttons */}
+        <div className="replay-player__streets">
+          {streetBoundaries.map((street) => {
+            const isCurrentStreet =
+              currentStep >= street.stepIndex &&
+              (streetBoundaries.indexOf(street) === streetBoundaries.length - 1 ||
+                currentStep < streetBoundaries[streetBoundaries.indexOf(street) + 1].stepIndex);
+            return (
+              <button
+                key={street.label}
+                className={`replay-player__street-btn ${isCurrentStreet ? 'replay-player__street-btn--active' : ''}`}
+                onClick={() => jumpToStep(street.stepIndex)}
+              >
+                {street.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Bottom Controls */}

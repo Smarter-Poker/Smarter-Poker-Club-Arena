@@ -124,7 +124,7 @@ export default function ActionPanel({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const isDesktop = windowWidth >= 768;
+  const isDesktop = windowWidth >= 1024;
 
   // Dan 2026-04-17: the vertical slider was breaking on narrow phones — ticks
   // piled up, progress fill looked empty at min, BB labels overlapped the

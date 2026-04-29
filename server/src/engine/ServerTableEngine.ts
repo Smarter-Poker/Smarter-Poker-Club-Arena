@@ -990,6 +990,23 @@ export class ServerTableEngine {
       }
     }
 
+    // Phase X5 (2026-04-29) — Bible V8 §1.16 time_bank_activated public event
+    // distinct from time_bank_low/timeout. Broadcast lets opponents see the
+    // "TIMEBANK" indicator on the acting player's seat ring (not just the
+    // hero who triggered it).
+    try {
+      this.hub?.emitEvent(this.tableId, {
+        type: 'time_bank_activated',
+        table_id: this.tableId,
+        player_id: userId,
+        seat: player.seat,
+        uses_remaining: manualUsesLeft,
+        timestamp: Date.now(),
+      });
+    } catch {
+      /* broadcast failure is non-fatal */
+    }
+
     return { success: true };
   }
 
@@ -1280,6 +1297,18 @@ export class ServerTableEngine {
       return { success: false, error: 'Player not found at this table', immediate: false };
     }
 
+    // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so
+    // every connected client (including spectators) can re-render the
+    // empty seat without diffing the next state snapshot.
+    this.hub?.emitEvent(this.tableId, {
+      type: 'seat_left',
+      table_id: this.tableId,
+      seat: player.seat_number,
+      user_id: userId,
+      mid_hand: this.handController !== null,
+      timestamp: Date.now(),
+    });
+
     if (this.handController !== null) {
       // Mid-hand: fold the player immediately if it's their turn or they're still in
       const state = this.handController.getState();
@@ -1343,6 +1372,14 @@ export class ServerTableEngine {
     console.log(
       `[ServerTableEngine:${this.tableId}] Admin pause activated${reason ? `: ${reason}` : ''}`
     );
+    // Phase X5 (2026-04-29) — Bible V8 §1.16 table_paused discrete event so
+    // clients can render the paused-overlay + suppress the action timer.
+    this.hub?.emitEvent(this.tableId, {
+      type: 'table_paused',
+      table_id: this.tableId,
+      reason: reason ?? null,
+      timestamp: Date.now(),
+    });
     return { success: true };
   }
 
@@ -1356,6 +1393,12 @@ export class ServerTableEngine {
       this.tableFSM.transition('running');
     }
     console.log(`[ServerTableEngine:${this.tableId}] Admin resume — dealing will continue`);
+    // Phase X5 (2026-04-29) — Bible V8 §1.16 table_resumed discrete event.
+    this.hub?.emitEvent(this.tableId, {
+      type: 'table_resumed',
+      table_id: this.tableId,
+      timestamp: Date.now(),
+    });
     return { success: true };
   }
 
@@ -1952,8 +1995,36 @@ export class ServerTableEngine {
         }
 
         // Reload players + refresh blinds before each hand
+        const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
         this.seatedPlayers = await loadSeatedPlayers(this.tableId);
         await this.refreshBlinds();
+
+        // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
+        // player who appeared in seatedPlayers since the previous hand.
+        // (seat_left is emitted from leaveTable() at the moment of leave;
+        // here we only need to announce arrivals after the seat reload.)
+        for (const p of this.seatedPlayers) {
+          if (!previousSeatedIds.has(p.user_id)) {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'seat_taken',
+              table_id: this.tableId,
+              seat: p.seat_number,
+              user_id: p.user_id,
+              username: p.username ?? null,
+              starting_stack: p.stack ?? 0,
+              timestamp: Date.now(),
+            });
+          }
+        }
+        // Phase X5 (2026-04-29) — online_count broadcast every hand-start so
+        // dashboards / spectator view can show current seated count without
+        // diffing snapshots.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'online_count',
+          table_id: this.tableId,
+          seated_count: this.seatedPlayers.length,
+          timestamp: Date.now(),
+        });
 
         // Bible V8 §4.2: Detect new joiners. Any userId that appears in
         // seatedPlayers but wasn't known before is a new player. After the
@@ -2668,6 +2739,40 @@ export class ServerTableEngine {
               amount: w.amount,
               hand_name: w.hand?.name,
             })),
+          });
+
+          // Phase X5 (2026-04-29) — Bible V8 §1.16 pot_distributed companion
+          // event with explicit per-pot breakdown (main pot + side pots).
+          // Without this, the client must infer side-pot allocations from
+          // a state-snapshot diff. This event names every pot index, the
+          // amount that pot held, and the user_ids that received that
+          // pot's chips.
+          const stateSnapshot = this.handController?.getState?.() as unknown as
+            | { pots?: Array<{ amount: number; eligibleSeats?: number[]; eligible?: string[] }> }
+            | undefined;
+          const potBreakdown = (stateSnapshot?.pots ?? []).map((p, idx) => {
+            const eligibleIds = p.eligible ?? [];
+            const eligibleWinners = this.currentHandWinners.filter(
+              (w) => eligibleIds.length === 0 || eligibleIds.includes(w.userId)
+            );
+            const totalEligibleAmount = eligibleWinners.reduce((s, w) => s + w.amount, 0) || 1;
+            return {
+              pot_index: idx,
+              amount: p.amount,
+              winner_user_ids: eligibleWinners.map((w) => w.userId),
+              per_winner_share: eligibleWinners.map((w) => ({
+                user_id: w.userId,
+                share: (w.amount / totalEligibleAmount) * p.amount,
+              })),
+            };
+          });
+          this.hub?.emitEvent(this.tableId, {
+            type: 'pot_distributed',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            total_pot: this.currentHandPotSize,
+            pots: potBreakdown,
+            timestamp: Date.now(),
           });
         }
         break;

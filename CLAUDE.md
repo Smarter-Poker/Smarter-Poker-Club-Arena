@@ -1,9 +1,15 @@
 # Club Arena -- Agent Instructions
 
 ALL agents (Claude, AntiGravity, Cowork, any AI) MUST read this file at session start.
-This is the single source of truth for **this repo**. Updated 2026-04-23.
+This is the single source of truth for **this repo**. Updated 2026-04-28.
 
-**Platform-level plan** (CA + CE + Supabase + Hetzner + WH integration):
+**↗ READ FIRST:** `.agent/architecture/CLUB-ARENA-CANONICAL-ARCHITECTURE-2026-04-28.md`
+That document is the canonical "where does my fix go?" decision tree, the
+duplicate-table reconciliation, and the four-tier topology lock. Every agent
+must read it before pushing any code. If the architecture doc contradicts
+this CLAUDE.md, the architecture doc wins (it's newer + repo-canonical).
+
+**Platform-level plan** (CA + Supabase + Hetzner + WH integration):
 `~/Documents/Smarter-Poker-World-Hub/CLUB-ARENA-OFFICIAL-UPGRADE-INTEGRATION.md`
 
 That document supersedes the old `POKERBROS_UPGRADE_PLAN.md`, `PHASE_3/4_*_PLAN.md`,

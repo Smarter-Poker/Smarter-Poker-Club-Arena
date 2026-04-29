@@ -306,7 +306,30 @@ export type BusEventType =
   | 'TOURNAMENT_BREAK'
   | 'TOURNAMENT_BREAK_END'
   // Satellite tournament completion
-  | 'SATELLITE_COMPLETE';
+  | 'SATELLITE_COMPLETE'
+  // Round 20 — Engine→FE event coverage (Bible V8 §1.16) re-broadcasts
+  // emitted from TablePage when the corresponding lowercase engine events
+  // arrive over the WS hub. See src/pages/TablePage.tsx engineLastEvent
+  // useEffect for the dispatch site. INSURANCE_OFFERED, RIT_OFFERED,
+  // RIT_RESOLVED, TIME_BANK_ACTIVATED, PLAYER_DISCONNECTED already exist
+  // above — these are the additional ones added in Round 20 + Round 30 fix.
+  | 'RIT_CHOOSER_DECIDED'
+  | 'BBJ_HIT'
+  | 'BBJ_PAYOUT_COMPLETE'
+  | 'POT_DISTRIBUTED'
+  | 'SHOWDOWN_CARDS_REVEALED'
+  | 'TIME_BANK_LOW'
+  | 'TIME_BANK_TIMEOUT'
+  | 'TOURNAMENT_LEVEL_UP'
+  | 'SEAT_TAKEN'
+  | 'SEAT_LEFT'
+  | 'TABLE_PAUSED'
+  | 'TABLE_RESUMED'
+  | 'TABLE_LOCKED'
+  | 'TABLE_UNLOCKED'
+  | 'RABBIT_HUNT_AVAILABLE'
+  | 'ALL_IN_EQUITY'
+  | 'ONLINE_COUNT';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -967,6 +990,28 @@ export interface BusPayloadMap {
     ticketWinners: number | unknown[];
     targetTournament: unknown;
   };
+  // Round 20 — Engine→FE event coverage payloads. The engine emits the
+  // lowercase form (rit_chooser_decided, bbj_hit, etc.) over WS; TablePage
+  // re-emits onto the bus. Payloads are pass-through (Record<string, unknown>)
+  // because the engine event shapes vary by event type and component-level
+  // listeners narrow at use site.
+  RIT_CHOOSER_DECIDED: Record<string, unknown>;
+  BBJ_HIT: Record<string, unknown>;
+  BBJ_PAYOUT_COMPLETE: Record<string, unknown>;
+  POT_DISTRIBUTED: Record<string, unknown>;
+  SHOWDOWN_CARDS_REVEALED: Record<string, unknown>;
+  TIME_BANK_LOW: Record<string, unknown>;
+  TIME_BANK_TIMEOUT: Record<string, unknown>;
+  TOURNAMENT_LEVEL_UP: Record<string, unknown>;
+  SEAT_TAKEN: Record<string, unknown>;
+  SEAT_LEFT: Record<string, unknown>;
+  TABLE_PAUSED: Record<string, unknown>;
+  TABLE_RESUMED: Record<string, unknown>;
+  TABLE_LOCKED: Record<string, unknown>;
+  TABLE_UNLOCKED: Record<string, unknown>;
+  RABBIT_HUNT_AVAILABLE: Record<string, unknown>;
+  ALL_IN_EQUITY: Record<string, unknown>;
+  ONLINE_COUNT: Record<string, unknown>;
 }
 
 export interface BusEvent<T = unknown> {

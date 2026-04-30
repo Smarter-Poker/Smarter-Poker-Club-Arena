@@ -285,18 +285,24 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           </button>
 
           {/* Messages */}
-          <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/messenger')}>
-            <img
-              src={`${BASE}images/header-messenger.png`}
-              alt="Messages"
-              className={styles.orbImg}
-            />
-            {unreadMessages > 0 && (
-              <span className={styles.badge} aria-live="polite">
-                {unreadMessages > 99 ? '99+' : unreadMessages}
-              </span>
-            )}
-          </button>
+          {authUser?.id && (
+            <button
+              className={styles.orbBtn}
+              onClick={() => navigateToHub('/hub/messenger')}
+              aria-label="Open Messenger"
+            >
+              <img
+                src={`${BASE}images/header-messenger.png`}
+                alt="Messages"
+                className={styles.orbImg}
+              />
+              {unreadMessages > 0 && (
+                <span className={styles.badge} aria-live="polite">
+                  {unreadMessages > 99 ? '99+' : unreadMessages}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Notifications — route to in-app Notification Center */}
           <Link to="/notifications" className={styles.orbLink}>

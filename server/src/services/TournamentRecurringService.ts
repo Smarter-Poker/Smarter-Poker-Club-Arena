@@ -731,7 +731,10 @@ export class TournamentRecurringService {
         }
       }
     } catch (err: any) {
-      reportError(new Error(`[TournamentRecurring] Tournament check error: ${err.message}`), 'TournamentRecurring.Tournament_check_error');
+      reportError(
+        new Error(`[TournamentRecurring] Tournament check error: ${err.message}`),
+        'TournamentRecurring.Tournament_check_error'
+      );
     }
   }
 
@@ -759,7 +762,10 @@ export class TournamentRecurringService {
         console.log(`[TournamentRecurring] Launched ${launched} SNGs`);
       }
     } catch (err: any) {
-      reportError(new Error(`[TournamentRecurring] SNG check error: ${err.message}`), 'TournamentRecurring.SNG_check_error');
+      reportError(
+        new Error(`[TournamentRecurring] SNG check error: ${err.message}`),
+        'TournamentRecurring.SNG_check_error'
+      );
     }
   }
 
@@ -787,7 +793,10 @@ export class TournamentRecurringService {
         console.log(`[TournamentRecurring] Launched ${launched} Spins`);
       }
     } catch (err: any) {
-      reportError(new Error(`[TournamentRecurring] Spin check error: ${err.message}`), 'TournamentRecurring.Spin_check_error');
+      reportError(
+        new Error(`[TournamentRecurring] Spin check error: ${err.message}`),
+        'TournamentRecurring.Spin_check_error'
+      );
     }
   }
 
@@ -844,7 +853,10 @@ export class TournamentRecurringService {
         }
       }
     } catch (err: any) {
-      reportError(new Error(`[TournamentRecurring] XMTT check error: ${err.message}`), 'TournamentRecurring.XMTT_check_error');
+      reportError(
+        new Error(`[TournamentRecurring] XMTT check error: ${err.message}`),
+        'TournamentRecurring.XMTT_check_error'
+      );
     }
   }
 
@@ -869,10 +881,13 @@ export class TournamentRecurringService {
         config.type === 'progressive_bounty' ||
         config.type === 'mystery_bounty';
       const bountyPercent = config.bountyPercent || 30;
-      const bountyAmount = isBountyType ? Math.trunc(config.buyIn * bountyPercent) / 100 : 0;
+      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety
+      // on bounty / mystery-max calculation — same family as the other Round 40
+      // fixes (calculateRake, completeHand, prizePool, totalRake, mysteryValue).
+      const bountyAmount = isBountyType ? Math.round(config.buyIn * bountyPercent) / 100 : 0;
       const mysteryMin = config.type === 'mystery_bounty' ? bountyAmount : 0;
       const mysteryMax =
-        config.type === 'mystery_bounty' ? Math.trunc(bountyAmount * 10 * 100) / 100 : 0;
+        config.type === 'mystery_bounty' ? Math.round(bountyAmount * 10 * 100) / 100 : 0;
 
       let tournament = null;
       let lastError = null;
@@ -914,11 +929,21 @@ export class TournamentRecurringService {
           break;
         }
         lastError = error;
-        reportError(new Error(`[RecurringService] XMTT creation attempt ${attempt}/3 failed: ${error?.message}`), 'RecurringService.XMTT_creation_attempt_attempt3');
+        reportError(
+          new Error(
+            `[RecurringService] XMTT creation attempt ${attempt}/3 failed: ${error?.message}`
+          ),
+          'RecurringService.XMTT_creation_attempt_attempt3'
+        );
         if (attempt < 3) await new Promise((r) => setTimeout(r, 5000));
       }
       if (!tournament) {
-        reportError(new Error(`[RecurringService] XMTT creation FAILED after 3 retries: ${lastError?.message}`), 'RecurringService.XMTT_creation_FAILED_after_3_r');
+        reportError(
+          new Error(
+            `[RecurringService] XMTT creation FAILED after 3 retries: ${lastError?.message}`
+          ),
+          'RecurringService.XMTT_creation_FAILED_after_3_r'
+        );
         return { tournamentId: null, registered: 0 };
       }
 
@@ -931,11 +956,19 @@ export class TournamentRecurringService {
         .update({ current_players: registered, prize_pool: prizePool, status: 'REGISTERING' })
         .eq('id', tournament.id);
       if (updateErr)
-        reportError(new Error(`[TournamentRecurring] XMTT state update failed for ${tournament.id.slice(0, 8)}: ${updateErr.message}`), 'TournamentRecurring.XMTT_state_update_failed_for_t');
+        reportError(
+          new Error(
+            `[TournamentRecurring] XMTT state update failed for ${tournament.id.slice(0, 8)}: ${updateErr.message}`
+          ),
+          'TournamentRecurring.XMTT_state_update_failed_for_t'
+        );
 
       return { tournamentId: tournament.id, registered };
     } catch (err: any) {
-      reportError(new Error(`[TournamentRecurring] createXMTT error: ${err.message}`), 'TournamentRecurring.createXMTT_error');
+      reportError(
+        new Error(`[TournamentRecurring] createXMTT error: ${err.message}`),
+        'TournamentRecurring.createXMTT_error'
+      );
       return { tournamentId: null, registered: 0 };
     }
   }
@@ -997,12 +1030,14 @@ export class TournamentRecurringService {
         config.type === 'mystery_bounty';
 
       // Calculate bounty amount using configurable bountyPercent
+      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety —
+      // mirrors the same fix applied to the other bounty-config branch in this file.
       const bountyPercent = config.bountyPercent || 30;
-      const bountyAmount = isBountyType ? Math.trunc(config.buyIn * bountyPercent) / 100 : 0;
+      const bountyAmount = isBountyType ? Math.round(config.buyIn * bountyPercent) / 100 : 0;
       // Mystery bounty range: min = base bounty, max = 10x base
       const mysteryMin = config.type === 'mystery_bounty' ? bountyAmount : 0;
       const mysteryMax =
-        config.type === 'mystery_bounty' ? Math.trunc(bountyAmount * 10 * 100) / 100 : 0;
+        config.type === 'mystery_bounty' ? Math.round(bountyAmount * 10 * 100) / 100 : 0;
 
       let tournament = null;
       let lastError = null;
@@ -1042,11 +1077,21 @@ export class TournamentRecurringService {
           break;
         }
         lastError = error;
-        reportError(new Error(`[RecurringService] Tournament creation attempt ${attempt}/3 failed: ${error?.message}`), 'RecurringService.Tournament_creation_attempt_at');
+        reportError(
+          new Error(
+            `[RecurringService] Tournament creation attempt ${attempt}/3 failed: ${error?.message}`
+          ),
+          'RecurringService.Tournament_creation_attempt_at'
+        );
         if (attempt < 3) await new Promise((r) => setTimeout(r, 5000));
       }
       if (!tournament) {
-        reportError(new Error(`[RecurringService] Tournament creation FAILED after 3 retries: ${lastError?.message}`), 'RecurringService.Tournament_creation_FAILED_aft');
+        reportError(
+          new Error(
+            `[RecurringService] Tournament creation FAILED after 3 retries: ${lastError?.message}`
+          ),
+          'RecurringService.Tournament_creation_FAILED_aft'
+        );
         return { tournamentId: null, registered: 0 };
       }
 
@@ -1060,11 +1105,19 @@ export class TournamentRecurringService {
         .update({ current_players: registered, prize_pool: prizePool, status: 'REGISTERING' })
         .eq('id', tournament.id);
       if (updateErr)
-        reportError(new Error(`[TournamentRecurring] Tournament state update failed for ${tournament.id.slice(0, 8)}: ${updateErr.message}`), 'TournamentRecurring.Tournament_state_update_failed');
+        reportError(
+          new Error(
+            `[TournamentRecurring] Tournament state update failed for ${tournament.id.slice(0, 8)}: ${updateErr.message}`
+          ),
+          'TournamentRecurring.Tournament_state_update_failed'
+        );
 
       return { tournamentId: tournament.id, registered };
     } catch (err: any) {
-      reportError(new Error(`[TournamentRecurring] createTournament error: ${err.message}`), 'TournamentRecurring.createTournament_error');
+      reportError(
+        new Error(`[TournamentRecurring] createTournament error: ${err.message}`),
+        'TournamentRecurring.createTournament_error'
+      );
       return { tournamentId: null, registered: 0 };
     }
   }
@@ -1108,7 +1161,10 @@ export class TournamentRecurringService {
         .maybeSingle(); // FIX 168
 
       if (error || !sng) {
-        reportError(new Error(`[TournamentRecurring] SNG creation failed: ${error?.message}`), 'TournamentRecurring.SNG_creation_failed');
+        reportError(
+          new Error(`[TournamentRecurring] SNG creation failed: ${error?.message}`),
+          'TournamentRecurring.SNG_creation_failed'
+        );
         return { tournamentId: null, registered: 0 };
       }
 
@@ -1120,11 +1176,19 @@ export class TournamentRecurringService {
         .update({ current_players: registered, prize_pool: prizePool, status: 'REGISTERING' })
         .eq('id', sng.id);
       if (sngUpdateErr)
-        reportError(new Error(`[TournamentRecurring] SNG state update failed for ${sng.id.slice(0, 8)}: ${sngUpdateErr.message}`), 'TournamentRecurring.SNG_state_update_failed_for_sn');
+        reportError(
+          new Error(
+            `[TournamentRecurring] SNG state update failed for ${sng.id.slice(0, 8)}: ${sngUpdateErr.message}`
+          ),
+          'TournamentRecurring.SNG_state_update_failed_for_sn'
+        );
 
       return { tournamentId: sng.id, registered };
     } catch (err: any) {
-      reportError(new Error(`[TournamentRecurring] createSNG error: ${err.message}`), 'TournamentRecurring.createSNG_error');
+      reportError(
+        new Error(`[TournamentRecurring] createSNG error: ${err.message}`),
+        'TournamentRecurring.createSNG_error'
+      );
       return { tournamentId: null, registered: 0 };
     }
   }
@@ -1170,7 +1234,10 @@ export class TournamentRecurringService {
         .maybeSingle(); // FIX 168
 
       if (error || !spin) {
-        reportError(new Error(`[TournamentRecurring] Spin creation failed: ${error?.message}`), 'TournamentRecurring.Spin_creation_failed');
+        reportError(
+          new Error(`[TournamentRecurring] Spin creation failed: ${error?.message}`),
+          'TournamentRecurring.Spin_creation_failed'
+        );
         return { tournamentId: null, registered: 0 };
       }
 
@@ -1188,11 +1255,19 @@ export class TournamentRecurringService {
         })
         .eq('id', spin.id);
       if (spinUpdateErr)
-        reportError(new Error(`[TournamentRecurring] Spin state update failed for ${spin.id.slice(0, 8)}: ${spinUpdateErr.message}`), 'TournamentRecurring.Spin_state_update_failed_for_s');
+        reportError(
+          new Error(
+            `[TournamentRecurring] Spin state update failed for ${spin.id.slice(0, 8)}: ${spinUpdateErr.message}`
+          ),
+          'TournamentRecurring.Spin_state_update_failed_for_s'
+        );
 
       return { tournamentId: spin.id, registered };
     } catch (err: any) {
-      reportError(new Error(`[TournamentRecurring] createSpin error: ${err.message}`), 'TournamentRecurring.createSpin_error');
+      reportError(
+        new Error(`[TournamentRecurring] createSpin error: ${err.message}`),
+        'TournamentRecurring.createSpin_error'
+      );
       return { tournamentId: null, registered: 0 };
     }
   }
@@ -1213,9 +1288,9 @@ export class TournamentRecurringService {
         const { error: regError } = await supabase.from('tournament_players').insert({
           tournament_id: tournamentId,
           user_id: horse.id,
-          username: horse.use_real_name 
-            ? (horse.display_name || horse.username || 'Horse')
-            : (horse.username || horse.display_name || 'Horse'),
+          username: horse.use_real_name
+            ? horse.display_name || horse.username || 'Horse'
+            : horse.username || horse.display_name || 'Horse',
           status: 'registered',
           chips: 0,
         });

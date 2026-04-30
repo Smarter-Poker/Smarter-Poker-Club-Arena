@@ -1170,8 +1170,10 @@ export class TournamentManager {
         }
 
         // Prize pool = buy_in * multiplier (NOT net_buy_in * players * multiplier)
+        // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety —
+        // same family as the chop-pot fix (commit 9900b874) and calculateRake fix.
         const buyIn = tournament.buy_in_amount || 0;
-        const prizePool = Math.trunc(buyIn * spinMultiplier * 100) / 100;
+        const prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
 
         await supabase
           .from('tournaments')
@@ -1944,9 +1946,11 @@ export class TournamentManager {
       if (Array.isArray(payouts)) {
         const payoutEntry = payouts.find((p: any) => p.place === position);
         if (payoutEntry) {
-          // Exact cent-precision: truncate sub-cent fractions
+          // Round 40 RE-RUN: Math.round (not Math.trunc) so IEEE 754 drift on
+          // prizeRaw doesn't shave 1¢ off the player's payout. The cap-bound
+          // case is unaffected; only the precision matters.
           const prizeRaw = ((tournament.prize_pool || 0) * payoutEntry.percentage) / 100;
-          prize = Math.trunc(prizeRaw * 100) / 100;
+          prize = Math.round(prizeRaw * 100) / 100;
         }
       }
     }
@@ -2113,7 +2117,11 @@ export class TournamentManager {
     if (tournament.is_pko) {
       // ── PROGRESSIVE KO ──
       // 50% to knocker immediately, 50% added to knocker's bounty head
-      const totalBountyCents = Math.trunc(bountyValue * 100);
+      // Round 40 RE-RUN: Math.round on bountyValue → cents (was Math.trunc;
+      // could under-pay PKO bounty by 1¢ when bountyValue has IEEE 754 drift).
+      // The 50/50 split below uses (totalBountyCents - knockerCents) so the
+      // sum always equals totalBountyCents — that compensation logic is fine.
+      const totalBountyCents = Math.round(bountyValue * 100);
       const knockerCents = Math.trunc(totalBountyCents / 2);
       const knockerPortion = knockerCents / 100;
       const addedToHead = (totalBountyCents - knockerCents) / 100;
@@ -2184,7 +2192,9 @@ export class TournamentManager {
         }
       }
 
-      const mysteryValue = Math.trunc(baseBounty * mysteryMultiplier * 100) / 100;
+      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety
+      // on mystery bounty payout — same family as the rest of this round's fixes.
+      const mysteryValue = Math.round(baseBounty * mysteryMultiplier * 100) / 100;
 
       // Update knocker stats
       const { data: knocker } = await supabase
@@ -2340,9 +2350,11 @@ export class TournamentManager {
       const payoutEntry = payouts.find((p: any) => p.place === player.position);
       if (!payoutEntry) continue;
 
+      // Round 40 RE-RUN: Math.round on prize calc + diff to avoid IEEE 754 drift
+      // shaving 1¢ off a player's payout adjustment.
       const correctPrize =
-        Math.trunc(((finalPrizePool * payoutEntry.percentage) / 100) * 100) / 100;
-      const difference = Math.trunc((correctPrize - (player.prize || 0)) * 100) / 100;
+        Math.round(((finalPrizePool * payoutEntry.percentage) / 100) * 100) / 100;
+      const difference = Math.round((correctPrize - (player.prize || 0)) * 100) / 100;
 
       if (difference > 0) {
         console.log(
@@ -2448,8 +2460,10 @@ export class TournamentManager {
       }
       const firstPlace = Array.isArray(payouts) ? payouts.find((p: any) => p.place === 1) : null;
       if (firstPlace) {
+        // Round 40 RE-RUN: Math.round for IEEE 754 drift safety (winnerPrize
+        // was previously Math.trunc which could under-pay by 1¢).
         const prizeRaw = ((tournament.prize_pool || 0) * firstPlace.percentage) / 100;
-        winnerPrize = Math.trunc(prizeRaw * 100) / 100;
+        winnerPrize = Math.round(prizeRaw * 100) / 100;
       } else {
         // FALLBACK: no place 1 in structure — award 100% of prize pool to winner
         console.warn(
@@ -2526,7 +2540,10 @@ export class TournamentManager {
     // Union distributes 90% rake back to clubs weekly. Union holds all BBJ & promo.
     const rakePerEntry = tournament?.buy_in_fee || 0;
     const totalEntries = tournament?.current_players || 0;
-    const totalRake = Math.trunc(rakePerEntry * totalEntries * 100) / 100;
+    // Round 40 RE-RUN: Math.round for IEEE 754 drift safety (totalRake was
+    // Math.trunc which could under-collect 1¢ on tournaments where
+    // rakePerEntry has float drift).
+    const totalRake = Math.round(rakePerEntry * totalEntries * 100) / 100;
 
     if (totalRake > 0 && tournament?.club_id) {
       // Get club + union info

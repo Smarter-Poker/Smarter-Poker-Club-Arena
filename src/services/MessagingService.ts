@@ -1279,21 +1279,35 @@ class MessagingServiceClass {
   // Q3 PHASE 12: RECENT PLAYERS "PLAYED WITH" COUNT
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /** Get count of shared sessions with another player */
+  /**
+   * Get count of shared sessions with another player.
+   *
+   * Round 38 RE-RUN fix: hand_history has no `player_ids` column. Use the
+   * `players` JSONB array via PostgREST containment, requiring BOTH userIds
+   * to be present in the array. Pre-stringified JSON to avoid the unquoted-key
+   * serialization bug noted in HandHistoryService.getPlayerHands (BUG 021
+   * Layer D). Pre-fix this function returned 0 for every pair.
+   */
   async getPlayedWithCount(userId: string, otherUserId: string): Promise<number> {
+    const containmentJson = JSON.stringify([{ userId }, { userId: otherUserId }]);
     const { count } = await supabase
       .from('hand_history')
       .select('id', { count: 'exact', head: true })
-      .contains('player_ids', [userId, otherUserId]);
+      .contains('players', containmentJson);
     return count || 0;
   }
 
-  /** Get "last played together" timestamp */
+  /**
+   * Get "last played together" timestamp.
+   * Round 38 RE-RUN fix: same `player_ids`→`players` JSONB containment fix
+   * as getPlayedWithCount above. Pre-fix returned null for every pair.
+   */
   async getLastPlayedTogether(userId: string, otherUserId: string): Promise<string | null> {
+    const containmentJson = JSON.stringify([{ userId }, { userId: otherUserId }]);
     const { data } = await supabase
       .from('hand_history')
       .select('created_at')
-      .contains('player_ids', [userId, otherUserId])
+      .contains('players', containmentJson)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();

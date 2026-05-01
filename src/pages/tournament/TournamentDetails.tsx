@@ -192,7 +192,13 @@ export default function TournamentDetails() {
                 user_id: newPlayer.user_id,
                 username: newPlayer.username || 'Player',
                 avatar_url: null,
-                chips: newPlayer.chips || tournament?.starting_chips || 0,
+                // BUG FIX: do NOT read tournament.starting_chips here — this
+                // handler is in a closure that captured `tournament` at the time
+                // the effect ran (tournamentId dep), which may be null if the
+                // subscription was set up before loadTournament completed.
+                // Use newPlayer.chips if present; the next loadTournament() call
+                // (triggered by TOURNAMENT_UPDATED) will hydrate the full entry.
+                chips: newPlayer.chips || 0,
                 position: newPlayer.position || undefined,
                 status: newPlayer.status as TournamentEntry['status'],
                 table_id: newPlayer.table_id || null,
@@ -294,9 +300,11 @@ export default function TournamentDetails() {
               : e
           )
         );
-        toast.info(
-          `${event.payload.username} eliminated — ${event.payload.position}${getOrdinal(event.payload.position)} place`
-        );
+        // BUG FIX: guard against undefined position — getOrdinal(undefined) would
+        // produce "undefinedth" which reads as a broken toast message.
+        const pos = event.payload.position;
+        const posText = pos != null ? `${pos}${getOrdinal(pos)} place` : 'eliminated';
+        toast.info(`${event.payload.username} ${posText}`);
       },
       300
     );

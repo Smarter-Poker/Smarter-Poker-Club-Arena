@@ -306,11 +306,17 @@ export function HandReplayPlayer({
   }, [autoPlay, state]);
 
   useEffect(() => {
+    // BUG FIX: collect timeout IDs and clear them all on cleanup.
+    // Without this, if `hand` changes before all timeouts fire (e.g. rapid
+    // navigation), old timeouts fire setVisibleSeats on a stale hand.
+    const ids: ReturnType<typeof setTimeout>[] = [];
     hand.players.forEach((player, i) => {
-      setTimeout(() => {
+      const id = setTimeout(() => {
         setVisibleSeats((prev) => new Set([...prev, player.seat]));
       }, i * 60);
+      ids.push(id);
     });
+    return () => ids.forEach(clearTimeout);
   }, [hand]);
 
   // Controls
@@ -336,6 +342,11 @@ export function HandReplayPlayer({
   // X6.2d: re-simulate all steps up to a target index to rebuild display state
   const jumpToStep = useCallback(
     (targetStep: number) => {
+      // BUG FIX: cancel the active play-loop timer before taking over state.
+      // Without this, if the user clicks a street button while PLAYING, the
+      // play-loop timer fires executeStep() concurrently with jumpToStep,
+      // causing double-execution and corrupted display state.
+      if (timerRef.current) clearTimeout(timerRef.current);
       // Reset state
       setVisibleCards({});
       setBoard([]);
@@ -388,6 +399,10 @@ export function HandReplayPlayer({
   );
 
   // Hide controls after delay
+  // BUG FIX: remove currentStep from deps. Including it caused a new 3s timer
+  // to be scheduled on every step advance, creating a timer storm during fast
+  // playback where the controls flickered off/on unpredictably. The intent is
+  // to auto-hide after playback starts, not after every individual step.
   useEffect(() => {
     if (state === 'PLAYING') {
       const timer = setTimeout(() => setShowControls(false), 3000);
@@ -395,7 +410,7 @@ export function HandReplayPlayer({
     } else {
       setShowControls(true);
     }
-  }, [state, currentStep]);
+  }, [state]);
 
   return (
     <div

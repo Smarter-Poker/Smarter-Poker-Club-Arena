@@ -325,6 +325,14 @@ function HandReplay3DComponent({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isReady, setIsReady] = useState(false);
 
+  // BUG FIX: Store onReady in a ref so the scene-init effect does NOT list it
+  // as a dep. If onReady is an inline arrow function in the parent (e.g.
+  // onReady={() => setIsReady(true)}), its identity changes on every parent
+  // render, which caused the effect to tear down and rebuild the entire WebGL
+  // context — destroying the Three.js scene — on every re-render.
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+
   // Initialize Three.js scene
   useEffect(() => {
     if (!active || !canvasRef.current) return;
@@ -343,7 +351,7 @@ function HandReplay3DComponent({
     sceneRef.current = scene;
 
     setIsReady(true);
-    onReady?.();
+    onReadyRef.current?.();
 
     // Resize handler
     const handleResize = () => {
@@ -359,7 +367,11 @@ function HandReplay3DComponent({
       sceneRef.current = null;
       setIsReady(false);
     };
-  }, [active, seatCount, feltColor, onReady]);
+    // Intentionally omit onReady — stored in onReadyRef to avoid scene rebuild
+    // on inline-arrow identity change. active/seatCount/feltColor are the true
+    // scene-rebuild triggers.
+     
+  }, [active, seatCount, feltColor]);
 
   // Listen for replay step events from HandReplayEngine via MasterBus
   // HAND_REPLAY_STEP includes the current snapshot — drive the 3D scene from it

@@ -4139,13 +4139,16 @@ export class ServerTableEngine {
     }
 
     // SETTLEMENT STEP 8c: Log BBJ contribution
+    // Round 44: pass v_handHistoryId so bbj_contributions.hand_id links to
+    // hand_history (consistent with rake_records and club_wallet_transactions).
     if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
       await logBBJCollection(
         this.tableId,
         this.tableInfo.club_id,
         this.handCount,
         this.currentHandBBJFee,
-        this.tableInfo.big_blind
+        this.tableInfo.big_blind,
+        v_handHistoryId
       );
     }
 

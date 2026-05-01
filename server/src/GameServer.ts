@@ -2470,17 +2470,19 @@ export class TournamentManager {
         winnerPrize = Math.round(prizeRaw * 100) / 100;
       } else {
         // FALLBACK: no place 1 in structure — award 100% of prize pool to winner
+        // Round 53: Math.round, not trunc — same IEEE-drift family as the rest of Round 40.
         console.warn(
           `[Tournament:${this.tournamentId.slice(0, 8)}] payout_structure missing place 1 — awarding full prize pool to winner`
         );
-        winnerPrize = Math.trunc((tournament.prize_pool || 0) * 100) / 100;
+        winnerPrize = Math.round((tournament.prize_pool || 0) * 100) / 100;
       }
     } else {
       // No payout_structure at all — award full prize pool
+      // Round 53: Math.round, not trunc — same IEEE-drift family as the rest of Round 40.
       console.warn(
         `[Tournament:${this.tournamentId.slice(0, 8)}] No payout_structure — awarding full prize pool to winner`
       );
-      winnerPrize = Math.trunc((tournament?.prize_pool || 0) * 100) / 100;
+      winnerPrize = Math.round((tournament?.prize_pool || 0) * 100) / 100;
     }
 
     if (winnerPrize > 0) {

@@ -39,6 +39,19 @@ export function SpinItWheel({ tiers, result, isSpinning, onSpinComplete }: SpinI
   const [showResult, setShowResult] = useState(false);
   const wheelRef = useRef<HTMLDivElement>(null);
   const hasSpunRef = useRef(false);
+  // CA-4 BUG FIX: spinTimersRef collects the anticipation timer, all tick timers,
+  // and the result timer. Without this, if SpinItWheel unmounts during the 4s
+  // spin (e.g. user navigates away mid-spin), all pending setShowResult calls
+  // and soundService.playSpinTick() calls would still fire.
+  const spinTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Unmount guard — cancel any in-flight spin timers
+  useEffect(() => {
+    return () => {
+      spinTimersRef.current.forEach(clearTimeout);
+      spinTimersRef.current = [];
+    };
+  }, []);
 
   const segmentAngle = tiers.length > 0 ? 360 / tiers.length : 360;
 
@@ -70,7 +83,6 @@ export function SpinItWheel({ tiers, result, isSpinning, onSpinComplete }: SpinI
 
         // Decelerating tick pattern over 4s — fast at start, slow at end
         // Cubic easing mirrors the CSS transform easing for audio/visual sync
-        const tickTimers: ReturnType<typeof setTimeout>[] = [];
         const SPIN_DURATION = 4000;
         const TICK_COUNT = 32; // 32 ticks spread across 4s
         for (let i = 0; i < TICK_COUNT; i++) {
@@ -78,7 +90,7 @@ export function SpinItWheel({ tiers, result, isSpinning, onSpinComplete }: SpinI
           // Ease-out cubic so ticks start fast and slow to a halt
           const eased = 1 - Math.pow(1 - progress, 3);
           const delay = eased * SPIN_DURATION;
-          tickTimers.push(
+          spinTimersRef.current.push(
             setTimeout(() => {
               soundService.playSpinTick();
             }, delay)
@@ -91,14 +103,12 @@ export function SpinItWheel({ tiers, result, isSpinning, onSpinComplete }: SpinI
           soundService.playSpinResult();
           onSpinComplete?.();
         }, 4200);
-
-        // Store timers for potential cleanup — wheelRef will unmount cleanup anyway
-        return () => {
-          tickTimers.forEach(clearTimeout);
-          clearTimeout(resultTimer);
-        };
+        // CA-4: push resultTimer into spinTimersRef so unmount guard can cancel it
+        spinTimersRef.current.push(resultTimer);
       }, 300);
 
+      // CA-4: push anticipationTimer into spinTimersRef so unmount guard can cancel it
+      spinTimersRef.current.push(anticipationTimer);
       return () => {
         clearTimeout(anticipationTimer);
       };

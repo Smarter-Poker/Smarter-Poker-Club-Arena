@@ -195,24 +195,23 @@ export class RakebackSettlerService {
     let agentCreditsFailed = 0;
     for (const row of rows as RakeRecordRow[]) {
       if (!row.player_contributions) continue;
-      const dealtIn = Object.entries(row.player_contributions).filter(
-        ([, amt]) => Number(amt) > 0
-      );
+      const dealtIn = Object.entries(row.player_contributions).filter(([, amt]) => Number(amt) > 0);
       if (dealtIn.length === 0) continue;
       const equalShare = Math.round((Number(row.rake_amount) / dealtIn.length) * 100) / 100;
       for (const [userId] of dealtIn) {
         agentCreditsAttempted++;
-        const { error: rpcErr } = await this.supabaseRpc(
-          'credit_agent_commission_from_rake',
-          {
-            p_agent_user_id: userId,
-            p_club_id: row.club_id,
-            p_rake_credit: equalShare,
-            p_source_type: 'rake_settlement',
-            p_source_id: null,
-            p_notes: `RakebackSettler hand at ${row.created_at}`,
-          }
-        );
+        const { error: rpcErr } = await this.supabaseRpc('credit_agent_commission_from_rake', {
+          p_agent_user_id: userId,
+          p_club_id: row.club_id,
+          p_rake_credit: equalShare,
+          p_source_type: 'rake_settlement',
+          // Round 43: link the commission audit row + club_wallet_transactions
+          // commission_out audit row back to the originating hand for
+          // ledger reconciliation. row.hand_id is the FK populated in
+          // Round 38 (rake_records.hand_id → hand_history.id).
+          p_source_id: (row as any).hand_id ?? null,
+          p_notes: `RakebackSettler hand at ${row.created_at}`,
+        });
         if (rpcErr) {
           agentCreditsFailed++;
         }

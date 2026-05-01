@@ -472,7 +472,10 @@ export async function logRakeCollection(
   // Round 42 fix: BBJ amount threaded through so club_wallets.period_bbj_contribution
   // gets credited and chip_balance reflects the correct net (rake - bbj). Default
   // 0 keeps backwards-compat for any caller that doesn't pass it yet.
-  bbjAmount: number = 0
+  bbjAmount: number = 0,
+  // Round 43 fix: hand_history.id (UUID) for FK linking the
+  // club_wallet_transactions audit row back to the originating hand.
+  handId: string | null = null
 ): Promise<void> {
   if (rakeAmount <= 0) return;
 
@@ -518,6 +521,7 @@ export async function logRakeCollection(
         p_club_id: clubId,
         p_rake: rakeAmount,
         p_bbj: bbjAmount,
+        p_hand_id: handId,
         p_hand_number: handNumber,
       });
       if (cwErr) {

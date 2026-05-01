@@ -4088,37 +4088,11 @@ export class ServerTableEngine {
       }))
     );
 
-    // SETTLEMENT STEP 8b: Log rake collection — every penny documented
-    if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
-      // Round 42: pass BBJ fee through so club_wallets period_bbj_contribution
-      // is credited and chip_balance reflects (rake - bbj) net.
-      await logRakeCollection(
-        this.tableId,
-        this.tableInfo.club_id,
-        this.handCount,
-        this.currentHandRake,
-        this.currentHandPotSize,
-        this.currentHandBBJFee
-      );
-    }
-
-    // SETTLEMENT STEP 8c: Log BBJ contribution
-    if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
-      await logBBJCollection(
-        this.tableId,
-        this.tableInfo.club_id,
-        this.handCount,
-        this.currentHandBBJFee,
-        this.tableInfo.big_blind
-      );
-    }
-
-    // ─── ROUND 38 FIX: REORDERED — hand_history first, then rake_records ───
-    // Was: rake_records inserted with hand_id=NULL because logHandHistory
-    // ran AFTER and the hand_history.id wasn't available. That broke the
-    // FK chain rake_records.hand_id → hand_history.id and orphaned every
-    // rake event from its hand. Now: log hand_history first, capture the
-    // returned id, pass it to rake_records.
+    // ─── ROUND 38 + 43 FIX: REORDERED — hand_history FIRST, then rake/BBJ ───
+    // Round 38: rake_records.hand_id needed the v_handHistoryId.
+    // Round 43: club_wallet_transactions.related_id (rake_in audit row) also
+    // needs the hand UUID to link the audit ledger to the source hand. So
+    // logHandHistory must precede logRakeCollection / logBBJCollection.
     let v_handHistoryId: string | null = null;
     if (this.tableInfo) {
       const result = await logHandHistory({
@@ -4145,6 +4119,34 @@ export class ServerTableEngine {
         actions: this.currentHandActions,
       });
       v_handHistoryId = result.handId;
+    }
+
+    // SETTLEMENT STEP 8b: Log rake collection — every penny documented
+    if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
+      // Round 42: pass BBJ fee through so club_wallets period_bbj_contribution
+      // is credited and chip_balance reflects (rake - bbj) net.
+      // Round 43: pass v_handHistoryId through so the club_wallet_transactions
+      // audit row can link to the originating hand.
+      await logRakeCollection(
+        this.tableId,
+        this.tableInfo.club_id,
+        this.handCount,
+        this.currentHandRake,
+        this.currentHandPotSize,
+        this.currentHandBBJFee,
+        v_handHistoryId
+      );
+    }
+
+    // SETTLEMENT STEP 8c: Log BBJ contribution
+    if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
+      await logBBJCollection(
+        this.tableId,
+        this.tableInfo.club_id,
+        this.handCount,
+        this.currentHandBBJFee,
+        this.tableInfo.big_blind
+      );
     }
 
     // SETTLEMENT STEP 12: Calculate rakeback (EQUAL-SHARE, FIX 144)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './TournamentAnnouncementOverlay.css';
 
 interface TournamentAnnouncementProps {
@@ -13,18 +13,33 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
   onDismiss,
 }) => {
   const [visible, setVisible] = useState(false);
+  // CA-5 BUG FIX: the inner setTimeout(onDismiss, 500) inside the outer auto-dismiss
+  // callback had no ref — clearTimeout(timer) on the outer one doesn't cancel it.
+  // Added dismissCallbackTimerRef so unmount cancels both.
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissCallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Unmount guard
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      if (dismissCallbackTimerRef.current) clearTimeout(dismissCallbackTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (type) {
       setVisible(true);
-      const timer = setTimeout(
+      dismissTimerRef.current = setTimeout(
         () => {
           setVisible(false);
-          setTimeout(onDismiss, 500); // Wait for fade-out
+          dismissCallbackTimerRef.current = setTimeout(onDismiss, 500); // Wait for fade-out
         },
         type === 'level_up' ? 2000 : 4000
       );
-      return () => clearTimeout(timer);
+      return () => {
+        if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      };
     }
   }, [type, onDismiss]);
 

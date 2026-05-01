@@ -10,7 +10,7 @@
  * - Timeline integration
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import './ReplayActions.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -185,14 +185,26 @@ export function ReplayActions({
   isPlaying = false,
 }: ReplayActionsProps) {
   const [visibleStreets, setVisibleStreets] = useState<boolean[]>([]);
+  // CA-7 BUG FIX: stagger timers for street animation had no cleanup return.
+  // Pending setVisibleStreets calls fire after the hand replay panel is closed.
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
+    // Cancel any in-flight stagger timers before starting new ones
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
     setVisibleStreets([]);
     streets.forEach((_, i) => {
-      setTimeout(() => {
-        setVisibleStreets((prev) => [...prev, true]);
-      }, i * 70);
+      staggerTimersRef.current.push(
+        setTimeout(() => {
+          setVisibleStreets((prev) => [...prev, true]);
+        }, i * 70)
+      );
     });
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
+    };
   }, [streets]);
 
   // Calculate total actions

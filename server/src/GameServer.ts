@@ -2744,6 +2744,10 @@ export class TournamentManager {
             reason: 'table_break',
           });
 
+          // Round 51 RE-RUN-2: signal expansion to skip this cycle so we
+          // don't immediately re-create the table we just broke.
+          this.breakOccurredThisCycle = true;
+
           break; // One break per cycle to avoid stale data
         }
       }
@@ -2882,7 +2886,24 @@ export class TournamentManager {
    *
    * Called from the elimination checker cycle so it runs every 5s.
    */
+  // Round 51 RE-RUN-2 fix: when a table was just broken in the same
+  // elimination-loop cycle, skip expansion. Otherwise the broken table's
+  // close → reduces dbActiveTableCount → triggers fresh expansion → and
+  // the next cycle breaks ANOTHER empty table → loop creates 12 new
+  // tables/minute. Verified live on "Union PKO Afternoon" with 12 playing
+  // / 2 active / 109 closed: 12 tables/min churn rate continued for 8+
+  // minutes after the first defensive cap deployed.
+  private breakOccurredThisCycle = false;
+
   private async checkDynamicTableExpansion(): Promise<void> {
+    // Skip expansion in the same 5-second cycle as a break — gives
+    // executePlayerMoves time to actually seat players to remaining tables
+    // before we evaluate "are we over capacity?"
+    if (this.breakOccurredThisCycle) {
+      this.breakOccurredThisCycle = false;
+      return;
+    }
+
     // Only expand during rebuy/late-reg period (before prize pool is finalized)
     if (this.prizePoolFinalized) return;
 

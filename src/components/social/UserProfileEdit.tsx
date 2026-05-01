@@ -10,7 +10,7 @@
  * - Manage Player Tags (e.g., "Aggressive", "Grinder")
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import './UserProfileEdit.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -55,10 +55,27 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
   const [formData, setFormData] = useState<UserProfileData>(initialData);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [mounted, setMounted] = useState(false);
-
+  const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (isOpen) setTimeout(() => setMounted(true), 50);
-    else setMounted(false);
+    if (isOpen) {
+      if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+      mountTimerRef.current = setTimeout(() => {
+        mountTimerRef.current = null;
+        setMounted(true);
+      }, 50);
+    } else {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+      setMounted(false);
+    }
+    return () => {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -151,7 +168,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
                 required
               />
             </div>
-            
+
             <div className="form-group">
               <label>Real Name (Optional)</label>
               <input

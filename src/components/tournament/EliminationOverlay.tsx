@@ -36,7 +36,8 @@ export const EliminationOverlay: React.FC<EliminationOverlayProps> = ({
 
   useEffect(() => {
     if (elimination) {
-      setTimeout(() => setMounted(true), 50);
+      // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+      const _mountTimer = setTimeout(() => setMounted(true), 50);
       setPhase('entering');
 
       // Somber descending elimination tone (or bright money-finish fanfare)
@@ -55,6 +56,7 @@ export const EliminationOverlay: React.FC<EliminationOverlayProps> = ({
       }, 4500);
 
       return () => {
+        clearTimeout(_mountTimer);
         clearTimeout(showTimer);
         clearTimeout(exitTimer);
         clearTimeout(hideTimer);

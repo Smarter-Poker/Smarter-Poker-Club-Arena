@@ -44,9 +44,7 @@ export function CashierModal({
 }: CashierModalProps) {
   type ClubCashierTab = 'deposit' | 'withdraw' | 'history';
   const clubCashierTabs: ClubCashierTab[] = ['deposit', 'withdraw', 'history'];
-  const [activeTab, setActiveTab] = useState<'balance' | ClubCashierTab>(
-    'balance'
-  );
+  const [activeTab, setActiveTab] = useState<'balance' | ClubCashierTab>('balance');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -69,7 +67,9 @@ export function CashierModal({
             ? clubCashierTabs[(idx + 1) % clubCashierTabs.length]
             : clubCashierTabs[(idx - 1 + clubCashierTabs.length) % clubCashierTabs.length];
         handleTabChange(next);
-        const btn = document.querySelector(`[aria-controls="club-cashier-panel-${next}"]`) as HTMLElement;
+        const btn = document.querySelector(
+          `[aria-controls="club-cashier-panel-${next}"]`
+        ) as HTMLElement;
         btn?.focus();
       }
     },
@@ -78,40 +78,45 @@ export function CashierModal({
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => setMounted(true), 50);
+      // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+      const _mountTimer = setTimeout(() => setMounted(true), 50);
+      return () => clearTimeout(_mountTimer);
     } else {
       setMounted(false);
     }
   }, [isOpen]);
 
   // ── Focus Trap: trap focus inside modal when open ──
-  const handleFocusTrap = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-      return;
-    }
-    if (e.key !== 'Tab' || !modalRef.current) return;
-
-    const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    );
-    if (focusable.length === 0) return;
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-
-    if (e.shiftKey) {
-      if (document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
+  const handleFocusTrap = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
       }
-    } else {
-      if (document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
+      if (e.key !== 'Tab' || !modalRef.current) return;
+
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
-    }
-  }, [onClose]);
+    },
+    [onClose]
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -154,7 +159,13 @@ export function CashierModal({
   };
 
   return (
-    <div className="cashier-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="cashier-modal-title">
+    <div
+      className="cashier-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cashier-modal-title"
+    >
       <div
         className="cashier-modal"
         ref={modalRef}
@@ -169,7 +180,9 @@ export function CashierModal({
         <div className="cashier-modal__header">
           <div className="cashier-modal__title-group">
             <span className="cashier-modal__icon"></span>
-            <h2 id="cashier-modal-title" className="cashier-modal__title">Cashier</h2>
+            <h2 id="cashier-modal-title" className="cashier-modal__title">
+              Cashier
+            </h2>
           </div>
           <button className="cashier-modal__close" onClick={onClose}>
             ×
@@ -183,7 +196,12 @@ export function CashierModal({
         </div>
 
         {/* Tabs */}
-        <div className="cashier-tabs" role="tablist" aria-label="Cashier actions" onKeyDown={handleTabKeyDown}>
+        <div
+          className="cashier-tabs"
+          role="tablist"
+          aria-label="Cashier actions"
+          onKeyDown={handleTabKeyDown}
+        >
           <button
             role="tab"
             tabIndex={activeTab === 'deposit' ? 0 : -1}
@@ -220,7 +238,12 @@ export function CashierModal({
         </div>
 
         {/* Content */}
-        <div className="cashier-content" id={`club-cashier-panel-${activeTab}`} role="tabpanel" aria-labelledby={activeTab !== 'balance' ? `club-cashier-tab-${activeTab}` : undefined}>
+        <div
+          className="cashier-content"
+          id={`club-cashier-panel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={activeTab !== 'balance' ? `club-cashier-tab-${activeTab}` : undefined}
+        >
           {(activeTab === 'deposit' || activeTab === 'withdraw') && (
             <div className="cashier-form">
               <label className="cashier-label">

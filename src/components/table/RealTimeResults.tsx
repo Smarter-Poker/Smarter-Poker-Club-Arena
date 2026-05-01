@@ -11,7 +11,7 @@
  * - Observer list
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './RealTimeResults.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -105,13 +105,31 @@ export function RealTimeResults({
 }: RealTimeResultsProps) {
   const [sessionDuration, setSessionDuration] = useState('00:00:00');
   const [mounted, setMounted] = useState(false);
+  // BUG FIX (RTR-1): track mount-animation timer so it cancels on unmount or
+  // on isOpen toggle — prevents stale setState on unmounted component.
+  const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => setMounted(true), 50);
+      // Cancel any pending timer before setting a new one (idempotent)
+      if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+      mountTimerRef.current = setTimeout(() => {
+        mountTimerRef.current = null;
+        setMounted(true);
+      }, 50);
     } else {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
       setMounted(false);
     }
+    return () => {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   // Update session duration every second

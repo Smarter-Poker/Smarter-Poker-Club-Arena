@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Complete Profile Modal
  * ═══════════════════════════════════════════════════════════════════════════════
- * Forces users to configure their Poker Alias (and optionally Real Name) 
+ * Forces users to configure their Poker Alias (and optionally Real Name)
  * if they signed in via a provider (Google) that skipped the Hub signup form.
  */
 
@@ -31,9 +31,11 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
     if (isOpen) {
       if (user) {
         setAlias(user.username.startsWith('Player') ? '' : user.username);
-        setRealName(user.display_name === 'New Player' ? '' : (user.display_name || ''));
+        setRealName(user.display_name === 'New Player' ? '' : user.display_name || '');
       }
-      setTimeout(() => setMounted(true), 50);
+      // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+      const _mountTimer = setTimeout(() => setMounted(true), 50);
+      return () => clearTimeout(_mountTimer);
     } else {
       setMounted(false);
     }
@@ -60,33 +62,29 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
-           username: safeAlias,
-           display_name: safeRealName
+          username: safeAlias,
+          display_name: safeRealName,
         })
         .eq('id', user.id);
 
       if (profileError) {
-         if (profileError.code === '23505') {
-            throw new Error('This Poker Alias is already taken.');
-         }
-         throw profileError;
+        if (profileError.code === '23505') {
+          throw new Error('This Poker Alias is already taken.');
+        }
+        throw profileError;
       }
 
       // 2. Update Public Users table
-      await supabase
-        .from('users')
-        .update({ username: safeAlias })
-        .eq('id', user.id);
+      await supabase.from('users').update({ username: safeAlias }).eq('id', user.id);
 
       // 3. Update Local Store
       setUser({
         ...user,
         username: safeAlias,
-        display_name: safeRealName
+        display_name: safeRealName,
       });
 
       onComplete();
-
     } catch (err: any) {
       reportError(err, 'CompleteProfileModal.SaveFailed');
       setError(err.message || 'Failed to save profile. Try again.');
@@ -111,8 +109,8 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
 
         <div className={styles.content}>
           <p className={styles.intro}>
-            Welcome to Club Arena! Before you hit the tables, please choose your Poker Alias. 
-            This is how other players will identify you.
+            Welcome to Club Arena! Before you hit the tables, please choose your Poker Alias. This
+            is how other players will identify you.
           </p>
 
           <form id="complete-profile-form" onSubmit={handleSave} className={styles.formGroup}>
@@ -154,24 +152,24 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
         </div>
 
         <footer className={styles.footer}>
-          <button 
-            type="submit" 
-            form="complete-profile-form" 
+          <button
+            type="submit"
+            form="complete-profile-form"
             className={styles.submitButton}
             disabled={isSaving || !alias.trim()}
           >
             {isSaving ? 'Saving...' : 'Enter Arena'}
           </button>
-          
-          <button 
-             type="button" 
-             className={styles.cancelButton}
-             onClick={() => {
-                // If they explicitly choose to keep the auto-generated name, let them bypass
-                onComplete();
-             }}
+
+          <button
+            type="button"
+            className={styles.cancelButton}
+            onClick={() => {
+              // If they explicitly choose to keep the auto-generated name, let them bypass
+              onComplete();
+            }}
           >
-             Keep System Generated Name ({user.username})
+            Keep System Generated Name ({user.username})
           </button>
         </footer>
       </div>
@@ -188,27 +186,27 @@ export function useCompleteProfile(user: any) {
 
   useEffect(() => {
     if (!user || !user.username) {
-       setIsReady(true);
-       return;
+      setIsReady(true);
+      return;
     }
 
-    const hasCompleted = localStorage.getItem(STORAGE_KEYS.WELCOME_ACCEPTED) 
-       ? localStorage.getItem('profile_alias_configured') === 'true'
-       : false;
+    const hasCompleted = localStorage.getItem(STORAGE_KEYS.WELCOME_ACCEPTED)
+      ? localStorage.getItem('profile_alias_configured') === 'true'
+      : false;
 
     // Detect system-generated 'Player1234' names
     const isSystemGenerated = /^Player\d{4}$/.test(user.username);
-    
+
     // Only show if it's a new or system-generated account that hasn't configured an alias yet
     if (isSystemGenerated && !hasCompleted) {
       setShowProfileModal(true);
     } else {
-       // Auto-flag as complete if they already have a custom name
-       if (!isSystemGenerated && !hasCompleted) {
-          localStorage.setItem('profile_alias_configured', 'true');
-       }
+      // Auto-flag as complete if they already have a custom name
+      if (!isSystemGenerated && !hasCompleted) {
+        localStorage.setItem('profile_alias_configured', 'true');
+      }
     }
-    
+
     setIsReady(true);
   }, [user]);
 

@@ -4090,12 +4090,15 @@ export class ServerTableEngine {
 
     // SETTLEMENT STEP 8b: Log rake collection — every penny documented
     if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
+      // Round 42: pass BBJ fee through so club_wallets period_bbj_contribution
+      // is credited and chip_balance reflects (rake - bbj) net.
       await logRakeCollection(
         this.tableId,
         this.tableInfo.club_id,
         this.handCount,
         this.currentHandRake,
-        this.currentHandPotSize
+        this.currentHandPotSize,
+        this.currentHandBBJFee
       );
     }
 

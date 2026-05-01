@@ -468,7 +468,11 @@ export async function logRakeCollection(
   clubId: string,
   handNumber: number,
   rakeAmount: number,
-  potAmount: number
+  potAmount: number,
+  // Round 42 fix: BBJ amount threaded through so club_wallets.period_bbj_contribution
+  // gets credited and chip_balance reflects the correct net (rake - bbj). Default
+  // 0 keeps backwards-compat for any caller that doesn't pass it yet.
+  bbjAmount: number = 0
 ): Promise<void> {
   if (rakeAmount <= 0) return;
 
@@ -513,7 +517,7 @@ export async function logRakeCollection(
       const { error: cwErr } = await supabase.rpc('credit_club_wallet_rake', {
         p_club_id: clubId,
         p_rake: rakeAmount,
-        p_bbj: 0,
+        p_bbj: bbjAmount,
         p_hand_number: handNumber,
       });
       if (cwErr) {

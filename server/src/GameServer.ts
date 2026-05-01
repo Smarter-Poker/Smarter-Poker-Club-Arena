@@ -2912,7 +2912,21 @@ export class TournamentManager {
       maxPerTable = 9;
     }
 
-    const currentTableCount = this.tableEngines.size;
+    // Round 51 RE-RUN fix: ground currentTableCount in the DB, not the
+    // in-memory map. The in-memory map is volatile across engine restarts
+    // and any code path that bypasses tableEngines.set(). Live evidence:
+    // some tournaments accumulated 1000+ closed orphan rows (e.g. "Union
+    // Mystery Bounty (PLO5)": 22 players, 1 active table in map, 1075
+    // closed rows in DB — 600 created/hour during restart-heavy windows).
+    // Using max(map.size, db_active_count) prevents creating duplicates
+    // of tables that already exist in the DB; subsequent rebalance can
+    // adopt them via the existing resume() path.
+    const { count: dbActiveTableCount } = await supabase
+      .from('tables')
+      .select('*', { count: 'exact', head: true })
+      .eq('tournament_id', this.tournamentId)
+      .in('status', ['running', 'waiting']);
+    const currentTableCount = Math.max(this.tableEngines.size, dbActiveTableCount || 0);
     const totalCapacity = currentTableCount * maxPerTable;
 
     // Only create new tables when we're actually over capacity

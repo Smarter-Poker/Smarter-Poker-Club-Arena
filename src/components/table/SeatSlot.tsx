@@ -17,7 +17,7 @@
  * that DISAPPEARS as the clock counts down (CSS conic-gradient mask).
  */
 
-import React, { useMemo, useState, useEffect, memo } from 'react';
+import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
 import './SeatSlot.css';
 import { CardImage, CardBack } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
@@ -292,6 +292,14 @@ export const SeatSlot = memo(
     const [winnerPop, setWinnerPop] = useState(false);
     // Bible V8 §5.3: card peek gesture — tap hero cards for brief lift
     const [isPeeking, setIsPeeking] = useState(false);
+    // CA-14 BUG FIX: track the 300ms peek-dismiss timer so it cancels on unmount.
+    // Previously fire-and-forget in onTouchEnd/onMouseUp inline handlers.
+    const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+      return () => {
+        if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+      };
+    }, []);
     useEffect(() => {
       if (isWinner && !winnerPop) {
         setWinnerPop(true);
@@ -400,7 +408,13 @@ export const SeatSlot = memo(
         return <div className={containerClasses} aria-label={`Seat ${seatNumber}: empty`} />;
       }
       return (
-        <div className={containerClasses} onClick={onSit} role="button" tabIndex={0} aria-label={`Seat ${seatNumber}: open - click to sit`}>
+        <div
+          className={containerClasses}
+          onClick={onSit}
+          role="button"
+          tabIndex={0}
+          aria-label={`Seat ${seatNumber}: open - click to sit`}
+        >
           <span className="seat__empty-label">+ SIT</span>
         </div>
       );
@@ -422,9 +436,7 @@ export const SeatSlot = memo(
       const durationMs = turnStartTimeMs
         ? Math.max(1000, turnDeadlineMs - turnStartTimeMs)
         : 15_000;
-      const elapsedMs = turnStartTimeMs
-        ? Math.max(0, Date.now() - turnStartTimeMs)
-        : 0;
+      const elapsedMs = turnStartTimeMs ? Math.max(0, Date.now() - turnStartTimeMs) : 0;
       timerStyle = {
         '--sp-timer-duration': `${(durationMs / 1000).toFixed(3)}s`,
         '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
@@ -449,7 +461,11 @@ export const SeatSlot = memo(
       >
         {/* Last Action Badge — floats ABOVE the seat (premium style) */}
         {lastAction && (
-          <div className={`seat__action seat__action--${lastAction}`} role="status" aria-label={`${player.name}: ${getActionLabel(lastAction, lastBetAmount)}`}>
+          <div
+            className={`seat__action seat__action--${lastAction}`}
+            role="status"
+            aria-label={`${player.name}: ${getActionLabel(lastAction, lastBetAmount)}`}
+          >
             {getActionLabel(lastAction, lastBetAmount)}
           </div>
         )}
@@ -466,8 +482,8 @@ export const SeatSlot = memo(
                 isCollectingChips
                   ? 'collect'
                   : lastAction === 'bet' || lastAction === 'raise' || lastAction === 'all_in'
-                  ? 'slide-in'
-                  : 'none'
+                    ? 'slide-in'
+                    : 'none'
               }
               compact={true}
             />
@@ -476,34 +492,50 @@ export const SeatSlot = memo(
 
         {/* Hole Cards — opponents: show card backs for active/all-in players, reveal at showdown.
             Also render during isFolding so the fly-out animation can play before unmount. */}
-        {!player.isHero && (player.status === 'active' || player.status === 'all_in' || isFolding) && (
-          <div
-            className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
-          >
-            {player.holeCards && player.holeCards.length > 0 ? (
-              player.holeCards.map((card, i) => (
-                <HoleCard
-                  key={i}
-                  card={card}
-                  hidden={!player.showCards}
-                  index={i}
-                  isWinner={isWinner}
-                  deckStyle={deckStyle}
-                  cardBack={cardBack}
-                />
-              ))
-            ) : (
-              <>
-                <HoleCard key={0} hidden={true} index={0} deckStyle={deckStyle} cardBack={cardBack} />
-                <HoleCard key={1} hidden={true} index={1} deckStyle={deckStyle} cardBack={cardBack} />
-              </>
-            )}
-          </div>
-        )}
+        {!player.isHero &&
+          (player.status === 'active' || player.status === 'all_in' || isFolding) && (
+            <div
+              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+            >
+              {player.holeCards && player.holeCards.length > 0 ? (
+                player.holeCards.map((card, i) => (
+                  <HoleCard
+                    key={i}
+                    card={card}
+                    hidden={!player.showCards}
+                    index={i}
+                    isWinner={isWinner}
+                    deckStyle={deckStyle}
+                    cardBack={cardBack}
+                  />
+                ))
+              ) : (
+                <>
+                  <HoleCard
+                    key={0}
+                    hidden={true}
+                    index={0}
+                    deckStyle={deckStyle}
+                    cardBack={cardBack}
+                  />
+                  <HoleCard
+                    key={1}
+                    hidden={true}
+                    index={1}
+                    deckStyle={deckStyle}
+                    cardBack={cardBack}
+                  />
+                </>
+              )}
+            </div>
+          )}
 
         {/* Avatar Circle — large, sits on top of info box */}
         {/* Bible V8 §11.1: show_avatars toggle */}
-        <div className="seat__avatar-wrap" style={showAvatar ? undefined : { visibility: 'hidden' }}>
+        <div
+          className="seat__avatar-wrap"
+          style={showAvatar ? undefined : { visibility: 'hidden' }}
+        >
           {/* Timer is shown via smooth conic-gradient border on the info box below */}
           <div
             className="seat__avatar"
@@ -564,7 +596,9 @@ export const SeatSlot = memo(
              on each seat. Dealer "D" button rendered separately via DealerButton
              component, so skip 'D' and 'BTN' here to avoid double-badging. */}
           {position && position !== 'D' && position !== 'BTN' && (
-            <div className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}>
+            <div
+              className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}
+            >
               {position}
             </div>
           )}
@@ -623,16 +657,34 @@ export const SeatSlot = memo(
               'seat__cards seat__cards--hero' +
               (isDealing ? ' seat__cards--dealing' : '') +
               (isFolding ? ' seat__cards--folding' : '') +
-              (lastAction === 'fold' || player.status === 'folded'
-                ? ' seat__cards--folded'
-                : '') +
+              (lastAction === 'fold' || player.status === 'folded' ? ' seat__cards--folded' : '') +
               (isPeeking ? ' seat__cards--peeking' : '')
             }
             /* Bible V8 §5.3: tap hero cards to peek (brief lift animation) */
-            onTouchStart={() => { if (gesturesEnabled) setIsPeeking(true); }}
-            onTouchEnd={() => { if (gesturesEnabled) setTimeout(() => setIsPeeking(false), 300); }}
-            onMouseDown={() => { if (gesturesEnabled) setIsPeeking(true); }}
-            onMouseUp={() => { if (gesturesEnabled) setTimeout(() => setIsPeeking(false), 300); }}
+            onTouchStart={() => {
+              if (gesturesEnabled) setIsPeeking(true);
+            }}
+            onTouchEnd={() => {
+              if (gesturesEnabled) {
+                if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+                peekTimerRef.current = setTimeout(() => {
+                  peekTimerRef.current = null;
+                  setIsPeeking(false);
+                }, 300);
+              }
+            }}
+            onMouseDown={() => {
+              if (gesturesEnabled) setIsPeeking(true);
+            }}
+            onMouseUp={() => {
+              if (gesturesEnabled) {
+                if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+                peekTimerRef.current = setTimeout(() => {
+                  peekTimerRef.current = null;
+                  setIsPeeking(false);
+                }, 300);
+              }
+            }}
           >
             {player.holeCards.map((card, i) => (
               <HoleCard

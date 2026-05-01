@@ -136,6 +136,17 @@ function CommunityCardsComponent({
   const [particleOrigin, setParticleOrigin] = useState<{ x: number; y: number } | undefined>();
   const prevHighlightRef = useRef<number[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  // CA-13 BUG FIX: the 2500ms setShowParticles(false) inside the showdown branch
+  // of the stage-transition useEffect was fire-and-forget. If the hand ends and
+  // the board clears before 2.5s, the component unmounts and setState fires.
+  const showParticlesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Unmount guard for the particles timer
+  useEffect(() => {
+    return () => {
+      if (showParticlesTimerRef.current) clearTimeout(showParticlesTimerRef.current);
+    };
+  }, []);
 
   // FIX 184: Removed duplicate haptic here — stage transition useEffect below already
   // fires haptic on flop/turn/river. Having both caused double-haptic on every deal.
@@ -216,7 +227,12 @@ function CommunityCardsComponent({
           });
         }
         setShowParticles(true);
-        setTimeout(() => setShowParticles(false), 2500);
+        // CA-13: cancel any lingering timer before setting a new one
+        if (showParticlesTimerRef.current) clearTimeout(showParticlesTimerRef.current);
+        showParticlesTimerRef.current = setTimeout(() => {
+          showParticlesTimerRef.current = null;
+          setShowParticles(false);
+        }, 2500);
       }
       prevStageRef.current = stage;
       return () => {
@@ -258,10 +274,14 @@ function CommunityCardsComponent({
       ref={containerRef}
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
       role="region"
-      aria-label={`Community cards: ${cards.length > 0 ? cards.map(c => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${winningHandName ? ` - ${winningHandName}` : ''}`}
+      aria-label={`Community cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${winningHandName ? ` - ${winningHandName}` : ''}`}
     >
       {/* Bible V8 §5.1: Stage label (FLOP/TURN/RIVER) — fades in briefly when cards are dealt */}
-      {stageLabel && <div className="community-cards__stage-label" aria-live="polite">{stageLabel}</div>}
+      {stageLabel && (
+        <div className="community-cards__stage-label" aria-live="polite">
+          {stageLabel}
+        </div>
+      )}
       <div
         className={`community-cards__container ${highlightPop ? 'community-cards__container--highlight-pop' : ''}`}
       >

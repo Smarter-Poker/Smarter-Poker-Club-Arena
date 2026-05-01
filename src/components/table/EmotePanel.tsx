@@ -9,7 +9,7 @@
  * - Cooldown between emotes
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import './EmotePanel.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -79,6 +79,16 @@ export function EmotePanel({
   const [lastEmoteTime, setLastEmoteTime] = useState(0);
   const [animatingEmote, setAnimatingEmote] = useState<string | null>(null);
   const [selectedEmote, setSelectedEmote] = useState<string | null>(null);
+  // CA-11 BUG FIX: animTimerRef tracks the 500ms animation-clear timer.
+  // Previously fire-and-forget; on rapid panel close/unmount the timer fired
+  // setAnimatingEmote(null) / setSelectedEmote(null) on unmounted component.
+  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (animTimerRef.current) clearTimeout(animTimerRef.current);
+    };
+  }, []);
 
   const emotes = customEmotes || DEFAULT_EMOTES;
 
@@ -112,8 +122,10 @@ export function EmotePanel({
       setLastEmoteTime(Date.now());
       onEmote(emoteId);
 
-      // Clear animations
-      setTimeout(() => {
+      // Clear animations — tracked so unmount can cancel
+      if (animTimerRef.current) clearTimeout(animTimerRef.current);
+      animTimerRef.current = setTimeout(() => {
+        animTimerRef.current = null;
         setAnimatingEmote(null);
         setSelectedEmote(null);
       }, 500);

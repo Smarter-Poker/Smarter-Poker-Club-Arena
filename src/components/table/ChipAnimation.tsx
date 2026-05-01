@@ -72,6 +72,10 @@ export default function ChipAnimation({
   const [scale, setScale] = useState(1);
   const [isVisible, setIsVisible] = useState(true);
   const animRef = useRef<number>(0);
+  // CA-12 BUG FIX: the 100ms hide-delay setTimeout after the rAF completes was
+  // fire-and-forget. If the parent unmounts ChipAnimation during this window,
+  // setIsVisible(false) fires on an unmounted component.
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let startTime: number | null = null;
@@ -111,7 +115,8 @@ export default function ChipAnimation({
         animRef.current = requestAnimationFrame(run);
       } else {
         // Finished — brief pause then hide
-        setTimeout(() => {
+        hideTimerRef.current = setTimeout(() => {
+          hideTimerRef.current = null;
           setIsVisible(false);
           onComplete?.();
         }, 100);
@@ -122,6 +127,7 @@ export default function ChipAnimation({
 
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
   }, [from, to, duration, delay, onComplete, useArc, arcHeight]);
 

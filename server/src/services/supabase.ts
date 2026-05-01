@@ -484,9 +484,15 @@ export async function logRakeCollection(
   if (rakeErr) console.warn(`[DB] Failed to log rake for hand #${handNumber}:`, rakeErr.message);
 
   // Credit rake to the correct entity wallet:
-  // - Club NOT in a union → credit to CLUB wallet (club_wallets or clubs.chip_pool)
-  // - Club IN a union → credit to UNION wallet (union_wallets.chip_balance)
+  // - Club NOT in a union → credit to CLUB wallet (clubs.chip_pool)
+  // - Club IN a union → credit to UNION wallet (union_wallets.rake_wallet)
   // NEVER goes to a player's personal wallet.
+  //
+  // Round 42 fix: ALWAYS update club_wallets accumulators (period + lifetime
+  // rake/BBJ counters + audit transaction row) regardless of standalone vs
+  // union, because club_wallets is the canonical audit / dashboard counter.
+  // Pre-fix, club_wallets stayed at zero for every active club (verified
+  // live: Shark Club had $5,020 of 24h rake but club_wallets read $0).
   try {
     const { data: club, error: clubErr } = await supabase
       .from('clubs')
@@ -499,6 +505,24 @@ export async function logRakeCollection(
       return;
     }
     if (!club) return;
+
+    // Round 42: update club_wallets accumulators + audit ledger BEFORE the
+    // entity-specific credit (union or chip_pool). Independent of where the
+    // chips actually settle — this is the rake-collected counter.
+    {
+      const { error: cwErr } = await supabase.rpc('credit_club_wallet_rake', {
+        p_club_id: clubId,
+        p_rake: rakeAmount,
+        p_bbj: 0,
+        p_hand_number: handNumber,
+      });
+      if (cwErr) {
+        reportError(
+          new Error(`[logRakeCollection] club_wallets credit failed: ${cwErr.message}`),
+          'logRakeCollection.club_wallets_credit_failed'
+        );
+      }
+    }
 
     if (club.union_id) {
       // Club is in a union — ALL rake held by union wallet until weekly settlement

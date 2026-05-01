@@ -293,20 +293,54 @@ export class RakebackSettlerService {
       );
     }
 
-    // 3. Upsert into rakeback_periods (combine with any existing period-row)
+    // 3. Upsert into rakeback_periods. Round 45 RE-RUN fix: recompute the
+    // FULL period total from the actual canonical rake_records rather than
+    // INCREMENTING the existing row's rake_generated. The old incremental
+    // logic double-counted on every engine restart because the settler's
+    // 7-day fallback window re-processed already-credited records.
+    //
+    // Verified live before fix: top user had rake_generated=$4002 vs actual
+    // share-from-rake_records of $1048 (4× over-credited from ~7 restarts).
+    //
+    // The new logic SETs rake_generated to the period total derived from
+    // rake_records, so re-running over the same window converges to the
+    // correct value rather than diverging.
     let upserts = 0;
     let failures = 0;
     for (const bucket of buckets.values()) {
-      // Read existing period row for this user/club/week
+      // Existing row (mostly for status check — paid rows are immutable)
       const { data: existing } = await supabase
         .from('rakeback_periods')
-        .select('id, rake_generated, status')
+        .select('id, status')
         .eq('user_id', bucket.user_id)
         .eq('club_id', bucket.club_id)
         .eq('period_start', bucket.period_start)
         .maybeSingle();
 
-      const totalRake = (existing?.rake_generated ?? 0) + bucket.rake_generated;
+      // Recompute the canonical period total from rake_records.
+      // We sum equal-shares for this (user, club) within the period window.
+      const periodEndDate = new Date(bucket.period_end + 'T23:59:59.999Z');
+      const periodStartDate = new Date(bucket.period_start + 'T00:00:00.000Z');
+      const { data: periodRows } = await supabase
+        .from('rake_records')
+        .select('rake_amount, player_contributions')
+        .eq('club_id', bucket.club_id)
+        .gte('created_at', periodStartDate.toISOString())
+        .lte('created_at', periodEndDate.toISOString())
+        .gt('rake_amount', 0)
+        .not('player_contributions', 'is', null)
+        .limit(50000);
+
+      let totalRake = 0;
+      for (const r of (periodRows as RakeRecordRow[] | null) ?? []) {
+        if (!r.player_contributions) continue;
+        const dealt = Object.entries(r.player_contributions).filter(([, a]) => Number(a) > 0);
+        if (dealt.length === 0) continue;
+        if (dealt.some(([uid]) => uid === bucket.user_id)) {
+          totalRake += Math.round((Number(r.rake_amount) / dealt.length) * 100) / 100;
+        }
+      }
+      totalRake = Math.round(totalRake * 100) / 100;
       const tier = tierFor(totalRake);
       const rakebackEarned = Math.round(totalRake * tier.rate * 100) / 100;
 

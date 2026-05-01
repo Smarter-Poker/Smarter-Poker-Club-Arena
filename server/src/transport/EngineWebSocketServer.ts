@@ -35,6 +35,8 @@ import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
 import { supabase } from '../services/supabase.js';
 import type { TableStateHub, HubSubscriber } from './TableStateHub.js';
+// Round 70: blacklist gate + Round 67/190: connection audit log both use
+// the supabase client imported above. No additional import needed.
 import { parseTableIdFromPath, extractBearerToken } from './wsHelpers.js';
 
 // Re-export helpers so existing imports keep working. Tests pull them from
@@ -51,10 +53,26 @@ const MAX_INBOUND_MESSAGE_BYTES = 4 * 1024;
 
 // Close codes (must be in the 4000–4999 application-defined range per RFC 6455)
 export const CLOSE_AUTH_FAILED = 4401;
+export const CLOSE_BANNED = 4403; // Round 70: banned by club / union blacklist
 export const CLOSE_TABLE_NOT_FOUND = 4404;
 export const CLOSE_RATE_LIMITED = 4429;
 export const CLOSE_SERVER_ERROR = 4500;
 export const CLOSE_BAD_REQUEST = 4400;
+
+// Round 70 + 67/190: extract real client IP from x-forwarded-for chain.
+// Caddy sits in front of the engine, so socket.remoteAddress is always
+// 127.0.0.1. The forwarded header carries the real chain.
+function extractClientIp(req: IncomingMessage): string | null {
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.length > 0) {
+    return fwd.split(',')[0]?.trim() ?? null;
+  }
+  if (Array.isArray(fwd) && fwd.length > 0) {
+    return String(fwd[0]).split(',')[0]?.trim() ?? null;
+  }
+  const sockAddr = (req.socket as unknown as { remoteAddress?: string }).remoteAddress;
+  return sockAddr ?? null;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,9 +159,13 @@ export class EngineWebSocketServer {
         return;
       }
 
+      // Round 67/190: capture client IP from x-forwarded-for chain (Caddy
+      // proxies upstream so socket.remoteAddress is always 127.0.0.1).
+      const clientIp = extractClientIp(req);
+
       // Finish the handshake asynchronously after auth + table check pass.
       this.verifyToken(token)
-        .then((auth) => {
+        .then(async (auth) => {
           if (!auth) {
             // Pre-handshake failure — cannot use WS close codes yet.
             // Return 401 by writing a short HTTP/1.1 response. Browsers
@@ -162,6 +184,30 @@ export class EngineWebSocketServer {
             socket.destroy();
             return;
           }
+
+          // Round 70: blacklist enforcement at WS upgrade. Banned users can't
+          // even open a connection to the table, so they can't see other
+          // players' actions / chat / etc. Belt-and-suspenders relative to
+          // the buyin gate at /api/club-arena/buyin.
+          try {
+            const banned = await this.isBannedFromTable(tableId, auth.userId);
+            if (banned) {
+              socket.write(
+                'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+              );
+              socket.destroy();
+              return;
+            }
+          } catch {
+            // Belt-and-suspenders: never reject legit connections on a
+            // blacklist-check error. Log and proceed.
+          }
+
+          // Round 67/190: log connection IP to action_audit_logs so the
+          // multi-account detector has data on real player traffic. Bots
+          // generate no audit log entries; this gap meant the detector was
+          // blind. Fire-and-forget — never blocks the upgrade.
+          this.logConnectionAudit(auth.userId, tableId, clientIp);
 
           this.wss.handleUpgrade(req, socket, head, (ws) => {
             this.onUpgraded(ws, req, auth.userId, tableId);
@@ -202,6 +248,66 @@ export class EngineWebSocketServer {
   // Metrics
   connectionCount(): number {
     return this.connections.size;
+  }
+
+  // ─── Round 70: blacklist gate ───────────────────────────────────────────
+  /**
+   * Check if `userId` is banned from `tableId`'s club (or its union).
+   * Returns true if an active ban row exists. Cached briefly so repeated
+   * reconnects from the same banned user don't hammer the DB.
+   */
+  private async isBannedFromTable(tableId: string, userId: string): Promise<boolean> {
+    // Resolve the table's club + union (single query, no caching here — table
+    // membership in a club is stable for the lifetime of the table).
+    const { data: tableRow } = await supabase
+      .from('tables')
+      .select('club_id')
+      .eq('id', tableId)
+      .maybeSingle();
+    if (!tableRow?.club_id) return false;
+
+    const { data: clubRow } = await supabase
+      .from('clubs')
+      .select('union_id')
+      .eq('id', tableRow.club_id)
+      .maybeSingle();
+
+    const nowIso = new Date().toISOString();
+    let q = supabase
+      .from('blacklists')
+      .select('id')
+      .eq('user_id', userId)
+      .or('expires_at.is.null,expires_at.gt.' + nowIso);
+
+    const orParts = [`club_id.eq.${tableRow.club_id}`];
+    if (clubRow?.union_id) orParts.push(`union_id.eq.${clubRow.union_id}`);
+    q = q.or(orParts.join(','));
+
+    const { data: bans } = await q.limit(1);
+    return !!(bans && bans.length > 0);
+  }
+
+  // ─── Round 67/190: per-connection audit log ─────────────────────────────
+  /**
+   * Fire-and-forget: write a row to action_audit_logs so the multi-account
+   * IP detector has a data source for real engine traffic (the engine path
+   * that bypasses /api/club-arena/* routes which is where auditLogger.js
+   * normally fires).
+   */
+  private logConnectionAudit(userId: string, tableId: string, ip: string | null): void {
+    void supabase
+      .from('action_audit_logs')
+      .insert({
+        action_type: 'engine_ws_connect',
+        user_id: userId,
+        ip_address: ip ?? 'unknown',
+        details: { table_id: tableId },
+      })
+      .then(({ error }) => {
+        if (error && error.code !== '23505' /* dup */) {
+          console.warn('[EngineWS] audit log failed:', error.message);
+        }
+      });
   }
 
   // ─── Upgrade aftermath ─────────────────────────────────────────────────────

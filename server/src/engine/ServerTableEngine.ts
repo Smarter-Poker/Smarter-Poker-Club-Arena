@@ -1356,6 +1356,12 @@ export class ServerTableEngine {
           // Round 57: clear DisconnectEngine state so we don't leak the
           // user's FSM entry into snapshot.disconnect_states forever.
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          // Round 64: same pattern for TimeBankEngine — playerBanks Map leaks
+          // ghost entries otherwise. Cancels any pending timebank timer too.
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          // Round 66: clear auto-straddle enrollment so the Set doesn't keep
+          // stale entries (and a returning player's preference is fresh).
+          this.straddleEngine.removePlayer(this.tableId, userId);
         })
         .catch((err) => {
           console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
@@ -1363,6 +1369,8 @@ export class ServerTableEngine {
           markSeatAsLeft(this.tableId, userId, player.seat_number);
           // Round 57: still unregister even on the fallback path.
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.straddleEngine.removePlayer(this.tableId, userId);
         });
 
       return { success: true, immediate: true };
@@ -3088,14 +3096,23 @@ export class ServerTableEngine {
         );
         this.currentHandWinnerIds = [];
 
-        // Rabbit Hunt: Broadcast captured remaining deck as a separate event
-        // so clients can offer Rabbit Hunt reveal with real cards
-        if (this.currentHandRabbitCards.length > 0) {
+        // Rabbit Hunt: Broadcast captured remaining deck ONLY when the hand
+        // ended before the river was dealt. If the board already had all 5
+        // cards revealed (full showdown), there's nothing to "see" — the
+        // event would just confuse the UI by offering a paid reveal of cards
+        // the player already saw. Round 65: gate on board.length < 5.
+        const board = this.handController?.getState()?.communityCards ?? [];
+        const handReachedRiver = board.length >= 5;
+        if (this.currentHandRabbitCards.length > 0 && !handReachedRiver) {
           this.hub?.emitEvent(this.tableId, {
             type: 'rabbit_hunt_available',
             table_id: this.tableId,
             hand_number: this.handCount,
             rabbit_cards: this.currentHandRabbitCards,
+            // Round 65: include current board length so client can slice the
+            // right number of additional cards (e.g. flop-fold → show turn+river,
+            // turn-fold → show river only, preflop-fold → show full 5).
+            current_board_length: board.length,
           });
         }
         break;
@@ -4337,6 +4354,8 @@ export class ServerTableEngine {
           // Round 57: clear FSM tracking so the horse doesn't leave a ghost
           // entry in disconnect_states.
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
+          // Round 64: same for TimeBankEngine.
+          this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
           this.horseRebuys.delete(horse.user_id);
           console.log(
             `[ServerTableEngine:${this.tableId}] Stop-Loss: Horse ${horse.username} lost 3 buy-ins and has been removed.`
@@ -4361,6 +4380,8 @@ export class ServerTableEngine {
           await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
           // Round 57: clear FSM tracking on insufficient-funds leave too.
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
+          // Round 64: same for TimeBankEngine.
+          this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
           this.horseRebuys.delete(horse.user_id);
           console.log(
             `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left — insufficient funds`
@@ -4403,6 +4424,8 @@ export class ServerTableEngine {
         await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
         // Round 57: clear FSM tracking on profit-target cashout too.
         this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
+        // Round 64: same for TimeBankEngine.
+        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
         this.horseRebuys.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Bankroll Management: Horse ${horse.username} hit profit target (${Math.floor(horse.stack)} chips) and cashed out before posting the Big Blind.`
@@ -4425,12 +4448,16 @@ export class ServerTableEngine {
       // we use that to unregister DisconnectEngine tracking so player states
       // don't leak. Without this every leaver leaves a ghost FSM entry that
       // persists in hand_state_snapshots.disconnect_states forever.
+      // Round 64: extended to also call timeBankEngine.removePlayer so the
+      // playerBanks Map sheds its entry too — same architectural fix.
       const cashedOutIds = await processLeavePending(
         this.tableId,
         this.tableInfo?.club_id || ''
       );
       for (const userId of cashedOutIds) {
         this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+        this.timeBankEngine.removePlayer(this.tableId, userId);
+        this.straddleEngine.removePlayer(this.tableId, userId);
       }
     }
 

@@ -97,6 +97,18 @@ export class StraddleEngine {
   }
 
   /**
+   * Round 66: Remove a player's straddle enrollment on leave so the Set
+   * doesn't accumulate stale entries — and so the player isn't silently
+   * still-enrolled if they rejoin later. Mirrors DisconnectEngine.unregister
+   * + TimeBankEngine.removePlayer cleanup pattern.
+   */
+  removePlayer(tableId: string, playerId: string): void {
+    const state = this.tableStates.get(tableId);
+    if (!state) return;
+    state.enrolledPlayers.delete(playerId);
+  }
+
+  /**
    * Process straddles at the start of a new hand.
    * Called by ServerTableEngine after blinds are posted, before preflop action.
    */

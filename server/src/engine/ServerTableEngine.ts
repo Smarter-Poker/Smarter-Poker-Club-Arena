@@ -1362,6 +1362,8 @@ export class ServerTableEngine {
           // Round 66: clear auto-straddle enrollment so the Set doesn't keep
           // stale entries (and a returning player's preference is fresh).
           this.straddleEngine.removePlayer(this.tableId, userId);
+          // R66 sweep: PreActionEngine FSM + queue cleanup.
+          this.preActionEngine.removePlayer(this.tableId, userId);
         })
         .catch((err) => {
           console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
@@ -1371,6 +1373,7 @@ export class ServerTableEngine {
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
           this.timeBankEngine.removePlayer(this.tableId, userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
+          this.preActionEngine.removePlayer(this.tableId, userId);
         });
 
       return { success: true, immediate: true };
@@ -4356,6 +4359,9 @@ export class ServerTableEngine {
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
           // Round 64: same for TimeBankEngine.
           this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+          // Round 66: same for StraddleEngine — symmetric cleanup.
+          this.straddleEngine.removePlayer(this.tableId, horse.user_id);
+          this.preActionEngine.removePlayer(this.tableId, horse.user_id);
           this.horseRebuys.delete(horse.user_id);
           console.log(
             `[ServerTableEngine:${this.tableId}] Stop-Loss: Horse ${horse.username} lost 3 buy-ins and has been removed.`
@@ -4382,6 +4388,9 @@ export class ServerTableEngine {
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
           // Round 64: same for TimeBankEngine.
           this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+          // Round 66: same for StraddleEngine.
+          this.straddleEngine.removePlayer(this.tableId, horse.user_id);
+          this.preActionEngine.removePlayer(this.tableId, horse.user_id);
           this.horseRebuys.delete(horse.user_id);
           console.log(
             `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left — insufficient funds`
@@ -4426,6 +4435,9 @@ export class ServerTableEngine {
         this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
         // Round 64: same for TimeBankEngine.
         this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+        // Round 66: same for StraddleEngine.
+        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
+        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
         this.horseRebuys.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Bankroll Management: Horse ${horse.username} hit profit target (${Math.floor(horse.stack)} chips) and cashed out before posting the Big Blind.`
@@ -4458,6 +4470,7 @@ export class ServerTableEngine {
         this.disconnectEngine.unregisterPlayer(this.tableId, userId);
         this.timeBankEngine.removePlayer(this.tableId, userId);
         this.straddleEngine.removePlayer(this.tableId, userId);
+        this.preActionEngine.removePlayer(this.tableId, userId);
       }
     }
 

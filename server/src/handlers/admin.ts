@@ -118,7 +118,11 @@ export async function handleAdminKick(
     if (mErr || !membership) {
       return sendJSON(res, 403, { success: false, error: 'Not a club member' });
     }
-    if (!['owner', 'admin', 'manager'].includes(String(membership.role))) {
+    // Round 72: production roles are owner / admin / super_agent / agent /
+    // member / player. 'manager' is in the enum but unused in production —
+    // dropped from this check. Admin tier = owner OR admin OR super_agent
+    // (matches waitlist / club-analytics / lobby-ordering / etc).
+    if (!['owner', 'admin', 'super_agent'].includes(String(membership.role))) {
       return sendJSON(res, 403, { success: false, error: 'Admin role required' });
     }
 

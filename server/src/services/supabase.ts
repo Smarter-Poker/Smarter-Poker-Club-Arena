@@ -490,16 +490,12 @@ export async function logRakeCollection(
 ): Promise<void> {
   if (rakeAmount <= 0) return;
 
-  // Log to rake_history (hand-level rake record — always)
-  const { error: rakeErr } = await supabase.from('rake_history').insert({
-    table_id: tableId,
-    club_id: clubId,
-    hand_number: handNumber,
-    rake_amount: rakeAmount,
-    pot_amount: potAmount,
-    collected_at: new Date().toISOString(),
-  });
-  if (rakeErr) console.warn(`[DB] Failed to log rake for hand #${handNumber}:`, rakeErr.message);
+  // Phase J: rake_history was a write-only legacy table. Verified no readers
+  // anywhere in the codebase (engine, workers, World Hub, frontend). The
+  // canonical hand-level rake ledger is rake_records (settler input + R73
+  // hand_id linkage). rake_history had grown to 1.37M rows / ~295 MB at
+  // ~1,128 rows/day with zero queriers. Insert removed — table will be
+  // dropped in a follow-up cleanup migration.
 
   // Credit rake to the correct entity wallet:
   // - Club NOT in a union → credit to CLUB wallet (clubs.chip_pool)

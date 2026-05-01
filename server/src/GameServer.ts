@@ -1750,9 +1750,13 @@ export class TournamentManager {
                 typeof seat.stack === 'number' && !isNaN(seat.stack) && seat.stack >= 0
                   ? seat.stack
                   : 0;
+              // Math.floor — tournament_players.chips is INTEGER. table_seats.stack
+              // is numeric(15,2) so a fractional stack from cash-style math would
+              // otherwise reach PostgREST as a decimal and fail the integer cast,
+              // contributing to the postgres log flood. Floor at the boundary.
               await supabase
                 .from('tournament_players')
-                .update({ chips: stackValue })
+                .update({ chips: Math.floor(stackValue) })
                 .eq('tournament_id', this.tournamentId)
                 .eq('user_id', seat.user_id)
                 .eq('status', 'playing');

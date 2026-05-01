@@ -193,8 +193,20 @@ export class RakebackSettlerService {
     // commission_rate lookup, ROUND, audit insert, and accumulator updates atomically.
     let agentCreditsAttempted = 0;
     let agentCreditsFailed = 0;
+    let agentCreditsSkippedNoHand = 0;
     for (const row of rows as RakeRecordRow[]) {
       if (!row.player_contributions) continue;
+      // Round 73: skip pre-R38-backfill rake_records that have no hand_id —
+      // they can't be linked back to a hand for audit, and the settler used
+      // to reprocess them on every restart (lastSettledAt is in-memory),
+      // emitting NULL-source-id agent_commission rows on every cycle. Skipping
+      // is correct: any commission for these legacy rows was already created
+      // before the bug surfaced; reprocessing only creates duplicates.
+      const handId = (row as { hand_id?: string | null }).hand_id;
+      if (!handId) {
+        agentCreditsSkippedNoHand++;
+        continue;
+      }
       const dealtIn = Object.entries(row.player_contributions).filter(([, amt]) => Number(amt) > 0);
       if (dealtIn.length === 0) continue;
       const equalShare = Math.round((Number(row.rake_amount) / dealtIn.length) * 100) / 100;
@@ -209,7 +221,7 @@ export class RakebackSettlerService {
           // commission_out audit row back to the originating hand for
           // ledger reconciliation. row.hand_id is the FK populated in
           // Round 38 (rake_records.hand_id → hand_history.id).
-          p_source_id: (row as any).hand_id ?? null,
+          p_source_id: handId,
           p_notes: `RakebackSettler hand at ${row.created_at}`,
         });
         if (rpcErr) {
@@ -217,9 +229,13 @@ export class RakebackSettlerService {
         }
       }
     }
-    if (agentCreditsAttempted > 0) {
+    if (agentCreditsAttempted > 0 || agentCreditsSkippedNoHand > 0) {
       console.log(
-        `[RakebackSettler] Agent-commission credits: ${agentCreditsAttempted - agentCreditsFailed}/${agentCreditsAttempted} OK (RPC silently skips non-agent players)`
+        `[RakebackSettler] Agent-commission credits: ${agentCreditsAttempted - agentCreditsFailed}/${agentCreditsAttempted} OK` +
+          (agentCreditsSkippedNoHand > 0
+            ? `, ${agentCreditsSkippedNoHand} skipped (no hand_id — pre-R38 legacy rows)`
+            : '') +
+          ' (RPC silently skips non-agent players)'
       );
     }
 

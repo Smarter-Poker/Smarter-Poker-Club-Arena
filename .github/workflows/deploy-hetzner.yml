@@ -134,14 +134,21 @@ jobs:
           exit 1
 
       - name: Verify deployed SHA matches expectation
-        if: ${{ github.event.inputs.ref_sha != '' }}
+        # Task #149: skip when ref_sha is empty OR one of the "deploy
+        # latest" placeholders Cowork sometimes sends (HEAD / main /
+        # latest). The deploy script already pulls main, so a placeholder
+        # is functionally equivalent to "no specific commit pinned" and
+        # shouldn't fail the run.
+        if: ${{ github.event.inputs.ref_sha != '' && github.event.inputs.ref_sha != 'HEAD' && github.event.inputs.ref_sha != 'main' && github.event.inputs.ref_sha != 'latest' }}
         run: |
           AFTER_SHA=$(ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
             "cd $REPO_DIR && git rev-parse HEAD")
           echo "Post-deploy commit on host: $AFTER_SHA"
           EXPECTED="${{ github.event.inputs.ref_sha }}"
-          # Accept full or short SHA prefix match
-          if [[ "$AFTER_SHA" == "$EXPECTED"* ]] || [[ "$EXPECTED" == "$AFTER_SHA"* ]]; then
+          # Accept full or short SHA prefix match (case-insensitive)
+          AFTER_LC=$(echo "$AFTER_SHA" | tr 'A-Z' 'a-z')
+          EXPECTED_LC=$(echo "$EXPECTED" | tr 'A-Z' 'a-z')
+          if [[ "$AFTER_LC" == "$EXPECTED_LC"* ]] || [[ "$EXPECTED_LC" == "$AFTER_LC"* ]]; then
             echo "✅ Deployed SHA matches expected ($EXPECTED)"
           else
             echo "::error::Deployed SHA ($AFTER_SHA) does NOT match expected ($EXPECTED)"

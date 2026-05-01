@@ -1371,6 +1371,24 @@ export default function TablePage({
     },
     []
   );
+  // CA-19 BUG FIX: seatDealTimerRef tracks the 700ms setIsSeatDealing(false) timer.
+  const seatDealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // CA-20 BUG FIX: handRevealTimerRef tracks the 6s setShowHandRevealModal(false) timer.
+  const handRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // CA-21 BUG FIX: bbjTimerRef tracks the 3s BBJ celebration delay timer.
+  const bbjTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // CA-22 BUG FIX: handCompleteTimerRef tracks the 3s HAND_COMPLETE table-reset timer.
+  const handCompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Unmount guard for all four CA-19..CA-22 animation timers.
+  useEffect(() => {
+    return () => {
+      if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
+      if (handRevealTimerRef.current) clearTimeout(handRevealTimerRef.current);
+      if (bbjTimerRef.current) clearTimeout(bbjTimerRef.current);
+      if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
+    };
+  }, []);
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
@@ -2407,7 +2425,10 @@ export default function TablePage({
         }
 
         // Delay celebration overlay by 3s so showdown cards + winner display are visible first
-        setTimeout(() => {
+        // CA-21: track so unmount can cancel — prevents setBbjCelebrationData/setShowBBJ on dead page
+        if (bbjTimerRef.current) clearTimeout(bbjTimerRef.current);
+        bbjTimerRef.current = setTimeout(() => {
+          bbjTimerRef.current = null;
           // Resolve usernames from current player list at time of display
           const resolveUsername = (uid: string): string => {
             const player = tableState.players.find((p) => p && p.id === uid);
@@ -3897,7 +3918,12 @@ export default function TablePage({
         setDealAnimationKey((k) => k + 1);
         // Bible V8 §10.1: per-seat card slide-in animation
         setIsSeatDealing(true);
-        setTimeout(() => setIsSeatDealing(false), 700);
+        // CA-19: track so unmount can cancel — prevents setIsSeatDealing on dead page
+        if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
+        seatDealTimerRef.current = setTimeout(() => {
+          seatDealTimerRef.current = null;
+          setIsSeatDealing(false);
+        }, 700);
         // Bible V8 §5.3: new hand indicator + card dealing sound
         if (soundService.isEnabled()) {
           soundService.playNewHand();
@@ -4016,7 +4042,10 @@ export default function TablePage({
         // Bible V8 §5.1 — winner display persists 2.5–3s before the table
         // resets to idle. Clear community board, pot, side pots and the
         // winner highlight after that delay so the next hand starts crisp.
-        window.setTimeout(() => {
+        // CA-22: track so unmount can cancel — prevents setTableState on dead page
+        if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
+        handCompleteTimerRef.current = window.setTimeout(() => {
+          handCompleteTimerRef.current = null;
           setTableState((prev) => ({
             ...prev,
             communityCards: [],
@@ -4136,7 +4165,12 @@ export default function TablePage({
           setHandRevealHandId(`${tableStateRef.current.handNumber || Date.now()}`);
           setShowHandRevealModal(true);
           // Auto-close after 6s if no action taken
-          setTimeout(() => setShowHandRevealModal(false), 6000);
+          // CA-20: track so unmount can cancel — prevents setShowHandRevealModal on dead page
+          if (handRevealTimerRef.current) clearTimeout(handRevealTimerRef.current);
+          handRevealTimerRef.current = setTimeout(() => {
+            handRevealTimerRef.current = null;
+            setShowHandRevealModal(false);
+          }, 6000);
         }
 
         if (winnerIds.length > 0 && winnerIds.includes(userId)) {

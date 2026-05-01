@@ -28,7 +28,7 @@ import { handleRit } from './handlers/rit.js';
 import { handleInsurance, handleInsurancePreview } from './handlers/insurance.js';
 import { handleShowhand } from './handlers/showhand.js';
 import { handleDiscard } from './handlers/discard.js';
-import { handleAdminPause, handleAdminResume } from './handlers/admin.js';
+import { handleAdminPause, handleAdminResume, handleAdminKick } from './handlers/admin.js';
 import { handlePostBB } from './handlers/postbb.js';
 import { handleGetActions, handleGetState } from './handlers/state.js';
 
@@ -112,6 +112,9 @@ export function createRouter(
       return handleAdminPause(req, res, { gameServer });
     if (method === 'POST' && url === '/admin/resume')
       return handleAdminResume(req, res, { gameServer });
+    // Round 68: admin kick — moderation can remove a player from a table
+    if (method === 'POST' && url === '/admin/kick')
+      return handleAdminKick(req, res, { gameServer });
     if (method === 'POST' && url === '/post-bb') return handlePostBB(req, res, { gameServer });
 
     if (method === 'GET' && url?.startsWith('/insurance-preview')) {

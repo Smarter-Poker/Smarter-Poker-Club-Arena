@@ -189,6 +189,12 @@ export function HandReplayPlayer({
   const [visibleSeats, setVisibleSeats] = useState<Set<number>>(new Set());
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // HRP-1 BUG FIX: store onComplete in a ref so executeStep's dep array is
+  // [steps] only. If onComplete is an inline arrow in the parent, its identity
+  // changes on every parent render, which forced executeStep to recreate →
+  // play-loop useEffect rescheduled the timer → double step execution.
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   // Generate steps
   const steps = useMemo(() => generateReplaySteps(hand), [hand]);
@@ -213,7 +219,7 @@ export function HandReplayPlayer({
     (stepIndex: number) => {
       if (stepIndex >= steps.length) {
         setState('COMPLETE');
-        onComplete?.();
+        onCompleteRef.current?.();
         return;
       }
 
@@ -275,7 +281,7 @@ export function HandReplayPlayer({
 
       setCurrentStep(stepIndex + 1);
     },
-    [steps, onComplete]
+    [steps] // onComplete via ref — removing it from deps prevents timer reschedule storms
   );
 
   // Play loop
@@ -506,11 +512,13 @@ export function HandReplayPlayer({
 
         {/* X6.2d: Street Navigation Buttons */}
         <div className="replay-player__streets">
-          {streetBoundaries.map((street) => {
+          {streetBoundaries.map((street, idx) => {
+            // HRP-2 BUG FIX: use map idx directly instead of O(n) indexOf call
+            // (indexOf was called twice per element → O(n²) per render).
             const isCurrentStreet =
               currentStep >= street.stepIndex &&
-              (streetBoundaries.indexOf(street) === streetBoundaries.length - 1 ||
-                currentStep < streetBoundaries[streetBoundaries.indexOf(street) + 1].stepIndex);
+              (idx === streetBoundaries.length - 1 ||
+                currentStep < streetBoundaries[idx + 1].stepIndex);
             return (
               <button
                 key={street.label}

@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AgentService, type Agent } from '../../services/AgentService';
 import styles from './AgentTree.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -94,9 +94,21 @@ function TreeNode({
   index = 0,
 }: TreeNodeProps) {
   const [mounted, setMounted] = useState(false);
-
+  // AT-1 BUG FIX: track stagger timer so it cancels on unmount — prevents
+  // stale setState when the tree re-renders and this node's index changes.
+  const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    setTimeout(() => setMounted(true), index * 60);
+    if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+    mountTimerRef.current = setTimeout(() => {
+      mountTimerRef.current = null;
+      setMounted(true);
+    }, index * 60);
+    return () => {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+    };
   }, [index]);
 
   const hasChildren = node.children.length > 0;

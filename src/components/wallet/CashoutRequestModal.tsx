@@ -142,6 +142,18 @@ export default function CashoutRequestModal({
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
+  // CA-16 BUG FIX: autoCloseTimer had no unmount-guard useEffect. If the parent
+  // destroys the modal (route change) while the 2s post-success auto-close
+  // countdown is running, setSuccess(false)/onClose fire on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (autoCloseTimer.current) {
+        clearTimeout(autoCloseTimer.current);
+        autoCloseTimer.current = null;
+      }
+    };
+  }, []);
+
   // ── Focus Trap: trap focus inside modal when open ──
   const handleFocusTrap = useCallback(
     (e: KeyboardEvent) => {

@@ -586,78 +586,18 @@ export async function postBBToEnter(tableId: string): Promise<ActionResult> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WEBSOCKET CONNECTIVITY — Real-time table state sync
+// WEBSOCKET CONNECTIVITY
+// -----------------------------------------------------------------------------
+// Round 56 (2026-05-01): the legacy `connectTableWebSocket` /
+// ReconnectingWebSocket / DeltaSyncService trio was removed. It was an old
+// duplicate of the engine WS wiring that:
+//   • didn't send the `bearer` Sec-WebSocket-Protocol auth header,
+//   • never replied to server PING (server would close after 60s),
+//   • used non-existent message types (REQUEST_SNAPSHOT, nested RESYNC).
+// Nothing imported it externally (verified via grep), so deleting it removes
+// a footgun without behaviour change. The production reconnect path lives in
+// `services/EngineStateClient.ts` driven by `hooks/useEngineTableState.ts`.
 // ═══════════════════════════════════════════════════════════════════════════════
-
-import { ReconnectingWebSocket, type WSMessage } from './ReconnectingWebSocket';
-import { DeltaSyncService, type DeltaMessage } from './DeltaSyncService';
-
-let activeWS: ReconnectingWebSocket | null = null;
-let activeDeltaSync: DeltaSyncService<Record<string, unknown>> | null = null;
-
-/**
- * Connect WebSocket to a table for real-time state updates.
- * Uses ReconnectingWebSocket with exponential backoff.
- */
-export function connectTableWebSocket(
-  tableId: string,
-  onStateUpdate: (state: Record<string, unknown>, changedKeys: string[]) => void
-): ReconnectingWebSocket {
-  // Disconnect any existing connection
-  disconnectTableWebSocket();
-
-  const wsUrl = GAME_SERVER_URL.replace(/^http/, 'ws') + `/ws/table/${tableId}`;
-
-  // Create delta sync service for incremental state updates
-  activeDeltaSync = new DeltaSyncService<Record<string, unknown>>({});
-  activeDeltaSync.onChange(onStateUpdate);
-
-  // Create reconnecting WebSocket
-  activeWS = new ReconnectingWebSocket(wsUrl, {
-    maxRetries: 10,
-    initialDelay: 1000,
-    maxDelay: 30000,
-    heartbeatInterval: 30000,
-    resyncPayload: () => ({
-      type: 'RESYNC',
-      tableId,
-      lastVersion: activeDeltaSync?.getVersion() ?? 0,
-    }),
-  });
-
-  // Handle incoming messages through delta sync
-  activeWS.onMessage((msg: WSMessage) => {
-    if (msg.type === 'DELTA' || msg.type === 'SNAPSHOT') {
-      activeDeltaSync?.processMessage(msg as DeltaMessage);
-    }
-  });
-
-  // Request snapshot on version gap
-  activeDeltaSync.onSnapshotRequest(() => {
-    activeWS?.send({ type: 'REQUEST_SNAPSHOT', payload: { tableId } });
-  });
-
-  activeWS.connect();
-  return activeWS;
-}
-
-/**
- * Disconnect the active table WebSocket
- */
-export function disconnectTableWebSocket(): void {
-  if (activeWS) {
-    activeWS.disconnect();
-    activeWS = null;
-  }
-  activeDeltaSync = null;
-}
-
-/**
- * Get current WebSocket connection status
- */
-export function getWebSocketStatus(): string | null {
-  return activeWS?.getStatus() ?? null;
-}
 
 export default {
   submitAction,
@@ -675,7 +615,4 @@ export default {
   previewInsurance,
   showHand,
   submitDiscard, // FIX 120: Crazy Pineapple
-  connectTableWebSocket,
-  disconnectTableWebSocket,
-  getWebSocketStatus,
 };

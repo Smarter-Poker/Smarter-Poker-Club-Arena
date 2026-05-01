@@ -156,7 +156,12 @@ export async function syncTournamentChips(tableId: string, tournamentId: string)
 
   await Promise.allSettled(
     seats.map(async (seat) => {
-      const exact = Math.trunc(seat.stack * 100) / 100;
+      // Math.floor — tournament_players.chips is INTEGER. Previous version
+      // computed 2-decimal cents (e.g. 80511.97) which Postgres rejected at
+      // PostgREST cast time, flooding postgres logs with thousands of
+      // "invalid input syntax for type integer" errors per minute.
+      // Verified in Smarter-Poker-World-Hub/.agent/POSTGRES_INTEGER_CAST_FLOOD.md
+      const exact = Math.floor(seat.stack);
       await supabase
         .from('tournament_players')
         .update({ chips: exact })

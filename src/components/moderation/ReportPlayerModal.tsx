@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useToast } from '../common/Toast';
 import './ReportPlayerModal.css';
 
@@ -51,10 +51,27 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
   const [handId, setHandId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
-
+  const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (isOpen) setTimeout(() => setMounted(true), 50);
-    else setMounted(false);
+    if (isOpen) {
+      if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+      mountTimerRef.current = setTimeout(() => {
+        mountTimerRef.current = null;
+        setMounted(true);
+      }, 50);
+    } else {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+      setMounted(false);
+    }
+    return () => {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;

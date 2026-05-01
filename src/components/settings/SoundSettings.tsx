@@ -50,7 +50,9 @@ export const SoundSettings: React.FC<SoundSettingsProps> = ({ onChange }) => {
 
   useEffect(() => {
     setConfig(getSoundConfig());
-    setTimeout(() => setMounted(true), 50);
+    // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+    const _mountTimer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(_mountTimer);
   }, []);
 
   // Sync config to SoundService whenever it changes

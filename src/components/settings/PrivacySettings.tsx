@@ -39,7 +39,9 @@ export const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onChange }) =>
     } catch {
       /* ignore corrupt data */
     }
-    setTimeout(() => setMounted(true), 50);
+    // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+    const _mountTimer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(_mountTimer);
   }, []);
 
   const updateConfig = <K extends keyof PrivacyConfig>(key: K, value: PrivacyConfig[K]) => {

@@ -10,7 +10,7 @@
  * - Leave table option
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
 import './SitOutModal.css';
 
@@ -91,9 +91,29 @@ export function SitOutModal({
   }, [onLeaveTable, onClose]);
 
   const [mounted, setMounted] = useState(false);
+  // BUG FIX (SOM-1): track mount-animation timer so it cancels on unmount or
+  // on isOpen toggle — prevents stale setState on unmounted component.
+  const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (isOpen) setTimeout(() => setMounted(true), 50);
-    else setMounted(false);
+    if (isOpen) {
+      if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+      mountTimerRef.current = setTimeout(() => {
+        mountTimerRef.current = null;
+        setMounted(true);
+      }, 50);
+    } else {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+      setMounted(false);
+    }
+    return () => {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;

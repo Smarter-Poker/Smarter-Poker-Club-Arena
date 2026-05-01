@@ -435,7 +435,7 @@ export async function atomicCashout(
 /**
  * Process leave-pending players after hand completion
  */
-export async function processLeavePending(tableId: string, clubId: string): Promise<void> {
+export async function processLeavePending(tableId: string, clubId: string): Promise<string[]> {
   const { data: pendingSeats } = await supabase
     .from('table_seats')
     .select('user_id, stack, seat_number')
@@ -443,11 +443,13 @@ export async function processLeavePending(tableId: string, clubId: string): Prom
     .eq('leave_pending', true)
     .is('left_at', null);
 
-  if (!pendingSeats || pendingSeats.length === 0) return;
+  if (!pendingSeats || pendingSeats.length === 0) return [];
 
+  const cashedOut: string[] = [];
   for (const seat of pendingSeats) {
     // FIX 208: Use direct atomicCashout instead of RPC
     await atomicCashout(seat.user_id, tableId, seat.seat_number);
+    cashedOut.push(seat.user_id);
   }
 
   // Authoritative recount after all departures
@@ -461,6 +463,10 @@ export async function processLeavePending(tableId: string, clubId: string): Prom
     .from('tables')
     .update({ current_players: count || 0 })
     .eq('id', tableId);
+
+  // Round 57: callers use this list to unregister disconnect tracking for
+  // players who cashed out. Without this, DisconnectEngine.playerStates leaks.
+  return cashedOut;
 }
 
 /**

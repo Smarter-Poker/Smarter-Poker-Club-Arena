@@ -1353,11 +1353,16 @@ export class ServerTableEngine {
           console.log(
             `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
           );
+          // Round 57: clear DisconnectEngine state so we don't leak the
+          // user's FSM entry into snapshot.disconnect_states forever.
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
         })
         .catch((err) => {
           console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
           // Fallback: mark seat as left directly
           markSeatAsLeft(this.tableId, userId, player.seat_number);
+          // Round 57: still unregister even on the fallback path.
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
         });
 
       return { success: true, immediate: true };
@@ -4329,6 +4334,9 @@ export class ServerTableEngine {
         // Stop-Loss Bankroll logic: if they have rebought twice already (lost 3 buy-ins total), they leave
         if (currentRebuys >= 2) {
           await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+          // Round 57: clear FSM tracking so the horse doesn't leave a ghost
+          // entry in disconnect_states.
+          this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
           this.horseRebuys.delete(horse.user_id);
           console.log(
             `[ServerTableEngine:${this.tableId}] Stop-Loss: Horse ${horse.username} lost 3 buy-ins and has been removed.`
@@ -4351,6 +4359,8 @@ export class ServerTableEngine {
           );
         } else {
           await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+          // Round 57: clear FSM tracking on insufficient-funds leave too.
+          this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
           this.horseRebuys.delete(horse.user_id);
           console.log(
             `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left — insufficient funds`
@@ -4391,6 +4401,8 @@ export class ServerTableEngine {
 
       for (const horse of cashedOutHorses) {
         await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+        // Round 57: clear FSM tracking on profit-target cashout too.
+        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
         this.horseRebuys.delete(horse.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] Bankroll Management: Horse ${horse.username} hit profit target (${Math.floor(horse.stack)} chips) and cashed out before posting the Big Blind.`
@@ -4409,7 +4421,17 @@ export class ServerTableEngine {
 
     // 6. Process leave-pending players (cash games only)
     if (!this.isTournamentTable()) {
-      await processLeavePending(this.tableId, this.tableInfo?.club_id || '');
+      // Round 57: processLeavePending now returns the user_ids it cashed out;
+      // we use that to unregister DisconnectEngine tracking so player states
+      // don't leak. Without this every leaver leaves a ghost FSM entry that
+      // persists in hand_state_snapshots.disconnect_states forever.
+      const cashedOutIds = await processLeavePending(
+        this.tableId,
+        this.tableInfo?.club_id || ''
+      );
+      for (const userId of cashedOutIds) {
+        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+      }
     }
 
     // SETTLEMENT STEP 15: Unlock table — authoritative recount, ready for next hand

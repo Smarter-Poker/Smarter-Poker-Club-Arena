@@ -300,8 +300,18 @@ export function ShareHand({
 }: ShareHandProps) {
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [copied, setCopied] = useState(false);
+  // CA-2 BUG FIX: track the "Copied" dismiss timer so it can be cancelled on
+  // unmount — was calling setCopied on an already-unmounted component.
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeTab, setActiveTab] = useState<'link' | 'social' | 'embed'>('link');
   const [visibleSocial, setVisibleSocial] = useState<boolean[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      staggerTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   // Generate shareable URL
   const shareUrl = useMemo(() => {
@@ -327,7 +337,8 @@ export function ShareHand({
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      clearTimeout(copiedTimerRef.current!);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       reportError(error, 'ShareHand.Copy_failed');
     }

@@ -9,7 +9,7 @@
  * - All-time table stats
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
 import './LeaderboardPanel.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -82,9 +82,18 @@ interface PlayerRowProps {
 
 function PlayerRow({ player, currency, index = 0 }: PlayerRowProps) {
   const [mounted, setMounted] = useState(false);
-
+  // LP-2 BUG FIX: track stagger timer so it cancels on unmount — prevents
+  // stale setState when the panel closes mid-animation.
+  const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    setTimeout(() => setMounted(true), index * 50);
+    if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+    mountTimerRef.current = setTimeout(() => {
+      mountTimerRef.current = null;
+      setMounted(true);
+    }, index * 50);
+    return () => {
+      if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+    };
   }, [index]);
   const rankBadge = useMemo(() => {
     if (player.rank === 1) return '1st';
@@ -253,8 +262,15 @@ export function LeaderboardPanel({
 
               {/* Rest of the list */}
               <div className="leaderboard-panel__rows">
-                {players.slice(3).map((player) => (
-                  <PlayerRow key={player.playerId} player={player} currency={currency} />
+                {players.slice(3).map((player, idx) => (
+                  // LP-1 BUG FIX: pass index so stagger animation actually staggers
+                  // (previously index defaulted to 0 → all rows animated simultaneously)
+                  <PlayerRow
+                    key={player.playerId}
+                    player={player}
+                    currency={currency}
+                    index={idx}
+                  />
                 ))}
               </div>
             </div>

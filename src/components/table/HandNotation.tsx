@@ -9,7 +9,7 @@
  * - Download as text file
  */
 
-import React, { useMemo, useEffect, useCallback, useState } from 'react';
+import React, { useMemo, useEffect, useCallback, useState, useRef } from 'react';
 import './HandNotation.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -191,6 +191,15 @@ function generateNotation(hand: NotationHand, currency: string): string {
 export function HandNotation({ hand, onClose, currency = '' }: HandNotationProps) {
   const [copied, setCopied] = useState(false);
   const [contentVisible, setContentVisible] = useState(false);
+  // CA-1 BUG FIX: track the "Copied" dismiss timer so it can be cancelled on
+  // unmount — was calling setCopied on an already-unmounted component.
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
 
   // Generate notation text
   const notation = useMemo(() => generateNotation(hand, currency), [hand, currency]);
@@ -204,7 +213,8 @@ export function HandNotation({ hand, onClose, currency = '' }: HandNotationProps
     try {
       await navigator.clipboard.writeText(notation);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      clearTimeout(copiedTimerRef.current!);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       reportError(error, 'HandNotation.Copy_failed');
     }

@@ -339,6 +339,19 @@ export class PreActionEngine {
   // CLEANUP
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Round 64 follow-up: drop one player's queued pre-action + FSM on leave so
+   * neither the queue nor the FSM Map accumulates ghost entries. Mirrors
+   * DisconnectEngine.unregisterPlayer + TimeBankEngine.removePlayer cleanup.
+   * clearTable() runs at hand boundaries but only clears queuedActions, not
+   * playerFSMs — this is the per-player hook for that.
+   */
+  removePlayer(tableId: string, playerId: string): void {
+    const key = `${tableId}:${playerId}`;
+    this.queuedActions.delete(key);
+    this.playerFSMs.delete(key);
+  }
+
   dispose(tableId: string): void {
     this.clearTable(tableId);
     // Clean up FSMs for this table

@@ -333,6 +333,17 @@ const getStatusBadgeStyle = (status: string): React.CSSProperties => ({
 export default function TableOperationsPanel({ clubId }: Props) {
   const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // CA-24 BUG FIX (part 1): staggerTimersRef had no unmount-guard useEffect.
+  // Also, the expandedTable player stagger below was entirely untracked (bare
+  // forEach + setTimeout). Both patterns cause setState on unmounted component
+  // when the panel is closed while animations are in flight.
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
+    };
+  }, []);
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
   const [seatedPlayers, setSeatedPlayers] = useState<Record<string, SeatedPlayer[]>>({});
@@ -371,18 +382,24 @@ export default function TableOperationsPanel({ clubId }: Props) {
 
   useEffect(() => {
     if (expandedTable && seatedPlayers[expandedTable]) {
+      // CA-24 BUG FIX (part 2): these bare setTimeout calls were not tracked.
+      // Clear existing stagger timers first, then push new ones into the ref.
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
       setVisiblePlayers((prev) => ({
         ...prev,
         [expandedTable]: [],
       }));
-      seatedPlayers[expandedTable].forEach((_, i) => {
-        setTimeout(() => {
-          setVisiblePlayers((prev) => ({
-            ...prev,
-            [expandedTable]: [...(prev[expandedTable] || []), true],
-          }));
-        }, i * 50);
-      });
+      staggerTimersRef.current.push(
+        ...seatedPlayers[expandedTable].map((_, i) =>
+          setTimeout(() => {
+            setVisiblePlayers((prev) => ({
+              ...prev,
+              [expandedTable]: [...(prev[expandedTable] || []), true],
+            }));
+          }, i * 50)
+        )
+      );
     }
   }, [expandedTable, seatedPlayers]);
 

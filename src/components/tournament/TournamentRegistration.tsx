@@ -38,6 +38,17 @@ export function TournamentRegistration({
   const isMounted = useIsMounted();
   const toast = useToast();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // CA-23 BUG FIX: staggerTimersRef was cleared between re-runs but had no
+  // unmount-guard. If the component unmounts mid-stagger (user leaves tournament
+  // lobby), all pending setVisibleActive/setVisibleEliminated calls fire on an
+  // unmounted component.
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
+    };
+  }, []);
   const [players, setPlayers] = useState<RegisteredPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');

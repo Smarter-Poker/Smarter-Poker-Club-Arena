@@ -187,6 +187,16 @@ function PlayerActionModal({
   const [confirmRole, setConfirmRole] = useState<MemberRole | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  // CA-18 BUG FIX: the 1.2s "show success then refresh" timer was fire-and-forget.
+  // If the user clicked outside to dismiss the modal before 1.2s, the component
+  // unmounted and onRoleChanged()/onClose() fired on a dead component tree.
+  const roleChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (roleChangeTimerRef.current) clearTimeout(roleChangeTimerRef.current);
+    };
+  }, []);
 
   // Accessibility: close modal on Escape key
   useEffect(() => {
@@ -302,7 +312,9 @@ function PlayerActionModal({
       });
 
       // Brief delay to show success, then refresh
-      setTimeout(() => {
+      if (roleChangeTimerRef.current) clearTimeout(roleChangeTimerRef.current);
+      roleChangeTimerRef.current = setTimeout(() => {
+        roleChangeTimerRef.current = null;
         onRoleChanged();
         onClose();
       }, 1200);

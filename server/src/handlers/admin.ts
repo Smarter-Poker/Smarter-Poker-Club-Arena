@@ -128,6 +128,34 @@ export async function handleAdminKick(
     }
 
     const result = engine.leaveTable(targetUserId);
+
+    // Round 71: write audit ledger row so forensic review sees who kicked
+    // whom, when, why. Fire-and-forget — engine admin actions log to
+    // anti_cheat_events (the moderation-specific stream) and audit_trail
+    // (the universal immutable ledger) when available. Failures don't
+    // block the response — the kick already happened.
+    const reasonText = (body as { reason?: string }).reason ?? 'admin kick';
+    void supabase
+      .from('anti_cheat_events')
+      .insert({
+        event_type: 'player_kicked',
+        player_id: targetUserId,
+        club_id: tableRow.club_id,
+        table_id: tableId,
+        details: {
+          reason: reasonText,
+          kicked_by: auth.userId,
+          source: 'engine_admin_kick',
+          immediate: result.immediate ?? false,
+        },
+        triggered_by: auth.userId,
+      })
+      .then(({ error }) => {
+        if (error) {
+          console.warn('[admin.kick] anti_cheat_events insert failed:', error.message);
+        }
+      });
+
     return sendJSON(res, result.success ? 200 : 400, {
       ...result,
       kicked_by: auth.userId,

@@ -47,9 +47,15 @@ export const AvatarCustomizer: React.FC<AvatarCustomizerProps> = ({ currentAvata
 
   useEffect(() => {
     const items = activeTab === 'preset' ? PRESET_AVATARS.length + AVATAR_BACKGROUNDS.length : 0;
+    // AC-1 BUG FIX: collect all stagger timer IDs so they cancel on cleanup.
+    // Without this, switching tabs rapidly or unmounting fires setVisibleItems
+    // on a stale component state.
+    setVisibleItems(new Set());
+    const timers: ReturnType<typeof setTimeout>[] = [];
     for (let i = 0; i < items; i++) {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+      timers.push(setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60));
     }
+    return () => timers.forEach(clearTimeout);
   }, [activeTab]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {

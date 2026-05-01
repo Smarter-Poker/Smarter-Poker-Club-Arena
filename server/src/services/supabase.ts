@@ -603,7 +603,10 @@ export async function logBBJCollection(
   clubId: string,
   handNumber: number,
   bbjAmount: number,
-  bigBlind: number
+  bigBlind: number,
+  // Round 44 fix: hand_history.id (UUID) for FK linking the bbj_contributions
+  // audit row back to the originating hand. Default null preserves caller compat.
+  handId: string | null = null
 ): Promise<void> {
   if (bbjAmount <= 0) return;
 
@@ -656,7 +659,7 @@ export async function logBBJCollection(
     let rpcError: any = null;
     const { error: errWithClub } = await supabase.rpc('bbj_record_contribution', {
       p_pool_id: pool.id,
-      p_hand_id: null,
+      p_hand_id: handId,
       p_table_id: tableId,
       p_amount: bbjAmount,
       p_main_portion: mainPortion,
@@ -671,7 +674,7 @@ export async function logBBJCollection(
       // Migration not yet applied — fall back to old signature without club_id
       const { error: errNoClub } = await supabase.rpc('bbj_record_contribution', {
         p_pool_id: pool.id,
-        p_hand_id: null,
+        p_hand_id: handId,
         p_table_id: tableId,
         p_amount: bbjAmount,
         p_main_portion: mainPortion,

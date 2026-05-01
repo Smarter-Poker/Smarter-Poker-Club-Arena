@@ -1096,6 +1096,11 @@ export async function processBBJPayout(params: {
     // 5. Record the payout in bbj_payouts table
     // hand_id is NULL (server uses hand_history table, not legacy hands table)
     // hand_number + table_id provide the reference instead
+    //
+    // Round 63 fix: winner_hand_name / loser_hand_name / status are NOT real
+    // columns in bbj_payouts — every prior insert silently failed. Hand names
+    // now go into the JSONB `metadata` field; status is implicit (rows only
+    // exist for completed payouts).
     const { data: payoutRecord, error: payoutErr } = await supabase
       .from('bbj_payouts')
       .insert({
@@ -1110,9 +1115,11 @@ export async function processBBJPayout(params: {
         loser_share: winnerShare,
         table_share: tableShareTotal,
         table_player_count: params.dealtInPlayerIds.length,
-        winner_hand_name: params.loserHandName,
-        loser_hand_name: params.winnerHandName,
-        status: 'completed',
+        metadata: {
+          winner_hand_name: params.loserHandName,
+          loser_hand_name: params.winnerHandName,
+          status: 'completed',
+        },
       })
       .select('id')
       .maybeSingle();
@@ -1135,14 +1142,38 @@ export async function processBBJPayout(params: {
     }
 
     // 7. Also record in bbj_winners table for the "Previous Winners" display
+    //
+    // Round 63 fix: prior insert used `user_id`/`amount`/`hand_name` which do
+    // NOT exist in this table — every insert silently failed (bbj_winners had
+    // 0 rows despite 48 hits in pool counters). Schema requires loser_id +
+    // winner_id + per-side payouts, with awarded_at as the timestamp.
+    //
+    // BBJ naming inversion: the BAD-BEAT holder (params.loserUserId in our
+    // engine vocabulary, the player who lost the hand with quads or better)
+    // is the BBJ "winner" — they receive the 50% loser_share above. So in
+    // bbj_winners.winner_id we put params.loserUserId, and in loser_id we put
+    // params.winnerUserId.
+    const { data: poolMeta } = await supabase
+      .from('bbj_pools')
+      .select('club_id')
+      .eq('id', pool.id)
+      .maybeSingle();
     await supabase
       .from('bbj_winners')
       .insert({
         pool_id: pool.id,
-        user_id: params.loserUserId, // The "winner" of the BBJ (bad beat holder)
-        amount: totalPayout,
-        hand_name: params.loserHandName,
+        club_id: poolMeta?.club_id ?? null,
+        winner_id: params.loserUserId,
+        loser_id: params.winnerUserId,
+        winner_hand: params.loserHandName,
+        loser_hand: params.winnerHandName,
+        winner_payout: loserShare,
+        loser_payout: winnerShare,
+        table_share_payout: tableShareTotal,
+        total_payout: totalPayout,
+        pool_amount_at_hit: pool.main_balance,
         table_id: params.tableId,
+        hand_number: params.handNumber,
       })
       .then(({ error }) => {
         if (error) console.warn(`[processBBJPayout] bbj_winners insert failed:`, error.message);

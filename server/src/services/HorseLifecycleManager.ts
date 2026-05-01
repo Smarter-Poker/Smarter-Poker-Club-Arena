@@ -227,31 +227,26 @@ export class HorseLifecycleManager {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Persist lifecycle event to horse_bug_reports for post-mortem debugging.
+   * Phase J: lifecycle event logging changed from horse_bug_reports DB insert
+   * to console.log only. Pre-fix, every horse rebuy / leave / profit-target
+   * cashout fired a row to horse_bug_reports with category='lifecycle_event'
+   * and severity='low'. Result: 61,627 happy-path rows polluted what is
+   * supposed to be a bug-report queue. Real bug categories (wallet_sync,
+   * runtime_error, state_desync) drowned in lifecycle noise.
+   *
+   * Lifecycle events are still emitted as console.log for runtime tail
+   * visibility + Sentry breadcrumbs (Sentry ingests stdout in production).
+   * Real bugs continue to write to horse_bug_reports via separate paths.
    */
   private async persistLifecycleLog(
     horseId: string,
     event: string,
     details: Record<string, unknown>
   ): Promise<void> {
-    try {
-      const { v4: uuidv4 } = await import('uuid');
-      await supabase.from('horse_bug_reports').insert({
-        id: uuidv4(),
-        horse_id: horseId,
-        horse_name: `HORSE_${horseId.slice(0, 8)}`,
-        table_id: 'lifecycle',
-        table_name: 'HorseLifecycleManager',
-        hand_number: 0,
-        category: 'lifecycle_event',
-        severity: 'low',
-        title: event,
-        description: JSON.stringify(details),
-        context: details,
-      });
-    } catch (err) {
-      console.warn('[Lifecycle] Failed to persist log:', err);
-    }
+    console.log(
+      `[HorseLifecycle] horse=${horseId.slice(0, 8)} event=${event} ` +
+        JSON.stringify(details)
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────

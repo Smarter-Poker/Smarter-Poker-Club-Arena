@@ -456,17 +456,35 @@ interface TablePageProps {
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
   isMultiTable?: boolean;
+  /**
+   * Whether this table is the currently-focused/active one in a multi-table session.
+   * Inactive tables suppress most ambient sounds (deal/chip/check/fold/etc.) to
+   * prevent audio chaos. Turn alerts and critical events always fire so the player
+   * can hear when it's their turn on a background table. Defaults to true so
+   * single-table mode (no MultiTablePage wrapper) behaves identically.
+   */
+  isActive?: boolean;
 }
 
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
   isMultiTable = false,
+  isActive = true,
 }: TablePageProps = {}) {
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const tableId = embeddedTableId || routeTableId;
   const navigate = useNavigate();
   const toast = useToast();
+
+  // ─── MULTI-TABLE SOUND GATE ───
+  // In multi-table mode, only the actively-focused tab plays ambient sounds
+  // (deal, chips, fold, check, community card, showdown, win celebrations,
+  // pot collect, etc.). Turn alerts and player-initiated action sounds always
+  // fire so the user knows it's their turn even on a background table and
+  // hears feedback for buttons they pressed. Single-table mode (no
+  // MultiTablePage wrapper) defaults isActive=true so behavior is unchanged.
+  const ambientSoundsAllowed = !isMultiTable || isActive;
 
   // Prevent Chrome from throttling this tab (keeps horse timers alive)
   useTabKeepAlive();
@@ -1785,6 +1803,8 @@ export default function TablePage({
   const playWinSound = (potAmount?: number) => {
     // NEW-BUG-2 FIX: use dynamic isEnabled() not stale isSoundEnabled closure
     if (!soundService.isEnabled()) return;
+    // #175 multi-table sound mixing: suppress ambient win celebration on background tables
+    if (!ambientSoundsAllowed) return;
     // Use ref for fresh blinds (this function is called from event handlers that may have stale closures)
     const currentBlinds = tableStateRef.current.blinds;
     const bb = safeBB(currentBlinds);
@@ -2100,8 +2120,8 @@ export default function TablePage({
     (payload: any) => {
       const row = payload.new;
       if (row && row.user_id === userId && row.cards) {
-        // Play deal sound if enabled
-        if (soundService.isEnabled()) soundService.playDeal();
+        // Play deal sound if enabled (#175 gated for multi-table)
+        if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDeal();
 
         setTableState((prev) => {
           const updatedPlayers = [...prev.players];
@@ -3253,7 +3273,8 @@ export default function TablePage({
       payload.secondsGranted ?? payload.additionalSeconds ?? payload.secondsAdded ?? 15;
 
     // FIX 172: Play time bank activation sound (Bible V8 §5.3)
-    if (soundService.isEnabled()) soundService.playTimeBankActivated();
+    // #175 gated for multi-table: only play on the active tab
+    if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playTimeBankActivated();
 
     // For OPPONENTS: extend the visual timer from the WebSocket broadcast
     // For HERO: the local TimeBankEngine.activate() already extended the timer,
@@ -3556,7 +3577,8 @@ export default function TablePage({
           console.debug('[RealtimeSeats] New seat INSERT:', newSeat.seat_number, newSeat.user_id);
 
           // FIX 172: Play seat-taken sound when new player sits (Bible V8 §5.1)
-          if (soundService.isEnabled()) soundService.playSeatTaken();
+          // #175 gated for multi-table: only play on the active tab
+          if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playSeatTaken();
 
           // Fetch the player's profile
           const { data: profile } = await supabase
@@ -3848,7 +3870,8 @@ export default function TablePage({
         // time the setTimeout closure ran (ref binding race in the React
         // commit phase). Direct inline + immediate setChipAnimations is
         // the surest path to the chips landing in the pot in real-time.
-        if (soundService.isEnabled()) {
+        // #175 gated for multi-table: only play opponent action SFX on the active tab
+        if (soundService.isEnabled() && ambientSoundsAllowed) {
           if (action === 'all_in' || action === 'allin') soundService.playAllIn();
           else if (action === 'bet' || action === 'raise' || action === 'call')
             soundService.playChips();
@@ -3925,7 +3948,8 @@ export default function TablePage({
           setIsSeatDealing(false);
         }, 700);
         // Bible V8 §5.3: new hand indicator + card dealing sound
-        if (soundService.isEnabled()) {
+        // #175 gated for multi-table: only play on the active tab
+        if (soundService.isEnabled() && ambientSoundsAllowed) {
           soundService.playNewHand();
           // Stagger the deal sound slightly after the new-hand chime
           setTimeout(() => soundService.playDeal(), 120);
@@ -3960,7 +3984,8 @@ export default function TablePage({
           }
         }
         // Play chip sound for blinds posting
-        if (postings.length > 0 && soundService.isEnabled()) {
+        // #175 gated for multi-table: only play on the active tab
+        if (postings.length > 0 && soundService.isEnabled() && ambientSoundsAllowed) {
           soundService.playChips();
         }
         break;
@@ -4017,7 +4042,8 @@ export default function TablePage({
           boardStage: stage as BoardStage,
         }));
         // Audio cue — Bible V8 §5.3: community card reveal sound (distinct from deal)
-        if (soundService.isEnabled()) soundService.playCommunityCard();
+        // #175 gated for multi-table: only play on the active tab
+        if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playCommunityCard();
         break;
       }
       case 'HAND_COMPLETE_EVENT':
@@ -4063,7 +4089,8 @@ export default function TablePage({
 
       case 'SHOWDOWN': {
         // Bible V8 §4.6: Showdown — play showdown sound, trigger card reveal animations
-        if (soundService.isEnabled()) soundService.playShowdown();
+        // #175 gated for multi-table: only play on the active tab
+        if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playShowdown();
         // Mark board stage so rendering picks up showdown card flips
         setTableState((prev) => ({
           ...prev,
@@ -4130,7 +4157,8 @@ export default function TablePage({
                 tableEl.classList.add('table-page--shake');
                 setTimeout(() => tableEl.classList.remove('table-page--shake'), 600);
               }
-              soundService.playBigWin();
+              // #175 gated for multi-table: only play on the active tab
+              if (ambientSoundsAllowed) soundService.playBigWin();
             }
           }
           // Bible V8 §5.1: Particle burst from first winner's seat position
@@ -4205,7 +4233,8 @@ export default function TablePage({
           if (events.length > 0) {
             setChipAnimations((prev) => [...prev, ...events]);
             // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
-            if (soundService.isEnabled()) soundService.playPotCollect();
+            // #175 gated for multi-table: only play on the active tab
+            if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
           }
         }
         break;

@@ -480,6 +480,7 @@ export default function MultiTablePage() {
                     updateTableInfo(table.id, info)
                   }
                   isMultiTable={true}
+                  isActive={idx === activeIndex}
                 />
               </Suspense>
             </div>
@@ -510,33 +511,38 @@ export default function MultiTablePage() {
             const shouldRender = isActivelySwiping ? isAdjacent : isActive;
 
             return (
-            <div
-              key={table.id}
-              className={`multi-table-page__table-slot ${isActive ? 'multi-table-page__table-slot--active' : ''}`}
-              style={shouldRender ? undefined : { display: 'none' }}
-            >
-              <Suspense
-                fallback={
-                  <div className="multi-table-page__loading">
-                    <div className="multi-table-page__spinner" />
-                    <span
-                      style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', marginTop: 12 }}
-                    >
-                      Loading table…
-                    </span>
-                  </div>
-                }
+              <div
+                key={table.id}
+                className={`multi-table-page__table-slot ${isActive ? 'multi-table-page__table-slot--active' : ''}`}
+                style={shouldRender ? undefined : { display: 'none' }}
               >
-                <TablePage
-                  key={table.id}
-                  embeddedTableId={table.id}
-                  onTableInfoUpdate={(info: Partial<TableInstance>) =>
-                    updateTableInfo(table.id, info)
+                <Suspense
+                  fallback={
+                    <div className="multi-table-page__loading">
+                      <div className="multi-table-page__spinner" />
+                      <span
+                        style={{
+                          color: 'rgba(255,255,255,0.5)',
+                          fontSize: '0.85rem',
+                          marginTop: 12,
+                        }}
+                      >
+                        Loading table…
+                      </span>
+                    </div>
                   }
-                  isMultiTable={tables.length > 1}
-                />
-              </Suspense>
-            </div>
+                >
+                  <TablePage
+                    key={table.id}
+                    embeddedTableId={table.id}
+                    onTableInfoUpdate={(info: Partial<TableInstance>) =>
+                      updateTableInfo(table.id, info)
+                    }
+                    isMultiTable={tables.length > 1}
+                    isActive={idx === activeIndex}
+                  />
+                </Suspense>
+              </div>
             );
           })}
         </div>

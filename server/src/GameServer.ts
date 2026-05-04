@@ -1059,6 +1059,18 @@ export class TournamentManager {
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (!tournament) throw new Error('Tournament not found');
+
+      if (typeof tournament.blind_structure === 'string') {
+        try {
+          tournament.blind_structure = JSON.parse(tournament.blind_structure);
+        } catch {
+          tournament.blind_structure = [];
+        }
+      }
+      if (!Array.isArray(tournament.blind_structure)) {
+        tournament.blind_structure = [];
+      }
+
       this.tournamentCache = tournament;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
 
@@ -1280,6 +1292,18 @@ export class TournamentManager {
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (!tournament) throw new Error('Tournament not found');
+
+      if (typeof tournament.blind_structure === 'string') {
+        try {
+          tournament.blind_structure = JSON.parse(tournament.blind_structure);
+        } catch {
+          tournament.blind_structure = [];
+        }
+      }
+      if (!Array.isArray(tournament.blind_structure)) {
+        tournament.blind_structure = [];
+      }
+
       this.tournamentCache = tournament;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
 

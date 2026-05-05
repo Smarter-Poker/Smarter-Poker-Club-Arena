@@ -1485,13 +1485,15 @@ export class TournamentManager {
 
         if (this.currentLevel >= blindStructure.length) {
           // Auto-escalate: double the last level's blinds
+          // FIX: Cap at 10M to prevent numeric field overflow in DECIMAL(10,2) columns
+          const MAX_BLIND_VALUE = 10_000_000;
           const lastLevel = blindStructure[blindStructure.length - 1];
           const escalationFactor = Math.pow(2, this.currentLevel - blindStructure.length + 1);
           const autoLevel = {
             level: this.currentLevel + 1,
-            smallBlind: lastLevel.smallBlind * escalationFactor,
-            bigBlind: lastLevel.bigBlind * escalationFactor,
-            ante: (lastLevel.ante || 0) * escalationFactor,
+            smallBlind: Math.min(lastLevel.smallBlind * escalationFactor, MAX_BLIND_VALUE),
+            bigBlind: Math.min(lastLevel.bigBlind * escalationFactor, MAX_BLIND_VALUE),
+            ante: Math.min((lastLevel.ante || 0) * escalationFactor, MAX_BLIND_VALUE),
             durationMinutes: Math.max(lastLevel.durationMinutes || 3, 2), // Keep same duration, min 2 min
           };
           blindStructure.push(autoLevel);
@@ -1513,12 +1515,17 @@ export class TournamentManager {
         );
 
         for (const tableId of this.tableEngines.keys()) {
+          // FIX: Clamp values before DB write to prevent numeric field overflow
+          const MAX_DB_BLIND = 10_000_000;
+          const safeSmallBlind = Math.min(level.smallBlind || 0, MAX_DB_BLIND);
+          const safeBigBlind = Math.min(level.bigBlind || 0, MAX_DB_BLIND);
+          const safeAnte = Math.min(level.ante || 0, MAX_DB_BLIND);
           const { error: blindErr } = await supabase
             .from('tables')
             .update({
-              small_blind: level.smallBlind,
-              big_blind: level.bigBlind,
-              ante: level.ante || 0,
+              small_blind: safeSmallBlind,
+              big_blind: safeBigBlind,
+              ante: safeAnte,
             })
             .eq('id', tableId);
           if (blindErr)

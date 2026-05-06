@@ -135,7 +135,7 @@ export const PlayerStatsDashboard: React.FC<{ playerId?: string }> = ({ playerId
   return (
     <div className="stats-dashboard">
       <header className="stats-header">
-        <h1>📊 Player Statistics</h1>
+        <h1>Player Statistics</h1>
         <span className="hands-count">{stats.totalHands.toLocaleString()} hands tracked</span>
       </header>
 
@@ -220,7 +220,7 @@ export const PlayerStatsDashboard: React.FC<{ playerId?: string }> = ({ playerId
 
           {/* Profit Graph */}
           <div className="chart-section">
-            <h3>📈 Profit Over Time</h3>
+            <h3>Profit Over Time</h3>
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={sessionData}>
                 <defs>
@@ -253,7 +253,7 @@ export const PlayerStatsDashboard: React.FC<{ playerId?: string }> = ({ playerId
 
           {/* Radar Chart */}
           <div className="chart-section">
-            <h3>🎯 Playing Style</h3>
+            <h3>Playing Style</h3>
             <ResponsiveContainer width="100%" height={250}>
               <RadarChart data={radarData}>
                 <PolarGrid stroke="#374151" />
@@ -278,9 +278,9 @@ export const PlayerStatsDashboard: React.FC<{ playerId?: string }> = ({ playerId
 
       {activeTab === 'leaks' && (
         <div className="leaks-section">
-          <h3>🔍 Potential Leaks</h3>
+          <h3>Potential Leaks</h3>
           <div className="leak-item">
-            <span className="leak-icon">⚠️</span>
+            <span className="leak-icon">!</span>
             <div className="leak-info">
               <span className="leak-title">3-Bet Frequency Too Low</span>
               <p>
@@ -290,7 +290,7 @@ export const PlayerStatsDashboard: React.FC<{ playerId?: string }> = ({ playerId
             </div>
           </div>
           <div className="leak-item">
-            <span className="leak-icon">💡</span>
+            <span className="leak-icon">*</span>
             <div className="leak-info">
               <span className="leak-title">C-Bet Too High on Turn</span>
               <p>
@@ -298,13 +298,13 @@ export const PlayerStatsDashboard: React.FC<{ playerId?: string }> = ({ playerId
               </p>
             </div>
           </div>
-          <button className="btn-analyze">🧠 Get Analysis</button>
+          <button className="btn-analyze">Get Analysis</button>
         </div>
       )}
 
       {activeTab === 'hands' && (
         <div className="hands-section">
-          <h3>📝 Recent Hands</h3>
+          <h3>Recent Hands</h3>
           <p className="hands-placeholder">View hand history in the Hand History page</p>
         </div>
       )}

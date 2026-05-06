@@ -13,7 +13,8 @@
  * ZERO browser dependency — this is the SERVER version.
  */
 
-import { supabase } from './supabase.js';
+import { supabase, atomicCashout } from './supabase.js';
+import { reportError } from './errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -79,7 +80,7 @@ export class HorseLifecycleManager {
         this.cleanupStaleSeats(),
       ]);
     } catch (err) {
-      console.error('[Lifecycle] Maintenance cycle error:', err);
+      reportError(err, 'Lifecycle.Maintenance_cycle_error');
     }
   }
 
@@ -137,7 +138,7 @@ export class HorseLifecycleManager {
               profiles.map((p) => p.id)
             );
         } catch (err) {
-          console.error(`[Lifecycle] Error processing tournament ${tournament.id}:`, err);
+          reportError(err, 'Lifecycle.Error_processing_tournament_to');
         }
       }
 
@@ -147,7 +148,7 @@ export class HorseLifecycleManager {
         );
       }
     } catch (err) {
-      console.error('[Lifecycle] cleanupFinishedTournaments error:', err);
+      reportError(err, 'Lifecycle.cleanupFinishedTournaments_err');
     }
   }
 
@@ -217,7 +218,7 @@ export class HorseLifecycleManager {
         console.log(`[Lifecycle] Force-reset ${forcedResets} stuck horses`);
       }
     } catch (err) {
-      console.error('[Lifecycle] detectStuckHorses error:', err);
+      reportError(err, 'Lifecycle.detectStuckHorses_error');
     }
   }
 
@@ -226,31 +227,25 @@ export class HorseLifecycleManager {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Persist lifecycle event to horse_bug_reports for post-mortem debugging.
+   * Phase J: lifecycle event logging changed from horse_bug_reports DB insert
+   * to console.log only. Pre-fix, every horse rebuy / leave / profit-target
+   * cashout fired a row to horse_bug_reports with category='lifecycle_event'
+   * and severity='low'. Result: 61,627 happy-path rows polluted what is
+   * supposed to be a bug-report queue. Real bug categories (wallet_sync,
+   * runtime_error, state_desync) drowned in lifecycle noise.
+   *
+   * Lifecycle events are still emitted as console.log for runtime tail
+   * visibility + Sentry breadcrumbs (Sentry ingests stdout in production).
+   * Real bugs continue to write to horse_bug_reports via separate paths.
    */
   private async persistLifecycleLog(
     horseId: string,
     event: string,
     details: Record<string, unknown>
   ): Promise<void> {
-    try {
-      const { v4: uuidv4 } = await import('uuid');
-      await supabase.from('horse_bug_reports').insert({
-        id: uuidv4(),
-        horse_id: horseId,
-        horse_name: `HORSE_${horseId.slice(0, 8)}`,
-        table_id: 'lifecycle',
-        table_name: 'HorseLifecycleManager',
-        hand_number: 0,
-        category: 'lifecycle_event',
-        severity: 'low',
-        title: event,
-        description: JSON.stringify(details),
-        context: details,
-      });
-    } catch (err) {
-      console.warn('[Lifecycle] Failed to persist log:', err);
-    }
+    console.log(
+      `[HorseLifecycle] horse=${horseId.slice(0, 8)} event=${event} ` + JSON.stringify(details)
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -287,7 +282,7 @@ export class HorseLifecycleManager {
           .eq('id', horseId);
 
         if (error) {
-          console.error(`[Lifecycle] Failed to reset horse ${horseId}:`, error.message);
+          reportError(error, 'Lifecycle.Failed_to_reset_horse_horseId');
           return false;
         }
         await this.persistLifecycleLog(horseId, 'natural_reset', {
@@ -311,24 +306,10 @@ export class HorseLifecycleManager {
         .eq('user_id', horseId)
         .is('left_at', null);
 
-      // Cash out each seat atomically to prevent chip loss
+      // FIX 208: Cash out each seat using direct queries (avoids PostgREST RPC cache issues)
       if (activeSeats && activeSeats.length > 0) {
         for (const seat of activeSeats) {
-          const { error: cashoutErr } = await supabase.rpc('atomic_table_cashout', {
-            p_user_id: horseId,
-            p_table_id: seat.table_id,
-            p_seat_number: seat.seat_number,
-          });
-          if (cashoutErr) {
-            // Fallback: if atomic cashout fails (e.g. seat already gone), force-close
-            await supabase
-              .from('table_seats')
-              .update({ left_at: new Date().toISOString() })
-              .eq('user_id', horseId)
-              .eq('table_id', seat.table_id)
-              .eq('seat_number', seat.seat_number)
-              .is('left_at', null);
-          }
+          await atomicCashout(horseId, seat.table_id, seat.seat_number);
         }
       }
 
@@ -391,8 +372,11 @@ export class HorseLifecycleManager {
                 p_amount: buyInAmount,
               });
               if (refundErr)
-                console.error(
-                  `[HorseLifecycle] SNG cancel refund FAILED for ${player.user_id.slice(0, 8)}: ${refundErr.message}`
+                reportError(
+                  new Error(
+                    `[HorseLifecycle] SNG cancel refund FAILED for ${player.user_id.slice(0, 8)}: ${refundErr.message}`
+                  ),
+                  'HorseLifecycle.SNG_cancel_refund_FAILED_for_p'
                 );
             }
           }
@@ -443,20 +427,8 @@ export class HorseLifecycleManager {
       let cleaned = 0;
       for (const seat of staleSeats) {
         try {
-          // Use atomic cashout to prevent chip loss
-          const { error: cashoutErr } = await supabase.rpc('atomic_table_cashout', {
-            p_user_id: seat.user_id,
-            p_table_id: seat.table_id,
-            p_seat_number: seat.seat_number,
-          });
-
-          if (cashoutErr) {
-            // Fallback: force-close the seat if atomic cashout fails
-            await supabase
-              .from('table_seats')
-              .update({ left_at: new Date().toISOString() })
-              .eq('id', seat.id);
-          }
+          // FIX 208: Use direct atomicCashout instead of RPC
+          await atomicCashout(seat.user_id, seat.table_id, seat.seat_number);
           cleaned++;
 
           // If horse, reset to available
@@ -464,7 +436,7 @@ export class HorseLifecycleManager {
             .from('profiles')
             .select('is_horse')
             .eq('id', seat.user_id)
-            .single();
+            .maybeSingle(); // FIX 168
 
           if (profile?.is_horse) {
             await this.evaluateHorseStatus(seat.user_id);
@@ -500,7 +472,7 @@ export class HorseLifecycleManager {
       });
 
       if (error) {
-        console.error(`[Lifecycle] Failed to credit winnings to ${horseId}:`, error.message);
+        reportError(error, 'Lifecycle.Failed_to_credit_winnings_to_h');
         return false;
       }
 

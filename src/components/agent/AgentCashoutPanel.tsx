@@ -10,11 +10,11 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
-import { supabase } from '../../lib/supabase';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './AgentCashoutPanel.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface AgentCashoutPanelProps {
   clubId?: string;
@@ -47,7 +47,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
       );
     } catch (err) {
-      console.error('Failed to load cashouts:', err);
+      reportError(err, 'AgentCashoutPanel.Failed_to_load_cashouts');
     }
     if (isMounted.current) setLoading(false);
   }, [user?.id, clubId]);
@@ -82,7 +82,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       })
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[AgentCashoutPanel] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'AgentCashoutPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AgentCashoutPanel] ⏱️ Realtime channel timed out');
@@ -112,7 +112,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         if (isMounted.current) setProcessing(null);
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentCashoutPanel.handleApprove');
       // Fail-open
     }
 
@@ -143,7 +144,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         if (isMounted.current) setProcessing(null);
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentCashoutPanel.handleReject');
       // Fail-open
     }
 
@@ -165,8 +167,93 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         <div className="panel-header">
           <h3> Pending Cashouts</h3>
         </div>
-        <div className="loading-state">
-          <div className="spinner" />
+        <div style={{ padding: '12px' }}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px',
+                marginBottom: '8px',
+                borderRadius: '8px',
+                background: 'rgba(255,255,255,0.02)',
+                animation: `shimmerFade 1.4s ease-in-out ${i * 0.1}s infinite`,
+              }}
+            >
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background:
+                    'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                  backgroundSize: '200px 100%',
+                  animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    width: `${50 + Math.random() * 30}%`,
+                    height: '12px',
+                    borderRadius: '4px',
+                    background:
+                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    backgroundSize: '200px 100%',
+                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                    marginBottom: '6px',
+                  }}
+                />
+                <div
+                  style={{
+                    width: '40%',
+                    height: '10px',
+                    borderRadius: '4px',
+                    background:
+                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    backgroundSize: '200px 100%',
+                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <style>{`
+          @keyframes shimmerSlide { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+          @keyframes shimmerFade { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        `}</style>
+      </div>
+    );
+  }
+
+  if (error && cashouts.length === 0) {
+    return (
+      <div className="agent-cashout-panel">
+        <div className="panel-header">
+          <h3> Pending Cashouts</h3>
+        </div>
+        <div style={{ textAlign: 'center', padding: '24px 16px', color: '#94a3b8' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠️</div>
+          <p style={{ margin: '0 0 12px', fontSize: '13px' }}>Failed to load cashout requests</p>
+          <button
+            onClick={loadCashouts}
+            style={{
+              padding: '8px 20px',
+              background: 'rgba(59,130,246,0.15)',
+              border: '1px solid rgba(59,130,246,0.3)',
+              borderRadius: '8px',
+              color: '#60a5fa',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            ↻ Retry
+          </button>
         </div>
       </div>
     );

@@ -16,6 +16,7 @@ import './FinancialAlertsPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
+import { reportError } from '../utils/errorReporter';
 
 export default function FinancialAlertsPage() {
   const { user } = useAuthUser();
@@ -40,7 +41,7 @@ export default function FinancialAlertsPage() {
       setAlerts(data);
     } catch (err) {
       if (getIsMounted && !getIsMounted()) return;
-      console.error('[FinancialAlerts] Failed to load alerts:', err);
+      reportError(err, 'FinancialAlertsPage.Failed_to_load_alerts');
       toast.error('Failed to load financial alerts');
     } finally {
       loadingRef.current = false;
@@ -67,7 +68,7 @@ export default function FinancialAlertsPage() {
       })
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[FinancialAlertsPage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'FinancialAlertsPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[FinancialAlertsPage] ⏱️ Realtime channel timed out');
@@ -133,7 +134,7 @@ export default function FinancialAlertsPage() {
       await FinancialAlertService.resolve(alertId);
       setAlerts((prev) => prev.filter((a) => a.id !== alertId));
     } catch (err) {
-      console.error('[FinancialAlerts] Failed to resolve alert:', err);
+      reportError(err, 'FinancialAlertsPage.Failed_to_resolve_alert');
       toast.error('Failed to resolve alert');
     }
     setResolving(null);
@@ -170,7 +171,8 @@ export default function FinancialAlertsPage() {
         `financial_alerts_${new Date().toISOString().split('T')[0]}.csv`
       );
       toast.success(`Exported ${rows.length} alert(s)`);
-    } catch {
+    } catch (e) {
+      reportError(e, 'FinancialAlertsPage.map');
       toast.error('Export failed');
     }
     setExporting(false);

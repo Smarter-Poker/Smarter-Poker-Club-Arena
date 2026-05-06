@@ -13,6 +13,7 @@
 import React, { useState, useEffect } from 'react';
 import { STORAGE_KEYS } from '../../lib/storage';
 import './InstallPrompt.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -27,7 +28,9 @@ export const InstallPrompt: React.FC = () => {
 
   useEffect(() => {
     if (showPrompt) {
-      setTimeout(() => setMounted(true), 50);
+      // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+      const _mountTimer = setTimeout(() => setMounted(true), 50);
+      return () => clearTimeout(_mountTimer);
     } else {
       setMounted(false);
     }
@@ -54,7 +57,7 @@ export const InstallPrompt: React.FC = () => {
         if (Date.now() - parseInt(dismissedAt) < cooldown) return;
       }
     } catch (err) {
-      console.error('[InstallPrompt] Error:', err);
+      reportError(err, 'InstallPrompt.Error');
       // localStorage disabled (Safari private browsing, quota exceeded) — don't show
       return;
     }
@@ -89,7 +92,7 @@ export const InstallPrompt: React.FC = () => {
       try {
         localStorage.setItem(STORAGE_KEYS.PWA_INSTALLED, 'true');
       } catch (err) {
-        console.error('[InstallPrompt] Error:', err);
+        reportError(err, 'InstallPrompt.Error');
         /* ignore */
       }
       setShowPrompt(false);
@@ -113,7 +116,7 @@ export const InstallPrompt: React.FC = () => {
           localStorage.setItem(STORAGE_KEYS.PWA_PROMPT_DISMISSED, Date.now().toString());
         }
       } catch (err) {
-        console.error('[InstallPrompt] Error:', err);
+        reportError(err, 'InstallPrompt.Error');
         /* localStorage disabled */
       }
     }
@@ -126,7 +129,7 @@ export const InstallPrompt: React.FC = () => {
       localStorage.setItem(STORAGE_KEYS.PWA_DISMISS_COUNT, count.toString());
       localStorage.setItem(STORAGE_KEYS.PWA_PROMPT_DISMISSED, Date.now().toString());
     } catch (err) {
-      console.error('[InstallPrompt] Error:', err);
+      reportError(err, 'InstallPrompt.Error');
       /* localStorage disabled */
     }
   };

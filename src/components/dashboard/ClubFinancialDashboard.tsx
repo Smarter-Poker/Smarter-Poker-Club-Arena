@@ -7,6 +7,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import {
   AreaChart,
   Area,
@@ -21,6 +22,7 @@ import {
   BarChart,
   Bar,
 } from 'recharts';
+import { reportError } from '../../utils/errorReporter';
 
 interface FinancialDashboardProps {
   clubId: string;
@@ -127,7 +129,8 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubFinancialDashboard] ❌ Realtime channel error:', err?.message || err);
+          if (err)
+            reportError(err?.message || err, 'ClubFinancialDashboard._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ClubFinancialDashboard] ⏱️ Realtime channel timed out');
@@ -140,6 +143,13 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
     };
   }, [clubId]);
 
+  // Hook to handle visibility state changes (prevents zombie subscriptions)
+  useVisibilityRefresh(() => {
+    fetchDiamondBalance();
+    fetchRevenueData();
+    fetchActiveTableCount();
+  });
+
   const fetchDiamondBalance = async () => {
     try {
       const resolvedId = await resolveClubUUID(clubId);
@@ -150,12 +160,12 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
         .maybeSingle();
 
       if (error) {
-        console.error('Failed to load diamond balance:', error);
+        reportError(error, 'ClubFinancialDashboard.Failed_to_load_diamond_balance');
         return;
       }
       if (data) setDiamondBalance(data.balance);
     } catch (err) {
-      console.error('[FinancialDashboard] fetchDiamondBalance error:', err);
+      reportError(err, 'ClubFinancialDashboard.fetchDiamondBalance_error');
     }
   };
 
@@ -190,7 +200,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
 
       setRevenueData(newData);
     } catch (error) {
-      console.error('Failed to load revenue data:', error);
+      reportError(error, 'ClubFinancialDashboard.Failed_to_load_revenue_data');
     }
   };
 
@@ -229,7 +239,8 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
         .eq('club_id', resolvedId)
         .eq('status', 'active');
       if (!error && count !== null) setActiveTableCount(count);
-    } catch {
+    } catch (e) {
+      reportError(e, 'ClubFinancialDashboard.fetchActiveTableCount');
       // Non-critical — keep existing count
     }
   };

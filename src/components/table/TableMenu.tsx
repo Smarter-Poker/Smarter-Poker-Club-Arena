@@ -11,6 +11,8 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import './TableMenu.css';
+import { haptic } from '../../services/SoundService';
 import {
   SitOutIcon,
   RebuyIcon,
@@ -21,7 +23,29 @@ import {
   HelpIcon,
   LeaveTableIcon,
 } from './TableMenuIcons';
-import './TableMenu.css';
+import { reportError } from '../../utils/errorReporter';
+import { STORAGE_KEYS } from '../../lib/storage';
+import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
+import { useAuthUser } from '../../hooks/useAuthUser';
+import { AvatarGallery } from '../customization/AvatarGallery';
+import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
+
+// ─── SVG Icons for Identity section ─── */
+const AvatarIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="7" r="4" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <path d="M2 18c0-3.3 3.6-6 8-6s8 2.7 8 6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+  </svg>
+);
+
+const NameTagIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+    <line x1="5" y1="10" x2="15" y2="10" stroke="currentColor" strokeWidth="1.5" />
+    <line x1="5" y1="13" x2="11" y2="13" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+  </svg>
+);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -42,6 +66,12 @@ export interface MenuSection {
   actions: MenuAction[];
 }
 
+export interface TableMenuObserver {
+  id: string;
+  name: string;
+  avatar?: string;
+}
+
 export interface TableMenuProps {
   isOpen: boolean;
   onClose: () => void;
@@ -57,6 +87,8 @@ export interface TableMenuProps {
   handNumber?: number;
   /** Session duration string (e.g. "1h 23m") */
   sessionDuration?: string;
+  /** Observers watching the table — shown in menu dropdown */
+  observers?: TableMenuObserver[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -73,8 +105,28 @@ export function createDefaultMenuSections(handlers: {
   onLeaderboard?: () => void;
   onHelp?: () => void;
   onLeaveTable?: () => void;
+  onChangeAvatar?: () => void;
+  onToggleAlias?: () => void;
+  aliasLabel?: string;
 }): MenuSection[] {
   return [
+    {
+      title: 'Identity',
+      actions: [
+        {
+          id: 'avatar',
+          label: 'Change Avatar',
+          icon: <AvatarIcon />,
+          onClick: handlers.onChangeAvatar || (() => {}),
+        },
+        {
+          id: 'display-name',
+          label: handlers.aliasLabel || 'Display Name',
+          icon: <NameTagIcon />,
+          onClick: handlers.onToggleAlias || (() => {}),
+        },
+      ],
+    },
     {
       title: 'Quick Actions',
       actions: [
@@ -158,15 +210,87 @@ export function TableMenu({
   isOpen,
   onClose,
   onToggle,
-  sections,
+  sections: propSections,
   position = 'top-right',
   tableName,
-  connectionStatus,
-  badgeCount,
+  connectionStatus = 'connected',
+  badgeCount = 0,
   handNumber,
   sessionDuration,
+  observers = [],
 }: TableMenuProps) {
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false);
+  const [useRealName, setUseRealName] = useState(false);
+  const [isVip, setIsVip] = useState(false);
+  const { user } = useAuthUser();
+  const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
   const prevOpenRef = useRef(false);
+
+  useEffect(() => {
+    const useReal = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME);
+    if (useReal !== null) setUseRealName(useReal === 'true');
+    // Fetch VIP status once
+    if (user?.id) {
+      supabase
+        .from('profiles')
+        .select('is_vip, tier')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setIsVip(data.is_vip || data.tier === 'vip' || false);
+        });
+    }
+  }, [user?.id]);
+
+  const handleUseRealNameToggle = () => {
+    const newValue = !useRealName;
+    setUseRealName(newValue);
+
+    // Optimistic local storage update
+    localStorage.setItem(STORAGE_KEYS.USE_REAL_NAME, String(newValue));
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'useRealName', value: newValue });
+
+    if (user?.id) {
+      const updateRealName = async () => {
+        try {
+          const { error } = await supabase
+            .from('profiles')
+            .update({ use_real_name: newValue } as any)
+            .eq('id', user.id);
+          if (error) throw error;
+        } catch (err: any) {
+          reportError(err, 'TableMenu.Error_updating_use_real_name');
+          localStorage.setItem(STORAGE_KEYS.USE_REAL_NAME, String(!newValue));
+          setUseRealName(!newValue);
+        }
+      };
+      updateRealName();
+    }
+  };
+
+  // Inject Identity section dynamically into the passed sections
+  const sections: MenuSection[] = [
+    {
+      title: 'Identity Component',
+      actions: [
+        {
+          id: 'avatar',
+          label: 'Change Avatar',
+          icon: <AvatarIcon />,
+          onClick: () => setShowAvatarGallery(true),
+        },
+        {
+          id: 'alias-toggle',
+          label: useRealName ? 'Using Real Name (vs Alias)' : 'Using Alias (vs Real Name)',
+          icon: <NameTagIcon />,
+          onClick: handleUseRealNameToggle,
+        },
+      ] as MenuAction[],
+    },
+    ...propSections,
+  ];
 
   // Sound cue on menu open
   useEffect(() => {
@@ -188,7 +312,8 @@ export function TableMenu({
           osc.stop(ctx.currentTime + 0.06);
           // Close AudioContext after playback to prevent resource leak
           setTimeout(() => ctx.close().catch(() => {}), 100);
-        } catch {
+        } catch (e) {
+          reportError(e, 'TableMenu.setTimeout');
           /* audio unavailable */
         }
       }
@@ -209,7 +334,6 @@ export function TableMenu({
     );
     return () => timeouts.forEach((t) => clearTimeout(t));
   }, [isOpen, sections.length]);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on click outside
   useEffect(() => {
@@ -238,8 +362,8 @@ export function TableMenu({
   const handleActionClick = useCallback(
     (action: MenuAction) => {
       if (action.disabled) return;
-      // Haptic feedback for premium feel
-      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate(8);
+      // FIX 198: Bible V8 §5.4 — use haptic service, not raw navigator.vibrate
+      haptic.light();
       action.onClick();
       onClose();
     },
@@ -346,7 +470,35 @@ export function TableMenu({
               </div>
             ))}
           </div>
+
+          {/* Observers Section */}
+          {observers.length > 0 && (
+            <div className="table-menu__observers">
+              <span className="table-menu__observers-title">
+                <span className="table-menu__observers-icon">◉</span>
+                {observers.length} Watching
+              </span>
+              <div className="table-menu__observers-list">
+                {observers.map((obs) => (
+                  <span key={obs.id} className="table-menu__observer-name">
+                    {obs.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Avatar Gallery Modal */}
+      {user && (
+        <AvatarGallery
+          isOpen={showAvatarGallery}
+          onClose={() => setShowAvatarGallery(false)}
+          userId={user.id}
+          currentAvatarUrl={avatarUrl || ''}
+          isVip={isVip}
+        />
       )}
     </div>
   );

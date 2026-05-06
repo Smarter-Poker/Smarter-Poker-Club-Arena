@@ -44,6 +44,7 @@ import DynamicWallet from '../components/wallet/DynamicWallet';
 import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+import { reportError } from '../utils/errorReporter';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -114,7 +115,10 @@ const CATEGORY_ICONS: Record<string, string> = {
   bonus: '★',
 };
 
+import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
+
 export default function CashierPage() {
+  useRealtimeFinancials();
   useEffect(() => {
     document.title = 'Cashier | Smarter Poker';
   }, []);
@@ -135,6 +139,15 @@ export default function CashierPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Rate limiting: minimum 2s between financial actions (beyond the 3s cooldown)
+  const lastActionRef = useRef<number>(0);
+  const RATE_LIMIT_MS = 2000;
+
+  // Connection status: track realtime channel health
+  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'reconnecting' | 'error'>(
+    'connected'
+  );
   const [message, setMessage] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
@@ -252,7 +265,7 @@ export default function CashierPage() {
   useEffect(() => {
     if (!clubId || !user?.id) return;
     setLoadingContext(true);
-    loadUserContext().finally(() => setLoadingContext(false));
+    loadUserContext();
   }, [clubId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load pending cashouts
@@ -283,7 +296,8 @@ export default function CashierPage() {
       if (isMounted.current) {
         setPendingCashouts(data || []);
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CashierPage.then');
       /* silent */
     }
   }, [clubId, user?.id]);
@@ -349,7 +363,8 @@ export default function CashierPage() {
         setIsInUnion(false);
         setIsUnionOwner(false);
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CashierPage.then');
       // Keep defaults
     } finally {
       if (isMounted.current) setLoadingContext(false);
@@ -520,7 +535,7 @@ export default function CashierPage() {
         recipientsCacheRef.current = { data: list, ts: Date.now(), clubId };
       }
     } catch (err: unknown) {
-      console.error('Failed to load recipients:', err);
+      reportError(err, 'CashierPage.Failed_to_load_recipients');
       toast.error(err instanceof Error ? err.message : 'Failed to load eligible recipients');
     }
     if (isMounted.current) setLoadingRecipients(false);
@@ -606,11 +621,13 @@ export default function CashierPage() {
               cachedAt: Date.now(),
             })
           );
-        } catch {
+        } catch (e) {
+          reportError(e, 'CashierPage.sort');
           /* storage full */
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CashierPage.sort');
       /* silent */
     } finally {
       txLoadingRef.current = false;
@@ -633,7 +650,8 @@ export default function CashierPage() {
               setTransactions(parsed.data);
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'CashierPage.useEffect');
           /* */
         }
       }
@@ -672,27 +690,13 @@ export default function CashierPage() {
     enabled: !!user?.id,
   });
 
-  // Wallet transactions channel
-  const handleTransactionUpdate = useCallback(
-    (payload: { eventType: string }) => {
-      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-        if (user?.id) {
-          loadBalances(user.id);
-          loadTransactions();
-        }
-      }
-    },
-    [user?.id, loadBalances, loadTransactions]
-  );
-
-  useMasterBusChannel({
-    channelName: user?.id ? `cashier-realtime-transactions-${user.id}` : null,
-    table: 'wallet_transactions',
-    filter: user?.id ? `user_id=eq.${user.id}` : null,
-    event: '*',
-    onPayload: handleTransactionUpdate,
-    enabled: !!user?.id,
-  });
+  // Wallet transactions channel — DISABLED (Phase 2 cost cut).
+  // wallet_transactions is being dropped from supabase_realtime to save egress.
+  // The page already refreshes on the canonical balance events via
+  // useMasterBusSubscriptions below (BALANCE_UPDATED, CHIPS_ADDED,
+  // CHIPS_WITHDRAWN, CASHIER_BALANCE_CHANGED, RAKEBACK_CLAIMED,
+  // DAILY_REWARD_CLAIMED). The `cashout_requests` subscription still covers
+  // pending-cashout state which is the cashier's primary action surface.
 
   // Cashout requests channel
   const handleCashoutUpdate = useCallback(() => {
@@ -810,11 +814,16 @@ export default function CashierPage() {
         }
       )
       .subscribe((status: string, err?: Error) => {
+        if (status === 'SUBSCRIBED') {
+          if (isMounted.current) setRealtimeStatus('connected');
+        }
         if (status === 'CHANNEL_ERROR') {
-          console.error('[CashierPage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'CashierPage._Realtime_channel_error');
+          if (isMounted.current) setRealtimeStatus('error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[CashierPage] ⏱️ Realtime channel timed out');
+          if (isMounted.current) setRealtimeStatus('reconnecting');
         }
       });
     return () => {
@@ -879,13 +888,35 @@ export default function CashierPage() {
         amount: chipAmount,
       });
     } catch (e) {
-      console.error('Failed to notify of wallet change:', e);
+      reportError(e, 'CashierPage.Failed_to_notify_of_wallet_change');
     }
   };
 
   const selectedRecipientData = useMemo(() => {
     return recipients.find((r) => r.id === selectedRecipient);
   }, [recipients, selectedRecipient]);
+
+  // ── Keyboard navigation for tabs (Arrow Left/Right) ──
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const idx = tabs.indexOf(action);
+        const next =
+          e.key === 'ArrowRight'
+            ? tabs[(idx + 1) % tabs.length]
+            : tabs[(idx - 1 + tabs.length) % tabs.length];
+        setAction(next);
+        setMessage(null);
+        // Focus the new tab button
+        const btn = document.querySelector(
+          `[aria-controls="cashier-panel-${next}"]`
+        ) as HTMLElement;
+        btn?.focus();
+      }
+    },
+    [tabs, action]
+  );
 
   const handleAction = async () => {
     const value = parseFloat(amount);
@@ -894,6 +925,14 @@ export default function CashierPage() {
       return;
     }
     if (!user?.id) return;
+
+    // Rate limit: block rapid successive actions (2s minimum)
+    const now = Date.now();
+    if (now - lastActionRef.current < RATE_LIMIT_MS) {
+      setMessage({ type: 'error', text: '⏱ Please wait before submitting another action' });
+      return;
+    }
+    lastActionRef.current = now;
 
     setIsProcessing(true);
     setMessage(null);
@@ -911,7 +950,8 @@ export default function CashierPage() {
           if (isMounted.current) setIsProcessing(false);
           return;
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'CashierPage');
         // Non-blocking: if settlement check fails, allow the action to proceed
       }
     }
@@ -1172,7 +1212,7 @@ export default function CashierPage() {
       }
       if (!clubId) {
         if (isMounted.current) setMessage({ type: 'error', text: 'Club ID is missing' });
-        setIsProcessing(false);
+        if (isMounted.current) setIsProcessing(false);
         return;
       }
 
@@ -1286,11 +1326,34 @@ export default function CashierPage() {
       )}
 
       {/* Action Tabs */}
-      <nav className={styles.tabNav} role="tablist" aria-label="Cashier actions">
+      {/* Connection status indicator */}
+      {realtimeStatus !== 'connected' && (
+        <div className={styles.connectionBanner} role="status" aria-live="polite">
+          {realtimeStatus === 'reconnecting' ? (
+            <>
+              <span className={styles.connectionDot} style={{ background: '#f59e0b' }} />{' '}
+              Reconnecting to live updates…
+            </>
+          ) : (
+            <>
+              <span className={styles.connectionDot} style={{ background: '#ef4444' }} /> Live
+              connection lost — data may be stale
+            </>
+          )}
+        </div>
+      )}
+
+      <nav
+        className={styles.tabNav}
+        role="tablist"
+        aria-label="Cashier actions"
+        onKeyDown={handleTabKeyDown}
+      >
         {tabs.map((act) => (
           <button
             key={act}
             role="tab"
+            tabIndex={action === act ? 0 : -1}
             aria-selected={action === act}
             aria-controls={`cashier-panel-${act}`}
             className={`${styles.tab} ${action === act ? styles.tabActive : ''}`}
@@ -1336,6 +1399,18 @@ export default function CashierPage() {
             onDistribute={() => loadBalances(user.id)}
           />
         )}
+
+      {/* Context Loading Skeleton — shown inside content while role/union data loads */}
+      {loadingContext && (
+        <div className={styles.card} aria-busy="true">
+          <div className={styles.loadingSkeleton}>
+            <div className={styles.skeletonBar} style={{ width: '45%', height: '14px' }} />
+            <div className={styles.skeletonBar} style={{ width: '70%', height: '44px' }} />
+            <div className={styles.skeletonBar} style={{ width: '100%', height: '44px' }} />
+            <div className={styles.skeletonBar} style={{ width: '100%', height: '48px' }} />
+          </div>
+        </div>
+      )}
 
       {/* ═══ SEND CHIPS ═══ */}
       {action === 'send' && (
@@ -1577,7 +1652,8 @@ export default function CashierPage() {
                       if (isMounted.current) setIsProcessing(false);
                       return;
                     }
-                  } catch {
+                  } catch (e) {
+                    reportError(e, 'CashierPage');
                     // Non-blocking: if settlement check fails, allow the action to proceed
                   }
                 }
@@ -1889,7 +1965,10 @@ export default function CashierPage() {
                   <button
                     key={f}
                     className={`${styles.txFilterBtn} ${txFilter === f ? styles.txFilterActive : ''}`}
-                    onClick={() => setTxFilter(f)}
+                    onClick={() => {
+                      setTxFilter(f);
+                      setTxPage(1);
+                    }}
                   >
                     {f === 'all'
                       ? 'All'
@@ -1907,7 +1986,34 @@ export default function CashierPage() {
             </div>
 
             {loadingTx ? (
-              <div className={styles.txLoading}>Loading transactions...</div>
+              <div className={styles.txLoading} aria-busy="true">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={styles.txSkeletonRow}
+                    style={{ animationDelay: `${i * 0.08}s` }}
+                  >
+                    <div
+                      className={`${styles.skeletonBar}`}
+                      style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0 }}
+                    />
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div
+                        className={styles.skeletonBar}
+                        style={{ width: `${55 + i * 5}%`, height: '12px' }}
+                      />
+                      <div
+                        className={styles.skeletonBar}
+                        style={{ width: '40%', height: '10px' }}
+                      />
+                    </div>
+                    <div
+                      className={styles.skeletonBar}
+                      style={{ width: '60px', height: '14px', flexShrink: 0 }}
+                    />
+                  </div>
+                ))}
+              </div>
             ) : filteredTransactions.length === 0 ? (
               <div className={styles.txEmpty}>
                 <span className={styles.txEmptyIcon}>📊</span>

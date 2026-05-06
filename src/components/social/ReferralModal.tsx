@@ -9,7 +9,7 @@
  * - Track referrals
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import './ReferralModal.css';
 
 export interface ReferralModalProps {
@@ -28,13 +28,27 @@ export function ReferralModal({
   totalReferrals,
 }: ReferralModalProps) {
   const [copied, setCopied] = useState(false);
+  // CA-15 BUG FIX: copiedTimerRef tracks the 2s 'Copied!' feedback timer.
+  // Previously fire-and-forget in handleCopy. If the modal closes before 2s
+  // (user navigates away), setCopied fires on an unmounted component.
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
 
   if (!isOpen) return null;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(referralLink);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => {
+      copiedTimerRef.current = null;
+      setCopied(false);
+    }, 2000);
   };
 
   return (

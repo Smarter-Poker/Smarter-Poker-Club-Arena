@@ -10,13 +10,14 @@
  * - Manage Player Tags (e.g., "Aggressive", "Grinder")
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import './UserProfileEdit.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 export interface UserProfileData {
   id: string;
+  username: string;
   displayName: string;
   avatarUrl: string;
   bio: string;
@@ -54,10 +55,27 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
   const [formData, setFormData] = useState<UserProfileData>(initialData);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [mounted, setMounted] = useState(false);
-
+  const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (isOpen) setTimeout(() => setMounted(true), 50);
-    else setMounted(false);
+    if (isOpen) {
+      if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+      mountTimerRef.current = setTimeout(() => {
+        mountTimerRef.current = null;
+        setMounted(true);
+      }, 50);
+    } else {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+      setMounted(false);
+    }
+    return () => {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -66,6 +84,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
     e.preventDefault();
     onSave({
       ...formData,
+      username: sanitizeInput(formData.username),
       displayName: sanitizeInput(formData.displayName),
       bio: sanitizeInput(formData.bio),
     });
@@ -141,12 +160,21 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
 
           <form onSubmit={handleSave} className="profile-form">
             <div className="form-group">
-              <label>Display Name</label>
+              <label>Poker Alias</label>
               <input
-                value={formData.displayName}
-                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                maxLength={12}
+                value={formData.username || ''}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                maxLength={16}
                 required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Real Name (Optional)</label>
+              <input
+                value={formData.displayName || ''}
+                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                maxLength={24}
               />
             </div>
 

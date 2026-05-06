@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DYNAMIC WALLET — Compact PokerBros-Style Inline Display
+ *  DYNAMIC WALLET — Compact Premium-Style Inline Display
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Compact wallet display positioned below the club card.
@@ -36,6 +36,7 @@ import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription'
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './DynamicWallet.css';
+import { reportError } from '../../utils/errorReporter';
 
 // All bus events that should trigger a wallet refresh
 const WALLET_BUS_EVENTS = [
@@ -267,7 +268,7 @@ export default function DynamicWallet({
       setFetchError(false);
       setLoading(false);
     } catch (err) {
-      console.error('[DynamicWallet] Fetch error:', err);
+      reportError(err, 'DynamicWallet.Fetch_error');
       if (thisVersion === fetchVersionRef.current && isMounted.current) {
         setFetchError(true);
         setLoading(false);
@@ -395,7 +396,7 @@ export default function DynamicWallet({
           retryCountRef.current = 0;
         }
         if (status === 'CHANNEL_ERROR') {
-          console.error('[DynamicWallet] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'DynamicWallet._Realtime_channel_error');
           scheduleReconnect();
         }
         if (status === 'TIMED_OUT') {

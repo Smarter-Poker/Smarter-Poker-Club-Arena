@@ -104,24 +104,14 @@ export interface PokerTable {
 }
 
 export type GameType = 'cash' | 'tournament' | 'sit_n_go';
-export type GameVariant =
-  | 'nlh'
-  | 'flh'
-  | 'plo'
-  | 'plo4'
-  | 'plo5'
-  | 'plo6'
-  | 'plo_hilo'
-  | 'plo8'
-  | 'short_deck'
-  | 'ofc'
-  | 'ofc_pineapple';
+// FIX 116: Dead variants removed — Dan's 9 approved variants only
+export type GameVariant = 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'pineapple' | 'short_deck';
 export type TableStatus = 'waiting' | 'running' | 'active' | 'paused' | 'closed' | 'deleted';
 
 export interface TableSettings {
   // ── Core Features ──
   straddle_enabled: boolean;
-  straddle_type: 'utg' | 'any_position' | 'mississippi';
+  straddle_type: 'utg'; // FIX 114: UTG straddle only
   run_it_twice: boolean;
   bomb_pot_enabled: boolean;
   bomb_pot_frequency: number; // Every N hands
@@ -142,6 +132,18 @@ export interface TableSettings {
   insurance_enabled: boolean; // All-in insurance
   auto_restart: boolean; // Auto restart after hand finishes
   call_time_enabled: boolean; // Shot clock / call time
+
+  // ── Blind Entry Policies (Bible V8 4.3) ──
+  wait_for_big_blind: boolean; // New players must wait for BB
+  auto_post_blinds: boolean; // Auto-post blinds when returning from sit-out
+  post_dead_blind: boolean; // Require missed blind post when re-entering
+
+  // ── Showdown Reveal Policy (Bible V8 4.21) ──
+  showdown_reveal: 'last_aggressor_first' | 'clockwise_from_button' | 'auto_show_all';
+  auto_muck_losers: boolean; // Auto-muck non-winning hands
+
+  // ── Anti-Ratholing ──
+  rathole_cooldown_minutes: number; // Cooldown before re-sitting after leaving (0 = disabled)
 }
 
 export interface ChipTransaction {
@@ -183,7 +185,7 @@ export interface UnionSettings {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Agent System (PokerBros-style chip distribution)
+// Agent System (premium-style chip distribution)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface Agent {
@@ -265,7 +267,8 @@ export interface HandState {
   players: SeatPlayer[];
 }
 
-export type HandStage = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
+// FIX 120: Added 'pineapple_discard' for Crazy Pineapple
+export type HandStage = 'preflop' | 'flop' | 'pineapple_discard' | 'turn' | 'river' | 'showdown';
 
 export interface SeatPlayer {
   seat: number;
@@ -278,9 +281,16 @@ export interface SeatPlayer {
   is_folded: boolean;
   is_all_in: boolean;
   is_sitting_out: boolean;
+  // Bible V8 2.4 / 2.8: Extended seat state
+  waiting_for_big_blind?: boolean;
+  forced_post_required?: boolean;
+  auto_time_bank_used_this_hand?: boolean;
+  manual_time_banks_used_this_hand?: number;
+  timeout_count_session?: number;
 }
 
-export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in';
+// FIX 120: Added 'discard' for Crazy Pineapple
+export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
 
 export interface PlayerAction {
   type: ActionType;

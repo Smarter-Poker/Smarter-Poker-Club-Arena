@@ -19,6 +19,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
 import './FinancialHealthPage.css';
+import { reportError } from '../utils/errorReporter';
 
 interface CronStatus {
   isRunning: boolean;
@@ -85,7 +86,7 @@ export default function FinancialHealthPage() {
       await FinancialCronService.runReconciliation();
       loadStatus();
     } catch (err) {
-      console.error('Manual reconciliation failed:', err);
+      reportError(err, 'FinancialHealthPage.Manual_reconciliation_failed');
       toast.error('Reconciliation failed');
     }
     setManualReconciling(false);
@@ -97,7 +98,7 @@ export default function FinancialHealthPage() {
       await FinancialCronService.runSuspensionCheck();
       loadStatus();
     } catch (err) {
-      console.error('Suspension check failed:', err);
+      reportError(err, 'FinancialHealthPage.Suspension_check_failed');
       toast.error('Suspension check failed');
     }
     setRefreshing(false);

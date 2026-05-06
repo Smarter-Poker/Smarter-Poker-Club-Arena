@@ -22,6 +22,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
 import { readLocalSession, hasLocalSession } from '../../lib/authUtils';
+import { reportError } from '../../utils/errorReporter';
 
 const SESSION_CHECK_TIMEOUT = 5000; // 5s max wait for getSession (increased from 3s)
 
@@ -205,7 +206,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
           setIsLoading(false);
         }
       } catch (err) {
-        console.error('[AuthGuard] Error:', err);
+        reportError(err, 'AuthGuard.Error');
         // getSession timed out. Check localStorage one final time before giving up.
         if (!cancelled) {
           if (hasLocalSession()) {
@@ -358,7 +359,7 @@ export function GuestGuard({ children }: AuthGuardProps) {
           setIsLoading(false);
         }
       } catch (err) {
-        console.error('[AuthGuard] Error:', err);
+        reportError(err, 'AuthGuard.Error');
         if (!cancelled) {
           setIsAuthenticated(hasLocalSession());
           setIsLoading(false);

@@ -16,6 +16,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { formatDate } from '../utils/format';
 import './ClubAnnouncementsPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 const announcementAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -99,10 +100,8 @@ export default function ClubAnnouncementsPage() {
           )
           .subscribe((status: string, err?: Error) => {
             if (status === 'CHANNEL_ERROR') {
-              console.error(
-                '[ClubAnnouncementsPage] ❌ Realtime channel error:',
-                err?.message || err
-              );
+              if (err)
+                reportError(err?.message || err, 'ClubAnnouncementsPage._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
               console.warn('[ClubAnnouncementsPage] ⏱️ Realtime channel timed out');
@@ -166,7 +165,8 @@ export default function ClubAnnouncementsPage() {
             setLoading(false);
           }
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubAnnouncementsPage.loadAnnouncements');
         /* corrupt cache */
       }
 
@@ -190,7 +190,8 @@ export default function ClubAnnouncementsPage() {
               .select('id, username')
               .in('id', authorIds);
             if (profs) for (const p of profs) authorMap[p.id] = p.username || 'Admin';
-          } catch {
+          } catch (e) {
+            reportError(e, 'ClubAnnouncementsPage.Set');
             /* non-critical */
           }
         }
@@ -228,7 +229,7 @@ export default function ClubAnnouncementsPage() {
         }
       }
     } catch (error) {
-      console.error('Failed to load announcements:', error);
+      reportError(error, 'ClubAnnouncementsPage.Failed_to_load_announcements');
       setLoadError(true);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load announcements');
     } finally {
@@ -262,7 +263,7 @@ export default function ClubAnnouncementsPage() {
         toast.error('Failed to post announcement');
       }
     } catch (error) {
-      console.error('Failed to post announcement:', error);
+      reportError(error, 'ClubAnnouncementsPage.Failed_to_post_announcement');
     }
     setPosting(false);
   };
@@ -281,7 +282,7 @@ export default function ClubAnnouncementsPage() {
         toast.error('Failed to update pin status');
       }
     } catch (err) {
-      console.error('Failed to toggle pin:', err);
+      reportError(err, 'ClubAnnouncementsPage.Failed_to_toggle_pin');
       toast.error('Failed to update pin status');
     }
   };
@@ -314,7 +315,7 @@ export default function ClubAnnouncementsPage() {
         toast.error('Failed to delete announcement');
       }
     } catch (err) {
-      console.error('Failed to delete announcement:', err);
+      reportError(err, 'ClubAnnouncementsPage.Failed_to_delete_announcement');
       toast.error('Failed to delete announcement');
     }
   };

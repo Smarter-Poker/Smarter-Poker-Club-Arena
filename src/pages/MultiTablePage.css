@@ -53,7 +53,9 @@
 .multi-table-page__container {
   flex: 1;
   display: flex;
-  will-change: transform;
+  /* NOTE: will-change:transform removed — it creates a containing block
+     for position:fixed descendants, breaking TablePage layout. §FIX-214
+     The inline transform style on the element is sufficient for GPU acceleration. */
   /* No transition by default — only during programmatic switches */
 }
 

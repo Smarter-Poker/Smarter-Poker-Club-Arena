@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './TournamentLobbyCard.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface Tournament {
   id: string;
@@ -62,7 +63,9 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setTimeout(() => setMounted(true), 50);
+    // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+    const _mountTimer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(_mountTimer);
   }, []);
 
   useEffect(() => {
@@ -96,7 +99,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       .eq('tournament_id', tournament.id)
       .eq('user_id', user.id)
       .maybeSingle();
-    if (error) console.error('[TournamentLobbyCard] Registration check failed:', error.message);
+    if (error) reportError(error, 'TournamentLobbyCard.Registration_check_failed');
     setIsRegistered(!!data);
   };
 
@@ -153,7 +156,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       }
       setIsRegistered(true);
     } catch (error) {
-      console.error('Failed to register:', error);
+      reportError(error, 'TournamentLobbyCard.Failed_to_register');
     }
     setRegistering(false);
   };
@@ -223,14 +226,20 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       try {
         let structure = tournament.blindStructure;
         if (typeof structure === 'string') {
-          structure = JSON.parse(structure);
+          // Only attempt JSON.parse if it looks like JSON (starts with [ or {)
+          const trimmed = structure.trim();
+          if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+            structure = JSON.parse(trimmed);
+          } else {
+            return null; // Not parseable JSON — skip silently
+          }
         }
         if (Array.isArray(structure) && structure.length > 0) {
           blindDuration = structure[0].durationMinutes || structure[0].duration_minutes;
         }
-      } catch (err) {
-        console.error('[TournamentLobbyCard] Error:', err);
-        // If parsing fails, return no badge
+      } catch (e) {
+        reportError(e, 'TournamentLobbyCard.getSpeedTier');
+        // If parsing fails, return no badge (non-critical)
         return null;
       }
     }
@@ -343,7 +352,6 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
                   PLO6: 'PLO6',
                   PLO8: 'PLO8',
                   PLO_HILO: 'PLO Hi-Lo',
-                  OFC_PINEAPPLE: 'OFC Pineapple',
                   SHORT_DECK: 'Short Deck',
                   PINEAPPLE: 'Pineapple',
                   MIXED: 'Mixed',

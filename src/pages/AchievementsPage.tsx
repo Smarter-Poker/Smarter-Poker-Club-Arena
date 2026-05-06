@@ -22,6 +22,7 @@ import './AchievementsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+import { reportError } from '../utils/errorReporter';
 
 type SortMode = 'default' | 'rarity' | 'progress' | 'recent';
 const RARITY_ORDER: Record<string, number> = { legendary: 0, epic: 1, rare: 2, common: 3 };
@@ -351,7 +352,7 @@ export default function AchievementsPage() {
           {
             event: '*',
             schema: 'public',
-            table: 'user_achievements',
+            table: 'training_user_achievements',
             filter: `user_id=eq.${user.id}`,
           },
           async (payload) => {
@@ -390,7 +391,7 @@ export default function AchievementsPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AchievementsPage] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'AchievementsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AchievementsPage] ⏱️ Realtime channel timed out');
@@ -456,7 +457,7 @@ export default function AchievementsPage() {
         setCachedAch(user?.id || '', merged);
       }
     } catch (error) {
-      console.error('Failed to load achievements:', error);
+      reportError(error, 'AchievementsPage.Failed_to_load_achievements');
       if (isMounted.current) toast?.error('Failed to load achievements');
     } finally {
       loadingRef.current = false;
@@ -529,7 +530,8 @@ export default function AchievementsPage() {
       const audio = new Audio('/sounds/unlock-chime.mp3');
       audio.volume = 0.4;
       audio.play().catch(() => {});
-    } catch {
+    } catch (e) {
+      reportError(e, 'AchievementsPage.useEffect');
       /* no audio support */
     }
   }, [newUnlock]);

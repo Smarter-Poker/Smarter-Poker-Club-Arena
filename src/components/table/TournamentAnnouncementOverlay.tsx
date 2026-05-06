@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './TournamentAnnouncementOverlay.css';
 
 interface TournamentAnnouncementProps {
@@ -13,18 +13,33 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
   onDismiss,
 }) => {
   const [visible, setVisible] = useState(false);
+  // CA-5 BUG FIX: the inner setTimeout(onDismiss, 500) inside the outer auto-dismiss
+  // callback had no ref — clearTimeout(timer) on the outer one doesn't cancel it.
+  // Added dismissCallbackTimerRef so unmount cancels both.
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissCallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Unmount guard
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      if (dismissCallbackTimerRef.current) clearTimeout(dismissCallbackTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (type) {
       setVisible(true);
-      const timer = setTimeout(
+      dismissTimerRef.current = setTimeout(
         () => {
           setVisible(false);
-          setTimeout(onDismiss, 500); // Wait for fade-out
+          dismissCallbackTimerRef.current = setTimeout(onDismiss, 500); // Wait for fade-out
         },
         type === 'level_up' ? 2000 : 4000
       );
-      return () => clearTimeout(timer);
+      return () => {
+        if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      };
     }
   }, [type, onDismiss]);
 
@@ -32,19 +47,19 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
 
   const config: Record<string, { icon: string; title: string; subtitle: string; color: string }> = {
     hand_for_hand: {
-      icon: '✋',
+      icon: 'H',
       title: 'HAND FOR HAND',
       subtitle: 'All tables play one hand at a time — bubble approaching!',
       color: '#f59e0b',
     },
     bubble_burst: {
-      icon: '💰',
+      icon: '$',
       title: 'BUBBLE BURST!',
       subtitle: 'Congratulations — all remaining players are in the money!',
       color: '#10b981',
     },
     final_table: {
-      icon: '🏆',
+      icon: '*',
       title: 'FINAL TABLE',
       subtitle: `${data?.playersRemaining || 'All'} players remain — final table begins!`,
       color: '#8b5cf6',

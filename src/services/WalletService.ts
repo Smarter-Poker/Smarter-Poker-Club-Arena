@@ -16,6 +16,7 @@ import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -164,11 +165,17 @@ export const WalletService = {
     // 3. Calculate diamond cost
     const diamondCost = Math.ceil((chipAmount / 100) * 38);
 
+    // BUG 025 FIX (2026-04-16): old RPC stub returned silent-success AND the call used
+    // mismatched param names (p_chips/p_diamonds) that would have 404'd against PostgREST
+    // anyway once the stub was replaced. Aligning to the unified signature
+    // (p_club_id, p_amount, p_minted_by, p_diamonds_cost, p_notes).
     const { data, error } = await retryAsync(async () => {
       const res = await supabase.rpc('mint_club_chips', {
         p_club_id: clubId,
-        p_chips: chipAmount,
-        p_diamonds: diamondCost,
+        p_amount: chipAmount,
+        p_minted_by: requestingUserId || null,
+        p_diamonds_cost: diamondCost,
+        p_notes: club.union_id ? 'Union mint' : 'Standalone club mint',
       });
       return res;
     });
@@ -386,7 +393,7 @@ export const WalletService = {
         await this.distributePromo(agentId, dist.playerId, dist.amount);
         success++;
       } catch (err) {
-        console.error(`[WalletService] distributePromo failed for player ${dist.playerId}:`, err);
+        reportError(err, 'WalletService.bulkDistributePromo', { playerId: dist.playerId });
         failed++;
       }
     }
@@ -427,10 +434,7 @@ export const WalletService = {
     });
 
     if (deductError) {
-      console.error(
-        '[WalletService] atomic_deduct_wallet_and_log RPC failed:',
-        deductError.message
-      );
+      reportError(deductError, 'WalletService.lockForBuyIn', { userId, tableId, amount });
       throw new Error(`Buy-in failed: ${deductError.message}`);
     }
 
@@ -472,10 +476,7 @@ export const WalletService = {
     });
 
     if (creditError) {
-      console.error(
-        '[WalletService] atomic_credit_wallet_and_log RPC failed:',
-        creditError.message
-      );
+      reportError(creditError, 'WalletService.unlockFromTable', { userId, tableId, amount });
       throw new Error(`Cash-out failed: ${creditError.message}`);
     }
 
@@ -521,29 +522,46 @@ export const WalletService = {
         3
       );
       // Also write to chip_ledger (immutable append-only audit trail)
-      supabase
-        .from('chip_ledger')
-        .insert({
-          performed_by: userId,
-          from_type:
-            type === 'debit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_mint',
-          from_entity_id: type === 'debit' ? userId : relatedEntityId,
-          to_type:
-            type === 'credit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_burn',
-          to_entity_id: type === 'credit' ? userId : relatedEntityId,
-          amount: Math.abs(amount),
-          category,
-          description,
-          table_id: tableId || undefined,
-          hand_id: handId || undefined,
-        })
-        .then(({ error: ledgerErr }) => {
-          if (ledgerErr)
-            console.warn('[WalletService] chip_ledger write failed:', ledgerErr.message);
-        });
+      // Guard: chip_ledger has amount > 0 CHECK constraint — skip zero-amount entries
+      const ledgerAmount = Math.abs(amount);
+      if (ledgerAmount > 0) {
+        supabase
+          .from('chip_ledger')
+          .insert({
+            performed_by: userId,
+            from_type:
+              type === 'debit'
+                ? 'player_wallet'
+                : relatedEntityId
+                  ? 'player_wallet'
+                  : 'system_mint',
+            from_entity_id: type === 'debit' ? userId : relatedEntityId,
+            to_type:
+              type === 'credit'
+                ? 'player_wallet'
+                : relatedEntityId
+                  ? 'player_wallet'
+                  : 'system_burn',
+            to_entity_id: type === 'credit' ? userId : relatedEntityId,
+            amount: ledgerAmount,
+            category,
+            description,
+            table_id: tableId || undefined,
+            hand_id: handId || undefined,
+          })
+          .then(({ error: ledgerErr }) => {
+            if (ledgerErr) reportError(ledgerErr, 'WalletService.chip_ledger_write_failed');
+          });
+      }
 
       if (error) {
-        console.error('[WalletService] Transaction log RPC failed:', error.message);
+        reportError(error, 'WalletService.logTransaction', {
+          userId,
+          walletType,
+          amount,
+          type,
+          category,
+        });
         // PARTIAL FAILURE RECOVERY: financial op succeeded but audit trail failed
         // Fire a critical alert so ops can manually reconcile
         // FIX: await the async logCritical call to prevent unhandled rejections
@@ -554,7 +572,13 @@ export const WalletService = {
         );
       }
     } catch (err: unknown) {
-      console.error('[WalletService] Transaction log error:', err);
+      reportError(err, 'WalletService.logTransaction.catch', {
+        userId,
+        walletType,
+        amount,
+        type,
+        category,
+      });
       // FIX: await the async logCritical call to prevent unhandled rejections
       await FinancialAlertService.logCritical(
         'WalletService.logTransaction',
@@ -675,7 +699,7 @@ export const WalletService = {
     );
 
     if (rpcError) {
-      console.error('[WalletService] deduct_table_chip_lock RPC failed:', rpcError.message);
+      reportError(rpcError, 'WalletService.processDealerTip', { userId, tableId, amount });
       throw new Error(`Failed to deduct dealer tip: ${rpcError.message}`);
     }
 
@@ -716,7 +740,7 @@ export const WalletService = {
     );
 
     if (error) {
-      console.error('[WalletService] deduct_table_chip_lock RPC failed:', error.message);
+      reportError(error, 'WalletService.processInsurance', { userId, tableId, handId, premium });
       throw new Error(`Failed to deduct insurance premium: ${error.message}`);
     }
 
@@ -753,7 +777,7 @@ export const WalletService = {
       .eq('wallet_type', walletType)
       .maybeSingle();
     if (error) {
-      console.error(`[WalletService] Failed to get ${walletType} wallet for ${userId}:`, error);
+      reportError(error, 'WalletService.getWallet', { userId, walletType });
       return null;
     }
     return data;
@@ -770,7 +794,7 @@ export const WalletService = {
       .select('wallet_type, balance, locked_balance')
       .eq('user_id', userId);
     if (error) {
-      console.error(`[WalletService] Failed to get wallets for ${userId}:`, error);
+      reportError(error, 'WalletService.getWallets', { userId });
       return [];
     }
     return data || [];
@@ -811,10 +835,7 @@ export const WalletService = {
         { onConflict: 'user_id,wallet_type', ignoreDuplicates: true }
       );
       if (error) {
-        console.error(
-          `[WalletService] Failed to ensure ${walletType} wallet for ${userId}:`,
-          error
-        );
+        reportError(error, 'WalletService.ensureWalletsExist', { userId, walletType });
       }
     }
   },

@@ -9,6 +9,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './LiveChipCounts.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ChipLeader {
   userId: string;
@@ -41,7 +42,9 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    setTimeout(() => setMounted(true), 50);
+    // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+    const _mountTimer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(_mountTimer);
   }, []);
 
   useEffect(() => {
@@ -89,7 +92,7 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
         setTotalChips(total);
       }
     } catch (error) {
-      console.error('Failed to load chip counts:', error);
+      reportError(error, 'LiveChipCounts.Failed_to_load_chip_counts');
     } finally {
       if (isMounted.current) setLoading(false);
     }

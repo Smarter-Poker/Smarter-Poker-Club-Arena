@@ -8,6 +8,7 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -45,7 +46,7 @@ class BlockServiceClass {
       if (error) {
         // Unique constraint — already blocked
         if (error.code === '23505') return true;
-        console.error('[BlockService] Failed to block user:', error);
+        reportError(error, 'BlockService.Failed_to_block_user');
         return false;
       }
 
@@ -67,7 +68,7 @@ class BlockServiceClass {
 
       return true;
     } catch (err: unknown) {
-      console.error('[BlockService] blockUser error:', err);
+      reportError(err, 'BlockService.blockUser_error');
       return false;
     }
   }
@@ -84,7 +85,7 @@ class BlockServiceClass {
         .eq('blocked_id', targetUserId);
 
       if (error) {
-        console.error('[BlockService] Failed to unblock user:', error);
+        reportError(error, 'BlockService.Failed_to_unblock_user');
         return false;
       }
 
@@ -98,7 +99,7 @@ class BlockServiceClass {
 
       return true;
     } catch (err: unknown) {
-      console.error('[BlockService] unblockUser error:', err);
+      reportError(err, 'BlockService.unblockUser_error');
       return false;
     }
   }
@@ -123,7 +124,7 @@ class BlockServiceClass {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('[BlockService] Failed to get blocked users:', error);
+        reportError(error, 'BlockService.Failed_to_get_blocked_users');
         return [];
       }
 
@@ -136,7 +137,7 @@ class BlockServiceClass {
         createdAt: row.created_at,
       }));
     } catch (err: unknown) {
-      console.error('[BlockService] getBlockedUsers error:', err);
+      reportError(err, 'BlockService.getBlockedUsers_error');
       return [];
     }
   }
@@ -190,7 +191,7 @@ class BlockServiceClass {
       this.blockedIds = new Set((data || []).map((row: any) => row.blocked_id));
       this.cacheUserId = userId;
     } catch (err) {
-      console.error('[BlockService] Error:', err);
+      reportError(err, 'BlockService.Error');
       this.blockedIds = new Set();
     }
   }

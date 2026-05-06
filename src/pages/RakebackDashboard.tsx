@@ -15,6 +15,7 @@ import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 interface RakebackStats {
   totalRakeContributed: number;
@@ -78,40 +79,13 @@ export default function RakebackDashboard() {
     };
   }, []);
 
-  // Supabase realtime: instant updates when wallet_transactions change (rake/rakeback)
-  useEffect(() => {
-    if (!user?.id) return;
-    const channelKey = `rakeback-dash-${user.id}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'wallet_transactions',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload: any) => {
-          // Only reload for rake/rakeback transactions
-          const cat = payload?.new?.category;
-          if (cat === 'rake' || cat === 'rakeback') {
-            if (isMounted.current) loadData();
-          }
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[RakebackDashboard] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[RakebackDashboard] ⏱️ Realtime channel timed out');
-        }
-      });
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [user?.id]);
+  // Realtime subscription on wallet_transactions removed (Phase 2 cost cut).
+  // Rakeback is an analytics view — the three existing refresh paths cover it:
+  //   • useVisibilityRefresh (line 57) refetches on tab focus
+  //   • masterBus 'BALANCE_UPDATED' refetches when any wallet changes
+  //   • masterBus 'HAND_COMPLETED' refetches when engine finishes a hand
+  // Rakeback accrual lags real wallet changes by ≤1 s anyway, so removing the
+  // direct INSERT subscription has no user-visible impact.
 
   const loadingRef = useRef(false);
 
@@ -189,7 +163,7 @@ export default function RakebackDashboard() {
       });
     } catch (err) {
       if (!isMounted.current) return;
-      console.error('[RakebackDashboard] Load failed:', err);
+      reportError(err, 'RakebackDashboard.Load_failed');
       toast.error('Failed to load rakeback data');
     } finally {
       loadingRef.current = false;

@@ -19,6 +19,7 @@ import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -90,11 +91,14 @@ class CashoutServiceClass {
       );
     }
 
+    // BUG 025 FIX (2026-04-16): old fn_request_cashout was a silent-success stub that
+    // returned a fabricated UUID without inserting cashout_requests or debiting chips.
+    // Real implementation now returns the actual new cashout_requests.id (uuid).
     const { data, error } = await retryAsync(
       () =>
         supabase.rpc('fn_request_cashout', {
           p_player_id: playerId,
-          p_club_id: clubId,
+          p_club_id: resolvedClubId,
           p_amount: amount,
           p_note: note || null,
         }),
@@ -102,12 +106,17 @@ class CashoutServiceClass {
     );
 
     if (error) {
-      console.error('[Cashout] Failed to request cashout:', error);
+      reportError(error, 'CashoutService.requestCashout');
       throw new Error(error.message || 'Failed to request cashout');
     }
 
-    // Get the created cashout
-    const cashout = await this.getCashout(data);
+    // RPC returns the new cashout uuid directly (BUG 025 fix)
+    const newCashoutId = typeof data === 'string' ? data : (data as any)?.request_id;
+    if (!newCashoutId) {
+      reportError(new Error('fn_request_cashout returned no id'), 'CashoutService.requestCashout');
+      throw new Error('Failed to request cashout: no id returned');
+    }
+    const cashout = await this.getCashout(newCashoutId);
 
     // 🔔 Notify agent of the new cash-out request (graceful failure)
     if (cashout?.agentId) {
@@ -120,7 +129,7 @@ class CashoutServiceClass {
           cashout.id
         );
       } catch (notifyError) {
-        console.error('[Cashout] Failed to notify agent:', notifyError);
+        reportError(notifyError, 'CashoutService.notifyAgent');
         // Don't fail the cashout if notification fails
       }
     }
@@ -157,15 +166,16 @@ class CashoutServiceClass {
   async cancelCashout(cashoutId: string, playerId: string): Promise<boolean> {
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: prod signature is (p_cashout_id, p_user_id) not (p_cashout_id, p_player_id).
         supabase.rpc('fn_cancel_cashout', {
           p_cashout_id: cashoutId,
-          p_player_id: playerId,
+          p_user_id: playerId,
         }),
       3
     );
 
     if (error) {
-      console.error('[Cashout] Failed to cancel cashout:', error);
+      reportError(error, 'CashoutService.cancelCashout');
       throw new Error(error.message || 'Failed to cancel cashout');
     }
 
@@ -200,16 +210,18 @@ class CashoutServiceClass {
   async approveCashout(cashoutId: string, agentId: string, note?: string): Promise<boolean> {
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: prod signature is (p_agent_note, p_agent_user_id, p_cashout_id);
+        // caller used to pass (p_agent_id, p_note) which silently 404'd in PostgREST.
         supabase.rpc('fn_agent_approve_cashout', {
           p_cashout_id: cashoutId,
-          p_agent_id: agentId,
-          p_note: note || null,
+          p_agent_user_id: agentId,
+          p_agent_note: note || null,
         }),
       3
     );
 
     if (error) {
-      console.error('[Cashout] Failed to approve cashout:', error);
+      reportError(error, 'CashoutService.approveCashout');
       throw new Error(error.message || 'Failed to approve cashout');
     }
 
@@ -248,15 +260,17 @@ class CashoutServiceClass {
   async completeCashout(cashoutId: string, agentId: string): Promise<boolean> {
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: prod signature is (p_cashout_id, p_completed_by) — the param
+        // is generic 'completed_by' not agent-specific because admins can also complete.
         supabase.rpc('fn_complete_cashout', {
           p_cashout_id: cashoutId,
-          p_agent_id: agentId,
+          p_completed_by: agentId,
         }),
       3
     );
 
     if (error) {
-      console.error('[Cashout] Failed to complete cashout:', error);
+      reportError(error, 'CashoutService.completeCashout');
       throw new Error(error.message || 'Failed to complete cashout');
     }
 
@@ -300,7 +314,7 @@ class CashoutServiceClass {
         }
       }
     } catch (err) {
-      console.error('[CashoutService] Post-cashout bus emission failed:', err);
+      reportError(err, 'CashoutService.postCashoutBus');
     }
 
     return data === true;
@@ -316,16 +330,17 @@ class CashoutServiceClass {
     // Delegate entirely to the atomic Supabase RPC to prevent race conditions
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: prod signature uses p_reason not p_note for the rejection reason.
         supabase.rpc('fn_reject_cashout', {
           p_cashout_id: cashoutId,
           p_agent_id: agentId,
-          p_note: reason || null,
+          p_reason: reason || null,
         }),
       3
     );
 
     if (error) {
-      console.error('[Cashout] CRITICAL: Failed to reject cashout:', error);
+      reportError(error, 'CashoutService.rejectCashout');
       throw new Error(error.message || 'Cannot reject cashout.');
     }
 
@@ -399,7 +414,7 @@ class CashoutServiceClass {
     const { data, error } = await query;
 
     if (error) {
-      console.error('[Cashout] Failed to get agent cashouts:', error);
+      reportError(error, 'CashoutService.getAgentCashouts');
       return [];
     }
 
@@ -430,7 +445,7 @@ class CashoutServiceClass {
     const { data, error } = await query;
 
     if (error) {
-      console.error('[Cashout] Failed to get player cashouts:', error);
+      reportError(error, 'CashoutService.getPlayerCashouts');
       return [];
     }
 
@@ -458,7 +473,7 @@ class CashoutServiceClass {
     );
 
     if (error) {
-      console.error('[Cashout] Failed to check remove permission:', error);
+      reportError(error, 'CashoutService.checkRemovePermission');
       return false;
     }
 
@@ -503,7 +518,7 @@ class CashoutServiceClass {
     });
 
     if (txError) {
-      console.error('[Cashout] Failed to record reversal metadata (transfer succeeded):', txError);
+      reportError(txError, 'CashoutService.reversalMetadata');
     }
 
     return true;
@@ -564,7 +579,7 @@ class CashoutServiceClass {
         .eq('id', reversibleTx.id);
 
       if (reverseError) {
-        console.error('[Cashout] Failed to mark reversal on column:', reverseError);
+        reportError(reverseError, 'CashoutService.markReversal');
       }
     } else {
       console.warn('[Cashout] No reversible transaction found to mark — reversal metadata skipped');
@@ -581,7 +596,7 @@ class CashoutServiceClass {
     });
 
     if (txError) {
-      console.error('[Cashout] Failed to record removal metadata:', txError);
+      reportError(txError, 'CashoutService.removalMetadata');
     }
 
     return true;
@@ -618,14 +633,15 @@ class CashoutServiceClass {
   async expireStale(maxHours = 72): Promise<{ expired: number; playersRefunded: string[] }> {
     const { data, error } = await retryAsync(
       () =>
+        // Round 18 fix: my Round 9 RPC param is p_ttl_hours, caller used p_max_hours.
         supabase.rpc('fn_expire_stale_cashouts', {
-          p_max_hours: maxHours,
+          p_ttl_hours: maxHours,
         }),
       3
     );
 
     if (error) {
-      console.error('[Cashout] Failed to expire stale cashouts:', error);
+      reportError(error, 'CashoutService.expireStale');
       return { expired: 0, playersRefunded: [] };
     }
 

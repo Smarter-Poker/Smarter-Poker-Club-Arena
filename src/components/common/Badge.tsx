@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🏷️ BADGE — Status & Label Badges
+ * BADGE — Status & Label Badges
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -50,7 +50,7 @@ export function VIPBadge({
     silver: '',
     gold: '',
     platinum: '',
-    diamond: '💠',
+    diamond: '',
   };
 
   // Don't render badge for invalid/empty/none levels

@@ -1,0 +1,71 @@
+# ═════════════════════════════════════════════════════════════════════════
+# Caddy vhost — engine.smarter.poker
+#   - Primary: reverse-proxy to club-arena-engine on :8080 (CORS-handled)
+#   - Secondary: monitoring stack co-located (Phase 5.1.3a, 2026-04-20):
+#       /grafana       → Grafana UI (own login)
+#       /prometheus    → Prometheus UI (basic-auth)
+#       /alertmanager  → AlertManager UI (basic-auth)
+#       /runbooks/*    → Markdown runbook file server (public)
+# ═════════════════════════════════════════════════════════════════════════
+
+engine.smarter.poker {
+    @cors_preflight method OPTIONS
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin "https://smarter.poker"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, Authorization, Upgrade, Connection"
+        header Access-Control-Allow-Credentials "true"
+        header Access-Control-Max-Age "86400"
+        respond "" 204
+    }
+
+    # ─── Grafana (own login) ─────────────────────────────────────────────
+    # Note: Grafana is configured with GF_SERVER_SERVE_FROM_SUB_PATH=true and
+    # GF_SERVER_ROOT_URL=https://engine.smarter.poker/grafana so it expects
+    # the /grafana prefix intact. Use `handle` (not `handle_path`) so Caddy
+    # does NOT strip the prefix before proxying.
+    handle /grafana/* {
+        reverse_proxy 127.0.0.1:3001
+    }
+    redir /grafana /grafana/ permanent
+
+    # ─── Prometheus (basic-auth) ─────────────────────────────────────────
+    handle_path /prometheus/* {
+        basic_auth {
+            monitor REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT
+        }
+        reverse_proxy 127.0.0.1:9090
+    }
+    redir /prometheus /prometheus/ permanent
+
+    # ─── AlertManager (basic-auth) ───────────────────────────────────────
+    handle_path /alertmanager/* {
+        basic_auth {
+            monitor REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT
+        }
+        reverse_proxy 127.0.0.1:9093
+    }
+    redir /alertmanager /alertmanager/ permanent
+
+    # ─── Runbooks (public markdown) ──────────────────────────────────────
+    handle_path /runbooks/* {
+        root * /opt/Smarter-Poker-World-Hub/docs/runbooks
+        try_files {path} {path}.md =404
+        file_server
+    }
+
+    # ─── Default: club-arena-engine reverse-proxy ────────────────────────
+    handle {
+        reverse_proxy localhost:8080 {
+            header_down -Access-Control-Allow-Origin
+            header_down -Access-Control-Allow-Methods
+            header_down -Access-Control-Allow-Headers
+            header_down -Access-Control-Allow-Credentials
+        }
+
+        header Access-Control-Allow-Origin "https://smarter.poker"
+        header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, Authorization, Upgrade, Connection"
+        header Access-Control-Allow-Credentials "true"
+    }
+}

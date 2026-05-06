@@ -3,7 +3,7 @@
  *  BUY-IN MODAL — Table Buy-In Interface
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * PokerBros-style buy-in modal with:
+ * premium-style buy-in modal with:
  * - Min/Max slider
  * - Quick amount buttons
  * - Auto rebuy toggle
@@ -11,8 +11,9 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import './BuyInModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -30,6 +31,8 @@ export interface BuyInModalProps {
   bigBlind: number;
   currency?: string;
   countdown?: number; // Seconds remaining to buy in
+  /** FIX 136: If set, player recently cashed out and must buy in for at least this amount */
+  cashoutRestriction?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -38,7 +41,10 @@ export interface BuyInModalProps {
 
 // EXACT precision — no abbreviations, no rounding
 function formatAmount(amount: number, currency: string = ''): string {
-  return `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (Math.abs(amount - Math.round(amount)) < 0.005) {
+    return Math.round(amount).toLocaleString('en-US');
+  }
+  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -57,14 +63,16 @@ export function BuyInModal({
   bigBlind,
   currency = '',
   countdown,
+  cashoutRestriction,
 }: BuyInModalProps) {
   // State
-  const [buyInAmount, setBuyInAmount] = useState(defaultBuyIn || Math.min(minBuyIn * 2, maxBuyIn));
+  // Default to MAX buy-in (capped by account balance) — Dan's directive
+  const effectiveDefault = defaultBuyIn || Math.min(maxBuyIn, accountBalance);
+  const [buyInAmount, setBuyInAmount] = useState(effectiveDefault);
   const [autoRebuy, setAutoRebuy] = useState(false);
-  const [rebuyThreshold, setRebuyThreshold] = useState(0);
-  const [displayAmount, setDisplayAmount] = useState(
-    defaultBuyIn || Math.min(minBuyIn * 2, maxBuyIn)
-  );
+  // FIX 191: rebuyThreshold was always 0 — default to 50% (half the buy-in)
+  const [rebuyThreshold, setRebuyThreshold] = useState(50);
+  const [displayAmount, setDisplayAmount] = useState(effectiveDefault);
   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const animationFrameRef = useRef<number>(0);
@@ -142,12 +150,12 @@ export function BuyInModal({
   // Handle confirm
   const handleConfirm = useCallback(async () => {
     if (!hasEnoughBalance || isProcessing) return;
-    haptic.medium();
+    soundService.playBuyInConfirm();
     setIsProcessing(true);
     try {
       await onConfirm(clampedBuyIn, autoRebuy);
     } catch (err) {
-      console.error('[BuyInModal] onConfirm threw:', err);
+      reportError(err, 'BuyInModal.onConfirm_threw');
     } finally {
       setIsProcessing(false);
     }
@@ -168,6 +176,26 @@ export function BuyInModal({
             ×
           </button>
         </div>
+
+        {/* FIX 136: 2-hour re-entry restriction notice */}
+        {cashoutRestriction && cashoutRestriction > 0 && (
+          <div
+            className="buy-in-modal__restriction-notice"
+            style={{
+              background: 'rgba(255, 165, 0, 0.15)',
+              border: '1px solid rgba(255, 165, 0, 0.4)',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              margin: '0 0 12px 0',
+              fontSize: '12px',
+              color: '#ffaa33',
+              textAlign: 'center',
+            }}
+          >
+            You cashed out {formatAmount(cashoutRestriction)} from this table. Min buy-in is{' '}
+            {formatAmount(cashoutRestriction)} for 2 hours.
+          </div>
+        )}
 
         {/* Amount Display */}
         <div className="buy-in-modal__amount-display">
@@ -206,16 +234,16 @@ export function BuyInModal({
           </div>
         </div>
 
-        {/* Quick Amounts */}
+        {/* Quick Amounts — FIX 192: labels computed dynamically from actual BB count */}
         <div className="buy-in-modal__quick-amounts">
           <button className="buy-in-modal__quick-btn" onClick={() => handleQuickAmount(1)}>
-            20BB
+            {Math.round(minBuyIn / bigBlind)}BB
           </button>
           <button className="buy-in-modal__quick-btn" onClick={() => handleQuickAmount(2)}>
-            40BB
+            {Math.round((minBuyIn * 2) / bigBlind)}BB
           </button>
           <button className="buy-in-modal__quick-btn" onClick={() => handleQuickAmount(5)}>
-            100BB
+            {Math.round(Math.min(minBuyIn * 5, maxBuyIn) / bigBlind)}BB
           </button>
           <button
             className="buy-in-modal__quick-btn buy-in-modal__quick-btn--max"

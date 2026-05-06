@@ -251,6 +251,9 @@ export function TableChat({
       {/* Header */}
       <div className="table-chat__header">
         <span className="table-chat__title">Table Chat</span>
+        <button className="table-chat__minimize" onClick={onToggleCollapse} title="Minimize chat">
+          ▾
+        </button>
       </div>
 
       {/* Messages */}

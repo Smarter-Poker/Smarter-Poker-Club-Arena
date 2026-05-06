@@ -8,6 +8,7 @@
 
 import { useCallback } from 'react';
 import './NumericKeypad.css';
+import { reportError } from '../../utils/errorReporter';
 
 // Haptic feedback utility
 const triggerHaptic = (pattern: number | number[] = 8) => {
@@ -16,8 +17,7 @@ const triggerHaptic = (pattern: number | number[] = 8) => {
       navigator.vibrate(pattern);
     }
   } catch (err) {
-
-    console.error("[NumericKeypad] Error:", err);
+    reportError(err, 'NumericKeypad.Error');
     /* silent */
   }
 };

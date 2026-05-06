@@ -67,35 +67,68 @@ export function HandHistoryViewer({
     setLoading(true);
 
     try {
+      // Round 38 audit Pass 1 fix: hand_history's real schema is
+      // (id, table_id, tournament_id, hand_number, game_variant, small_blind,
+      //  big_blind, pot_size, rake_amount, community_cards, winners, players,
+      //  actions, started_at, ended_at, hole_cards, board, created_at, ...).
+      // The previous select referenced 11 non-existent columns (table_name,
+      // stakes, result, game_type, hero_hand, played_at, user_id, club_id,
+      // position, final_action) and filtered .eq('user_id', user.id) on a
+      // column that doesn't exist — every player saw an empty list.
+      // Fix: select real columns + filter via JSONB contains on the players
+      // array. club_id is not on hand_history; if needed it would JOIN via
+      // tables(id).club_id (deferred — not required for the viewer).
       let query = supabase
         .from('hand_history')
         .select(
-          'id, table_id, table_name, stakes, pot_size, result, game_type, hero_hand, community_cards, actions, played_at, user_id, club_id, hole_cards, position, final_action, created_at'
+          'id, table_id, tournament_id, hand_number, game_variant, small_blind, big_blind, pot_size, rake_amount, community_cards, winners, players, actions, started_at, ended_at, created_at'
         )
-        .eq('user_id', user.id)
-        .order('played_at', { ascending: false })
+        .contains('players', [{ userId: user.id }])
+        .order('created_at', { ascending: false })
         .limit(limit);
 
-      if (clubId) query = query.eq('club_id', await resolveClubUUID(clubId));
+      if (clubId) {
+        // resolveClubUUID kept warm; downstream club narrowing happens via
+        // tables(id) join when that's wired in. No-op for now.
+        await resolveClubUUID(clubId);
+      }
       if (tableId) query = query.eq('table_id', tableId);
 
       const { data, error } = await query;
 
       if (!error && data) {
         setHands(
-          data.map((h) => ({
-            id: h.id,
-            tableId: h.table_id,
-            tableName: h.table_name || 'Table',
-            stakes: h.stakes || '1/2',
-            potSize: h.pot_size || 0,
-            myResult: h.result || 0,
-            holeCards: h.hole_cards || [],
-            communityCards: h.community_cards || [],
-            position: h.position || 'BTN',
-            action: h.final_action || 'fold',
-            playedAt: new Date(h.played_at || h.created_at),
-          }))
+          data.map((h) => {
+            // Round 38 audit Pass 1 fix: derive per-player fields from the
+            // JSONB players array since hand_history doesn't store them as
+            // top-level columns. The engine writes players as
+            // [{ userId, username, seat, stack, cards }] and winners as
+            // [{ userId, amount, ... }] (Bible V8 §2.5).
+            const playersArr = Array.isArray(h.players) ? (h.players as any[]) : [];
+            const winnersArr = Array.isArray(h.winners) ? (h.winners as any[]) : [];
+            const myPlayer = playersArr.find((p) => p?.userId === user.id);
+            const myWin = winnersArr.find((w) => w?.userId === user.id);
+            const myFinalAction = (() => {
+              if (!Array.isArray(h.actions)) return 'fold';
+              const mySeat = myPlayer?.seat;
+              if (mySeat == null) return 'fold';
+              const myActions = (h.actions as any[]).filter((a) => a?.seat === mySeat);
+              return myActions[myActions.length - 1]?.action || 'fold';
+            })();
+            return {
+              id: h.id,
+              tableId: h.table_id,
+              tableName: 'Table', // table_name not on hand_history; lookup via tables(id) on demand
+              stakes: `${h.small_blind ?? 1}/${h.big_blind ?? 2}`,
+              potSize: h.pot_size || 0,
+              myResult: myWin?.amount || 0,
+              holeCards: myPlayer?.cards || [],
+              communityCards: h.community_cards || [],
+              position: 'BTN', // position not stored on hand_history; derive from seat vs dealer if added later
+              action: myFinalAction,
+              playedAt: new Date(h.ended_at || h.created_at),
+            };
+          })
         );
         setVisibleItems(new Set());
         staggerTimersRef.current.forEach((t) => clearTimeout(t));

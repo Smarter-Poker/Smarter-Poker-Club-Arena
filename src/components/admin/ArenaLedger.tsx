@@ -5,7 +5,7 @@
  *
  * Consolidated from World Hub `components/commander/admin/ArenaLedger.jsx`.
  *
- * Displays a real-time feed of `club_arena_audit_logs` and `club_arena_messages`
+ * Displays a real-time feed of `audit_trail` and `club_arena_messages`
  * with filtering, search, and live streaming via Supabase Realtime.
  *
  * Used in: Commander admin panels, Financial Admin Hub
@@ -17,6 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { formatDateTime } from '../../lib/date';
 import './ArenaLedger.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -75,7 +76,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
     try {
       // Fetch audit logs
       const { data: auditData } = await supabase
-        .from('audit_logs')
+        .from('audit_trail')
         .select('id, action, actor_id, details, created_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })
@@ -114,7 +115,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
 
       if (isMounted.current) setEntries(combined.slice(0, maxEntries));
     } catch (err) {
-      console.error('[ArenaLedger] Fetch error:', err);
+      reportError(err, 'ArenaLedger.Fetch_error');
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -136,7 +137,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'audit_logs',
+          table: 'audit_trail',
           filter: `club_id=eq.${clubId}`,
         },
         (payload) => {
@@ -177,7 +178,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ArenaLedger] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'ArenaLedger._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ArenaLedger] ⏱️ Realtime channel timed out');

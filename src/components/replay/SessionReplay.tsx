@@ -8,6 +8,7 @@ import { formatDuration } from '@/lib/date';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './SessionReplay.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ReplayAction {
   timestamp: number;
@@ -78,7 +79,7 @@ export const SessionReplay: React.FC<SessionReplayProps> = ({ sessionId, onClose
       // Replaced seeded test data with null (session not found locally)
       setReplay(null);
     } catch (error) {
-      console.error('Failed to load session:', error);
+      reportError(error, 'SessionReplay.Failed_to_load_session');
     } finally {
       if (isMounted.current) setLoading(false);
     }

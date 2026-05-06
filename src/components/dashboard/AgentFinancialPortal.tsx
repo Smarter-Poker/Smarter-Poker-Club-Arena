@@ -6,6 +6,8 @@ import { WalletService } from '../../services/WalletService';
 import { useToast } from '../common/Toast';
 import { FinancialChart } from '../charts/FinancialChart';
 import { masterBus } from '../../core/MasterBus';
+import { reportError } from '../../utils/errorReporter';
+import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 
 interface AgentPortalProps {
   agentId: string;
@@ -32,7 +34,9 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setTimeout(() => setMounted(true), 50);
+    // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+    const _mountTimer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(_mountTimer);
   }, []);
 
   useEffect(() => {
@@ -40,25 +44,54 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
     fetchCommissionHistory();
   }, [agentId]);
 
+  // Hook to handle visibility state changes (prevents zombie subscriptions)
+  useVisibilityRefresh(() => {
+    fetchWalletData();
+    fetchCommissionHistory();
+  });
+
   // Live-sync: refresh wallet data when balances change anywhere in the app
   useEffect(() => {
-    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => {
-      fetchWalletData();
-    }, 500);
-    const unsubSettlement = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', () => {
-      fetchWalletData();
-      fetchCommissionHistory();
-    }, 500);
-    const unsubCommission = masterBus.subscribeDebounced('COMMISSION_PAID', () => {
-      fetchWalletData();
-      fetchCommissionHistory();
-    }, 500);
-    return () => { unsubBalance(); unsubSettlement(); unsubCommission(); };
+    const unsubBalance = masterBus.subscribeDebounced(
+      'BALANCE_UPDATED',
+      () => {
+        fetchWalletData();
+      },
+      500
+    );
+    const unsubSettlement = masterBus.subscribeDebounced(
+      'SETTLEMENT_COMPLETED',
+      () => {
+        fetchWalletData();
+        fetchCommissionHistory();
+      },
+      500
+    );
+    const unsubCommission = masterBus.subscribeDebounced(
+      'COMMISSION_PAID',
+      () => {
+        fetchWalletData();
+        fetchCommissionHistory();
+      },
+      500
+    );
+    return () => {
+      unsubBalance();
+      unsubSettlement();
+      unsubCommission();
+    };
   }, [agentId]);
 
   const fetchCommissionHistory = async () => {
     // Fetch last 7 days of commission data
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const days: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      days.push(
+        new Date(Date.now() - i * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
+          weekday: 'short',
+        })
+      );
+    }
     try {
       const { data, error } = await supabase
         .from('commission_ledger')
@@ -89,7 +122,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         );
       }
     } catch (err) {
-      console.error('Failed to load commission history:', err);
+      reportError(err, 'AgentFinancialPortal.Failed_to_load_commission_history');
     }
   };
 
@@ -102,7 +135,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         .maybeSingle();
 
       if (error || !data) {
-        console.error('Error loading agent wallet', error);
+        reportError(error, 'AgentFinancialPortal.Error_loading_agent_wallet');
         return;
       }
 
@@ -117,7 +150,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         debt: calculatedDebt.debtOwed,
       });
     } catch (err) {
-      console.error('[AgentPortal] fetchWalletData error:', err);
+      reportError(err, 'AgentFinancialPortal.fetchWalletData_error');
     }
   };
 
@@ -135,7 +168,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         toast.error('Transfer failed. Please check your balance.');
       }
     } catch (err) {
-      console.error('Transfer error:', err);
+      reportError(err, 'AgentFinancialPortal.Transfer_error');
       toast.error('Transfer failed: ' + (err as Error).message);
     } finally {
       setIsTransferring(false);
@@ -209,7 +242,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
           <div
             className="bg-red-500 h-4 transition-all duration-500"
             style={{
-              width: `${wallet.creditLimit > 0 ? Math.min(((wallet.creditLimit - wallet.agentBal) / wallet.creditLimit) * 100, 100) : 0}%`,
+              width: `${wallet.creditLimit > 0 ? Math.max(0, Math.min(((wallet.creditLimit - wallet.agentBal) / wallet.creditLimit) * 100, 100)) : 0}%`,
             }}
           />
         </div>

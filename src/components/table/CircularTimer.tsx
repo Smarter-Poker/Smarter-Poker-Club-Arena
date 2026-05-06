@@ -1,7 +1,7 @@
 /**
  * ♠ CLUB ARENA — Circular Timer Arc
  * ═══════════════════════════════════════════════════════════════════════════════
- * PokerBros-style SVG arc timer that wraps around the player's avatar.
+ * premium-style SVG arc timer that wraps around the player's avatar.
  * Replaces the linear progress bar with a professional circular countdown.
  *
  * - Green (>50%) → Yellow (25-50%) → Orange (10-25%) → Red (<10%)

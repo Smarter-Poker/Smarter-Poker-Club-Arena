@@ -1,6 +1,6 @@
 /**
  * ♠ CLUB ARENA — Hand Replayer Page
- * PokerBros-style shareable hand replay with social meta tags
+ * premium-style shareable hand replay with social meta tags
  * URL: /share/hand/:handId
  */
 
@@ -11,6 +11,7 @@ import { PositionAnalysis, OddsDisplay, ShareableHighlight } from '../../compone
 import { CardImage } from '../../components/table/CardImage';
 import type { Card } from '../../components/table/CardImage';
 import './HandReplayerPage.css';
+import { reportError } from '../../utils/errorReporter';
 
 const playerSeatAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -121,7 +122,7 @@ export default function HandReplayerPage() {
       setHand(mapped);
     } catch (error) {
       if (getIsMounted && !getIsMounted()) return;
-      console.error('Failed to load hand:', error);
+      reportError(error, 'HandReplayerPage.Failed_to_load_hand');
     }
     if (getIsMounted && !getIsMounted()) return;
     setLoading(false);
@@ -229,7 +230,7 @@ export default function HandReplayerPage() {
 
         {/* Sound toggle */}
         <button className="sound-toggle" onClick={() => setSoundEnabled(!soundEnabled)}>
-          {soundEnabled ? '🔊' : '🔇'}
+          {soundEnabled ? 'ON' : 'OFF'}
         </button>
 
         {/* Tab navigation */}
@@ -244,7 +245,7 @@ export default function HandReplayerPage() {
             className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`}
             onClick={() => setActiveTab('analysis')}
           >
-            📊 Analysis
+            Analysis
           </button>
         </div>
 

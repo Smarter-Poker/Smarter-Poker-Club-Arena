@@ -21,6 +21,7 @@ import TermsGate from '../components/auth/TermsGate';
 import styles from './SettingsPage.module.css';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { useToast } from '../components/common/Toast';
+import { reportError } from '../utils/errorReporter';
 
 const settingsSectionAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -54,7 +55,7 @@ interface UserSettings {
   autoRebuy: boolean;
   autoRebuyThreshold: number;
   confirmAllIn: boolean;
-  showHandStrength: boolean;
+  // FIX 199: showHandStrength REMOVED — not allowed for live online gameplay
   runItTwiceDefault: boolean;
   straddleDefault: boolean;
 
@@ -95,7 +96,6 @@ const DEFAULT_SETTINGS: UserSettings = {
   autoRebuy: false,
   autoRebuyThreshold: 50,
   confirmAllIn: true,
-  showHandStrength: false,
   runItTwiceDefault: false,
   straddleDefault: false,
 
@@ -156,7 +156,6 @@ function validateSettings(raw: unknown): UserSettings {
     autoRebuy: bool('autoRebuy'),
     autoRebuyThreshold: num('autoRebuyThreshold', 0, 100),
     confirmAllIn: bool('confirmAllIn'),
-    showHandStrength: bool('showHandStrength'),
     runItTwiceDefault: bool('runItTwiceDefault'),
     straddleDefault: bool('straddleDefault'),
     chatEnabled: bool('chatEnabled'),
@@ -336,7 +335,7 @@ export default function SettingsPage() {
       try {
         setSettings(validateSettings(JSON.parse(saved)));
       } catch (e) {
-        console.error('Failed to load settings:', e);
+        reportError(e, 'SettingsPage.Failed_to_load_settings');
       }
     }
     // Get current user email from auth session (avoid redundant getUser() call)
@@ -409,7 +408,7 @@ export default function SettingsPage() {
       setNewEmail('');
       toast.success('Confirmation email sent! Check your inbox to verify.');
     } catch (err: any) {
-      console.error('Email update failed:', err);
+      reportError(err, 'SettingsPage.Email_update_failed');
       toast.error(err?.message || 'Failed to update email.');
     }
     setActionLoading(false);
@@ -437,7 +436,7 @@ export default function SettingsPage() {
       setConfirmPassword('');
       toast.success('Password updated successfully!');
     } catch (err: any) {
-      console.error('Password update failed:', err);
+      reportError(err, 'SettingsPage.Password_update_failed');
       toast.error(err?.message || 'Failed to update password.');
     }
     setActionLoading(false);
@@ -465,15 +464,18 @@ export default function SettingsPage() {
           .select('id, user_id, wallet_type, balance, currency, created_at')
           .eq('user_id', user.id),
         supabase
-          .from('user_achievements')
+          .from('training_user_achievements')
           .select('id, user_id, achievement_id, unlocked_at, progress')
           .eq('user_id', user.id),
+        // Round 38 audit Pass 1 fix: hand_history has no player_id column.
+        // .eq('player_id', user.id) returned an error/empty for every export.
+        // Players live in the JSONB players array — use contains().
         supabase
           .from('hand_history')
           .select(
             'id, hand_number, game_variant, small_blind, big_blind, pot_size, community_cards, winners, players, created_at'
           )
-          .eq('player_id', user.id)
+          .contains('players', [{ userId: user.id }])
           .limit(100),
       ]);
 
@@ -495,7 +497,7 @@ export default function SettingsPage() {
       URL.revokeObjectURL(url);
       toast.success('Data exported successfully!');
     } catch (err) {
-      console.error('Export failed:', err);
+      reportError(err, 'SettingsPage.Export_failed');
       toast.error('Failed to export data. Please try again.');
     }
     setActionLoading(false);
@@ -536,7 +538,7 @@ export default function SettingsPage() {
         );
         // AuthGuard will handle redirect to /auth
       } catch (err) {
-        console.error('Account deletion failed:', err);
+        reportError(err, 'SettingsPage.Account_deletion_failed');
         toast.error('Failed to process request. Please try again.');
       }
       setActionLoading(false);
@@ -549,7 +551,7 @@ export default function SettingsPage() {
         setFactorId('');
         toast.success('Two-factor authentication disabled.');
       } catch (err) {
-        console.error('Failed to disable 2FA:', err);
+        reportError(err, 'SettingsPage.Failed_to_disable_2FA');
         toast.error('Failed to disable 2FA. Please try again.');
       }
       setActionLoading(false);
@@ -582,7 +584,7 @@ export default function SettingsPage() {
       setTwoFactorEnabled(!!totpFactor);
       if (totpFactor) setFactorId(totpFactor.id);
     } catch (err) {
-      console.error('Failed to check 2FA status:', err);
+      reportError(err, 'SettingsPage.Failed_to_check_2FA_status');
     }
   };
 
@@ -600,7 +602,7 @@ export default function SettingsPage() {
       setFactorId(data.id);
       setShow2FAModal(true);
     } catch (err) {
-      console.error('Failed to enable 2FA:', err);
+      reportError(err, 'SettingsPage.Failed_to_enable_2FA');
       toast.error('Failed to set up 2FA. Please try again.');
     }
     setActionLoading(false);
@@ -627,7 +629,7 @@ export default function SettingsPage() {
       setVerificationCode('');
       toast.success('Two-factor authentication enabled!');
     } catch (err) {
-      console.error('Failed to verify 2FA:', err);
+      reportError(err, 'SettingsPage.Failed_to_verify_2FA');
       toast.error('Invalid verification code. Please try again.');
     }
     setActionLoading(false);
@@ -667,7 +669,7 @@ export default function SettingsPage() {
         toast.error('Push notifications denied. Please allow in browser settings.');
       }
     } catch (err) {
-      console.error('Failed to enable push:', err);
+      reportError(err, 'SettingsPage.Failed_to_enable_push');
       toast.error('Failed to enable push notifications.');
     }
     setPushLoading(false);
@@ -726,7 +728,7 @@ export default function SettingsPage() {
       });
       toast.success('Settings saved!');
     } catch (error) {
-      console.error('Failed to sync settings:', error);
+      reportError(error, 'SettingsPage.Failed_to_sync_settings');
       toast.error('Failed to save settings. Please try again.');
     } finally {
       setSaving(false);

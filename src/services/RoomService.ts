@@ -6,6 +6,7 @@
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { SeatPlayer, Card, ActionType, HandStage } from '../types/database.types';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -63,99 +64,51 @@ class RoomService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Join a table room
+   * Register an existing channel (from TableWebSocket) to deduplicate subscriptions.
    */
-  async joinRoom(
-    tableId: string,
-    userId: string,
-    username: string,
-    seat: number,
-    stack: number
-  ): Promise<void> {
-    // Create or get channel
-    let channel = this.channels.get(tableId);
+  registerChannel(tableId: string, channel: RealtimeChannel): void {
+    if (this.channels.has(tableId)) return;
 
-    if (!channel) {
-      channel = supabase.channel(`table:${tableId}`, {
-        config: {
-          presence: {
-            key: userId,
-          },
-        },
+    // Handle broadcasts
+    channel.on('broadcast', { event: 'game_event' }, (payload) => {
+      this.handleMessage(tableId, payload.payload as RoomMessage);
+    });
+
+    // Handle presence sync
+    channel.on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState();
+      this.updatePresence(tableId, state);
+    });
+
+    // Handle joins
+    channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
+      this.notifyHandlers(tableId, {
+        type: 'PLAYER_JOINED',
+        payload: { userId: key, presences: newPresences },
+        sender: 'system',
+        timestamp: Date.now(),
       });
+    });
 
-      // Handle broadcasts
-      channel.on('broadcast', { event: 'game_event' }, (payload) => {
-        this.handleMessage(tableId, payload.payload as RoomMessage);
+    // Handle leaves
+    channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+      this.notifyHandlers(tableId, {
+        type: 'PLAYER_LEFT',
+        payload: { userId: key, presences: leftPresences },
+        sender: 'system',
+        timestamp: Date.now(),
       });
+    });
 
-      // Handle presence sync
-      channel.on('presence', { event: 'sync' }, () => {
-        const state = channel!.presenceState();
-        this.updatePresence(tableId, state);
-      });
-
-      // Handle joins
-      channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        this.notifyHandlers(tableId, {
-          type: 'PLAYER_JOINED',
-          payload: { userId: key, presences: newPresences },
-          sender: 'system',
-          timestamp: Date.now(),
-        });
-      });
-
-      // Handle leaves
-      channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        this.notifyHandlers(tableId, {
-          type: 'PLAYER_LEFT',
-          payload: { userId: key, presences: leftPresences },
-          sender: 'system',
-          timestamp: Date.now(),
-        });
-      });
-
-      // Subscribe
-      await channel.subscribe(async (status: string, err?: Error) => {
-        if (status === 'SUBSCRIBED') {
-          // Track presence
-          await channel!.track({
-            userId,
-            username,
-            seat,
-            stack,
-            status: 'active',
-          } as PlayerPresence);
-        } else if (status === 'CHANNEL_ERROR') {
-          console.debug('[RoomService] ❌ Channel error for table:', tableId, err?.message || err);
-        } else if (status === 'TIMED_OUT') {
-          console.debug('[RoomService] ⏱️ Channel timed out for table:', tableId);
-        }
-      });
-
-      this.channels.set(tableId, channel);
-    } else {
-      // Already in room, update presence
-      await channel.track({
-        userId,
-        username,
-        seat,
-        stack,
-        status: 'active',
-      } as PlayerPresence);
-    }
+    this.channels.set(tableId, channel);
   }
 
   /**
    * Leave a table room
    */
   async leaveRoom(tableId: string): Promise<void> {
-    const channel = this.channels.get(tableId);
-    if (!channel) return;
-
-    await channel.untrack();
-    await supabase.removeChannel(channel);
-
+    // We do NOT call untrack() or removeChannel() here because TableWebSocket owns the channel.
+    // We just clean up local RoomService references.
     this.channels.delete(tableId);
     this.presenceState.delete(tableId);
     this.messageHandlers.delete(tableId);
@@ -171,7 +124,7 @@ class RoomService {
   async broadcast(tableId: string, message: Omit<RoomMessage, 'timestamp'>): Promise<void> {
     const channel = this.channels.get(tableId);
     if (!channel) {
-      console.error('Not connected to room:', tableId);
+      reportError(new Error('Not connected to room'), 'RoomService.send', { tableId });
       return;
     }
 
@@ -272,7 +225,7 @@ class RoomService {
       try {
         handler(message);
       } catch (error: unknown) {
-        console.error('Handler error:', error);
+        reportError(error, 'RoomService.handler');
       }
     }
   }

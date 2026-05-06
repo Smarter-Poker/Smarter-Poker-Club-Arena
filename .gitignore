@@ -11,10 +11,15 @@ coverage
 # Supabase
 supabase/.temp
 
-# Environment
+# Environment — NEVER track any .env file with real secrets
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
+.env.check
+.env.vercel
+.env.prod.check
 
 # IDE
 .idea
@@ -24,6 +29,27 @@ supabase/.temp
 .DS_Store
 # Generated PioSolver trees (regeneratable)
 scripts/trees/
-.env*.local
-.env.prod.check
-.env.vercel
+server/vitest.config.ts.timestamp-*.mjs
+
+# Debug/test build outputs (e.g. dist-bug021, dist-hotfix, etc.)
+# These are one-off build snapshots that agents create during debugging.
+# They contain 500+ files each and cause VS Code to show 1K+ phantom changes.
+dist-*/
+dist.dead.*/
+.vercel/output/
+*.local
+
+# Agent brain artifacts (may contain tokens, session data)
+.gemini/
+
+# Agent memory/context files (tracked selectively, not bulk)
+# Uncomment below if you want to gitignore all .memory files:
+# .memory/
+.ssh/
+
+*.stale.*
+**/*.stale.*/
+
+# Round 19 — local-only artifacts that shouldn't ship
+.agent/openclaw-dispatcher-live-*.py
+playwright-report/

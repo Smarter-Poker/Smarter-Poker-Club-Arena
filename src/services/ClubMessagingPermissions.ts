@@ -14,6 +14,7 @@
 
 import { supabase } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { reportError } from '../utils/errorReporter';
 
 // Role hierarchy for messaging
 export type ClubRole =
@@ -64,7 +65,7 @@ class ClubMessagingPermissionsClass {
       // Check based on sender's role
       return this.checkPermission(senderRole, recipientRole);
     } catch (error: unknown) {
-      console.error('[ClubMessagingPermissions] Error checking permissions:', error);
+      reportError(error, 'ClubMessagingPermissions.checkPermissions');
       return { allowed: false, reason: 'Failed to verify permissions' };
     }
   }
@@ -87,7 +88,7 @@ class ClubMessagingPermissionsClass {
         .eq('user_id', userId)
         .in('unions.clubs.id', [resolvedClubId])
         .maybeSingle();
-      if (uErr) console.warn('[MsgPerms] getUserClubRole union query error:', uErr.message);
+      if (uErr) reportError(uErr, 'ClubMessagingPermissions.getUserClubRole_union_query');
 
       if (unionRole) {
         const role = unionRole.role === 'owner' ? 'union_owner' : 'union_admin';
@@ -101,7 +102,7 @@ class ClubMessagingPermissionsClass {
         .eq('user_id', userId)
         .eq('club_id', resolvedClubId)
         .maybeSingle();
-      if (cErr) console.warn('[MsgPerms] getUserClubRole member query error:', cErr.message);
+      if (cErr) reportError(cErr, 'ClubMessagingPermissions.getUserClubRole_member_query');
 
       if (!clubMember) {
         return null;
@@ -131,7 +132,7 @@ class ClubMessagingPermissionsClass {
           .select('user_id')
           .eq('club_id', resolvedClubId)
           .eq('agent_id', userId);
-        if (pErr) console.warn('[MsgPerms] getUserClubRole players query error:', pErr.message);
+        if (pErr) reportError(pErr, 'ClubMessagingPermissions.getUserClubRole_players_query');
         playerIds = players?.map((p) => p.user_id) || [];
       }
 
@@ -226,7 +227,8 @@ class ClubMessagingPermissionsClass {
             .select('user_id')
             .eq('club_id', await resolveClubUUID(clubId))
             .neq('user_id', userId);
-          if (aErr) console.warn('[MsgPerms] getMessagableUsers all-members error:', aErr.message);
+          if (aErr)
+            reportError(aErr, 'ClubMessagingPermissions.getMessagableUsers_allmembers_error');
           return allMembers?.map((m) => m.user_id) || [];
         }
 
@@ -248,8 +250,9 @@ class ClubMessagingPermissionsClass {
                 .neq('user_id', userId),
             ]);
           if (pErr)
-            console.warn('[MsgPerms] getMessagableUsers agent-players error:', pErr.message);
-          if (mErr) console.warn('[MsgPerms] getMessagableUsers agent-mgmt error:', mErr.message);
+            reportError(pErr, 'ClubMessagingPermissions.getMessagableUsers_agentplayers_error');
+          if (mErr)
+            reportError(mErr, 'ClubMessagingPermissions.getMessagableUsers_agentmgmt_error');
 
           players?.forEach((p) => messagableUserIds.push(p.user_id));
           management?.forEach((m) => messagableUserIds.push(m.user_id));
@@ -267,7 +270,7 @@ class ClubMessagingPermissionsClass {
             .eq('club_id', await resolveClubUUID(clubId))
             .in('role', ['owner', 'admin']);
           if (adErr)
-            console.warn('[MsgPerms] getMessagableUsers player-admins error:', adErr.message);
+            reportError(adErr, 'ClubMessagingPermissions.getMessagableUsers_playeradmins_error');
           admins?.forEach((a) => messagableUserIds.push(a.user_id));
           break;
         }

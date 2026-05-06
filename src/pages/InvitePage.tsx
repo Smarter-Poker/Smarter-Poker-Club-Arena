@@ -15,6 +15,7 @@ import { resolveClubIdFilter } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { reportError } from '../utils/errorReporter';
 
 const inviteStepAnimationStyle = {
   opacity: 0,
@@ -124,7 +125,7 @@ export default function InvitePage() {
         setAlreadyMember(!!membership);
       }
     } catch (err) {
-      console.error('Failed to load club:', err);
+      reportError(err, 'InvitePage.Failed_to_load_club');
       if (!getIsMounted || getIsMounted()) {
         toast.error('Failed to load club information');
         setError('Failed to load club information');
@@ -179,7 +180,8 @@ export default function InvitePage() {
       toast.success('Invite link copied!');
       clearTimeout(copiedTimerRef.current);
       copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } catch (e) {
+      reportError(e, 'InvitePage.setTimeout');
       toast.error('Failed to copy link');
     }
   };
@@ -202,13 +204,16 @@ export default function InvitePage() {
       // Update member count
       const { error: countErr } = await retryAsync(
         () =>
+          // Round 19: prod sig (p_club_id, p_delta). Caller used to pass
+          // unprefixed `club_id` and was missing required p_delta — silent 404.
           supabase.rpc('increment_member_count', {
-            club_id: club.id,
+            p_club_id: club.id,
+            p_delta: 1,
           }),
         3
       );
       if (countErr) {
-        console.error('[InvitePage] increment_member_count failed:', countErr.message);
+        reportError(countErr, 'InvitePage.increment_member_count_failed');
         toast.error('Joined successfully, but member count may be temporarily off.');
       }
 
@@ -217,7 +222,7 @@ export default function InvitePage() {
       toast.success(`Welcome to ${club.name}!`);
       navigate(`/clubs/${club.id}`);
     } catch (err: any) {
-      console.error('Failed to join:', err);
+      reportError(err, 'InvitePage.Failed_to_join');
       toast.error(err.message || 'Failed to join club');
       setError(err.message || 'Failed to join club');
     }

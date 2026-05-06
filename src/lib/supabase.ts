@@ -11,6 +11,7 @@ import {
   getTokenExpiry,
   AUTH_STORAGE_KEY,
 } from './authUtils';
+import { reportError } from '../utils/errorReporter';
 
 // Environment validation - follows VITE_ prefix law
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -18,9 +19,12 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undef
 
 // SECURITY: No hardcoded fallback credentials — env vars are required
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(
-    '[Supabase] VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in environment variables. ' +
-      'Check your .env file.'
+  reportError(
+    new Error(
+      '[Supabase] VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in environment variables. ' +
+        'Check your .env file.'
+    ),
+    'supabase.Supabase_VITE_SUPABASE_URL_and_VITE_SUPA'
   );
 }
 
@@ -139,119 +143,11 @@ export function subscribeToTable<T>(
 // useTableStore subscribes to the same channel to receive live game data.
 // This is much faster than postgres_changes and doesn't require a hand_states table.
 
-/**
- * Broadcast hand state to all subscribers for a given table.
- * Called by HeadlessTableEngine on every hand event.
- *
- * CRITICAL: Supabase Realtime requires channels to be subscribed (joined)
- * before .send() can deliver messages. We use a Promise-based ready pattern
- * so ALL sends (including those arriving during the subscribe handshake)
- * are queued until the channel is confirmed SUBSCRIBED.
- */
-const broadcastReady = new Map<string, Promise<ReturnType<typeof supabase.channel>>>();
-
-export function broadcastHandState(tableId: string, handState: Record<string, unknown>): void {
-  const channelName = `hand-state:${tableId}`;
-
-  // Create a ready Promise on first call; reuse on subsequent calls
-  if (!broadcastReady.has(channelName)) {
-    const readyPromise = new Promise<ReturnType<typeof supabase.channel>>((resolve, reject) => {
-      const channel = supabase.channel(channelName);
-      channel.subscribe((status: string, err?: Error) => {
-        if (status === 'SUBSCRIBED') {
-          resolve(channel);
-        } else if (status === 'CHANNEL_ERROR') {
-          console.debug(
-            `[broadcastHandState] ❌ Channel error on ${channelName}:`,
-            err?.message || err
-          );
-          broadcastReady.delete(channelName); // Allow retry on next call
-          reject(new Error(`Channel ${channelName} error: ${err?.message || 'unknown'}`));
-        } else if (status === 'TIMED_OUT') {
-          console.debug(`[broadcastHandState] ⏱️ Channel ${channelName} timed out`);
-          broadcastReady.delete(channelName); // Allow retry on next call
-          reject(new Error(`Channel ${channelName} timed out`));
-        }
-      });
-    });
-    broadcastReady.set(channelName, readyPromise);
-  }
-
-  // All calls (including during subscribe handshake) queue on the same Promise
-  broadcastReady
-    .get(channelName)!
-    .then((channel) => {
-      channel
-        .send({
-          type: 'broadcast',
-          event: 'hand_state',
-          payload: handState,
-        })
-        .catch((err: unknown) => {
-          console.warn(`[Broadcast] Failed to send hand state for ${tableId}:`, err);
-        });
-    })
-    .catch((err: unknown) => {
-      console.warn(
-        `[broadcastHandState] Channel not ready for ${tableId}, will retry on next call:`,
-        err
-      );
-    });
-}
-
-/**
- * Clean up a broadcast channel when a table engine stops.
- * Prevents resource leaks in the broadcastReady Map.
- */
-export function cleanupBroadcastChannel(tableId: string): void {
-  const channelName = `hand-state:${tableId}`;
-  const ready = broadcastReady.get(channelName);
-  if (ready) {
-    ready.then((channel) => {
-      channel
-        .unsubscribe()
-        .catch((e) => console.warn('[Supabase] Failed to unsubscribe from broadcast channel:', e));
-      supabase.removeChannel(channel);
-    });
-    broadcastReady.delete(channelName);
-  }
-}
-
-/**
- * Subscribe to hand state broadcasts for a given table.
- * Returns an unsubscribe function.
- */
-export function subscribeToHandState(
-  tableId: string,
-  callback: (handState: Record<string, unknown>) => void
-): () => void {
-  const channelName = `hand-state:${tableId}`;
-  const channel = supabase
-    .channel(channelName)
-    .on('broadcast', { event: 'hand_state' }, (payload) => {
-      callback(payload.payload as Record<string, unknown>);
-    })
-    .subscribe((status: string, err?: Error) => {
-      if (status === 'CHANNEL_ERROR') {
-        console.debug(
-          `[subscribeToHandState] ❌ Channel error on hand-state:${tableId}:`,
-          err?.message || err
-        );
-      }
-      if (status === 'TIMED_OUT') {
-        console.debug(
-          `[subscribeToHandState] ⏱️ Channel hand-state:${tableId} timed out — auto-reconnecting`
-        );
-      }
-    });
-
-  return () => {
-    channel
-      .unsubscribe()
-      .catch((e) => console.warn('[Supabase] Failed to unsubscribe from hand state channel:', e));
-    supabase.removeChannel(channel);
-  };
-}
+// Phase 1.1 PR-5 (NO-GO-2): broadcastHandState / cleanupBroadcastChannel /
+// subscribeToHandState and the `hand-state:{tableId}` Supabase Realtime
+// channel DELETED. Game state comes from the engine's native WebSocket at
+// wss://engine.smarter.poker/ws/table/:tableId, wired through
+// src/hooks/useEngineTableState.ts + src/services/EngineStateClient.ts.
 
 // Export type-safe database interface
 export type SupabaseClient = typeof supabase;
@@ -287,7 +183,7 @@ if (typeof window !== 'undefined') {
       localStorage.setItem(MIGRATION_FLAG, new Date().toISOString());
     }
   } catch (e) {
-    console.error('[SSO] Migration error:', e);
+    reportError(e, 'supabase.Migration_error');
   }
 
   // Session status logged by AntiGravityBoot — no duplicate getSession() here
@@ -335,20 +231,24 @@ if (typeof window !== 'undefined') {
         // Token already expired — try to refresh anyway
         console.warn('[Supabase] Token expired — attempting emergency refresh');
         supabase.auth.refreshSession().catch((err) => {
-          console.error('[Supabase] Emergency refresh failed:', err);
+          reportError(err, 'supabase.Emergency_refresh_failed');
           // If refresh token is dead, force signOut to prevent zombie session
           if (
             String(err).includes('Invalid Refresh Token') ||
             String(err).includes('invalid_grant')
           ) {
-            console.error('[Supabase] Refresh token is dead — forcing sign out');
+            reportError(
+              new Error('[Supabase] Refresh token is dead — forcing sign out'),
+              'supabase.Refresh_token_is_dead__forcing_sign_out'
+            );
             supabase.auth
               .signOut()
               .catch((e) => console.warn('[Supabase] Failed to force sign out:', e));
           }
         });
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'supabase');
       // Silent — best effort
     }
   }, REFRESH_CHECK_INTERVAL);
@@ -378,7 +278,8 @@ if (typeof window !== 'undefined') {
             console.warn('[Supabase] Proactive refresh on tab focus failed:', e);
           });
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'supabase.addEventListener');
         // Silent
       }
     }

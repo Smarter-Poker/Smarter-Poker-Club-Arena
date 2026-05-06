@@ -9,6 +9,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './PlayerActivityFeed.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ActivityItem {
   id: string;
@@ -47,7 +48,7 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
 
       // Fetch recent achievements
       const { data: achievements } = await supabase
-        .from('user_achievements')
+        .from('training_user_achievements')
         .select('id, achievement_id, unlocked_at')
         .eq('user_id', userId)
         .not('unlocked_at', 'is', null)
@@ -130,7 +131,7 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
 
       if (isMounted.current) setItems(feed.slice(0, 10));
     } catch (err) {
-      console.error('[PlayerActivityFeed] load error:', err);
+      reportError(err, 'PlayerActivityFeed.load_error');
     }
     if (isMounted.current) setLoading(false);
   }, [userId]);

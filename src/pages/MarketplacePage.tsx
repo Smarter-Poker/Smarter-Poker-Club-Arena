@@ -20,6 +20,7 @@ import styles from './MarketplacePage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 /* ═══ Types ═══ */
 interface MarketplaceItem {
@@ -239,7 +240,7 @@ export default function MarketplacePage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[MarketplacePage] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'MarketplacePage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[MarketplacePage] ⏱️ Realtime channel timed out');

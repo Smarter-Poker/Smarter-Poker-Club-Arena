@@ -25,6 +25,7 @@ import { useUserStore } from '../stores/useUserStore';
 import { realtimeChannelService } from '../services/RealtimeChannelService';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // EVENT TYPES
@@ -223,13 +224,6 @@ export type BusEventType =
   | 'PRE_ACTION_SET'
   | 'PRE_ACTION_EXECUTED'
   | 'PRE_ACTION_INVALIDATED'
-  // Phase Q1: OFC dealing events
-  | 'OFC_HAND_STARTED'
-  | 'OFC_CARDS_DEALT'
-  | 'OFC_PLACEMENT_TIMER' // @deprecated: no emitters or subscribers — reserved for future OFC implementation
-  | 'OFC_TURN_CHANGE'
-  | 'OFC_SCORING_COMPLETE'
-  | 'OFC_FANTASYLAND_ENTERED'
   // Phase Q1: Rakeback events
   | 'RAKEBACK_CALCULATED'
   | 'RAKEBACK_DISTRIBUTED'
@@ -312,7 +306,30 @@ export type BusEventType =
   | 'TOURNAMENT_BREAK'
   | 'TOURNAMENT_BREAK_END'
   // Satellite tournament completion
-  | 'SATELLITE_COMPLETE';
+  | 'SATELLITE_COMPLETE'
+  // Round 20 — Engine→FE event coverage (Bible V8 §1.16) re-broadcasts
+  // emitted from TablePage when the corresponding lowercase engine events
+  // arrive over the WS hub. See src/pages/TablePage.tsx engineLastEvent
+  // useEffect for the dispatch site. INSURANCE_OFFERED, RIT_OFFERED,
+  // RIT_RESOLVED, TIME_BANK_ACTIVATED, PLAYER_DISCONNECTED already exist
+  // above — these are the additional ones added in Round 20 + Round 30 fix.
+  | 'RIT_CHOOSER_DECIDED'
+  | 'BBJ_HIT'
+  | 'BBJ_PAYOUT_COMPLETE'
+  | 'POT_DISTRIBUTED'
+  | 'SHOWDOWN_CARDS_REVEALED'
+  | 'TIME_BANK_LOW'
+  | 'TIME_BANK_TIMEOUT'
+  | 'TOURNAMENT_LEVEL_UP'
+  | 'SEAT_TAKEN'
+  | 'SEAT_LEFT'
+  | 'TABLE_PAUSED'
+  | 'TABLE_RESUMED'
+  | 'TABLE_LOCKED'
+  | 'TABLE_UNLOCKED'
+  | 'RABBIT_HUNT_AVAILABLE'
+  | 'ALL_IN_EQUITY'
+  | 'ONLINE_COUNT';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -788,13 +805,6 @@ export interface BusPayloadMap {
   PRE_ACTION_SET: { tableId: string; playerId: string; action: string };
   PRE_ACTION_EXECUTED: { tableId: string; playerId: string; action: string; amount: number };
   PRE_ACTION_INVALIDATED: { tableId: string; playerId: string; reason: string };
-  // Phase Q1: OFC dealing payloads
-  OFC_HAND_STARTED: { tableId: string; handNumber: number; players: string[] };
-  OFC_CARDS_DEALT: { tableId: string; playerId: string; cardCount: number; isFantasyland: boolean };
-  OFC_PLACEMENT_TIMER: { tableId: string; playerId: string; secondsRemaining: number };
-  OFC_TURN_CHANGE: { tableId: string; playerId: string };
-  OFC_SCORING_COMPLETE: { tableId: string; scores: Record<string, number> };
-  OFC_FANTASYLAND_ENTERED: { tableId: string; playerId: string };
   // Phase Q1: Rakeback payloads
   RAKEBACK_CALCULATED: {
     playerId: string;
@@ -960,7 +970,9 @@ export interface BusPayloadMap {
       | 'HAND_HISTORY'
       | 'HELP'
       | 'LEAVE_TABLE'
-      | 'FORCE_LEAVE_TABLE';
+      | 'FORCE_LEAVE_TABLE'
+      | 'CHANGE_AVATAR'
+      | 'TOGGLE_ALIAS';
   };
   // Table settings open
   TABLE_SETTINGS_OPEN: { tableId: string };
@@ -978,6 +990,28 @@ export interface BusPayloadMap {
     ticketWinners: number | unknown[];
     targetTournament: unknown;
   };
+  // Round 20 — Engine→FE event coverage payloads. The engine emits the
+  // lowercase form (rit_chooser_decided, bbj_hit, etc.) over WS; TablePage
+  // re-emits onto the bus. Payloads are pass-through (Record<string, unknown>)
+  // because the engine event shapes vary by event type and component-level
+  // listeners narrow at use site.
+  RIT_CHOOSER_DECIDED: Record<string, unknown>;
+  BBJ_HIT: Record<string, unknown>;
+  BBJ_PAYOUT_COMPLETE: Record<string, unknown>;
+  POT_DISTRIBUTED: Record<string, unknown>;
+  SHOWDOWN_CARDS_REVEALED: Record<string, unknown>;
+  TIME_BANK_LOW: Record<string, unknown>;
+  TIME_BANK_TIMEOUT: Record<string, unknown>;
+  TOURNAMENT_LEVEL_UP: Record<string, unknown>;
+  SEAT_TAKEN: Record<string, unknown>;
+  SEAT_LEFT: Record<string, unknown>;
+  TABLE_PAUSED: Record<string, unknown>;
+  TABLE_RESUMED: Record<string, unknown>;
+  TABLE_LOCKED: Record<string, unknown>;
+  TABLE_UNLOCKED: Record<string, unknown>;
+  RABBIT_HUNT_AVAILABLE: Record<string, unknown>;
+  ALL_IN_EQUITY: Record<string, unknown>;
+  ONLINE_COUNT: Record<string, unknown>;
 }
 
 export interface BusEvent<T = unknown> {
@@ -1001,6 +1035,7 @@ export interface TableEventPayload {
   tableId: string;
   seat?: number;
   tableName?: string;
+  userId?: string;
 }
 
 export interface BalancePayload {
@@ -1113,49 +1148,49 @@ class MasterBusCore {
       const arenaState = useArenaStore.getState();
       stores.arena = arenaState !== undefined;
     } catch (e) {
-      console.error(' ├─ ArenaStore:  (Error)', e);
+      reportError(e, 'MasterBus._ArenaStore_Error');
     }
 
     try {
       const clubState = useClubStore.getState();
       stores.club = clubState !== undefined;
     } catch (e) {
-      console.error(' ├─ ClubStore:  (Error)', e);
+      reportError(e, 'MasterBus._ClubStore_Error');
     }
 
     try {
       const tableState = useTableStore.getState();
       stores.table = tableState !== undefined;
     } catch (e) {
-      console.error(' ├─ TableStore:  (Error)', e);
+      reportError(e, 'MasterBus._TableStore_Error');
     }
 
     try {
       const unionState = useUnionStore.getState();
       stores.union = unionState !== undefined;
     } catch (e) {
-      console.error(' ├─ UnionStore:  (Error)', e);
+      reportError(e, 'MasterBus._UnionStore_Error');
     }
 
     try {
       const walletState = useWalletStore.getState();
       stores.wallet = walletState !== undefined;
     } catch (e) {
-      console.error(' ├─ WalletStore:  (Error)', e);
+      reportError(e, 'MasterBus._WalletStore_Error');
     }
 
     try {
       const settingsState = useSettingsStore.getState();
       stores.settings = settingsState !== undefined;
     } catch (e) {
-      console.error(' ├─ SettingsStore:  (Error)', e);
+      reportError(e, 'MasterBus._SettingsStore_Error');
     }
 
     try {
       const userState = useUserStore.getState();
       stores.user = userState !== undefined;
     } catch (e) {
-      console.error(' └─ UserStore:  (Error)', e);
+      reportError(e, 'MasterBus._UserStore_Error');
     }
 
     // Determine overall status
@@ -1321,11 +1356,11 @@ class MasterBusCore {
           const result = handler(event as BusEvent) as any;
           if (result instanceof Promise) {
             result.catch((e: any) => {
-              console.error(`[BUS ASYNC ERROR] Handler failed for ${type}:`, e);
+              reportError(e, 'MasterBus.Handler_failed_for_type');
             });
           }
         } catch (e) {
-          console.error(`[BUS ERROR] Handler failed for ${type}:`, e);
+          reportError(e, 'MasterBus.Handler_failed_for_type');
         }
       });
     }
@@ -1637,7 +1672,7 @@ class MasterBusCore {
             // Emit REALTIME_CONNECTED after successful recovery
             this.emit('REALTIME_CONNECTED', { channelName: key });
           } catch (e) {
-            console.error(`[BUS HEALTH] Recovery failed for "${key}":`, e);
+            reportError(e, 'MasterBus.Recovery_failed_for_key');
           }
         } else {
           console.warn(`[BUS HEALTH] No factory for "${key}" -- removed only`);

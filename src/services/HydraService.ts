@@ -26,6 +26,34 @@
 import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODULE-LEVEL CIRCUIT BREAKERS — prevent Sentry flood on persistent DB errors
+// These reset after a cooldown so transient errors still get reported.
+// ═══════════════════════════════════════════════════════════════════════════════
+const _cb = {
+  seatQueryFailures: 0,
+  seatQueryTrippedAt: 0,
+  /** Returns true if the seat query circuit is open (silenced) */
+  isSeatQueryOpen(): boolean {
+    if (this.seatQueryFailures < 3) return false;
+    if (Date.now() - this.seatQueryTrippedAt > 5 * 60_000) {
+      // 5 min cooldown — allow one retry pass
+      this.seatQueryFailures = 0;
+      this.seatQueryTrippedAt = 0;
+      return false;
+    }
+    return true;
+  },
+  recordSeatQueryFailure(): void {
+    this.seatQueryFailures++;
+    if (this.seatQueryFailures >= 3 && this.seatQueryTrippedAt === 0) {
+      this.seatQueryTrippedAt = Date.now();
+      console.debug('[HydraService] Seat query circuit OPEN — silencing repeated errors for 5 min');
+    }
+  },
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -69,10 +97,10 @@ export interface TableLiquidityStatus {
   needsFewerHorses: boolean;
 }
 
-// HorseDecision is defined in HorseLogic.ts — use that canonical version
-import type { HorseDecision } from '../engine/HorseLogic';
+// HorseDecision canonical shape (extracted from engine/HorseLogic.ts in Phase U2 Stage A.4)
+import type { HorseDecision } from '../types/engine/horse';
 import { retryAsync } from '../utils/retryAsync';
-export type { HorseDecision } from '../engine/HorseLogic';
+export type { HorseDecision } from '../types/engine/horse';
 
 export interface HandContext {
   pot: number;
@@ -91,7 +119,7 @@ export interface HandContext {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const DEFAULT_CONFIG: HydraConfig = {
-  maxHorsesPerTable: 4,          // Max 4 horses at any cash game table
+  maxHorsesPerTable: 4, // Max 4 horses at any cash game table
   minHorsesPerTable: 0,
   fleetSize: 308,
   entryDelayRange: [1, 3],
@@ -209,7 +237,7 @@ export const HydraService = {
     const { data, error } = await query;
 
     if (error) {
-      console.error('HydraService.getAvailableHorses error:', error);
+      console.debug('HydraService.getAvailableHorses error:', error);
       return [];
     }
 
@@ -242,7 +270,10 @@ export const HydraService = {
       .is('left_at', null);
 
     if (seatError || !seatData?.length) {
-      if (seatError) console.error('HydraService.getActiveHorses seat query error:', seatError);
+      if (seatError && !_cb.isSeatQueryOpen()) {
+        _cb.recordSeatQueryFailure();
+        reportError(seatError, 'HydraService.HydraServicegetActiveHorses_seat_query');
+      }
       return [];
     }
 
@@ -260,7 +291,7 @@ export const HydraService = {
 
     if (profileError) {
       // If horse columns don't exist yet, silently return empty
-      console.error('HydraService.getActiveHorses profile query error:', profileError);
+      console.debug('HydraService.getActiveHorses profile query error:', profileError);
       return [];
     }
 
@@ -303,7 +334,7 @@ export const HydraService = {
       .eq('id', tableId)
       .maybeSingle();
     if (tableInfoErr)
-      console.warn('[Hydra] getTableLiquidityStatus tableInfo error:', tableInfoErr.message);
+      reportError(tableInfoErr, 'HydraService.getTableLiquidityStatus_tableInfo_error');
     const maxPlayers = tableInfo?.max_players || 9;
 
     // Simple seat count query — only active seats
@@ -314,7 +345,7 @@ export const HydraService = {
       .is('left_at', null);
 
     if (error) {
-      console.error('HydraService.getTableLiquidityStatus error:', error);
+      console.debug('HydraService.getTableLiquidityStatus error:', error);
       return {
         tableId,
         realPlayers: 0,
@@ -348,7 +379,11 @@ export const HydraService = {
    * Seed a table with horse players (up to 4 for cash games).
    * Tournaments have no horse cap — handled separately.
    */
-  async seedTable(tableId: string, bigBlind: number = 2, isTournament: boolean = false): Promise<HorsePlayer[]> {
+  async seedTable(
+    tableId: string,
+    bigBlind: number = 2,
+    isTournament: boolean = false
+  ): Promise<HorsePlayer[]> {
     const status = await this.getTableLiquidityStatus(tableId);
     // Cash games: hard cap of 4 horses. Tournaments: no limit.
     const maxHorses = isTournament ? 9 : Math.min(this.config.maxHorsesPerTable, 4);
@@ -371,6 +406,19 @@ export const HydraService = {
       const delay =
         randomInRange(this.config.entryDelayRange[0], this.config.entryDelayRange[1]) * 1000;
 
+      // Re-check seat count before each seating to prevent multi-tab over-seeding
+      const { data: currentSeats } = await supabase
+        .from('table_seats')
+        .select('id')
+        .eq('table_id', tableId)
+        .is('left_at', null);
+      if ((currentSeats?.length || 0) >= maxHorses) {
+        console.debug(
+          `[Hydra] Table ${tableId} already has ${currentSeats?.length} seats (max ${maxHorses}) — stopping seed`
+        );
+        break;
+      }
+
       // Stagger for natural appearance
       if (i > 0) {
         await new Promise<void>((resolve) => setTimeout(resolve, delay));
@@ -383,7 +431,7 @@ export const HydraService = {
           localClaimedSeats.add(seatedHorse.seatNumber);
         }
       } catch (err: unknown) {
-        console.error(`Failed to seat horse ${horse.id}:`, err);
+        console.debug(`Failed to seat horse ${horse.id}:`, err);
       }
     }
 
@@ -406,19 +454,43 @@ export const HydraService = {
       .eq('id', horseId)
       .eq('is_horse', true)
       .maybeSingle();
-    if (horseErr) console.warn('[Hydra] seatHorse profile error:', horseErr.message);
+    if (horseErr) reportError(horseErr, 'HydraService.seatHorse_profile_error');
 
     if (!horseData) return null;
 
-    const stack = getStackForProfile(horseData.horse_profile as HorseProfile, bigBlind);
+    // GUARD: Prevent duplicate seating — check if horse is already at this table
+    const { data: existingHorseSeat } = await supabase
+      .from('table_seats')
+      .select('id')
+      .eq('table_id', tableId)
+      .eq('user_id', horseId)
+      .is('left_at', null)
+      .maybeSingle();
+    if (existingHorseSeat) {
+      console.debug(`[Hydra] Horse ${horseId} already seated at table ${tableId} — skipping`);
+      return null;
+    }
 
-    // Find an available seat at the table (only count active seats, not left players)
+    // Guard: bigBlind must be at least 1 to prevent zero-stack (violates chip_ledger CHECK amount > 0)
+    const safeBigBlind = Math.max(1, bigBlind);
+    const stack = getStackForProfile(horseData.horse_profile as HorseProfile, safeBigBlind);
+
+    // Clean up departed (left_at NOT NULL) seat rows first — these block INSERTs
+    // due to unique constraint on (table_id, seat_number).
+    const { error: cleanupErr } = await supabase
+      .from('table_seats')
+      .delete()
+      .eq('table_id', tableId)
+      .not('left_at', 'is', null);
+    if (cleanupErr) reportError(cleanupErr, 'HydraService.seatHorse_cleanup_departed');
+
+    // Find an available seat at the table (only count active seats with left_at=null)
     const { data: existingSeats, error: seatsErr } = await supabase
       .from('table_seats')
       .select('seat_number')
       .eq('table_id', tableId)
       .is('left_at', null);
-    if (seatsErr) console.warn('[Hydra] seatHorse seats error:', seatsErr.message);
+    if (seatsErr) reportError(seatsErr, 'HydraService.seatHorse_seats_error');
 
     // Merge DB-visible seats with locally tracked seats (to handle RLS-invisible horse seats)
     const takenSeats = new Set((existingSeats || []).map((s) => s.seat_number));
@@ -432,7 +504,7 @@ export const HydraService = {
       .select('max_players')
       .eq('id', tableId)
       .maybeSingle();
-    if (tableErr) console.warn('[Hydra] seatHorse table error:', tableErr.message);
+    if (tableErr) reportError(tableErr, 'HydraService.seatHorse_table_error');
 
     const maxSeats = tableData?.max_players || 9;
     let availableSeat = 0;
@@ -444,7 +516,7 @@ export const HydraService = {
     }
 
     if (availableSeat === 0) {
-      console.error('HydraService.seatHorse: No available seats at table', tableId);
+      console.debug('HydraService.seatHorse: No available seats at table', tableId);
       return null;
     }
 
@@ -463,12 +535,12 @@ export const HydraService = {
             auto_rebuy: true,
           })
           .select('id')
-          .single(),
+          .maybeSingle(), // FIX 168
       3
     );
 
     if (seatErr) {
-      console.error(
+      console.debug(
         `[HydraService] table_seats INSERT FAILED for horse ${horseId} at seat ${availableSeat}:`,
         seatErr.message
       );
@@ -491,28 +563,12 @@ export const HydraService = {
     );
     masterBus.emit('BALANCE_UPDATED', { source: 'hydra_seat_horse', userId: horseId });
 
-    // Log horse buy-in via RPC (bypasses RLS, SECURITY DEFINER)
-    supabase
-      .rpc('log_wallet_transaction', {
-        p_user_id: horseId,
-        p_wallet_type: 'PLAYER',
-        p_amount: stack,
-        p_type: 'debit',
-        p_category: 'buy_in',
-        p_description: `Horse buy-in ${stack} chips at table ${tableId}`,
-        p_table_id: tableId,
-      })
-      .then(({ error }) => {
-        if (error)
-          console.debug('[Hydra] log_wallet_transaction (buy_in) note:', error.message);
-      });
-
     // Update horse status to seated
     const { error: statusErr1 } = await supabase
       .from('profiles')
       .update({ horse_status: 'seated' })
       .eq('id', horseId);
-    if (statusErr1) console.warn('[Hydra] seatHorse status update error:', statusErr1.message);
+    if (statusErr1) reportError(statusErr1, 'HydraService.seatHorse_status_update');
 
     return {
       id: horseData.id,
@@ -543,7 +599,7 @@ export const HydraService = {
     const horse = horses.find((h) => h.id === horseId);
 
     if (!horse) {
-      console.error('Horse not found for removal:', horseId);
+      console.debug('Horse not found for removal:', horseId);
       return;
     }
 
@@ -552,8 +608,7 @@ export const HydraService = {
       .from('profiles')
       .update({ horse_status: 'leaving' })
       .eq('id', horseId);
-    if (leaveErr)
-      console.warn('[Hydra] scheduleHorseRemoval status update error:', leaveErr.message);
+    if (leaveErr) reportError(leaveErr, 'HydraService.scheduleHorseRemoval_status_update');
   },
 
   /**
@@ -561,7 +616,9 @@ export const HydraService = {
    */
   async removeHorse(tableId: string, horseId: string): Promise<boolean> {
     // 1. Get the horse's current stack BEFORE removing the seat
-    const { data: seatData, error: seatFetchErr } = await supabase
+    //    Check active seats first, then fall back to departed (left_at set) seats
+    let seatData: { stack: number; seat_number: number } | null = null;
+    const { data: activeSeat, error: activeFetchErr } = await supabase
       .from('table_seats')
       .select('stack, seat_number')
       .eq('table_id', tableId)
@@ -569,29 +626,39 @@ export const HydraService = {
       .is('left_at', null)
       .maybeSingle();
 
-    if (seatFetchErr || !seatData) {
-      console.error(
-        `HydraService.removeHorse: Seat not found for horse ${horseId} at table ${tableId}`
+    if (activeSeat) {
+      seatData = activeSeat;
+    } else {
+      // Seat may already have left_at set by HeadlessTableEngine — still need to clean it up
+      const { data: departedSeat } = await supabase
+        .from('table_seats')
+        .select('stack, seat_number')
+        .eq('table_id', tableId)
+        .eq('user_id', horseId)
+        .not('left_at', 'is', null)
+        .maybeSingle();
+      seatData = departedSeat;
+    }
+
+    if (!seatData) {
+      // No seat at all — just reset horse status to available
+      await supabase.from('profiles').update({ horse_status: 'available' }).eq('id', horseId);
+      console.debug(
+        `HydraService.removeHorse: No seat found for horse ${horseId} at table ${tableId} — reset to available`
       );
-      return false;
+      return true; // Return true so caller can proceed with reseating
     }
 
     const remainingStack = seatData.stack || 0;
 
-    // 2. Remove seat directly — mark left_at and delete row
-    // atomic_table_cashout RPC is unreliable; direct DELETE is proven to work.
+    // 2. Remove ALL seat rows for this horse at this table (active + departed)
     const { error: deleteErr } = await retryAsync(
-      () =>
-        supabase
-          .from('table_seats')
-          .delete()
-          .eq('table_id', tableId)
-          .eq('user_id', horseId),
+      () => supabase.from('table_seats').delete().eq('table_id', tableId).eq('user_id', horseId),
       3
     );
 
     if (deleteErr) {
-      console.error(
+      console.debug(
         `[HydraService] table_seats DELETE FAILED for horse ${horseId}:`,
         deleteErr.message
       );
@@ -616,22 +683,6 @@ export const HydraService = {
         tableId
       );
       masterBus.emit('BALANCE_UPDATED', { source: 'hydra_remove_horse', userId: horseId });
-
-      // Log horse cashout via RPC (bypasses RLS, SECURITY DEFINER)
-      supabase
-        .rpc('log_wallet_transaction', {
-          p_user_id: horseId,
-          p_wallet_type: 'PLAYER',
-          p_amount: returnedChips,
-          p_type: 'credit',
-          p_category: 'cashout',
-          p_description: `Horse cash-out ${returnedChips} chips from table ${tableId}`,
-          p_table_id: tableId,
-        })
-        .then(({ error }) => {
-          if (error)
-            console.debug('[Hydra] log_wallet_transaction (cashout) note:', error.message);
-        });
     }
 
     // 4. Set horse back to available
@@ -639,7 +690,7 @@ export const HydraService = {
       .from('profiles')
       .update({ horse_status: 'available' })
       .eq('id', horseId);
-    if (statusErr2) console.warn('[Hydra] removeHorse status update error:', statusErr2.message);
+    if (statusErr2) reportError(statusErr2, 'HydraService.removeHorse_status_update');
 
     return true;
   },
@@ -679,9 +730,9 @@ export const HydraService = {
         randomInRange(this.config.entryDelayRange[0], this.config.entryDelayRange[1]) * 1000; // Convert seconds to milliseconds
 
       setTimeout(() => {
-        this.seedTable(tableId, bigBlind).catch((err) => {
-          console.error(`[HydraService] Failed to reseed table ${tableId} after player left:`, err);
-        });
+        this.seedTable(tableId, bigBlind).catch((err) =>
+          reportError(err, 'HydraService.Failed_to_reseed')
+        );
       }, delay);
     }
   },
@@ -888,7 +939,7 @@ export const HydraService = {
       .eq('is_horse', true);
 
     if (error) {
-      console.error('HydraService.getFleetStats error:', error);
+      console.debug('HydraService.getFleetStats error:', error);
       return {
         totalHorses: 0,
         available: 0,

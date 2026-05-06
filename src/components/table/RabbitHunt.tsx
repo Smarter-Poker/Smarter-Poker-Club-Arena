@@ -16,6 +16,7 @@ import { useToast } from '../common/Toast';
 import { CardImage } from '../table/CardImage';
 import type { Card as CardImageCard } from '../table/CardImage';
 import './RabbitHunt.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -76,7 +77,7 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
         const access = await vipService.checkFeatureAccess(user.id, 'rabbit_hunt');
         setIsVIP(access.hasAccess && !access.needsPurchase);
       } catch (err) {
-        console.error('[RabbitHunt] Error:', err);
+        reportError(err, 'RabbitHunt.Error');
         setIsVIP(false);
       }
       setIsCheckingVIP(false);
@@ -119,7 +120,7 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
       }
       setHasRevealed(true);
     } catch (error) {
-      console.error('Rabbit hunt failed:', error);
+      reportError(error, 'RabbitHunt.Rabbit_hunt_failed');
       toast.error('Rabbit hunt failed');
     } finally {
       setIsRevealing(false);

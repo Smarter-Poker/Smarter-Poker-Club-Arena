@@ -7,6 +7,7 @@
 import React, { useState, useCallback } from 'react';
 import { tournamentService } from '../../services/TournamentService';
 import { masterBus } from '../../core/MasterBus';
+import { soundService } from '../../services/SoundService';
 import './RebuyModal.css';
 
 interface RebuyModalProps {
@@ -43,6 +44,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
     try {
       const result = await tournamentService.processRebuy(tournamentId, userId);
       if (result.success) {
+        soundService.playBuyInConfirm();
         masterBus.emit('TOURNAMENT_UPDATED', {
           tournamentId,
           status: 'rebuy',

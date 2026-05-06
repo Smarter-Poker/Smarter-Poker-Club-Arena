@@ -1,7 +1,7 @@
 /**
  * ♠ CLUB ARENA — Seat Slot Component
  * ═══════════════════════════════════════════════════════════════════════════════
- * EXACT PokerBros seat layout:
+ * Premium seat layout:
  *
  *   [Fold badge above]
  *        ┌──────┐
@@ -17,14 +17,13 @@
  * that DISAPPEARS as the clock counts down (CSS conic-gradient mask).
  */
 
-import React, { useMemo, useState, useEffect, memo } from 'react';
+import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
 import './SeatSlot.css';
-import './CircularTimer.css';
 import { CardImage, CardBack } from './CardImage';
-import { CircularTimer } from './CircularTimer';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
+import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -35,8 +34,22 @@ export interface Card {
   suit: 'h' | 'd' | 'c' | 's';
 }
 
-export type PlayerStatus = 'active' | 'away' | 'sitting_out' | 'folded' | 'all_in';
-export type PositionBadge = 'D' | 'SB' | 'BB' | null;
+/** FIX 186: Bible V8 §2.3 — Added 'disconnected' status (was missing) */
+export type PlayerStatus = 'active' | 'away' | 'sitting_out' | 'folded' | 'all_in' | 'disconnected';
+/** Bible V8 Appendix B: Position labels for all table sizes */
+export type PositionBadge =
+  | 'D'
+  | 'BTN'
+  | 'SB'
+  | 'BB'
+  | 'UTG'
+  | 'UTG+1'
+  | 'UTG+2'
+  | 'MP'
+  | 'MP+1'
+  | 'HJ'
+  | 'CO'
+  | null;
 export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | null;
 
 export interface SeatPlayer {
@@ -63,6 +76,13 @@ export interface SeatSlotProps {
   bountyValue?: number;
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
+  /**
+   * Phase 2 T1-01 — net profit for this winner (winnings minus hero's
+   * own contribution to the pot). When > 0 and isWinner true, renders
+   * the signature PokerBros "+N" yellow floating text above the seat.
+   * Animation auto-fades after 2.5s.
+   */
+  netWinAmount?: number;
   hudStats?: MiniHUDStats | null; // Opponent VPIP/PFR stats
   showHUD?: boolean; // Whether to show the HUD overlay
   playerStyle?: PlayerStyleResult | null; // Auto-classified player archetype
@@ -73,6 +93,33 @@ export interface SeatSlotProps {
   onSit?: () => void;
   onAction?: () => void;
   onAvatarClick?: () => void;
+  /** Bible V8 §11.1: Show/hide player avatar images */
+  showAvatar?: boolean;
+  /** Bible V8 §11.1: Show/hide VIP/achievement badges */
+  showBadges?: boolean;
+  /** Bible V8 §11.1: Enable/disable gesture controls (tap peek, swipe) */
+  gesturesEnabled?: boolean;
+  /**
+   * Bible V8 §1.16 Real-Time Law — when true, the seat's bet chips play the
+   * "collect-to-pot" animation (cpCollect keyframe). Controlled by the table
+   * parent on COMMUNITY_CARDS_DEALT / HAND_COMPLETE events.
+   */
+  isCollectingChips?: boolean;
+  /**
+   * Bible V8 §10.1 — true during deal animation (HAND_STARTED). When set,
+   * applies `seat__cards--dealing` class for card slide-in animation at each seat.
+   */
+  isDealing?: boolean;
+  /**
+   * 2026-04-15 Bible V8 §6.1 — server-authoritative absolute wall-clock
+   * deadline for the CURRENT active seat (ms since epoch). Combined with
+   * `turnStartTimeMs` this drives a pure-CSS `@property` animation on the
+   * `.seat__info` element so the gold ring shrinks for BOTH hero and
+   * opponents, reliably, even when the tab is hidden (rAF suspended).
+   */
+  turnDeadlineMs?: number;
+  /** Wall-clock time the current turn started (server-authoritative). */
+  turnStartTimeMs?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -83,8 +130,12 @@ function formatStack(amount: number): string {
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
   if (amount >= 100000) return `${(amount / 1000).toFixed(0)}K`;
   if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  if (amount === Math.floor(amount)) return amount.toLocaleString();
-  return amount.toFixed(2);
+  // For any amount >= 1, always show as a rounded whole number.
+  // Fractional cents on big stacks are rake/split artifacts that look ugly.
+  if (amount >= 1) return Math.round(amount).toLocaleString();
+  // Sub-dollar amounts (micro-stakes like 0.25/0.50) — show 2 decimals
+  if (amount > 0) return amount.toFixed(2);
+  return '0';
 }
 
 function formatStackAsBB(stack: number, bigBlind: number): string {
@@ -146,7 +197,7 @@ function HoleCard({
   deckStyle?: '4color' | '2color';
   cardBack?: string;
 }) {
-  // PokerBros-style: hero cards have wider fan tilt, opponents tighter
+  // premium-style: hero cards have wider fan tilt, opponents tighter
   const rotation = isHero ? (index === 0 ? -12 : 12) : index === 0 ? -8 : 8;
   const size = isHero ? 'md' : 'sm';
 
@@ -168,29 +219,7 @@ function HoleCard({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// POSITION CHIP — D / SB / BB badge
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function PositionChip({ position }: { position: PositionBadge }) {
-  if (!position) return null;
-
-  const config: Record<string, { bg: string; color: string }> = {
-    D: { bg: '#FFFFFF', color: '#111' },
-    SB: { bg: '#3B82F6', color: '#FFF' },
-    BB: { bg: '#EAB308', color: '#111' },
-  };
-
-  const { bg, color } = config[position] || config.D;
-
-  return (
-    <div className="seat__position-chip" style={{ backgroundColor: bg, color }}>
-      {position}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// NEON TIMER BORDER — PokerBros-style disappearing border
+// NEON TIMER BORDER — premium-style disappearing border
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // The info box border glows neon yellow and the border progressively disappears
@@ -216,6 +245,7 @@ export const SeatSlot = memo(
       isTournament = false,
       bountyValue,
       isWinner = false,
+      netWinAmount,
       winningHandName,
       hudStats,
       showHUD = false,
@@ -227,6 +257,13 @@ export const SeatSlot = memo(
       onSit,
       onAction,
       onAvatarClick,
+      showAvatar = true,
+      showBadges = false,
+      gesturesEnabled = true,
+      isCollectingChips = false,
+      isDealing = false,
+      turnDeadlineMs,
+      turnStartTimeMs,
     } = props;
 
     // Animated stack change — flash green/red when stack changes
@@ -253,6 +290,16 @@ export const SeatSlot = memo(
 
     // Winner pop animation — brief scale bounce when isWinner transitions to true
     const [winnerPop, setWinnerPop] = useState(false);
+    // Bible V8 §5.3: card peek gesture — tap hero cards for brief lift
+    const [isPeeking, setIsPeeking] = useState(false);
+    // CA-14 BUG FIX: track the 300ms peek-dismiss timer so it cancels on unmount.
+    // Previously fire-and-forget in onTouchEnd/onMouseUp inline handlers.
+    const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+      return () => {
+        if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+      };
+    }, []);
     useEffect(() => {
       if (isWinner && !winnerPop) {
         setWinnerPop(true);
@@ -263,6 +310,8 @@ export const SeatSlot = memo(
 
     // All-in shake animation — brief shake when lastAction changes to 'all_in'
     const [allinShake, setAllinShake] = useState(false);
+    // Fold card fly-out animation — brief "cards to muck" before dimming
+    const [isFolding, setIsFolding] = useState(false);
     const prevActionRef = React.useRef<LastAction>(null);
     useEffect(() => {
       if (lastAction === 'all_in' && prevActionRef.current !== 'all_in') {
@@ -271,8 +320,30 @@ export const SeatSlot = memo(
         prevActionRef.current = lastAction;
         return () => clearTimeout(timer);
       }
+      // Bible V8 §10.1: card fold animation — cards fly to center/muck
+      if (lastAction === 'fold' && prevActionRef.current !== 'fold') {
+        setIsFolding(true);
+        const timer = setTimeout(() => setIsFolding(false), 350);
+        prevActionRef.current = lastAction;
+        return () => clearTimeout(timer);
+      }
       prevActionRef.current = lastAction;
     }, [lastAction]);
+
+    // Showdown card flip animation — 3D flip when opponent cards are revealed
+    const [isShowdownFlip, setIsShowdownFlip] = useState(false);
+    const prevShowCardsRef = React.useRef<boolean>(player?.showCards ?? false);
+    useEffect(() => {
+      if (!player) return;
+      // Trigger 3D flip when showCards transitions false → true
+      if (player.showCards && !prevShowCardsRef.current) {
+        setIsShowdownFlip(true);
+        const timer = setTimeout(() => setIsShowdownFlip(false), 400);
+        prevShowCardsRef.current = player.showCards;
+        return () => clearTimeout(timer);
+      }
+      prevShowCardsRef.current = player.showCards ?? false;
+    }, [player?.showCards]);
 
     // Stack glow pulse — when stack changes by >20%
     const [stackGlow, setStackGlow] = useState(false);
@@ -297,13 +368,27 @@ export const SeatSlot = memo(
       if (!player) {
         cls.push('seat--empty');
       } else {
-        cls.push(`seat--${player.status}`);
+        // 2026-04-15 ROOT-CAUSE FIX (Dan: opponent rings glued at 100%):
+        // player.status can be 'active' meaning "seated and in the hand",
+        // which would push `seat--active` — colliding with the CSS class
+        // used for "it is currently this seat's turn to act" (line below).
+        // Result: every seated player visually glowed as if it were their
+        // turn. Guard: only emit seat--${status} for non-'active' statuses
+        // (folded / all_in / sitting_out / away / disconnected). The
+        // canonical "in a hand" indicator is `seat--in-hand` added below.
+        if (player.status !== 'active') {
+          cls.push(`seat--${player.status}`);
+        }
         if (player.isHero) cls.push('seat--hero');
         if (isActive) cls.push('seat--active');
         if (isWinner) {
           cls.push('seat--winner');
           cls.push('seat--winner-glow');
           if (winnerPop) cls.push('seat--winner-pop');
+        }
+        // Bible V8 §5.1: Yellow glow on all players still in the hand (not folded)
+        if (player.status === 'active' || player.status === 'all_in') {
+          cls.push('seat--in-hand');
         }
         if (lastAction === 'fold') cls.push('seat--folded');
         if (allinShake) cls.push('seat--allin-shake');
@@ -320,82 +405,138 @@ export const SeatSlot = memo(
     // ─── EMPTY SEAT ────────────────────────────────────────────────────────
     if (!player) {
       if (isTournament) {
-        return <div className={containerClasses} />;
+        return <div className={containerClasses} aria-label={`Seat ${seatNumber}: empty`} />;
       }
       return (
-        <div className={containerClasses} onClick={onSit}>
+        <div
+          className={containerClasses}
+          onClick={onSit}
+          role="button"
+          tabIndex={0}
+          aria-label={`Seat ${seatNumber}: open - click to sit`}
+        >
           <span className="seat__empty-label">+ SIT</span>
         </div>
       );
     }
 
     // ─── OCCUPIED SEAT ─────────────────────────────────────────────────────
-    // Use custom avatar library default — NOT generic DiceBear icons
-    const avatarUrl = player.avatar || '/avatars/default-player.png';
+    // Use deterministic SVG avatar (colorful, unique per player) when no real image exists
+    const avatarUrl = getAvatarWithFallback(player.avatar || null, player.id, player.name);
 
-    // Timer progress as CSS custom prop for conic-gradient border
-    const timerStyle =
-      isActive && timerProgress !== undefined
-        ? ({ '--timer-progress': `${timerProgress}%` } as React.CSSProperties)
-        : undefined;
+    // 2026-04-15 Bible V8 §6.1 — pure-CSS ring countdown. Set animation
+    // duration + a negative animation-delay so the ring animates from the
+    // CURRENT elapsed position to 0% over the remaining seconds. Works on
+    // hidden tabs; applies identically to hero and opponent active seats.
+    // Falls back to the legacy --timer-progress var when server timing is
+    // unavailable so the prior JS-driven visual still shows.
+    let timerStyle: React.CSSProperties | undefined;
+    let timerKey: number | string = 'no-turn';
+    if (isActive && turnDeadlineMs && turnDeadlineMs > 0) {
+      const durationMs = turnStartTimeMs
+        ? Math.max(1000, turnDeadlineMs - turnStartTimeMs)
+        : 15_000;
+      const elapsedMs = turnStartTimeMs ? Math.max(0, Date.now() - turnStartTimeMs) : 0;
+      timerStyle = {
+        '--sp-timer-duration': `${(durationMs / 1000).toFixed(3)}s`,
+        '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
+      } as React.CSSProperties;
+      // React key so the .seat__info remounts (animation restarts) each
+      // new turn — identified by the authoritative wall-clock deadline.
+      timerKey = turnDeadlineMs;
+    } else if (isActive && timerProgress !== undefined) {
+      // Legacy JS-hook fallback (visible tabs only).
+      timerStyle = {
+        '--timer-progress': `${timerProgress}%`,
+      } as React.CSSProperties;
+    }
 
     return (
-      <div className={containerClasses} onClick={onAction}>
-        {/* Last Action Badge — floats ABOVE the seat like PokerBros */}
+      <div
+        className={containerClasses}
+        onClick={onAction}
+        role="region"
+        aria-label={`Seat ${seatNumber}: ${player.name}${isActive ? ' (acting now)' : ''}${player.status === 'folded' ? ' (folded)' : ''}${player.status === 'all_in' ? ' (all in)' : ''}, stack ${player.stack}`}
+        aria-live={isActive ? 'polite' : 'off'}
+      >
+        {/* Last Action Badge — floats ABOVE the seat (premium style) */}
         {lastAction && (
-          <div className={`seat__action seat__action--${lastAction}`}>
+          <div
+            className={`seat__action seat__action--${lastAction}`}
+            role="status"
+            aria-label={`${player.name}: ${getActionLabel(lastAction, lastBetAmount)}`}
+          >
             {getActionLabel(lastAction, lastBetAmount)}
           </div>
         )}
 
-        {/* Player Bet Chips on Felt */}
+        {/* Player Bet Chips on Felt — Bible V8 §1.16 Real-Time Law:
+            when the parent flips `isCollectingChips` (on COMMUNITY_CARDS_DEALT
+            or HAND_COMPLETE), these chips animate into the pot before being
+            cleared. Otherwise the chip stack slides in on fresh bets/raises. */}
         {lastBetAmount && lastBetAmount > 0 ? (
           <div className="seat__bet-chips">
             <ChipPhysics
               amount={lastBetAmount}
               animate={
-                lastAction === 'bet' || lastAction === 'raise' || lastAction === 'all_in'
-                  ? 'slide-in'
-                  : 'none'
+                isCollectingChips
+                  ? 'collect'
+                  : lastAction === 'bet' || lastAction === 'raise' || lastAction === 'all_in'
+                    ? 'slide-in'
+                    : 'none'
               }
               compact={true}
             />
           </div>
         ) : null}
 
-        {/* Hole Cards — opponents: beside avatar at showdown */}
-        {player.holeCards && player.holeCards.length > 0 && !player.isHero && (
-          <div
-            className={`seat__cards seat__cards--opponent${player.showCards ? ' seat__cards--revealed' : ''}`}
-          >
-            {player.holeCards.map((card, i) => (
-              <HoleCard
-                key={i}
-                card={card}
-                hidden={!player.showCards}
-                index={i}
-                isWinner={isWinner}
-                deckStyle={deckStyle}
-                cardBack={cardBack}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Avatar Circle — large, sits on top of info box */}
-        <div className="seat__avatar-wrap">
-          {/* Circular Timer Arc — PokerBros-style ring around avatar */}
-          {isActive && timerProgress !== undefined && (
-            <div className="seat__circular-timer">
-              <CircularTimer
-                progress={timerProgress}
-                size={64}
-                strokeWidth={3}
-                showCountdown={true}
-                secondsLeft={secondsLeft}
-              />
+        {/* Hole Cards — opponents: show card backs for active/all-in players, reveal at showdown.
+            Also render during isFolding so the fly-out animation can play before unmount. */}
+        {!player.isHero &&
+          (player.status === 'active' || player.status === 'all_in' || isFolding) && (
+            <div
+              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+            >
+              {player.holeCards && player.holeCards.length > 0 ? (
+                player.holeCards.map((card, i) => (
+                  <HoleCard
+                    key={i}
+                    card={card}
+                    hidden={!player.showCards}
+                    index={i}
+                    isWinner={isWinner}
+                    deckStyle={deckStyle}
+                    cardBack={cardBack}
+                  />
+                ))
+              ) : (
+                <>
+                  <HoleCard
+                    key={0}
+                    hidden={true}
+                    index={0}
+                    deckStyle={deckStyle}
+                    cardBack={cardBack}
+                  />
+                  <HoleCard
+                    key={1}
+                    hidden={true}
+                    index={1}
+                    deckStyle={deckStyle}
+                    cardBack={cardBack}
+                  />
+                </>
+              )}
             </div>
           )}
+
+        {/* Avatar Circle — large, sits on top of info box */}
+        {/* Bible V8 §11.1: show_avatars toggle */}
+        <div
+          className="seat__avatar-wrap"
+          style={showAvatar ? undefined : { visibility: 'hidden' }}
+        >
+          {/* Timer is shown via smooth conic-gradient border on the info box below */}
           <div
             className="seat__avatar"
             onClick={(e) => {
@@ -435,19 +576,38 @@ export const SeatSlot = memo(
             {lastAction === 'fold' && <div className="seat__avatar-fold-overlay" />}
           </div>
 
-          {/* Status dot (away/sitting out) */}
+          {/* Status dot (away/sitting out/disconnected) — Bible V8 §2.3 */}
           {player.status !== 'active' &&
             player.status !== 'folded' &&
             player.status !== 'all_in' && (
               <span className={`seat__status-dot seat__status-dot--${player.status}`} />
             )}
+          {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
+          {player.status === 'disconnected' && (
+            <div className="seat__disconnect-overlay" title="Player disconnected">
+              <span className="seat__disconnect-label">DISCONNECTED</span>
+              {secondsLeft != null && secondsLeft > 0 && (
+                <span className="seat__disconnect-timer">{Math.ceil(secondsLeft)}s</span>
+              )}
+            </div>
+          )}
 
-          {/* Position Chip — bottom-right of avatar */}
-          <PositionChip position={position} />
+          {/* Position Badge — PokerBros parity: SB/BB/UTG/CO/BTN shown
+             on each seat. Dealer "D" button rendered separately via DealerButton
+             component, so skip 'D' and 'BTN' here to avoid double-badging. */}
+          {position && position !== 'D' && position !== 'BTN' && (
+            <div
+              className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}
+            >
+              {position}
+            </div>
+          )}
         </div>
 
-        {/* Info Box — name + stack, with neon timer border when active */}
-        <div className="seat__info" style={timerStyle}>
+        {/* Info Box — name + stack, with neon timer border when active.
+            The React `key` forces a fresh mount per turn so the CSS
+            @property animation restarts from 100%. */}
+        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`}>
           {/* Neon border overlay (rendered via CSS ::before when --active) */}
           <span className="seat__name">{player.name}</span>
           <span
@@ -473,7 +633,8 @@ export const SeatSlot = memo(
         )}
 
         {/* Player Style Badge — auto-classified archetype */}
-        {!player.isHero && playerStyle && playerStyle.style !== 'unknown' && (
+        {/* Bible V8 §11.1: show_badges toggle controls badge visibility */}
+        {showBadges && !player.isHero && playerStyle && playerStyle.style !== 'unknown' && (
           <div
             className="seat__style-badge"
             style={{
@@ -486,9 +647,45 @@ export const SeatSlot = memo(
           </div>
         )}
 
-        {/* Hero Hole Cards — large, PokerBros style beside avatar */}
+        {/* Hero Hole Cards — large, premium style beside avatar.
+         *  After the hero folds, keep the cards visible but dim them so the
+         *  player can still see what they mucked (matches how the avatar
+         *  dims on fold). Dan's UX rule, 2026-04-14. */}
         {player.holeCards && player.holeCards.length > 0 && player.isHero && (
-          <div className="seat__cards seat__cards--hero">
+          <div
+            className={
+              'seat__cards seat__cards--hero' +
+              (isDealing ? ' seat__cards--dealing' : '') +
+              (isFolding ? ' seat__cards--folding' : '') +
+              (lastAction === 'fold' || player.status === 'folded' ? ' seat__cards--folded' : '') +
+              (isPeeking ? ' seat__cards--peeking' : '')
+            }
+            /* Bible V8 §5.3: tap hero cards to peek (brief lift animation) */
+            onTouchStart={() => {
+              if (gesturesEnabled) setIsPeeking(true);
+            }}
+            onTouchEnd={() => {
+              if (gesturesEnabled) {
+                if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+                peekTimerRef.current = setTimeout(() => {
+                  peekTimerRef.current = null;
+                  setIsPeeking(false);
+                }, 300);
+              }
+            }}
+            onMouseDown={() => {
+              if (gesturesEnabled) setIsPeeking(true);
+            }}
+            onMouseUp={() => {
+              if (gesturesEnabled) {
+                if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+                peekTimerRef.current = setTimeout(() => {
+                  peekTimerRef.current = null;
+                  setIsPeeking(false);
+                }, 300);
+              }
+            }}
+          >
             {player.holeCards.map((card, i) => (
               <HoleCard
                 key={i}
@@ -504,8 +701,17 @@ export const SeatSlot = memo(
           </div>
         )}
 
-        {/* Winning Hand Name — floats below cards like PokerBros "Straight" label */}
+        {/* Winning Hand Name — floats below cards (premium style) "Straight" label */}
         {isWinner && winningHandName && <div className="seat__hand-name">{winningHandName}</div>}
+
+        {/* Phase 2 T1-01 — PokerBros net-profit "+N" yellow floating text.
+         *  Shows only when isWinner=true AND netWinAmount>0. Keyed on the
+         *  amount so each new win re-triggers the float animation. */}
+        {isWinner && typeof netWinAmount === 'number' && netWinAmount > 0 && (
+          <div className="seat__net-win" key={netWinAmount}>
+            +{formatStack(netWinAmount)}
+          </div>
+        )}
 
         {/* All-In Badge */}
         {player.status === 'all_in' && !isWinner && <div className="seat__allin-badge">ALL IN</div>}
@@ -536,6 +742,7 @@ export const SeatSlot = memo(
     if (prev.bountyValue !== next.bountyValue) return false;
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
+    if (prev.netWinAmount !== next.netWinAmount) return false;
     if (prev.lastAction !== next.lastAction) return false;
     if (prev.lastBetAmount !== next.lastBetAmount) return false;
     if (prev.showHUD !== next.showHUD) return false;
@@ -560,6 +767,14 @@ export const SeatSlot = memo(
     const nextStyle = next.playerStyle?.style || 'unknown';
     if (prevStyle !== nextStyle) return false;
     if (prev.deckStyle !== next.deckStyle) return false;
+    if (prev.cardBack !== next.cardBack) return false;
+    if (prev.secondsLeft !== next.secondsLeft) return false;
+    if (prev.showAvatar !== next.showAvatar) return false;
+    if (prev.showBadges !== next.showBadges) return false;
+    if (prev.isDealing !== next.isDealing) return false;
+    // 2026-04-15 §6.1: re-render on new turn so CSS ring restarts.
+    if (prev.turnDeadlineMs !== next.turnDeadlineMs) return false;
+    if (prev.turnStartTimeMs !== next.turnStartTimeMs) return false;
 
     const pp = prev.player;
     const np = next.player;
@@ -586,7 +801,7 @@ export const SeatSlot = memo(
     } else if (!ph || !nh || ph.length !== nh.length) return false;
     else {
       for (let i = 0; i < ph.length; i++) {
-        if (ph[i] !== nh[i]) return false;
+        if (ph[i].rank !== nh[i].rank || ph[i].suit !== nh[i].suit) return false;
       }
     }
 

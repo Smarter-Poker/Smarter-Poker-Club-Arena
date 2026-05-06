@@ -44,6 +44,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { STORAGE_KEYS } from '../lib/storage';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import styles from './HomePage.module.css';
+import { reportError } from '../utils/errorReporter';
 
 // Lazy-load heavy components to reduce initial bundle
 const CreateClubModal = lazy(() => import('../components/modals/CreateClubModal'));
@@ -97,7 +98,7 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('[HomePage ErrorBoundary]', error, info);
+    reportError(info, 'HomePage.HomePage_ErrorBoundary');
   }
 
   render() {
@@ -240,10 +241,14 @@ function HomePageInner() {
 
   // Shark Club stats state
   const [sharkClubId, setSharkClubId] = useState<string | null>(null);
-  const [sharkClubStats, setSharkClubStats] = useState({
-    totalMembers: 0,
-    clubLevel: 1,
-    activePlayers: 0,
+  const [sharkClubStats, setSharkClubStats] = useState<{
+    totalMembers: number | null;
+    clubLevel: number | null;
+    activePlayers: number | null;
+  }>({
+    totalMembers: null,
+    clubLevel: null,
+    activePlayers: null,
   });
 
   // #15: Online/Offline detection
@@ -305,8 +310,14 @@ function HomePageInner() {
                   ...m.club,
                   is_owner: m.role === 'owner',
                   member_count: m.club?.member_count || 0,
-                  // Detect unions by name (e.g. "Midway Union")
-                  entity_type: /union/i.test(m.club?.name || '') ? 'union' : 'club',
+                  // Detect union entities via union_id FK + name heuristic.
+                  // A club row with union_id set AND "union" in the name is the union's
+                  // display stub. Regular member clubs also have union_id but don't
+                  // have "union" in their name.
+                  entity_type:
+                    (m.club as any)?.union_id && /union/i.test(m.club?.name || '')
+                      ? 'union'
+                      : 'club',
                 }) as UserClub
             ) || [];
           if (getIsMounted && !getIsMounted()) return;
@@ -368,7 +379,7 @@ function HomePageInner() {
           }
         }
       } catch (err) {
-        console.error('Error fetching user data:', err);
+        reportError(err, 'HomePage.Error_fetching_user_data');
         toast.error('Failed to load user data');
       } finally {
         clearTimeout(loadingTimeout);
@@ -417,7 +428,7 @@ function HomePageInner() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[HomePage] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[HomePage] ⏱️ Realtime channel timed out');
@@ -515,7 +526,8 @@ function HomePageInner() {
       if (cached) {
         const parsed = JSON.parse(cached);
         const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (parsed.totalMembers > 0 && age < SWR_TTL_MS) setSharkClubStats(parsed);
+        if (parsed.totalMembers !== null && parsed.totalMembers > 0 && age < SWR_TTL_MS)
+          setSharkClubStats(parsed);
       }
     } catch {
       /* */
@@ -562,16 +574,18 @@ function HomePageInner() {
             p_club_id: club.id,
           });
           activePlayers = Number(rpcCount) || 0;
-        } catch {
-          // RPC not deployed yet — use legacy 2-query fallback
+        } catch (e) {
+          reportError(e, 'HomePage');
+          // RPC not deployed yet — use legacy 2-query fallback (DISTINCT user_id)
           if (tablesResult.status === 'fulfilled' && tablesResult.value.data?.length) {
             const tableIds = tablesResult.value.data.map((t: any) => t.id);
-            const { count: seatCount } = await supabase
+            const { data: seatRows } = await supabase
               .from('table_seats')
-              .select('*', { count: 'exact', head: true })
+              .select('user_id')
               .in('table_id', tableIds)
               .is('left_at', null);
-            activePlayers = seatCount || 0;
+            // Deduplicate by user_id to match the RPC behavior
+            activePlayers = seatRows ? new Set(seatRows.map((s: any) => s.user_id)).size : 0;
           }
         }
 
@@ -608,7 +622,8 @@ function HomePageInner() {
                   refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
               }
             }
-          } catch {
+          } catch (e) {
+            reportError(e, 'HomePage');
             // RPC not available — use default level
           }
         }
@@ -624,10 +639,12 @@ function HomePageInner() {
         });
 
         if (!isMounted) return;
+        // Safety clamp: active players can never exceed member count
+        const clampedActive = Math.min(activePlayers, memberCount);
         const stats = {
           totalMembers: memberCount,
           clubLevel: levelInfo.level,
-          activePlayers,
+          activePlayers: clampedActive,
         };
         setSharkClubStats(stats);
 
@@ -638,7 +655,7 @@ function HomePageInner() {
           /* */
         }
       } catch (err) {
-        console.error('[HomePage] Failed to fetch Shark Club stats:', err);
+        reportError(err, 'HomePage.Failed_to_fetch_Shark_Club_stats');
         // Single retry after 3s — only on initial mount, not on real-time refreshes
         if (retryOnFail && isMounted) {
           setTimeout(() => {
@@ -655,11 +672,12 @@ function HomePageInner() {
       if (cached) {
         const parsed = JSON.parse(cached);
         const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (parsed.totalMembers > 0 && age < SWR_TTL_MS) {
+        if (parsed.totalMembers !== null && parsed.totalMembers > 0 && age < SWR_TTL_MS) {
           skipInitialFetch = true;
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'HomePage.setTimeout');
       /* */
     }
     if (!skipInitialFetch) {
@@ -670,15 +688,10 @@ function HomePageInner() {
     const sharkChannelKey = 'clubs-live-stats';
     const channel = masterBus.getOrCreateChannel(sharkChannelKey);
 
-    // Debounce club_members changes — fires on ALL clubs, so collapse rapid events
-    let sharkDebounce: ReturnType<typeof setTimeout> | null = null;
-    const debouncedSharkRefresh = () => {
-      if (sharkDebounce) clearTimeout(sharkDebounce);
-      sharkDebounce = setTimeout(() => {
-        if (isMounted) fetchSharkClubStats();
-      }, 2000);
-    };
-
+    // NOTE (2026-04-19): Unfiltered `club_members` and `table_seats` global listeners REMOVED.
+    // `table_seats` is the engine's highest-write table (updates on every hand for every horse),
+    // and listening globally generated massive message volume. Shark Club stats now refresh via
+    // MasterBus CLUB_JOINED/CLUB_LEFT events (already subscribed above) + the filtered clubs listener.
     channel
       .on(
         'postgres_changes',
@@ -692,20 +705,9 @@ function HomePageInner() {
           if (isMounted) fetchSharkClubStats();
         }
       )
-      // Listen to club_members changes (debounced — no filter available for
-      // specific club_id, so this fires on all clubs)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'club_members',
-        },
-        debouncedSharkRefresh
-      )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[HomePage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[HomePage] ⏱️ Realtime channel timed out');
@@ -730,51 +732,16 @@ function HomePageInner() {
 
     return () => {
       isMounted = false;
-      if (sharkDebounce) clearTimeout(sharkDebounce);
       unsubJoined();
       unsubLeft();
       masterBus.removeRegisteredChannel(sharkChannelKey);
     };
   }, []);
 
-  // Enhancement #6: Real-time stats refresh for ALL club cards (debounced)
-  useEffect(() => {
-    let isMounted = true;
-    const allClubsKey = 'clubs-all-live-stats';
-    const allClubsChannel = masterBus.getOrCreateChannel(allClubsKey);
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const debouncedFetch = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        if (isMounted) fetchUserData(true, () => isMounted);
-      }, 500);
-    };
-    allClubsChannel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'club_members' },
-        debouncedFetch
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'table_seats' },
-        debouncedFetch
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[HomePage] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[HomePage] ⏱️ Realtime channel timed out');
-        }
-      });
-
-    return () => {
-      isMounted = false;
-      if (debounceTimer) clearTimeout(debounceTimer);
-      masterBus.removeRegisteredChannel(allClubsKey);
-    };
-  }, [fetchUserData]);
+  // Enhancement #6: Real-time stats refresh for ALL club cards
+  // NOTE (2026-04-19): Unfiltered `club_members` + `table_seats` global listeners REMOVED.
+  // These generated massive message volume. Club card stats now refresh via MasterBus events
+  // (CLUB_JOINED, CLUB_LEFT, CLUB_UPDATED) already subscribed above.
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // Enhancement #2: Context Menu handlers
@@ -988,7 +955,7 @@ function HomePageInner() {
       setShowReferralPrompt(true);
     } catch (err) {
       if (!isMountedRef.current) return;
-      console.error('Error validating club code:', err);
+      reportError(err, 'HomePage.Error_validating_club_code');
       toast.error('Failed to validate club code');
     } finally {
       if (isMountedRef.current) setIsValidatingCode(false);
@@ -1084,7 +1051,8 @@ function HomePageInner() {
                 p_club_id: club.id,
               });
               activePlayers = Number(rpcCount) || 0;
-            } catch {
+            } catch (e) {
+              reportError(e, 'HomePage.map');
               // RPC not deployed — skip
             }
 
@@ -1120,7 +1088,8 @@ function HomePageInner() {
                       refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
                   }
                 }
-              } catch {
+              } catch (e) {
+                reportError(e, 'HomePage');
                 // RPC not available
               }
             }
@@ -1137,10 +1106,11 @@ function HomePageInner() {
             });
 
             if (isMounted) {
+              // Safety clamp: active players can never exceed member count
               statsMap[club.id] = {
                 totalMembers: memberCount,
                 clubLevel: levelInfo.level,
-                activePlayers,
+                activePlayers: Math.min(activePlayers, memberCount),
               };
             }
           })
@@ -1149,19 +1119,73 @@ function HomePageInner() {
         // ── Union stats overlay: fetch from `unions` table for union-type clubs ──
         // The `clubs` table row for unions has stale/minimal data (level=1, member_count=1).
         // The real aggregated stats (level=26, total_players=622) live in the `unions` table.
+        // IMPORTANT: clubs.id ≠ unions.id — we use clubs.union_id (FK) to bridge.
         const unionTypeClubs = displayClubs.filter((c) => c.entity_type === 'union');
         if (unionTypeClubs.length > 0 && isMounted) {
           try {
-            const unionIds = unionTypeClubs.map((c) => c.id);
+            // Build mapping: union UUID (from clubs.union_id FK) → club.id (for statsMap key)
+            const unionIdToClubId: Record<string, string> = {};
+            const realUnionIds: string[] = [];
+            for (const c of unionTypeClubs) {
+              const uid = (c as any).union_id as string | undefined;
+              if (uid) {
+                unionIdToClubId[uid] = c.id;
+                realUnionIds.push(uid);
+              }
+            }
+
+            if (realUnionIds.length === 0) throw new Error('No union_id FK found on union clubs');
+
             const { data: unionRows } = await supabase
               .from('unions')
               .select(
                 'id, level, total_players, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
               )
-              .in('id', unionIds);
+              .in('id', realUnionIds);
 
             if (unionRows && isMounted) {
+              // Fetch member clubs for each union to aggregate active players
+              const { data: unionClubRows } = await supabase
+                .from('union_clubs')
+                .select('union_id, club_id')
+                .in('union_id', realUnionIds);
+
+              // Aggregate active players from all member clubs per union
+              const unionActiveMap: Record<string, number> = {};
+              if (unionClubRows && unionClubRows.length > 0) {
+                // Get unique member club IDs across all unions
+                const memberClubIds = [...new Set(unionClubRows.map((r: any) => r.club_id))];
+                // Batch-fetch active counts for all member clubs
+                const activeResults = await Promise.allSettled(
+                  memberClubIds.map(async (clubId: string) => {
+                    try {
+                      const { data: count } = await supabase.rpc('fn_get_active_player_count', {
+                        p_club_id: clubId,
+                      });
+                      return { clubId, count: Number(count) || 0 };
+                    } catch {
+                      return { clubId, count: 0 };
+                    }
+                  })
+                );
+                // Build club → active count map
+                const clubActiveMap: Record<string, number> = {};
+                for (const r of activeResults) {
+                  if (r.status === 'fulfilled') {
+                    clubActiveMap[r.value.clubId] = r.value.count;
+                  }
+                }
+                // Sum active counts per union from its member clubs
+                for (const row of unionClubRows) {
+                  const uid = (row as any).union_id;
+                  unionActiveMap[uid] =
+                    (unionActiveMap[uid] || 0) + (clubActiveMap[(row as any).club_id] || 0);
+                }
+              }
+
               for (const u of unionRows) {
+                const clubId = unionIdToClubId[u.id]; // Map back to clubs.id for statsMap
+                if (!clubId) continue;
                 const totalMembers = u.total_players || u.member_count || 0;
                 const levelInfo = getClubLevel({
                   level: u.level || 1,
@@ -1172,15 +1196,17 @@ function HomePageInner() {
                   hierarchyThresholdCurrent: u.hierarchy_threshold_current || 0,
                   hierarchyThresholdNext: u.hierarchy_threshold_next || 0,
                 });
-                statsMap[u.id] = {
+                // Use aggregated active count from member clubs, clamped to totalMembers
+                const unionActive = unionActiveMap[u.id] || 0;
+                statsMap[clubId] = {
                   totalMembers,
                   clubLevel: levelInfo.level,
-                  activePlayers: statsMap[u.id]?.activePlayers || 0,
+                  activePlayers: Math.min(unionActive, totalMembers),
                 };
               }
             }
           } catch (e) {
-            console.warn('[HomePage] Union stats overlay failed:', e);
+            reportError(e, 'HomePage.Union_stats_overlay_failed');
           }
         }
 
@@ -1201,7 +1227,7 @@ function HomePageInner() {
           }
         }
       } catch (err) {
-        console.error('[HomePage] Failed to fetch club stats:', err);
+        reportError(err, 'HomePage.Failed_to_fetch_club_stats');
       }
     }
 

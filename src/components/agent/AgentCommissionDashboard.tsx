@@ -13,6 +13,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './AgentCommissionDashboard.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface CommissionSummary {
   totalEarned: number;
@@ -101,10 +102,8 @@ export function AgentCommissionDashboard() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error(
-            '[AgentCommissionDashboard] ❌ Realtime channel error:',
-            err?.message || err
-          );
+          if (err)
+            reportError(err?.message || err, 'AgentCommissionDashboard._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AgentCommissionDashboard] ⏱️ Realtime channel timed out');
@@ -136,7 +135,7 @@ export function AgentCommissionDashboard() {
         'fn_get_agent_commission_summary',
         { p_agent_id: user.id }
       );
-      if (summaryErr) console.error('[AgentCommission] Summary RPC failed:', summaryErr.message);
+      if (summaryErr) reportError(summaryErr, 'AgentCommissionDashboard.Summary_RPC_failed');
 
       if (summaryData) {
         setSummary({
@@ -204,7 +203,8 @@ export function AgentCommissionDashboard() {
             if (profiles) {
               for (const p of profiles) subProfileMap[p.id] = p;
             }
-          } catch {
+          } catch (e) {
+            reportError(e, 'AgentCommissionDashboard.map');
             /* non-critical */
           }
         }

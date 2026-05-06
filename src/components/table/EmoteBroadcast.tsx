@@ -7,7 +7,7 @@
  * Shows emotes from all players at the table.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './EmoteBroadcast.css';
 
@@ -50,6 +50,19 @@ interface EmoteBroadcastProps {
 
 export function EmoteBroadcast({ tableId }: EmoteBroadcastProps) {
   const [floatingEmotes, setFloatingEmotes] = useState<FloatingEmote[]>([]);
+  // CA-10 BUG FIX: each emote spawns a 2500ms auto-remove timer. Previously these
+  // were fire-and-forget setTimeouts. If the component unmounts while emotes are
+  // floating (e.g. user leaves table), all pending setFloatingEmotes calls would
+  // fire on an unmounted component. Added emoteTimersRef keyed by emote id.
+  const emoteTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Unmount guard — cancel all in-flight emote timers
+  useEffect(() => {
+    return () => {
+      emoteTimersRef.current.forEach(clearTimeout);
+      emoteTimersRef.current.clear();
+    };
+  }, []);
 
   const addEmote = useCallback((emojiOrId: string, username?: string) => {
     // Support both direct emoji and emote ID lookup
@@ -60,10 +73,12 @@ export function EmoteBroadcast({ tableId }: EmoteBroadcastProps) {
       { id, emoji, username, createdAt: Date.now() },
     ]);
 
-    // Auto-remove after animation completes
-    setTimeout(() => {
+    // Auto-remove after animation completes — tracked so unmount can cancel
+    const timer = setTimeout(() => {
       setFloatingEmotes((prev) => prev.filter((e) => e.id !== id));
+      emoteTimersRef.current.delete(id);
     }, 2500);
+    emoteTimersRef.current.set(id, timer);
   }, []);
 
   useMasterBusSubscription('TABLE_EMOTE', (payload) => {

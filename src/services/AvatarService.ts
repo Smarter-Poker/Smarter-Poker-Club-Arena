@@ -14,6 +14,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 import {
   generateAvatarSvg,
   generateDefaultAvatar,
@@ -186,7 +187,7 @@ class AvatarServiceClass {
 
       return data.avatar_url;
     } catch (err) {
-      console.error('[AvatarService] Error:', err);
+      reportError(err, 'AvatarService.Error');
       return DEFAULT_AVATAR_SVG;
     }
   }
@@ -216,7 +217,7 @@ class AvatarServiceClass {
         }
       }
     } catch (err) {
-      console.error('[AvatarService] Error:', err);
+      reportError(err, 'AvatarService.Error');
     }
 
     // Set SVG fallback for any missing users
@@ -241,7 +242,7 @@ class AvatarServiceClass {
         .eq('id', userId);
 
       if (profileError) {
-        console.error('[AvatarService] Profile update failed:', profileError);
+        reportError(profileError, 'AvatarService.Profile_update_failed');
         return false;
       }
 
@@ -264,7 +265,7 @@ class AvatarServiceClass {
 
       return true;
     } catch (err) {
-      console.error('[AvatarService] Error:', err);
+      reportError(err, 'AvatarService.Error');
       return false;
     }
   }
@@ -291,7 +292,7 @@ class AvatarServiceClass {
 
       return data?.is_vip || false;
     } catch (err) {
-      console.error('[AvatarService] Error:', err);
+      reportError(err, 'AvatarService.Error');
       return false;
     }
   }

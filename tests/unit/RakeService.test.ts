@@ -53,11 +53,10 @@ vi.mock('../../src/services/BBJService', () => ({
   },
 }));
 
-vi.mock('../../src/engine/RakebackEngine', () => ({
-  rakebackEngine: {
-    recordHandRake: vi.fn(),
-  },
-}));
+// NOTE (2026-04-23, Phase U2): the previous `vi.mock('../../src/engine/RakebackEngine', ...)`
+// here is removed because src/engine/RakebackEngine no longer exists — rakeback logic is
+// now server-authoritative (Hetzner). RakeService itself is pure math and no longer
+// imports from src/engine/.
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 

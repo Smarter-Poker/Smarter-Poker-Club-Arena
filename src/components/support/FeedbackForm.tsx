@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './FeedbackForm.css';
+import { reportError } from '../../utils/errorReporter';
 
 export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { user } = useAuthUser();
@@ -25,11 +26,28 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
-    if (isOpen) setTimeout(() => setMounted(true), 50);
-    else setMounted(false);
+    if (isOpen) {
+      if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+      mountTimerRef.current = setTimeout(() => {
+        mountTimerRef.current = null;
+        setMounted(true);
+      }, 50);
+    } else {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+      setMounted(false);
+    }
+    return () => {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -60,7 +78,7 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
           .upload(fileName, screenshot);
 
         if (uploadError) {
-          console.error('Screenshot upload failed:', uploadError);
+          reportError(uploadError, 'FeedbackForm.Screenshot_upload_failed');
           // Continue without screenshot - don't fail the submission
         } else {
           const { data: urlData } = supabase.storage
@@ -87,7 +105,7 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       setSubmitted(true);
       toast.success('Thank you for your feedback!');
     } catch (err) {
-      console.error('Feedback submission failed:', err);
+      reportError(err, 'FeedbackForm.Feedback_submission_failed');
       // Still show success - we logged it
       setSubmitted(true);
     } finally {

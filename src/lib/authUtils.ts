@@ -17,6 +17,9 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** Shared SSO storage key — MUST match Hub's 'smarter-poker-auth' for same-origin SSO */
+
+import { reportError } from '../utils/errorReporter';
+
 export const AUTH_STORAGE_KEY = 'smarter-poker-auth';
 
 /** Buffer for JWT expiry checks (60s to handle clock skew) */
@@ -101,7 +104,8 @@ export function readLocalSession(): LocalSession | null {
     const expiresAt = typeof payload.exp === 'number' ? (payload.exp as number) * 1000 : null;
 
     return { userId, email, username, expiresAt, accessToken: token, rawData: data };
-  } catch {
+  } catch (e) {
+    reportError(e, 'authUtils.readLocalSession');
     return null; // Corrupted localStorage or malformed JWT
   }
 }

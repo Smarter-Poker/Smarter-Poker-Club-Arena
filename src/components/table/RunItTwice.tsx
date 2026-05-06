@@ -25,9 +25,19 @@ export interface Card {
 
 export interface RunItTwicePromptProps {
   isOpen: boolean;
+  /** FIX 96: true = this player chooses how many runs (2 or 3) */
+  isChooser?: boolean;
+  /** FIX 96: callback when chooser decides number of runs */
+  onChooserDecide?: (runs: 1 | 2 | 3) => Promise<void>;
   onAccept: () => void;
   onDecline: () => void;
   timeRemaining: number; // seconds
+  /** FIX 96: number of runs chosen (2 or 3) */
+  chosenRuns?: 2 | 3;
+  /** FIX 96: max runs allowed (2 or 3) */
+  maxRuns?: 2 | 3;
+  /** FIX 96: number of players in the all-in (affects RIT eligibility) */
+  playerCount?: number;
   opponentName: string;
 }
 
@@ -62,22 +72,35 @@ function toCardImage(card: Card): CardImageCard {
 
 export function RunItTwicePrompt({
   isOpen,
+  isChooser = false,
+  onChooserDecide,
   onAccept,
   onDecline,
   timeRemaining,
+  chosenRuns,
+  maxRuns = 2,
+  playerCount: _playerCount,
   opponentName,
 }: RunItTwicePromptProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => setMounted(true), 50);
+      // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+      const _mountTimer = setTimeout(() => setMounted(true), 50);
+      return () => clearTimeout(_mountTimer);
     } else {
       setMounted(false);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  // FIX 188: Bible V8 §4.20 — Chooser selects number of runs (2 or 3)
+  // Phase 1: Chooser (best hand) picks runs. Phase 2: Others accept/decline.
+  const isChooserPhase = isChooser && !chosenRuns;
+  const isResponderPhase = !isChooser || !!chosenRuns;
+  const runsLabel = chosenRuns === 3 ? 'Three Times' : 'Twice';
 
   return (
     <div className="rit-overlay">
@@ -90,29 +113,60 @@ export function RunItTwicePrompt({
         }}
       >
         <div className="rit-prompt__icon"></div>
-        <h3 className="rit-prompt__title">Run it Twice?</h3>
+        <h3 className="rit-prompt__title">
+          {isChooserPhase ? 'Run It Multiple Times?' : `Run it ${runsLabel}?`}
+        </h3>
         <p className="rit-prompt__text">
-          {opponentName} wants to run the remaining cards twice. The pot will be split based on both
-          runouts.
+          {isChooserPhase
+            ? 'You have the best hand. Choose how many times to run the remaining cards.'
+            : `${opponentName} wants to run the remaining cards ${runsLabel.toLowerCase()}. The pot will be split based on ${chosenRuns === 3 ? 'all three' : 'both'} runouts.`}
         </p>
 
         <div className="rit-prompt__timer">
           <div className="rit-prompt__timer-bar">
             <div
               className="rit-prompt__timer-fill"
-              style={{ width: `${(timeRemaining / 10) * 100}%` }}
+              style={{ width: `${Math.min(100, (timeRemaining / 10) * 100)}%` }}
             />
           </div>
           <span className="rit-prompt__timer-text">{timeRemaining}s</span>
         </div>
 
         <div className="rit-prompt__actions">
-          <button className="rit-prompt__btn rit-prompt__btn--decline" onClick={onDecline}>
-            No Thanks
-          </button>
-          <button className="rit-prompt__btn rit-prompt__btn--accept" onClick={onAccept}>
-            Run it Twice!
-          </button>
+          {isChooserPhase ? (
+            <>
+              {/* FIX 188: Chooser can decline (run once), run twice, or run three times */}
+              <button
+                className="rit-prompt__btn rit-prompt__btn--decline"
+                onClick={() => onChooserDecide?.(1)}
+              >
+                Run Once
+              </button>
+              <button
+                className="rit-prompt__btn rit-prompt__btn--accept"
+                onClick={() => onChooserDecide?.(2)}
+              >
+                Run it Twice
+              </button>
+              {maxRuns >= 3 && (
+                <button
+                  className="rit-prompt__btn rit-prompt__btn--accept rit-prompt__btn--triple"
+                  onClick={() => onChooserDecide?.(3)}
+                >
+                  Run it 3×
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <button className="rit-prompt__btn rit-prompt__btn--decline" onClick={onDecline}>
+                No Thanks
+              </button>
+              <button className="rit-prompt__btn rit-prompt__btn--accept" onClick={onAccept}>
+                Run it {runsLabel}!
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

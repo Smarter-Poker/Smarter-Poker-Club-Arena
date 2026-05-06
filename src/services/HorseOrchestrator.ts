@@ -17,7 +17,7 @@
  * - MasterBus broadcasts updates across all pages
  *
  * FULL COVERAGE:
- * - Cash Games: NLH, PLO4, PLO5, PLO8, OFC Pineapple — ALL stake levels
+ * - Cash Games: NLH, PLO4, PLO5, PLO8 — ALL stake levels
  * - Tournaments: Freezeout, Bounty, PKO, Mystery Bounty, Turbo, Freeroll
  * - SNGs: 6-Max Turbo, 9-Max — all game types
  * - Spins: 3-Max — all game types
@@ -317,32 +317,6 @@ const DEFAULT_TABLES: TableConfig[] = [
     gameVariant: 'plo8',
   },
 
-  // ─── OFC PINEAPPLE ──────────────────────────────────────────────────────
-  {
-    name: 'Pineapple 0.25/0.50',
-    smallBlind: 0.25,
-    bigBlind: 0.5,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'ofc_pineapple',
-  },
-  {
-    name: 'Pineapple 0.50/1.00',
-    smallBlind: 0.5,
-    bigBlind: 1.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'ofc_pineapple',
-  },
-  {
-    name: 'Pineapple 1.00/2.00',
-    smallBlind: 1.0,
-    bigBlind: 2.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'ofc_pineapple',
-  },
-
   // ─── SHORT DECK ─────────────────────────────────────────────────────────
   {
     name: 'Short Deck 0.50/1.00',
@@ -397,35 +371,19 @@ const DEFAULT_TABLES: TableConfig[] = [
     gameVariant: 'plo6',
   },
 
-  // ─── PLO HI-LO TABLES ────────────────────────────────────────────────────
+  // FIX 116: Dead variants removed (plo_hilo → use plo8, flh, crazy_pineapple, double_board, mixed)
+
+  // ─── PLO8 (HI-LO) TABLES ───────────────────────────────────────────────
   {
-    name: 'PLO Hi-Lo 5/10',
+    name: 'PLO8 Hi-Lo 5/10',
     smallBlind: 5,
     bigBlind: 10,
     maxPlayers: 6,
     horsesPerTable: 5,
-    gameVariant: 'plo_hilo',
+    gameVariant: 'plo8',
   },
 
-  // ─── FIXED LIMIT HOLD'EM ─────────────────────────────────────────────────
-  {
-    name: 'FLH 1/2',
-    smallBlind: 1,
-    bigBlind: 2,
-    maxPlayers: 9,
-    horsesPerTable: 7,
-    gameVariant: 'flh',
-  },
-  {
-    name: 'FLH 2/4',
-    smallBlind: 2,
-    bigBlind: 4,
-    maxPlayers: 9,
-    horsesPerTable: 7,
-    gameVariant: 'flh',
-  },
-
-  // ─── PINEAPPLE & CRAZY PINEAPPLE ─────────────────────────────────────────
+  // ─── PINEAPPLE ──────────────────────────────────────────────────────────
   {
     name: 'Pineapple 1/2',
     smallBlind: 1,
@@ -433,34 +391,6 @@ const DEFAULT_TABLES: TableConfig[] = [
     maxPlayers: 9,
     horsesPerTable: 7,
     gameVariant: 'pineapple',
-  },
-  {
-    name: 'Crazy Pineapple 1/2',
-    smallBlind: 1,
-    bigBlind: 2,
-    maxPlayers: 9,
-    horsesPerTable: 7,
-    gameVariant: 'crazy_pineapple',
-  },
-
-  // ─── DOUBLE BOARD ─────────────────────────────────────────────────────────
-  {
-    name: 'Double Board NLH 1/2',
-    smallBlind: 1,
-    bigBlind: 2,
-    maxPlayers: 6,
-    horsesPerTable: 5,
-    gameVariant: 'double_board',
-  },
-
-  // ─── MIXED GAMES (HORSE) ─────────────────────────────────────────────────
-  {
-    name: 'HORSE Mixed 1/2',
-    smallBlind: 1,
-    bigBlind: 2,
-    maxPlayers: 9,
-    horsesPerTable: 7,
-    gameVariant: 'mixed',
   },
 ];
 
@@ -680,23 +610,6 @@ const TOURNAMENT_CONFIGS = [
     dayOfWeek: 5,
     startHour: 20,
   },
-  {
-    name: '10 Chip Mystery Bounty — Pineapple OFC',
-    type: 'mystery_bounty' as const,
-    gameVariant: 'ofc_pineapple',
-    buyIn: 10,
-    rake: 1,
-    guarantee: 250,
-    startingStack: 5000,
-    maxPlayers: 30,
-    minPlayers: 6,
-    horsesToRegister: 15,
-    blindStructure: TURBO_BLIND_STRUCTURE,
-    payoutStructure: PAYOUT_5_PLACES,
-    dayOfWeek: 5,
-    startHour: 22,
-  },
-
   // ─── SATURDAY: TURBO MARATHON + BIG GUARANTEE ────────────────────────────
   {
     name: '50 Chip Saturday Major — NLH 5K GTD',
@@ -985,23 +898,6 @@ const SNG_CONFIGS = [
     blindStructure: SNG_BLIND_9MAX,
     payoutStructure: PAYOUT_3_PLACES,
   },
-  // Pineapple SNGs
-  {
-    name: '5 Chip SNG 6-Max Pineapple',
-    type: 'sng' as const,
-    gameVariant: 'ofc_pineapple',
-    buyIn: 5,
-    rake: 0.5,
-    startingStack: 1500,
-    maxPlayers: 6,
-    minPlayers: 6,
-    horsesToRegister: 6,
-    blindStructure: SNG_BLIND_6MAX,
-    payoutStructure: [
-      { place: 1, percentage: 65 },
-      { place: 2, percentage: 35 },
-    ],
-  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1132,21 +1028,6 @@ const SPIN_CONFIGS = [
     name: '3 Chip Spin PLO8',
     type: 'spin' as const,
     gameVariant: 'plo8',
-    buyIn: 3,
-    rake: 0.3,
-    startingStack: 500,
-    maxPlayers: 3,
-    minPlayers: 3,
-    horsesToRegister: 3,
-    blindStructure: SPIN_BLIND_STRUCTURE,
-    payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
-  },
-  // Pineapple Spins
-  {
-    name: '3 Chip Spin Pineapple',
-    type: 'spin' as const,
-    gameVariant: 'ofc_pineapple',
     buyIn: 3,
     rake: 0.3,
     startingStack: 500,
@@ -1528,7 +1409,6 @@ class HorseOrchestrator {
         plo6: 'PLO6',
         plo8: 'PLO8',
         plo_hilo: 'PLO_HILO',
-        ofc_pineapple: 'OFC_PINEAPPLE',
         short_deck: 'SHORT_DECK',
         flh: 'FLH',
         pineapple: 'PINEAPPLE',
@@ -1645,7 +1525,6 @@ class HorseOrchestrator {
         plo4: 'PLO4',
         plo5: 'PLO5',
         plo8: 'PLO8',
-        ofc_pineapple: 'OFC_PINEAPPLE',
         short_deck: 'SHORT_DECK',
       };
       const dbGameType = gameTypeMap[config.gameVariant || 'nlh'] || 'NLH';
@@ -1749,7 +1628,6 @@ class HorseOrchestrator {
         plo4: 'PLO4',
         plo5: 'PLO5',
         plo8: 'PLO8',
-        ofc_pineapple: 'OFC_PINEAPPLE',
         short_deck: 'SHORT_DECK',
       };
       const dbGameType = gameTypeMap[config.gameVariant || 'nlh'] || 'NLH';

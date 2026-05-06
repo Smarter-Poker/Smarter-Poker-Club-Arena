@@ -9,6 +9,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -156,7 +157,7 @@ class PlayerPositionStatsServiceClass {
         }
       }
     } catch (err: unknown) {
-      console.error('[PositionStats] Processing error:', err);
+      reportError(err, 'PlayerPositionStatsService.processStats');
     }
   }
 }

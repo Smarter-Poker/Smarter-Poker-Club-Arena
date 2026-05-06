@@ -11,6 +11,7 @@ import { useToast } from '../common/Toast';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import './DailyBonusWheel.css';
 import { retryAsync } from '../../utils/retryAsync';
+import { reportError } from '../../utils/errorReporter';
 
 interface DailyBonusWheelProps {
   isOpen: boolean;
@@ -72,7 +73,7 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (spinCheckErr) console.error('[DailyBonusWheel] Spin check failed:', spinCheckErr.message);
+      if (spinCheckErr) reportError(spinCheckErr, 'DailyBonusWheel.Spin_check_failed');
 
       if (data) {
         const lastSpin = new Date(data.created_at);
@@ -83,7 +84,7 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
         if (isMounted.current) setCanSpin(true);
       }
     } catch (err) {
-      console.error('[DailyBonusWheel] Error:', err);
+      reportError(err, 'DailyBonusWheel.Error');
       if (isMounted.current) setCanSpin(true);
     }
   };
@@ -134,7 +135,7 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
           3
         );
         if (rewardErr) {
-          console.error('[DailyBonusWheel] fn_grant_daily_reward failed:', rewardErr.message);
+          reportError(rewardErr, 'DailyBonusWheel.fn_grant_daily_reward_failed');
           toast.error('Reward failed to apply — please contact support');
           return;
         }
@@ -142,7 +143,7 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
         toast.success(` You won ${prize.label}!`);
         onReward?.(prize);
       } catch (error) {
-        console.error('Failed to record spin:', error);
+        reportError(error, 'DailyBonusWheel.Failed_to_record_spin');
       }
     }, 4000);
   };

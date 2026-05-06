@@ -14,6 +14,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { formatDate } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 interface JackpotInfo {
   id: string;
@@ -105,7 +106,8 @@ export default function BadBeatJackpotPage() {
           )
           .subscribe((status: string, err?: Error) => {
             if (status === 'CHANNEL_ERROR') {
-              console.error('[BadBeatJackpotPage] ❌ Realtime channel error:', err?.message || err);
+              if (err)
+                reportError(err?.message || err, 'BadBeatJackpotPage._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
               console.warn('[BadBeatJackpotPage] ⏱️ Realtime channel timed out');
@@ -186,7 +188,7 @@ export default function BadBeatJackpotPage() {
           setPlayerContribution(total);
         }
       } catch (error) {
-        console.error('Failed to load jackpot:', error);
+        reportError(error, 'BadBeatJackpotPage.Failed_to_load_jackpot');
         if (!getIsMounted || getIsMounted()) toast.error('Failed to load jackpot data.');
       } finally {
         loadingRef.current = false;

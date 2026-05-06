@@ -1,0 +1,191 @@
+# Alert rules — smarter.poker monitoring stack
+# Phase 5.1.3
+#
+# Severity ladder:
+#   critical → page oncall via PagerDuty (routed in alertmanager.yml)
+#   warning  → Slack #alerts-ops channel
+#   info     → Slack #alerts-info (mostly informational, e.g. deploy markers)
+#
+# Burn-rate philosophy: most latency alerts use the Google SRE multi-window
+# multi-burn-rate recipe (1h + 6h windows) so we don't flap on transient
+# spikes but still catch sustained degradation within ~30 minutes.
+
+groups:
+  - name: engine-health
+    interval: 15s
+    rules:
+      - alert: EngineDown
+        expr: up{job="engine_pm2"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: "Poker engine unreachable on {{ $labels.instance }}"
+          description: |
+            pm2-metrics has been unreachable for >1 minute. This means either
+            the pm2 process is dead, the node is down, or the metrics module
+            crashed. Player-facing impact: active tables cannot tick.
+          runbook: https://monitor.smarter.poker/runbooks/engine-down
+
+      - alert: EngineHandsPerSecDropped
+        # Hands/sec should average > 0.5 during business hours. A sustained
+        # zero during peak means the dealer loop is stuck even though pm2
+        # is still "up".
+        expr: |
+          rate(poker_engine_hands_played_total[5m]) == 0
+          and on() hour() >= 13 and hour() < 6
+        for: 10m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: "Engine has played zero hands in the last 10 minutes"
+          description: |
+            No hands played during peak hours. Likely the dealer tick is
+            blocked. Check engine-01 logs and pm2 list.
+
+      - alert: EngineTableCountAnomaly
+        # If the active table count drops more than 50% from the 1h baseline
+        # we probably lost a shard or the lobby is failing to promote tables.
+        expr: |
+          poker_engine_active_tables < 0.5 * avg_over_time(poker_engine_active_tables[1h] offset 1h)
+        for: 15m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "Active table count dropped >50% vs 1h baseline"
+          description: |
+            {{ $labels.instance }} reports {{ $value }} tables. Baseline was
+            much higher. Investigate lobby.promote failures.
+
+  - name: cron-health
+    interval: 30s
+    rules:
+      - alert: CronLagHigh
+        # cron-01 sets cron_last_run_timestamp after each job. If the most
+        # recent run is more than 15min behind the expected schedule we have
+        # a stuck cron.
+        expr: (time() - max by (job_name) (cron_last_run_timestamp)) > 900
+        for: 5m
+        labels:
+          severity: warning
+          component: cron
+        annotations:
+          summary: "Cron job {{ $labels.job_name }} has not run in >15 min"
+          description: |
+            Expected frequency exceeded. Check /var/log/cron on cron-01 and
+            `systemctl status smarter-poker-{{ $labels.job_name }}.timer`.
+
+      - alert: CronFailedRunSpike
+        expr: rate(cron_runs_failed_total[30m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          component: cron
+        annotations:
+          summary: "Cron {{ $labels.job_name }} failure rate >5%/30min"
+
+  - name: postgres-health
+    interval: 30s
+    rules:
+      - alert: PostgresConnectionsSaturated
+        expr: |
+          (sum by (instance) (pg_stat_database_numbackends))
+          / on(instance) pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Supabase connections >80% of pool"
+          description: |
+            Pool is {{ $value | humanize }}% full. Any spike will 5xx. Common
+            cause: an API route leaking connections or Vercel's pooler client
+            not being reused.
+
+      - alert: PostgresReplicationLagHigh
+        expr: pg_replication_lag_seconds > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Supabase replica lag >30s on {{ $labels.instance }}"
+
+      - alert: PostgresDown
+        expr: up{job="supabase_pg"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "postgres_exporter unreachable"
+          description: |
+            Either the exporter sidecar died or Supabase is not accepting
+            connections from the pooler subnet. Player-facing impact:
+            probable site-wide 5xx.
+
+  - name: vercel-health
+    interval: 60s
+    rules:
+      - alert: WorldHubApiDown
+        expr: probe_success{instance="https://smarter.poker/api/health"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: world-hub
+        annotations:
+          summary: "World Hub /api/health returning non-2xx"
+
+      - alert: ClubArenaApiDown
+        expr: probe_success{instance="https://smarter.poker/api/club-arena/health"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: club-arena
+        annotations:
+          summary: "Club Arena health endpoint returning non-2xx"
+
+      - alert: VercelApiLatencyHigh
+        expr: probe_duration_seconds > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: vercel
+        annotations:
+          summary: "Vercel API probe >2s on {{ $labels.instance }}"
+
+  - name: host-health
+    interval: 30s
+    rules:
+      - alert: HostDiskNearlyFull
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 15m
+        labels:
+          severity: warning
+          component: infra
+        annotations:
+          summary: "Disk <10% free on {{ $labels.host }}"
+
+      - alert: HostCPUSaturated
+        expr: |
+          100 - (avg by (host) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: infra
+        annotations:
+          summary: "CPU >85% on {{ $labels.host }} for 10m"
+
+      - alert: HostMemoryPressure
+        expr: |
+          (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 10
+        for: 10m
+        labels:
+          severity: warning
+          component: infra
+        annotations:
+          summary: "Available memory <10% on {{ $labels.host }}"

@@ -17,6 +17,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -106,14 +107,14 @@ export const DisputeService = {
 
       if (club?.owner_id) {
         await pushNotificationService.sendToUser(club.owner_id, {
-          title: '⚠️ Settlement Dispute Filed',
+          title: 'Settlement Dispute Filed',
           message: `${submitterName} disputed ${dispute.amount.toLocaleString()} chips on ${dispute.targetType}`,
           category: 'settlement' as any,
           url: '/commander/disputes',
         });
       }
     } catch (e: unknown) {
-      console.error('[DisputeService] Notification failed:', e);
+      reportError(e, 'DisputeService.notification');
     }
 
     return this.mapDispute(data);
@@ -286,13 +287,13 @@ export const DisputeService = {
     if (data?.submitted_by) {
       try {
         await pushNotificationService.sendToUser(data.submitted_by, {
-          title: '✅ Dispute Resolved',
+          title: 'Dispute Resolved',
           message: resolution.resolution || 'Your dispute has been resolved',
           category: 'settlement' as any,
           url: '/wallet',
         });
       } catch (e: unknown) {
-        console.error('[DisputeService] Notification failed:', e);
+        reportError(e, 'DisputeService.notification');
       }
     }
 

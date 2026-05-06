@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -378,7 +379,7 @@ class UnionServiceClass {
             .maybeSingle();
           displayName = profile?.full_name || profile?.username;
         } catch (err) {
-          console.error('[UnionService] Profile lookup failed:', err);
+          reportError(err, 'UnionService.getUnionProfile');
         }
 
         return {
@@ -498,7 +499,7 @@ class UnionServiceClass {
             .in('status', ['active', 'approved']);
           memberCount = count || 0;
         } catch (err) {
-          console.error('[UnionService] Member count query failed:', err);
+          reportError(err, 'UnionService.memberCountQuery');
         }
 
         try {
@@ -511,7 +512,7 @@ class UnionServiceClass {
             .limit(QUERY_LIMITS.BULK);
           weeklyRake = (rakeData || []).reduce((sum, r) => sum + Number(r.amount || 0), 0);
         } catch (err) {
-          console.error('[UnionService] Rake query failed:', err);
+          reportError(err, 'UnionService.rakeQuery');
         }
 
         // Get owner display name from profiles table directly
@@ -527,7 +528,7 @@ class UnionServiceClass {
             ownerName = profile?.full_name || profile?.username;
           }
         } catch (err) {
-          console.error('[UnionService] Owner profile lookup failed:', err);
+          reportError(err, 'UnionService.ownerProfileLookup');
         }
 
         return {
@@ -572,7 +573,7 @@ class UnionServiceClass {
         .from('unions')
         .update({ club_count: clubCount })
         .eq('id', unionId);
-      if (countErr) console.error('[UnionService] Failed to update union club_count:', countErr);
+      if (countErr) reportError(countErr, 'UnionService.addClub.updateCount');
     }
 
     // Update club's union_id
@@ -580,7 +581,7 @@ class UnionServiceClass {
       .from('clubs')
       .update({ union_id: unionId })
       .eq('id', resolvedClubId);
-    if (linkErr) console.error('[UnionService] Failed to set club union_id:', linkErr);
+    if (linkErr) reportError(linkErr, 'UnionService.addClub.linkClub');
 
     masterBus.emit('UNION_UPDATED', { unionId });
     masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
@@ -614,7 +615,7 @@ class UnionServiceClass {
         .from('unions')
         .update({ club_count: clubCount })
         .eq('id', unionId);
-      if (countErr) console.error('[UnionService] Failed to update union club_count:', countErr);
+      if (countErr) reportError(countErr, 'UnionService.removeClub.updateCount');
     }
 
     // Update club's union_id to null
@@ -622,7 +623,7 @@ class UnionServiceClass {
       .from('clubs')
       .update({ union_id: null })
       .eq('id', resolvedClubId);
-    if (unlinkErr) console.error('[UnionService] Failed to clear club union_id:', unlinkErr);
+    if (unlinkErr) reportError(unlinkErr, 'UnionService.removeClub.unlinkClub');
 
     masterBus.emit('UNION_UPDATED', { unionId });
     masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
@@ -735,7 +736,7 @@ class UnionServiceClass {
         .eq('union_id', unionId)
         .eq('club_id', await resolveClubUUID(clubId));
       if (splitErr) {
-        console.error(`[UnionService] Failed to update split for club ${clubId}:`, splitErr);
+        reportError(splitErr, 'UnionService.updateSplits', { clubId });
         anyFailed = true;
       }
     }

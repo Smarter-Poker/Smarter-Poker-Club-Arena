@@ -15,6 +15,7 @@ import {
   FEATURE_PRICING,
 } from '../services/VIPService';
 import { useAuthUser } from './useAuthUser';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -63,7 +64,7 @@ export function VIPProvider({ children }: { children: ReactNode }) {
       const vipStatus = await vipService.checkVIPStatus(user.id);
       setStatus(vipStatus);
     } catch (error) {
-      console.error('Failed to check VIP status:', error);
+      reportError(error, 'useVIP.Failed_to_check_VIP_status');
       setStatus({
         isVIP: false,
         expiresAt: null,
@@ -161,7 +162,8 @@ export function useVIPStatus() {
         if (mounted) {
           setIsVIP(vip);
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'useVIP.check');
         if (mounted) setIsVIP(false);
       }
       if (mounted) setIsLoading(false);

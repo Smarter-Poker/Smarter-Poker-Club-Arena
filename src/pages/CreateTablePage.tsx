@@ -2,14 +2,13 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * CREATE TABLE PAGE — Game Type Selector
  * ═══════════════════════════════════════════════════════════════════════════════
- * PokerBros-style game type selection with 7 game options:
+ * premium-style game type selection with 7 game options:
  * - NLH (No Limit Hold'em)
  * - FLH (Fixed Limit Hold'em)
  * - 6+ (Short Deck Hold'em)
  * - OMAHA (Pot Limit Omaha)
  * - FLO (Fixed Limit Omaha)
  * - MIXED GAME (Hold'em/Omaha)
- * - OFC (Open Face Chinese Poker)
  */
 
 import { useState, useEffect } from 'react';
@@ -17,6 +16,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './CreateTablePage.css';
+import { reportError } from '../utils/errorReporter';
 
 const gameTypeCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -33,6 +33,7 @@ interface GameType {
   unlockLevel: number;
 }
 
+// FIX 116: 9 approved variants only — removed flh, plo, flo, mixed
 const GAME_TYPES: GameType[] = [
   {
     id: 'nlh',
@@ -43,50 +44,50 @@ const GAME_TYPES: GameType[] = [
     unlockLevel: 1,
   },
   {
-    id: 'flh',
-    name: 'FLH',
-    subtitle: "FIXED LIMIT HOLD'EM",
-    gradient: 'linear-gradient(135deg, #1a73e8 0%, #1557b0 50%, #0d3d7a 100%)',
-    icon: '♣',
-    unlockLevel: 1,
-  },
-  {
-    id: 'shortdeck',
-    name: '6+',
-    subtitle: "6+ HOLD'EM",
-    gradient: 'linear-gradient(135deg, #0866FF 0%, #0557d6 50%, #0449b0 100%)',
-    icon: '♦',
-    unlockLevel: 1,
-  },
-  {
-    id: 'plo',
-    name: 'OMAHA',
-    subtitle: 'POT LIMIT OMAHA',
+    id: 'plo4',
+    name: 'PLO4',
+    subtitle: 'POT LIMIT OMAHA 4',
     gradient: 'linear-gradient(135deg, #2374E1 0%, #1963c6 50%, #1252a8 100%)',
     icon: '♥',
     unlockLevel: 1,
   },
   {
-    id: 'flo',
-    name: 'FLO',
-    subtitle: 'FIXED LIMIT OMAHA',
+    id: 'plo5',
+    name: 'PLO5',
+    subtitle: 'POT LIMIT OMAHA 5',
     gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
-    icon: '♠',
+    icon: '♦',
     unlockLevel: 1,
   },
   {
-    id: 'mixed',
-    name: 'MIXED GAME',
-    subtitle: "HOLD'EM/OMAHA",
+    id: 'plo6',
+    name: 'PLO6',
+    subtitle: 'POT LIMIT OMAHA 6',
     gradient: 'linear-gradient(135deg, #4299e1 0%, #3182ce 50%, #2b6cb0 100%)',
     icon: '♣',
     unlockLevel: 1,
   },
   {
-    id: 'ofc',
-    name: 'OFC',
-    subtitle: 'OPEN FACE CHINESE POKER',
-    gradient: 'linear-gradient(135deg, #5a9cf6 0%, #4285f4 50%, #3674d9 100%)',
+    id: 'plo8',
+    name: 'PLO8',
+    subtitle: 'OMAHA HI-LO',
+    gradient: 'linear-gradient(135deg, #1a73e8 0%, #1557b0 50%, #0d3d7a 100%)',
+    icon: '♠',
+    unlockLevel: 1,
+  },
+  {
+    id: 'pineapple',
+    name: 'PINE',
+    subtitle: 'PINEAPPLE',
+    gradient: 'linear-gradient(135deg, #f59e0b 0%, #d97706 50%, #b45309 100%)',
+    icon: '♥',
+    unlockLevel: 1,
+  },
+  {
+    id: 'short_deck',
+    name: '6+',
+    subtitle: "SHORT DECK HOLD'EM",
+    gradient: 'linear-gradient(135deg, #0866FF 0%, #0557d6 50%, #0449b0 100%)',
     icon: '♦',
     unlockLevel: 1,
   },
@@ -110,7 +111,8 @@ export default function CreateTablePage() {
           .limit(1)
           .maybeSingle();
         if (data) navigate(`/clubs/${clubId}`, { replace: true });
-      } catch {
+      } catch (e) {
+        reportError(e, 'CreateTablePage.async');
         /* fail-open */
       }
     })();

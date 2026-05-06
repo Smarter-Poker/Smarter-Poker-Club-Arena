@@ -13,6 +13,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CardBackSelector } from '../customization/CardBackSelector';
 import { AvatarGallery } from '../customization/AvatarGallery';
+import { TableSettingsPanel } from './TableSettingsPanel';
+import { ThemeSettingsModal } from './ThemeSettingsModal';
+import { useUserTableSettings } from '../../hooks/useUserTableSettings';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import './SettingsPanel.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -25,7 +29,8 @@ export interface TableSettings {
   autoPostBlinds: boolean;
   soundEnabled: boolean;
   soundVolume: number;
-  showHandStrength: boolean;
+  hapticEnabled: boolean;
+  // FIX 199: showHandStrength REMOVED — not allowed for live online gameplay
   showPotOdds: boolean;
   animationSpeed: 'slow' | 'normal' | 'fast';
   fourColorDeck: boolean;
@@ -33,6 +38,7 @@ export interface TableSettings {
   showBetSizePresets: boolean;
   confirmAllIn: boolean;
   sitOutNextHand: boolean;
+  tableTheme: string;
 }
 
 export interface SettingsPanelProps {
@@ -62,7 +68,7 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   autoPostBlinds: true,
   soundEnabled: true,
   soundVolume: 70,
-  showHandStrength: true,
+  hapticEnabled: true,
   showPotOdds: false,
   animationSpeed: 'normal',
   fourColorDeck: false,
@@ -70,7 +76,19 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   showBetSizePresets: true,
   confirmAllIn: true,
   sitOutNextHand: false,
+  tableTheme: 'black',
 };
+
+/** Available table themes from design-tokens.css */
+const TABLE_THEMES = [
+  { value: 'green', label: 'Classic Green' },
+  { value: 'blue', label: 'Ocean Blue' },
+  { value: 'red', label: 'Ruby Red' },
+  { value: 'purple', label: 'Royal Purple' },
+  { value: 'black', label: 'Midnight Black' },
+  { value: 'gold', label: 'VIP Gold' },
+  { value: 'light', label: 'Light Mode' },
+];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -93,6 +111,15 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [visibleSections, setVisibleSections] = useState<boolean[]>([]);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
+  const [showThemeSettings, setShowThemeSettings] = useState(false);
+
+  // Bible V8 §11.1: User table settings (12 toggles) from Supabase
+  const { user: authUser } = useAuthUser();
+  const {
+    settings: v8Settings,
+    loading: v8Loading,
+    toggleSetting: v8Toggle,
+  } = useUserTableSettings(authUser?.id);
 
   useEffect(() => {
     if (isOpen) {
@@ -207,12 +234,7 @@ export function SettingsPanel({
           >
             <h3 className="settings-section__title">Display</h3>
 
-            <SettingToggle
-              label="Show hand strength"
-              description="Display current hand rank"
-              checked={settings.showHandStrength}
-              onChange={() => handleToggle('showHandStrength')}
-            />
+            {/* FIX 199: Hand strength toggle REMOVED — not allowed for live online gameplay */}
 
             <SettingToggle
               label="Show pot odds"
@@ -228,12 +250,10 @@ export function SettingsPanel({
               onChange={() => handleToggle('fourColorDeck')}
             />
 
-            <SettingToggle
-              label="Show stack in BBs"
-              description="Display chip counts as big blinds"
-              checked={settings.showStackInBB}
-              onChange={() => handleToggle('showStackInBB')}
-            />
+            {/* FIX 220: Legacy showStackInBB toggle REMOVED — Bible V8 §11.1
+                show_stack_in_bb is now handled by TableSettingsPanel (line ~388)
+                which persists to Supabase user_table_settings. Keeping both
+                created a duplicate toggle with competing state sources. */}
 
             <SettingToggle
               label="Bet size presets"
@@ -254,6 +274,24 @@ export function SettingsPanel({
                   <option value="slow">Slow</option>
                   <option value="normal">Normal</option>
                   <option value="fast">Fast</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="settings-item">
+              <div className="settings-item__info">
+                <span className="settings-item__label">Table Theme</span>
+              </div>
+              <div className="settings-item__select">
+                <select
+                  value={settings.tableTheme}
+                  onChange={(e) => handleSelect('tableTheme', e.target.value)}
+                >
+                  {TABLE_THEMES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -292,6 +330,13 @@ export function SettingsPanel({
                 disabled={!settings.soundEnabled}
               />
             </div>
+
+            <SettingToggle
+              label="Haptic feedback"
+              description="Vibrate on actions, wins, and alerts"
+              checked={settings.hapticEnabled}
+              onChange={() => handleToggle('hapticEnabled')}
+            />
           </div>
 
           {/* Customization Section */}
@@ -332,6 +377,20 @@ export function SettingsPanel({
               onPurchase={onCardBackPurchase}
             />
           </div>
+
+          {/* ═══════════════════════════════════════════════════════════
+              Bible V8 §11.1: User Table Preferences (12 toggles)
+          ═══════════════════════════════════════════════════════════ */}
+          <div className="settings-section">
+            <h3 className="settings-section__title">Table Preferences</h3>
+            <TableSettingsPanel
+              settings={v8Settings}
+              loading={v8Loading}
+              onToggle={v8Toggle}
+              mode="inline"
+              onOpenThemeSettings={() => setShowThemeSettings(true)}
+            />
+          </div>
         </div>
 
         {/* Footer */}
@@ -350,6 +409,14 @@ export function SettingsPanel({
         currentAvatarUrl={currentAvatarUrl}
         isVip={isVip}
         onAvatarChanged={onAvatarChanged}
+      />
+
+      {/* Bible V8 §11.2: Theme Settings Modal */}
+      <ThemeSettingsModal
+        isOpen={showThemeSettings}
+        onClose={() => setShowThemeSettings(false)}
+        userId={authUser?.id || userId}
+        isVip={isVip}
       />
     </div>
   );

@@ -13,6 +13,9 @@
  * All chip/currency values in the platform must show true, real-time
  * precision down to the cent. No abbreviations (K, M) allowed.
  */
+
+import { reportError } from '../utils/errorReporter';
+
 export function formatCurrency(amount: number, currency = 'USD'): string {
   return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
@@ -132,24 +135,7 @@ export function calculatePotOdds(potSize: number, callAmount: number): number {
   return (callAmount / (potSize + callAmount)) * 100;
 }
 
-/**
- * Get hand strength label
- */
-export function getHandStrengthLabel(rank: number): string {
-  const labels = [
-    'High Card',
-    'Pair',
-    'Two Pair',
-    'Three of a Kind',
-    'Straight',
-    'Flush',
-    'Full House',
-    'Four of a Kind',
-    'Straight Flush',
-    'Royal Flush',
-  ];
-  return labels[rank] || 'Unknown';
-}
+// FIX 199: getHandStrengthLabel REMOVED — not allowed for live online gameplay
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VALIDATION
@@ -255,7 +241,8 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
     return true;
-  } catch {
+  } catch (e) {
+    reportError(e, 'utils.copyToClipboard');
     return false;
   }
 }

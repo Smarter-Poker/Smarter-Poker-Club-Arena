@@ -21,6 +21,7 @@ import { formatDateShort as formatDate } from '../utils/format';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 interface Promotion {
   id: string;
@@ -90,7 +91,7 @@ export default function PromotionsPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[PromotionsPage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'PromotionsPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PromotionsPage] ⏱️ Realtime channel timed out');
@@ -137,7 +138,7 @@ export default function PromotionsPage() {
         setPromotions(data);
       }
     } catch (error) {
-      console.error('Failed to load promotions:', error);
+      reportError(error, 'PromotionsPage.Failed_to_load_promotions');
       toast.error('Failed to load promotions');
     }
     if (getIsMounted && !getIsMounted()) return;

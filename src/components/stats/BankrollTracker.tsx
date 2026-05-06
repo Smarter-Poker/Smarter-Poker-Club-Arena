@@ -22,6 +22,7 @@ import {
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './BankrollTracker.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ── SWR cache ──
 const CACHE_KEY = 'bankroll_v1_';
@@ -77,7 +78,8 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
     try {
       const { data: userResp } = await getAuthUser();
       return userResp.user?.id || null;
-    } catch {
+    } catch (e) {
+      reportError(e, 'BankrollTracker.useCallback');
       return null;
     }
   }, [userId]);
@@ -138,7 +140,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
       if (!mountedRef.current) return;
 
       if (error) {
-        console.error('[BankrollTracker] Query error:', error.message);
+        reportError(error, 'BankrollTracker.Query_error');
         setLoaded(true);
         return;
       }
@@ -152,7 +154,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
 
       setLoaded(true);
     } catch (err) {
-      console.error('[BankrollTracker] Failed to load:', err);
+      reportError(err, 'BankrollTracker.Failed_to_load');
       if (mountedRef.current) setLoaded(true);
     }
   }, [resolveUserId, initialSessions, loaded]);
@@ -267,7 +269,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
           <p className="bankroll-subtitle">No session data to chart yet</p>
         </div>
         <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'rgba(255,255,255,0.5)' }}>
-          <span style={{ fontSize: '2rem' }}>📈</span>
+          <span style={{ fontSize: '2rem' }}>--</span>
           <p style={{ marginTop: '0.5rem' }}>
             Play some sessions and your bankroll progression will appear here.
           </p>
@@ -389,7 +391,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
           {/* Max Drawdown — Enhancement #5 */}
           <div className="stat-card">
             <div className="stat-icon" style={{ color: '#ef4444' }}>
-              📉
+              --
             </div>
             <div className="stat-content">
               <span className="stat-label">Max Drawdown</span>

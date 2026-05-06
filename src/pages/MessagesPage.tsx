@@ -13,6 +13,7 @@ import ConversationList from '../components/messaging/ConversationList';
 import MessageThread from '../components/messaging/MessageThread';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import './MessagesPage.css';
+import { reportError } from '../utils/errorReporter';
 
 export default function MessagesPage() {
   useEffect(() => {
@@ -48,7 +49,8 @@ export default function MessagesPage() {
         if (!cancelled && data?.role) {
           setUserRole(data.role as typeof userRole);
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'MessagesPage.async');
         /* silent */
       }
     })();

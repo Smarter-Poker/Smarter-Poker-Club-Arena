@@ -39,6 +39,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -174,7 +175,8 @@ export default function AgentManagementPage() {
         { maxRetries: 2, isMountedRef: isMounted }
       );
       if (isMounted.current) setRecentDistributions(data || []);
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentManagementPage.then');
       /* silent */
     }
   };
@@ -205,7 +207,7 @@ export default function AgentManagementPage() {
         if (isMounted.current) setAvailableMembers(members);
       })
       .catch((err) => {
-        console.error('Failed to load eligible members:', err);
+        reportError(err, 'AgentManagementPage.Failed_to_load_eligible_members');
         toast.error('Failed to load eligible members');
         if (isMounted.current) setAvailableMembers([]);
       })
@@ -227,7 +229,7 @@ export default function AgentManagementPage() {
         setError(null);
       } catch (err) {
         if (!isMounted.current) return;
-        console.error('Failed to reload agents:', err);
+        reportError(err, 'AgentManagementPage.Failed_to_reload_agents');
         toast.error('Failed to load agents');
         setError(err instanceof Error ? err.message : 'Failed to reload agents');
       } finally {
@@ -256,22 +258,15 @@ export default function AgentManagementPage() {
             loadAgentsData();
           }
         )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'wallet_transactions',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          (payload) => {
-            // Commission tracking - reload on any transaction change for this club
-            loadAgentsData();
-          }
-        )
+        // wallet_transactions subscription removed (Phase 2 cost cut): the
+        // canonical balance / commission state is derived via joins against
+        // wallets + commission_records (both still in supabase_realtime).
+        // Bus 'BALANCE_UPDATED' / 'WALLET_REFRESHED' listeners below backstop
+        // admin-side commission edits.
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AgentManagementPage] ❌ Realtime channel error:', err?.message || err);
+            if (err)
+              reportError(err?.message || err, 'AgentManagementPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AgentManagementPage] ⏱️ Realtime channel timed out');
@@ -639,7 +634,8 @@ export default function AgentManagementPage() {
                     { key: 'weeklyRake', label: 'Weekly Rake' },
                   ]
                 );
-              } catch {
+              } catch (e) {
+                reportError(e, 'AgentManagementPage.map');
                 /* silent */
               }
             }}

@@ -15,6 +15,7 @@ import './TransactionHistoryPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { formatDateTime as formatDate } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 interface Transaction {
   id: string;
@@ -140,7 +141,8 @@ export default function TransactionHistoryPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[TransactionHistoryPage] ❌ Realtime channel error:', err?.message || err);
+          if (err)
+            reportError(err?.message || err, 'TransactionHistoryPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TransactionHistoryPage] ⏱️ Realtime channel timed out');
@@ -245,7 +247,7 @@ export default function TransactionHistoryPage() {
         setPage(pageNum);
       }
     } catch (error) {
-      console.error('Failed to load transactions:', error);
+      reportError(error, 'TransactionHistoryPage.Failed_to_load_transactions');
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load transactions');
     } finally {
       loadingRef.current = false;
@@ -279,7 +281,7 @@ export default function TransactionHistoryPage() {
       ]);
       toast.success('Transactions exported!');
     } catch (err) {
-      console.error('CSV export failed:', err);
+      reportError(err, 'TransactionHistoryPage.CSV_export_failed');
       toast.error('Failed to export transactions.');
     }
   };

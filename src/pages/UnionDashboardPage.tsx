@@ -18,6 +18,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { getUnionLevel } from '../utils/clubLevels';
+import { reportError } from '../utils/errorReporter';
 
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
@@ -361,7 +362,8 @@ export default function UnionDashboardPage() {
             cachedAt: Date.now(),
           })
         );
-      } catch {
+      } catch (e) {
+        reportError(e, 'UnionDashboardPage');
         /* storage full */
       }
     }
@@ -386,7 +388,8 @@ export default function UnionDashboardPage() {
           setLoading(false); // Show cached data instantly
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'UnionDashboardPage.useEffect');
       /* corrupt cache */
     }
     loadDashboard();
@@ -481,7 +484,7 @@ export default function UnionDashboardPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[UnionDashboardPage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'UnionDashboardPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[UnionDashboardPage] ⏱️ Realtime channel timed out');

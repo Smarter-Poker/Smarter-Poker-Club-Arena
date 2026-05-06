@@ -25,13 +25,13 @@ interface ChipDenom {
 }
 
 const DENOMINATIONS: ChipDenom[] = [
-  { value: 1, color: '#e0e0e0', accent: '#ababab', label: '1' },
-  { value: 5, color: '#ef4444', accent: '#b91c1c', label: '5' },
-  { value: 25, color: '#22c55e', accent: '#15803d', label: '25' },
-  { value: 100, color: '#3b82f6', accent: '#1d4ed8', label: '100' },
-  { value: 500, color: '#1a1a2e', accent: '#374151', label: '500' },
-  { value: 1000, color: '#f59e0b', accent: '#d97706', label: '1K' },
-  { value: 5000, color: '#a855f7', accent: '#7c3aed', label: '5K' },
+  { value: 1, color: '#e0e0e0', accent: '#ababab', label: '1' }, // White
+  { value: 5, color: '#ef4444', accent: '#b91c1c', label: '5' }, // Red
+  { value: 25, color: '#22c55e', accent: '#15803d', label: '25' }, // Green
+  { value: 100, color: '#1a1a2e', accent: '#374151', label: '100' }, // Black
+  { value: 500, color: '#7c3aed', accent: '#5b21b6', label: '500' }, // Violet
+  { value: 1000, color: '#f97316', accent: '#ea580c', label: '1K' }, // Orange
+  { value: 5000, color: '#a855f7', accent: '#7c3aed', label: '5K' }, // Purple
 ];
 
 function getChipBreakdown(amount: number): { denom: ChipDenom; count: number }[] {
@@ -93,11 +93,39 @@ export function ChipPhysics({
 
   if (amount <= 0) return null;
 
+  // In compact mode (bet chips next to player), show single chip icon + amount
+  // to avoid misleading chip counts that don't match the bet value
+  if (compact) {
+    const topDenom = breakdown.length > 0 ? breakdown[0].denom : DENOMINATIONS[0];
+    return (
+      <div
+        className={`chip-physics cp--compact ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
+      >
+        <div className="cp-stacks">
+          <div className="cp-stack" style={{ '--group-idx': 0 } as React.CSSProperties}>
+            <div
+              className="cp-chip"
+              style={
+                {
+                  '--chip-color': topDenom.color,
+                  '--chip-accent': topDenom.accent,
+                  '--chip-idx': 0,
+                  '--total-chips': 1,
+                } as React.CSSProperties
+              }
+            >
+              <div className="cp-chip__face" />
+            </div>
+          </div>
+        </div>
+        {showAmount && <span className="cp-amount">{formatChipAmount(amount)}</span>}
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={`chip-physics ${compact ? 'cp--compact' : ''} ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
-    >
-      {/* Chip stacks */}
+    <div className={`chip-physics ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}>
+      {/* Full chip stacks — only used for pot display, not per-player bets */}
       <div className="cp-stacks">
         {breakdown.map(({ denom, count }, groupIdx) => (
           <div
@@ -136,7 +164,10 @@ export function ChipPhysics({
 function formatChipAmount(amount: number): string {
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
   if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  return amount.toLocaleString();
+  // Always show whole numbers for amounts >= 1. Sub-dollar shows 2 decimals.
+  if (amount >= 1) return Math.round(amount).toLocaleString();
+  if (amount > 0) return amount.toFixed(2);
+  return '0';
 }
 
 export default ChipPhysics;

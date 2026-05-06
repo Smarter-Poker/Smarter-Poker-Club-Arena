@@ -23,6 +23,7 @@ import { ChipFlowService } from '../../services/ChipFlowService';
 import { WalletService } from '../../services/WalletService';
 import { resolveClubIdFilter, resolveClubUUID } from '../../utils/clubIdResolver';
 import './ChipTransferModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface Recipient {
   id: string;
@@ -66,7 +67,9 @@ export default function ChipTransferModal({
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => setMounted(true), 50);
+      // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+      const _mountTimer = setTimeout(() => setMounted(true), 50);
+      return () => clearTimeout(_mountTimer);
     } else {
       setMounted(false);
     }
@@ -113,7 +116,7 @@ export default function ChipTransferModal({
         .maybeSingle();
       setClubName(club?.name || '');
     } catch (err) {
-      console.error('Failed to load sender info:', err);
+      reportError(err, 'ChipTransferModal.Failed_to_load_sender_info');
     }
   };
 
@@ -197,7 +200,7 @@ export default function ChipTransferModal({
 
       setRecipients(recipientList);
     } catch (err) {
-      console.error('Error loading recipients:', err);
+      reportError(err, 'ChipTransferModal.Error_loading_recipients');
       if (isMounted.current) toast.error('Failed to load recipients');
     }
     setIsLoadingRecipients(false);
@@ -295,7 +298,7 @@ export default function ChipTransferModal({
         setSuccess(null);
       }, 1500);
     } catch (err: any) {
-      console.error('Transfer error:', err);
+      reportError(err, 'ChipTransferModal.Transfer_error');
       if (isMounted.current) setError(err.message || 'Transfer failed. Please try again.');
     }
     setIsLoading(false);

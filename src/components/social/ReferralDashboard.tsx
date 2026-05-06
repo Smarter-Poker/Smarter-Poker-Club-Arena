@@ -14,6 +14,7 @@ import {
 } from '../../services/ReferralService';
 import { useToast } from '../common/Toast';
 import './ReferralDashboard.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ReferralDashboardProps {
   userId: string;
@@ -57,7 +58,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
       // Check for unclaimed milestones
       await referralService.checkMilestones(userId, s.totalReferrals);
     } catch (err) {
-      console.error('[ReferralDashboard] load error:', err);
+      reportError(err, 'ReferralDashboard.load_error');
     }
     if (isMounted.current) setLoading(false);
   };
@@ -73,7 +74,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
         if (isMounted.current) setCopied(false);
       }, 2000);
     } catch (err) {
-      console.error('[ReferralDashboard] Error:', err);
+      reportError(err, 'ReferralDashboard.Error');
       if (isMounted.current) toast.error('Failed to copy');
     }
   };
@@ -92,7 +93,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
         if (isMounted.current) toast.success('Invite link copied!');
       }
     } catch (err) {
-      console.error('[ReferralDashboard] Error:', err);
+      reportError(err, 'ReferralDashboard.Error');
       // user cancelled
     }
   };

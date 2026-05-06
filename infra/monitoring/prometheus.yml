@@ -1,0 +1,132 @@
+# Prometheus scrape config — smarter.poker monitoring stack
+# Phase 5.1.3
+#
+# Target layout:
+#   cron-01 (this host)  — this Prometheus + Grafana + AlertManager
+#   engine-01             — Hetzner poker engine (pm2 + pm2-metrics at :9256)
+#   supabase-pg           — remote Supabase pooler (postgres_exporter sidecar)
+#
+# When cron-02 comes online (hot standby for engine-01), add it to
+# engine_job below. When we shard the engine by region, split engine_job
+# into engine_us / engine_eu / engine_apac and re-export the engine metric
+# names with a `region` label.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: smarter-poker-prod
+    environment: production
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+  # Phase 5.1.5: SLO recording rules + multi-window multi-burn-rate alerts.
+  # Split into two files so recording-rule evaluation order is deterministic
+  # (Prometheus evaluates all rules in a group sequentially; keeping records
+  # and alerts separate means a record that feeds an alert is guaranteed to
+  # have been computed in the same tick).
+  - /etc/prometheus/slo-rules.yml
+  - /etc/prometheus/slo-alerts.yml
+
+scrape_configs:
+  # -------------------------------------------------------------------------
+  # Prometheus scrapes itself — standard practice so we can alert on the
+  # scraper being down via a second heartbeat.
+  # -------------------------------------------------------------------------
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  # -------------------------------------------------------------------------
+  # cron-01 host system metrics (this machine)
+  # -------------------------------------------------------------------------
+  - job_name: node_cron01
+    static_configs:
+      - targets:
+          - host.docker.internal:9100
+        labels:
+          host: cron-01
+          role: cron
+
+  # -------------------------------------------------------------------------
+  # engine-01 — the pm2 host running the poker engine
+  # node_exporter (system) + pm2-metrics (app-level: hands/sec, tables)
+  # -------------------------------------------------------------------------
+  - job_name: node_engine01
+    static_configs:
+      - targets:
+          - engine-01.internal:9100
+        labels:
+          host: engine-01
+          role: engine
+
+  - job_name: engine_pm2
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - engine-01.internal:9256
+        labels:
+          host: engine-01
+          role: engine
+          app: poker-engine
+    # pm2-metrics uses Prometheus text format; scrape at 5s for fast alerting
+    scrape_interval: 5s
+    scrape_timeout: 4s
+
+  # -------------------------------------------------------------------------
+  # cron-01 systemd timer state — served by cron-health-server.js on :4002.
+  # /metrics exposes `cron_last_run_timestamp{job_name=...}` per tracked
+  # timer. Alert rules in alert-rules.yml (group cron-health) fire on lag.
+  # -------------------------------------------------------------------------
+  - job_name: cron_timers
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - host.docker.internal:4002
+        labels:
+          host: cron-01
+          role: cron
+    scrape_interval: 30s
+
+  # -------------------------------------------------------------------------
+  # Supabase Postgres — scraped through the read-only postgres_exporter
+  # sidecar we deploy alongside the pooler. Slow scrape to avoid warming
+  # the pooler pool with synthetic traffic.
+  # -------------------------------------------------------------------------
+  - job_name: supabase_pg
+    static_configs:
+      - targets:
+          - supabase-pg-exporter.internal:9187
+        labels:
+          cluster: supabase
+          role: primary
+    scrape_interval: 30s
+    scrape_timeout: 20s
+
+  # -------------------------------------------------------------------------
+  # Vercel cron health — we expose /api/health on World Hub and scrape it as
+  # a blackbox probe. 5xx or >2s response triggers vercel_api_unhealthy alert.
+  # -------------------------------------------------------------------------
+  - job_name: vercel_health
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://smarter.poker/api/health
+          - https://smarter.poker/api/club-arena/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+    scrape_interval: 60s

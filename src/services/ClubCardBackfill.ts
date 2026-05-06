@@ -13,6 +13,7 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // Track which clubs we've already attempted to backfill this session
 const processedClubs = new Set<string>();
@@ -89,7 +90,7 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
           storageDisabled = true;
           return;
         }
-        console.error(`[ClubCardBackfill] Upload failed for ${club.name}:`, uploadError);
+        reportError(uploadError, 'ClubCardBackfill.Upload_failed_for_clubname');
         continue;
       }
 
@@ -98,7 +99,10 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
       const publicUrl = urlData?.publicUrl;
 
       if (!publicUrl) {
-        console.error(`[ClubCardBackfill] No public URL for ${club.name}`);
+        reportError(
+          new Error(`[ClubCardBackfill] No public URL for ${club.name}`),
+          'ClubCardBackfill.No_public_URL_for_clubname'
+        );
         continue;
       }
 
@@ -109,7 +113,7 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
         .eq('id', club.id);
 
       if (updateError) {
-        console.error(`[ClubCardBackfill] DB update failed for ${club.name}:`, updateError);
+        reportError(updateError, 'ClubCardBackfill.DB_update_failed_for_clubname');
         continue;
       }
 
@@ -120,7 +124,7 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
         `[ClubCardBackfill] ✅ Baked card saved for "${club.name}" (${ext}) → ${publicUrl}`
       );
     } catch (err) {
-      console.error(`[ClubCardBackfill] Error processing ${club.name}:`, err);
+      reportError(err, 'ClubCardBackfill.Error_processing_clubname');
     }
   }
 }

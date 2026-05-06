@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './AvatarGenerator.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface AvatarStyle {
   id: string;
@@ -66,7 +67,7 @@ export const AvatarGenerator: React.FC<{
       setGeneratedImages(data.images || []);
       toast.success('Avatars generated!');
     } catch (error) {
-      console.error('Avatar generation failed:', error);
+      reportError(error, 'AvatarGenerator.Avatar_generation_failed');
       toast.error('Failed to generate avatar. Please try again.');
 
       // Replaced mocked fallback with empty array
@@ -95,7 +96,7 @@ export const AvatarGenerator: React.FC<{
       onGenerated?.(selectedImage);
       onClose?.();
     } catch (error) {
-      console.error('Failed to save avatar:', error);
+      reportError(error, 'AvatarGenerator.Failed_to_save_avatar');
       toast.error('Failed to save avatar');
     }
   };

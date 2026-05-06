@@ -8,50 +8,19 @@
 
 import { supabase } from '../lib/supabase';
 import type { Card } from '../types/database.types';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-interface HandPlayerDB {
-  seat: number;
-  user_id: string;
-  hole_cards: Card[];
-  final_hand?: string | null;
-  result: number;
-  is_winner: boolean;
-}
-
-interface HandActionDB {
-  player_id: string;
-  action: string;
-  amount?: number | null;
-  street: string;
-  created_at: string;
-}
-
-interface TableDB {
-  name: string;
-  game_type: string;
-  stakes: string;
-  club_id?: string;
-}
-
-interface HandDB {
-  id: string;
-  serial_number?: string;
-  table_id: string;
-  created_at: string;
-  hand_number?: number;
-  total_hands?: number;
-  pot_size?: number;
-  side_pots?: number[];
-  community_cards?: Card[];
-  button_seat?: number;
-  hand_players?: HandPlayerDB[];
-  hand_actions?: HandActionDB[];
-  tables?: TableDB;
-}
+//
+// Round 38 RE-RUN cleanup: removed HandPlayerDB / HandActionDB / TableDB / HandDB
+// and the methods that consumed them (getTableHands, getRecentWinningHands,
+// searchHands, mapHandRecord). Those types described the legacy `hands` /
+// `hand_players` / `hand_actions` tables, which are EMPTY in production
+// (0 rows each) — see BUG 021 FIX comment on getPlayerHands. The canonical
+// store is `hand_history` (5.15M rows) and its mapper is mapHandHistoryRow.
+// Dead-code removal aligns with the "no stubs / no broken paths" rule.
 
 export interface HandPlayer {
   seat: number;
@@ -96,317 +65,182 @@ export interface HandRecord {
 
 class HandHistoryServiceClass {
   /**
-   * Get a single hand by ID
+   * Get a single hand by ID.
+   *
+   * Round 38 RE-RUN fix: previously queried `hands` (0 rows in prod) with a
+   * nested join to `hand_players` and `hand_actions` (also 0 rows each). Result:
+   * every call returned null, so the entire hand-replay feature (HandReplay
+   * component + HandReplayerPage) was dead in production. Same root cause as
+   * BUG 021 FIX in getPlayerHands.
+   *
+   * Fix: query `hand_history` (5.15M rows, the canonical store), use the
+   * existing mapHandHistoryRow mapper, and resolve profile names from the
+   * JSONB `players` array.
    */
   async getHand(handId: string): Promise<HandRecord | null> {
     const { data, error } = await supabase
-      .from('hands')
+      .from('hand_history')
       .select(
-        `
-                *,
-                hand_players (
-                    seat,
-                    user_id,
-                    hole_cards,
-                    final_hand,
-                    result,
-                    is_winner
-                ),
-                hand_actions (
-                    player_id,
-                    action,
-                    amount,
-                    street,
-                    created_at
-                ),
-                tables (
-                    name,
-                    game_type,
-                    stakes
-                )
-            `
+        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
       )
       .eq('id', handId)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error || !data) {
+      if (error) reportError(error, 'HandHistoryService.getHand_query');
+      return null;
+    }
 
-    // Fetch profile names for all players in this hand
-    const userIds = (data.hand_players || []).map((hp: unknown) => (hp as HandPlayerDB).user_id);
+    const userIds: string[] = [];
+    for (const p of (data as any).players || []) if (p?.userId) userIds.push(p.userId);
+    for (const w of (data as any).winners || []) if (w?.userId) userIds.push(w.userId);
     const profileMap = await this.fetchProfileMap(userIds);
 
-    return this.mapHandRecord(data, profileMap);
+    // Pass empty string for requestingUserId — getHand by ID is a public
+    // replay use case so no per-viewer hole-card hiding (cards remain hidden
+    // for non-winners by the mapper anyway).
+    return this.mapHandHistoryRow(data, '', profileMap);
   }
 
   /**
-   * Get hands for a player
+   * Get hands for a player.
+   *
+   * BUG 021 FIX (2026-04-15): previously queried `hand_players` table (EMPTY — 0 rows) with a
+   * nested join to `hands` (also empty). The canonical hand history store is `hand_history`
+   * (5.1M rows in prod) with JSONB columns `players`, `actions`, `winners`. Rewrote to filter
+   * by players JSONB containing the requested userId, then map JSONB → HandRecord inline.
    */
   async getPlayerHands(userId: string, limit = 50): Promise<HandRecord[]> {
+    // BUG 021 Layer D (2026-04-16): Supabase JS `.contains('column', [{key: val}])` serializes
+    // the object literal with unquoted keys, producing invalid JSON in PostgREST. Symptom:
+    //   {"code":"22P02","details":"Expected string or '}', but found '['","message":"invalid input syntax for type json"}
+    // Fix: pass a pre-stringified JSON string, which Supabase JS URL-encodes verbatim.
+    const containmentJson = JSON.stringify([{ userId }]);
     const { data, error } = await supabase
-      .from('hand_players')
+      .from('hand_history')
       .select(
-        `
-                hands (
-                    *,
-                    hand_players (
-                        seat,
-                        user_id,
-                        hole_cards,
-                        final_hand,
-                        result,
-                        is_winner
-                    ),
-                    tables (
-                        name,
-                        game_type,
-                        stakes
-                    )
-                )
-            `
+        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
       )
-      .eq('user_id', userId)
+      .contains('players', containmentJson)
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    if (error || !data) return [];
+    if (error || !data) {
+      if (error) reportError(error, 'HandHistoryService.getPlayerHands_hand_history_query');
+      return [];
+    }
 
-    // Collect all user_ids across all hands
-    const allUserIds = data.flatMap((d: unknown) => {
-      const row = d as any;
-      return (row.hands?.hand_players || []).map((hp: any) => hp.user_id);
-    });
+    // Collect all user ids across all hands, including winners — needed to resolve display names
+    const allUserIds: string[] = [];
+    for (const row of data as any[]) {
+      for (const p of row.players || []) if (p?.userId) allUserIds.push(p.userId);
+      for (const w of row.winners || []) if (w?.userId) allUserIds.push(w.userId);
+    }
     const profileMap = await this.fetchProfileMap(allUserIds);
 
     return data
-      .map((d: unknown) => {
-        const row = d as any;
-        return this.mapHandRecord(row.hands, profileMap);
-      })
+      .map((d: any) => this.mapHandHistoryRow(d, userId, profileMap))
       .filter((h: HandRecord | null): h is HandRecord => h !== null);
   }
 
-  /**
-   * Get hands for a table
-   */
-  async getTableHands(tableId: string, limit = 100): Promise<HandRecord[]> {
-    const { data, error } = await supabase
-      .from('hands')
-      .select(
-        `
-                *,
-                hand_players (
-                    seat,
-                    user_id,
-                    hole_cards,
-                    final_hand,
-                    result,
-                    is_winner
-                ),
-                tables (
-                    name,
-                    game_type,
-                    stakes
-                )
-            `
-      )
-      .eq('table_id', tableId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error || !data) return [];
-
-    const allUserIds = data.flatMap((d: unknown) => {
-      const row = d as HandDB;
-      return (row.hand_players || []).map((hp: HandPlayerDB) => hp.user_id);
-    });
-    const profileMap = await this.fetchProfileMap(allUserIds);
-
-    return data
-      .map((d: unknown) => this.mapHandRecord(d as HandDB, profileMap))
-      .filter((h: HandRecord | null): h is HandRecord => h !== null);
-  }
-
-  /**
-   * Get recent winning hands (for highlights)
-   */
-  async getRecentWinningHands(userId: string, limit = 10): Promise<HandRecord[]> {
-    const { data, error } = await supabase
-      .from('hand_players')
-      .select(
-        `
-                hands (
-                    *,
-                    hand_players (
-                        seat,
-                        user_id,
-                        hole_cards,
-                        final_hand,
-                        result,
-                        is_winner
-                    ),
-                    tables (
-                        name,
-                        game_type,
-                        stakes
-                    )
-                )
-            `
-      )
-      .eq('user_id', userId)
-      .eq('is_winner', true)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error || !data) return [];
-
-    const allUserIds = data.flatMap((d: unknown) => {
-      const row = d as any;
-      return (row.hands?.hand_players || []).map((hp: any) => hp.user_id);
-    });
-    const profileMap = await this.fetchProfileMap(allUserIds);
-
-    return data
-      .map((d: unknown) => {
-        const row = d as any;
-        return this.mapHandRecord(row.hands, profileMap);
-      })
-      .filter((h: HandRecord | null): h is HandRecord => h !== null);
-  }
-
-  /**
-   * Search hands by criteria
-   */
-  async searchHands(filters: {
-    userId?: string;
-    tableId?: string;
-    clubId?: string;
-    startDate?: string;
-    endDate?: string;
-    minPot?: number;
-    limit?: number;
-  }): Promise<HandRecord[]> {
-    let query = supabase
-      .from('hands')
-      .select(
-        `
-                *,
-                hand_players (
-                    seat,
-                    user_id,
-                    hole_cards,
-                    final_hand,
-                    result,
-                    is_winner
-                ),
-                tables (
-                    name,
-                    game_type,
-                    stakes,
-                    club_id
-                )
-            `
-      )
-      .order('created_at', { ascending: false });
-
-    if (filters.tableId) {
-      query = query.eq('table_id', filters.tableId);
-    }
-
-    if (filters.startDate) {
-      query = query.gte('created_at', filters.startDate);
-    }
-
-    if (filters.endDate) {
-      query = query.lte('created_at', filters.endDate);
-    }
-    if (filters.minPot) {
-      query = query.gte('pot_size', filters.minPot);
-    }
-
-    if (filters.clubId) {
-      // Pre-filter: get table IDs for this club, then filter hands by those tables
-      const { data: clubTables } = await supabase
-        .from('tables')
-        .select('id')
-        .eq('club_id', filters.clubId);
-      const tableIds = (clubTables || []).map((t: { id: string }) => t.id);
-      if (tableIds.length === 0) return []; // No tables for this club
-      query = query.in('table_id', tableIds);
-    }
-
-    query = query.limit(filters.limit || 50);
-
-    const { data, error } = await query;
-
-    if (error || !data) return [];
-
-    const allUserIds = data.flatMap((d: unknown) => {
-      const row = d as HandDB;
-      return (row.hand_players || []).map((hp: HandPlayerDB) => hp.user_id);
-    });
-    const profileMap = await this.fetchProfileMap(allUserIds);
-
-    const results = data
-      .map((d: unknown) => this.mapHandRecord(d as HandDB, profileMap))
-      .filter((h: HandRecord | null): h is HandRecord => h !== null);
-
-    return results;
-  }
+  // Round 38 RE-RUN cleanup: deleted 3 dead methods that queried the empty
+  // `hands` / `hand_players` tables and had ZERO callers in the codebase:
+  //   - getTableHands(tableId)
+  //   - getRecentWinningHands(userId)
+  //   - searchHands(filters)
+  // If any of these features is wanted later, re-add via hand_history +
+  // mapHandHistoryRow (the canonical pattern used by getPlayerHands and getHand).
 
   // ─────────────────────────────────────────────────────────────────────────────
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  private mapHandRecord(
-    data: HandDB | undefined,
-    profileMap?: Map<string, { username: string; avatar_url: string | null }>
+  /**
+   * BUG 021 FIX — map a row from `hand_history` (the canonical prod source) to a HandRecord.
+   * hand_history stores players + actions + winners as JSONB with camelCase keys
+   * (userId, not user_id). We compute result per hand by looking up the player in winners[]
+   * and subtracting their total invested from actions[].
+   */
+  private mapHandHistoryRow(
+    row: any,
+    requestingUserId: string,
+    profileMap: Map<string, { username: string; avatar_url: string | null }>
   ): HandRecord | null {
-    if (!data) return null;
-    const table: TableDB = data.tables || { name: 'Unknown', game_type: 'NLH', stakes: '1/2' };
-    const players: HandPlayer[] = (data.hand_players || []).map((hp: HandPlayerDB): HandPlayer => {
-      const profile = profileMap?.get(hp.user_id);
+    if (!row?.id) return null;
+    const jsonbPlayers: any[] = Array.isArray(row.players) ? row.players : [];
+    const jsonbActions: any[] = Array.isArray(row.actions) ? row.actions : [];
+    const jsonbWinners: any[] = Array.isArray(row.winners) ? row.winners : [];
+
+    // Compute per-player result: winnings from winners[] minus total amount bet in actions[]
+    const buildResult = (userId: string): number => {
+      const invested = jsonbActions
+        .filter((a) => a?.userId === userId && typeof a?.amount === 'number' && a.amount > 0)
+        .reduce((sum, a) => sum + Number(a.amount), 0);
+      const won = jsonbWinners
+        .filter((w) => w?.userId === userId && typeof w?.amount === 'number')
+        .reduce((sum, w) => sum + Number(w.amount), 0);
+      return Math.round((won - invested) * 100) / 100;
+    };
+
+    const buttonSeat = (jsonbPlayers.find((p) => p?.isButton)?.seat as number | undefined) ?? 1;
+    const playerCount = jsonbPlayers.length || 1;
+
+    const players: HandPlayer[] = jsonbPlayers.map((p: any): HandPlayer => {
+      const uid: string = p?.userId || '';
+      const profile = profileMap.get(uid);
+      const isMe = uid === requestingUserId;
+      const isWinner = jsonbWinners.some((w) => w?.userId === uid);
       return {
-        seat: hp.seat,
-        user_id: hp.user_id,
-        username: profile?.username || hp.user_id?.slice(0, 8) || 'Unknown',
+        seat: Number(p?.seat) || 0,
+        user_id: uid,
+        username: profile?.username || p?.username || (uid ? uid.slice(0, 8) : 'Unknown'),
         avatar_url: profile?.avatar_url || null,
-        position: this.getPositionName(
-          hp.seat,
-          data.button_seat || 1,
-          (data.hand_players || []).length
-        ),
-        hole_cards: hp.hole_cards || [],
-        final_hand: hp.final_hand || undefined,
-        result: hp.result || 0,
-        is_winner: hp.is_winner || false,
+        position: this.getPositionName(Number(p?.seat) || 0, buttonSeat, playerCount),
+        // Only reveal hole cards if it's the requesting user OR cards are already exposed in the JSONB
+        hole_cards: Array.isArray(p?.cards) && (isMe || isWinner) ? p.cards : [],
+        final_hand: jsonbWinners.find((w) => w?.userId === uid)?.hand?.name || undefined,
+        result: buildResult(uid),
+        is_winner: isWinner,
       };
     });
 
-    const actions: HandAction[] = (data.hand_actions || []).map((a: HandActionDB) => ({
-      player_id: a.player_id,
-      action: a.action as HandAction['action'],
-      amount: a.amount || undefined,
-      street: a.street as HandAction['street'],
-      timestamp: new Date(a.created_at).getTime(),
-    }));
+    const actions: HandAction[] = jsonbActions.map(
+      (a: any): HandAction => ({
+        player_id: a?.userId || '',
+        action: (a?.action as HandAction['action']) || 'fold',
+        amount: typeof a?.amount === 'number' ? a.amount : undefined,
+        street: (a?.stage as HandAction['street']) || 'preflop',
+        timestamp:
+          typeof a?.timestamp === 'number' ? a.timestamp : new Date(row.created_at).getTime(),
+      })
+    );
+
+    const sb = Number(row.small_blind) || 0;
+    const bb = Number(row.big_blind) || 0;
+    const stakes = sb > 0 && bb > 0 ? `${sb}/${bb}` : '1/2';
 
     return {
-      id: data.id,
-      serial_number: data.serial_number || data.id,
-      table_id: data.table_id,
-      table_name: table.name || 'Unknown',
-      played_at: data.created_at,
-      hand_number: data.hand_number || 1,
-      total_hands: data.total_hands || 1,
-      main_pot: data.pot_size || 0,
-      side_pots: data.side_pots || [],
-      community_cards: data.community_cards || [],
+      id: row.id,
+      serial_number: row.id,
+      table_id: row.table_id,
+      table_name: 'Table',
+      played_at: row.created_at,
+      hand_number: Number(row.hand_number) || 1,
+      total_hands: 1,
+      main_pot: Number(row.pot_size) || 0,
+      side_pots: [],
+      community_cards: Array.isArray(row.community_cards) ? row.community_cards : [],
       players,
       actions,
-      game_type: table.game_type || 'NLH',
-      stakes: table.stakes || '1/2',
+      game_type: (row.game_variant || 'nlh').toUpperCase(),
+      stakes,
     };
   }
+
+  // Round 38 RE-RUN cleanup: deleted private mapHandRecord(HandDB) — only
+  // consumer was the now-deleted dead methods (getTableHands /
+  // getRecentWinningHands / searchHands). The active mapper is
+  // mapHandHistoryRow above.
 
   /**
    * Batch-fetch profiles for a list of user_ids
@@ -428,10 +262,7 @@ class HandHistoryServiceClass {
         map.set(p.id, { username: p.username, avatar_url: p.avatar_url });
       }
     } catch (err: unknown) {
-      console.error(
-        '[HandHistoryService] Error:',
-        err instanceof Error ? err.message : String(err)
-      );
+      reportError(err, 'HandHistoryService.fetchProfileMap');
       // Non-critical — names will fall back to truncated user_id
     }
 
@@ -537,7 +368,7 @@ class HandHistoryServiceClass {
       console.debug(`[HandHistory] Saved hand #${handData.handNumber} to Supabase (id: ${handId})`);
     } catch (err: unknown) {
       // Non-critical — localStorage is the primary store
-      console.error('[HandHistory] Supabase save failed (non-critical):', err);
+      reportError(err, 'HandHistoryService.saveHandToSupabase');
     }
   }
 

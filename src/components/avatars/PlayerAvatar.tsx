@@ -40,8 +40,6 @@ export interface PlayerAvatarProps {
   vipTier?: VipTier;
   /** Player level (displayed in badge) */
   level?: number;
-  /** XP progress toward next level (0-100) */
-  xpProgress?: number;
 
   /** Online presence status */
   presenceStatus?: PresenceStatus;
@@ -52,8 +50,6 @@ export interface PlayerAvatarProps {
 
   /** Show level badge */
   showLevelBadge?: boolean;
-  /** Show XP ring */
-  showXpRing?: boolean;
   /** Show VIP status ring */
   showVipRing?: boolean;
 
@@ -62,65 +58,6 @@ export interface PlayerAvatarProps {
   /** Custom className */
   className?: string;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// XP LEVEL THRESHOLDS
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/** XP required per level (progressive scaling) */
-export function getXPForLevel(level: number): number {
-  return Math.floor(100 * Math.pow(1.15, level - 1));
-}
-
-/** Calculate XP progress percentage (0-100) from vipPoints and level */
-export function calculateXpProgress(vipPoints: number, level: number): number {
-  const currentLevelXP = getXPForLevel(level);
-  const nextLevelXP = getXPForLevel(level + 1);
-  const range = nextLevelXP - currentLevelXP;
-  if (range <= 0) return 100;
-  const progress = ((vipPoints - currentLevelXP) / range) * 100;
-  return Math.max(0, Math.min(100, progress));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SVG XP RING SUB-COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface XPRingProps {
-  progress: number; // 0-100
-  tier: VipTier;
-  size: number; // px
-}
-
-const XPRing: React.FC<XPRingProps> = React.memo(({ progress, tier, size }) => {
-  const strokeWidth = size <= 36 ? 2 : size <= 48 ? 2.5 : 3;
-  const radius = size / 2 - strokeWidth - 1;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference - (progress / 100) * circumference;
-
-  return (
-    <svg className="xp-ring-svg" viewBox={`0 0 ${size} ${size}`}>
-      <circle
-        className="xp-ring-track"
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        strokeWidth={strokeWidth}
-      />
-      <circle
-        className={`xp-ring-progress tier-${tier}`}
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        strokeWidth={strokeWidth}
-        strokeDasharray={circumference}
-        strokeDashoffset={dashOffset}
-      />
-    </svg>
-  );
-});
-
-XPRing.displayName = 'XPRing';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // POKER CHIP SVG (for "Playing Now" indicator)
@@ -159,12 +96,10 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
   size = 'md',
   vipTier = 'bronze',
   level = 1,
-  xpProgress = 0,
   presenceStatus = 'offline',
   showPresence = true,
   isPlaying = false,
   showLevelBadge = true,
-  showXpRing = true,
   showVipRing = true,
   onClick,
   className = '',
@@ -191,9 +126,6 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
     >
       {/* VIP Status Ring (outermost glow) */}
       {showVipRing && vipTier !== 'bronze' && <div className={`vip-status-ring tier-${vipTier}`} />}
-
-      {/* XP Progress Ring */}
-      {showXpRing && <XPRing progress={xpProgress} tier={vipTier} size={sizePx} />}
 
       {/* Avatar Image/Initials */}
       <div className="player-avatar-image">

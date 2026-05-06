@@ -28,6 +28,7 @@ import './LeaderboardPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { retryFetch } from '../utils/retryFetch';
+import { reportError } from '../utils/errorReporter';
 
 // ── SWR Cache helpers ──
 const LB_CACHE_KEY = 'lb_cache_';
@@ -110,6 +111,7 @@ export default function LeaderboardPage() {
   const [userRank, setUserRank] = useState<{ rank: number; total: number } | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMountedRef = useRef(true);
 
   // Club selection
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
@@ -128,11 +130,16 @@ export default function LeaderboardPage() {
 
   // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
   useEffect(() => {
+    isMountedRef.current = true;
     const timeout = setTimeout(() => {
+      if (!isMountedRef.current) return;
       setLoading(false);
       setClubsLoading(false);
     }, 5000);
-    return () => clearTimeout(timeout);
+    return () => {
+      isMountedRef.current = false;
+      clearTimeout(timeout);
+    };
   }, []);
 
   // Load user's clubs on mount
@@ -204,7 +211,8 @@ export default function LeaderboardPage() {
 
   // Callback for leaderboard updates
   const handleLeaderboardUpdate = useCallback(() => {
-    if (activeTabRef.current === 'rankings') loadLeaderboardRef.current(true, () => true);
+    if (activeTabRef.current === 'rankings')
+      loadLeaderboardRef.current(true, () => isMountedRef.current);
   }, []);
 
   useMasterBusChannel({
@@ -218,7 +226,8 @@ export default function LeaderboardPage() {
 
   // Callback for tournament updates
   const handleTournamentLeaderboardUpdate = useCallback(() => {
-    if (activeTabRef.current === 'tournaments') loadTournamentStatsRef.current(() => true);
+    if (activeTabRef.current === 'tournaments')
+      loadTournamentStatsRef.current(() => isMountedRef.current);
   }, []);
 
   useMasterBusChannel({
@@ -234,9 +243,9 @@ export default function LeaderboardPage() {
   useEffect(() => {
     refreshTimerRef.current = setInterval(() => {
       if (activeTabRef.current === 'rankings') {
-        loadLeaderboardRef.current(true, () => true);
+        loadLeaderboardRef.current(true, () => isMountedRef.current);
       } else {
-        loadTournamentStatsRef.current(() => true);
+        loadTournamentStatsRef.current(() => isMountedRef.current);
       }
     }, 30000);
 
@@ -294,7 +303,7 @@ export default function LeaderboardPage() {
         setSelectedClubId(clubs[0].id as string);
       }
     } catch (error) {
-      console.error('Failed to load clubs:', error);
+      reportError(error, 'LeaderboardPage.Failed_to_load_clubs');
       toast.error('Failed to load clubs');
     }
     if (getIsMounted && !getIsMounted()) return;
@@ -338,7 +347,7 @@ export default function LeaderboardPage() {
         setUserRank(rank);
       }
     } catch (error) {
-      console.error('Failed to load leaderboard:', error);
+      reportError(error, 'LeaderboardPage.Failed_to_load_leaderboard');
       if (!silent) toast.error('Failed to load leaderboard');
     } finally {
       loadingRef.current = false;
@@ -361,7 +370,7 @@ export default function LeaderboardPage() {
       setTournamentStats(data);
       setLastUpdated(new Date());
     } catch (error) {
-      console.error('Failed to load tournament stats:', error);
+      reportError(error, 'LeaderboardPage.Failed_to_load_tournament_stats');
       toast.error('Failed to load tournament stats');
     } finally {
       if (!getIsMounted || getIsMounted()) setTournamentsLoading(false);
@@ -503,7 +512,8 @@ export default function LeaderboardPage() {
                   { key: 'userId', label: 'User ID' },
                 ]);
                 toast.success('Leaderboard exported!');
-              } catch {
+              } catch (e) {
+                reportError(e, 'LeaderboardPage.find');
                 toast.error('Export failed');
               }
             }}
@@ -645,10 +655,8 @@ export default function LeaderboardPage() {
                     size="lg"
                     vipTier={(top3[1].vipTier as VipTier) || 'silver'}
                     level={top3[1].level || 1}
-                    xpProgress={50}
                     showPresence={false}
                     showLevelBadge={true}
-                    showXpRing={true}
                     showVipRing={true}
                   />
                   {top3[1].isVIP && <span className="vip-badge">VIP</span>}
@@ -677,10 +685,8 @@ export default function LeaderboardPage() {
                     size="xl"
                     vipTier={(top3[0].vipTier as VipTier) || 'gold'}
                     level={top3[0].level || 1}
-                    xpProgress={75}
                     showPresence={false}
                     showLevelBadge={true}
-                    showXpRing={true}
                     showVipRing={true}
                   />
                   {top3[0].isVIP && <span className="vip-badge">VIP</span>}
@@ -708,10 +714,8 @@ export default function LeaderboardPage() {
                     size="lg"
                     vipTier={(top3[2].vipTier as VipTier) || 'bronze'}
                     level={top3[2].level || 1}
-                    xpProgress={30}
                     showPresence={false}
                     showLevelBadge={true}
-                    showXpRing={true}
                     showVipRing={true}
                   />
                   {top3[2].isVIP && <span className="vip-badge">VIP</span>}

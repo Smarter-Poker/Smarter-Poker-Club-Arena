@@ -15,6 +15,7 @@ import { messagingService } from '../../services/MessagingService';
 import { formatRelativeShort } from '../../lib/date';
 import styles from './ConversationList.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface Conversation {
   id: string;
@@ -93,7 +94,7 @@ export default function ConversationList({
         .eq('category', 'club');
 
       if (convError || !clubConvs) {
-        console.error('Failed to load club conversations:', convError);
+        reportError(convError, 'ConversationList.Failed_to_load_club_conversations');
         return;
       }
 
@@ -115,7 +116,7 @@ export default function ConversationList({
 
       setClubUnreadTotal(count || 0);
     } catch (error) {
-      console.error('Failed to load club messages count:', error);
+      reportError(error, 'ConversationList.Failed_to_load_club_messages_count');
     }
   }, [user?.id]);
 
@@ -199,7 +200,7 @@ export default function ConversationList({
           setHasMore(data.length === 20);
         }
       } catch (error) {
-        console.error('Failed to load conversations:', error);
+        reportError(error, 'ConversationList.Failed_to_load_conversations');
       }
       setLoading(false);
     },

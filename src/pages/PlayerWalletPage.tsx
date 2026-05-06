@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 import { useWalletStore } from '../stores/useWalletStore';
@@ -18,6 +18,7 @@ import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import './PlayerWalletPage.css';
+import { reportError } from '../utils/errorReporter';
 
 type WalletTab = 'overview' | 'transfer' | 'history';
 type WalletType = 'BUSINESS' | 'PLAYER' | 'PROMO';
@@ -167,7 +168,10 @@ function WalletCard({
 // MAIN PAGE COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
+
 export default function PlayerWalletPage() {
+  useRealtimeFinancials();
   useEffect(() => {
     document.title = 'Wallet | Smarter Poker';
   }, []);
@@ -198,7 +202,9 @@ export default function PlayerWalletPage() {
   // Auto-dismiss messages after 8s
   useEffect(() => {
     if (!message) return;
-    const t = setTimeout(() => { if (isMounted.current) setMessage(null); }, 8000);
+    const t = setTimeout(() => {
+      if (isMounted.current) setMessage(null);
+    }, 8000);
     return () => clearTimeout(t);
   }, [message]);
 
@@ -239,24 +245,14 @@ export default function PlayerWalletPage() {
           }
         }
       )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'wallet_transactions',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            loadBalances(user.id);
-            loadDiamonds(user.id);
-          }
-        }
-      )
+      // wallet_transactions subscription removed (Phase 2 cost cut): the
+      // canonical balance lives on public.wallets and every write path that
+      // inserts a transaction also updates wallets — the `wallets` listener
+      // above already covers balance changes. The bus 'BALANCE_UPDATED'
+      // listener below backstops admin-side adjustments.
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[PlayerWalletPage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'PlayerWalletPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PlayerWalletPage] ⏱️ Realtime channel timed out');
@@ -340,18 +336,41 @@ export default function PlayerWalletPage() {
     try {
       if (!user?.id) return;
       await internalTransfer(user.id, transferFrom, transferTo, amount);
-      setMessage({
-        type: 'success',
-        text: `Transferred ${amount.toLocaleString()} chips successfully!`,
-      });
-      setTransferAmount('');
+      if (isMounted.current) {
+        setMessage({
+          type: 'success',
+          text: `Transferred ${amount.toLocaleString()} chips successfully!`,
+        });
+        setTransferAmount('');
+      }
       loadBalances(user.id);
       masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId: user.id });
-    } catch {
-      if (isMounted.current) setMessage({ type: 'error', text: 'Transfer failed. Please try again.' });
+    } catch (e) {
+      reportError(e, 'PlayerWalletPage');
+      if (isMounted.current)
+        setMessage({ type: 'error', text: 'Transfer failed. Please try again.' });
     }
     if (isMounted.current) setIsTransferring(false);
   };
+
+  // ── Keyboard navigation for tabs (Arrow Left/Right) ──
+  const walletTabs: WalletTab[] = ['overview', 'transfer', 'history'];
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const idx = walletTabs.indexOf(activeTab);
+        const next =
+          e.key === 'ArrowRight'
+            ? walletTabs[(idx + 1) % walletTabs.length]
+            : walletTabs[(idx - 1 + walletTabs.length) % walletTabs.length];
+        setActiveTab(next);
+        const btn = document.querySelector(`[aria-controls="wallet-panel-${next}"]`) as HTMLElement;
+        btn?.focus();
+      }
+    },
+    [activeTab]
+  );
 
   return (
     <div className="wallet-page">
@@ -408,11 +427,17 @@ export default function PlayerWalletPage() {
       </div>
 
       {/* ═══════════ TABS ═══════════ */}
-      <div className="wallet-tabs" role="tablist" aria-label="Wallet sections">
+      <div
+        className="wallet-tabs"
+        role="tablist"
+        aria-label="Wallet sections"
+        onKeyDown={handleTabKeyDown}
+      >
         {(['overview', 'transfer', 'history'] as WalletTab[]).map((tab) => (
           <button
             key={tab}
             role="tab"
+            tabIndex={activeTab === tab ? 0 : -1}
             aria-selected={activeTab === tab}
             aria-controls={`wallet-panel-${tab}`}
             className={activeTab === tab ? 'active' : ''}

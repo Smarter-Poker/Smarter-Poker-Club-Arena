@@ -2,13 +2,14 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  MISSIONS PANEL — Tiered daily/weekly/monthly mission cards
  * ═══════════════════════════════════════════════════════════════════════════════
- * Progress bars, XP + diamond reward badges, completion animation.
+ * Progress bars, diamond reward badges, completion animation.
  */
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import './MissionsPanel.css';
+import { reportError } from '../../utils/errorReporter';
 
 type MissionTier = 'daily' | 'weekly' | 'monthly';
 
@@ -21,7 +22,7 @@ interface Mission {
   current: number;
   target: number;
   rewardAmount: number;
-  rewardType: 'xp' | 'diamonds' | 'chips';
+  rewardType: 'diamonds' | 'chips';
   completed: boolean;
   claimed: boolean;
 }
@@ -38,7 +39,6 @@ const TIER_CONFIG: Record<MissionTier, { label: string; icon: string; color: str
 };
 
 const REWARD_ICONS: Record<string, string> = {
-  xp: '⭐',
   diamonds: '💎',
   chips: '🪙',
 };
@@ -157,7 +157,8 @@ export default function MissionsPanel({ missions, onClaim }: MissionsPanelProps)
                             rewardType: mission.rewardType,
                             rewardAmount: mission.rewardAmount,
                           });
-                        } catch {
+                        } catch (e) {
+                          reportError(e, 'MissionsPanel.setCelebratingIds');
                           // Claim failed — no celebration, ProfilePage shows error toast
                         }
                       }}

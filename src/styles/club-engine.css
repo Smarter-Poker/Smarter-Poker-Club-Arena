@@ -693,7 +693,7 @@ pre {
 }
 
 .card-deal {
-  animation: card-deal 0.4s var(--ease-out-expo) forwards;
+  animation: card-deal calc(0.4s * var(--animation-speed, 1)) var(--ease-out-expo) forwards;
 }
 
 /* Chip Stack Animation */
@@ -710,7 +710,7 @@ pre {
 }
 
 .chip-stack {
-  animation: chip-stack 0.3s var(--ease-bounce) forwards;
+  animation: chip-stack calc(0.3s * var(--animation-speed, 1)) var(--ease-bounce) forwards;
 }
 
 /* Win Celebration */
@@ -726,7 +726,7 @@ pre {
 }
 
 .win-glow {
-  animation: win-glow 0.5s ease-in-out 3;
+  animation: win-glow calc(0.5s * var(--animation-speed, 1)) ease-in-out 3;
 }
 
 /* Spinner */

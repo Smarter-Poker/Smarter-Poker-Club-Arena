@@ -11,6 +11,7 @@
  */
 
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -45,7 +46,7 @@ export const OfflineQueueService = {
     try {
       this.db = await this.openDB();
     } catch (err: unknown) {
-      console.error('[OfflineQueue] IndexedDB not available:', err);
+      reportError(err, 'OfflineQueueService.IndexedDB_not_available');
     }
 
     // Remove previous listener if re-initializing (prevent stacking)
@@ -86,7 +87,10 @@ export const OfflineQueueService = {
     // Check for duplicate operation
     const existing = await this.findByOperationId(mutation.operationId);
     if (existing) {
-      console.error(`[OfflineQueue] Duplicate operation ${mutation.operationId} — skipping`);
+      reportError(
+        new Error(`[OfflineQueue] Duplicate operation ${mutation.operationId} — skipping`),
+        'OfflineQueueService.Duplicate_operation_mutationoperationId_'
+      );
       return false;
     }
 
@@ -112,7 +116,7 @@ export const OfflineQueueService = {
         resolve(true);
       };
       req.onerror = () => {
-        console.error('[OfflineQueue] Failed to queue mutation:', req.error);
+        reportError(req.error, 'OfflineQueueService.Failed_to_queue_mutation');
         resolve(false);
       };
     });
@@ -127,7 +131,7 @@ export const OfflineQueueService = {
 
     // Concurrency guard — prevent double-execution from rapid 'online' events
     if (this._isReplaying) {
-      console.error('[OfflineQueue] Replay already in progress — skipping');
+      console.debug('[OfflineQueue] Replay already in progress — skipping (not an error)');
       return { replayed: 0, failed: 0 };
     }
     this._isReplaying = true;
@@ -154,7 +158,10 @@ export const OfflineQueueService = {
           } else {
             mutation.retries++;
             if (mutation.retries >= 3) {
-              console.error(`[OfflineQueue] Mutation ${mutation.id} failed 3 times — dropping`);
+              reportError(
+                new Error(`[OfflineQueue] Mutation ${mutation.id} failed 3 times — dropping`),
+                'OfflineQueueService.Mutation_mutationid_failed_3_times__drop'
+              );
               await this.remove(mutation.id);
               failed++;
             } else {
@@ -163,7 +170,7 @@ export const OfflineQueueService = {
             }
           }
         } catch (err: unknown) {
-          console.error(`[OfflineQueue] Error replaying ${mutation.id}:`, err);
+          reportError(err, 'OfflineQueueService.Error_replaying_mutationid');
           failed++;
         }
       }
@@ -181,7 +188,7 @@ export const OfflineQueueService = {
           mutationsFailed: failed,
         });
       } catch (err) {
-        console.error('[OfflineQueueService] Error:', err);
+        reportError(err, 'OfflineQueueService.Error');
         /* non-fatal */
       }
 
@@ -280,7 +287,10 @@ export const OfflineQueueService = {
         return !error;
       }
       default:
-        console.error(`[OfflineQueue] Unknown action: ${mutation.action}`);
+        reportError(
+          new Error(`[OfflineQueue] Unknown action: ${mutation.action}`),
+          'OfflineQueueService.Unknown_action'
+        );
         return false;
     }
   },

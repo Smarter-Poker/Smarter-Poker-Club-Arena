@@ -16,7 +16,8 @@
  */
 
 import { supabase } from '../lib/supabase';
-import type { HandController, HandEvent } from '../engine/HandController';
+import type { HandController, HandEvent } from '../types/engine/handController';
+import { reportError } from '../utils/errorReporter';
 
 interface HandRecord {
   id?: string;
@@ -94,7 +95,7 @@ export class HandPersistence {
         );
       }
     } catch (err) {
-      console.error('[HandPersistenceService] Error:', err);
+      reportError(err, 'HandPersistence.cleanupOrphanedHands');
       // Silently ignore — cleanup is non-critical
     }
   }
@@ -149,10 +150,7 @@ export class HandPersistence {
       try {
         await this.handleEvent(event, config);
       } catch (err: unknown) {
-        console.error(
-          `[HandPersistence:${this.tableId}] Event handler error for ${event.type}:`,
-          err
-        );
+        reportError(err, 'HandPersistence.enqueueEvent', { eventType: event.type });
       }
     });
   }
@@ -190,8 +188,9 @@ export class HandPersistence {
     // Guard: if a previous hand is still in progress, finalize it first.
     // With serialized events this should be rare, but handle it defensively.
     if (this.currentHand) {
-      console.error(
-        `[HandPersistence:${this.tableId}] Previous hand #${this.currentHand.hand_number} still open — finalizing before hand #${handNumber}`
+      reportError(
+        `Previous hand #${this.currentHand.hand_number} still open — finalizing before hand #${handNumber}`,
+        'HandPersistence.onHandStart.orphanedHand'
       );
       await this.onHandComplete(this.currentHand.hand_number, 0);
     }
@@ -251,10 +250,7 @@ export class HandPersistence {
       .maybeSingle();
 
     if (error) {
-      console.error(
-        `[HandPersistence:${this.tableId}] Failed to insert hand #${handNumber}:`,
-        error
-      );
+      reportError(error, 'HandPersistence.onHandStart.insertFailed', { handNumber });
       // Retry once
       try {
         const { data: retryData, error: retryError } = await supabase
@@ -266,7 +262,7 @@ export class HandPersistence {
         if (!retryError && retryData) {
           if (this.currentHand) this.currentHand.id = retryData.id;
         } else {
-          console.error(`[HandPersistence:${this.tableId}] Retry also failed:`, retryError);
+          reportError(retryError, 'HandPersistence.onHandStart.retryFailed');
           // Mark as local-only so we don't try to update a non-existent DB row
           if (this.currentHand) {
             this.currentHand.id = crypto.randomUUID();
@@ -274,7 +270,7 @@ export class HandPersistence {
           }
         }
       } catch (e: unknown) {
-        console.error(`[HandPersistence:${this.tableId}] Retry exception:`, e);
+        reportError(e, 'HandPersistence.onHandStart.retryException');
         if (this.currentHand) {
           this.currentHand.id = crypto.randomUUID();
           (this.currentHand as any)._localOnly = true;
@@ -317,8 +313,9 @@ export class HandPersistence {
 
   private async onHandComplete(handNumber: number, rake: number): Promise<void> {
     if (!this.currentHand) {
-      console.error(
-        `[HandPersistence:${this.tableId}] HAND_COMPLETE for #${handNumber} but no currentHand`
+      reportError(
+        `HAND_COMPLETE for #${handNumber} but no currentHand`,
+        'HandPersistence.onHandComplete.noCurrentHand'
       );
       return;
     }
@@ -330,8 +327,9 @@ export class HandPersistence {
     // With event serialization, the insert should always have completed by now.
     // But handle the edge case defensively.
     if (!this.currentHand.id) {
-      console.error(
-        `[HandPersistence:${this.tableId}] HAND_COMPLETE for #${handNumber} but no DB id — should not happen with serialization`
+      reportError(
+        `HAND_COMPLETE for #${handNumber} but no DB id`,
+        'HandPersistence.onHandComplete.noDbId'
       );
       this.currentHand = null;
       this.handActions = [];
@@ -360,9 +358,7 @@ export class HandPersistence {
         .eq('id', this.currentHand.id);
 
       if (error) {
-        console.error(
-          `[HandPersistence:${this.tableId}] Failed to update hand #${handNumber}: ${error.message || error.code || JSON.stringify(error)}`
-        );
+        reportError(error, 'HandPersistence.onHandComplete.updateFailed', { handNumber });
         // Retry once
         try {
           const { error: retryErr } = await supabase
@@ -370,12 +366,10 @@ export class HandPersistence {
             .update(updatePayload)
             .eq('id', this.currentHand.id);
           if (retryErr) {
-            console.error(
-              `[HandPersistence:${this.tableId}] Retry update also failed: ${retryErr.message || retryErr.code}`
-            );
+            reportError(retryErr, 'HandPersistence.onHandComplete.retryUpdateFailed');
           }
         } catch (e: unknown) {
-          console.error(`[HandPersistence:${this.tableId}] Retry update exception:`, e);
+          reportError(e, 'HandPersistence.onHandComplete.retryUpdateException');
         }
       }
     }
@@ -419,10 +413,7 @@ export class HandPersistence {
         const { error: hpError } = await supabase.from('hand_players').insert(handPlayerRows);
 
         if (hpError) {
-          console.error(
-            `[HandPersistence:${this.tableId}] Failed to insert hand_players for hand #${handNumber}:`,
-            hpError
-          );
+          reportError(hpError, 'HandPersistence.onHandComplete.insertPlayers', { handNumber });
         }
       }
 
@@ -461,30 +452,49 @@ class HandPersistenceServiceClass extends HandPersistence {
       .limit(limit);
 
     if (error) {
-      console.error('[HandPersistence] Failed to load hand history:', error);
+      reportError(error, 'HandPersistence.getTableHandHistory');
       return [];
     }
     return data || [];
   }
 
   /**
-   * Load hand history for a player
+   * Load hand history for a player.
+   *
+   * BUG 021 Layer D pattern fix (2026-04-16): Supabase JS `.contains()` with an
+   * object literal containing a dynamic key (`{ [playerId]: {} }`) serializes the
+   * key unquoted, producing `{abc-123:{}}` which PostgREST rejects as invalid
+   * JSON ("22P02 — Expected string or '}', but found '['"). Pre-stringify the
+   * JSONB containment value so Supabase sends valid JSON.
+   *
+   * Also: the `hands` table doesn't exist — `hand_history` is the canonical
+   * schema. Matching HandHistoryService's containment pattern on `players`
+   * (array of {userId} objects).
    */
   async getPlayerHandHistory(playerId: string, limit = 50): Promise<HandRecord[]> {
+    // Round 38 audit Pass 1 fix: select clause referenced 9 columns that
+    // don't exist on hand_history (club_id, variant, stakes, pot, rake,
+    // winner_ids, street, status, dealer_position). The real column names
+    // per information_schema are game_variant, pot_size, rake_amount,
+    // winners (JSONB), and there's no street/status/dealer_position. The
+    // pre-fix query 400'd or silently returned an error. Replaced with
+    // valid columns; downstream HandRecord mapping derives missing fields
+    // from JSONB.
+    const containmentJson = JSON.stringify([{ userId: playerId }]);
     const { data, error } = await supabase
-      .from('hands')
+      .from('hand_history')
       .select(
-        'id, table_id, club_id, hand_number, game_variant, stakes, pot, rake, community_cards, board, winner_ids, players, actions, street, status, dealer_position, started_at, ended_at, created_at'
+        'id, table_id, tournament_id, hand_number, game_variant, small_blind, big_blind, pot_size, rake_amount, community_cards, board, winners, players, actions, started_at, ended_at, hole_cards, created_at'
       )
-      .contains('players', { [playerId]: {} })
+      .contains('players', containmentJson)
       .order('ended_at', { ascending: false })
       .limit(limit);
 
     if (error) {
-      console.error('[HandPersistence] Failed to load player hands:', error);
+      reportError(error, 'HandPersistence.getPlayerHandHistory');
       return [];
     }
-    return data || [];
+    return (data || []) as unknown as HandRecord[];
   }
 }
 

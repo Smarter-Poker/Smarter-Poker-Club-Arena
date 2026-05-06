@@ -10,6 +10,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -73,30 +74,20 @@ export const DIAMOND_PACKAGES: DiamondPackage[] = [
 export const DiamondService = {
   /**
    * Get user's diamond wallet balance.
-   * Strategy: Try wallets table (DIAMOND type) first for Triple-Wallet alignment,
-   * then fall back to profiles.diamonds for backward compatibility.
+   * Source of truth: profiles.diamonds column.
+   * NOTE: The wallets table constraint only allows PLAYER and BUSINESS types —
+   * there is no DIAMOND wallet type, so we read directly from profiles.
    * Also computes lifetimeEarned/lifetimeSpent from wallet_transactions.
    */
   async getBalance(userId: string): Promise<DiamondWallet> {
-    // 1. Try wallets table (preferred — consistent with Triple-Wallet architecture)
-    const { data: walletData } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', 'DIAMOND')
+    // Read diamond balance from profiles (the actual source of truth)
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('diamonds')
+      .eq('id', userId)
       .maybeSingle();
 
-    let balance = walletData?.balance ?? null;
-
-    // 2. Fallback to profiles.diamonds if DIAMOND wallet doesn't exist yet
-    if (balance === null) {
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('diamonds')
-        .eq('id', userId)
-        .maybeSingle();
-      balance = profileData?.diamonds || 0;
-    }
+    const balance = profileData?.diamonds || 0;
 
     // 3. Compute lifetime stats from wallet_transactions (non-blocking)
     let lifetimeEarned = 0;
@@ -118,7 +109,7 @@ export const DiamondService = {
         .in('category', ['diamond_deduction', 'vip_purchase', 'mint']);
       lifetimeSpent = (spentData || []).reduce((sum, t) => sum + Number(t.amount || 0), 0);
     } catch (err) {
-      console.error('[DiamondService] Error:', err);
+      reportError(err, 'DiamondService.getBalance.lifetimeStats', { userId });
       // Non-blocking: lifetime stats are best-effort
     }
 
@@ -201,7 +192,7 @@ export const DiamondService = {
         );
 
         if (intentError) {
-          console.error('[DiamondService] Stripe edge function error:', intentError);
+          reportError(intentError, 'DiamondService.purchaseDiamonds.stripe', { userId, packageId });
           return { success: false, error: 'Payment processing failed. Please try again.' };
         }
 
@@ -223,7 +214,7 @@ export const DiamondService = {
 
         return { success: false, error: intentData?.error || 'Payment failed' };
       } catch (stripeErr) {
-        console.error('[DiamondService] Stripe flow unavailable, falling back to RPC:', stripeErr);
+        reportError(stripeErr, 'DiamondService.purchase.stripeFallback');
         // Fall through to legacy RPC
       }
     }
@@ -231,16 +222,16 @@ export const DiamondService = {
     // ── LEGACY / DEV FLOW: Direct RPC credit ──────────────────────────────
     const { data, error } = await retryAsync(
       () =>
+        // Round 19: prod sig (p_user_id, p_amount). p_reason silently 404'd.
         supabase.rpc('fn_add_diamonds', {
           p_user_id: userId,
           p_amount: totalDiamonds,
-          p_reason: `Purchased ${pkg.name} (${pkg.diamonds}+${pkg.bonusDiamonds} bonus)`,
         }),
       3
     );
 
     if (error) {
-      console.error('DiamondService.purchaseDiamonds error:', error);
+      reportError(error, 'DiamondService.purchaseDiamonds.rpc', { userId, packageId });
       return { success: false, error: error.message };
     }
 
@@ -284,7 +275,7 @@ export const DiamondService = {
 
       return { success: data?.success, newBalance: data?.newBalance };
     } catch (err: unknown) {
-      console.error('[DiamondService] verifyPayment error:', err);
+      reportError(err, 'DiamondService.verifyPayment', { userId, paymentIntentId });
       return { success: false, error: 'Verification error' };
     }
   },

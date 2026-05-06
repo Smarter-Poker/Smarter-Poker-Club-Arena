@@ -1,143 +1,206 @@
-# Claude Instructions for Club Arena
+# Club Arena -- Agent Instructions
 
-## 🚨 MANDATORY: TypeScript Check Before EVERY Commit (NON-NEGOTIABLE)
+ALL agents (Claude, AntiGravity, Cowork, any AI) MUST read this file at session start.
+This is the single source of truth for **this repo**. Updated 2026-04-28.
 
-**Before EVERY `git commit`, run `npx tsc --noEmit`. If it has ANY errors, DO NOT commit. Fix all errors first.**
+**↗ READ FIRST:** `.agent/architecture/CLUB-ARENA-CANONICAL-ARCHITECTURE-2026-04-28.md`
+That document is the canonical "where does my fix go?" decision tree, the
+duplicate-table reconciliation, and the four-tier topology lock. Every agent
+must read it before pushing any code. If the architecture doc contradicts
+this CLAUDE.md, the architecture doc wins (it's newer + repo-canonical).
+
+**Platform-level plan** (CA + Supabase + Hetzner + WH integration):
+`~/Documents/Smarter-Poker-World-Hub/CLUB-ARENA-OFFICIAL-UPGRADE-INTEGRATION.md`
+
+That document supersedes the old `POKERBROS_UPGRADE_PLAN.md`, `PHASE_3/4_*_PLAN.md`,
+`MASTER_BLUEPRINT.md`, and every `ANTIGRAVITY-HANDOFF-*.md` (now in
+`docs/_archive/handoffs/`). If any of those conflict with the platform plan, the
+platform plan wins.
+
+---
+
+## 1. DEPLOYMENT PIPELINE
+
+Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
+It deploys through the World Hub repo, NOT directly.
+
+### 1.1 The Only Deploy Path (Phase U5.4 — one script, one push)
 
 ```bash
-# MUST run this before EVERY commit:
-npx tsc --noEmit
-
-# Only if exit code 0 → commit and push
-git add -A && git commit -m "your message" && git push origin main
+cd ~/Documents/Smarter-Poker-World-Hub
+bash scripts/sync-club-arena.sh "feat(ca): <describe what changed>"
 ```
 
-**Common mistakes that WILL break CI:**
-- Importing a component that doesn't exist → create the file AND add to barrel `index.ts`
-- Emitting bus events with fields not in `BusPayloadMap` → update `src/core/MasterBus.ts`
-- Passing JSX props not in the component's Props interface → add to interface or remove prop
+That single script: builds CA with NODE_ENV=production + Sentry sourcemap upload,
+wipes WH `public/hub/club-arena/{index.html,assets/}`, copies the new build,
+stages additions + deletions, commits, and pushes to `main` (which triggers
+the Vercel deploy).
 
-See `skills/mandatory-typecheck/SKILL.md` for the full protocol.
+`SENTRY_AUTH_TOKEN/ORG/PROJECT` are read from `~/Documents/club-arena/.env` if
+not already exported. Bulky static dirs (`cards/`, `images/`, `club-logos/`,
+`videos/`) are preserved — they're not in a fresh build.
 
-## MANDATORY FOR ALL AGENTS (AntiGravity, Claude, any AI agent)
+**Legacy names** still work but just forward to the canonical script:
 
-**Club Arena has been PERMANENTLY migrated to smarter.poker.**
+- `WH scripts/build-club-arena.sh` → `sync-club-arena.sh`
+- `CA scripts/sync-to-world-hub.sh` → `sync-club-arena.sh`
 
-### Where to PUBLISH / SAVE / DEPLOY:
+For post-deploy verification that production is serving your commit, follow up
+with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
+already exits non-zero on build/push failure.
 
-1. Build Club Arena: `npm run build` (Vite produces dist/)
-2. Sync to World Hub: `bash scripts/sync-to-world-hub.sh ~/Documents/Smarter-Poker-World-Hub`
-3. Push WORLD HUB (not Club Arena) to deploy: `cd ~/Documents/Smarter-Poker-World-Hub && bash scripts/git-safe-push.sh "your message"`
-4. Verify on: `https://smarter.poker/hub/club-arena/`
+### 1.2 Vercel Project
 
-### NEVER DO:
+- `hub-vanguard` (`prj_op66GkZyZcygXQKm76iyycfVFAQx`) -- THE REAL ONE. Aliased to `smarter.poker`.
+- `smarter-poker` (`prj_FNUaJmcjRnwCSh1JzblIUYuOXDGK`) -- DEAD DUPLICATE. Disconnected. Do not touch.
+- There are NO deploy hooks. The Vercel git integration auto-deploys on push to main.
 
-- NEVER run `vercel deploy` or `vercel --prod` in the Club Arena directory
-- NEVER push to or deploy via `club-arena.vercel.app`
-- NEVER push to or deploy via `club-engine.vercel.app`
-- NEVER push to or deploy via `club.smarter.poker`
-- NEVER add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`)
-- NEVER add `VITE_` prefixed secret keys (use server-side API routes instead)
+### 1.3 Never Do
 
-### WHERE THINGS LIVE:
+- Never run `vercel deploy` or `vercel --prod` in the Club Arena directory
+- Never push to or test on `club-arena.vercel.app`
+- Never call any deploy hook URL
+- Never add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`)
+- Never add `VITE_` prefixed secret keys (use server-side API routes)
+- Never edit `public/hub/club-arena/` in the World Hub directly (always rebuild from source)
 
-- Production URL: `https://smarter.poker/hub/club-arena/`
-- Built files: `Smarter-Poker-World-Hub/public/hub/club-arena/` (618 files)
-- Source code: `Smarter-Poker-Club-Arena/src/` (this repo)
-- API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/` (66 routes)
-- Vercel project: `smarter-poker` (the ONLY deployment target)
+### 1.4 Claiming Success
 
-## CRITICAL: Testing & Deployment Rules
+You may ONLY say a change is deployed after `git-safe-push.sh` exits 0.
+Never say "should be live in a few minutes" or "deploy triggered."
 
-**ALL live E2E testing MUST be done on `smarter.poker` — NEVER on `club-arena.vercel.app` directly.**
+---
 
-Club Arena lives 100% inside smarter.poker. All files (JS, CSS, HTML, images, cards,
-videos, logos) are served from `smarter.poker/hub/club-arena/*` via the World Hub's
-`public/` directory. ZERO requests go to external domains.
+## 2. INFRASTRUCTURE
 
-- Test URL: `https://smarter.poker/hub/club-arena/`
-- NEVER navigate to or test on `club-arena.vercel.app` directly
-- After code changes: rebuild with Vite, copy dist/ to World Hub's public/hub/club-arena/, push World Hub
+| Service  | Purpose                          | Location                                        |
+| -------- | -------------------------------- | ----------------------------------------------- |
+| Vercel   | Frontend hosting (smarter.poker) | World Hub repo -> auto-deploys via hub-vanguard |
+| Hetzner  | Poker engine server (Node.js)    | `server/` directory, deployed via SSH + PM2     |
+| Supabase | Database + Auth + Realtime       | `kuklfnapbkmacvwxktbh.supabase.co`              |
 
-## Architecture — How This App Is Served
+### Hetzner VPS (Poker Engine Server)
 
-Club Arena is a **Vite + React SPA** that lives inside the smarter.poker Next.js app:
+- Runs server-authoritative game engine: `server/src/index.ts`
+- ALL game logic lives here: HandController, ServerTableEngine, all engines
+- HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
+- Uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS)
 
-1. **Production (user-facing)**: `smarter.poker/hub/club-arena/*` — served from World Hub's `public/` directory
-2. **Build tool**: Vite builds the SPA into `dist/` — this output is copied to World Hub's `public/hub/club-arena/`
-3. **SPA routing**: World Hub's `next.config.js` has `fallback` rewrites that serve `index.html` for unmatched routes
-4. **Auth**: Same-origin Supabase session via shared `smarter-poker-auth` localStorage key
+### Supabase
 
-NO iframe. NO postMessage. NO proxy. NO external domain requests. Everything from smarter.poker.
+- PostgreSQL: tables, table_seats, table_hole_cards, hand_history
+- Auth: JWT-based, shared with smarter.poker frontend
+- Realtime: WebSocket broadcasts to connected clients
+- RLS: Protects hole cards (users can only read own cards)
+- Schema changes MUST be SQL migration files in `supabase/migrations/`
 
-### Deployment Pipeline
+---
 
-```
-1. Make changes in Club Arena repo
-2. Build: npm run build (Vite produces dist/)
-3. Copy dist/ to World Hub: public/hub/club-arena/ (strip source maps)
-4. Push World Hub to GitHub
-5. Vercel auto-deploys smarter.poker with updated Club Arena files
-```
+## 3. ACTIVE MIGRATION
 
-### Vercel Project Details
+There is a server-authoritative migration in progress. Before ANY code work, read:
 
-- World Hub: `smarter-poker` (prj_FNUaJmcjRnwCSh1JzblIUYuOXDGK) — this is the ONLY deployment
-- Club Arena code lives in: `public/hub/club-arena/` within the World Hub repo
+1. `MIGRATION-LAW.md` -- 11 laws governing all migration work
+2. `MASTER-MIGRATION-DOCUMENT.md` -- Section 8 for current phase order
+3. `MIGRATION-CHANGELOG.md` -- What's done, where to resume
 
-## Tech Stack
-
-- Vite + React 18 + TypeScript
-- React Router v6
-- Supabase (PostgreSQL + Auth + Realtime)
-- CSS Modules + global CSS
-
-## Key Directories
+Phase order (sacred):
 
 ```
-src/App.tsx              — React Router (70+ routes)
-src/pages/               — Page components
-src/components/          — Shared components (club/, common/, vip/)
-src/services/            — API services (ClubService, TableService, TournamentService)
-src/lib/supabase.ts      — Supabase client
-src/types/               — TypeScript types
+STEP 1: RIP OUT client-side engine code
+STEP 2: VERIFY CLEAN (grep confirms zero local authoritative state)
+STEP 3: FIX SERVER BLOCKERS (card security, auto-fold, timer)
+STEP 4: PORT CORE (PreciseActionTimer, ServerActionValidator, StateVerifier)
+STEP 5: PORT SUPPORTING (TimeBankEngine, DisconnectEngine, PreActionEngine)
+STEP 6: PORT ADVANCED (Straddle, RIT, Insurance, MixedGame, Rakeback)
+STEP 7: TOURNAMENT & EXTRAS (ChipRace, TableBalancer, OFC, Telemetry)
+STEP 8: TABLE SETTINGS & THEME CUSTOMIZATION (Bible V8 Chapter 11)
 ```
 
-## Auth
+You CANNOT skip ahead. Every change: READ -> DOCUMENT -> CHANGE -> VERIFY -> LOG.
 
-- Same-origin auth via shared Supabase localStorage key (`smarter-poker-auth`)
-- User logs into smarter.poker, Club Arena reads the same session automatically
-- NO iframe, NO postMessage, NO `window.parent` checks — all eliminated March 2026
-- Standard `supabase.auth.getSession()` and `supabase.auth.getUser()` everywhere
+---
 
-## Code Safety Rules
+## 4. FIX-FIRST PROCEDURE
 
-1. Use `.maybeSingle()` instead of `.single()` for Supabase queries
+When auditing or reviewing code:
+
+1. FIND an issue
+2. FIX IT FULLY -- write the actual code, not just a note
+3. MOVE ON to the next item
+4. REPEAT until all items in the current phase are done
+
+Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
+
+---
+
+## 5. CODE SAFETY RULES
+
+1. Use `.maybeSingle()` never `.single()` for Supabase queries
 2. Always handle null/undefined gracefully in display components
-3. VIP levels must be validated — only render badges for valid levels (bronze/silver/gold/platinum/diamond)
-4. Format numbers with `.toLocaleString()` — never zero-pad with `.padStart()`
+3. No emoji in source files (breaks SWC compiler)
+4. VIP levels must be validated before rendering badges
+5. Format numbers with `.toLocaleString()`, never `.padStart()`
+6. TypeScript: run `npx tsc --noEmit` before committing. Fix ALL errors first.
 
-## Performance Optimizations
+---
 
-- **Recharts pages**: Already lazy-loaded via React.lazy() in App.tsx (PlayerStatsPage, RakebackPage, etc.)
-- **Offline queue**: Max size capped at 50 items (see `src/utils/offlineQueue.ts`)
-- **Bundle analysis**: Run `npm run analyze` to visualize bundle size and identify large chunks
+## 6. FILE MAP
 
-## Large Images (>100KB)
+```
+src/App.tsx              React Router (70+ routes)
+src/pages/               Page components
+src/components/          Shared components (club/, common/, vip/)
+src/services/            API services (ClubService, TableService, TournamentService)
+src/lib/supabase.ts      Supabase client
+src/types/               TypeScript types
+server/src/index.ts      Game engine server (Hetzner)
+```
 
-The following images are in `/public` and should be candidates for optimization:
+Production URL: `https://smarter.poker/hub/club-arena/`
+Built files: `Smarter-Poker-World-Hub/public/hub/club-arena/`
+API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 
-- Card backs: 3.1-3.7MB (backs/black.jpeg, white.jpeg, blue.jpeg, red.jpeg)
-- Club logos: 695K-948K (preset-*.png files)
-- UI assets: 400K-600K (header-*.png, vip-card.png, poker-chip-logo.png)
-- Frame images: 82K-102K (frames/frame-*.jpg)
+---
 
-Consider WebP conversion or lazy-loading for these assets.
+## 7. ARCHITECTURE
 
-## Known Bug Patterns (Fixed, Don't Reintroduce)
+Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
 
-- Bad Beat Jackpot: Use `num.toLocaleString()`, NOT `padStart(9, '0')` for formatting
-- VIP Badge: Always validate level against valid list before rendering — return null for invalid/empty/none
-- Promotion types: Format raw DB enums (HIGH_HAND → "High Hand") before display
-- Negative VIP points: Guard against currentPoints >= nextTierPoints edge case
-- Bottom nav labels: Keep labels short (e.g., "Msgs" not "Messages") to prevent text truncation on small screens
+- Production: `smarter.poker/hub/club-arena/*` served from World Hub's `public/` directory
+- Build: Vite produces `dist/`, copied to World Hub's `public/hub/club-arena/`
+- Routing: SPA fallback rewrites unmatched routes to `index.html`
+- Auth: Same-origin Supabase session via `smarter-poker-auth` localStorage key
+
+NO iframe. NO postMessage. NO proxy. Everything from smarter.poker.
+
+---
+
+## 8. TECH STACK
+
+Vite + React 19 + TypeScript, React Router v7, Supabase (PostgreSQL + Auth + Realtime),
+CSS Modules + global CSS.
+
+---
+
+## 9. KNOWN BUG PATTERNS (fixed, don't reintroduce)
+
+- Bad Beat Jackpot: Use `num.toLocaleString()`, NOT `padStart(9, '0')`
+- VIP Badge: Validate level against valid list before rendering, return null for invalid
+- Promotion types: Format raw DB enums (HIGH_HAND -> "High Hand") before display
+- Negative VIP points: Guard against currentPoints >= nextTierPoints
+- Bottom nav labels: Keep short ("Msgs" not "Messages") to prevent truncation
+
+---
+
+## 10. WORKING RULES (set by Dan, binding)
+
+1. One step at a time. Finish and verify before the next.
+2. Do it right, not fast. No band-aids.
+3. However long it takes. Scope honestly.
+4. Verify on real hardware. "It compiles" is not verification.
+5. No emoji in code. Never call AI players "bots" (they are horses).
+6. Mobile-first. 375px first, then scale up.
+7. Never ask permission for obvious work. Just do it.
+8. When corrected, change course immediately.
+9. Write it down. Update MIGRATION-CHANGELOG.md at session end.

@@ -11,6 +11,7 @@ import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { masterBus } from '../../core/MasterBus';
 import './ClubAnnouncementsList.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ClubAnnouncementsListProps {
   clubId: string;
@@ -105,8 +106,7 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
       toast.success('Announcement deleted');
       loadAnnouncements();
     } catch (err) {
-
-      console.error("[ClubAnnouncementsList] Error:", err);
+      reportError(err, 'ClubAnnouncementsList.Error');
       toast.error('Failed to delete');
     }
   };

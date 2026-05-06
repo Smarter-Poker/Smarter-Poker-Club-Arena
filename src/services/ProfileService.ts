@@ -8,6 +8,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -73,7 +74,7 @@ class ProfileServiceClass {
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          'id, username, display_name, avatar_url, bio, level, tier, xp, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
+          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
         )
         .eq('id', userId)
         .maybeSingle();
@@ -82,7 +83,7 @@ class ProfileServiceClass {
 
       return this.mapProfile(data);
     } catch (err: unknown) {
-      console.error('[Profile] getProfile error:', err);
+      reportError(err, 'ProfileService.getProfile', { userId });
       return null;
     }
   }
@@ -95,7 +96,7 @@ class ProfileServiceClass {
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          'id, username, display_name, avatar_url, bio, level, tier, xp, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
+          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
         )
         .eq('username', username)
         .maybeSingle();
@@ -104,7 +105,7 @@ class ProfileServiceClass {
 
       return this.mapProfile(data);
     } catch (err: unknown) {
-      console.error('[Profile] getProfileByUsername error:', err);
+      reportError(err, 'ProfileService.getProfileByUsername', { username });
       return null;
     }
   }
@@ -119,7 +120,7 @@ class ProfileServiceClass {
         .select(
           `
           id, username, display_name, avatar_url, bio,
-          level, tier, xp,
+          level, tier,
           login_streak, streak_days,
           total_hands_played, diamonds,
           created_at, updated_at
@@ -131,7 +132,7 @@ class ProfileServiceClass {
       if (error || !data) return null;
       return this.mapProfile(data);
     } catch (err: unknown) {
-      console.error('[Profile] getPublicProfile error:', err);
+      reportError(err, 'ProfileService.getPublicProfile', { userId });
       return null;
     }
   }
@@ -188,7 +189,7 @@ class ProfileServiceClass {
       .eq('id', userId);
 
     if (vipErr) {
-      console.error('[Profile] VIP points update failed:', vipErr);
+      reportError(vipErr, 'ProfileService.addVIPPoints', { userId, points });
       throw new Error('Failed to update VIP points');
     }
 
@@ -237,7 +238,7 @@ class ProfileServiceClass {
         .eq('id', userId);
 
       if (streakErr) {
-        console.error('[Profile] Streak update failed:', streakErr);
+        reportError(streakErr, 'ProfileService.updateStreak', { userId });
       }
 
       masterBus.emit('PROFILE_UPDATED', {
@@ -308,7 +309,7 @@ class ProfileServiceClass {
     const { data } = await supabase
       .from('profiles')
       .select(
-        'id, username, display_name, avatar_url, level, tier, xp, total_hands_played, diamonds, created_at, updated_at'
+        'id, username, display_name, avatar_url, level, tier, total_hands_played, diamonds, created_at, updated_at'
       )
       .order(orderColumn, { ascending: false })
       .limit(limit);
@@ -333,7 +334,7 @@ class ProfileServiceClass {
       const prefs = data.preferences as Record<string, unknown> | null;
       return !!prefs?.club_arena_tos_accepted; // FIX: was returning true in both branches
     } catch (err: unknown) {
-      console.error('[Profile] hasTOSAccepted error:', err);
+      reportError(err, 'ProfileService.hasTOSAccepted', { userId });
       return true; // Default to accepted to avoid blocking
     }
   }
@@ -362,7 +363,7 @@ class ProfileServiceClass {
       .eq('id', userId);
 
     if (error) {
-      console.error('[TOS] Failed to accept TOS:', error);
+      reportError(error, 'ProfileService.acceptTOS', { userId });
       return false;
     }
 
@@ -388,7 +389,7 @@ class ProfileServiceClass {
       bio: data.bio as string | undefined,
       level,
       vipTier: (data.tier as UserProfile['vipTier']) || 'bronze', // DB column is `tier`
-      vipPoints: (data.xp as number) || 0, // No vip_points column; use xp as proxy
+      vipPoints: 0, // No xp column anymore
       currentStreak: (data.login_streak as number) || 0, // DB column is `login_streak`
       longestStreak: (data.streak_days as number) || 0, // DB column is `streak_days`
       lastLoginDate: data.last_login_date as string | undefined,

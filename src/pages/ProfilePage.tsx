@@ -16,7 +16,9 @@ import DailyBonusWheel from '../components/bonus/DailyBonusWheel';
 import FriendListPanel from '../components/social/FriendListPanel';
 import { VIPStatusCard } from '../components/vip/VIPStatusCard';
 import { VIPProgressRing } from '../components/vip/VIPProgressRing';
+import UserProfileEdit, { UserProfileData } from '../components/social/UserProfileEdit';
 import { profileService } from '../services/ProfileService';
+import { DiamondService } from '../services/DiamondService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { bonusService } from '../services/BonusService';
 import { masterBus } from '../core/MasterBus';
@@ -41,6 +43,7 @@ import styles from './ProfilePage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
+import { reportError } from '../utils/errorReporter';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazy(() => import('../components/profile/ProfitChart'));
@@ -217,6 +220,7 @@ export default function ProfilePage() {
   const toast = useToast();
   // Double-claim guard: prevents duplicate RPC calls on rapid button clicks
   const claimingMissionsRef = useRef<Set<string>>(new Set());
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
   const { user: storeUser } = useAuthUser();
   useVisibilityRefresh(async () => {
     const {
@@ -310,7 +314,8 @@ export default function ProfilePage() {
             if (cp.dailyStreak != null) setDailyStreak(cp.dailyStreak);
             setIsLoading(false); // Show cached UI instantly
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ProfilePage.loadProfile');
           /* corrupt cache */
         }
 
@@ -367,7 +372,8 @@ export default function ProfilePage() {
                 dailyStreak: profile.login_streak || 0,
               })
             );
-          } catch {
+          } catch (e) {
+            reportError(e, 'ProfilePage');
             /* storage full */
           }
         }
@@ -378,7 +384,7 @@ export default function ProfilePage() {
           retryFetch(
             () =>
               supabase
-                .from('user_achievements')
+                .from('training_user_achievements')
                 .select('*, achievement:achievements(*)')
                 .eq('user_id', authUser.id)
                 .limit(200)
@@ -457,7 +463,7 @@ export default function ProfilePage() {
           });
         }
       } catch (err: any) {
-        console.error('[PROFILE] Load failed:', err);
+        reportError(err, 'ProfilePage.Load_failed');
         if (isMounted) toast.error(err.message || 'Failed to load profile data');
       } finally {
         if (isMounted) setIsLoading(false);
@@ -562,20 +568,33 @@ export default function ProfilePage() {
           .getUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
-              supabase
-                .from('diamond_wallets')
-                .select('balance')
-                .eq('user_id', authUser.id)
-                .maybeSingle()
-                .then(({ data: dw }) => {
-                  if (dw && isMounted) setDiamonds(dw.balance || 0);
-                });
+              DiamondService.getBalance(authUser.id).then((dw) => {
+                if (dw && isMounted) setDiamonds(dw.balance || 0);
+              });
             }
           })
           .catch((e) => console.warn('[Profile] Refreshing diamond balance failed:', e));
       },
       500
     );
+    const unsubDiamond = masterBus.subscribeDebounced(
+      'DIAMOND_BALANCE_CHANGED',
+      () => {
+        invalidateProfileCache();
+        supabase.auth
+          .getUser()
+          .then(({ data: { user: authUser } }) => {
+            if (authUser && isMounted) {
+              DiamondService.getBalance(authUser.id).then((dw) => {
+                if (dw && isMounted) setDiamonds(dw.balance || 0);
+              });
+            }
+          })
+          .catch((e) => console.warn('[Profile] Refreshing diamond balance failed:', e));
+      },
+      500
+    );
+
     // Gamification bus listeners: refresh balance when rewards earned on other pages
     const unsubDailyReward = masterBus.subscribeDebounced(
       'DAILY_REWARD_CLAIMED',
@@ -659,7 +678,8 @@ export default function ProfilePage() {
           .getUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
-              dailyChallengeService.getAllChallenges(authUser.id)
+              dailyChallengeService
+                .getAllChallenges(authUser.id)
                 .then(({ daily, weekly, monthly }) => {
                   if (!isMounted) return;
                   const allMissions = [...daily, ...weekly, ...monthly];
@@ -694,6 +714,7 @@ export default function ProfilePage() {
       unsubProfile();
       unsubHand();
       unsubBalance();
+      unsubDiamond();
       unsubDailyReward();
       unsubMissionClaim();
       unsubWheelSpin();
@@ -780,14 +801,14 @@ export default function ProfilePage() {
           )
           .subscribe((status: string, err?: Error) => {
             if (status === 'CHANNEL_ERROR') {
-              console.error('[ProfilePage] ❌ Realtime channel error:', err?.message || err);
+              if (err) reportError(err?.message || err, 'ProfilePage._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
               console.warn('[ProfilePage] ⏱️ Realtime channel timed out');
             }
           });
       } catch (err) {
-        console.error('[PROFILE] Realtime subscription failed:', err);
+        reportError(err, 'ProfilePage.Realtime_subscription_failed');
       }
     }
 
@@ -884,7 +905,7 @@ export default function ProfilePage() {
           >
             Change Avatar
           </button>
-          <button className={styles.editButton} onClick={() => navigate('/settings')}>
+          <button className={styles.editButton} onClick={() => setShowProfileEdit(true)}>
             Edit Profile
           </button>
           <button
@@ -990,7 +1011,7 @@ export default function ProfilePage() {
               }
               toast.success('Mission reward claimed!');
             } catch (err: any) {
-              console.error('Failed to claim mission:', err);
+              reportError(err, 'ProfilePage.Failed_to_claim_mission');
               toast.error(err.message || 'Failed to claim mission reward');
             } finally {
               claimingMissionsRef.current.delete(missionId);
@@ -1426,6 +1447,51 @@ export default function ProfilePage() {
 
       {/* Diamond Rain Gamification Effect */}
       <DiamondRainEffect active={showDiamondRain} onComplete={() => setShowDiamondRain(false)} />
+
+      {showProfileEdit && user && (
+        <UserProfileEdit
+          isOpen={showProfileEdit}
+          onClose={() => setShowProfileEdit(false)}
+          initialData={{
+            id: user.id || '',
+            username: user.username || '',
+            displayName: user.displayName || '',
+            avatarUrl: user.avatarUrl || '',
+            bio: (user as any).bio || '',
+            tags: [],
+          }}
+          onSave={async (data: UserProfileData) => {
+            try {
+              const { error } = await supabase
+                .from('profiles')
+                .update({
+                  username: data.username,
+                  display_name: data.displayName,
+                  bio: data.bio,
+                })
+                .eq('id', user.id);
+
+              if (error) throw error;
+
+              const { error: userError } = await supabase
+                .from('users')
+                .update({ username: data.username })
+                .eq('id', user.id);
+
+              if (userError) throw userError;
+
+              setUser({
+                ...user,
+                username: data.username,
+                displayName: data.displayName,
+              });
+              setShowProfileEdit(false);
+            } catch (err) {
+              console.error('Failed to update profile:', err);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

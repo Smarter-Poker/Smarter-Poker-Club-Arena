@@ -13,6 +13,7 @@
 
 import { supabase } from '../lib/supabase';
 import { resolveClubUUID } from './clubIdResolver';
+import { reportError } from './errorReporter';
 
 export interface SettlementLockResult {
   locked: boolean;
@@ -112,7 +113,7 @@ export async function checkSettlementLock(clubId: string): Promise<SettlementLoc
 
     return { locked: false };
   } catch (err: unknown) {
-    console.error('[settlementLock] Error checking lock:', err);
+    reportError(err, 'settlementLock.Error_checking_lock');
     // Fail-open: if we can't check the lock, allow the operation
     // (the RPC layer has its own guard — this is advisory only)
     return { locked: false };

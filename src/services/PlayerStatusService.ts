@@ -9,6 +9,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -40,7 +41,7 @@ class PlayerStatusServiceClass {
       .eq('id', userId);
 
     if (error) {
-      console.error('[PlayerStatus] setStatusText error:', error);
+      reportError(error, 'PlayerStatusService.setStatusText');
       return;
     }
 
@@ -213,7 +214,7 @@ class PlayerStatusServiceClass {
       .maybeSingle();
 
     if (error) {
-      console.error('[PlayerStatus] shareProfileToConversation error:', error);
+      reportError(error, 'PlayerStatusService.shareProfileToConversation');
       return;
     }
 

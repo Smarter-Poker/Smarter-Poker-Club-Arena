@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { notificationService } from './NotificationService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -57,14 +58,14 @@ class WaitlistServiceClass {
     );
 
     if (error) {
-      console.error('[Waitlist] Failed to join:', error);
+      reportError(error, 'WaitlistService.Failed_to_join');
       return null;
     }
 
     // Fetch the created entry
     const { data: entry } = await supabase
-      .from('table_waitlists')
-      .select('*, poker_tables(name)')
+      .from('table_waitlist')
+      .select('*, tables:table_id(name)')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .eq('status', 'waiting')
@@ -75,7 +76,7 @@ class WaitlistServiceClass {
     masterBus.emit('WAITLIST_POSITION_CHANGED', {
       tableId,
       position: entry.position,
-      tableName: entry.poker_tables?.name || 'Table',
+      tableName: entry.tables?.name || 'Table',
     });
 
     return this.mapEntry(entry);
@@ -86,14 +87,14 @@ class WaitlistServiceClass {
    */
   async leave(tableId: string, userId: string): Promise<boolean> {
     const { error } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .update({ status: 'left' })
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .eq('status', 'waiting');
 
     if (error) {
-      console.error('[Waitlist] Failed to leave:', error);
+      reportError(error, 'WaitlistService.Failed_to_leave');
       return false;
     }
 
@@ -125,7 +126,7 @@ class WaitlistServiceClass {
 
     // Get total waiting count
     const { count } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('*', { count: 'exact', head: true })
       .eq('table_id', tableId)
       .eq('status', 'waiting');
@@ -142,8 +143,8 @@ class WaitlistServiceClass {
    */
   async getUserWaitlistEntry(tableId: string, userId: string): Promise<WaitlistEntry | null> {
     const { data, error } = await supabase
-      .from('table_waitlists')
-      .select('*, poker_tables(name)')
+      .from('table_waitlist')
+      .select('*, tables:table_id(name)')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .eq('status', 'waiting')
@@ -159,14 +160,14 @@ class WaitlistServiceClass {
    */
   async getUserWaitlists(userId: string): Promise<WaitlistEntry[]> {
     const { data, error } = await supabase
-      .from('table_waitlists')
-      .select('*, poker_tables(name)')
+      .from('table_waitlist')
+      .select('*, tables:table_id(name)')
       .eq('user_id', userId)
       .eq('status', 'waiting')
-      .order('joined_at', { ascending: true });
+      .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('[Waitlist] Failed to get user waitlists:', error);
+      reportError(error, 'WaitlistService.Failed_to_get_user_waitlists');
       return [];
     }
 
@@ -178,14 +179,14 @@ class WaitlistServiceClass {
    */
   async getTableWaitlist(tableId: string): Promise<WaitlistEntry[]> {
     const { data, error } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('*, profiles(username, display_name)')
       .eq('table_id', tableId)
       .eq('status', 'waiting')
       .order('position', { ascending: true });
 
     if (error) {
-      // table_waitlists may not exist yet — silently return empty
+      // table_waitlist may not exist yet — silently return empty
       console.debug('[Waitlist] getTableWaitlist:', error.message);
       return [];
     }
@@ -199,8 +200,8 @@ class WaitlistServiceClass {
   async notifyNextPlayer(tableId: string): Promise<boolean> {
     // Get next waiting player
     const { data: next } = await supabase
-      .from('table_waitlists')
-      .select('*, poker_tables(name)')
+      .from('table_waitlist')
+      .select('*, tables:table_id(name)')
       .eq('table_id', tableId)
       .eq('status', 'waiting')
       .order('position', { ascending: true })
@@ -213,7 +214,7 @@ class WaitlistServiceClass {
 
     // Update status to notified
     await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .update({
         status: 'notified',
         notified_at: new Date().toISOString(),
@@ -221,7 +222,7 @@ class WaitlistServiceClass {
       .eq('id', next.id);
 
     // Send notification
-    const tableName = next.poker_tables?.name || 'Table';
+    const tableName = next.tables?.name || 'Table';
     await notificationService.notifyWaitlistReady(next.user_id, tableName, tableId);
 
     masterBus.emit('WAITLIST_POSITION_CHANGED', {
@@ -238,14 +239,14 @@ class WaitlistServiceClass {
    */
   async markSeated(tableId: string, userId: string): Promise<boolean> {
     const { error } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .update({ status: 'seated' })
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .in('status', ['waiting', 'notified']);
 
     if (error) {
-      console.error('[Waitlist] Failed to mark seated:', error);
+      reportError(error, 'WaitlistService.Failed_to_mark_seated');
       return false;
     }
 
@@ -265,14 +266,14 @@ class WaitlistServiceClass {
     const cutoff = new Date(Date.now() - minutesOld * 60 * 1000).toISOString();
 
     const { data, error } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .update({ status: 'expired' })
       .eq('status', 'notified')
       .lt('notified_at', cutoff)
       .select();
 
     if (error) {
-      console.error('[Waitlist] Failed to expire notifications:', error);
+      reportError(error, 'WaitlistService.Failed_to_expire_notifications');
       return 0;
     }
 
@@ -283,14 +284,14 @@ class WaitlistServiceClass {
    * Map database record to WaitlistEntry
    */
   private mapEntry(data: Record<string, unknown>): WaitlistEntry {
-    const table = data.poker_tables as Record<string, unknown> | undefined;
+    const table = data.tables as Record<string, unknown> | undefined;
     return {
       id: data.id as string,
       tableId: data.table_id as string,
       tableName: (table?.name as string) || 'Unknown Table',
       userId: data.user_id as string,
       position: data.position as number,
-      joinedAt: data.joined_at as string,
+      joinedAt: data.created_at as string,
       status: data.status as WaitlistEntry['status'],
       notifiedAt: data.notified_at as string | undefined,
     };

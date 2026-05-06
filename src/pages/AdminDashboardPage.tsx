@@ -22,6 +22,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { fmt, fmtChips } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 // ── Helpers ─────────────────────────────────────────────────
 const formatDate = (ts: string | null | undefined) => {
@@ -464,7 +465,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AdminDashboardPage] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'AdminDashboardPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AdminDashboardPage] ⏱️ Realtime channel timed out');
@@ -875,7 +876,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
         const to = from + PAGE_SIZE - 1;
 
         const { data, error, count } = await supabase
-          .from('audit_logs')
+          .from('audit_trail')
           .select('id, action, actor_id, target_type, target_id, details, ip_address, created_at', {
             count: 'exact',
           })
@@ -960,7 +961,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
           {
             event: 'INSERT',
             schema: 'public',
-            table: 'audit_logs',
+            table: 'audit_trail',
             filter: `club_id=eq.${uuid}`,
           },
           () => {
@@ -970,7 +971,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AuditLogTab] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'AdminDashboardPage._Realtime_channel_error');
           }
         });
     };
@@ -1016,7 +1017,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
               try {
                 const uuid = await resolveClubUUID(clubId);
                 const { data, error } = await supabase
-                  .from('audit_logs')
+                  .from('audit_trail')
                   .select(
                     'id, action, actor_id, target_type, target_id, details, ip_address, created_at'
                   )
@@ -1040,9 +1041,9 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                 a.click();
                 URL.revokeObjectURL(url);
               } catch (e: unknown) {
-                console.error(
-                  '[AuditLog] CSV export failed:',
-                  e instanceof Error ? e.message : String(e)
+                reportError(
+                  e instanceof Error ? e.message : String(e),
+                  'AdminDashboardPage.CSV_export_failed'
                 );
               }
             }}
@@ -2269,6 +2270,7 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
 // TAB 12: MINT CHIPS
 // ═══════════════════════════════════════════════════════════════════════════════
 function MintChipsTab({ clubId }: { clubId: string }) {
+  const { user } = useAuthUser();
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -2279,7 +2281,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
     <div className="admin-tab-content">
       <div className="admin-card">
         <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
-          🏦 Mint Chips to Treasury
+          Mint Chips to Treasury
         </div>
         <div className="admin-text-secondary" style={{ marginBottom: '16px', lineHeight: 1.5 }}>
           Create new chips and add them to the club treasury. Subject to daily limits.
@@ -2331,10 +2333,13 @@ function MintChipsTab({ clubId }: { clubId: string }) {
                   setProcessing(false);
                   return;
                 }
+                // BUG 025 FIX (2026-04-16): old RPC was silent-success stub; unified signature
+                // now requires p_minted_by for authorization check.
                 const { error } = await supabase.rpc('mint_club_chips', {
                   p_club_id: uuid,
                   p_amount: mintAmount,
-                  p_notes: notes || undefined,
+                  p_minted_by: user?.id || null,
+                  p_notes: notes || null,
                 });
                 if (error) throw error;
                 setMsg(`Minted ${fmtChips(mintAmount)} chips to treasury!`);

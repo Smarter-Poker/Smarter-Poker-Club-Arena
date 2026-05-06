@@ -8,6 +8,7 @@
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -201,7 +202,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'tourney_top3_10',
     name: 'Consistent',
     description: 'Finish top 3 in 10 tournaments',
-    icon: '🎖️',
+    icon: '',
     category: 'tournament',
     rarity: 'rare',
     requirement: 10,
@@ -233,7 +234,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'straight_flush',
     name: 'Straight Flush',
     description: 'Hit a Straight Flush',
-    icon: '🌊',
+    icon: '',
     category: 'special',
     rarity: 'epic',
     requirement: 1,
@@ -243,7 +244,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'quads',
     name: 'Four of a Kind',
     description: 'Hit Quads',
-    icon: '4️⃣',
+    icon: '4',
     category: 'special',
     rarity: 'rare',
     requirement: 1,
@@ -253,7 +254,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'bad_beat',
     name: 'Bad Beat Survivor',
     description: 'Lose with quads or better',
-    icon: '💔',
+    icon: '',
     category: 'special',
     rarity: 'epic',
     requirement: 1,
@@ -266,7 +267,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'streak_7',
     name: 'Weekly Warrior',
     description: 'Log in 7 days in a row',
-    icon: '🔥',
+    icon: '',
     category: 'special',
     rarity: 'common',
     requirement: 7,
@@ -299,6 +300,12 @@ export const ACHIEVEMENTS: Achievement[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class AchievementServiceClass {
+  /** FIX-216: Circuit breaker — disable DB writes after persistent failures (missing table) */
+  private _dbWriteDisabled = false;
+  private _dbWriteFailures = 0;
+  /** Read-side breaker — silence RLS/permission read errors after first report */
+  private _dbReadDisabled = false;
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Get Achievements
   // ─────────────────────────────────────────────────────────────────────────────
@@ -320,14 +327,21 @@ class AchievementServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
 
   async getUserAchievements(userId: string): Promise<UserAchievement[]> {
+    // Silent breaker — avoids Sentry flood from polling when table/RLS blocks reads
+    if (this._dbReadDisabled) return [];
+
     const { data, error } = await supabase
-      .from('user_achievements')
+      .from('training_user_achievements')
       .select('id, achievement_id, user_id, progress, unlocked_at')
       .eq('user_id', userId)
       .limit(QUERY_LIMITS.MODERATE);
 
     if (error) {
-      console.error('[AchievementService] Error fetching achievements:', error);
+      this._dbReadDisabled = true;
+      reportError(error, 'AchievementService.getUserAchievements', {
+        userId,
+        note: 'Disabling subsequent reads — likely missing table or RLS',
+      });
       return [];
     }
 
@@ -344,7 +358,7 @@ class AchievementServiceClass {
 
   async getProgress(userId: string, achievementId: string): Promise<number> {
     const { data } = await supabase
-      .from('user_achievements')
+      .from('training_user_achievements')
       .select('progress')
       .eq('user_id', userId)
       .eq('achievement_id', achievementId)
@@ -362,12 +376,15 @@ class AchievementServiceClass {
     achievementId: string,
     amount: number = 1
   ): Promise<{ unlocked: boolean; achievement?: Achievement }> {
+    // FIX-216: Circuit breaker — skip DB writes after persistent failures
+    if (this._dbWriteDisabled) return { unlocked: false };
+
     const achievement = this.getById(achievementId);
     if (!achievement) return { unlocked: false };
 
     // Get or create progress record
     const { data: existing } = await supabase
-      .from('user_achievements')
+      .from('training_user_achievements')
       .select('id, progress, unlocked_at')
       .eq('user_id', userId)
       .eq('achievement_id', achievementId)
@@ -385,26 +402,54 @@ class AchievementServiceClass {
     if (existing) {
       // Update existing
       const { error: progErr } = await supabase
-        .from('user_achievements')
+        .from('training_user_achievements')
         .update({
           progress: newProgress,
           unlocked_at: justUnlocked ? new Date().toISOString() : null,
         })
         .eq('id', existing.id);
       if (progErr) {
-        console.error('[AchievementService] Progress update failed:', progErr);
+        this._dbWriteFailures++;
+        if (this._dbWriteFailures >= 3) {
+          this._dbWriteDisabled = true;
+          console.debug(
+            '[AchievementService] DB writes disabled — training_user_achievements table unavailable'
+          );
+        }
+        // Report only first 3 failures — avoids Sentry flood from repeated RLS errors
+        if (this._dbWriteFailures <= 3) {
+          reportError(progErr, 'AchievementService.incrementProgress.update', {
+            userId,
+            achievementId,
+            failureCount: this._dbWriteFailures,
+          });
+        }
         return { unlocked: false };
       }
     } else {
       // Create new
-      const { error: insErr } = await supabase.from('user_achievements').insert({
+      const { error: insErr } = await supabase.from('training_user_achievements').insert({
         user_id: userId,
         achievement_id: achievementId,
         progress: newProgress,
         unlocked_at: justUnlocked ? new Date().toISOString() : null,
       });
       if (insErr) {
-        console.error('[AchievementService] Achievement insert failed:', insErr);
+        this._dbWriteFailures++;
+        if (this._dbWriteFailures >= 3) {
+          this._dbWriteDisabled = true;
+          console.debug(
+            '[AchievementService] DB writes disabled — training_user_achievements table unavailable'
+          );
+        }
+        // Report only first 3 failures — avoids Sentry flood from repeated RLS errors
+        if (this._dbWriteFailures <= 3) {
+          reportError(insErr, 'AchievementService.incrementProgress.insert', {
+            userId,
+            achievementId,
+            failureCount: this._dbWriteFailures,
+          });
+        }
         return { unlocked: false };
       }
     }
@@ -418,13 +463,14 @@ class AchievementServiceClass {
   }
 
   async setProgress(userId: string, achievementId: string, progress: number): Promise<void> {
+    if (this._dbWriteDisabled) return;
     const achievement = this.getById(achievementId);
     if (!achievement) return;
 
     const clampedProgress = Math.min(progress, achievement.requirement);
     const unlocked = clampedProgress >= achievement.requirement;
 
-    const { error: upsertErr } = await supabase.from('user_achievements').upsert(
+    const { error: upsertErr } = await supabase.from('training_user_achievements').upsert(
       {
         user_id: userId,
         achievement_id: achievementId,
@@ -434,7 +480,7 @@ class AchievementServiceClass {
       { onConflict: 'user_id,achievement_id' }
     );
     if (upsertErr) {
-      console.debug('[AchievementService] setProgress upsert:', upsertErr?.message);
+      reportError(upsertErr, 'AchievementService.setProgress', { userId, achievementId });
       return;
     }
 
@@ -452,17 +498,18 @@ class AchievementServiceClass {
     if (achievement.chipReward && achievement.chipReward > 0) {
       const { error: rewardErr } = await retryAsync(
         () =>
+          // Round 19: drop p_description (not a prod param).
           supabase.rpc('add_to_promo_wallet', {
             p_user_id: userId,
             p_amount: achievement.chipReward,
-            p_description: `Achievement: ${achievement.name}`,
           }),
         3
       );
       if (rewardErr)
-        console.error(
-          `[AchievementService] Reward failed for ${userId.slice(0, 8)}: ${rewardErr.message}`
-        );
+        reportError(rewardErr, 'AchievementService.awardRewards', {
+          userId: userId.slice(0, 8),
+          achievementName: achievement.name,
+        });
     }
 
     // Create notification
@@ -473,7 +520,7 @@ class AchievementServiceClass {
       message: `You earned "${achievement.name}"!`,
       data: { achievement_id: achievement.id },
     });
-    if (notifErr) console.debug('[AchievementService] Notification insert failed:', notifErr);
+    if (notifErr) reportError(notifErr, 'AchievementService.Notification_insert_failed');
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

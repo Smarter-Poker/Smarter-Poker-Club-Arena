@@ -20,6 +20,7 @@ import './AdminDashboardPage.css'; // reuse admin styles
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 interface PlayerSession {
   userId: string;
@@ -525,7 +526,7 @@ export default function PlayerSessionsPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[PlayerSessionsPage] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'PlayerSessionsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[PlayerSessionsPage] ⏱️ Realtime channel timed out');
@@ -987,7 +988,8 @@ export default function PlayerSessionsPage() {
                         { key: 'volume24h', label: 'Volume (24h)' },
                         { key: 'lastActive', label: 'Last Active' },
                       ]);
-                    } catch {
+                    } catch (e) {
+                      reportError(e, 'PlayerSessionsPage');
                       /* silent */
                     }
                   }}

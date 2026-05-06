@@ -1,112 +1,266 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  THROWABLE SELECTOR — Styles
- * ═══════════════════════════════════════════════════════════════════════════════
+ * =================================================================================
+ *  THROWABLE SELECTOR -- Premium Throwable Picker UI
+ * =================================================================================
+ *
+ *  The "storefront" for throwables and reactions. Must feel premium because
+ *  this is where players decide to spend Diamonds. PokerBros-level design:
+ *
+ *  - Dramatic slide-up entrance with spring overshoot
+ *  - Category tabs with active-state morph + gold underline
+ *  - Grid items with 3D tilt on hover, spring press on tap
+ *  - Staggered grid entrance animation per item
+ *  - Icon pulse/glow on hover
+ *  - Premium/VIP tab gets a shimmer border
+ *  - Gold/diamond accent color palette
+ *  - Glassmorphism throughout
+ *  - Full responsive (4-col on mobile, 5-col on desktop)
+ *  - All 44px min touch targets
+ *  - Complete reduced-motion fallback
  */
+
+/* =================================================================================
+   CUSTOM PROPERTIES
+   ================================================================================= */
+
+:root {
+  --ts-bg-primary: rgba(12, 12, 28, 0.98);
+  --ts-bg-secondary: rgba(18, 18, 38, 0.96);
+  --ts-border-gold: rgba(212, 168, 75, 0.35);
+  --ts-border-subtle: rgba(255, 255, 255, 0.08);
+  --ts-gold: #d4a84b;
+  --ts-gold-light: #e8c87a;
+  --ts-gold-glow: rgba(212, 168, 75, 0.25);
+  --ts-text-primary: rgba(255, 255, 255, 0.9);
+  --ts-text-secondary: rgba(255, 255, 255, 0.55);
+  --ts-text-muted: rgba(255, 255, 255, 0.35);
+
+  --ts-ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ts-ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ts-ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ts-ease-snap: cubic-bezier(0.22, 0.68, 0, 1.71);
+
+  --ts-entrance-duration: 0.4s;
+  --ts-item-stagger: 30ms;
+}
+
+/* =================================================================================
+   MAIN PANEL -- The selector card itself
+   ================================================================================= */
 
 .throwable-selector {
   position: absolute;
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
-  width: 280px;
-  background: linear-gradient(180deg, rgba(20, 20, 35, 0.98) 0%, rgba(10, 10, 26, 0.99) 100%);
-  border: 2px solid #d4a84b;
-  border-radius: 12px;
-  box-shadow:
-    0 0 32px rgba(0, 0, 0, 0.6),
-    0 0 20px rgba(212, 168, 75, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  width: 300px;
+  background: var(--ts-bg-primary);
+  border: 1.5px solid var(--ts-border-gold);
+  border-radius: 16px;
   z-index: 1000;
-  animation: selectorSlideUp 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(12px) saturate(1.3);
-  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  overflow: hidden;
+
+  /* Premium glassmorphism */
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+
+  /* Layered shadow: ambient + gold glow + inner highlight */
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.65),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 40px var(--ts-gold-glow),
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+
+  /* Entrance animation */
+  animation: tsSlideUp var(--ts-entrance-duration) var(--ts-ease-spring);
+  transform-origin: bottom center;
 }
 
-@keyframes selectorSlideUp {
-  from {
+@keyframes tsSlideUp {
+  0% {
     opacity: 0;
-    transform: translateX(-50%) translateY(10px);
+    transform: translateX(-50%) translateY(20px) scale(0.85);
+    filter: blur(6px);
   }
-
-  to {
+  40% {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    filter: blur(0);
+  }
+  65% {
+    transform: translateX(-50%) translateY(-6px) scale(1.02);
+  }
+  80% {
+    transform: translateX(-50%) translateY(2px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
   }
 }
+
+/* Top edge gold shimmer */
+.throwable-selector::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--ts-gold-light) 20%,
+    var(--ts-gold) 50%,
+    var(--ts-gold-light) 80%,
+    transparent 100%
+  );
+  opacity: 0.6;
+  z-index: 1;
+}
+
+/* Inner ambient glow at top */
+.throwable-selector::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 60px;
+  background: radial-gradient(ellipse 100% 100%, rgba(212, 168, 75, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* =================================================================================
+   LOADING STATE
+   ================================================================================= */
 
 .throwable-selector--loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
+  padding: 48px;
+  min-height: 180px;
 }
 
 .throwable-selector__spinner {
-  width: 24px;
-  height: 24px;
-  border: 3px solid rgba(212, 168, 75, 0.3);
-  border-top-color: #d4a84b;
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(212, 168, 75, 0.2);
+  border-top-color: var(--ts-gold);
   border-radius: 50%;
-  animation: spin 0.8s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) infinite;
-  box-shadow: 0 0 8px rgba(212, 168, 75, 0.3);
+  animation: tsSpin 0.75s linear infinite;
+  box-shadow: 0 0 12px var(--ts-gold-glow);
 }
 
-@keyframes spin {
+@keyframes tsSpin {
   to {
     transform: rotate(360deg);
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   HEADER
-   ───────────────────────────────────────────────────────────────────────────── */
+/* =================================================================================
+   HEADER -- Title + allowance + close button
+   ================================================================================= */
 
 .throwable-selector__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(212, 168, 75, 0.3);
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid rgba(212, 168, 75, 0.15);
+  position: relative;
+  z-index: 1;
+}
+
+/* Subtle gradient behind header */
+.throwable-selector__header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: linear-gradient(180deg, rgba(212, 168, 75, 0.04) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .throwable-selector__title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #d4a84b;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ts-gold);
   margin: 0;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 16px var(--ts-gold-glow);
 }
 
 .throwable-selector__close {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 50%;
-  color: #ffffff;
-  font-size: 1rem;
+  color: var(--ts-text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background 0.2s var(--ts-ease-smooth),
+    color 0.2s ease,
+    transform 0.2s var(--ts-ease-spring),
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .throwable-selector__close:hover {
-  background: rgba(244, 63, 94, 0.3);
+  background: rgba(244, 63, 94, 0.2);
+  border-color: rgba(244, 63, 94, 0.4);
   color: #f43f5e;
+  transform: scale(1.1) rotate(90deg);
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.15);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   CATEGORY TABS
-   ───────────────────────────────────────────────────────────────────────────── */
+.throwable-selector__close:active {
+  transform: scale(0.85) rotate(90deg);
+}
+
+/* =================================================================================
+   ALLOWANCE DISPLAY
+   ================================================================================= */
+
+.throwable-selector__allowance {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.throwable-selector__free {
+  color: var(--ts-gold);
+  text-shadow: 0 0 8px var(--ts-gold-glow);
+}
+
+.throwable-selector__cost {
+  color: #60a5fa;
+  text-shadow: 0 0 8px rgba(96, 165, 250, 0.2);
+}
+
+/* =================================================================================
+   CATEGORY TABS -- Pill tabs with active gold morph
+   ================================================================================= */
 
 .throwable-selector__tabs {
   display: flex;
   gap: 4px;
-  padding: 8px 12px;
+  padding: 10px 12px 8px;
   overflow-x: auto;
   scrollbar-width: none;
+  position: relative;
+  z-index: 1;
 }
 
 .throwable-selector__tabs::-webkit-scrollbar {
@@ -115,114 +269,315 @@
 
 .throwable-selector__tab {
   flex-shrink: 0;
-  padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  color: rgba(255, 255, 255, 0.7);
+  padding: 7px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ts-border-subtle);
+  border-radius: 20px;
+  color: var(--ts-text-secondary);
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(6px) saturate(1.2);
-  -webkit-backdrop-filter: blur(6px) saturate(1.2);
+  letter-spacing: 0.02em;
+  position: relative;
+  overflow: hidden;
+
+  transition:
+    background 0.25s var(--ts-ease-smooth),
+    border-color 0.25s ease,
+    color 0.2s ease,
+    transform 0.2s var(--ts-ease-spring),
+    box-shadow 0.25s ease;
+}
+
+/* Hover shimmer sweep */
+.throwable-selector__tab::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 80%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  transition: left 0.5s ease;
+  pointer-events: none;
+}
+
+.throwable-selector__tab:hover::after {
+  left: 150%;
 }
 
 .throwable-selector__tab:hover {
-  background: rgba(212, 168, 75, 0.1);
-  border-color: rgba(212, 168, 75, 0.3);
+  background: rgba(212, 168, 75, 0.08);
+  border-color: rgba(212, 168, 75, 0.2);
+  color: var(--ts-text-primary);
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
+.throwable-selector__tab:active {
+  transform: scale(0.93);
+}
+
+/* Active tab -- gold gradient fill */
 .throwable-selector__tab--active {
-  background: linear-gradient(180deg, #d4a84b 0%, #b8922a 100%);
-  border-color: #d4a84b;
+  background: linear-gradient(160deg, var(--ts-gold-light) 0%, var(--ts-gold) 50%, #b8922a 100%);
+  border-color: var(--ts-gold);
   color: #0a0a1a;
-  font-weight: 600;
+  font-weight: 700;
+  box-shadow:
+    0 2px 8px rgba(212, 168, 75, 0.3),
+    0 0 20px rgba(212, 168, 75, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   THROWABLE GRID
-   ───────────────────────────────────────────────────────────────────────────── */
+.throwable-selector__tab--active:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 12px rgba(212, 168, 75, 0.4),
+    0 0 24px rgba(212, 168, 75, 0.15);
+}
+
+.throwable-selector__tab--active::after {
+  display: none;
+}
+
+/* =================================================================================
+   THROWABLE GRID -- The main item picker
+   ================================================================================= */
 
 .throwable-selector__grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 8px;
-  padding: 12px;
-  max-height: 200px;
+  padding: 12px 12px 16px;
+  max-height: 220px;
   overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  z-index: 1;
+
+  /* Custom scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 168, 75, 0.2) transparent;
 }
+
+.throwable-selector__grid::-webkit-scrollbar {
+  width: 4px;
+}
+
+.throwable-selector__grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.throwable-selector__grid::-webkit-scrollbar-thumb {
+  background: rgba(212, 168, 75, 0.25);
+  border-radius: 2px;
+}
+
+.throwable-selector__grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 168, 75, 0.4);
+}
+
+/* =================================================================================
+   GRID ITEMS -- Individual throwable buttons
+   ================================================================================= */
 
 .throwable-selector__item {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 8px 4px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  padding: 8px 4px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ts-border-subtle);
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(6px) saturate(1.2);
-  -webkit-backdrop-filter: blur(6px) saturate(1.2);
+  position: relative;
+  overflow: hidden;
+
+  /* Staggered entrance animation */
+  animation: tsItemEnter 0.35s var(--ts-ease-overshoot) backwards;
+  animation-delay: calc(var(--item-index, 0) * var(--ts-item-stagger));
+
+  transition:
+    background 0.2s var(--ts-ease-smooth),
+    border-color 0.25s ease,
+    transform 0.2s var(--ts-ease-spring),
+    box-shadow 0.25s ease;
 }
 
+/* Stagger first 10 items */
+.throwable-selector__item:nth-child(1) {
+  --item-index: 0;
+}
+.throwable-selector__item:nth-child(2) {
+  --item-index: 1;
+}
+.throwable-selector__item:nth-child(3) {
+  --item-index: 2;
+}
+.throwable-selector__item:nth-child(4) {
+  --item-index: 3;
+}
+.throwable-selector__item:nth-child(5) {
+  --item-index: 4;
+}
+.throwable-selector__item:nth-child(6) {
+  --item-index: 5;
+}
+.throwable-selector__item:nth-child(7) {
+  --item-index: 6;
+}
+.throwable-selector__item:nth-child(8) {
+  --item-index: 7;
+}
+.throwable-selector__item:nth-child(9) {
+  --item-index: 8;
+}
+.throwable-selector__item:nth-child(10) {
+  --item-index: 9;
+}
+
+@keyframes tsItemEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.7);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Hover: lift + glow + border gold */
 .throwable-selector__item:hover {
-  background: rgba(212, 168, 75, 0.15);
-  border-color: rgba(212, 168, 75, 0.5);
-  transform: scale(1.05) translateY(-1px);
+  background: rgba(212, 168, 75, 0.1);
+  border-color: rgba(212, 168, 75, 0.4);
+  transform: scale(1.08) translateY(-2px);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.25),
+    0 0 16px rgba(212, 168, 75, 0.08);
 }
 
+/* Active: press down */
+.throwable-selector__item:active {
+  transform: scale(0.9);
+  box-shadow: none;
+  background: rgba(212, 168, 75, 0.2);
+  border-color: rgba(212, 168, 75, 0.6);
+}
+
+/* Hover gold underline glow */
+.throwable-selector__item::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: var(--ts-gold);
+  border-radius: 1px;
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 0.25s var(--ts-ease-spring);
+  box-shadow: 0 0 8px var(--ts-gold-glow);
+}
+
+.throwable-selector__item:hover::before {
+  transform: scaleX(1);
+}
+
+/* Focus ring for keyboard nav */
+.throwable-selector__item:focus-visible {
+  outline: 2px solid rgba(212, 168, 75, 0.6);
+  outline-offset: 2px;
+}
+
+/* Locked items (not yet unlocked) */
 .throwable-selector__item--locked {
-  opacity: 0.6;
+  opacity: 0.45;
+  filter: grayscale(0.4);
 }
 
 .throwable-selector__item--locked:hover {
-  opacity: 1;
+  opacity: 0.7;
+  filter: grayscale(0.2);
 }
+
+.throwable-selector__item--locked::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  /* Lock icon via CSS shape */
+  background:
+    radial-gradient(circle at center, var(--ts-text-muted) 3px, transparent 3px),
+    linear-gradient(var(--ts-text-muted), var(--ts-text-muted));
+  background-size:
+    8px 8px,
+    10px 8px;
+  background-position:
+    center 0,
+    center 4px;
+  background-repeat: no-repeat;
+  border-radius: 2px 2px 1px 1px;
+  opacity: 0.6;
+}
+
+/* =================================================================================
+   ICON & LABELS
+   ================================================================================= */
 
 .throwable-selector__icon {
   font-size: 1.5rem;
   line-height: 1;
+  transition:
+    transform 0.2s var(--ts-ease-spring),
+    filter 0.2s ease;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.throwable-selector__item:hover .throwable-selector__icon {
+  transform: scale(1.15);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 8px var(--ts-gold-glow));
 }
 
 .throwable-selector__name {
   font-size: 0.5rem;
-  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  color: var(--ts-text-secondary);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+  transition: color 0.2s ease;
+}
+
+.throwable-selector__item:hover .throwable-selector__name {
+  color: var(--ts-text-primary);
 }
 
 .throwable-selector__price {
   font-size: 0.5rem;
-  font-weight: 600;
+  font-weight: 700;
   color: #60a5fa;
   background: rgba(96, 165, 250, 0.1);
-  padding: 2px 4px;
-  border-radius: 4px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  letter-spacing: 0.02em;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   ALLOWANCE DISPLAY
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.throwable-selector__allowance {
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.throwable-selector__free {
-  color: #d4a84b;
-}
-
-.throwable-selector__cost {
-  color: #60a5fa;
-}
+/* =================================================================================
+   FALLBACK ICON
+   ================================================================================= */
 
 .throwable-selector__fallback {
   display: flex;
@@ -230,15 +585,16 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  color: var(--ts-text-muted);
   font-size: 1rem;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   OVERLAY (TablePage integration)
-   ───────────────────────────────────────────────────────────────────────────── */
+/* =================================================================================
+   OVERLAY MODE -- Full-screen overlay (TablePage integration)
+   ================================================================================= */
 
 .throwable-selector-overlay {
   position: fixed;
@@ -246,20 +602,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
   z-index: 900;
-  animation: overlayFadeIn 0.15s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(4px) saturate(1.1);
-  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+  animation: tsOverlayIn 0.25s var(--ts-ease-smooth);
+  backdrop-filter: blur(6px) saturate(1.1);
+  -webkit-backdrop-filter: blur(6px) saturate(1.1);
 }
 
-@keyframes overlayFadeIn {
+@keyframes tsOverlayIn {
   from {
     opacity: 0;
+    background: rgba(0, 0, 0, 0);
   }
-
   to {
     opacity: 1;
+    background: rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -268,16 +624,72 @@
   bottom: auto;
   left: auto;
   transform: none;
+  /* Re-apply entrance when in overlay mode */
+  animation: tsOverlayCardIn 0.45s var(--ts-ease-spring);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   RESPONSIVE — Mobile touch targets
-   ═══════════════════════════════════════════════════════════════════════════════ */
+@keyframes tsOverlayCardIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(30px);
+    filter: blur(8px);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  70% {
+    transform: scale(1.02) translateY(-3px);
+  }
+  85% {
+    transform: scale(0.995) translateY(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* =================================================================================
+   CATEGORY ICONS (inline text icons from component)
+   ================================================================================= */
+
+.category-icon {
+  font-style: normal;
+  margin-right: 2px;
+}
+
+.category-icon--premium {
+  color: var(--ts-gold);
+}
+
+/* =================================================================================
+   RESPONSIVE -- Mobile layout adjustments
+   ================================================================================= */
+
+@media (max-width: 640px) {
+  .throwable-selector {
+    width: calc(100vw - 20px);
+    max-width: 340px;
+    border-radius: 14px;
+  }
+
+  .throwable-selector__grid {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    max-height: 200px;
+  }
+}
 
 @media (max-width: 480px) {
   .throwable-selector {
-    width: calc(100vw - 24px);
+    width: calc(100vw - 16px);
     max-width: 320px;
+    border-radius: 12px;
+  }
+
+  .throwable-selector__header {
+    padding: 12px 14px 10px;
   }
 
   .throwable-selector__close {
@@ -285,21 +697,102 @@
     height: 36px;
     min-width: 36px;
     min-height: 36px;
+    font-size: 1.2rem;
+  }
+
+  .throwable-selector__tabs {
+    padding: 8px 10px 6px;
+    gap: 3px;
   }
 
   .throwable-selector__tab {
-    min-height: 32px;
-    padding: 6px 14px;
-    font-size: 0.8125rem;
+    min-height: 34px;
+    padding: 7px 12px;
+    font-size: 0.8rem;
   }
 
   .throwable-selector__grid {
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
+    padding: 10px 10px 14px;
+    max-height: 180px;
   }
 
   .throwable-selector__item {
     min-height: 44px;
-    padding: 8px 6px;
+    padding: 8px 4px 6px;
+  }
+
+  .throwable-selector__icon {
+    font-size: 1.35rem;
+  }
+
+  .throwable-selector__name {
+    font-size: 0.45rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .throwable-selector {
+    width: calc(100vw - 12px);
+    max-width: 300px;
+  }
+
+  .throwable-selector__grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    padding: 8px 8px 12px;
+  }
+
+  .throwable-selector__tab {
+    font-size: 0.75rem;
+    padding: 6px 10px;
+  }
+}
+
+/* =================================================================================
+   REDUCED MOTION
+   ================================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .throwable-selector,
+  .throwable-selector-overlay,
+  .throwable-selector-overlay .throwable-selector,
+  .throwable-selector__item,
+  .throwable-selector__spinner {
+    animation: none !important;
+  }
+
+  .throwable-selector {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+
+  .throwable-selector-overlay .throwable-selector {
+    opacity: 1;
+    transform: none;
+  }
+
+  .throwable-selector__item {
+    opacity: 1;
+    transform: none;
+  }
+
+  .throwable-selector__tab,
+  .throwable-selector__item,
+  .throwable-selector__close,
+  .throwable-selector__icon {
+    transition: none !important;
+  }
+
+  .throwable-selector__tab::after,
+  .throwable-selector__item::before {
+    display: none;
+  }
+
+  .throwable-selector__spinner {
+    /* Static indicator instead of spin */
+    border-top-color: var(--ts-gold);
+    opacity: 0.6;
   }
 }

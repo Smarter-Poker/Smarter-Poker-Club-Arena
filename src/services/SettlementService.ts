@@ -21,6 +21,7 @@ import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 // Use globalThis.crypto for browser-safe UUID generation
 const generateUUID = (): string =>
   typeof globalThis.crypto?.randomUUID === 'function'
@@ -256,9 +257,7 @@ export const SettlementService = {
       );
 
       if (error) {
-        console.error(
-          '[Settlement] calculate_agent_settlement not available, trying calculate_agent_spread'
-        );
+        reportError(error, 'SettlementService.calculateAgentSettlement', { periodId, agentId });
         // Fall back to calculate_agent_spread if available
         const { data: spreadData, error: spreadError } = await retryAsync(
           () =>
@@ -274,7 +273,11 @@ export const SettlementService = {
         }
 
         // Return default if both fail
-        console.error('[Settlement] Falling back to default settlement');
+        reportError(
+          'Both settlement RPCs failed',
+          'SettlementService.calculateAgentSettlement.fallback',
+          { periodId, agentId }
+        );
         return {
           id: `${agentId}-${periodId}`,
           periodId,
@@ -292,7 +295,10 @@ export const SettlementService = {
       }
       return data;
     } catch (err: unknown) {
-      console.error('[Settlement] Error calculating agent settlement:', err);
+      reportError(err, 'SettlementService.calculateAgentSettlement.exception', {
+        periodId,
+        agentId,
+      });
       throw err;
     }
   },
@@ -332,16 +338,17 @@ export const SettlementService = {
         .select('id');
 
       if (claimError || !claimData || claimData.length === 0) {
-        console.error(
-          `[Settlement] Skipping agent ${settlement.agent_id}: ` +
-            `already claimed by another instance or status changed`
+        reportError(
+          claimError || 'Settlement already claimed',
+          'SettlementService.executeMondayPayouts.claim',
+          { settlementId: settlement.id, agentId: settlement.agent_id }
         );
         continue;
       }
 
       // Skip agents with zero or negative settlements (e.g. excess credit extended)
       if (settlement.net_settlement <= 0) {
-        console.error(
+        console.warn(
           `[Settlement] Skipping agent ${settlement.agent_id}: ` +
             `net_settlement=${settlement.net_settlement} (non-positive)`
         );
@@ -399,12 +406,16 @@ export const SettlementService = {
         // Send push notification to agent (push needs auth.users.id)
         pushNotificationService
           .notifySettlement(agentUserId, settlement.net_settlement, 'Weekly Commission')
-          .catch((err) => console.error('[Settlement] Agent push failed:', err));
+          .catch((err) => reportError(err, 'SettlementService.agentPushNotification'));
 
         agentsPaid++;
         totalDisbursed += settlement.net_settlement;
       } catch (err: unknown) {
-        console.error(`[Settlement] CRITICAL: Failed to pay agent ${settlement.agent_id}:`, err);
+        reportError(err, 'SettlementService.executeMondayPayouts.agentPay', {
+          settlementId: settlement.id,
+          agentId: settlement.agent_id,
+          amount: settlement.net_settlement,
+        });
         // Revert status to 'failed' so ops can identify and manually retry
         const errMsg = err instanceof Error ? err.message : String(err);
         await supabase
@@ -432,7 +443,7 @@ export const SettlementService = {
             }
           );
         } catch (err) {
-          console.error('[SettlementService] Error:', err);
+          reportError(err, 'SettlementService.financialAlertFailed');
           /* best effort — already logged to console */
         }
 
@@ -477,12 +488,15 @@ export const SettlementService = {
         // Send push notification to player
         pushNotificationService
           .notifySettlement(snapshot.player_id, snapshot.rakeback_earned, 'Weekly Rakeback')
-          .catch((err) => console.error('[Settlement] Player push failed:', err));
+          .catch((err) => reportError(err, 'SettlementService.playerPushNotification'));
 
         playersWithRakeback++;
         totalDisbursed += snapshot.rakeback_earned;
       } catch (err: unknown) {
-        console.error(`Failed rakeback for player ${snapshot.player_id}:`, err);
+        reportError(err, 'SettlementService.executeMondayPayouts.playerRakeback', {
+          playerId: snapshot.player_id,
+          amount: snapshot.rakeback_earned,
+        });
       }
     }
 
@@ -499,9 +513,10 @@ export const SettlementService = {
         .eq('id', periodId);
     } else {
       // Partial success — mark for manual reconciliation (never auto-finalize partial)
-      console.error(
-        `[Settlement] Only ${totalSucceeded}/${totalExpected} payouts succeeded ` +
-          `(${Math.round(successRate * 100)}%) for period ${periodId} — marking PARTIAL.`
+      reportError(
+        `Partial payout: ${totalSucceeded}/${totalExpected} (${Math.round(successRate * 100)}%)`,
+        'SettlementService.executeMondayPayouts.partial',
+        { periodId, totalSucceeded, totalExpected }
       );
       await supabase
         .from('settlement_periods')
@@ -584,13 +599,15 @@ export const SettlementService = {
     );
 
     if (execErr) {
-      console.error('[Settlement] Error verifying union idempotency:', execErr);
+      reportError(execErr, 'SettlementService.executeUnionRakeBack.idempotency', { unionId });
       throw new Error(`Execution verification failed: ${execErr.message}`);
     }
 
     if (canExecute === false) {
-      console.error(
-        `[Settlement] Union ${unionId} already had rakeback executed for ${periodStart} - ${periodEnd}. Bailing out to prevent double-payout.`
+      reportError(
+        `Union ${unionId} already paid for ${periodStart} - ${periodEnd}`,
+        'SettlementService.executeUnionRakeBack.alreadyPaid',
+        { unionId }
       );
       return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
     }
@@ -634,9 +651,10 @@ export const SettlementService = {
     // CRITICAL ALERT: Insufficient balance — abort all payouts
     if (unionOwnerBalance < totalEstimatedRakeBack) {
       const shortfall = totalEstimatedRakeBack - unionOwnerBalance;
-      console.error(
-        `[Settlement] CRITICAL: Union owner insufficient balance for rakeback. ` +
-          `Balance: ${unionOwnerBalance}, Required: ${totalEstimatedRakeBack}, Shortfall: ${shortfall}`
+      reportError(
+        `Union owner insufficient balance: Balance=${unionOwnerBalance}, Required=${totalEstimatedRakeBack}, Shortfall=${shortfall}`,
+        'SettlementService.executeUnionRakeBack.insufficientBalance',
+        { unionId, unionOwnerBalance, totalEstimatedRakeBack, shortfall }
       );
 
       try {
@@ -655,7 +673,8 @@ export const SettlementService = {
             affectedClubs: clubs.length,
           }
         );
-      } catch {
+      } catch (e) {
+        reportError(e, 'SettlementService');
         /* best effort */
       }
 
@@ -702,8 +721,10 @@ export const SettlementService = {
         if (transferError || transferResult === false) {
           const errMsg =
             transferError?.message || 'transferResult === false (insufficient balance?)';
-          console.error(
-            `[Settlement] CRITICAL: Transfer failed from Union owner to ${club.name}: ${errMsg}`
+          reportError(
+            transferError || 'transferResult === false',
+            'SettlementService.executeUnionRakeBack.transfer',
+            { unionId, clubId: club.id, clubName: club.name, rakeBack }
           );
 
           // Log critical financial alert — silent skipping is dangerous for money movement
@@ -725,7 +746,8 @@ export const SettlementService = {
                 error: errMsg,
               }
             );
-          } catch {
+          } catch (e) {
+            reportError(e, 'SettlementService');
             /* best effort — already logged to console */
           }
 

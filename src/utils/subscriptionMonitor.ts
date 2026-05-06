@@ -8,6 +8,8 @@
  */
 
 // Keep in sync with RealtimeChannelService.MAX_CONCURRENT_SUBSCRIPTIONS (25)
+import { reportError } from './errorReporter';
+
 const SUBSCRIPTION_WARN_THRESHOLD = 20;
 const SUBSCRIPTION_MAX = 25;
 
@@ -49,9 +51,12 @@ class SubscriptionMonitor {
 
     // Log if at max
     if (this.subscriptions.size >= SUBSCRIPTION_MAX) {
-      console.error(
-        `[SubscriptionMonitor] Max subscriptions (${SUBSCRIPTION_MAX}) reached! ` +
-          `Current: ${this.subscriptions.size}. This may cause memory leaks.`
+      reportError(
+        new Error(
+          `[SubscriptionMonitor] Max subscriptions (${SUBSCRIPTION_MAX}) reached! ` +
+            `Current: ${this.subscriptions.size}. This may cause memory leaks.`
+        ),
+        'subscriptionMonitor.SubscriptionMonitor_Max_subscriptions_SU'
       );
     }
   }

@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import NotificationGrouper, { type NotificationCategory } from './NotificationGrouper';
 import './NotificationCenter.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface Notification {
   id: string;
@@ -86,7 +87,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         });
       }
     } catch (error) {
-      console.error('Failed to load notifications:', error);
+      reportError(error, 'NotificationCenter.Failed_to_load_notifications');
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -117,7 +118,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           masterBus.emit('NOTIFICATION_READ', { notifId: notif.id, allRead: false });
         }
       } catch (err) {
-        console.error('[NotificationCenter] mark-read error:', err);
+        reportError(err, 'NotificationCenter.markread_error');
       }
     }
 
@@ -141,7 +142,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         masterBus.emit('NOTIFICATION_READ', { notifId: null, allRead: true });
       }
     } catch (err) {
-      console.error('[NotificationCenter] mark-all-read error:', err);
+      reportError(err, 'NotificationCenter.markallread_error');
     }
   };
 
@@ -157,7 +158,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         setNotifications((prev) => prev.filter((n) => !n.isRead));
       }
     } catch (err) {
-      console.error('[NotificationCenter] clear-all error:', err);
+      reportError(err, 'NotificationCenter.clearall_error');
     }
   };
 
@@ -206,7 +207,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                 if (/table|hand|game|seat|tournament|tourney|mtt|sng|waitlist|blind/.test(cStr))
                   cat = 'games';
                 else if (/friend|message|chat|club|invite|joined|member/.test(cStr)) cat = 'social';
-                else if (/achievement|badge|unlock|level|xp|streak|bonus|reward|diamond/.test(cStr))
+                else if (/achievement|badge|unlock|level|streak|bonus|reward|diamond/.test(cStr))
                   cat = 'achievements';
 
                 return {

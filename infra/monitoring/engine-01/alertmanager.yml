@@ -1,0 +1,28 @@
+# AlertManager routing — engine-01 co-located (Phase 5.1.3a adapted 2026-04-20)
+#
+# Stripped-down from the cron-01 config:
+#   - No Slack/PagerDuty notification wiring yet — placeholders in .env.
+#     Set SLACK_ALERT_URL + PAGERDUTY_SERVICE_KEY in .env and replace this
+#     file with the full alertmanager.yml from infra/monitoring/ when ready.
+#   - All alerts route to a "black-hole" receiver; they still appear in the
+#     AlertManager UI at /alertmanager for triage.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: null-receiver
+  group_by: [alertname, cluster, component]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: null-receiver
+
+inhibit_rules:
+  - source_matchers:
+      - alertname="EngineDown"
+    target_matchers:
+      - component="engine"
+    equal: [instance]

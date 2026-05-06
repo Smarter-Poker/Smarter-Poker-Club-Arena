@@ -11,8 +11,8 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { SpinPrizeConfig, SpinMultiplier } from '../../engine/SpinItEngine';
-import { haptic } from '../../services/SoundService';
+import type { SpinPrizeConfig, SpinMultiplier } from '../../types/engine/spinIt';
+import { haptic, soundService } from '../../services/SoundService';
 import './SpinItWheel.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -39,6 +39,19 @@ export function SpinItWheel({ tiers, result, isSpinning, onSpinComplete }: SpinI
   const [showResult, setShowResult] = useState(false);
   const wheelRef = useRef<HTMLDivElement>(null);
   const hasSpunRef = useRef(false);
+  // CA-4 BUG FIX: spinTimersRef collects the anticipation timer, all tick timers,
+  // and the result timer. Without this, if SpinItWheel unmounts during the 4s
+  // spin (e.g. user navigates away mid-spin), all pending setShowResult calls
+  // and soundService.playSpinTick() calls would still fire.
+  const spinTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Unmount guard — cancel any in-flight spin timers
+  useEffect(() => {
+    return () => {
+      spinTimersRef.current.forEach(clearTimeout);
+      spinTimersRef.current = [];
+    };
+  }, []);
 
   const segmentAngle = tiers.length > 0 ? 360 / tiers.length : 360;
 
@@ -64,17 +77,41 @@ export function SpinItWheel({ tiers, result, isSpinning, onSpinComplete }: SpinI
       const target = getTargetRotation(result);
 
       // Anticipation delay
-      setTimeout(() => {
+      const anticipationTimer = setTimeout(() => {
         setRotation(target);
         haptic.strong();
 
+        // Decelerating tick pattern over 4s — fast at start, slow at end
+        // Cubic easing mirrors the CSS transform easing for audio/visual sync
+        const SPIN_DURATION = 4000;
+        const TICK_COUNT = 32; // 32 ticks spread across 4s
+        for (let i = 0; i < TICK_COUNT; i++) {
+          const progress = i / TICK_COUNT;
+          // Ease-out cubic so ticks start fast and slow to a halt
+          const eased = 1 - Math.pow(1 - progress, 3);
+          const delay = eased * SPIN_DURATION;
+          spinTimersRef.current.push(
+            setTimeout(() => {
+              soundService.playSpinTick();
+            }, delay)
+          );
+        }
+
         // Wait for CSS transition to finish (4s)
-        setTimeout(() => {
+        const resultTimer = setTimeout(() => {
           setShowResult(true);
-          haptic.triple();
+          soundService.playSpinResult();
           onSpinComplete?.();
         }, 4200);
+        // CA-4: push resultTimer into spinTimersRef so unmount guard can cancel it
+        spinTimersRef.current.push(resultTimer);
       }, 300);
+
+      // CA-4: push anticipationTimer into spinTimersRef so unmount guard can cancel it
+      spinTimersRef.current.push(anticipationTimer);
+      return () => {
+        clearTimeout(anticipationTimer);
+      };
     }
   }, [isSpinning, result, getTargetRotation, onSpinComplete]);
 

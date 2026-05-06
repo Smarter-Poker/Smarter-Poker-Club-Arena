@@ -25,6 +25,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { WalletService } from '../services/WalletService';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    TYPES
@@ -186,6 +187,16 @@ function PlayerActionModal({
   const [confirmRole, setConfirmRole] = useState<MemberRole | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  // CA-18 BUG FIX: the 1.2s "show success then refresh" timer was fire-and-forget.
+  // If the user clicked outside to dismiss the modal before 1.2s, the component
+  // unmounted and onRoleChanged()/onClose() fired on a dead component tree.
+  const roleChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (roleChangeTimerRef.current) clearTimeout(roleChangeTimerRef.current);
+    };
+  }, []);
 
   // Accessibility: close modal on Escape key
   useEffect(() => {
@@ -301,7 +312,9 @@ function PlayerActionModal({
       });
 
       // Brief delay to show success, then refresh
-      setTimeout(() => {
+      if (roleChangeTimerRef.current) clearTimeout(roleChangeTimerRef.current);
+      roleChangeTimerRef.current = setTimeout(() => {
+        roleChangeTimerRef.current = null;
         onRoleChanged();
         onClose();
       }, 1200);
@@ -487,7 +500,7 @@ export default function ClubMembersPage() {
   const loadMembers = useCallback(
     async (getIsMounted?: () => boolean) => {
       if (!clubId) return;
-      if (loadingRef.current) return;
+
       loadingRef.current = true;
       if (!getIsMounted || getIsMounted()) setLoading(true);
       try {
@@ -508,7 +521,8 @@ export default function ClubMembersPage() {
               setLoading(false); // Show cached list instantly
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubMembersPage.async');
           /* corrupt cache */
         }
 
@@ -585,7 +599,7 @@ export default function ClubMembersPage() {
           }
         }
       } catch (error) {
-        console.error('Failed to load members:', error);
+        reportError(error, 'ClubMembersPage.Failed_to_load_members');
         toast.error('Failed to load members');
       } finally {
         loadingRef.current = false;
@@ -656,8 +670,35 @@ export default function ClubMembersPage() {
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
-    onPayload: () => {
-      loadMembers(() => true);
+    onPayload: (payload) => {
+      if (!payload) return;
+      const { eventType, new: newRec, old: oldRec } = payload;
+
+      if (eventType === 'DELETE' && oldRec) {
+        setMembers((prev) => prev.filter((m) => m.user_id !== oldRec.user_id));
+      } else if (eventType === 'UPDATE' && newRec) {
+        if (newRec.status === 'banned' || newRec.status === 'suspended') {
+          setMembers((prev) => prev.filter((m) => m.user_id !== newRec.user_id));
+        } else {
+          setMembers((prev) => {
+            const idx = prev.findIndex((m) => m.user_id === newRec.user_id);
+            if (idx === -1) {
+              setTimeout(() => loadMembers(() => true), 100);
+              return prev;
+            }
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx],
+              role: newRec.role,
+              chip_balance: newRec.chip_balance,
+              parent_agent_id: newRec.parent_agent_id,
+            };
+            return next;
+          });
+        }
+      } else {
+        setTimeout(() => loadMembers(() => true), 100);
+      }
     },
     enabled: !!resolvedClubId,
   });
@@ -682,7 +723,7 @@ export default function ClubMembersPage() {
         if (status === 'SUBSCRIBED') {
           await channel.track({ user_id: user.id, club_id: clubId });
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubMembersPage] ❌ Presence channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'ClubMembersPage._Presence_channel_error');
         } else if (status === 'TIMED_OUT') {
           console.warn('[ClubMembersPage] ⏱️ Presence channel timed out');
         }
@@ -788,7 +829,8 @@ export default function ClubMembersPage() {
                   { key: 'joined_at', label: 'Joined' },
                   { key: 'user_id', label: 'User ID' },
                 ]);
-              } catch {
+              } catch (e) {
+                reportError(e, 'ClubMembersPage.filter');
                 /* silent */
               }
             }}

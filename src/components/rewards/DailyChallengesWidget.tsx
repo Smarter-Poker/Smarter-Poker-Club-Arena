@@ -17,6 +17,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../../components/common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
+import { reportError } from '../../utils/errorReporter';
 
 interface Challenge {
   id: string;
@@ -74,10 +75,8 @@ export const DailyChallengesWidget: React.FC = () => {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error(
-              '[DailyChallengesWidget] ❌ Realtime channel error:',
-              err?.message || err
-            );
+            if (err)
+              reportError(err?.message || err, 'DailyChallengesWidget._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[DailyChallengesWidget] ⏱️ Realtime channel timed out');
@@ -114,8 +113,11 @@ export const DailyChallengesWidget: React.FC = () => {
     // happen silently to avoid distracting UI flashes on every hand played
     if (!initialLoadDoneRef.current) setLoading(true);
     try {
-      const { daily: dailyData, weekly: weeklyData, monthly: monthlyData } =
-        await dailyChallengeService.getAllChallenges(user.id);
+      const {
+        daily: dailyData,
+        weekly: weeklyData,
+        monthly: monthlyData,
+      } = await dailyChallengeService.getAllChallenges(user.id);
 
       if (!isMounted.current) return;
       loadErrorRef.current = false;
@@ -182,7 +184,7 @@ export const DailyChallengesWidget: React.FC = () => {
 
       if (isMounted.current) setChallenges(newChallenges);
     } catch (error) {
-      console.error('Failed to load challenges:', error);
+      reportError(error, 'DailyChallengesWidget.Failed_to_load_challenges');
       loadErrorRef.current = true;
     }
     if (isMounted.current) {

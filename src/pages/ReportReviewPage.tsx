@@ -12,6 +12,7 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import './ReportReviewPage.css';
+import { reportError } from '../utils/errorReporter';
 
 const reportCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -81,7 +82,7 @@ export default function ReportReviewPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ReportReviewPage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'ReportReviewPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ReportReviewPage] ⏱️ Realtime channel timed out');
@@ -121,36 +122,70 @@ export default function ReportReviewPage() {
       setReports(data || []);
     } catch (error) {
       if (getIsMounted && !getIsMounted()) return;
-      console.error('Failed to load reports:', error);
+      reportError(error, 'ReportReviewPage.Failed_to_load_reports');
       toast.error('Failed to load reports');
     }
     if (getIsMounted && !getIsMounted()) return;
     setLoading(false);
   };
 
-  const handleAction = async (reportId: string, action: 'actioned' | 'dismissed') => {
+  const handleAction = (reportId: string, action: 'actioned' | 'dismissed') => {
     setProcessing(true);
-    try {
-      const { error } = await supabase
+
+    // EAGER STATE SYNCHRONIZATION: Update report status and close modal immediately (BFCache-safe)
+    const prevReports = reports;
+    const prevSelected = selectedReport;
+    const prevNotes = adminNotes;
+    const sanitizedNotes = sanitizeInput(adminNotes);
+
+    setReports((prev) =>
+      prev.map((r) =>
+        r.id === reportId
+          ? {
+              ...r,
+              status: action,
+              reviewed_at: new Date().toISOString(),
+              reviewed_by: user?.id,
+              admin_notes: sanitizedNotes,
+            }
+          : r
+      )
+    );
+    setSelectedReport(null);
+    setAdminNotes('');
+    toast.success(action === 'actioned' ? 'Player action taken' : 'Report dismissed');
+
+    // Fire-and-forget DB mutation with rollback on failure
+    void Promise.resolve(
+      supabase
         .from('player_reports')
         .update({
           status: action,
           reviewed_at: new Date().toISOString(),
           reviewed_by: user?.id,
-          admin_notes: sanitizeInput(adminNotes),
+          admin_notes: sanitizedNotes,
         })
-        .eq('id', reportId);
-
-      if (error) throw error;
-
-      toast.success(action === 'actioned' ? 'Player action taken' : 'Report dismissed');
-      setSelectedReport(null);
-      setAdminNotes('');
-      loadReports();
-    } catch (error) {
-      toast.error('Failed to update report');
-    }
-    setProcessing(false);
+        .eq('id', reportId)
+    )
+      .then(({ error }) => {
+        if (error) {
+          // Rollback on failure
+          setReports(prevReports);
+          setSelectedReport(prevSelected);
+          setAdminNotes(prevNotes);
+          toast.error('Failed to update report');
+          reportError(error, 'ReportReviewPage.Failed_to_update_report');
+        }
+        setProcessing(false);
+      })
+      .catch((error: unknown) => {
+        setReports(prevReports);
+        setSelectedReport(prevSelected);
+        setAdminNotes(prevNotes);
+        toast.error('Failed to update report');
+        reportError(error, 'ReportReviewPage.Failed_to_update_report');
+        setProcessing(false);
+      });
   };
 
   const getReasonIcon = (reason: string) => {

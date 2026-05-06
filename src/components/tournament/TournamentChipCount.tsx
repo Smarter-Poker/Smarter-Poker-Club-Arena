@@ -8,6 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './TournamentChipCount.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface TournamentChipCountProps {
   tournamentId: string;
@@ -31,7 +32,9 @@ export function TournamentChipCount({ tournamentId, limit = 10 }: TournamentChip
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setTimeout(() => setMounted(true), 50);
+    // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+    const _mountTimer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(_mountTimer);
   }, []);
 
   useEffect(() => {
@@ -72,7 +75,7 @@ export function TournamentChipCount({ tournamentId, limit = 10 }: TournamentChip
         setTotalChips(total);
       }
     } catch (error) {
-      console.error('Failed to load chip counts:', error);
+      reportError(error, 'TournamentChipCount.Failed_to_load_chip_counts');
     }
     if (isMounted.current) setLoading(false);
   };

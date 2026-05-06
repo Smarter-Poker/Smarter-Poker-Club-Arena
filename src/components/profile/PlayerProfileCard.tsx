@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import './PlayerProfileCard.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PlayerProfileCardProps {
   userId: string;
@@ -46,7 +47,9 @@ export function PlayerProfileCard({
 
   useEffect(() => {
     if (!loading && profile) {
-      setTimeout(() => setMounted(true), 50);
+      // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+      const _mountTimer = setTimeout(() => setMounted(true), 50);
+      return () => clearTimeout(_mountTimer);
     }
   }, [loading, profile]);
 
@@ -83,7 +86,7 @@ export function PlayerProfileCard({
         });
       }
     } catch (error) {
-      console.error('Failed to load profile:', error);
+      reportError(error, 'PlayerProfileCard.Failed_to_load_profile');
     }
     setLoading(false);
   };

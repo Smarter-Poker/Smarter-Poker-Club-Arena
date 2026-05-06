@@ -1,0 +1,81 @@
+.identity-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+.identity-modal-content {
+  background: var(--surface-2, #1f232a);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 12px;
+  width: 300px;
+  max-width: 90vw;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+.identity-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color, #333);
+}
+.identity-modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary, #fff);
+}
+.identity-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #aaa);
+  font-size: 24px;
+  cursor: pointer;
+}
+.identity-modal-close:hover {
+  color: #fff;
+}
+.identity-modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.identity-modal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.identity-modal-row label {
+  color: var(--text-primary, #ccc);
+  font-size: 14px;
+}
+.identity-alias-input {
+  background: var(--surface-1, #121418);
+  border: 1px solid var(--border-color, #333);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  width: 140px;
+}
+.identity-save-btn {
+  margin-top: 8px;
+  background: var(--primary-color, #0f8);
+  color: #000;
+  border: none;
+  padding: 10px;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.identity-save-btn:hover {
+  background: #3f9;
+}

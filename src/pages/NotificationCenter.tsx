@@ -23,6 +23,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 interface Notification {
   id: string;
@@ -66,7 +67,7 @@ export default function NotificationCenter() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
-      if (error) console.error('[NotificationCenter] Load failed:', error.message);
+      if (error) reportError(error, 'NotificationCenter.Load_failed');
 
       if (data && isMounted.current) {
         setNotifications(
@@ -83,7 +84,7 @@ export default function NotificationCenter() {
         );
       }
     } catch (err) {
-      console.error('Failed to load notifications:', err);
+      reportError(err, 'NotificationCenter.Failed_to_load_notifications');
       if (isMounted.current) toast.error('Failed to load notifications');
     }
     if (isMounted.current) setLoading(false);
@@ -140,7 +141,7 @@ export default function NotificationCenter() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[NotificationCenter] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'NotificationCenter._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[NotificationCenter] ⏱️ Realtime channel timed out');
@@ -163,7 +164,7 @@ export default function NotificationCenter() {
       // #3: Emit NOTIFICATION_READ for instant bell badge sync
       masterBus.emit('NOTIFICATION_READ', { notifId, allRead: false });
     } catch (err) {
-      console.error('[NotificationCenter] markAsRead error:', err);
+      reportError(err, 'NotificationCenter.markAsRead_error');
       toast.error('Failed to mark as read');
     }
   };
@@ -181,7 +182,7 @@ export default function NotificationCenter() {
       // #3: Emit NOTIFICATION_READ for instant bell badge sync
       masterBus.emit('NOTIFICATION_READ', { notifId: null, allRead: true });
     } catch (err) {
-      console.error('[NotificationCenter] markAllRead error:', err);
+      reportError(err, 'NotificationCenter.markAllRead_error');
       toast.error('Failed to mark all as read');
     }
   };

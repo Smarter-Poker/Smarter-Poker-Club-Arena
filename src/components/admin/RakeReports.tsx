@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './RakeReports.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface RakeData {
   period: string;
@@ -102,7 +103,7 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
       };
       setData(liveData);
     } catch (error) {
-      console.error('Failed to load rake data:', error);
+      reportError(error, 'RakeReports.Failed_to_load_rake_data');
     } finally {
       if (isMounted.current) setLoading(false);
     }

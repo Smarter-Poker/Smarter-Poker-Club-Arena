@@ -11,6 +11,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './ClubMemberManagement.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ClubMemberManagementProps {
   clubId: string;
@@ -129,7 +130,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
-      console.error('[ClubMemberManagement] Error:', err);
+      reportError(err, 'ClubMemberManagement.Error');
       if (isMounted.current) toast.error('Failed to update role');
     }
   };
@@ -149,7 +150,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
-      console.error('[ClubMemberManagement] Error:', err);
+      reportError(err, 'ClubMemberManagement.Error');
       if (isMounted.current) toast.error('Failed to update ban status');
     }
   };
@@ -169,7 +170,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
-      console.error('[ClubMemberManagement] Error:', err);
+      reportError(err, 'ClubMemberManagement.Error');
       if (isMounted.current) toast.error('Failed to remove member');
     }
   };

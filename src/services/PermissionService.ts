@@ -20,6 +20,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -322,7 +323,7 @@ export const PermissionService = {
         contexts: {},
       };
     } catch (err: any) {
-      console.error('[PermissionService] getUserPermissions crashed:', err.message);
+      reportError(err, 'PermissionService.getUserPermissions');
       // Safe fallback — PLAYER level. Callers should handle gracefully.
       return {
         userId,

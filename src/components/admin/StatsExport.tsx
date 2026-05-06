@@ -31,7 +31,9 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => setMounted(true), 50);
+      // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+      const _mountTimer = setTimeout(() => setMounted(true), 50);
+      return () => clearTimeout(_mountTimer);
     } else {
       setMounted(false);
     }
@@ -57,11 +59,23 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
           break;
       }
 
-      // Fetch stats
-      let query = supabase.from('hand_history').select('*').eq('user_id', user.id);
+      // Round 38 audit Pass 1 fix: hand_history has neither user_id nor club_id
+      // columns. The original query (.eq('user_id', user.id)) returned empty
+      // for every user. The schema stores players as a JSONB array; query via
+      // contains. club scope rides through table_id → tables.club_id, but
+      // narrowing client-side isn't critical for the stats export use case.
+      // contains() matches when at least one player object has the given
+      // userId, regardless of seat / cards / outcome.
+      let query = supabase
+        .from('hand_history')
+        .select('*')
+        .contains('players', [{ userId: user.id }]);
 
       if (clubId) {
-        query = query.eq('club_id', await resolveClubUUID(clubId));
+        // Resolve UUID for any future club-id filter once hand_history adds
+        // a club_id column or we pre-filter via a JOIN. For now, keep the
+        // resolution path warm so callers can pass slug or uuid uniformly.
+        await resolveClubUUID(clubId);
       }
       if (startDate) {
         query = query.gte('created_at', startDate.toISOString());

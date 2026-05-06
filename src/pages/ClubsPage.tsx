@@ -25,6 +25,7 @@ import { getClubLevel } from '../utils/clubLevels';
 import styles from './ClubsPage.module.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { STORAGE_KEYS } from '../lib/storage';
+import { reportError } from '../utils/errorReporter';
 
 type Tab = 'discover' | 'my-clubs' | 'create';
 
@@ -170,7 +171,8 @@ export default function ClubsPage() {
             .in('union_id', unionIds);
           if (ucRows) ucRows.forEach((r) => unionClubIds.add(r.club_id));
           displayedClubs = memberships.filter((m) => !unionClubIds.has((m.club as any)?.id));
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubsPage.filter');
           /* fail-open: show all clubs if dedup fails */
         }
       }
@@ -189,7 +191,7 @@ export default function ClubsPage() {
         /* quota */
       }
     } catch (err) {
-      console.error('[CLUBS] Failed to load memberships:', err);
+      reportError(err, 'ClubsPage.Failed_to_load_memberships');
       toast.error('Failed to load your clubs');
       if (getIsMounted && !getIsMounted()) return;
       setMyClubs([]);
@@ -217,33 +219,14 @@ export default function ClubsPage() {
     let isMounted = true;
     loadMyClubs(() => isMounted);
 
-    // Realtime: refresh clubs when membership data changes or clubs are modified
-    const channelKey = 'clubs-page-realtime';
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'club_members' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clubs' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'unions' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'union_clubs' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubsPage] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[ClubsPage] ⏱️ Realtime channel timed out');
-        }
-      });
+    // NOTE (2026-04-19): Realtime `postgres_changes` listeners on club_members, clubs,
+    // unions, union_clubs REMOVED. These were unfiltered global listeners (event: '*',
+    // no filter) that fired on EVERY mutation across ALL clubs/unions, generating massive
+    // realtime message volume. The MasterBus event listeners below (CLUB_JOINED, CLUB_LEFT,
+    // CLUB_UPDATED, UNION_UPDATED, etc.) already handle all cross-page refresh needs.
+
     return () => {
       isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
     };
   }, []);
 
@@ -271,7 +254,7 @@ export default function ClubsPage() {
 
   // Join club by ID
   const handleJoinClub = async () => {
-    if (joinClubId.length < 6) return;
+    if (joinClubId.length < 5) return;
 
     setIsJoining(true);
     setJoinError(null);
@@ -296,7 +279,7 @@ export default function ClubsPage() {
       setJoinClubId('');
       setActiveTab('my-clubs');
     } catch (err: any) {
-      console.error('[CLUBS] Join failed:', err);
+      reportError(err, 'ClubsPage.Join_failed');
       toast.error(err.message || 'Failed to join club');
       setJoinError(err.message || 'Failed to join club');
     } finally {
@@ -334,7 +317,7 @@ export default function ClubsPage() {
       // Navigate to the new club
       navigate(`/clubs/${club.id}`);
     } catch (err: any) {
-      console.error('[CLUBS] Create failed:', err);
+      reportError(err, 'ClubsPage.Create_failed');
       toast.error(err.message || 'Failed to create club');
       setCreateError(err.message || 'Failed to create club');
     } finally {
@@ -397,27 +380,27 @@ export default function ClubsPage() {
             <div className={styles.discoverTab}>
               <section className={styles.joinSection}>
                 <h3>JOIN A CLUB</h3>
-                <p>Enter a 6-digit Club ID to join an existing club.</p>
+                <p>Enter a 5-digit Club Code to join an existing club.</p>
 
                 {joinError && <div className={styles.errorText}>{joinError}</div>}
 
                 <div className={styles.formGroup}>
-                  <label className={styles.label}>ENTER CLUB ID:</label>
+                  <label className={styles.label}>ENTER CLUB CODE:</label>
                   <input
                     className={styles.joinInput}
-                    placeholder="123456"
+                    placeholder="25450"
                     value={joinClubId}
                     onChange={(e) => {
                       setJoinClubId(e.target.value.replace(/\D/g, ''));
                       setJoinError(null);
                     }}
-                    maxLength={6}
+                    maxLength={5}
                   />
                 </div>
 
                 <button
                   className={styles.btnPrimary}
-                  disabled={joinClubId.length < 6 || isJoining}
+                  disabled={joinClubId.length < 5 || isJoining}
                   onClick={() => {
                     haptic.medium();
                     handleJoinClub();

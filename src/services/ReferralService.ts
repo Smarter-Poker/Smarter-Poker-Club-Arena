@@ -7,6 +7,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -80,10 +81,7 @@ class ReferralService {
         .maybeSingle();
 
       if (error || !data) {
-        console.error(
-          '[ReferralService] Failed to create code:',
-          error?.message || 'No data returned'
-        );
+        reportError(error?.message || 'No data returned', 'ReferralService.Failed_to_create_code');
         return null;
       }
 
@@ -94,7 +92,7 @@ class ReferralService {
         maxUses: data.max_uses,
       };
     } catch (err: unknown) {
-      console.error('[ReferralService] getOrCreateCode exception:', err);
+      reportError(err, 'ReferralService.getOrCreateCode_exception');
       return null;
     }
   }
@@ -110,7 +108,7 @@ class ReferralService {
       });
 
       if (error) {
-        console.error('[ReferralService] redeemCode RPC error:', error);
+        reportError(error, 'ReferralService.redeemCode_RPC_error');
         return { success: false, error: error.message };
       }
 
@@ -123,7 +121,7 @@ class ReferralService {
 
       return { success: true };
     } catch (err: any) {
-      console.error('[ReferralService] redeemCode exception:', err);
+      reportError(err, 'ReferralService.redeemCode_exception');
       return { success: false, error: err.message || 'Redemption failed' };
     }
   }
@@ -153,7 +151,7 @@ class ReferralService {
         totalChipsEarned,
       };
     } catch (err: unknown) {
-      console.error('[ReferralService] getStats exception:', err);
+      reportError(err, 'ReferralService.getStats_exception');
       return { code: '', totalReferrals: 0, totalChipsEarned: 0 };
     }
   }
@@ -181,10 +179,11 @@ class ReferralService {
 
         // Award bonus chips
         try {
+          // Round 19: prod sig is (p_user_id, p_amount). p_reason isn't a param;
+          // RPC doesn't audit. Caller used to silently 404 on the extra param.
           await supabase.rpc('add_chips', {
             p_user_id: userId,
             p_amount: m.reward,
-            p_reason: `Referral milestone: ${m.label}`,
           });
 
           if (typeof window !== 'undefined') {
@@ -193,7 +192,7 @@ class ReferralService {
 
           masterBus.emit('BALANCE_UPDATED', { source: 'referral_milestone', userId });
         } catch (err: unknown) {
-          console.error(`[ReferralService] milestone ${m.count} award failed:`, err);
+          reportError(err, 'ReferralService.milestone_mcount_award_failed');
         }
       }
     }

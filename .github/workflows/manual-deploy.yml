@@ -54,6 +54,11 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
+          # Phase U5.1 (task #133): same Sentry wiring as ci.yml so manual
+          # deploys also produce symbolicated stack traces.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: smarter-poker
+          SENTRY_PROJECT: club-arena
 
       - name: Deploy to Vercel
         id: deploy

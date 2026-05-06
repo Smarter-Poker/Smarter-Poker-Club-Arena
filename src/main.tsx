@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Main Entry Point (ANTI-GRAVITY PROTECTED)
  * ═══════════════════════════════════════════════════════════════════════════════
- * PokerBros Clone — Better
+ * Smarter Poker Platform
  *
  *  ANTI-GRAVITY INSTANT RENDER:
  * React renders IMMEDIATELY after synchronous env-var validation.
@@ -17,19 +17,37 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+// Cache-bust token 2026-04-15-v7 — test atomic bash deploy loop
+const __CACHE_BUST_V7__ = '2026-04-15-v7';
+void __CACHE_BUST_V7__;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  BOOT SENTINEL (Dan 2026-04-17)
+//  Flip this flag the INSTANT main.tsx's module evaluates. The self-heal script
+//  in index.html checks for this — if it's set, React has started (even if it's
+//  still pulling lazy chunks), and the script stands down instead of reloading.
+//  Without this sentinel, mobile cold boots were reload-looping every ~20s on
+//  phones that took more than 2.5s to mount 100+ code-split chunks.
+// ═══════════════════════════════════════════════════════════════════════════════
+(window as any).__CLUB_ARENA_BOOTING__ = true;
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/club-engine.css';
 import './styles/animations.css';
+import './styles/ChipAnimations.css';
+import './components/table/CardAnimations.css';
 import { initAntiGravity } from './core/AntiGravityBoot';
 import { initMasterBus } from './core/MasterBus';
 import { initIdentityDNA } from './core/IdentityDNA';
 import { initSentry } from './core/SentryInit';
 import { initWebVitals } from './core/WebVitals';
+import { startFunnelTracker } from './lib/funnelTracker';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
+import { reportError } from './utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GLOBAL SAFETY NET — Catch unhandled promise rejections from service throws
@@ -39,7 +57,7 @@ import { ErrorBoundary } from './components/common';
 // This prevents those from silently crashing the app or causing undefined state.
 window.addEventListener('unhandledrejection', (event) => {
   // Log but don't crash — the page's error state should handle degraded display
-  console.error('[GLOBAL] Unhandled promise rejection caught:', event.reason);
+  reportError(event.reason, 'main.Unhandled_promise_rejection_caught');
   // Prevent the default browser behavior (console error + potential crash)
   event.preventDefault();
 });
@@ -68,8 +86,18 @@ if (bootStatus.antigravityOk) {
   // The async getSession() part continues in the background.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const identityPromise = initIdentityDNA().catch((err) => {
-    console.error('[BOOT] IdentityDNA init error (app already rendered):', err);
+    reportError(err, 'main.IdentityDNA_init_error_app_already_rende');
   });
+
+  // PHASE 4: Activation-funnel tracker (Phase 5.1.2b). Fire-and-forget;
+  // subscribes to MasterBus + IdentityDNA for first_table_seat,
+  // first_hand_played, first_session_of_30min. No-ops if VITE_POSTHOG_KEY
+  // is unset. Never throws out — all handlers swallow their own errors.
+  try {
+    startFunnelTracker();
+  } catch (err) {
+    reportError(err, 'main.FunnelTracker_init_error_non_blocking');
+  }
 
   // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
   // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline
@@ -84,6 +112,9 @@ if (bootStatus.antigravityOk) {
   );
 } else {
   // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
-  console.error('[BOOT] Missing environment variables — rendering diagnostic screen');
+  reportError(
+    new Error('[BOOT] Missing environment variables — rendering diagnostic screen'),
+    'main.Missing_environment_variables__rendering'
+  );
   root.render(<SystemOffline status={bootStatus} />);
 }

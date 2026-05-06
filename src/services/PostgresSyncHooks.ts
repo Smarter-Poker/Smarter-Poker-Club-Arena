@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { reportError } from '../utils/errorReporter';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -69,21 +70,8 @@ class PostgresSyncHooksService {
     this.channel = supabase.channel(`global_db_sync:${userId}`);
 
     this.channel
-      // 1. Wallets (Financial integrity) — NOT debounced (money must be instant)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'wallets', filter: `user_id=eq.${userId}` },
-        (payload) => {
-          console.debug('[PostgresSync] External Wallet mutation detected:', payload);
-          masterBus.emit('BALANCE_UPDATED', { source: 'postgres_sync' });
-          const w = payload.new as any;
-          masterBus.emit('WALLET_REFRESHED', {
-            walletType: w.wallet_type || 'PLAYER',
-            available: (w.balance || 0) - (w.locked_balance || 0),
-            total: w.balance || 0,
-          });
-        }
-      )
+      // 1. Wallets (Financial integrity) — REMOVED to scoped hook useRealtimeFinancials (2026-04-19)
+
       // 2. Profiles (Display names, avatars, diamonds) — NOT debounced (personal data)
       .on(
         'postgres_changes',
@@ -103,39 +91,13 @@ class PostgresSyncHooksService {
           }
         }
       )
-      // 3. Clubs — DEBOUNCED (global listener, could fire for many clubs)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clubs' }, (payload) => {
-        console.debug('[PostgresSync] External Club mutation detected:', payload);
-        const clubId = payload.new.id;
-        this.debouncedEmit(`club_${clubId}`, 'CLUB_UPDATED', { clubId });
-      })
-      // 4. Unions — DEBOUNCED (global listener, could fire for many unions)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'unions' }, (payload) => {
-        console.debug('[PostgresSync] External Union mutation detected:', payload);
-        const unionId = payload.new.id;
-        this.debouncedEmit(`union_${unionId}`, 'UNION_UPDATED', { unionId });
-      })
-      // 5. Tables — DEBOUNCED (global listener for external table creation/modification)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, (payload) => {
-        const tableId = (payload.new as any)?.id || (payload.old as any)?.id;
-        if (tableId) {
-          console.debug('[PostgresSync] External Table mutation detected:', payload);
-          const status = payload.eventType === 'DELETE' ? 'deleted' : (payload.new as any)?.status;
-          this.debouncedEmit(`table_${tableId}`, 'TABLE_UPDATED', { tableId, status });
-        }
-      })
-      // 6. Tournaments — DEBOUNCED (global listener for external tournament mutations)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, (payload) => {
-        const tournamentId = (payload.new as any)?.id || (payload.old as any)?.id;
-        if (tournamentId) {
-          console.debug('[PostgresSync] External Tournament mutation detected:', payload);
-          const status = payload.eventType === 'DELETE' ? 'deleted' : (payload.new as any)?.status;
-          this.debouncedEmit(`tournament_${tournamentId}`, 'TOURNAMENT_UPDATED', {
-            tournamentId,
-            status,
-          });
-        }
-      })
+
+      // NOTE: Global unfiltered listeners REMOVED to prevent billing waste:
+      //   - `tables` + `tournaments` REMOVED 2026-04-18: fired on every mutation globally,
+      //     caused ~80% of the 86M realtime messages ($217/mo last cycle).
+      //   - `clubs` + `unions` REMOVED 2026-04-19: same global fan-out pattern.
+      //     CLUB_UPDATED already emitted by filtered club_members listener below.
+      //     Club/union detail pages subscribe directly (page-scoped channel).
       // 7. User Settings — debounced (settings toggle spam protection)
       .on(
         'postgres_changes',
@@ -170,36 +132,8 @@ class PostgresSyncHooksService {
         }
       )
       // 9. Chip Ledger — REALTIME transaction notifications
-      // When a chip_ledger entry is created involving this user (as sender or receiver),
-      // emit a TRANSACTION_LOGGED event so wallet/cashier pages can show live updates
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chip_ledger',
-          filter: `performed_by=eq.${userId}`,
-        },
-        (payload) => {
-          console.debug('[PostgresSync] New ledger entry (outgoing):', payload);
-          masterBus.emit('BALANCE_UPDATED', { source: 'chip_ledger_realtime' });
-          (masterBus as any).emit('TRANSACTION_LOGGED', { entry: payload.new, direction: 'out' });
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chip_ledger',
-          filter: `to_entity_id=eq.${userId}`,
-        },
-        (payload) => {
-          console.debug('[PostgresSync] New ledger entry (incoming):', payload);
-          masterBus.emit('BALANCE_UPDATED', { source: 'chip_ledger_realtime' });
-          (masterBus as any).emit('TRANSACTION_LOGGED', { entry: payload.new, direction: 'in' });
-        }
-      )
+      // NOTE: chip_ledger listeners REMOVED to scoped hook useRealtimeFinancials (2026-04-19)
+
       // Phase 11: Health monitoring with reconnect logging
       // Phase 15: Emit bus events so ConnectionHUD and other UI elements can react
       // Phase 16: Auto-reconnect on CHANNEL_ERROR / TIMED_OUT
@@ -220,7 +154,7 @@ class PostgresSyncHooksService {
             this.scheduleReconnect(userId);
             break;
           case 'TIMED_OUT':
-            console.error(`[PostgresSync] ⏱️ Channel timed out — scheduling reconnect.`);
+            console.warn(`[PostgresSync] ⏱️ Channel timed out — scheduling reconnect.`);
             masterBus.emit('REALTIME_DISCONNECTED', {
               channelName,
               reason: 'Connection timed out',

@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  SECURITY BADGE — Reusable trust signal component
  * ═══════════════════════════════════════════════════════════════════════════════
- * Composable trust indicators: 🔒 Funds Secured, 🛡️ Verified, ✅ Processed
+ * Composable trust indicators: Funds Secured, Verified, Processed
  */
 
 import './SecurityBadge.css';
@@ -18,11 +18,11 @@ interface SecurityBadgeProps {
 }
 
 const BADGE_CONFIG: Record<BadgeVariant, { icon: string; defaultLabel: string; color: string }> = {
-  secured: { icon: '🔒', defaultLabel: 'Funds Secured', color: '#00c853' },
-  verified: { icon: '🛡️', defaultLabel: 'Verified', color: '#448aff' },
-  processed: { icon: '✅', defaultLabel: 'Processed', color: '#00e676' },
-  escrow: { icon: '🔐', defaultLabel: 'In Escrow', color: '#ffa726' },
-  pending: { icon: '⏳', defaultLabel: 'Pending', color: '#fbbf24' },
+  secured: { icon: '*', defaultLabel: 'Funds Secured', color: '#00c853' },
+  verified: { icon: '+', defaultLabel: 'Verified', color: '#448aff' },
+  processed: { icon: '-', defaultLabel: 'Processed', color: '#00e676' },
+  escrow: { icon: '*', defaultLabel: 'In Escrow', color: '#ffa726' },
+  pending: { icon: '...', defaultLabel: 'Pending', color: '#fbbf24' },
 };
 
 export default function SecurityBadge({

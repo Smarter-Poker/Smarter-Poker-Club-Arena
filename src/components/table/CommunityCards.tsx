@@ -12,7 +12,7 @@
 
 import React, { useMemo, useEffect, useRef, useState, memo } from 'react';
 import { CardImage, CardBack, type Card } from './CardImage';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import { ParticleSystem } from './ParticleSystem';
 import { triggerScreenShake } from '../../utils/ScreenShake';
 import './CommunityCards.css';
@@ -62,7 +62,7 @@ interface CardFaceProps {
   card: Card;
   index: number;
   isHighlighted: boolean;
-  isDealing: boolean;
+  isNewlyDealt: boolean;
   stage: BoardStage;
   deckStyle?: '4color' | '2color';
 }
@@ -71,20 +71,21 @@ function CardFace({
   card,
   index,
   isHighlighted,
-  isDealing,
+  isNewlyDealt,
   stage,
   deckStyle = '4color',
 }: CardFaceProps) {
-  // Apply turn/river emphasis animations to the newly dealt card
-  const isTurnCard = stage === 'turn' && index === 3;
-  const isRiverCard = (stage === 'river' || stage === 'showdown') && index === 4;
+  // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
+  const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
+  const isRiverCard = isNewlyDealt && (stage === 'river' || stage === 'showdown') && index === 4;
+  const isFlopDeal = isNewlyDealt && stage === 'flop' && index < 3;
 
   return (
     <div
       className={[
         'community-cards__card',
         isHighlighted ? 'community-cards__card--highlighted' : '',
-        isDealing ? 'community-cards__card--dealing' : '',
+        isFlopDeal ? 'community-cards__card--flop-deal' : '',
         isTurnCard ? 'community-cards__card--turn' : '',
         isRiverCard ? 'community-cards__card--river' : '',
       ]
@@ -126,30 +127,90 @@ function CommunityCardsComponent({
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
   const prevStageRef = useRef(stage);
   const prevCardCountRef = useRef(cards.length);
+  const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
   const [highlightPop, setHighlightPop] = useState(false);
+  const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
+  const [stageLabel, setStageLabel] = useState<string | null>(null);
   const [showParticles, setShowParticles] = useState(false);
   const [particleOrigin, setParticleOrigin] = useState<{ x: number; y: number } | undefined>();
   const prevHighlightRef = useRef<number[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  // CA-13 BUG FIX: the 2500ms setShowParticles(false) inside the showdown branch
+  // of the stage-transition useEffect was fire-and-forget. If the hand ends and
+  // the board clears before 2.5s, the component unmounts and setState fires.
+  const showParticlesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Haptic feedback when new community cards are dealt (triggered when cards array length increases)
+  // Unmount guard for the particles timer
   useEffect(() => {
-    if (cards.length > prevCardCountRef.current) {
-      haptic.medium();
-      prevCardCountRef.current = cards.length;
-    }
+    return () => {
+      if (showParticlesTimerRef.current) clearTimeout(showParticlesTimerRef.current);
+    };
+  }, []);
+
+  // FIX 184: Removed duplicate haptic here — stage transition useEffect below already
+  // fires haptic on flop/turn/river. Having both caused double-haptic on every deal.
+  // Track card count for reference only (no haptic).
+  useEffect(() => {
+    prevCardCountRef.current = cards.length;
   }, [cards.length]);
 
-  // Haptic feedback on stage transitions
+  // Track newly dealt cards — only new cards get deal animation, existing cards stay still
+  useEffect(() => {
+    const prevCount = prevVisibleCountRef.current;
+    if (visibleCount > prevCount) {
+      // New cards appeared — mark them as newly dealt
+      const newIndices = new Set<number>();
+      for (let i = prevCount; i < visibleCount; i++) {
+        newIndices.add(i);
+      }
+      setNewlyDealtIndices(newIndices);
+      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 700);
+      prevVisibleCountRef.current = visibleCount;
+      return () => clearTimeout(timer);
+    }
+    if (visibleCount < prevCount) {
+      // New hand started — all visible cards are new
+      prevVisibleCountRef.current = visibleCount;
+      if (visibleCount > 0) {
+        const newIndices = new Set<number>();
+        for (let i = 0; i < visibleCount; i++) {
+          newIndices.add(i);
+        }
+        setNewlyDealtIndices(newIndices);
+        const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 700);
+        return () => clearTimeout(timer);
+      }
+    }
+    prevVisibleCountRef.current = visibleCount;
+  }, [visibleCount]);
+
+  // Bible V8 §5.1: Stage label + haptic feedback on stage transitions
   useEffect(() => {
     if (stage !== prevStageRef.current) {
+      // Show stage label briefly when new community cards are dealt
+      let labelTimer: ReturnType<typeof setTimeout> | undefined;
+      if (stage === 'flop' || stage === 'turn' || stage === 'river') {
+        setStageLabel(stage.toUpperCase());
+        labelTimer = setTimeout(() => setStageLabel(null), 1500);
+      } else {
+        setStageLabel(null);
+      }
+
       if (stage === 'flop') {
         haptic.medium();
+        // Bible V8 §5.3: Per-card deal sound — stagger 3 snaps for flop
+        if (soundService.isEnabled()) {
+          soundService.playCommunityCard();
+          setTimeout(() => soundService.playCommunityCard(), 120);
+          setTimeout(() => soundService.playCommunityCard(), 240);
+        }
       } else if (stage === 'turn') {
         haptic.light();
+        if (soundService.isEnabled()) soundService.playCommunityCard();
       } else if (stage === 'river') {
         haptic.medium();
+        if (soundService.isEnabled()) soundService.playCommunityCard();
       } else if (stage === 'showdown') {
         haptic.strong();
         setShowdownMode(true);
@@ -166,9 +227,17 @@ function CommunityCardsComponent({
           });
         }
         setShowParticles(true);
-        setTimeout(() => setShowParticles(false), 2500);
+        // CA-13: cancel any lingering timer before setting a new one
+        if (showParticlesTimerRef.current) clearTimeout(showParticlesTimerRef.current);
+        showParticlesTimerRef.current = setTimeout(() => {
+          showParticlesTimerRef.current = null;
+          setShowParticles(false);
+        }, 2500);
       }
       prevStageRef.current = stage;
+      return () => {
+        if (labelTimer) clearTimeout(labelTimer);
+      };
     }
   }, [stage]);
 
@@ -193,18 +262,26 @@ function CommunityCardsComponent({
           type: 'card' as const,
           card: cards[i],
           isHighlighted: highlightedIndices.includes(i),
+          isNewlyDealt: newlyDealtIndices.has(i),
         };
       }
-      return { type: 'placeholder' as const };
+      return { type: 'placeholder' as const, isNewlyDealt: false };
     });
-  }, [cards, visibleCount, highlightedIndices]);
+  }, [cards, visibleCount, highlightedIndices, newlyDealtIndices]);
 
   return (
     <div
       ref={containerRef}
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
+      role="region"
+      aria-label={`Community cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${winningHandName ? ` - ${winningHandName}` : ''}`}
     >
-      {/* Card Container — no stage label clutter */}
+      {/* Bible V8 §5.1: Stage label (FLOP/TURN/RIVER) — fades in briefly when cards are dealt */}
+      {stageLabel && (
+        <div className="community-cards__stage-label" aria-live="polite">
+          {stageLabel}
+        </div>
+      )}
       <div
         className={`community-cards__container ${highlightPop ? 'community-cards__container--highlight-pop' : ''}`}
       >
@@ -215,11 +292,15 @@ function CommunityCardsComponent({
               card={slot.card}
               index={i}
               isHighlighted={slot.isHighlighted}
-              isDealing={isDealing && i === visibleCount - 1}
+              isNewlyDealt={slot.isNewlyDealt}
               stage={stage}
               deckStyle={deckStyle}
             />
-          ) : (
+          ) : // Phase 2 T1-07 — per POKERBROS_CLONE_SPEC.md line 485:
+          //   "Preflop: cards exist but are hidden/not displayed"
+          // Suppress placeholder card backs during preflop. Post-flop we
+          // still show placeholders for not-yet-dealt slots (turn/river).
+          stage === 'preflop' ? null : (
             <PlaceholderCard key={`placeholder-${i}`} index={i} />
           )
         )}
@@ -235,7 +316,7 @@ function CommunityCardsComponent({
         </>
       )}
 
-      {/* Winning Hand Name — PokerBros-style "Straight" label below community cards */}
+      {/* Winning Hand Name — premium-style "Straight" label below community cards */}
       {winningHandName && <div className="community-cards__hand-name">{winningHandName}</div>}
 
       {/* Gold Spark Burst on Showdown */}

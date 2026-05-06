@@ -29,6 +29,14 @@ export interface PremiumPotProps {
   currency?: string;
 }
 
+// Smart precision — whole dollars for clean amounts, decimals only for fractional (all-in splits)
+function formatAmount(amount: number): string {
+  if (Math.abs(amount - Math.round(amount)) < 0.005) {
+    return Math.round(amount).toLocaleString('en-US');
+  }
+  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 type PotTier = 'normal' | 'medium' | 'large' | 'monster';
 
 function getPotTier(amount: number): PotTier {
@@ -115,7 +123,7 @@ export function PremiumPot({
         <span className="pp-main__label">POT</span>
         <span className="pp-main__value">
           {currency}
-          {animatedMain.toLocaleString()}
+          {formatAmount(animatedMain)}
         </span>
       </div>
 
@@ -127,7 +135,7 @@ export function PremiumPot({
               <span className="pp-side__label">Side {i + 1}</span>
               <span className="pp-side__value">
                 {currency}
-                {sp.amount.toLocaleString()}
+                {formatAmount(sp.amount)}
               </span>
               <span className="pp-side__players" title={sp.eligible.join(', ')}>
                 ({sp.eligible.length} players)

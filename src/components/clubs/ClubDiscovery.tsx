@@ -10,6 +10,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { getClubLevel } from '../../utils/clubLevels';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import './ClubDiscovery.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface Club {
   id: string;
@@ -75,7 +76,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         }
 
         const { data, error: queryErr } = await query;
-        if (queryErr) console.error('[ClubDiscovery] Load failed:', queryErr.message);
+        if (queryErr) reportError(queryErr, 'ClubDiscovery.Load_failed');
         fetchedClubs = data || [];
       }
 
@@ -139,7 +140,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         }, i * 60);
       });
     } catch (error) {
-      console.error('Failed to load clubs:', error);
+      reportError(error, 'ClubDiscovery.Failed_to_load_clubs');
     } finally {
       if (isMounted.current) setLoading(false);
     }

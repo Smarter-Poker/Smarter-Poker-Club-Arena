@@ -36,10 +36,10 @@ export function showDiamondTopUp(
 ): void {
   const { feature, cost, currentBalance } = options;
 
-  const balanceMsg = currentBalance !== undefined ? ` (You have ${currentBalance}💎)` : '';
+  const balanceMsg = currentBalance !== undefined ? ` (You have ${currentBalance})` : '';
 
   toast.error(
-    `Not enough diamonds for ${feature} (${cost}💎 needed)${balanceMsg}. Top up in the Diamond Store!`
+    `Not enough diamonds for ${feature} (${cost} needed)${balanceMsg}. Top up in the Diamond Store!`
   );
 }
 

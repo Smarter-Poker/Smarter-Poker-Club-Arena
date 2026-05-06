@@ -30,6 +30,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../../utils/clubIdResolver
 import { getClubLevel } from '../../utils/clubLevels';
 import ClubChat from '../../components/club/ClubChat';
 import styles from './ClubDashboard.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ClubInfo {
   id: string;
@@ -144,15 +145,12 @@ export default function ClubDashboard() {
     enabled: !!resolvedClubId,
   });
 
-  // Hand history channel
-  useMasterBusChannel({
-    channelName: `club-dashboard-hands-${clubId}`,
-    table: 'hand_history',
-    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
-    event: 'INSERT',
-    onPayload: () => loadDashboardData(),
-    enabled: !!resolvedClubId,
-  });
+  // Hand history channel — DISABLED (Phase 2 cost cut).
+  // hand_history is being dropped from supabase_realtime to save egress. The
+  // dashboard already refreshes on tab-focus (useVisibilityRefresh at line 60)
+  // and every club-scoped bus event below (TABLE_SEATED, TABLE_LEFT,
+  // CHIPS_ADDED, etc.), so cross-client hand counts become eventually
+  // consistent rather than realtime. Accepted trade-off for a dashboard view.
 
   // ── Bus Listeners: cross-page event reactivity (debounced, scoped by clubId) ──
   useEffect(() => {
@@ -208,7 +206,7 @@ export default function ClubDashboard() {
       toast.success('Club Level Recalculated Successfully!');
       loadDashboardData();
     } catch (err: any) {
-      console.error('Recalculate error:', err);
+      reportError(err, 'ClubDashboard.Recalculate_error');
       toast.error(err.message || 'Failed to recalculate level.');
     } finally {
       setIsRecalculating(false);
@@ -320,7 +318,7 @@ export default function ClubDashboard() {
         setTopPlayers(sorted);
       }
     } catch (error) {
-      console.error('Failed to load dashboard:', error);
+      reportError(error, 'ClubDashboard.Failed_to_load_dashboard');
       setLoadError(true);
       toast.error('Failed to load dashboard data');
     } finally {

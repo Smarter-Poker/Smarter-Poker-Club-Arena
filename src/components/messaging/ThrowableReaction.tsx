@@ -3,13 +3,14 @@
  * ♠ THROWABLE REACTION — Q3 Social Upgrade (Phase 2: Social Richness)
  *
  * Animated SVG reactions that fly across the screen from sender to target.
- * Inspired by PokerBros throwable emojis and ClubGG's 3D animated reactions.
+ * Inspired by premium throwable emojis and ClubGG's 3D animated reactions.
  * Uses CSS @keyframes for performant GPU-accelerated flight animations.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { haptic } from '../../services/HapticService';
+import { soundService } from '../../services/SoundService';
 import './ThrowableReaction.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -100,6 +101,7 @@ export const ThrowablePicker: React.FC<ThrowablePickerProps> = ({
               className="throwable-item"
               onClick={() => {
                 haptic.heavy();
+                soundService.playThrowableImpact();
                 onSelect(emoji);
                 onClose();
               }}

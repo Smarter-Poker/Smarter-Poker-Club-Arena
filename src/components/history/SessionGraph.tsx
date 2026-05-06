@@ -17,7 +17,9 @@ export function SessionGraph({ data, height = 120, showLabels = true }: SessionG
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setTimeout(() => setMounted(true), 50);
+    // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+    const _mountTimer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(_mountTimer);
   }, []);
 
   const { path, minVal, maxVal, startBalance, endBalance, profit } = useMemo(() => {

@@ -9,17 +9,26 @@ export default defineConfig({
   plugins: [
     react(),
 
-    // Sentry plugin for source maps and release tracking (production only + auth token required)
+    // Sentry source-map upload + release tagging (Phase U5.1, task #133).
+    // Gated on NODE_ENV=production AND SENTRY_AUTH_TOKEN so dev builds stay fast.
+    // CI passes both via GitHub Actions secrets (`.github/workflows/ci.yml`).
+    // Org/project slugs default to the LIVE Sentry values verified 2026-04-23
+    // via the Sentry API: org `smarter-software-inc`, project `javascript-react`.
+    // The earlier defaults (smarter-poker / club-arena) referenced a non-existent
+    // org slug and uploads silently no-op'd — see task #133.
     !!(process.env.NODE_ENV === 'production' && process.env.SENTRY_AUTH_TOKEN) &&
       sentryVitePlugin({
         org: process.env.SENTRY_ORG || 'smarter-software-inc',
         project: process.env.SENTRY_PROJECT || 'javascript-react',
         authToken: process.env.SENTRY_AUTH_TOKEN,
 
-        // Upload source maps
+        // Upload source maps, then DELETE them from dist/ so they don't ship
+        // to end users (saves ~3 MB per deploy + avoids exposing source code).
+        // Sentry keeps its own copy on the server side for symbolication.
         sourcemaps: {
           assets: './dist/**',
           ignore: ['node_modules'],
+          filesToDeleteAfterUpload: ['./dist/**/*.js.map', './dist/**/*.css.map'],
         },
 
         // Release management
@@ -64,9 +73,17 @@ export default defineConfig({
       process.env.NODE_ENV === 'production' ? ['console.log', 'console.debug', 'console.info'] : [],
   },
   build: {
-    sourcemap: false, // Disabled to fit in CI disk constraints; re-enable for Sentry in production CI
+    sourcemap: true, // Enabled — Sentry source maps are uploaded for readable production stack traces
     rollupOptions: {
       output: {
+        // 2026-04-15 cache-bust: append a build-time tag to every emitted
+        // file's name so that v5-broken immutable caches on users' browsers
+        // are bypassed. Vite's default content hash alone can't help here
+        // because vendor chunks' content is unchanged — the tag forces a
+        // brand-new URL even when content hash would otherwise match.
+        entryFileNames: 'assets/[name]-[hash]-v6.js',
+        chunkFileNames: 'assets/[name]-[hash]-v6.js',
+        assetFileNames: 'assets/[name]-[hash]-v6[extname]',
         manualChunks(id: string) {
           // ── Vendor Splits (safe — no circular dependencies) ──
           if (id.includes('node_modules/react-dom')) return 'vendor-react';

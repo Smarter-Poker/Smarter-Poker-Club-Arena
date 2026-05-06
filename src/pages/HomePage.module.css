@@ -195,7 +195,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: clip;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   /* Enhancement #6: Content stays flat in parallax context */
@@ -1026,14 +1026,19 @@
 
 .bottomRow {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   z-index: 10;
-  padding: 16px 16px 20px 16px;
+  padding: 16px 8px 20px 8px;
   margin-top: 0;
   overflow: visible;
+  /* Full width with internal padding keeps tiles centered and un-clipped */
   width: 100%;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
   justify-content: center;
   flex-wrap: nowrap;
+  box-sizing: border-box;
 }
 
 .tileCard {
@@ -1787,7 +1792,7 @@
 
   .bottomRow {
     gap: 8px;
-    padding: 12px 10px 16px;
+    padding: 12px 12px 16px;
   }
 
   .modalContent {
@@ -1862,8 +1867,9 @@
   }
 
   .bottomRow {
-    gap: 6px;
+    gap: 4px;
     padding: 10px 8px 14px;
+    width: 100%;
   }
 }
 

@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { soundService } from '../../services/SoundService';
 import './AchievementNotification.css';
 
 interface AchievementNotificationProps {
@@ -36,6 +37,9 @@ export function AchievementNotification({ achievement, onDismiss }: AchievementN
     if (achievement) {
       setIsVisible(true);
       setIsExiting(false);
+
+      // Premium celebratory sparkle on achievement unlock
+      soundService.playAchievement();
 
       // Auto-dismiss after 5 seconds
       const timer = setTimeout(() => {

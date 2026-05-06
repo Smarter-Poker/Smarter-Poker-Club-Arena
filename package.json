@@ -1,5 +1,5 @@
 {
-  "name": "club-engine",
+  "name": "@smarter-poker/club-arena",
   "version": "1.0.1",
   "private": true,
   "type": "module",
@@ -28,14 +28,12 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@react-three/drei": "^10.0.0",
-    "@react-three/fiber": "^9.0.0",
-    "@rollup/rollup-linux-arm64-gnu": "^4.59.0",
     "@sentry/react": "^10.38.0",
     "@sentry/vite-plugin": "^4.8.0",
     "@supabase/supabase-js": "^2.49.0",
     "@types/md5": "^2.3.6",
     "canvas-confetti": "^1.9.4",
+    "fast-json-patch": "^3.1.1",
     "framer-motion": "^11.18.0",
     "md5": "^2.3.0",
     "react": "^19.0.0",
@@ -60,7 +58,6 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.0.18",
     "@vitest/ui": "^4.0.18",
-    "autoprefixer": "^10.4.20",
     "eslint": "^9.18.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.18",
@@ -69,7 +66,6 @@
     "jsdom": "^28.1.0",
     "lint-staged": "^16.3.3",
     "pg": "^8.20.0",
-    "postcss": "^8.5.1",
     "prettier": "^3.8.1",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0",
@@ -87,5 +83,8 @@
     "*.{ts,tsx,css,json,md}": [
       "prettier --write"
     ]
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-arm64": "^4.60.0"
   }
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import './RebuyModal.css';
 
 interface RebuyModalProps {
@@ -36,18 +36,33 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
         </div>
         <div className="rebuyModalBody">
           <div className="rebuyInfo">
+            {/* FIX 197: Format amounts with .toLocaleString() — was raw unformatted numbers */}
             <div className="rebuyRow">
               <span>Rebuy Cost</span>
-              <span className="rebuyValue">{rebuyCost}</span>
+              <span className="rebuyValue">
+                {rebuyCost.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
             </div>
             <div className="rebuyRow">
               <span>Chips Received</span>
-              <span className="rebuyValue rebuyChips">+{rebuyChips}</span>
+              <span className="rebuyValue rebuyChips">
+                +
+                {rebuyChips.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
             </div>
             <div className="rebuyRow">
               <span>Wallet Balance</span>
               <span className={`rebuyValue ${!canAfford ? 'insufficient' : ''}`}>
-                {walletBalance}
+                {walletBalance.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
               </span>
             </div>
           </div>
@@ -60,7 +75,7 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
           <button
             className="rebuyConfirmBtn"
             onClick={() => {
-              haptic.medium();
+              soundService.playBuyInConfirm();
               onConfirm();
             }}
             disabled={!canAfford || isProcessing}

@@ -1,0 +1,109 @@
+# ═════════════════════════════════════════════════════════════════════════
+# Prometheus + Grafana + AlertManager — engine-01 co-located monitoring
+# Phase 5.1.3a (adapted 2026-04-20)
+# ═════════════════════════════════════════════════════════════════════════
+#
+# Deploy:
+#   cd /opt/smarter-poker-monitoring
+#   cp .env.example .env                         # fill in GRAFANA_ADMIN_PASSWORD
+#   docker compose up -d
+#
+# Binds on 127.0.0.1 only — the Caddy vhost at engine.smarter.poker fronts
+# them at /grafana, /prometheus, /alertmanager.
+#
+# Adapted from the cron-01 stack:
+#   - GF_SERVER_ROOT_URL retargeted to https://engine.smarter.poker/grafana
+#   - Prometheus --web.external-url retargeted to ../engine../prometheus
+#   - prometheus service gains host.docker.internal host-gateway mapping so
+#     it can scrape node_exporter :9100 and club-arena-engine :8080 on host
+#   - 1 GB disk retention (down from 15d) because engine-01 is smaller
+# ═════════════════════════════════════════════════════════════════════════
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  alertmanager-data:
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: sp-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.retention.size=1GB"
+      - "--web.enable-lifecycle"
+      - "--web.external-url=https://engine.smarter.poker/prometheus"
+      - "--web.route-prefix=/"
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      - ./slo-rules.yml:/etc/prometheus/slo-rules.yml:ro
+      - ./slo-alerts.yml:/etc/prometheus/slo-alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - monitoring
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: sp-alertmanager
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+      - "--web.external-url=https://engine.smarter.poker/alertmanager"
+      - "--web.route-prefix=/"
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    env_file: .env
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: sp-grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SERVER_ROOT_URL=https://engine.smarter.poker/grafana
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_UNIFIED_ALERTING_ENABLED=true
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+      - ./grafana-dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: sp-node-exporter
+    restart: unless-stopped
+    command:
+      - "--path.rootfs=/host"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    pid: host
+    network_mode: host
+    volumes:
+      - "/:/host:ro,rslave"

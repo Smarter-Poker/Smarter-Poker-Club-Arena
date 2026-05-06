@@ -20,6 +20,7 @@ import { horseBugReporter } from './HorseBugReporter';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -47,12 +48,78 @@ class AutoRebuyServiceCore {
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private rebuyInProgress: Set<string> = new Set(); // Track concurrent rebuys by horse:table
 
+  // ── Tab leader election (prevents multi-tab race conditions) ──
+  private tabId = Math.random().toString(36).slice(2, 10);
+  private isLeader = false;
+  private leaderChannel: BroadcastChannel | null = null;
+  private leaderHeartbeatHandle: ReturnType<typeof setInterval> | null = null;
+  private lastLeaderHeartbeat = 0;
+
   constructor(config: Partial<AutoRebuyConfig> = {}) {
     this.monitoringInterval = config.monitoringInterval ?? 30000;
     this.minStackBB = config.minStackBB ?? 20;
     this.rebuyStackBB = config.rebuyStackBB ?? 100;
-    this.minHorsesPerTable = config.minHorsesPerTable ?? 2;
+    this.minHorsesPerTable = config.minHorsesPerTable ?? 4;
     this.minWalletBalance = config.minWalletBalance ?? 50000;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TAB LEADER ELECTION — Only ONE tab runs AutoRebuy at a time
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private initLeaderElection(): void {
+    try {
+      this.leaderChannel = new BroadcastChannel('autorebuy-leader');
+      this.leaderChannel.onmessage = (e) => {
+        if (e.data?.type === 'heartbeat' && e.data.tabId !== this.tabId) {
+          // Another tab is the leader — step down
+          if (this.isLeader) {
+            console.debug(`[AutoRebuy:${this.tabId}] Yielding leadership to ${e.data.tabId}`);
+          }
+          this.isLeader = false;
+          this.lastLeaderHeartbeat = Date.now();
+        } else if (e.data?.type === 'claim' && e.data.tabId !== this.tabId) {
+          // Another tab wants leadership — if we're leader, reassert
+          if (this.isLeader) {
+            this.leaderChannel?.postMessage({ type: 'heartbeat', tabId: this.tabId });
+          }
+        }
+      };
+
+      // Try to claim leadership after a short random delay (jitter to avoid simultaneous claims)
+      setTimeout(
+        () => {
+          if (!this.isLeader && Date.now() - this.lastLeaderHeartbeat > 5000) {
+            this.claimLeadership();
+          }
+        },
+        Math.random() * 2000 + 500
+      );
+
+      // Check for stale leader every 10 seconds
+      this.leaderHeartbeatHandle = setInterval(() => {
+        if (this.isLeader) {
+          // We're leader — send heartbeat
+          this.leaderChannel?.postMessage({ type: 'heartbeat', tabId: this.tabId });
+        } else if (Date.now() - this.lastLeaderHeartbeat > 15000) {
+          // No heartbeat in 15s — leader tab is gone, claim leadership
+          this.claimLeadership();
+        }
+      }, 5000);
+    } catch (e) {
+      reportError(e, 'AutoRebuyService.setInterval');
+      // BroadcastChannel not available — just become leader (single tab)
+      this.isLeader = true;
+      console.debug(
+        `[AutoRebuy:${this.tabId}] BroadcastChannel unavailable — becoming leader by default`
+      );
+    }
+  }
+
+  private claimLeadership(): void {
+    this.isLeader = true;
+    this.leaderChannel?.postMessage({ type: 'heartbeat', tabId: this.tabId });
+    console.debug(`[AutoRebuy:${this.tabId}] Claimed leadership`);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -64,15 +131,18 @@ class AutoRebuyServiceCore {
    */
   start(): void {
     if (this.isRunning) {
-      console.error('[AutoRebuy] Already running');
+      console.debug('[AutoRebuy] Already running');
       return;
     }
 
     this.isRunning = true;
-    console.debug('[AutoRebuy] Starting monitoring (interval: ' + this.monitoringInterval + 'ms)');
+    this.initLeaderElection();
+    console.debug(
+      `[AutoRebuy:${this.tabId}] Starting monitoring (interval: ${this.monitoringInterval}ms)`
+    );
 
-    // Initial check
-    this.checkAllTables();
+    // Initial check (delayed to let leader election settle)
+    setTimeout(() => this.checkAllTables(), 3000);
 
     // Recurring checks
     this.intervalHandle = setInterval(() => {
@@ -85,14 +155,23 @@ class AutoRebuyServiceCore {
    */
   stop(): void {
     if (!this.isRunning) {
-      console.error('[AutoRebuy] Not running');
+      console.debug('[AutoRebuy] Not running');
       return;
     }
 
     this.isRunning = false;
+    this.isLeader = false;
     if (this.intervalHandle) {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
+    }
+    if (this.leaderHeartbeatHandle) {
+      clearInterval(this.leaderHeartbeatHandle);
+      this.leaderHeartbeatHandle = null;
+    }
+    if (this.leaderChannel) {
+      this.leaderChannel.close();
+      this.leaderChannel = null;
     }
 
     console.debug('[AutoRebuy] Stopped monitoring');
@@ -106,15 +185,21 @@ class AutoRebuyServiceCore {
    * Check all active tables and process rebuys
    */
   private async checkAllTables(): Promise<void> {
+    // Only the leader tab runs AutoRebuy to prevent multi-tab race conditions
+    if (!this.isLeader) {
+      return;
+    }
+
     try {
-      // Get all active tables
+      // Get all active/waiting/running tables — horses should be managed in all live states.
+      // Tables transition: waiting → active → running during gameplay.
       const { data: tables, error: tableError } = await supabase
         .from('tables')
         .select('id, big_blind')
-        .eq('status', 'active');
+        .in('status', ['active', 'waiting', 'running']);
 
       if (tableError) {
-        console.error('[AutoRebuy] Failed to fetch active tables:', tableError);
+        reportError(tableError, 'AutoRebuyService.checkAllTables.fetchTables');
         return;
       }
 
@@ -130,14 +215,14 @@ class AutoRebuyServiceCore {
       // Log any individual table failures
       results.forEach((result, idx) => {
         if (result.status === 'rejected') {
-          console.error(
+          console.debug(
             '[AutoRebuy] Error processing table ' + tables[idx].id + ':',
             result.reason
           );
         }
       });
     } catch (err: unknown) {
-      console.error('[AutoRebuy] Fatal error in checkAllTables:', err);
+      reportError(err, 'AutoRebuyService.checkAllTables');
     }
   }
 
@@ -152,8 +237,13 @@ class AutoRebuyServiceCore {
       const stackInBB = horse.stack / bigBlind;
 
       if (horse.stack === 0) {
-        // Horse is busted - reseat with fresh stack
-        await this.reseatHorse(horse.horseId, tableId);
+        // Horse is busted — direct stack update to rebuy amount.
+        // DO NOT use reseatHorse() which does a destructive remove+reseat cycle
+        // that conflicts with HeadlessTableEngine's autorebuyHorses (also does
+        // direct stack updates). The remove+reseat path caused duplicate seats
+        // and phantom "drain" as the old row was deleted mid-hand.
+        const rebuyAmount = this.rebuyStackBB * bigBlind;
+        await this.rebuyHorse(horse.horseId, tableId, rebuyAmount);
       } else if (stackInBB < this.minStackBB) {
         // Horse is short-stacked - top up stack
         const topupAmount = this.rebuyStackBB * bigBlind - horse.stack;
@@ -185,27 +275,48 @@ class AutoRebuyServiceCore {
 
     // Skip if rebuy already in progress for this horse:table
     if (this.rebuyInProgress.has(rebuyKey)) {
-      console.error('[AutoRebuy] Rebuy already in progress for ' + rebuyKey);
+      console.debug('[AutoRebuy] Rebuy already in progress for ' + rebuyKey);
       return false;
     }
 
     this.rebuyInProgress.add(rebuyKey);
     try {
-      // Execute ATOMIC rebuy
-      const { error: rebuyError } = await retryAsync(
+      // Direct stack UPDATE — atomic_table_rebuy RPC has UUID type mismatch bug.
+      // This achieves the same result: add chips to horse's current stack.
+      const { data: currentSeat, error: fetchErr } = await supabase
+        .from('table_seats')
+        .select('stack')
+        .eq('table_id', tableId)
+        .eq('user_id', horseId)
+        .is('left_at', null)
+        .maybeSingle();
+
+      if (fetchErr || !currentSeat) {
+        console.debug(
+          '[AutoRebuy] Could not find seat for rebuy — horse ' +
+            horseId +
+            ': ' +
+            (fetchErr?.message || 'seat not found')
+        );
+        return false;
+      }
+
+      const newStack = (currentSeat.stack || 0) + amount;
+      const { error: updateErr } = await retryAsync(
         () =>
-          supabase.rpc('atomic_table_rebuy', {
-            p_user_id: horseId,
-            p_table_id: tableId,
-            p_amount: amount,
-          }),
+          supabase
+            .from('table_seats')
+            .update({ stack: newStack })
+            .eq('table_id', tableId)
+            .eq('user_id', horseId)
+            .is('left_at', null),
         3
       );
 
-      if (rebuyError) {
-        console.error(
-          '[AutoRebuy] Atomic rebuy failed for horse ' + horseId + ':',
-          rebuyError.message
+      if (updateErr) {
+        console.debug(
+          '[AutoRebuy] Stack update failed for horse ' + horseId + ':',
+          updateErr.message
         );
         horseBugReporter.report({
           horseName: 'AutoRebuy',
@@ -217,10 +328,10 @@ class AutoRebuyServiceCore {
           severity: 'high',
           title: 'Auto-rebuy failed',
           description:
-            'Could not complete atomic rebuy of ' +
+            'Could not complete stack update of ' +
             amount +
             ' chips: ' +
-            (rebuyError.message || 'unknown error'),
+            (updateErr.message || 'unknown error'),
           context: { horseId, tableId, amount },
         });
         return false;
@@ -246,7 +357,7 @@ class AutoRebuyServiceCore {
       );
       return true;
     } catch (err: unknown) {
-      console.error('[AutoRebuy] Error in rebuyHorse:', err);
+      reportError(err, 'AutoRebuyService.rebuyHorse');
       return false;
     } finally {
       this.rebuyInProgress.delete(rebuyKey);
@@ -262,7 +373,7 @@ class AutoRebuyServiceCore {
 
     // Skip if reseat already in progress for this horse:table
     if (this.rebuyInProgress.has(reseatKey)) {
-      console.error('[AutoRebuy] Reseat already in progress for ' + reseatKey);
+      console.debug('[AutoRebuy] Reseat already in progress for ' + reseatKey);
       return false;
     }
 
@@ -276,7 +387,7 @@ class AutoRebuyServiceCore {
         .maybeSingle();
 
       if (!tableData) {
-        console.error('[AutoRebuy] Table not found:', tableId);
+        console.debug('[AutoRebuy] Table not found:', tableId);
         return false;
       }
 
@@ -289,7 +400,7 @@ class AutoRebuyServiceCore {
       // Step 1: Remove the busted horse
       const removed = await HydraService.removeHorse(tableId, horseId);
       if (!removed) {
-        console.error('[AutoRebuy] Failed to remove busted horse ' + horseId);
+        console.debug('[AutoRebuy] Failed to remove busted horse ' + horseId);
         return false;
       }
 
@@ -299,7 +410,7 @@ class AutoRebuyServiceCore {
       // Step 3: Reseat the horse
       const seated = await HydraService.seatHorse(horseId, tableId, bigBlind);
       if (!seated) {
-        console.error('[AutoRebuy] Failed to reseat horse ' + horseId);
+        console.debug('[AutoRebuy] Failed to reseat horse ' + horseId);
         return false;
       }
 
@@ -322,7 +433,7 @@ class AutoRebuyServiceCore {
       console.debug('[AutoRebuy] Reseated horse ' + horseId + ' at table ' + tableId);
       return true;
     } catch (err: unknown) {
-      console.error('[AutoRebuy] Error in reseatHorse:', err);
+      reportError(err, 'AutoRebuyService.reseatHorse');
       return false;
     } finally {
       const reseatKey = this.getHorseLockKey(horseId, tableId);
@@ -353,7 +464,7 @@ class AutoRebuyServiceCore {
           .maybeSingle();
 
         if (!tableData) {
-          console.error('[AutoRebuy] Table not found:', tableId);
+          console.debug('[AutoRebuy] Table not found:', tableId);
           return;
         }
 
@@ -366,7 +477,7 @@ class AutoRebuyServiceCore {
         }
       }
     } catch (err: unknown) {
-      console.error('[AutoRebuy] Error in ensureMinimumHorses:', err);
+      reportError(err, 'AutoRebuyService.ensureMinimumHorses');
     }
   }
 
@@ -384,7 +495,7 @@ class AutoRebuyServiceCore {
         .maybeSingle();
 
       if (walletError) {
-        console.error('[AutoRebuy] Could not fetch wallet for horse ' + horseId + ':', walletError);
+        reportError(walletError, 'AutoRebuyService.topUpWallet.fetchWallet', { horseId });
         return false;
       }
 
@@ -419,7 +530,8 @@ class AutoRebuyServiceCore {
       );
 
       if (creditError) {
-        console.error(
+        reportError(creditError, 'AutoRebuyService.executeRebuy');
+        console.debug(
           '[AutoRebuy] Wallet topup failed for horse ' + horseId + ':',
           creditError.message
         );
@@ -453,7 +565,7 @@ class AutoRebuyServiceCore {
       );
       return true;
     } catch (err: unknown) {
-      console.error('[AutoRebuy] Error in topUpWallet:', err);
+      reportError(err, 'AutoRebuyService.topUpWallet');
       return false;
     }
   }
@@ -473,7 +585,7 @@ class AutoRebuyServiceCore {
         stack: h.stack,
       }));
     } catch (err: unknown) {
-      console.error('[AutoRebuy] Error in getTableHorseStacks:', err);
+      reportError(err, 'AutoRebuyService.getTableHorseStacks');
       return [];
     }
   }

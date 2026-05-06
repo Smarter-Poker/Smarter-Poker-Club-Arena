@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './TournamentWinnerOverlay.css';
 
 interface TournamentWinnerOverlayProps {
@@ -19,6 +19,16 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
     Array<{ id: number; x: number; y: number; delay: number }>
   >([]);
   const [displayPrize, setDisplayPrize] = useState(0);
+  // CA-9 BUG FIX: dismissTimerRef — setTimeout(onDismiss, 500) in handleDismiss was
+  // fire-and-forget. If the parent unmounts the overlay in the 500ms window, onDismiss
+  // fires on a dead component tree. Added ref + unmount guard.
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (isWinner) {
@@ -63,7 +73,8 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
 
   const handleDismiss = useCallback(() => {
     setVisible(false);
-    setTimeout(onDismiss, 500);
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(onDismiss, 500);
   }, [onDismiss]);
 
   if (!isWinner) return null;
@@ -84,7 +95,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         ))}
       </div>
       <div className="winnerContent winner-entrance">
-        <div className="winnerTrophy trophy-bounce">🏆</div>
+        <div className="winnerTrophy trophy-bounce">WINNER</div>
         <div className="winnerTitle winner-golden">CHAMPION!</div>
         <div className="winnerTournament">{tournamentName}</div>
         {prize > 0 && (

@@ -40,7 +40,7 @@ export const MilestoneToast: React.FC = () => {
       id: `milestone-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       title: data.title || data.milestoneName || 'Milestone Unlocked!',
       description: data.description || data.message || 'You reached a new milestone!',
-      icon: data.icon || '🏆',
+      icon: data.icon || 'Trophy',
       reward: data.reward || data.rewardText,
     };
 
@@ -80,7 +80,7 @@ export const MilestoneToast: React.FC = () => {
           <div className="milestone-toast__content">
             <div className="milestone-toast__title">{n.title}</div>
             <div className="milestone-toast__description">{n.description}</div>
-            {n.reward && <div className="milestone-toast__reward">🎁 {n.reward}</div>}
+            {n.reward && <div className="milestone-toast__reward">Reward: {n.reward}</div>}
           </div>
           <div className="milestone-toast__progress" />
         </div>

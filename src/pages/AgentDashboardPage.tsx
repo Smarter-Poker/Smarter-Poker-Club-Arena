@@ -26,6 +26,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 type AgentTab =
   | 'overview'
@@ -290,7 +291,8 @@ export default function AgentDashboardPage() {
               cachedAt: Date.now(),
             })
           );
-        } catch {
+        } catch (e) {
+          reportError(e, 'AgentDashboardPage.map');
           /* storage full */
         }
       } catch (err: unknown) {
@@ -358,7 +360,8 @@ export default function AgentDashboardPage() {
           setLoading(false);
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentDashboardPage.useEffect');
       /* corrupt cache */
     }
   }, [user?.id, clubId]);
@@ -433,7 +436,7 @@ export default function AgentDashboardPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AgentDashboardPage] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'AgentDashboardPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AgentDashboardPage] ⏱️ Realtime channel timed out');
@@ -706,7 +709,8 @@ export default function AgentDashboardPage() {
                       { key: 'created_at', label: 'Date' },
                     ]);
                   }
-                } catch {
+                } catch (e) {
+                  reportError(e, 'AgentDashboardPage');
                   /* silent */
                 }
               }}

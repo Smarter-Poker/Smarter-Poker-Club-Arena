@@ -23,6 +23,7 @@ import { setSentryUser, clearSentryUser } from './SentryInit';
 import { pushNotificationService } from '../services/PushNotificationService';
 import { clearSessionCache } from '../hooks/useSessionCache';
 import { useHeaderDataStore } from '../stores/useHeaderDataStore';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -126,7 +127,7 @@ class IdentityDNACore {
       if (e?.name === 'AbortError' || e?.message?.includes('aborted')) {
         console.warn('  └─ Session check aborted (benign)');
       } else {
-        console.error('  └─ Session Check Failed:', e);
+        reportError(e, 'IdentityDNA._Session_Check_Failed');
       }
     }
 
@@ -220,10 +221,7 @@ class IdentityDNACore {
                 try {
                   postgresSyncHooks.init(session.user.id);
                 } catch (syncErr) {
-                  console.error(
-                    '[IdentityDNA] PostgresSyncHooks init failed on SIGNED_IN:',
-                    syncErr
-                  );
+                  reportError(syncErr, 'IdentityDNA.PostgresSyncHooks_init_failed_on_SIGNED_');
                   // Non-fatal — user is still authenticated, just realtime may be degraded
                 }
               } finally {
@@ -270,10 +268,7 @@ class IdentityDNACore {
                 postgresSyncHooks.destroy();
                 postgresSyncHooks.init(session.user.id);
               } catch (syncErr) {
-                console.error(
-                  '[IdentityDNA] PostgresSyncHooks re-init failed, retrying in 2s:',
-                  syncErr
-                );
+                reportError(syncErr, 'IdentityDNA.PostgresSyncHooks_reinit_failed_retrying');
                 // Retry once after a short delay — transient failures are common during token rotation
                 setTimeout(() => {
                   try {
@@ -281,10 +276,7 @@ class IdentityDNACore {
                     postgresSyncHooks.init(session.user.id);
                     console.debug('[IdentityDNA] PostgresSyncHooks re-init succeeded on retry');
                   } catch (retryErr) {
-                    console.error(
-                      '[IdentityDNA] PostgresSyncHooks re-init FAILED on retry — realtime may be degraded:',
-                      retryErr
-                    );
+                    reportError(retryErr, 'IdentityDNA.PostgresSyncHooks_reinit_FAILED_on_retry');
                     // Emit bus event so UI can show a connectivity warning
                     // Using REALTIME_DISCONNECTED (registered type) since realtime is effectively down
                     masterBus.emit('REALTIME_DISCONNECTED', {
@@ -381,7 +373,7 @@ class IdentityDNACore {
     if (error) {
       // Profile might not exist yet - this is okay for new users
       if (error.code !== 'PGRST116') {
-        console.error('🧬 [PROFILE] Load error:', error.message);
+        reportError(error, 'IdentityDNA.Load_error');
       }
       return null;
     }
@@ -422,7 +414,7 @@ class IdentityDNACore {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {
-        console.error('🧬 [LOGOUT] Error:', error.message);
+        reportError(error, 'IdentityDNA.Error');
         throw error;
       }
       // Auth listener will handle the rest

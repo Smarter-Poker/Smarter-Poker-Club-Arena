@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import './Tooltip.css';
 
 interface TooltipProps {
@@ -15,15 +15,26 @@ export const Tooltip: React.FC<TooltipProps> = ({
   delay = 200,
 }) => {
   const [visible, setVisible] = useState(false);
-  const [timeoutId, setTimeoutId] = useState<ReturnType<typeof setTimeout> | null>(null);
+  // CA-17 BUG FIX: was useState(timeoutId) — caused an extra re-render on every
+  // hover AND had no unmount cleanup. Using useRef avoids the re-render and lets
+  // us cancel the pending show-delay timer when the component unmounts.
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
 
   const showTooltip = () => {
-    const id = setTimeout(() => setVisible(true), delay);
-    setTimeoutId(id);
+    timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = null;
+      setVisible(true);
+    }, delay);
   };
 
   const hideTooltip = () => {
-    if (timeoutId) clearTimeout(timeoutId);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
     setVisible(false);
   };
 

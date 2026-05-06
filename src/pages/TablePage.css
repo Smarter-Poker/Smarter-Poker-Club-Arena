@@ -29,6 +29,134 @@
    PAGE LAYOUT
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Dan 2026-04-17 (Task 56) — Winner acknowledgment banner.
+   Sits above everything but the modals, fades in+scales, hangs for ~2.4s,
+   then fades out. Hero wins → gold/green; opponent win → cool slate. */
+.winner-banner {
+  position: fixed;
+  top: 28vh;
+  left: 50%;
+  transform: translate(-50%, 0) scale(1);
+  z-index: 1250;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 28px;
+  min-width: 220px;
+  max-width: 86vw;
+  border-radius: 18px;
+  text-align: center;
+  color: #fff;
+  font-family: inherit;
+  pointer-events: none;
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  animation:
+    winnerBannerEnter 280ms cubic-bezier(0.2, 0.9, 0.35, 1.05) both,
+    winnerBannerExit 400ms ease-in 2400ms both;
+}
+.winner-banner--hero {
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.22), rgba(212, 160, 23, 0.32));
+  border: 1.5px solid rgba(255, 215, 0, 0.55);
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.55),
+    0 0 36px rgba(255, 215, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.winner-banner--opp {
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.78), rgba(15, 23, 42, 0.92));
+  border: 1.5px solid rgba(148, 163, 184, 0.45);
+  box-shadow:
+    0 14px 44px rgba(0, 0, 0, 0.55),
+    0 0 20px rgba(30, 41, 59, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.winner-banner__title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+.winner-banner--hero .winner-banner__title {
+  color: #fffbe6;
+  text-shadow:
+    0 2px 6px rgba(107, 70, 0, 0.65),
+    0 0 14px rgba(255, 215, 0, 0.55);
+}
+.winner-banner__hand {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+.winner-banner--hero .winner-banner__hand {
+  color: #fde68a;
+}
+.winner-banner--opp .winner-banner__hand {
+  color: #cbd5e1;
+}
+.winner-banner__amount {
+  font-size: 1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+.winner-banner--hero .winner-banner__amount {
+  color: #fff;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.7);
+}
+.winner-banner--opp .winner-banner__amount {
+  color: #e2e8f0;
+}
+@keyframes winnerBannerEnter {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -12px) scale(0.86);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+@keyframes winnerBannerExit {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .winner-banner {
+    animation: none;
+    opacity: 1;
+  }
+}
+@media (max-width: 480px) {
+  .winner-banner {
+    top: 22vh;
+    padding: 12px 20px;
+    min-width: 180px;
+    border-radius: 16px;
+  }
+  .winner-banner__title {
+    font-size: 1.15rem;
+  }
+  .winner-banner__hand {
+    font-size: 0.75rem;
+  }
+  .winner-banner__amount {
+    font-size: 0.9rem;
+  }
+}
+
 .table-page {
   position: fixed;
   inset: 0;
@@ -106,7 +234,7 @@
 
 /* ─── Winner Celebration — golden flash on table ─── */
 .table-page--winner-flash .table-surface {
-  animation: winnerTableFlash 1.5s ease-out;
+  animation: winnerTableFlash calc(1.5s * var(--animation-speed, 1)) ease-out;
 }
 
 @keyframes winnerTableFlash {
@@ -134,18 +262,30 @@
    HEADER BAR — PokerBros compact style
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Dan 2026-04-17: top bar was competing with the TableHUD hamburger and
+   BBJ banner, and its centered game-info duplicated the on-felt "NLH 1/2"
+   title. Trimmed down to a transparent thin strip hosting only the quick
+   back + add-chips buttons on the left; center/right text rows hidden. */
 .table-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  padding-top: calc(6px + env(safe-area-inset-top, 0));
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.7) 100%);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  justify-content: flex-start;
+  padding: 4px 8px;
+  padding-top: calc(4px + env(safe-area-inset-top, 0));
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: none;
   z-index: 100;
-  min-height: 44px;
+  min-height: 0;
+}
+
+/* Hide all three slots of the legacy header — hamburger menu (TableHUD
+   upper-left) already hosts Leave Table + Add Chips. */
+.header-left,
+.header-center,
+.header-right {
+  display: none !important;
 }
 
 .header-btn {
@@ -203,9 +343,23 @@
 .header-center {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
+}
+
+.header-center__top-row {
+  display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.header-center__bottom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.7;
 }
 
 .header-table-name {
@@ -238,6 +392,31 @@
   background: rgba(34, 197, 94, 0.08);
   border-radius: 4px;
   border: 1px solid rgba(34, 197, 94, 0.15);
+}
+
+.header-brand {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  color: #60a5fa;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 6px rgba(96, 165, 250, 0.3);
+}
+
+.header-club-name {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: #a78bfa;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-hand-number {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: #94a3b8;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
 }
 
 .header-right {
@@ -303,20 +482,28 @@
   flex: 1;
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 8px 8px 4px;
-  overflow: hidden;
+  /* Dan 2026-04-17 (v3): top was clipping under BBJ row. Drop the table ~24px
+     further from the top edge. Align-start pins the scaler to the top so the
+     padding-top alone controls vertical position — no more centered clip. */
+  padding: 76px 12px calc(124px + env(safe-area-inset-bottom, 0));
+  overflow: visible;
+  max-height: calc(100dvh - 60px);
 }
 
-/* Table Wrapper - Scales uniformly via CSS transform */
+/* Phase A (Dan 2026-04-17, flipped): PokerBros is a VERTICAL portrait oval —
+   taller than wide. Aspect ratio ~0.65:1 (0.65 wide per 1 tall). On a 375px
+   phone with the padded container ~335px wide, we hold to ~300px wide and
+   let the table fill vertically up to the available dvh minus header, BBJ,
+   hero cards, and action bar. */
 .table-scaler {
   width: 100%;
-  max-width: min(100%, 420px);
-  aspect-ratio: 1 / 1.4;
-  /* Vertical orientation */
+  max-width: min(calc(100% - 16px), 320px);
+  aspect-ratio: 0.65 / 1;
   position: relative;
   transform-origin: center center;
+  max-height: 100%;
 }
 
 /* Table Felt (Vertical Oval) */
@@ -325,12 +512,13 @@
   height: 100%;
   position: absolute;
   inset: 0;
+  overflow: visible;
 }
 
 .table-rail {
   width: 100%;
   height: 100%;
-  padding: 6px;
+  padding: 10px;
   /* Premium dark wood rail with subtle grain highlights */
   background: var(
     --rail-gradient,
@@ -344,7 +532,13 @@
       #3a2a1e 100%
     )
   );
-  border-radius: 45% / 35%;
+  /* Dan 2026-04-17 (v4): egg / teardrop — wider at the hero (bottom), tapered
+     toward the top. Math: top horizontal radii sum to 100% (no flat segment
+     at top → fully curved/tapered top); bottom horizontal radii sum to 90%
+     (10% flat segment along the bottom edge → wider, flatter bottom).
+     Vertical radii 55% top vs 45% bottom deepens the top curve so it rolls
+     inward more, matching the PokerBros reference. */
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
   box-shadow:
         /* Outer double ring */
     0 0 0 2px rgba(0, 0, 0, 0.8),
@@ -363,7 +557,8 @@
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 45% / 35%;
+  /* Dan 2026-04-17 (v3): match egg teardrop rail. */
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
   background: repeating-linear-gradient(
     85deg,
     transparent 0px,
@@ -380,8 +575,9 @@
   content: '';
   position: absolute;
   inset: 4px;
-  border-radius: 44% / 34%;
   border: 1px dashed rgba(255, 255, 255, 0.06);
+  /* Dan 2026-04-17 (v3): match egg teardrop rail. */
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
   pointer-events: none;
   z-index: 2;
 }
@@ -395,9 +591,17 @@
   --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%);
 }
 
-/* Default: Midnight Black (fallback when no theme set) */
+/* Default: Casino Green (PokerBros-style classic green felt) */
 .table-page:not([data-felt-theme]) {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%);
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%);
+  --rail-gradient: linear-gradient(
+    180deg,
+    #5a4232 0%,
+    #4a3728 20%,
+    #3a2a1e 50%,
+    #4a3728 80%,
+    #5a4232 100%
+  );
 }
 
 /* Blue Royale */
@@ -425,6 +629,169 @@
   --felt-gradient: radial-gradient(ellipse at 50% 40%, #7a6a1a 0%, #524a0f 50%, #3d380a 100%);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIX 222: BIBLE V8 §11.2 THEME IDS — Tab 1 (Themes) + Tab 2 (Table Felt)
+   Maps ThemeSettingsModal asset IDs to --felt-gradient CSS custom property
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Tab 1: Themes (presets) */
+.table-page[data-felt-theme='default-dark'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #16213e 50%, #0e0e18 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #1a1a2e 0%, #0e0f1a 100%);
+}
+.table-page[data-felt-theme='classic-brown'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #5d4037 0%, #3e2723 50%, #2c1a14 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #3e2723 0%, #1a0f0a 100%);
+}
+.table-page[data-felt-theme='neon-blue'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1565c0 0%, #0d47a1 50%, #062f6e 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #0d47a1 0%, #05204f 100%);
+}
+.table-page[data-felt-theme='rustic-wood'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #795548 0%, #4e342e 50%, #321e18 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #4e342e 0%, #1a0f0a 100%);
+}
+.table-page[data-felt-theme='casino-green'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2e7d32 0%, #1b5e20 50%, #0d3a10 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #1b5e20 0%, #0a2d0a 100%);
+}
+
+/* Tab 2: Table Felt (specific surface) */
+.table-page[data-felt-theme='dark-felt'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #0f0f1a 50%, #08080f 100%);
+}
+.table-page[data-felt-theme='brown-felt'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #4e342e 0%, #3e2723 50%, #2a1812 100%);
+}
+.table-page[data-felt-theme='neon-blue-felt'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a237e 0%, #0d47a1 50%, #062c70 100%);
+}
+.table-page[data-felt-theme='red-leather'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #c62828 0%, #b71c1c 50%, #7f0000 100%);
+}
+.table-page[data-felt-theme='green-casino'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #388e3c 0%, #1b5e20 50%, #0d3a10 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIX 222: BIBLE V8 §11.2 — Tab 4 (Background Themes)
+   Applied to .table-page via --bg-gradient and background
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page[data-background-theme='diamond-pattern'] {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 12px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 12px
+    ),
+    radial-gradient(ellipse at 50% 50%, #263238 0%, #1a2025 100%);
+}
+.table-page[data-background-theme='stone-concrete'] {
+  background:
+    repeating-conic-gradient(rgba(255, 255, 255, 0.008) 0% 25%, transparent 0% 50%) 0 0 / 3px 3px,
+    radial-gradient(ellipse at 50% 50%, #616161 0%, #424242 50%, #2a2a2a 100%);
+}
+.table-page[data-background-theme='galaxy-nebula'] {
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(63, 81, 181, 0.3) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(156, 39, 176, 0.2) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, #1a237e 0%, #311b92 50%, #0a0a1a 100%);
+}
+.table-page[data-background-theme='hardwood-floor'] {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.02) 0px,
+      transparent 2px,
+      transparent 40px
+    ),
+    radial-gradient(ellipse at 50% 50%, #795548 0%, #5d4037 50%, #3e2723 100%);
+}
+.table-page[data-background-theme='teal-tile'] {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.025) 0px,
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px,
+      transparent 50px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.025) 0px,
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px,
+      transparent 50px
+    ),
+    radial-gradient(ellipse at 50% 50%, #00897b 0%, #00695c 50%, #004d40 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIX 222: BIBLE V8 §11.2 — Tab 3 (Button Themes)
+   Dealer button color tokens — consumed by .dealer-button component
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page[data-button-theme='classic-white'] {
+  --dealer-btn-bg: linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%);
+  --dealer-btn-color: #111;
+}
+.table-page[data-button-theme='red-d-gear'] {
+  --dealer-btn-bg: linear-gradient(135deg, #c62828, #e53935);
+  --dealer-btn-color: #fff;
+}
+.table-page[data-button-theme='gray-d-gear'] {
+  --dealer-btn-bg: linear-gradient(135deg, #616161, #757575);
+  --dealer-btn-color: #fff;
+}
+.table-page[data-button-theme='blue-crystal'] {
+  --dealer-btn-bg: linear-gradient(135deg, #1565c0, #42a5f5);
+  --dealer-btn-color: #fff;
+}
+.table-page[data-button-theme='gold-star'] {
+  --dealer-btn-bg: linear-gradient(135deg, #f57f17, #fbc02d);
+  --dealer-btn-color: #1a1a1e;
+}
+.table-page[data-button-theme='sports-themed'] {
+  --dealer-btn-bg: linear-gradient(135deg, #33691e, #558b2f);
+  --dealer-btn-color: #fff;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIX 222: BIBLE V8 §11.2 — Tab 5 (Card Themes)
+   Card face color tokens — consumed by card rendering components
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page[data-cards-theme='standard-red'] {
+  --card-accent: #c62828;
+  --card-back-gradient: linear-gradient(135deg, #c62828, #e53935);
+}
+.table-page[data-cards-theme='standard-blue'] {
+  --card-accent: #1565c0;
+  --card-back-gradient: linear-gradient(135deg, #1565c0, #1976d2);
+}
+.table-page[data-cards-theme='premium-gold'] {
+  --card-accent: #f57f17;
+  --card-back-gradient: linear-gradient(135deg, #f57f17, #ff8f00);
+}
+.table-page[data-cards-theme='premium-black'] {
+  --card-accent: #424242;
+  --card-back-gradient: linear-gradient(135deg, #212121, #424242);
+}
+.table-page[data-cards-theme='premium-platinum'] {
+  --card-accent: #90a4ae;
+  --card-back-gradient: linear-gradient(135deg, #78909c, #90a4ae);
+}
+
 .table-surface {
   width: 100%;
   height: 100%;
@@ -438,7 +805,8 @@
     repeating-conic-gradient(rgba(0, 0, 0, 0.02) 0% 25%, transparent 0% 50%) 1px 1px / 4px 4px,
     /* Main radial felt gradient — uses theme tokens */
     var(--felt-gradient, radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%));
-  border-radius: 44% / 34%;
+  /* Dan 2026-04-17 (v3): match egg teardrop rail. */
+  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -452,36 +820,48 @@
     /* Ambient inner shadow */ inset 0 0 80px rgba(0, 0, 0, 0.12),
     /* Outer glow */ 0 4px 24px rgba(0, 0, 0, 0.5),
     0 0 0 3px rgba(255, 255, 255, 0.05);
-  border: var(--table-border, 1.5px solid rgba(255, 255, 255, 0.04));
+  border: 2px solid rgba(255, 215, 0, 0.15);
+  /* Gold trim line between felt and rail */
+  outline: 1px solid rgba(255, 215, 0, 0.08);
+  outline-offset: 2px;
 }
 
-/* Hand Number Display — positioned top-left of the table felt */
+/* Hand Number Display — top-center of table felt. Tightened to be legible
+   without stealing focus from the pot. JetBrains Mono keeps the casino-tote
+   feel; slight letter-spacing prevents the hashmark and digits from crowding. */
 .hand-number-display {
   position: absolute;
-  top: 12%;
+  top: 11%;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.625rem;
-  font-weight: 500;
+  font-size: 0.68rem;
+  font-weight: 600;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  color: rgba(148, 163, 184, 0.5);
-  letter-spacing: 0.05em;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  z-index: 1;
+  color: rgba(178, 193, 214, 0.72);
+  letter-spacing: 0.08em;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.7),
+    0 0 6px rgba(0, 0, 0, 0.35);
+  z-index: 2;
   pointer-events: none;
   user-select: none;
 }
 
-/* Center spotlight — subtle light pooling effect */
+/* Center spotlight — premium light pooling effect like overhead casino light */
 .table-surface::after {
   content: '';
   position: absolute;
-  top: 30%;
+  top: 25%;
   left: 50%;
-  width: 60%;
-  height: 40%;
+  width: 70%;
+  height: 50%;
   transform: translateX(-50%);
-  background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.035) 0%, transparent 70%);
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.02) 40%,
+    transparent 70%
+  );
   pointer-events: none;
   z-index: 0;
 }
@@ -512,6 +892,58 @@
   z-index: 20;
 }
 
+/*
+ * Phase 2 T1-04 — PokerBros hand-strength label at pot center on showdown.
+ * Pops in, holds ~1s, fades out. Per POKERBROS_CLONE_SPEC.md §6 line 548:
+ *   "Hand strength label displayed at pot center temporarily (1 second)"
+ * Total duration 1.4s (150ms in + 850ms hold + 400ms out) so the label is
+ * readable without being in the way of the next hand.
+ */
+.pot-hand-strength {
+  position: absolute;
+  top: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(20, 20, 24, 0.95), rgba(32, 32, 40, 0.95));
+  border: 1.5px solid rgba(255, 222, 92, 0.5);
+  color: #ffde5c;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  z-index: 25;
+  pointer-events: none;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.55),
+    0 0 16px rgba(255, 222, 92, 0.25);
+  animation: pot-hand-strength-show 1400ms cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+}
+
+@keyframes pot-hand-strength-show {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.85);
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1.1);
+  }
+  25% {
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-2px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px) scale(0.97);
+  }
+}
+
 /* Community Cards Area */
 .community-area {
   position: absolute;
@@ -520,8 +952,42 @@
   transform: translate(-50%, -50%);
 }
 
-/* Game Info — Removed from center of table for clean PokerBros look */
-/* Game type and blinds are now shown in the header bar */
+/* Game Info Strip — Dan 2026-04-17 v2: PokerBros-style on-felt title. Sits
+   directly UNDER the community cards (flop). Community area is at top:45%
+   with card height ~60px in scaler; so place this at ~54% to sit right
+   beneath the board rather than floating in the felt middle. */
+.table-game-info {
+  position: absolute;
+  top: 54%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  z-index: 10;
+  pointer-events: none;
+}
+.table-game-info__name {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.82);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(0, 0, 0, 0.45);
+}
+.table-game-info__stakes {
+  font-size: 0.68rem;
+  font-weight: 900;
+  color: rgba(255, 222, 92, 0.92);
+  letter-spacing: 0.16em;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(255, 222, 92, 0.18);
+  text-transform: uppercase;
+}
 
 /* Spectator badge — bottom edge of felt */
 .spectator-area {
@@ -567,7 +1033,7 @@
   transition:
     transform 0.3s var(--ease-spring),
     box-shadow 0.3s ease;
-  animation: dealerPuckDrop 0.5s var(--ease-spring);
+  animation: dealerPuckDrop calc(0.5s * var(--animation-speed, 1)) var(--ease-spring);
 }
 
 @keyframes dealerPuckDrop {
@@ -590,37 +1056,96 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .action-panel-wrapper {
+  /* POKERBROS-spec (Dan 2026-04-17 v3): action bar is LOCKED to the
+     absolute bottom of the viewport in a fixed position. ALL action buttons
+     render here and nowhere else. */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
   display: flex;
   flex-direction: column;
-  background: transparent;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 10, 16, 0.85) 0%,
+    rgba(8, 10, 16, 0.99) 40%,
+    rgba(8, 10, 16, 1) 100%
+  );
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  min-height: calc(96px + env(safe-area-inset-bottom, 0px));
+  justify-content: flex-end;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* ─── SPECTATOR MODE ─── */
-.spectator-mode {
+/* Spectator footer bar — shown when hero is not seated.
+   Lives at the bottom of the flex column so it's always flush with the
+   viewport bottom. POKERBROS-spec: footer present at all times. */
+.spectator-footer-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 14px 24px;
-  background: rgba(0, 0, 0, 0.6);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.5);
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  background: linear-gradient(180deg, rgba(15, 18, 25, 0.95) 0%, rgba(8, 10, 16, 0.99) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+.spectator-footer-bar__label {
   font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.02em;
+  text-align: center;
 }
 
-.spectator-mode__icon {
-  font-size: 1.1rem;
+/* Single-button action bar — used for footer-pinned prompts like Show Hand,
+   post-fold offers, etc. Dan rule 2026-04-17: ALL action buttons on footer. */
+.footer-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 16px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
+  background: linear-gradient(180deg, rgba(15, 18, 25, 0.95) 0%, rgba(8, 10, 16, 0.99) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
 }
 
-.spectator-mode__text {
-  font-weight: 500;
+.footer-action-bar__btn {
+  flex: 1;
+  max-width: 360px;
+  min-height: 48px;
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.06) 100%);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
 }
+
+.footer-action-bar__btn:active {
+  transform: scale(0.98);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%);
+}
+
+/* ─── SPECTATOR MODE — REMOVED (seats already show "+ SIT") ─── */
 
 /* ─── CONTROL STRIP — Clean icon row above action buttons ─── */
 .control-strip {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 6px 12px;
   background: linear-gradient(180deg, rgba(10, 15, 26, 0.88) 0%, rgba(5, 8, 16, 0.92) 100%);
@@ -628,6 +1153,18 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   position: relative;
+}
+
+/* Transparent variant — no dark bar, just floating buttons */
+.control-strip--transparent {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-top: none;
+  box-shadow: none;
+}
+.control-strip--transparent::before {
+  display: none;
 }
 
 /* Glass shine line across top */
@@ -681,6 +1218,14 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
   pointer-events: none;
   border-radius: 7px 7px 0 0;
+}
+
+.control-strip__label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .control-strip__btn:active {
@@ -875,24 +1420,35 @@
    OBSERVING INDICATOR
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.observing-indicator {
-  position: fixed;
-  bottom: 100px;
-  left: 50%;
-  transform: translateX(-50%);
+/* .observing-indicator REMOVED — no observer UI displayed */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HUD Game Info (Center-Top in 4-corner HUD)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.hud-game-info {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 24px;
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
-  color: #b0b3b8;
-  font-size: 0.875rem;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 6px 14px;
 }
 
-.eye-icon {
-  font-size: 1.125rem;
+.hud-game-info__type {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--off-white, #e4e6eb);
+  letter-spacing: 0.03em;
+}
+
+.hud-game-info__blinds {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--soft-white, #b0b3b8);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -901,11 +1457,16 @@
 
 @media (max-width: 768px) {
   .table-container {
-    padding: 4px 8px 4px;
+    /* Dan 2026-04-17 (v3): lowered table so top doesn't clip BBJ. Extra 24px
+       from the top edge; align-start pins scaler to top padding baseline. */
+    align-items: flex-start;
+    padding: 80px 10px calc(128px + env(safe-area-inset-bottom, 0));
   }
 
   .table-scaler {
-    max-width: 100%;
+    max-width: min(calc(100% - 12px), 320px);
+    /* Portrait vertical oval — taller than wide (PokerBros layout). */
+    aspect-ratio: 0.65 / 1;
   }
 
   .table-rail {
@@ -980,7 +1541,9 @@
 
 @media (max-width: 380px) {
   .table-container {
-    padding: 2px 2px 2px;
+    /* Phase A (Dan 2026-04-17): narrow-phone landscape racetrack. Tighter side
+       gutters keep the table wide; top/bottom padding still covers chrome. */
+    padding: 48px 6px calc(120px + env(safe-area-inset-bottom, 0));
   }
 
   .table-header {
@@ -1113,14 +1676,23 @@
   }
 }
 
-/* Slow community card dealing in all-in mode */
+/* Slow community card dealing in all-in mode — Bible V8 dramatic runout */
+.table-page--allin-mode .community-cards__card {
+  animation-duration: calc(0.8s * var(--animation-speed, 1));
+}
 .table-page--allin-mode .community-cards__card--dealing {
-  animation-duration: 0.9s;
+  animation-duration: calc(1.2s * var(--animation-speed, 1));
+}
+.table-page--allin-mode .community-cards__card--turn {
+  animation-duration: calc(1s * var(--animation-speed, 1)) !important;
+}
+.table-page--allin-mode .community-cards__card--river {
+  animation-duration: calc(1.3s * var(--animation-speed, 1)) !important;
 }
 
 /* Pot display glows during all-in */
 .table-page--allin-mode .pot-display {
-  animation: allInPotGlow 1.5s ease-in-out infinite;
+  animation: allInPotGlow calc(1.5s * var(--animation-speed, 1)) ease-in-out infinite;
 }
 
 @keyframes allInPotGlow {
@@ -1154,7 +1726,7 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .table-page--shake {
-  animation: screenShake 0.4s ease-out;
+  animation: screenShake calc(0.4s * var(--animation-speed, 1)) ease-out;
 }
 
 @keyframes screenShake {
@@ -1367,6 +1939,29 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   ENHANCED VIEW — Bible V8 §11.1: enhanced_view toggles richer visual effects
+   Activated via document[data-enhanced-view="1"]
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+[data-enhanced-view='1'] .table-felt {
+  filter: contrast(1.08) saturate(1.15);
+}
+
+[data-enhanced-view='1'] .seat__card--face {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+}
+
+[data-enhanced-view='1'] .pot-display__amount {
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+}
+
+[data-enhanced-view='1'] .seat--active .seat__info-box {
+  box-shadow:
+    0 0 16px 4px rgba(255, 215, 0, 0.25),
+    0 0 4px 1px rgba(255, 215, 0, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    BACKGROUND TAB — Freeze animations when tab is hidden (battery savings)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -1375,4 +1970,198 @@
 .table-page--backgrounded *::after {
   animation-play-state: paused !important;
   transition: none !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PHASE 2: TOP & BOTTOM UI BUTTONS 
+   ══════════════════════════════════════════════════════════════ */
+
+/* Top-Right Diamond Button */
+.diamond-purple-btn {
+  background: linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%) !important;
+  border: 2px solid #fbbf24 !important;
+  color: white;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  z-index: 100;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.diamond-purple-btn:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 16px rgba(124, 58, 237, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.diamond-ico {
+  font-size: 16px;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
+}
+
+/* spectator-join-bar REMOVED — no observer join bar */
+/* chat-mail-toggle-btn REMOVED — TableChat handles its own collapsed icon */
+
+/* ══════════════════════════════════════════════════════════════
+   PHASE 3: UI REFINEMENTS (Hiding old header, side-chat, floating actions)
+   ══════════════════════════════════════════════════════════════ */
+
+.table-header {
+  display: none !important;
+}
+
+.hud-ul-column {
+  /* Dan 2026-04-17: hamburger + "+" sit side-by-side now, not stacked. */
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+.hud-ul-column--stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.add-chips-icon-btn {
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    background 0.2s,
+    transform 0.1s;
+}
+.add-chips-icon-btn:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.floating-im-back,
+.floating-post-blind {
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+  border: 1px solid #34d399;
+  color: white;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.floating-action-br {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  z-index: 100;
+}
+
+.floating-action-bl {
+  position: absolute;
+  bottom: 80px;
+  left: 20px;
+  z-index: 100;
+}
+
+/* chat-mail-toggle-btn duplicate override REMOVED */
+
+/* Slide out chat exactly like the attachment */
+.table-chat {
+  right: 0 !important;
+  left: auto !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  width: 350px !important;
+  height: 100% !important;
+  background: rgba(15, 23, 42, 0.85) !important;
+  backdrop-filter: blur(8px) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0 !important;
+  max-height: 100% !important;
+  transform: translateX(100%);
+  animation: slideInChat 0.3s forwards;
+}
+
+@keyframes slideInChat {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST-BB-TO-ENTER OVERLAY (Bible V8 §4.2)
+   Walkthrough Step 4 fix 2026-04-29 — small fixed-position pill button
+   shown to the hero only when their userId is in the engine's
+   waitingForBBUserIds list. Tapping it calls POST /post-bb on the engine.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.post-bb-overlay-button {
+  position: fixed;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 24px;
+  border: 2px solid #ffd54a;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  color: #ffde5c;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow:
+    0 0 18px rgba(255, 213, 74, 0.45),
+    0 4px 14px rgba(0, 0, 0, 0.5);
+  animation: post-bb-pulse 1.6s ease-in-out infinite alternate;
+}
+.post-bb-overlay-button:hover {
+  background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+}
+.post-bb-overlay-button__title {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.post-bb-overlay-button__sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+}
+@keyframes post-bb-pulse {
+  from {
+    box-shadow:
+      0 0 18px rgba(255, 213, 74, 0.45),
+      0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+  to {
+    box-shadow:
+      0 0 28px rgba(255, 213, 74, 0.85),
+      0 4px 14px rgba(0, 0, 0, 0.5);
+  }
 }

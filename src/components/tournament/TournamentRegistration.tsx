@@ -11,6 +11,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './TournamentRegistration.css';
 import { retryAsync } from '../../utils/retryAsync';
+import { reportError } from '../../utils/errorReporter';
 
 interface TournamentRegistrationProps {
   tournamentId: string;
@@ -37,6 +38,17 @@ export function TournamentRegistration({
   const isMounted = useIsMounted();
   const toast = useToast();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // CA-23 BUG FIX: staggerTimersRef was cleared between re-runs but had no
+  // unmount-guard. If the component unmounts mid-stagger (user leaves tournament
+  // lobby), all pending setVisibleActive/setVisibleEliminated calls fire on an
+  // unmounted component.
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
+    };
+  }, []);
   const [players, setPlayers] = useState<RegisteredPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,7 +74,8 @@ export function TournamentRegistration({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[TournamentRegistration] ❌ Realtime channel error:', err?.message || err);
+          if (err)
+            reportError(err?.message || err, 'TournamentRegistration._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TournamentRegistration] ⏱️ Realtime channel timed out');
@@ -151,7 +164,7 @@ export function TournamentRegistration({
           );
 
           if (refundErr) {
-            console.error('[AdminRemove] Refund failed — re-inserting player:', refundErr);
+            reportError(refundErr, 'TournamentRegistration.Refund_failed__reinserting_player');
             // Re-insert the player since refund failed — preserve tournament integrity
             try {
               const playerEntry = players.find((p) => p.id === playerId);
@@ -164,10 +177,7 @@ export function TournamentRegistration({
               if (isMounted.current)
                 toast.error('Removal cancelled — refund failed, player re-inserted');
             } catch (reinsertErr) {
-              console.error(
-                '[AdminRemove] CRITICAL: Re-insert failed after refund failure:',
-                reinsertErr
-              );
+              reportError(reinsertErr, 'TournamentRegistration.CRITICAL');
               if (isMounted.current)
                 toast.error('CRITICAL: Player removed but refund failed — contact support');
             }
@@ -195,7 +205,7 @@ export function TournamentRegistration({
             .eq('id', tournamentId);
 
           if (updateErr) {
-            console.error('[AdminRemove] Failed to decrement player count:', updateErr);
+            reportError(updateErr, 'TournamentRegistration.Failed_to_decrement_player_count');
           }
         }
       }
@@ -203,7 +213,7 @@ export function TournamentRegistration({
       if (isMounted.current) toast.success('Player removed and refunded');
       loadPlayers();
     } catch (err) {
-      console.error('[TournamentRegistration] Error:', err);
+      reportError(err, 'TournamentRegistration.Error');
       if (isMounted.current) toast.error('Failed to remove player');
     }
   };

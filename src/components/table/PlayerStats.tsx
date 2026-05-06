@@ -121,6 +121,10 @@ export function PlayerStats({
           setTimeout(() => setVisibleHud((prev) => [...prev, true]), i * 50)
         )
       );
+      return () => {
+        staggerTimersRef.current.forEach(clearTimeout);
+        staggerTimersRef.current = [];
+      };
     }
   }, [isOpen, stats]);
 
@@ -132,8 +136,20 @@ export function PlayerStats({
       staggerTimersRef.current.push(
         ...notes.map((_, i) => setTimeout(() => setVisibleNotes((prev) => [...prev, true]), i * 40))
       );
+      return () => {
+        staggerTimersRef.current.forEach(clearTimeout);
+        staggerTimersRef.current = [];
+      };
     }
   }, [isOpen, notes]);
+
+  // CA-8 BUG FIX: unmount guard — cancel any in-flight stagger timers when the
+  // component is destroyed (was missing; effects cleared on re-run but not on unmount).
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -309,7 +325,7 @@ export function PlayerStats({
         {!isCurrentUser && onReport && (
           <div className="player-stats__actions">
             <button className="player-stats__report" onClick={() => onReport(playerId)}>
-              🚩 Report Player
+              Report Player
             </button>
           </div>
         )}

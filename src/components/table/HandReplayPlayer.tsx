@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🎬 HAND REPLAY PLAYER — Visual Hand Replay (PokerBros-Style)
+ * 🎬 HAND REPLAY PLAYER — Visual Hand Replay (Premium-Style)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Full visual hand replay with:
@@ -189,17 +189,37 @@ export function HandReplayPlayer({
   const [visibleSeats, setVisibleSeats] = useState<Set<number>>(new Set());
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // HRP-1 BUG FIX: store onComplete in a ref so executeStep's dep array is
+  // [steps] only. If onComplete is an inline arrow in the parent, its identity
+  // changes on every parent render, which forced executeStep to recreate →
+  // play-loop useEffect rescheduled the timer → double step execution.
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   // Generate steps
   const steps = useMemo(() => generateReplaySteps(hand), [hand]);
   const progress = steps.length > 0 ? (currentStep / steps.length) * 100 : 0;
+
+  // X6.2d: compute step indices for the start of each street
+  const streetBoundaries = useMemo(() => {
+    const boundaries: { label: string; stepIndex: number }[] = [];
+    // Preflop always starts at 0
+    boundaries.push({ label: 'Preflop', stepIndex: 0 });
+    for (let i = 0; i < steps.length; i++) {
+      if (steps[i].type === 'DEAL_FLOP') boundaries.push({ label: 'Flop', stepIndex: i });
+      if (steps[i].type === 'DEAL_TURN') boundaries.push({ label: 'Turn', stepIndex: i });
+      if (steps[i].type === 'DEAL_RIVER') boundaries.push({ label: 'River', stepIndex: i });
+      if (steps[i].type === 'SHOWDOWN') boundaries.push({ label: 'Showdown', stepIndex: i });
+    }
+    return boundaries;
+  }, [steps]);
 
   // Execute a step
   const executeStep = useCallback(
     (stepIndex: number) => {
       if (stepIndex >= steps.length) {
         setState('COMPLETE');
-        onComplete?.();
+        onCompleteRef.current?.();
         return;
       }
 
@@ -261,7 +281,7 @@ export function HandReplayPlayer({
 
       setCurrentStep(stepIndex + 1);
     },
-    [steps, onComplete]
+    [steps] // onComplete via ref — removing it from deps prevents timer reschedule storms
   );
 
   // Play loop
@@ -292,11 +312,17 @@ export function HandReplayPlayer({
   }, [autoPlay, state]);
 
   useEffect(() => {
+    // BUG FIX: collect timeout IDs and clear them all on cleanup.
+    // Without this, if `hand` changes before all timeouts fire (e.g. rapid
+    // navigation), old timeouts fire setVisibleSeats on a stale hand.
+    const ids: ReturnType<typeof setTimeout>[] = [];
     hand.players.forEach((player, i) => {
-      setTimeout(() => {
+      const id = setTimeout(() => {
         setVisibleSeats((prev) => new Set([...prev, player.seat]));
       }, i * 60);
+      ids.push(id);
     });
+    return () => ids.forEach(clearTimeout);
   }, [hand]);
 
   // Controls
@@ -319,17 +345,70 @@ export function HandReplayPlayer({
     }
   }, [state]);
 
+  // X6.2d: re-simulate all steps up to a target index to rebuild display state
+  const jumpToStep = useCallback(
+    (targetStep: number) => {
+      // BUG FIX: cancel the active play-loop timer before taking over state.
+      // Without this, if the user clicks a street button while PLAYING, the
+      // play-loop timer fires executeStep() concurrently with jumpToStep,
+      // causing double-execution and corrupted display state.
+      if (timerRef.current) clearTimeout(timerRef.current);
+      // Reset state
+      setVisibleCards({});
+      setBoard([]);
+      setPot(0);
+      setActiveAction(null);
+      setWinningSeats([]);
+      // Re-execute every step up to (but not including) targetStep
+      const nextCards: Record<number, ShareableCard[]> = {};
+      let nextBoard: ShareableCard[] = [];
+      let nextPot = 0;
+      let nextAction: { seat: number; text: string } | null = null;
+      const nextWinners: number[] = [];
+      for (let i = 0; i < targetStep && i < steps.length; i++) {
+        const s = steps[i];
+        if (s.type === 'DEAL_HOLE' && s.seat !== undefined && s.cards) {
+          nextCards[s.seat] = s.cards;
+        } else if (s.type === 'ACTION' && s.action) {
+          const txt = s.action.amount ? `${s.action.action} ${s.action.amount}` : s.action.action;
+          nextAction = { seat: s.seat!, text: txt };
+          if (s.action.amount) nextPot += s.action.amount;
+        } else if (s.type === 'DEAL_FLOP' && s.cards) {
+          nextBoard = [...s.cards];
+          nextAction = null;
+        } else if ((s.type === 'DEAL_TURN' || s.type === 'DEAL_RIVER') && s.card) {
+          nextBoard = [...nextBoard, s.card];
+          nextAction = null;
+        } else if (s.type === 'SHOWDOWN') {
+          nextAction = null;
+        } else if (s.type === 'AWARD_POT' && s.seat !== undefined) {
+          nextWinners.push(s.seat);
+        }
+      }
+      setVisibleCards(nextCards);
+      setBoard(nextBoard);
+      setPot(nextPot);
+      setActiveAction(nextAction);
+      setWinningSeats(nextWinners);
+      setCurrentStep(targetStep);
+      setState('PAUSED');
+    },
+    [steps]
+  );
+
   const handleSeek = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const targetStep = Math.floor((parseInt(e.target.value) / 100) * steps.length);
-      setCurrentStep(targetStep);
-      // Re-execute up to this step
-      // For simplicity, just jump (full implementation would re-simulate)
+      jumpToStep(targetStep);
     },
-    [steps.length]
+    [steps.length, jumpToStep]
   );
 
   // Hide controls after delay
+  // BUG FIX: remove currentStep from deps. Including it caused a new 3s timer
+  // to be scheduled on every step advance, creating a timer storm during fast
+  // playback where the controls flickered off/on unpredictably. The intent is
+  // to auto-hide after playback starts, not after every individual step.
   useEffect(() => {
     if (state === 'PLAYING') {
       const timer = setTimeout(() => setShowControls(false), 3000);
@@ -337,7 +416,7 @@ export function HandReplayPlayer({
     } else {
       setShowControls(true);
     }
-  }, [state, currentStep]);
+  }, [state]);
 
   return (
     <div
@@ -429,6 +508,27 @@ export function HandReplayPlayer({
               Share
             </button>
           )}
+        </div>
+
+        {/* X6.2d: Street Navigation Buttons */}
+        <div className="replay-player__streets">
+          {streetBoundaries.map((street, idx) => {
+            // HRP-2 BUG FIX: use map idx directly instead of O(n) indexOf call
+            // (indexOf was called twice per element → O(n²) per render).
+            const isCurrentStreet =
+              currentStep >= street.stepIndex &&
+              (idx === streetBoundaries.length - 1 ||
+                currentStep < streetBoundaries[idx + 1].stepIndex);
+            return (
+              <button
+                key={street.label}
+                className={`replay-player__street-btn ${isCurrentStreet ? 'replay-player__street-btn--active' : ''}`}
+                onClick={() => jumpToStep(street.stepIndex)}
+              >
+                {street.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Bottom Controls */}

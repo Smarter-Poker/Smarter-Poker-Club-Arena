@@ -1,6 +1,6 @@
 /**
  * ♠ CLUB ARENA — Club Lobby Page
- * PokerBros-style club interface with tournaments, tables, and navigation
+ * premium-style club interface with tournaments, tables, and navigation
  *
  * Fixes applied:
  *  1. Show BOTH tables and tournaments (not either/or)
@@ -41,6 +41,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import { FavoriteTablesWidget } from '../../components/quickactions';
 import './ClubLobby.css';
+import { reportError } from '../../utils/errorReporter';
 
 // Animation utilities
 const cardAnimationStyle = (index: number) => ({
@@ -52,23 +53,17 @@ const cardAnimationStyle = (index: number) => ({
 type GameFilter = 'ALL' | "Hold'em" | 'Omaha' | 'Mixed' | 'MTT' | 'Spin-It' | 'SN';
 
 // Map game_variant strings to filter categories
+// FIX 116: Dead variants removed — 9 approved variants only
 function variantMatchesFilter(variant: string | undefined, filter: GameFilter): boolean {
   if (filter === 'ALL') return true;
   const v = (variant || 'nlh').toLowerCase();
   switch (filter) {
     case "Hold'em":
-      return v === 'nlh' || v === 'flh' || v === 'short_deck';
+      return v === 'nlh' || v === 'short_deck';
     case 'Omaha':
-      return v.startsWith('plo') || v === 'plo_hilo' || v === 'plo8';
+      return v.startsWith('plo');
     case 'Mixed':
-      return (
-        v === 'mixed' ||
-        v === 'ofc' ||
-        v === 'ofc_pineapple' ||
-        v === 'double_board' ||
-        v === 'pineapple' ||
-        v === 'crazy_pineapple'
-      );
+      return v === 'pineapple' || v === 'crazy_pineapple' || v === 'mixed';
     default:
       return true;
   }
@@ -87,8 +82,6 @@ function getVariantLabel(variant: string | undefined): string {
     plo6: 'PLO6',
     plo_hilo: 'PLO Hi-Lo',
     plo8: 'PLO8',
-    ofc: 'OFC',
-    ofc_pineapple: 'OFC-P',
     mixed: 'MIXED',
     double_board: '2Board',
     pineapple: 'Pine',
@@ -158,7 +151,8 @@ export default function ClubLobby() {
 
         // Not in union — flag it
         setIsInUnion(false);
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubLobby.init');
         // Fail-open for standalone clubs
       }
 
@@ -382,7 +376,7 @@ export default function ClubLobby() {
         }
       }
     } catch (err) {
-      console.error('[ClubLobby] Failed to load club data:', err);
+      reportError(err, 'ClubLobby.Failed_to_load_club_data');
     } finally {
       loadingRef.current = false;
       if (isMountedRef.current) setIsLoading(false);

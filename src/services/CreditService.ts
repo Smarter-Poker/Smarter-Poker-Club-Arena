@@ -26,6 +26,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -96,6 +97,11 @@ export interface CreditLimitRequest {
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Module-level circuit breakers — silence RLS/permission spam for non-admin users.
+// When a read fails (expected for players who don't own these tables via RLS),
+// we report once then go quiet. Prevents Sentry/console flood from polling loops.
+let _agentInvoicesDisabled = false;
+
 export const CreditService = {
   // ─────────────────────────────────────────────────────────────────────────────
   // CREDIT LINE MANAGEMENT
@@ -124,7 +130,8 @@ export const CreditService = {
           .maybeSingle();
         agentName = profile?.display_name || 'Unknown';
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CreditService.getCreditAccount');
       /* non-critical */
     }
 
@@ -337,39 +344,72 @@ export const CreditService = {
     const periodStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const dueDate = new Date(now.getTime() + 48 * 60 * 60 * 1000); // 48 hour grace
 
-    const { data, error } = await supabase
-      .from('credit_invoices')
-      .insert({
-        agent_id: agentId,
-        period_start: periodStart.toISOString(),
-        period_end: periodEnd.toISOString(),
-        debt_owed: debt.debtOwed,
-        amount_paid: 0,
-        amount_remaining: debt.debtOwed,
-        status: 'pending',
-        due_date: dueDate.toISOString(),
-      })
-      .select()
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from('credit_invoices')
+        .insert({
+          agent_id: agentId,
+          period_start: periodStart.toISOString(),
+          period_end: periodEnd.toISOString(),
+          debt_owed: debt.debtOwed,
+          amount_paid: 0,
+          amount_remaining: debt.debtOwed,
+          status: 'pending',
+          due_date: dueDate.toISOString(),
+        })
+        .select()
+        .maybeSingle();
 
-    if (error) throw error;
-    return this.mapInvoice(data, account.agentName);
+      if (error) {
+        reportError(error, 'CreditService.generateSundayInvoice', {
+          agentId,
+          debtOwed: debt.debtOwed,
+        });
+        return null;
+      }
+      return this.mapInvoice(data, account.agentName);
+    } catch (e) {
+      reportError(e, 'CreditService.generateSundayInvoice.tableAccess', { agentId });
+      return null;
+    }
   },
 
   /**
    * Get invoices for an agent
    */
   async getAgentInvoices(agentId: string): Promise<CreditInvoice[]> {
-    const { data, error } = await supabase
-      .from('credit_invoices')
-      .select(
-        'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
-      )
-      .eq('agent_id', agentId)
-      .order('created_at', { ascending: false })
-      .limit(QUERY_LIMITS.LIST);
+    // Circuit breaker — if previous calls hit RLS/permission errors,
+    // silently return empty instead of spamming Sentry on every poll.
+    if (_agentInvoicesDisabled) return [];
 
-    if (error) throw error;
+    let data: any[] | null = null;
+    try {
+      const result = await supabase
+        .from('credit_invoices')
+        .select(
+          'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
+        )
+        .eq('agent_id', agentId)
+        .order('created_at', { ascending: false })
+        .limit(QUERY_LIMITS.LIST);
+
+      if (result.error) {
+        _agentInvoicesDisabled = true;
+        reportError(result.error, 'CreditService.getAgentInvoices', {
+          agentId,
+          note: 'Disabling subsequent calls — likely RLS/permission for non-agent user',
+        });
+        return [];
+      }
+      data = result.data;
+    } catch (e) {
+      _agentInvoicesDisabled = true;
+      reportError(e, 'CreditService.getAgentInvoices.tableAccess', {
+        agentId,
+        note: 'Disabling subsequent calls — likely RLS/permission for non-agent user',
+      });
+      return [];
+    }
 
     // Fetch agent display name separately (safe — no FK hint needed)
     let agentName = 'Unknown';
@@ -387,8 +427,8 @@ export const CreditService = {
           .maybeSingle();
         agentName = profile?.display_name || 'Unknown';
       }
-    } catch {
-      /* non-critical */
+    } catch (e) {
+      /* non-critical — agent name lookup is a nice-to-have */
     }
 
     return (data || []).map((inv) => this.mapInvoice(inv, agentName));
@@ -403,16 +443,16 @@ export const CreditService = {
     method: 'wallet' | 'diamonds' | 'external'
   ): Promise<CreditPayment> {
     // Get current invoice
-    const { data: invoice, error: fetchError } = await supabase
-      .from('credit_invoices')
+    const { data: invoiceResult, error: invoiceError } = await supabase
+      .from('settlement_invoices')
       .select(
         'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
       )
       .eq('id', invoiceId)
       .maybeSingle();
 
-    if (fetchError) throw fetchError;
-    if (!invoice) throw new Error(`Invoice not found: ${invoiceId}`);
+    if (invoiceError) throw invoiceError;
+    if (!invoiceResult) throw new Error(`Invoice not found: ${invoiceId}`);
 
     // STEP 1: If paying from wallet, deduct FIRST (before recording anything)
     if (method === 'wallet') {
@@ -420,7 +460,7 @@ export const CreditService = {
       const { data: agentData } = await supabase
         .from('agents')
         .select('user_id')
-        .eq('id', invoice.agent_id)
+        .eq('id', invoiceResult.agent_id)
         .maybeSingle();
 
       if (!agentData?.user_id) {
@@ -457,17 +497,20 @@ export const CreditService = {
     }
 
     // STEP 2: Atomically update invoice amounts using ALREADY-FETCHED invoice data (no re-fetch TOCTOU)
-    const newAmountPaid = (invoice?.amount_paid || 0) + amount;
-    const newAmountRemaining = Math.max(0, (invoice?.amount_remaining || 0) - amount);
-
-    const { error: updateError } = await supabase
-      .from('credit_invoices')
-      .update({
-        amount_paid: newAmountPaid,
-        amount_remaining: newAmountRemaining,
-        status: newAmountRemaining <= 0 ? 'paid' : 'partial',
-      })
-      .eq('id', invoiceId);
+    let updateError: any = null;
+    try {
+      const { error: _updateErr } = await supabase
+        .from('credit_invoices')
+        .update({
+          amount_remaining: Math.max(0, invoiceResult.amount_remaining - amount),
+          status: invoiceResult.amount_remaining - amount <= 0 ? 'paid' : 'pending',
+        })
+        .eq('id', invoiceId);
+      updateError = _updateErr;
+    } catch (e) {
+      reportError(e, 'CreditService.processPayment.invoiceUpdate', { invoiceId });
+      updateError = e;
+    }
 
     if (updateError) {
       // Rollback wallet deduction if invoice update failed — MUST BE LOGGED atomically
@@ -476,7 +519,7 @@ export const CreditService = {
           const { data: agentForRollback } = await supabase
             .from('agents')
             .select('user_id')
-            .eq('id', invoice.agent_id)
+            .eq('id', invoiceResult.agent_id)
             .maybeSingle();
 
           if (agentForRollback?.user_id) {
@@ -494,15 +537,17 @@ export const CreditService = {
               3
             );
             if (rollbackErr2) {
-              console.error(
-                `[CreditService] CRITICAL: Wallet rollback failed for agent ${invoice.agent_id}: ${rollbackErr2.message}`
-              );
+              reportError(rollbackErr2, 'CreditService.processPayment.rollback', {
+                invoiceId,
+                agentId: invoiceResult.agent_id,
+                amount,
+              });
               FinancialAlertService.logCritical(
                 'CreditService',
                 'Wallet rollback failed after invoice update failure',
                 {
                   invoiceId,
-                  agentId: invoice.agent_id,
+                  agentId: invoiceResult.agent_id,
                   amount,
                   rollbackError: rollbackErr2.message,
                 }
@@ -515,7 +560,7 @@ export const CreditService = {
             }
           }
         } catch (rollbackErr) {
-          console.error('[CreditService] Rollback failed:', rollbackErr);
+          reportError(rollbackErr, 'CreditService.processPayment.rollbackOuter', { invoiceId });
         }
       }
       throw new Error(`Invoice update failed: ${updateError.message}`);

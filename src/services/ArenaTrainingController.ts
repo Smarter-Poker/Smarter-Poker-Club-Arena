@@ -7,6 +7,7 @@
 
 import { supabase, getAuthUser } from '@/lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 import type {
   TrainingSession,
   TrainingStatus,
@@ -168,7 +169,7 @@ export async function startTrainingSession(
     .maybeSingle();
 
   if (error) {
-    console.error('[Service] Session start failed:', error);
+    reportError(error, 'ArenaTrainingController.Session_start_failed');
     throw new Error('Failed to start training session');
   }
 
@@ -183,15 +184,15 @@ export async function checkLevelAccess(userId: string, targetLevel: number): Pro
 
   const { data, error } = await retryAsync(
     () =>
+      // Round 19: prod sig (p_user_id) — RPC computes target level itself.
       supabase.rpc('fn_check_level_advancement', {
         p_user_id: userId,
-        p_target_level: targetLevel,
       }),
     3
   );
 
   if (error) {
-    console.error('[Service] Level access check failed:', error);
+    reportError(error, 'ArenaTrainingController.Level_access_check_failed');
     // Default to locked if check fails
     return false;
   }
@@ -238,7 +239,7 @@ export async function recordAnswer(
     .eq('id', sessionId);
 
   if (updateError) {
-    console.error('[Service] Answer record failed:', updateError);
+    reportError(updateError, 'ArenaTrainingController.Answer_record_failed');
     throw new Error('Failed to record answer');
   }
 
@@ -274,11 +275,7 @@ async function recordSessionCompletion(
       }),
     3
   );
-  if (rewardErr)
-    console.error(
-      '[ArenaTraining] CRITICAL: Diamond reward RPC failed — user may not receive reward:',
-      rewardErr
-    );
+  if (rewardErr) reportError(rewardErr, 'ArenaTrainingController.CRITICAL');
 }
 
 /**
@@ -319,7 +316,7 @@ export async function getTrainingHistory(
     .limit(limit);
 
   if (error) {
-    console.error('[Service] History fetch failed:', error);
+    reportError(error, 'ArenaTrainingController.History_fetch_failed');
     throw new Error('Failed to fetch training history');
   }
 

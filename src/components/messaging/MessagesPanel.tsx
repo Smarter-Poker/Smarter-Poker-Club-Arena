@@ -11,6 +11,7 @@ import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { isToday, isYesterday } from '../../lib/date';
 import styles from './MessagesPanel.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface Conversation {
   id: string;
@@ -152,7 +153,7 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
         if (initial) setSelectedConvo(initial);
       }
     } catch (error) {
-      console.error('Failed to load conversations:', error);
+      reportError(error, 'MessagesPanel.Failed_to_load_conversations');
     }
     setLoading(false);
   };
@@ -215,7 +216,7 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
 
       setNewMessage('');
     } catch (error) {
-      console.error('Failed to send message:', error);
+      reportError(error, 'MessagesPanel.Failed_to_send_message');
       // User needs to know their message didn't send
     }
     setSending(false);

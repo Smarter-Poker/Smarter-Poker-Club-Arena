@@ -13,6 +13,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 
@@ -80,19 +81,11 @@ export const FinancialAlertService = {
         created_at: alert.createdAt,
       });
       if (insertErr) {
-        console.error(
-          `[FinancialAlert] DB insert failed — ${severity.toUpperCase()}: ${source}: ${message}`,
-          context,
-          insertErr
-        );
+        reportError(insertErr, 'FinancialAlertService._log.insert', { severity, source, message });
       }
     } catch (err: unknown) {
       // If the table doesn't exist yet, log to console as fallback
-      console.error(
-        `[FinancialAlert] DB insert failed — ${severity.toUpperCase()}: ${source}: ${message}`,
-        context,
-        err
-      );
+      reportError(err, 'FinancialAlertService._log.catch', { severity, source, message });
     }
 
     // 2. Emit bus event for real-time dashboard
@@ -105,15 +98,14 @@ export const FinancialAlertService = {
         timestamp: alert.createdAt,
       });
     } catch (err) {
-
-      console.debug("[FinancialAlertService] Bus emit error:", err);
+      console.debug('[FinancialAlertService] Bus emit error:', err);
       // Bus emission failure is non-fatal
     }
 
     // 3. Log to console — debug level so it's stripped from production builds
     // Alerts are persisted to DB (financial_alerts table) and visible on the admin dashboard.
     const prefix =
-      severity === 'critical' ? '🔴 CRITICAL' : severity === 'warning' ? '🟡 WARNING' : 'ℹ️ INFO';
+      severity === 'critical' ? 'CRITICAL' : severity === 'warning' ? 'WARNING' : 'INFO';
     console.debug(`[FinancialAlert] ${prefix}: ${source}: ${message}`, context);
 
     // NOTE: Financial alerts are ops-only signals. They are NOT shown as user-facing toasts.
@@ -157,7 +149,7 @@ export const FinancialAlertService = {
     );
 
     if (error) {
-      console.error('[FinancialAlert] Failed to resolve alert:', alertId, error);
+      reportError(error, 'FinancialAlertService.resolve', { alertId });
       throw error;
     }
   },

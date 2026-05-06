@@ -19,6 +19,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
+import { reportError } from '../utils/errorReporter';
 
 interface ClubSettings {
   name: string;
@@ -155,7 +156,7 @@ export default function ClubSettingsPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[ClubSettingsPage] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'ClubSettingsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[ClubSettingsPage] ⏱️ Realtime channel timed out');
@@ -261,13 +262,14 @@ export default function ClubSettingsPage() {
             if (membership?.role) {
               setUserRole(membership.role as 'owner' | 'admin' | 'agent' | 'member');
             }
-          } catch {
+          } catch (e) {
+            reportError(e, 'ClubSettingsPage');
             /* non-critical */
           }
         }
       }
     } catch (error) {
-      console.error('Failed to load club settings:', error);
+      reportError(error, 'ClubSettingsPage.Failed_to_load_club_settings');
       setLoadError(true);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load club settings');
     } finally {
@@ -318,7 +320,7 @@ export default function ClubSettingsPage() {
       originalSettings.current = { ...settings };
       navigate(`/clubs/${clubId}`);
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      reportError(error, 'ClubSettingsPage.Failed_to_save_settings');
       toast.error('Failed to save settings');
     }
     setSaving(false);
@@ -337,7 +339,7 @@ export default function ClubSettingsPage() {
       toast.success('Club deleted successfully');
       navigate('/clubs');
     } catch (error: unknown) {
-      console.error('Failed to delete club:', error);
+      reportError(error, 'ClubSettingsPage.Failed_to_delete_club');
       toast.error(error instanceof Error ? error.message : 'Failed to delete club');
     } finally {
       setIsDeleting(false);

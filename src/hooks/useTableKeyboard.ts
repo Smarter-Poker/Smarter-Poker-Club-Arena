@@ -15,8 +15,8 @@
  *
  *  TOGGLE KEYS (always active):
  *    M = Mute/unmute sound
- *    H = Toggle hand strength display
  *    S = Toggle stats HUD
+ *    (FIX 199: H key for hand strength REMOVED — not allowed for live play)
  *    Escape = Close any open panel or modal
  *
  * OPTIMIZATION: Uses refs for all callbacks and state to prevent
@@ -40,7 +40,7 @@ export interface UseTableKeyboardOptions {
 
   // Toggle callbacks
   onToggleSound?: () => void;
-  onToggleHandStrength?: () => void;
+  // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
   onToggleStats?: () => void;
   onClosePanel?: () => void;
 }
@@ -81,10 +81,7 @@ export function useTableKeyboard(options: UseTableKeyboardOptions): void {
             e.preventDefault();
             opts.onToggleSound?.();
             return;
-          case 'h':
-            e.preventDefault();
-            opts.onToggleHandStrength?.();
-            return;
+          // FIX 199: 'h' key for hand strength REMOVED — not allowed for live play
           case 's':
             if (!e.ctrlKey && !e.metaKey) {
               e.preventDefault();

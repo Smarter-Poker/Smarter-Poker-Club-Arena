@@ -69,17 +69,17 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
   const getPatternIcon = (type: SuspiciousPattern['type']): string => {
     switch (type) {
       case 'soft_play':
-        return '🤝';
+        return 'SP';
       case 'chip_dumping':
-        return '💰';
+        return 'CD';
       case 'coordinated_betting':
-        return '📊';
+        return 'CB';
       case 'unusual_timing':
-        return '⏱️';
+        return 'UT';
       case 'same_ip':
-        return '🌐';
+        return 'IP';
       default:
-        return '⚠️';
+        return '!';
     }
   };
 
@@ -110,7 +110,7 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
   return (
     <div className="collusion-monitor">
       <div className="monitor-header">
-        <h2>🛡️ Anti-Collusion Monitor</h2>
+        <h2>Anti-Collusion Monitor</h2>
         <div className="filter-buttons">
           {(['all', 'high', 'medium', 'low'] as const).map((f) => (
             <button
@@ -196,7 +196,7 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
                 </div>
                 <div className="pattern-actions">
                   <button className="btn-investigate" onClick={() => onInvestigate?.(pattern)}>
-                    🔍 Investigate
+                    Investigate
                   </button>
                   <button className="btn-dismiss" onClick={() => onDismiss?.(pattern.id)}>
                     ✕ Dismiss
@@ -211,7 +211,7 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
       {/* Empty State */}
       {!selectedReport && (
         <div className="empty-state">
-          <span className="empty-icon">📊</span>
+          <span className="empty-icon">--</span>
           <p>Select a table to view detailed analysis</p>
         </div>
       )}

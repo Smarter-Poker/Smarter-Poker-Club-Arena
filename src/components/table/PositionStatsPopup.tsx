@@ -14,6 +14,7 @@ import {
   type PlayerStyleResult,
 } from '../../services/PlayerStyleClassifier';
 import './PositionStatsPopup.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PositionStatsPopupProps {
   playerId: string;
@@ -100,7 +101,7 @@ export default function PositionStatsPopup({
           setStyleResult(playerStyleClassifier.classify(totals));
         }
       } catch (err) {
-        console.error('[PositionStatsPopup] Error:', err);
+        reportError(err, 'PositionStatsPopup.Error');
         setRows([]);
       } finally {
         setLoading(false);

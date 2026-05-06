@@ -19,6 +19,7 @@
 import { supabase } from '../lib/supabase';
 import { subscriptionMonitor } from '../utils/subscriptionMonitor';
 import type { RealtimeChannel, RealtimePresenceState } from '@supabase/supabase-js';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -122,15 +123,18 @@ class RealtimeChannelService {
         });
 
         if (staleKeys.length > 0) {
-          console.error(
-            `[RealtimeChannelService] Found ${staleKeys.length} stale subscriptions (>30 min old). Cleaning up...`
+          reportError(
+            new Error(
+              `[RealtimeChannelService] Found ${staleKeys.length} stale subscriptions (>30 min old). Cleaning up...`
+            ),
+            'RealtimeChannelService.Found_staleKeyslength_stale_subscription'
           );
           staleKeys.forEach((key) => {
             const sub = this.subscriptions.get(key);
             if (sub) {
               sub.channel
                 .unsubscribe()
-                .catch((e) => console.error('[RealtimeChannel] Cleanup failed:', e));
+                .catch((e: unknown) => reportError(e, 'RealtimeChannelService.staleCleanup'));
               this.subscriptions.delete(key);
               this.subscriptionTimestamps.delete(key);
               subscriptionMonitor.unregister(key);
@@ -205,7 +209,7 @@ class RealtimeChannelService {
           try {
             await oldest.channel.unsubscribe();
           } catch (e) {
-            console.error('[RealtimeChannel] Cleanup failed for', oldestKey, ':', e);
+            reportError(e, 'RealtimeChannelService.Cleanup_failed_for');
           }
           console.warn(
             `[RealtimeChannelService] Max subscriptions (${MAX_CONCURRENT_SUBSCRIPTIONS}) reached. ` +
@@ -285,10 +289,8 @@ class RealtimeChannelService {
           joinedAt: new Date().toISOString(),
         });
       } else if (status === 'CHANNEL_ERROR') {
-        console.error(
-          `[RealtimeChannel] ❌ Club channel error for ${clubId}:`,
-          err?.message || err
-        );
+        if (err)
+          reportError(err?.message || err, 'RealtimeChannelService._Club_channel_error_for_clubId');
       } else if (status === 'TIMED_OUT') {
         console.warn(`[RealtimeChannel] ⏱️ Club channel ${clubId} timed out`);
       }
@@ -333,7 +335,10 @@ class RealtimeChannelService {
     const subscription = this.subscriptions.get(channelName);
 
     if (!subscription) {
-      console.error(`Not subscribed to ${channelName}`);
+      reportError(
+        new Error(`Not subscribed to ${channelName}`),
+        'RealtimeChannelService.Not_subscribed_to_channelName'
+      );
       return;
     }
 
@@ -410,10 +415,11 @@ class RealtimeChannelService {
 
     channel.subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        console.error(
-          `[RealtimeChannel] ❌ Tournament channel error for ${tournamentId}:`,
-          err?.message || err
-        );
+        if (err)
+          reportError(
+            err?.message || err,
+            'RealtimeChannelService._Tournament_channel_error_for_tournament'
+          );
       }
       if (status === 'TIMED_OUT') {
         console.warn(`[RealtimeChannel] ⏱️ Tournament channel ${tournamentId} timed out`);
@@ -465,10 +471,11 @@ class RealtimeChannelService {
       try {
         await channel.subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error(
-              `[RealtimeChannel] ❌ Broadcast channel error for tournament:${tournamentId}:`,
-              err?.message || err
-            );
+            if (err)
+              reportError(
+                err?.message || err,
+                'RealtimeChannelService._Broadcast_channel_error_for_tournament'
+              );
           }
         });
         await channel.send({
@@ -477,16 +484,13 @@ class RealtimeChannelService {
           payload: { ...event, timestamp: new Date().toISOString() },
         });
       } catch (e: unknown) {
-        console.error(
-          `[RealtimeChannelService] Tournament broadcast failed for ${tournamentId}:`,
-          e
-        );
+        reportError(e, 'RealtimeChannelService.Tournament_broadcast_failed_for_tourname');
       } finally {
         // Always clean up — prevents orphaned channels
         try {
           await channel.unsubscribe();
         } catch (e: unknown) {
-          console.error('[RealtimeChannel] Cleanup failed:', e);
+          reportError(e, 'RealtimeChannelService.Cleanup_failed');
         }
       }
       return;
@@ -533,10 +537,11 @@ class RealtimeChannelService {
 
     channel.subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        console.error(
-          `[RealtimeChannel] ❌ Hand replay channel error for ${handId}:`,
-          err?.message || err
-        );
+        if (err)
+          reportError(
+            err?.message || err,
+            'RealtimeChannelService._Hand_replay_channel_error_for_handId'
+          );
       }
       if (status === 'TIMED_OUT') {
         console.warn(`[RealtimeChannel] ⏱️ Hand replay channel ${handId} timed out`);
@@ -585,10 +590,11 @@ class RealtimeChannelService {
     try {
       await channel.subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error(
-            `[RealtimeChannel] ❌ Hand replay stream channel error for ${handId}:`,
-            err?.message || err
-          );
+          if (err)
+            reportError(
+              err?.message || err,
+              'RealtimeChannelService._Hand_replay_stream_channel_error_for_ha'
+            );
         }
       });
       for (const event of events) {
@@ -600,13 +606,13 @@ class RealtimeChannelService {
         });
       }
     } catch (e: unknown) {
-      console.error(`[RealtimeChannelService] Hand replay stream failed for ${handId}:`, e);
+      reportError(e, 'RealtimeChannelService.Hand_replay_stream_failed_for_handId');
     } finally {
       // Always clean up — prevents orphaned channels
       try {
         await channel.unsubscribe();
       } catch (e: unknown) {
-        console.error('[RealtimeChannel] Cleanup failed:', e);
+        reportError(e, 'RealtimeChannelService.Cleanup_failed');
       }
     }
   }

@@ -101,19 +101,24 @@
   color: #ffffff;
 }
 
-/* Turn Indicator Tab (action on you at another table) */
+/* Turn Indicator Tab (action on you at another table) — spec §9.3 gold pulse-glow */
 .table-tab-bar__tab--turn {
-  border-color: rgba(34, 197, 94, 0.5);
-  animation: tabTurnPulse 1.5s ease-in-out infinite;
+  border-color: rgba(255, 215, 0, 0.6);
+  animation: pulseGlow 0.8s infinite alternate;
 }
 
-@keyframes tabTurnPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+@keyframes pulseGlow {
+  0% {
+    box-shadow:
+      0 0 4px rgba(255, 215, 0, 0.3),
+      0 0 0 0 rgba(255, 215, 0, 0);
+    filter: drop-shadow(0 0 2px rgba(255, 215, 0, 0.3));
   }
-  50% {
-    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.25);
+  100% {
+    box-shadow:
+      0 0 12px rgba(255, 215, 0, 0.6),
+      0 0 0 3px rgba(255, 215, 0, 0.2);
+    filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.5));
   }
 }
 

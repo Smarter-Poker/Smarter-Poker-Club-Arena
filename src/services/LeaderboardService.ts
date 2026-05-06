@@ -14,6 +14,7 @@ import { VIP_GOLD_LIMITS } from './VIPService';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -145,7 +146,7 @@ export const LeaderboardService = {
         .limit(limit);
 
       if (statsError || !statsData) {
-        console.error('LeaderboardService.getClubLeaderboard stats error:', statsError);
+        reportError(statsError, 'LeaderboardService.LeaderboardServicegetClubLeaderboard_sta');
         return [];
       }
 
@@ -189,7 +190,7 @@ export const LeaderboardService = {
         };
       });
     } catch (err: unknown) {
-      console.error('LeaderboardService.getClubLeaderboard error:', err);
+      reportError(err, 'LeaderboardService.LeaderboardServicegetClubLeaderboard_err');
       return [];
     }
   },
@@ -273,7 +274,7 @@ export const LeaderboardService = {
         };
       });
     } catch (err: unknown) {
-      console.error('LeaderboardService.getUnionLeaderboard error:', err);
+      reportError(err, 'LeaderboardService.LeaderboardServicegetUnionLeaderboard_er');
       return [];
     }
   },
@@ -296,7 +297,7 @@ export const LeaderboardService = {
     const { data, error } = await query.maybeSingle();
 
     if (error) {
-      console.error('LeaderboardService.getPlayerStats error:', error);
+      reportError(error, 'LeaderboardService.LeaderboardServicegetPlayerStats_error');
       return null;
     }
 
@@ -341,7 +342,7 @@ export const LeaderboardService = {
     );
 
     if (error) {
-      console.error('LeaderboardService.updateHandStats error:', error);
+      reportError(error, 'LeaderboardService.LeaderboardServiceupdateHandStats_error');
     }
 
     // Track for POY batched submission (cash games)
@@ -390,7 +391,7 @@ export const LeaderboardService = {
         .limit(QUERY_LIMITS.BULK);
 
       if (error || !allStats) {
-        console.error('LeaderboardService.getUserRank error:', error);
+        reportError(error, 'LeaderboardService.LeaderboardServicegetUserRank_error');
         return null;
       }
 
@@ -402,9 +403,9 @@ export const LeaderboardService = {
         total: allStats.length,
       };
     } catch (err: unknown) {
-      console.error(
-        'LeaderboardService.getUserRank error:',
-        err instanceof Error ? err.message : String(err)
+      reportError(
+        err instanceof Error ? err.message : String(err),
+        'LeaderboardService.LeaderboardServicegetUserRank_error'
       );
       return null;
     }
@@ -437,7 +438,7 @@ export const LeaderboardService = {
         .limit(QUERY_LIMITS.AGGREGATE);
 
       if (resultsError || !playerResults) {
-        console.error('LeaderboardService.getClubTournamentStats error:', resultsError);
+        reportError(resultsError, 'LeaderboardService.LeaderboardServicegetClubTournamentStats');
         return [];
       }
 
@@ -534,7 +535,7 @@ export const LeaderboardService = {
         .sort((a, b) => b.totalPrizes - a.totalPrizes)
         .slice(0, limit);
     } catch (err: unknown) {
-      console.error('LeaderboardService.getClubTournamentStats error:', err);
+      reportError(err, 'LeaderboardService.LeaderboardServicegetClubTournamentStats');
       return [];
     }
   },

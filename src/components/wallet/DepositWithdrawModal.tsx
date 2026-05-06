@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import styles from './DepositWithdrawModal.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 // Haptic feedback utility for mobile-first financial interactions
 const triggerHaptic = (pattern: number | number[] = 10) => {
@@ -19,7 +20,7 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
       navigator.vibrate(pattern);
     }
   } catch (err) {
-    console.error('[DepositWithdrawModal] Error:', err);
+    reportError(err, 'DepositWithdrawModal.Error');
     /* silent — not all devices support vibration */
   }
 };
@@ -244,6 +245,8 @@ export default function DepositWithdrawModal({
   const [mounted, setMounted] = useState(false);
   const isMounted = useIsMounted();
   const mountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // Withdrawal-specific fields
   const [withdrawAddress, setWithdrawAddress] = useState('');
@@ -258,6 +261,69 @@ export default function DepositWithdrawModal({
       if (mountTimer.current) clearTimeout(mountTimer.current);
     };
   }, [isOpen]);
+
+  // ── Close handler: resets all form state and calls parent onClose ──
+  const handleClose = useCallback(() => {
+    setStep('method');
+    setSelectedMethod(null);
+    setAmount('');
+    setError(null);
+    setReferenceId(null);
+    setWithdrawAddress('');
+    onClose();
+  }, [onClose]);
+
+  // ── Focus Trap: trap focus inside modal when open ──
+  const handleFocusTrap = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !modalRef.current) return;
+
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    },
+    [handleClose]
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      document.addEventListener('keydown', handleFocusTrap);
+      const t = setTimeout(() => {
+        if (modalRef.current) {
+          const first = modalRef.current.querySelector<HTMLElement>(
+            'button:not([disabled]), input:not([disabled])'
+          );
+          first?.focus();
+        }
+      }, 100);
+      return () => {
+        document.removeEventListener('keydown', handleFocusTrap);
+        clearTimeout(t);
+        previousFocusRef.current?.focus();
+      };
+    }
+  }, [isOpen, handleFocusTrap]);
 
   const currentMethod = PAYMENT_METHODS.find((m) => m.id === selectedMethod);
   const numericAmount = parseFloat(amount) || 0;
@@ -347,14 +413,14 @@ export default function DepositWithdrawModal({
       }
 
       if (!isMounted.current) return;
-      setReferenceId(data.id);
+      setReferenceId(data?.id ?? null);
       setStep('success');
       triggerHaptic([20, 100, 20]);
       onComplete?.();
       // Emit bus event so DynamicWallet and other components refresh balances
       masterBus.emit('BALANCE_UPDATED', { source: mode, amount: numericAmount });
     } catch (err) {
-      console.error(`${mode} failed:`, err);
+      reportError(err, 'DepositWithdrawModal.mode_failed');
       if (isMounted.current) {
         toast.error(`Failed to process ${mode}. Please try again.`);
         setError(`Failed to process ${mode}. Please try again.`);
@@ -363,24 +429,21 @@ export default function DepositWithdrawModal({
     if (isMounted.current) setProcessing(false);
   };
 
-  const handleClose = () => {
-    setStep('method');
-    setSelectedMethod(null);
-    setAmount('');
-    setError(null);
-    setReferenceId(null);
-    setWithdrawAddress('');
-    onClose();
-  };
-
   const quickAmounts = [25, 50, 100, 250, 500, 1000];
 
   if (!isOpen) return null;
 
   return (
-    <div className={styles.overlay} onClick={handleClose} role="dialog" aria-modal="true" aria-labelledby="deposit-withdraw-modal-title">
+    <div
+      className={styles.overlay}
+      onClick={handleClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="deposit-withdraw-modal-title"
+    >
       <div
         className={styles.modal}
+        ref={modalRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           animation: mounted ? 'sheetSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards' : 'none',

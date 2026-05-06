@@ -115,7 +115,7 @@ export type {
   NotationAction,
 } from './HandNotation';
 
-// Share Hand (PokerBros-style sharing)
+// Share Hand (premium-style sharing)
 export { ShareHand, encodeHand, decodeHandFromUrl } from './ShareHand';
 export type {
   ShareHandProps,
@@ -131,7 +131,7 @@ export type { HandReplayPlayerProps, ReplayState, ReplaySpeed } from './HandRepl
 
 // Table Menu (Hamburger menu)
 export { TableMenu, createDefaultMenuSections } from './TableMenu';
-export type { TableMenuProps, MenuSection, MenuAction } from './TableMenu';
+export type { TableMenuProps, MenuSection, MenuAction, TableMenuObserver } from './TableMenu';
 
 // Player Stats Popup
 export { PlayerStats } from './PlayerStats';
@@ -174,6 +174,10 @@ export type { BadBeatJackpotProps } from './BadBeatJackpot';
 export { TableSettings as VIPTableSettings } from './TableSettings';
 export type { TableSettingsState as VIPTableSettingsState } from './TableSettings';
 
+// Bible V8 §11.1: Reusable Table Settings Panel (12 toggles)
+export { TableSettingsPanel } from './TableSettingsPanel';
+export type { TableSettingsPanelProps } from './TableSettingsPanel';
+
 // Theme Selector
 export { ThemeSelector } from './ThemeSelector';
 
@@ -209,3 +213,23 @@ export type {
   HandHistoryStreet,
   HandHistoryAction,
 } from './HandHistoryPanel';
+
+// Theme Settings Modal (Bible V8 §11.2)
+export { ThemeSettingsModal } from './ThemeSettingsModal';
+export type { ThemeSettingsModalProps } from './ThemeSettingsModal';
+
+// Table HUD — 4-Corner Overlay Layout
+export { TableHUD } from './TableHUD';
+export type { TableHUDProps } from './TableHUD';
+
+// Mini Stats Card — Upper-Right HUD Widget
+export { MiniStatsCard } from './MiniStatsCard';
+export type { MiniStatsCardProps, MiniStatsObserver } from './MiniStatsCard';
+
+// Previous Hand Card — Bottom-Left HUD Widget
+export { PreviousHandCard } from './PreviousHandCard';
+export type { PreviousHandCardProps } from './PreviousHandCard';
+
+// Deal Animation — Card dealing visual on new hand
+export { DealAnimation } from './DealAnimation';
+export type { DealAnimationProps } from './DealAnimation';

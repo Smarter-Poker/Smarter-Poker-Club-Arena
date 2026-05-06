@@ -13,6 +13,7 @@ import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './SpinAndGoLobby.css';
 import { retryAsync } from '../../utils/retryAsync';
+import { reportError } from '../../utils/errorReporter';
 
 interface SpinAndGoLobbyProps {
   clubId: string;
@@ -31,17 +32,16 @@ interface SpinTournament {
 }
 
 // Pool-based multipliers — display values for the wheel UI.
-// Actual payouts: winner gets 2× buy_in + bonus from pool (if triggered).
-// 75% of spins = 2×, remainder = bonus spins funded by the pool.
+// Balanced probabilities: expected payout = 3× buy_in, club net = 10%.
 const SPIN_MULTIPLIERS = [2, 3, 5, 10, 25, 50, 100];
 
 const MULTIPLIER_PROBABILITIES: { [key: number]: number } = {
-  2: 75,
-  3: 15,
-  5: 6,
-  10: 2.5,
-  25: 1.0,
-  50: 0.4,
+  2: 76.19,
+  3: 14.29,
+  5: 5.71,
+  10: 2.38,
+  25: 0.95,
+  50: 0.38,
   100: 0.1,
 };
 
@@ -67,31 +67,40 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
   useEffect(() => {
     loadTournaments();
 
-    // Subscribe to updates
-    const channelKey = 'spin-tournaments';
+    // Subscribe to updates — resolve club UUID for realtime filter
+    const channelKey = `spin-tournaments-${clubId}`;
+    let isMounted = true;
 
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'spin_tournaments',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => loadTournaments()
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[SpinAndGoLobby] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[SpinAndGoLobby] ⏱️ Realtime channel timed out');
-        }
-      });
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'spin_tournaments',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => loadTournaments()
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            if (err) reportError(err?.message || err, 'SpinAndGoLobby._Realtime_channel_error');
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[SpinAndGoLobby] ⏱️ Realtime channel timed out');
+          }
+        });
+    };
+
+    setupRealtime().catch((e) => console.warn('[SpinAndGoLobby] Realtime setup failed:', e));
 
     return () => {
+      isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId]);
@@ -216,9 +225,19 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
                       const prob = MULTIPLIER_PROBABILITIES[multiplier] || 0;
                       // Prize = 2× buy_in base + bonus buy-ins from pool
                       const bonusBuyIns =
-                        multiplier === 2 ? 0 : multiplier === 3 ? 1 :
-                        multiplier === 5 ? 3 : multiplier === 10 ? 8 :
-                        multiplier === 25 ? 23 : multiplier === 50 ? 48 : 98;
+                        multiplier === 2
+                          ? 0
+                          : multiplier === 3
+                            ? 1
+                            : multiplier === 5
+                              ? 3
+                              : multiplier === 10
+                                ? 8
+                                : multiplier === 25
+                                  ? 23
+                                  : multiplier === 50
+                                    ? 48
+                                    : 98;
                       const prize = Math.trunc(t.buyIn * (2 + bonusBuyIns));
                       return (
                         <div key={multiplier} className="prize-tier">
@@ -238,7 +257,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
               {/* Probability Info */}
               <div className="spin-card__info">
                 <span className="info-label">Prize Tiers</span>
-                <span className="info-text">2x-75%, 3x-15%, 5x-6%, 10x-2.5%, 25x+</span>
+                <span className="info-text">2x-76%, 3x-14%, 5x-6%, 10x-2.4%, 25x+</span>
               </div>
 
               {t.status === 'registering' && (

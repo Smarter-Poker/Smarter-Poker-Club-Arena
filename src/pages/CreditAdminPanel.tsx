@@ -17,6 +17,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 interface AgentCredit {
   id: string;
@@ -56,7 +57,8 @@ export default function CreditAdminPanel() {
           .limit(1)
           .maybeSingle();
         if (isMounted.current) setAuthorized(!!data);
-      } catch {
+      } catch (e) {
+        reportError(e, 'CreditAdminPanel.async');
         if (isMounted.current) setAuthorized(false);
       }
     })();
@@ -98,7 +100,8 @@ export default function CreditAdminPanel() {
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'CreditAdminPanel.map');
           /* non-critical */
         }
 
@@ -123,7 +126,7 @@ export default function CreditAdminPanel() {
         );
       }
     } catch (err) {
-      console.error('[CreditAdmin] Load failed:', err);
+      reportError(err, 'CreditAdminPanel.Load_failed');
       if (isMounted.current) toast.error('Failed to load agents');
     } finally {
       loadingRef.current = false;
@@ -144,7 +147,8 @@ export default function CreditAdminPanel() {
         { maxRetries: 2, isMountedRef: isMounted }
       );
       if (isMounted.current) setAuditLog(auditData || []);
-    } catch {
+    } catch (e) {
+      reportError(e, 'CreditAdminPanel.then');
       /* table may not exist */
     }
   }, [toast]);
@@ -181,7 +185,7 @@ export default function CreditAdminPanel() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[CreditAdminPanel] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'CreditAdminPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[CreditAdminPanel] ⏱️ Realtime channel timed out');
@@ -221,7 +225,8 @@ export default function CreditAdminPanel() {
           rate_type: 'credit_limit',
           created_at: new Date().toISOString(),
         });
-      } catch {
+      } catch (e) {
+        reportError(e, 'CreditAdminPanel.find');
         /* non-blocking */
       }
 
@@ -301,7 +306,8 @@ export default function CreditAdminPanel() {
                     { key: 'debtOwed', label: 'Debt Owed' },
                     { key: 'status', label: 'Status' },
                   ]);
-                } catch {
+                } catch (e) {
+                  reportError(e, 'CreditAdminPanel');
                   /* silent */
                 }
               }}

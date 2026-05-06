@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
+import { reportError } from '../../utils/errorReporter';
 
 interface LedgerEntry {
   id: string;
@@ -93,7 +94,8 @@ export default function TransactionLedgerView({
       if (!error && data) {
         setEntries(data as LedgerEntry[]);
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'TransactionLedgerView.useCallback');
       /* silent */
     }
     setLoading(false);

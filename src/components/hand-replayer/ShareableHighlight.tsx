@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { CardImage } from '../table/CardImage';
 import type { Card } from '../table/CardImage';
 import './ShareableHighlight.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ShareableHighlightProps {
   handId: string;
@@ -46,7 +47,7 @@ export default function ShareableHighlight({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      reportError(err, 'ShareableHighlight.Failed_to_copy');
     }
   };
 
@@ -59,7 +60,7 @@ export default function ShareableHighlight({
           url: shareUrl,
         });
       } catch (err) {
-        console.error('Share failed:', err);
+        reportError(err, 'ShareableHighlight.Share_failed');
       }
     } else {
       handleCopyLink();
@@ -75,7 +76,7 @@ export default function ShareableHighlight({
       const date = new Date(dateStr);
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     } catch (err) {
-      console.error('[ShareableHighlight] Error:', err);
+      reportError(err, 'ShareableHighlight.Error');
       return 'Recent';
     }
   };

@@ -24,6 +24,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import './HandHistoryPage.css';
+import { reportError } from '../utils/errorReporter';
 
 // ── SWR Cache ──
 const HH_CACHE_KEY = 'hh_cache_';
@@ -107,40 +108,14 @@ export default function HandHistoryPage() {
     };
   }, [user?.id, filter]);
 
-  // ── Realtime subscription: refresh hands on new entries ──
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channelKey = `hand-history-${user.id}`;
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'hand_history',
-          filter: `player_ids=cs.{${user.id}}`,
-        },
-        () => {
-          // New hand added for this user, refresh the hand list
-          loadHandsRef.current(true);
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[HandHistoryPage] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[HandHistoryPage] ⏱️ Realtime channel timed out');
-        }
-      });
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [user?.id]);
+  // ── Realtime backstop ──
+  // Removed postgres_changes subscription on public.hand_history (Phase 2 cost
+  // cut): the table is being dropped from the supabase_realtime publication to
+  // save egress. The three existing refresh paths cover this page fully:
+  //   • useVisibilityRefresh → refetch on tab-focus (line 57)
+  //   • masterBus 'HAND_COMPLETED' → refetch when engine finishes a hand
+  //   • masterBus 'TABLE_CREATED' → refetch on cross-table sync
+  // External writers (admin insertions, back-fills) appear on the next focus.
 
   // Keep loadHandsRef in sync so bus listeners always call the latest version
   useEffect(() => {
@@ -148,8 +123,8 @@ export default function HandHistoryPage() {
   });
 
   // ── Bus Listener: debounced refresh when engine completes a hand ──
-  // Debounced at 1s to coalesce with postgres_changes subscription above
-  // (both fire for the same hand — bus fires immediately, postgres 100-2000ms later)
+  // Debounced at 1s in case multiple HAND_COMPLETED events fire in quick
+  // succession (e.g., multi-table rapid-fire finishes).
   useEffect(() => {
     const unsub = masterBus.subscribeDebounced(
       'HAND_COMPLETED',
@@ -213,7 +188,7 @@ export default function HandHistoryPage() {
         // Update SWR cache with latest data
         if (reset && user?.id) setCachedHands(user.id, filtered);
       } catch (error) {
-        console.error('Failed to load hands:', error);
+        reportError(error, 'HandHistoryPage.Failed_to_load_hands');
         if (!getIsMounted || getIsMounted()) toast.error('Failed to load hand history');
       }
       if (!getIsMounted || getIsMounted()) {
@@ -313,7 +288,7 @@ export default function HandHistoryPage() {
       window.open(url, '_blank');
       toast.info('Opening Jarvis analysis...');
     } catch (err) {
-      console.error('Failed to send hand to Jarvis:', err);
+      reportError(err, 'HandHistoryPage.Failed_to_send_hand_to_Jarvis');
       toast.error('Failed to analyze hand');
     }
   };
@@ -328,13 +303,7 @@ export default function HandHistoryPage() {
             className={`hh-filter-chip ${filter === f ? 'active' : ''}`}
             onClick={() => setFilter(f)}
           >
-            {f === 'all'
-              ? 'All Hands'
-              : f === 'won'
-                ? '✅ Won'
-                : f === 'lost'
-                  ? '❌ Lost'
-                  : '🔥 Big Pots'}
+            {f === 'all' ? 'All Hands' : f === 'won' ? 'Won' : f === 'lost' ? 'Lost' : 'Big Pots'}
           </button>
         ))}
       </div>

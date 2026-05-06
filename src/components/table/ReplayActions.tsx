@@ -10,7 +10,7 @@
  * - Timeline integration
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import './ReplayActions.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -66,12 +66,12 @@ const ACTION_CONFIG: Record<ActionType, { label: string; color: string; icon: st
   POST_BB: { label: 'BB', color: '#6E7681', icon: '' },
   FOLD: { label: 'Fold', color: '#F85149', icon: '' },
   CHECK: { label: 'Check', color: '#8B949E', icon: '' },
-  CALL: { label: 'Call', color: '#3FB950', icon: '📞' },
+  CALL: { label: 'Call', color: '#3FB950', icon: '' },
   BET: { label: 'Bet', color: '#FFB800', icon: '' },
   RAISE: { label: 'Raise', color: '#FF6B35', icon: '' },
   ALL_IN: { label: 'All-In', color: '#A855F7', icon: '' },
   SHOW: { label: 'Show', color: '#1877F2', icon: '' },
-  MUCK: { label: 'Muck', color: '#6E7681', icon: '🙈' },
+  MUCK: { label: 'Muck', color: '#6E7681', icon: '' },
   WIN: { label: 'Win', color: '#3FB950', icon: '' },
 };
 
@@ -185,14 +185,26 @@ export function ReplayActions({
   isPlaying = false,
 }: ReplayActionsProps) {
   const [visibleStreets, setVisibleStreets] = useState<boolean[]>([]);
+  // CA-7 BUG FIX: stagger timers for street animation had no cleanup return.
+  // Pending setVisibleStreets calls fire after the hand replay panel is closed.
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
+    // Cancel any in-flight stagger timers before starting new ones
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
     setVisibleStreets([]);
     streets.forEach((_, i) => {
-      setTimeout(() => {
-        setVisibleStreets((prev) => [...prev, true]);
-      }, i * 70);
+      staggerTimersRef.current.push(
+        setTimeout(() => {
+          setVisibleStreets((prev) => [...prev, true]);
+        }, i * 70)
+      );
     });
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
+    };
   }, [streets]);
 
   // Calculate total actions

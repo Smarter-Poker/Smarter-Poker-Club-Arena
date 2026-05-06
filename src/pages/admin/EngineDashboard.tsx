@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { cashGameOrchestrator } from '../../engine/CashGameOrchestrator';
-import { tournamentOrchestrator } from '../../engine/TournamentOrchestrator';
+import {
+  getCashStats,
+  getTournamentStats,
+  refreshCashStats,
+  refreshTournamentStats,
+  type CashEngineStats,
+  type TournamentEngineStats,
+} from '../../services/AdminStatsService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../../components/common/Toast';
@@ -9,17 +15,21 @@ import { SettlementCronStatus } from '../../components/SettlementCronStatus';
 import './EngineDashboard.css';
 
 export default function EngineDashboard() {
-  const [stats, setStats] = useState(cashGameOrchestrator.getStats());
-  const [tStats, setTStats] = useState(tournamentOrchestrator.getStats());
+  const [stats, setStats] = useState<CashEngineStats>(getCashStats());
+  const [tStats, setTStats] = useState<TournamentEngineStats>(getTournamentStats());
   const [hydraStats, setHydraStats] = useState({ available: 0, seated: 0 });
   const toast = useToast();
 
+  // Initial + polled refresh of engine stats from Supabase. (Phase U2 Stage B:
+  // replaces client-side cashGameOrchestrator/tournamentOrchestrator singletons.)
   useEffect(() => {
-    // Refresh stats every second
-    const interval = setInterval(() => {
-      setStats(cashGameOrchestrator.getStats());
-      setTStats(tournamentOrchestrator.getStats());
-    }, 1000);
+    const refresh = async () => {
+      const [cash, tour] = await Promise.all([refreshCashStats(), refreshTournamentStats()]);
+      setStats(cash);
+      setTStats(tour);
+    };
+    refresh();
+    const interval = setInterval(refresh, 5000); // 5s — durable reads; no need for 1s
     return () => clearInterval(interval);
   }, []);
 
@@ -32,23 +42,23 @@ export default function EngineDashboard() {
   useEffect(() => {
     const unsubTable = masterBus.subscribeDebounced(
       'TABLE_UPDATED',
-      () => {
-        setStats(cashGameOrchestrator.getStats());
+      async () => {
+        setStats(await refreshCashStats());
         loadHydraStats();
       },
       500
     );
     const unsubHand = masterBus.subscribeDebounced(
       'HAND_COMPLETED',
-      () => {
-        setStats(cashGameOrchestrator.getStats());
+      async () => {
+        setStats(await refreshCashStats());
       },
       500
     );
     const unsubTournament = masterBus.subscribeDebounced(
       'TOURNAMENT_UPDATED',
-      () => {
-        setTStats(tournamentOrchestrator.getStats());
+      async () => {
+        setTStats(await refreshTournamentStats());
       },
       500
     );
@@ -70,16 +80,16 @@ export default function EngineDashboard() {
     // Phase 4: Refresh stats on table break completions (tournament rebalancing)
     const unsubTableBreak = masterBus.subscribeDebounced(
       'TABLE_BREAK_COMPLETED',
-      () => {
-        setTStats(tournamentOrchestrator.getStats());
+      async () => {
+        setTStats(await refreshTournamentStats());
       },
       500
     );
     // Phase 4: Refresh stats on bomb pot triggers (cash game activity)
     const unsubBombPot = masterBus.subscribeDebounced(
       'BOMB_POT_TRIGGERED',
-      () => {
-        setStats(cashGameOrchestrator.getStats());
+      async () => {
+        setStats(await refreshCashStats());
       },
       500
     );
@@ -115,34 +125,15 @@ export default function EngineDashboard() {
     }
   };
 
+  // Engine lifecycle is managed by Hetzner (`club-arena-engine` container via
+  // SSH/systemd). These handlers warn the operator and no-op; a separate admin
+  // flow can call POST https://engine.smarter.poker/admin/pause|/admin/resume.
   const handleToggleOrchestrator = async () => {
-    try {
-      if (stats.running) {
-        await cashGameOrchestrator.stop();
-        toast.info('Cash Game Orchestrator stopped. All tables halted.');
-      } else {
-        await cashGameOrchestrator.start();
-        toast.success('Cash Game Orchestrator started! Engines spinning up.');
-      }
-      setStats(cashGameOrchestrator.getStats());
-    } catch (err) {
-      toast.error('Failed to toggle orchestrator');
-    }
+    toast.info('Engine is managed by the Hetzner container. Use SSH or the /admin/pause endpoint.');
   };
 
   const handleToggleTournament = async () => {
-    try {
-      if (tStats.running) {
-        await tournamentOrchestrator.stop();
-        toast.info('Tournament Orchestrator stopped. All tournaments paused.');
-      } else {
-        await tournamentOrchestrator.start();
-        toast.success('Tournament Orchestrator started!');
-      }
-      setTStats(tournamentOrchestrator.getStats());
-    } catch (err) {
-      toast.error('Failed to toggle tournament orchestrator');
-    }
+    toast.info('Tournament engine runs on Hetzner. Use SSH or the /admin/pause endpoint to halt.');
   };
 
   return (

@@ -12,6 +12,7 @@ import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -118,7 +119,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 3,
     chipReward: 60,
-    icon: '👀',
+    icon: '',
   },
   {
     id: 'showdown_5',
@@ -170,7 +171,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 250,
     chipReward: 1000,
-    icon: '🔥',
+    icon: '',
   },
   {
     id: 'weekly_wins_50',
@@ -179,7 +180,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 50,
     chipReward: 1500,
-    icon: '👑',
+    icon: '',
   },
   {
     id: 'weekly_tourneys_10',
@@ -188,7 +189,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 10,
     chipReward: 2000,
-    icon: '🏆',
+    icon: '',
   },
   {
     id: 'weekly_showdowns_20',
@@ -197,7 +198,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 20,
     chipReward: 800,
-    icon: '👀',
+    icon: '',
   },
 ];
 
@@ -209,7 +210,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 1000,
     chipReward: 5000,
-    icon: '🌋',
+    icon: '',
   },
   {
     id: 'monthly_wins_250',
@@ -218,7 +219,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 250,
     chipReward: 10000,
-    icon: '💎',
+    icon: '',
   },
   {
     id: 'monthly_tourneys_50',
@@ -227,7 +228,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 50,
     chipReward: 15000,
-    icon: '🚀',
+    icon: '',
   },
 ];
 
@@ -249,8 +250,7 @@ class DailyChallengeServiceClass {
       .select('*')
       .eq('user_id', userId)
       .eq('assigned_date', today);
-    if (existErr)
-      console.warn('[DailyChallenge] getTodaysChallenges fetch error:', existErr.message);
+    if (existErr) reportError(existErr, 'DailyChallengeService.getTodaysChallenges_fetch_error');
 
     if (existing && existing.length > 0) {
       return existing.map(this.mapToUserChallenge);
@@ -272,7 +272,8 @@ class DailyChallengeServiceClass {
       onConflict: 'user_id,challenge_id,assigned_date',
       ignoreDuplicates: true,
     });
-    if (insertErr) console.error('[DailyChallenge] Failed to assign daily challenges:', insertErr);
+    if (insertErr)
+      reportError(insertErr, 'DailyChallengeService.Failed_to_assign_daily_challenges');
 
     // Always re-fetch from DB to get canonical rows (handles race condition correctly)
     const { data: canonical } = await supabase
@@ -309,7 +310,7 @@ class DailyChallengeServiceClass {
       .select('*')
       .eq('user_id', userId)
       .eq('assigned_date', weekKey);
-    if (wkErr) console.warn('[DailyChallenge] getWeeklyChallenges fetch error:', wkErr.message);
+    if (wkErr) reportError(wkErr, 'DailyChallengeService.getWeeklyChallenges_fetch_error');
 
     if (existing && existing.length > 0) {
       return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'weekly' as const }));
@@ -329,7 +330,8 @@ class DailyChallengeServiceClass {
       onConflict: 'user_id,challenge_id,assigned_date',
       ignoreDuplicates: true,
     });
-    if (insertErr) console.error('[DailyChallenge] Failed to assign weekly challenges:', insertErr);
+    if (insertErr)
+      reportError(insertErr, 'DailyChallengeService.Failed_to_assign_weekly_challenges');
 
     // Re-fetch canonical rows from DB
     const { data: canonical } = await supabase
@@ -367,7 +369,7 @@ class DailyChallengeServiceClass {
       .select('*')
       .eq('user_id', userId)
       .eq('assigned_date', monthKey);
-    if (moErr) console.warn('[DailyChallenge] getMonthlyChallenges fetch error:', moErr.message);
+    if (moErr) reportError(moErr, 'DailyChallengeService.getMonthlyChallenges_fetch_error');
 
     if (existing && existing.length > 0) {
       return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'monthly' as const }));
@@ -388,7 +390,7 @@ class DailyChallengeServiceClass {
       ignoreDuplicates: true,
     });
     if (insertErr)
-      console.error('[DailyChallenge] Failed to assign monthly challenges:', insertErr);
+      reportError(insertErr, 'DailyChallengeService.Failed_to_assign_monthly_challenges');
 
     // Re-fetch canonical rows from DB
     const { data: canonical } = await supabase
@@ -437,7 +439,7 @@ class DailyChallengeServiceClass {
       .eq('user_id', userId)
       .in('assigned_date', [today, weekKey, monthKey])
       .eq('completed', false);
-    if (chErr) console.warn('[DailyChallenge] updateProgress fetch error:', chErr.message);
+    if (chErr) reportError(chErr, 'DailyChallengeService.updateProgress_fetch_error');
 
     if (!challenges) return { completed };
 
@@ -484,7 +486,7 @@ class DailyChallengeServiceClass {
           })
           .eq('id', uc.id);
         if (progErr) {
-          console.error('[DailyChallenge] Progress update failed:', progErr);
+          reportError(progErr, 'DailyChallengeService.Progress_update_failed');
           continue;
         }
       }
@@ -523,7 +525,7 @@ class DailyChallengeServiceClass {
         p_reward_amount: rewardAmount,
       });
       if (result.error) {
-        console.error('[DailyChallenge] RPC claim error:', result.error);
+        reportError(result.error, 'DailyChallengeService.RPC_claim_error');
         throw new Error(result.error.message);
       }
       return result;
@@ -561,7 +563,7 @@ class DailyChallengeServiceClass {
       .eq('user_id', userId)
       .eq('completed', true)
       .limit(QUERY_LIMITS.MODERATE);
-    if (statErr) console.warn('[DailyChallenge] getStats error:', statErr.message);
+    if (statErr) reportError(statErr, 'DailyChallengeService.getStats_error');
 
     if (!data) {
       return {

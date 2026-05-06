@@ -140,6 +140,31 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
     { debounce: 300 }
   );
 
+  // Auto-refresh diamond balance when it changes anywhere in the platform
+  useMasterBusSubscription(
+    'DIAMOND_BALANCE_CHANGED',
+    (payload: any) => {
+      if (authUser?.id) {
+        // If the bus event carries the new balance, update store directly (instant)
+        if (payload?.newBalance !== undefined) {
+          useWalletStore.setState({ diamonds: payload.newBalance });
+        } else {
+          loadDiamonds(authUser.id);
+        }
+      }
+    },
+    { debounce: 200 }
+  );
+
+  // Also listen for generic BALANCE_UPDATED (covers admin adjustments, rewards, etc.)
+  useMasterBusSubscription(
+    'BALANCE_UPDATED',
+    () => {
+      if (authUser?.id) loadDiamonds(authUser.id);
+    },
+    { debounce: 500 }
+  );
+
   useMasterBusSubscription('USER_PROFILE_LOADED', (payload) => {
     if (payload?.avatarUrl) {
       setAvatarUrl(payload.avatarUrl as string);
@@ -260,18 +285,24 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           </button>
 
           {/* Messages */}
-          <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/messenger')}>
-            <img
-              src={`${BASE}images/header-messenger.png`}
-              alt="Messages"
-              className={styles.orbImg}
-            />
-            {unreadMessages > 0 && (
-              <span className={styles.badge} aria-live="polite">
-                {unreadMessages > 99 ? '99+' : unreadMessages}
-              </span>
-            )}
-          </button>
+          {authUser?.id && (
+            <button
+              className={styles.orbBtn}
+              onClick={() => navigateToHub('/hub/messenger')}
+              aria-label="Open Messenger"
+            >
+              <img
+                src={`${BASE}images/header-messenger.png`}
+                alt="Messages"
+                className={styles.orbImg}
+              />
+              {unreadMessages > 0 && (
+                <span className={styles.badge} aria-live="polite">
+                  {unreadMessages > 99 ? '99+' : unreadMessages}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Notifications — route to in-app Notification Center */}
           <Link to="/notifications" className={styles.orbLink}>

@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { tournamentService } from '../../services/TournamentService';
 import { masterBus } from '../../core/MasterBus';
+import { soundService } from '../../services/SoundService';
 import './RebuyModal.css'; // Shared styles
 
 interface AddOnModalProps {
@@ -60,6 +61,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
       const result = await tournamentService.processAddOn(tournamentId, userId);
       if (result.success) {
         setPurchased(true);
+        soundService.playBuyInConfirm();
         masterBus.emit('TOURNAMENT_UPDATED', {
           tournamentId,
           status: 'addon',

@@ -12,6 +12,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './TransactionHistory.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface TransactionHistoryProps {
   walletId?: string;
@@ -98,43 +99,68 @@ const CATEGORY_ICONS: Record<string, string> = {
   bonus: '★',
 };
 
+// ── Skeleton Loading Component ──
+function TransactionSkeleton() {
+  return (
+    <div className="transaction-history">
+      <div className="transaction-history__header">
+        <div className="tx-skeleton-bar" style={{ width: '140px', height: '16px' }} />
+        <div
+          className="tx-skeleton-bar"
+          style={{ width: '80px', height: '28px', borderRadius: '6px' }}
+        />
+      </div>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div
+          key={i}
+          className="transaction-row tx-skeleton-row"
+          style={{ animationDelay: `${i * 0.08}s` }}
+        >
+          <div className="tx-skeleton-circle" />
+          <div className="details">
+            <div
+              className="tx-skeleton-bar"
+              style={{ width: `${60 + Math.random() * 40}%`, height: '13px' }}
+            />
+            <div
+              className="tx-skeleton-bar"
+              style={{ width: `${40 + Math.random() * 30}%`, height: '10px', marginTop: '4px' }}
+            />
+          </div>
+          <div className="amounts">
+            <div className="tx-skeleton-bar" style={{ width: '60px', height: '14px' }} />
+            <div
+              className="tx-skeleton-bar"
+              style={{ width: '45px', height: '10px', marginTop: '4px' }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryProps) {
   const { user } = useAuthUser();
   const toast = useToast();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState<string>('all');
   const [txPage, setTxPage] = useState(1);
   const TX_PAGE_SIZE = 25;
   const isMounted = useIsMounted();
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadRef = useRef<() => void>(() => {});
 
   // Stagger animation for transaction list
   const { style: txStyle } = useStaggerAnimation(transactions.length);
 
-  useEffect(() => {
-    if (user?.id || walletId) {
-      loadTransactions();
-    }
-  }, [user?.id, walletId]);
-
-  // Bus listeners: auto-refresh on wallet events
-  const debouncedRefresh = useCallback(() => {
-    if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    refreshTimer.current = setTimeout(() => {
-      if (isMounted.current) loadRef.current();
-    }, 500);
-  }, [isMounted]);
-
-  useMasterBusSubscription('BALANCE_UPDATED', debouncedRefresh);
-  useMasterBusSubscription('WALLET_REFRESHED', debouncedRefresh);
-  useMasterBusSubscription('CHIPS_DISTRIBUTED', debouncedRefresh);
-
-  const loadTransactions = async () => {
+  // ── Load Transactions (memoized with useCallback) ──
+  const loadTransactions = useCallback(async () => {
     if (!user?.id && !walletId) return;
     setLoading(true);
+    setLoadError(false);
 
     try {
       let query = supabase
@@ -153,12 +179,12 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
 
       const { data, error } = await query;
 
-      if (!error && data) {
+      if (!error && data && isMounted.current) {
         setTransactions(
           data.map((t) => ({
             id: t.id,
-            type: t.type, // credit or debit
-            category: t.category, // buyin, cashout, rake, prize, etc.
+            type: t.type,
+            category: t.category,
             amount: t.amount,
             balance: t.balance_after || 0,
             description: t.description || '',
@@ -166,16 +192,42 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
             walletType: t.wallet_type || 'PLAYER',
           }))
         );
-        // We will handle stagger animation in a useEffect based on transactions change
+      } else if (error && isMounted.current) {
+        setLoadError(true);
+        toast.error('Failed to load transactions');
       }
-    } catch (error) {
+    } catch (e) {
+      reportError(e, 'TransactionHistory.map');
+      if (isMounted.current) setLoadError(true);
       toast.error('Failed to load transactions');
     }
     if (isMounted.current) setLoading(false);
-  };
+  }, [user?.id, walletId, limit, isMounted, toast]);
 
-  // Keep loadRef in sync with latest loadTransactions
-  loadRef.current = loadTransactions;
+  useEffect(() => {
+    if (user?.id || walletId) {
+      loadTransactions();
+    }
+  }, [user?.id, walletId, loadTransactions]);
+
+  // Bus listeners: auto-refresh on wallet events
+  const debouncedRefresh = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      if (isMounted.current) loadTransactions();
+    }, 500);
+  }, [isMounted, loadTransactions]);
+
+  useMasterBusSubscription('BALANCE_UPDATED', debouncedRefresh);
+  useMasterBusSubscription('WALLET_REFRESHED', debouncedRefresh);
+  useMasterBusSubscription('CHIPS_DISTRIBUTED', debouncedRefresh);
+
+  // Cleanup refreshTimer on unmount to prevent lingering timers
+  useEffect(() => {
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
+  }, []);
 
   const filteredTransactions =
     filter === 'all'
@@ -190,15 +242,37 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
   const visibleTransactions = filteredTransactions.slice(0, txPage * TX_PAGE_SIZE);
   const hasMore = filteredTransactions.length > visibleTransactions.length;
 
+  // ── Skeleton loading state ──
   if (loading) {
-    return <div className="transaction-history loading">Loading...</div>;
+    return <TransactionSkeleton />;
+  }
+
+  // ── Error state with retry ──
+  if (loadError && transactions.length === 0) {
+    return (
+      <div className="transaction-history">
+        <div className="tx-error-state">
+          <span className="tx-error-icon">⚠️</span>
+          <p>Failed to load transactions</p>
+          <button className="tx-retry-btn" onClick={loadTransactions}>
+            ↻ Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="transaction-history">
       <div className="transaction-history__header">
         <h3> Transaction History</h3>
-        <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+        <select
+          value={filter}
+          onChange={(e) => {
+            setFilter(e.target.value);
+            setTxPage(1);
+          }}
+        >
           <option value="all">All</option>
           <option value="credit">Credits</option>
           <option value="debit">Debits</option>

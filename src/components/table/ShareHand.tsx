@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SHARE HAND — PokerBros-Style Shareable Hand Replay
+ *  SHARE HAND — Premium-Style Shareable Hand Replay
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Complete shareable hand replay system:
@@ -14,6 +14,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { haptic } from '../../services/SoundService';
 import { CardImage, type Card } from '../table/CardImage';
 import './ShareHand.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -268,7 +269,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
 
     return hand;
   } catch (e) {
-    console.error('Failed to decode hand:', e);
+    reportError(e, 'ShareHand.Failed_to_decode_hand');
     return null;
   }
 }
@@ -299,8 +300,18 @@ export function ShareHand({
 }: ShareHandProps) {
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [copied, setCopied] = useState(false);
+  // CA-2 BUG FIX: track the "Copied" dismiss timer so it can be cancelled on
+  // unmount — was calling setCopied on an already-unmounted component.
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeTab, setActiveTab] = useState<'link' | 'social' | 'embed'>('link');
   const [visibleSocial, setVisibleSocial] = useState<boolean[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      staggerTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   // Generate shareable URL
   const shareUrl = useMemo(() => {
@@ -326,9 +337,10 @@ export function ShareHand({
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      clearTimeout(copiedTimerRef.current!);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      console.error('Copy failed:', error);
+      reportError(error, 'ShareHand.Copy_failed');
     }
   }, [shareUrl]);
 
@@ -360,7 +372,7 @@ export function ShareHand({
           url: shareUrl,
         });
       } catch (error) {
-        console.error('Share failed:', error);
+        reportError(error, 'ShareHand.Share_failed');
       }
     }
   }, [shareText, shareUrl, clubName]);

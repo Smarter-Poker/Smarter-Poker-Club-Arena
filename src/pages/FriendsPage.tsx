@@ -23,6 +23,7 @@ import { playerStatusService } from '../services/PlayerStatusService';
 import './FriendsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 interface Friend {
   id: string;
@@ -138,7 +139,7 @@ export default function FriendsPage() {
         if (status === 'SUBSCRIBED') {
           await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('[FriendsPage] ❌ Presence channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'FriendsPage._Presence_channel_error');
         } else if (status === 'TIMED_OUT') {
           console.warn('[FriendsPage] ⏱️ Presence channel timed out');
         }
@@ -259,7 +260,8 @@ export default function FriendsPage() {
             for (const p of profiles)
               profileMap[p.id] = { username: p.username, avatar_url: p.avatar_url };
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'FriendsPage.pendingUserIds');
           /* non-critical */
         }
       }
@@ -334,7 +336,7 @@ export default function FriendsPage() {
         );
       }
     } catch (error) {
-      console.error('Failed to load friends:', error);
+      reportError(error, 'FriendsPage.Failed_to_load_friends');
       toast.error('Failed to load friends');
     } finally {
       loadingRef.current = false;
@@ -356,7 +358,7 @@ export default function FriendsPage() {
       loadFriends();
       toast.success('Friend request accepted!');
     } catch (err) {
-      console.error('[Friends] Failed to accept request:', err);
+      reportError(err, 'FriendsPage.Failed_to_accept_request');
       toast.error('Failed to accept request');
     }
   };
@@ -372,7 +374,7 @@ export default function FriendsPage() {
       loadFriends();
       toast.success('Friend request declined');
     } catch (err) {
-      console.error('[Friends] Failed to decline request:', err);
+      reportError(err, 'FriendsPage.Failed_to_decline_request');
       toast.error('Failed to decline request');
     }
   };
@@ -388,7 +390,7 @@ export default function FriendsPage() {
       loadFriends();
       toast.success('Friend removed');
     } catch (err) {
-      console.error('[Friends] Failed to remove friend:', err);
+      reportError(err, 'FriendsPage.Failed_to_remove_friend');
       toast.error('Failed to remove friend');
     }
   };
@@ -411,7 +413,7 @@ export default function FriendsPage() {
       masterBus.emit('FRIEND_REQUEST_SENT', { toUserId: playerId });
       toast.success('Friend request sent!');
     } catch (err) {
-      console.error('[Friends] Failed to send request:', err);
+      reportError(err, 'FriendsPage.Failed_to_send_request');
       toast.error('Failed to send friend request');
     }
   };
@@ -526,7 +528,8 @@ export default function FriendsPage() {
                       { key: 'user_id', label: 'User ID' },
                     ]);
                     toast.success('Friends exported!');
-                  } catch {
+                  } catch (e) {
+                    reportError(e, 'FriendsPage');
                     toast.error('Export failed');
                   }
                 }}

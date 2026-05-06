@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { SettlementService } from './SettlementService';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -148,9 +149,10 @@ export const SettlementCronService = {
       if (this.config.requireCanaryCheck) {
         const canary = await this.runCanaryCheck();
         if (!canary.passed) {
-          console.error(
-            `[SettlementCron] CANARY CHECK FAILED: credits=${canary.totalCredits}, ` +
-              `debits=${canary.totalDebits}, diff=${canary.difference}`
+          reportError(
+            `CANARY CHECK FAILED: credits=${canary.totalCredits}, debits=${canary.totalDebits}, diff=${canary.difference}`,
+            'SettlementCronService.canaryCheckFailed',
+            { ...canary }
           );
 
           // Raise critical alert
@@ -163,7 +165,7 @@ export const SettlementCronService = {
               { ...canary }
             );
           } catch (err) {
-            console.error('[SettlementCron] Canary audit log failed:', err);
+            reportError(err, 'SettlementCronService.canaryAuditLog');
           }
 
           // Automated push/email alert via Supabase edge function
@@ -180,11 +182,7 @@ export const SettlementCronService = {
               },
             });
           } catch (err) {
-
-            console.error("[SettlementCronService] Error:", err);
-            console.error(
-              '[SettlementCron] Edge function send-canary-alert unavailable — relying on DB alert'
-            );
+            reportError(err, 'SettlementCronService.edgeFunctionAlert');
           }
 
           masterBus.emit('SETTLEMENT_CYCLE_COMPLETED', {
@@ -223,7 +221,7 @@ export const SettlementCronService = {
         });
       }
     } catch (err: unknown) {
-      console.error('[SettlementCron] Error during settlement cycle:', err);
+      reportError(err, 'SettlementCronService.check');
     } finally {
       this.isRunning = false;
     }
@@ -239,8 +237,9 @@ export const SettlementCronService = {
       if (error || !data) {
         // FAIL-CLOSED: If canary RPC doesn't exist, settlement MUST NOT proceed unverified.
         // Raise critical alert and block until the RPC is deployed.
-        console.error(
-          '[SettlementCron] Canary RPC not available — BLOCKING settlement (fail-closed)'
+        reportError(
+          'Canary RPC not available — BLOCKING settlement (fail-closed)',
+          'SettlementCronService.canaryRPCMissing'
         );
         try {
           const { FinancialAlertService } = await import('./FinancialAlertService');
@@ -250,7 +249,7 @@ export const SettlementCronService = {
             { error: error?.message || 'No data returned' }
           );
         } catch (err) {
-          console.error('[SettlementCron] Balance check audit failed:', err);
+          reportError(err, 'SettlementCronService.balanceCheckAudit');
         }
         return { passed: false, totalCredits: 0, totalDebits: 0, difference: -1 };
       }
@@ -266,10 +265,7 @@ export const SettlementCronService = {
       return { passed, totalCredits, totalDebits, difference };
     } catch (err: unknown) {
       // FAIL-CLOSED: Unexpected errors also block settlement
-      console.error(
-        '[SettlementCron] Canary check error — BLOCKING settlement (fail-closed):',
-        err
-      );
+      reportError(err, 'SettlementCronService.canaryCheckError');
       return { passed: false, totalCredits: 0, totalDebits: 0, difference: -1 };
     }
   },

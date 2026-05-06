@@ -23,14 +23,14 @@
   -webkit-tap-highlight-color: transparent;
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  /* Slide-up entrance when it's hero's turn */
-  animation: actionPanelSlideUp 0.35s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  /* X6.2e: cross-fade entrance when hero's turn starts (300ms per spec §5.4) */
+  animation: actionPanelCrossFade 0.3s ease-out both;
 }
 
-@keyframes actionPanelSlideUp {
+@keyframes actionPanelCrossFade {
   0% {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(12px);
   }
   100% {
     opacity: 1;
@@ -65,10 +65,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 56px;
-  min-height: 48px;
+  height: 72px;
+  min-height: 64px;
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   cursor: pointer;
   transition:
     transform 0.12s var(--ease-spring),
@@ -109,101 +109,115 @@
 
 .action-btn:active:not(:disabled) {
   transform: scale(0.96) translateY(2px);
+  filter: brightness(1.3);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.3),
+    0 2px 0 rgba(0, 0, 0, 0.3);
 }
 
 .action-btn__label {
-  font-size: 0.9375rem;
-  font-weight: 700;
-  text-transform: none;
-  letter-spacing: 0.8px;
+  font-size: 1.125rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
   color: white;
   line-height: 1.1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .action-btn__amount {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-  margin-top: 1px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.95);
+  margin-top: 2px;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 /* ─── FOLD (Red) ──────────────────────────────────────────── */
 .action-btn--fold {
-  background: linear-gradient(180deg, var(--color-fold) 0%, var(--color-fold-dark) 100%);
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 40%, #b91c1c 100%);
   box-shadow:
-    0 4px 14px var(--color-fold-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+    0 4px 0 #991b1b,
+    0 6px 20px rgba(239, 68, 68, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
 .action-btn--fold:hover:not(:disabled) {
-  filter: brightness(1.12);
+  filter: brightness(1.15);
   box-shadow:
-    0 6px 24px rgba(239, 68, 68, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    0 3px 0 #991b1b,
+    0 8px 32px rgba(239, 68, 68, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
 
 /* ─── CHECK (Green) ───────────────────────────────────────── */
 .action-btn--check {
-  background: linear-gradient(180deg, var(--color-check) 0%, var(--color-check-dark) 100%);
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 40%, #15803d 100%);
   box-shadow:
-    0 4px 14px var(--color-check-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+    0 4px 0 #166534,
+    0 6px 20px rgba(34, 197, 94, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
 .action-btn--check:hover:not(:disabled) {
-  filter: brightness(1.12);
+  filter: brightness(1.15);
   box-shadow:
-    0 6px 24px rgba(34, 197, 94, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    0 3px 0 #166534,
+    0 8px 32px rgba(34, 197, 94, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
 
 /* ─── CALL (Green) ────────────────────────────────────────── */
 .action-btn--call {
-  background: linear-gradient(180deg, var(--color-call) 0%, var(--color-call-dark) 100%);
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 40%, #15803d 100%);
   box-shadow:
-    0 4px 14px var(--color-call-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+    0 4px 0 #166534,
+    0 6px 20px rgba(34, 197, 94, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
 .action-btn--call:hover:not(:disabled) {
-  filter: brightness(1.12);
+  filter: brightness(1.15);
   box-shadow:
-    0 6px 24px rgba(34, 197, 94, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    0 3px 0 #166534,
+    0 8px 32px rgba(34, 197, 94, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
 
 /* ─── RAISE (Amber) ───────────────────────────────────────── */
 .action-btn--raise {
-  background: linear-gradient(180deg, var(--color-raise) 0%, var(--color-raise-dark) 100%);
+  background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 40%, #d97706 100%);
   box-shadow:
     0 4px 0 #b45309,
-    0 6px 16px var(--color-raise-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    0 6px 20px rgba(245, 158, 11, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.2);
 }
 
 .action-btn--raise:hover:not(:disabled) {
-  filter: brightness(1.12);
+  filter: brightness(1.15);
   box-shadow:
     0 3px 0 #b45309,
-    0 6px 24px rgba(245, 158, 11, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    0 8px 32px rgba(245, 158, 11, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
 
 /* ─── ALL-IN (Purple) — The big play ─────────────────────── */
 .action-btn--allin {
-  background: linear-gradient(180deg, var(--color-allin) 0%, var(--color-allin-dark) 100%);
+  background: linear-gradient(180deg, #a855f7 0%, #7c3aed 40%, #6d28d9 100%);
   box-shadow:
     0 4px 0 #5b21b6,
-    0 6px 16px var(--color-allin-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    0 6px 20px rgba(139, 92, 246, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.2);
   animation: allinPulse 1.8s ease-in-out infinite;
 }
 
@@ -221,13 +235,16 @@
   100% {
     box-shadow:
       0 4px 0 #5b21b6,
-      0 6px 16px rgba(139, 92, 246, 0.3);
+      0 6px 20px rgba(139, 92, 246, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.2);
   }
   50% {
     box-shadow:
       0 4px 0 #5b21b6,
-      0 8px 32px rgba(139, 92, 246, 0.55),
-      0 0 48px rgba(139, 92, 246, 0.15);
+      0 10px 40px rgba(139, 92, 246, 0.6),
+      0 0 60px rgba(139, 92, 246, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 }
 
@@ -287,12 +304,52 @@
   border-radius: 10px;
 }
 
+/* Phase 2 T1-03: amount is now a button so it's keyboard-focusable and the
+   click handler opens the numeric input. Reset button chrome so it visually
+   matches the prior <span>. */
 .raise-value__amount {
   font-size: 1.75rem;
   font-weight: 800;
   color: #ffd700;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   line-height: 1.1;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.raise-value__amount:focus-visible {
+  outline: 2px solid #ffd700;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Inline numeric input swap — sized to mirror the .raise-value__amount span
+   so the layout doesn't jump when the user taps to edit. */
+.raise-value__input {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #ffd700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  line-height: 1.1;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 215, 0, 0.55);
+  border-radius: 6px;
+  padding: 2px 6px;
+  width: 7ch;
+  text-align: center;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.raise-value__input::-webkit-outer-spin-button,
+.raise-value__input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .raise-value__bb {
@@ -302,52 +359,251 @@
   margin-top: 2px;
 }
 
-/* Slider */
-.raise-slider-wrap {
-  padding: 0 8px;
-  margin-bottom: 14px;
-  position: relative;
+/* ═══════════════════════════════════════════════════════════════
+   Phase 2 T1-02 — vertical bet slider on the right (spec §5.2)
+   ═══════════════════════════════════════════════════════════════ */
+
+.action-panel--raise-vertical {
+  /* Give the slider rail room to sit on the right edge without pushing
+     the existing 3-button-wide content to overflow. */
+  padding-right: calc(56px + 16px);
 }
 
+.raise-layout {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.raise-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.raise-slider-vertical {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -56px; /* lives in the padding gap reserved by --raise-vertical */
+  width: 48px;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  pointer-events: none; /* re-enabled on the rail itself */
+}
+
+.raise-slider-vertical__rail {
+  position: relative;
+  width: 32px;
+  margin: 8px 0;
+  pointer-events: auto;
+}
+
+/* Cross-browser vertical slider:
+   - Firefox: orient="vertical" attribute (set in JSX)
+   - WebKit/Blink: rotate(-90deg) on the horizontal range input. We size the
+     element as if horizontal then rotate so the thumb runs bottom→top. */
+.raise-slider-vertical__rail .raise-slider {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%);
+}
+
+@supports (-webkit-appearance: none) and (not (-moz-appearance: none)) {
+  /* WebKit-only fallback: rotate the rail. Firefox uses native orient. */
+  .raise-slider-vertical__rail .raise-slider {
+    width: 240px; /* logical horizontal length pre-rotation */
+    height: 32px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    transform-origin: center;
+  }
+}
+
+.raise-slider-vertical__ticks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.raise-slider-vertical__tick {
+  position: absolute;
+  left: 50%;
+  width: 14px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  transform: translate(-50%, 50%);
+}
+
+.raise-slider-vertical__tick-label {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.raise-slider-vertical__caps {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.04em;
+}
+
+.raise-slider-vertical__cap {
+  white-space: nowrap;
+}
+
+/* Mobile (<768px): collapse the right-side rail back into the main column —
+   the absolute-positioned rail can extend off-screen on narrow phones, so we
+   render the rail inline above the presets instead. */
+@media (max-width: 1023px) {
+  .action-panel--raise-vertical {
+    padding-right: 16px;
+  }
+  .raise-slider-vertical {
+    position: relative;
+    right: auto;
+    width: 100%;
+    height: 56px;
+    margin: 0 0 12px 0;
+  }
+  .raise-slider-vertical__rail {
+    width: 100%;
+    margin: 0;
+  }
+  @supports (-webkit-appearance: none) and (not (-moz-appearance: none)) {
+    .raise-slider-vertical__rail .raise-slider {
+      width: 100%;
+      height: 32px;
+      transform: translate(-50%, -50%);
+    }
+  }
+  .raise-slider-vertical__ticks {
+    inset: auto 0 4px 0;
+    height: 12px;
+  }
+  .raise-slider-vertical__tick {
+    width: 2px;
+    height: 12px;
+    bottom: auto !important;
+    top: 0;
+  }
+  .raise-slider-vertical__caps {
+    flex-direction: row;
+    justify-content: space-between;
+    margin: 4px 0 0 0;
+  }
+}
+
+/* Legacy horizontal slider — Dan 2026-04-17: used on mobile now since the
+   vertical layout was collapsing into a broken strip below 768px. */
+.raise-slider-wrap {
+  padding: 14px 8px 8px;
+  margin-bottom: 10px;
+  position: relative;
+  /* Keep the 48px thumb fully inside the panel on mobile. */
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+}
+
+.raise-slider-wrap .raise-slider {
+  width: 100%;
+}
+
+.raise-slider-wrap .raise-slider-ticks {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 6px;
+  pointer-events: none;
+}
+
+.raise-slider-wrap .raise-slider-tick {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateX(-50%);
+}
+
+/* PokerBros premium slider — 2026-04-14 polish.
+ * Track: 14px chunky rail with inner-shadow depth + dark-base + gold fill.
+ * Thumb: 48px metallic gold disc with rim, 3D shadow stack, subtle glow halo.
+ * Active state: thumb pulses with stronger glow so the player feels their drag. */
 .raise-slider {
   width: 100%;
-  height: 8px;
-  border-radius: 4px;
+  height: 14px;
+  border-radius: 8px;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
   background: linear-gradient(
     90deg,
-    var(--color-raise, #f59e0b) 0%,
-    var(--color-raise, #f59e0b) var(--slider-progress, 50%),
-    rgba(255, 255, 255, 0.08) var(--slider-progress, 50%),
-    rgba(255, 255, 255, 0.08) 100%
+    #ffe082 0%,
+    var(--color-raise, #f59e0b) calc(var(--slider-progress, 50%) - 12%),
+    var(--color-raise-dark, #d97706) var(--slider-progress, 50%),
+    rgba(0, 0, 0, 0.45) var(--slider-progress, 50%),
+    rgba(0, 0, 0, 0.55) 100%
   );
   cursor: pointer;
   position: relative;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .raise-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(
-    135deg,
-    #ffd54f 0%,
-    var(--color-raise, #f59e0b) 50%,
-    var(--color-raise-dark, #d97706) 100%
+  width: 48px;
+  height: 48px;
+  background: radial-gradient(
+    circle at 30% 30%,
+    #fff7d6 0%,
+    #ffd54f 30%,
+    #f59e0b 65%,
+    #c47f08 100%
   );
   border-radius: 50%;
-  cursor: pointer;
+  cursor: grab;
+  /* Stacked shadow gives a real 3D coin look — outer glow, drop shadow,
+     inner-rim highlight, base shadow for depth. */
   box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.5),
-    0 0 0 3px rgba(255, 255, 255, 0.15),
-    0 0 16px var(--color-raise-glow, rgba(245, 158, 11, 0.4));
+    0 6px 16px rgba(0, 0, 0, 0.6),
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 0 0 2px rgba(255, 255, 255, 0.18),
+    0 0 22px var(--color-raise-glow, rgba(245, 158, 11, 0.55)),
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px rgba(140, 80, 0, 0.45);
   transition:
-    transform 0.12s var(--ease-spring),
-    box-shadow 0.12s ease;
-  border: 2px solid rgba(255, 255, 255, 0.25);
+    transform 0.1s var(--ease-spring),
+    box-shadow 0.15s ease;
+  border: 2px solid #d4870c;
+}
+
+.raise-slider:active {
+  cursor: grabbing;
 }
 
 .raise-slider::-webkit-slider-thumb:hover {
@@ -367,33 +623,42 @@
 }
 
 .raise-slider::-moz-range-thumb {
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(
-    135deg,
-    #ffd54f 0%,
-    var(--color-raise, #f59e0b) 50%,
-    var(--color-raise-dark, #d97706) 100%
+  width: 48px;
+  height: 48px;
+  background: radial-gradient(
+    circle at 30% 30%,
+    #fff7d6 0%,
+    #ffd54f 30%,
+    #f59e0b 65%,
+    #c47f08 100%
   );
   border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid rgba(255, 255, 255, 0.25);
+  cursor: grab;
+  border: 2px solid #d4870c;
   box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.5),
-    0 0 16px var(--color-raise-glow, rgba(245, 158, 11, 0.4));
+    0 6px 16px rgba(0, 0, 0, 0.6),
+    0 0 22px var(--color-raise-glow, rgba(245, 158, 11, 0.55)),
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px rgba(140, 80, 0, 0.45);
 }
 
 .raise-slider::-moz-range-track {
-  height: 8px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
   border: none;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.55);
 }
 
 .raise-slider::-moz-range-progress {
-  height: 8px;
-  border-radius: 4px;
-  background: var(--color-raise, #f59e0b);
+  height: 14px;
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    #ffe082 0%,
+    var(--color-raise, #f59e0b) 60%,
+    var(--color-raise-dark, #d97706) 100%
+  );
 }
 
 .raise-slider::-moz-range-thumb:hover {
@@ -409,15 +674,15 @@
 
 .raise-preset {
   flex: 1;
-  height: 38px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  height: 44px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.75rem;
-  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.8125rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.4px;
   cursor: pointer;
   transition: all 0.15s var(--ease-spring);
   touch-action: manipulation;
@@ -490,13 +755,13 @@
 
 .raise-confirm {
   flex: 1;
-  height: 48px;
-  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+  height: 56px;
+  background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 40%, #d97706 100%);
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   color: white;
-  font-size: 0.9375rem;
-  font-weight: 700;
+  font-size: 1.0625rem;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   cursor: pointer;
@@ -559,17 +824,17 @@
   }
 
   .action-btn {
-    height: 60px;
-    border-radius: 10px;
+    height: 68px;
+    border-radius: 12px;
   }
 
   .action-btn__label {
-    font-size: 0.9375rem;
-    letter-spacing: 0.5px;
+    font-size: 1.0625rem;
+    letter-spacing: 0.8px;
   }
 
   .action-btn__amount {
-    font-size: 0.6875rem;
+    font-size: 0.8125rem;
   }
 
   .raise-header {
@@ -614,39 +879,62 @@
     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
   }
 
+  .action-panel--raise {
+    padding: 12px 10px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  }
+
   .action-btn {
-    height: 56px;
-    border-radius: 8px;
+    height: 64px;
+    border-radius: 10px;
   }
 
   .action-btn__label {
-    font-size: 0.875rem;
+    font-size: 1rem;
+  }
+
+  /* Dan 2026-04-17: shrink +/- buttons + amount pill so 375px doesn't
+     overflow. Previously the 44px adjusts + 120px pill + 32px gaps were
+     pushing the layout past 100% width. */
+  .raise-header {
+    gap: 8px;
+    margin-bottom: 10px;
   }
 
   .raise-value {
-    min-width: 100px;
-    padding: 6px 16px;
+    min-width: 0;
+    flex: 1;
+    padding: 6px 10px;
   }
 
   .raise-value__amount {
     font-size: 1.25rem;
   }
 
+  .raise-value__bb {
+    font-size: 0.625rem;
+  }
+
   .raise-adjust {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
+    font-size: 1.25rem;
+    flex-shrink: 0;
   }
 
   .raise-preset {
     height: 38px;
+    font-size: 0.625rem;
   }
 
   .raise-confirm {
     height: 48px;
+    font-size: 0.8125rem;
   }
 
   .raise-cancel {
     height: 48px;
+    padding: 0 12px;
   }
 }
 
@@ -662,14 +950,23 @@
 @keyframes actionAttentionPulse {
   0% {
     box-shadow: inset 0 1px 0 rgba(34, 197, 94, 0);
+    border-top-color: var(--border-default);
   }
-  40% {
+  30% {
     box-shadow:
-      inset 0 1px 0 rgba(34, 197, 94, 0.4),
-      0 -2px 20px rgba(34, 197, 94, 0.15);
+      inset 0 1px 0 rgba(34, 197, 94, 0.5),
+      0 -4px 30px rgba(34, 197, 94, 0.25);
+    border-top-color: rgba(34, 197, 94, 0.6);
+  }
+  60% {
+    box-shadow:
+      inset 0 1px 0 rgba(34, 197, 94, 0.2),
+      0 -2px 15px rgba(34, 197, 94, 0.1);
+    border-top-color: rgba(34, 197, 94, 0.3);
   }
   100% {
     box-shadow: inset 0 1px 0 rgba(34, 197, 94, 0);
+    border-top-color: rgba(34, 197, 94, 0.3);
   }
 }
 

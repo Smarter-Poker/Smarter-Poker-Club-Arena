@@ -12,6 +12,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './FriendActivityFeed.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ActivityItem {
   id: string;
@@ -60,7 +61,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
 
       // Fetch friends' recent achievements
       const { data: achievements } = await supabase
-        .from('user_achievements')
+        .from('training_user_achievements')
         .select('id, user_id, achievement_id, unlocked_at')
         .in('user_id', friendIds)
         .not('unlocked_at', 'is', null)
@@ -124,7 +125,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
         setLoading(false);
       }
     } catch (err) {
-      console.error('[FriendActivityFeed] load error:', err);
+      reportError(err, 'FriendActivityFeed.load_error');
       if (isMounted.current) setLoading(false);
     }
   }, [friends, user?.id]);

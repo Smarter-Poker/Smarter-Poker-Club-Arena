@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { reportError } from './errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -32,295 +33,23 @@ interface TableConfig {
 // CASH GAME TABLE CONFIGS — Every Stake Level × Every Game Type
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// FIX 201: Tables spawn from the UNION, not individual clubs.
+// All cash tables belong to the Midway Union — visible across all member clubs.
+const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
+
+// Legacy club IDs kept only for rake routing fallback (seatHorse clubId param)
 const SHARK_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const JAQK_CLUB_ID = 'a0000000-0000-0000-0000-000000000001';
 
 const DEFAULT_TABLES: TableConfig[] = [
-  // ─── NO LIMIT HOLD'EM (NLH) — Full Stake Ladder ─────────────────────────
-  {
-    name: 'NLH Micro 0.10/0.20',
-    smallBlind: 0.1,
-    bigBlind: 0.2,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 0.25/0.50',
-    smallBlind: 0.25,
-    bigBlind: 0.5,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 0.50/1.00',
-    smallBlind: 0.5,
-    bigBlind: 1.0,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'nlh',
-  },
+  // ONE TABLE ONLY: NLH 1/2 - quality before scaling
   {
     name: 'NLH 1.00/2.00',
     smallBlind: 1.0,
     bigBlind: 2.0,
     maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 2.00/4.00',
-    smallBlind: 2.0,
-    bigBlind: 4.0,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 2.00/5.00',
-    smallBlind: 2.0,
-    bigBlind: 5.0,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 3.00/6.00',
-    smallBlind: 3.0,
-    bigBlind: 6.0,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 5.00/10.00',
-    smallBlind: 5.0,
-    bigBlind: 10.0,
-    maxPlayers: 6,
     horsesPerTable: 6,
     gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 10.00/25.00',
-    smallBlind: 10.0,
-    bigBlind: 25.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'nlh',
-  },
-  // 6-Max tables
-  {
-    name: 'NLH 6-Max 0.10/0.20',
-    smallBlind: 0.1,
-    bigBlind: 0.2,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 6-Max 0.25/0.50',
-    smallBlind: 0.25,
-    bigBlind: 0.5,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 6-Max 0.50/1.00',
-    smallBlind: 0.5,
-    bigBlind: 1.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'NLH 6-Max 1.00/2.00',
-    smallBlind: 1.0,
-    bigBlind: 2.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'nlh',
-  },
-
-  // ─── POT LIMIT OMAHA 4-CARD (PLO4) ──────────────────────────────────────
-  {
-    name: 'PLO4 0.10/0.20',
-    smallBlind: 0.1,
-    bigBlind: 0.2,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'plo4',
-  },
-  {
-    name: 'PLO4 0.25/0.50',
-    smallBlind: 0.25,
-    bigBlind: 0.5,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'plo4',
-  },
-  {
-    name: 'PLO4 0.50/1.00',
-    smallBlind: 0.5,
-    bigBlind: 1.0,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'plo4',
-  },
-  {
-    name: 'PLO4 1.00/2.00',
-    smallBlind: 1.0,
-    bigBlind: 2.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'plo4',
-  },
-  {
-    name: 'PLO4 2.00/5.00',
-    smallBlind: 2.0,
-    bigBlind: 5.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'plo4',
-  },
-  {
-    name: 'PLO4 5.00/10.00',
-    smallBlind: 5.0,
-    bigBlind: 10.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'plo4',
-  },
-
-  // ─── POT LIMIT OMAHA 5-CARD (PLO5) ──────────────────────────────────────
-  {
-    name: 'PLO5 0.25/0.50',
-    smallBlind: 0.25,
-    bigBlind: 0.5,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'plo5',
-  },
-  {
-    name: 'PLO5 0.50/1.00',
-    smallBlind: 0.5,
-    bigBlind: 1.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'plo5',
-  },
-  {
-    name: 'PLO5 1.00/2.00',
-    smallBlind: 1.0,
-    bigBlind: 2.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'plo5',
-  },
-  {
-    name: 'PLO5 2.00/5.00',
-    smallBlind: 2.0,
-    bigBlind: 5.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'plo5',
-  },
-
-  // ─── POT LIMIT OMAHA 8 OR BETTER (PLO8 / Hi-Lo) ─────────────────────────
-  {
-    name: 'PLO8 0.25/0.50',
-    smallBlind: 0.25,
-    bigBlind: 0.5,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'plo8',
-  },
-  {
-    name: 'PLO8 0.50/1.00',
-    smallBlind: 0.5,
-    bigBlind: 1.0,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'plo8',
-  },
-  {
-    name: 'PLO8 1.00/2.00',
-    smallBlind: 1.0,
-    bigBlind: 2.0,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'plo8',
-  },
-  {
-    name: 'PLO8 2.00/5.00',
-    smallBlind: 2.0,
-    bigBlind: 5.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'plo8',
-  },
-
-  // ─── OFC PINEAPPLE ──────────────────────────────────────────────────────
-  {
-    name: 'Pineapple 0.25/0.50',
-    smallBlind: 0.25,
-    bigBlind: 0.5,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'ofc_pineapple',
-  },
-  {
-    name: 'Pineapple 0.50/1.00',
-    smallBlind: 0.5,
-    bigBlind: 1.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'ofc_pineapple',
-  },
-  {
-    name: 'Pineapple 1.00/2.00',
-    smallBlind: 1.0,
-    bigBlind: 2.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'ofc_pineapple',
-  },
-
-  // ─── SHORT DECK ─────────────────────────────────────────────────────────
-  {
-    name: 'Short Deck 0.50/1.00',
-    smallBlind: 0.5,
-    bigBlind: 1.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'short_deck',
-  },
-  {
-    name: 'Short Deck 1.00/2.00',
-    smallBlind: 1.0,
-    bigBlind: 2.0,
-    maxPlayers: 6,
-    horsesPerTable: 6,
-    gameVariant: 'short_deck',
-  },
-
-  // ─── BOMB POT TABLES ────────────────────────────────────────────────────
-  {
-    name: 'Bomb Pot NLH 0.25/0.50',
-    smallBlind: 0.25,
-    bigBlind: 0.5,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'nlh',
-  },
-  {
-    name: 'Bomb Pot PLO4 0.50/1.00',
-    smallBlind: 0.5,
-    bigBlind: 1.0,
-    maxPlayers: 9,
-    horsesPerTable: 8,
-    gameVariant: 'plo4',
   },
 ];
 
@@ -363,12 +92,12 @@ export class HorseFleetManager {
         console.log('[HorseFleet] Initial seeding complete');
       })
       .catch((err) => {
-        console.error('[HorseFleet] Initial seeding error:', err);
+        reportError(err, 'HorseFleet.Initial_seeding_error');
       });
 
     // Recurring check: every 30 seconds, ensure horses are seated
     this.seedInterval = setInterval(() => {
-      this.seedAllTables().catch((err) => console.error('[HorseFleet] Seed cycle error:', err));
+      this.seedAllTables().catch((err) => reportError(err, 'HorseFleet.Seed_cycle_error'));
     }, 30000);
 
     console.log('[HorseFleet] Running — seeding in background, checking every 30s');
@@ -392,21 +121,34 @@ export class HorseFleetManager {
 
     for (const config of DEFAULT_TABLES) {
       try {
-        // Check if table already exists by name
+        // FIX 201: Check for table by name in ANY status (not just waiting/running).
+        // If a closed table exists, reactivate it instead of creating a duplicate.
         const { data: existing } = await supabase
           .from('tables')
-          .select('id')
+          .select('id, status, union_id')
           .eq('name', config.name)
           .is('tournament_id', null)
-          .in('status', ['waiting', 'running'])
           .maybeSingle();
 
-        if (existing) continue; // Table exists
+        if (existing) {
+          // Table exists — ensure it's active and at Union level
+          const updates: Record<string, any> = {};
+          if (existing.status === 'closed') updates.status = 'waiting';
+          if (existing.union_id !== MIDWAY_UNION_ID) updates.union_id = MIDWAY_UNION_ID;
+          if (Object.keys(updates).length > 0) {
+            updates.current_players = 0;
+            await supabase.from('tables').update(updates).eq('id', existing.id);
+            console.log(`[HorseFleet] Reactivated table: ${config.name} (was ${existing.status})`);
+          }
+          continue;
+        }
 
-        // Create the table
+        // FIX 201: Tables belong to a club BUT are inside the Union.
+        // Set both club_id (for rake routing) AND union_id (for Union-level discovery).
         const clubId = this.getNextClubId();
         const { error } = await supabase.from('tables').insert({
           club_id: clubId,
+          union_id: MIDWAY_UNION_ID,
           name: config.name,
           game_type: 'cash',
           game_variant: config.gameVariant,
@@ -421,12 +163,14 @@ export class HorseFleetManager {
         });
 
         if (error) {
-          console.error(`[HorseFleet] Failed to create table "${config.name}":`, error.message);
+          reportError(error, 'HorseFleet.Failed_to_create_table_confign');
         } else {
-          console.log(`[HorseFleet] Created table: ${config.name}`);
+          console.log(
+            `[HorseFleet] Created table: ${config.name} (club: ${clubId}, union: ${MIDWAY_UNION_ID})`
+          );
         }
       } catch (err: any) {
-        console.error(`[HorseFleet] Error creating table "${config.name}":`, err.message);
+        reportError(err, 'HorseFleet.Error_creating_table_confignam');
       }
     }
   }
@@ -447,7 +191,7 @@ export class HorseFleetManager {
         .in('status', ['waiting', 'running']);
 
       if (tablesError || !tables) {
-        console.error('[HorseFleet] Failed to fetch tables:', tablesError?.message);
+        reportError(tablesError, 'HorseFleet.Failed_to_fetch_tables');
         return;
       }
 
@@ -530,13 +274,13 @@ export class HorseFleetManager {
             continue;
           }
 
-          // Get table's club_id
+          // Get table's club_id for rake routing
           const { data: tableData } = await supabase
             .from('tables')
             .select('club_id')
             .eq('id', table.id)
-            .single();
-          const clubId = tableData?.club_id || SHARK_CLUB_ID;
+            .maybeSingle(); // FIX 168
+          const clubId = tableData?.club_id || JAQK_CLUB_ID;
 
           // Seat each horse at an ACTUAL empty seat
           let seated = 0;
@@ -575,7 +319,7 @@ export class HorseFleetManager {
             }
           }
         } catch (err: any) {
-          console.error(`[HorseFleet] Error seeding table "${table.name}":`, err.message);
+          reportError(err, 'HorseFleet.Error_seeding_table_tablename');
         }
       }
 
@@ -583,7 +327,7 @@ export class HorseFleetManager {
         console.log(`[HorseFleet] Seated ${totalSeated} horses across tables`);
       }
     } catch (err: any) {
-      console.error('[HorseFleet] seedAllTables error:', err.message);
+      reportError(err, 'HorseFleet.seedAllTables_error');
     } finally {
       this.seeding = false;
     }
@@ -602,29 +346,46 @@ export class HorseFleetManager {
     clubId: string
   ): Promise<boolean> {
     try {
-      // 100% ACID-Compliant Seating via Postgres RPC
-      // Prevents "phantom deductions" if the Node server dies mid-seat.
-      const { data: success, error } = await supabase.rpc('atomic_seat_horse', {
+      // ROUND 34 FIX: Direct UPDATE on public.wallets is rejected by the
+      // Phase 4.1.6a wallet guard ("Direct balance mutation on public.wallets
+      // is forbidden"). All balance changes must flow through whitelisted
+      // SECURITY DEFINER RPCs that log to chip_ledger. The
+      // atomic_table_buyin RPC handles every step atomically — balance
+      // check, debit, seat insert, audit log, and tables.current_players
+      // bump — and is whitelisted, so a single call replaces the manual
+      // 4-step sequence below.
+      void clubId; // kept in caller signature for downstream use; RPC reads it
+      // from tables(id).club_id transitively.
+      const { error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
+        p_user_id: horseId,
         p_table_id: tableId,
-        p_horse_id: horseId,
         p_seat_number: seatNumber,
-        p_buy_in: buyIn,
-        p_table_name: tableName,
+        p_amount: buyIn,
+        p_auto_rebuy: false,
       });
 
-      if (error || !success) {
-        if (error && !error.message.includes('Insufficient balance')) {
-          console.error(
-            `[HorseFleet] atomic_seat_horse database failure for ${horseId} at ${tableName}:`,
-            error.message
-          );
+      if (rpcErr) {
+        // 'Insufficient balance' / 'already seated' are silent expected
+        // failures during the seeding race; only report other errors.
+        const msg = rpcErr.message || '';
+        if (
+          !msg.includes('Insufficient balance') &&
+          !msg.includes('Player already seated') &&
+          !msg.includes('duplicate key')
+        ) {
+          reportError(rpcErr, 'HorseFleet.atomic_table_buyin_failed_for_horse');
         }
         return false;
       }
 
+      // Log a tableName-aware description on top of the RPC's generic
+      // "Cash game buy-in at table" string so audit reconciliation can
+      // match human-readable table names.
+      void tableName; // RPC writes its own description; this comment is the trail
+
       return true;
     } catch (err: any) {
-      console.error(`[HorseFleet] seatHorse error:`, err.message);
+      reportError(err, 'HorseFleet.seatHorse_error');
       return false;
     }
   }

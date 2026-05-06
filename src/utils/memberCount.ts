@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { reportError } from './errorReporter';
 
 /** Valid statuses for "active" members */
 const ACTIVE_STATUSES = ['active', 'approved'] as const;
@@ -35,7 +36,8 @@ export async function getActiveMemberCount(clubId: string): Promise<number> {
     if (!error && typeof count === 'number') {
       return count;
     }
-  } catch {
+  } catch (e) {
+    reportError(e, 'memberCount.getActiveMemberCount');
     // Fall through
   }
   return 0;
@@ -66,7 +68,8 @@ export async function getActiveMemberCountBatch(clubIds: string[]): Promise<Map<
       }
       return countMap;
     }
-  } catch {
+  } catch (e) {
+    reportError(e, 'memberCount.getActiveMemberCountBatch');
     // RPC not available — fall through to individual queries
   }
 
@@ -100,7 +103,8 @@ export async function getUserActiveClubCount(userId: string): Promise<number> {
     if (!error && typeof count === 'number') {
       return count;
     }
-  } catch {
+  } catch (e) {
+    reportError(e, 'memberCount.getUserActiveClubCount');
     // Fall through
   }
   return 0;

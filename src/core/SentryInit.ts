@@ -19,6 +19,7 @@
  */
 
 import React from 'react';
+import { reportError } from '../utils/errorReporter';
 
 // ── Module-level state ──
 let SentryModule: typeof import('@sentry/react') | null = null;
@@ -205,7 +206,7 @@ async function loadAndInitSentry(): Promise<typeof import('@sentry/react') | nul
     console.log('[Sentry] ✅ Lazy-loaded and initialized');
     return Sentry;
   } catch (error) {
-    console.error('❌ [Sentry] Initialization failed:', error);
+    reportError(error, 'SentryInit.Initialization_failed');
     return null;
   }
 }

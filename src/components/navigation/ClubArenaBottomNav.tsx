@@ -13,6 +13,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { reportError } from '../../utils/errorReporter';
 
 const FB = {
   primary: '#2374E1',
@@ -80,7 +81,7 @@ export default function ClubArenaBottomNav({ clubId, userRole }: ClubArenaBottom
 
       setUnreadCount(count || 0);
     } catch (e) {
-      console.error('[BottomNav] Failed to fetch unread:', e);
+      reportError(e, 'ClubArenaBottomNav.Failed_to_fetch_unread');
     }
   }, [clubId, user?.id]);
 

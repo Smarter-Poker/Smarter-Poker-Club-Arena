@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — App Component
  * ═══════════════════════════════════════════════════════════════════════════════
- * PokerBros Clone — Better
+ * Smarter Poker Platform
  * Root application with routing, auth guards, and global providers
  */
 
@@ -37,7 +37,6 @@ import { bootServices, shutdownServices } from './services/ServiceBootstrap';
 import { preloadCriticalChunks } from './utils/ChunkPreloader';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import { supabaseConnectionWatchdog } from './utils/supabaseConnectionWatchdog';
-import FloatingHamburger from './components/navigation/FloatingHamburger';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -112,6 +111,7 @@ const RakebackDashboard = lazy(() => import('./pages/RakebackDashboard'));
 const CreditAdminPanel = lazy(() => import('./pages/CreditAdminPanel'));
 const SettlementHistoryPage = lazy(() => import('./pages/SettlementHistoryPage'));
 const FlashPoolPage = lazy(() => import('./pages/FlashPoolPage'));
+const BlacklistManagerPage = lazy(() => import('./pages/BlacklistManagerPage'));
 const SessionHistoryPage = lazy(() => import('./pages/SessionHistoryPage'));
 
 // Q4: New Backported Pages (Hub → Club Arena)
@@ -130,6 +130,7 @@ const NewConversationPage = lazy(() => import('./pages/NewConversationPage'));
 
 // Shared/Public Pages
 const HandReplayerPage = lazy(() => import('./pages/share/HandReplayerPage'));
+const SimPage = lazy(() => import('./pages/SimPage'));
 
 // System Pages
 const HealthCheckPage = lazy(() => import('./pages/HealthCheckPage'));
@@ -156,6 +157,7 @@ function LoadingSpinner() {
 
 // Imported from centralized storage keys
 import { STORAGE_KEYS } from './lib/storage';
+import { reportError } from './utils/errorReporter';
 
 export default function App() {
   // Check if intro video has been shown this session
@@ -235,6 +237,7 @@ export default function App() {
 
     // Register SW for background notifications
     // FIX: Use base-relative path so the SW is found under /hub/club-arena/
+    // HARDENED: Force update check every time to bust stale SW caches after re-deploy
     if ('serviceWorker' in navigator) {
       const swPath =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
@@ -242,12 +245,18 @@ export default function App() {
           : '/sw-bus.js';
       navigator.serviceWorker
         .register(swPath)
+        .then((reg) => {
+          // Force the browser to check for a new version of the SW immediately.
+          // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
+          // install the new SW, which triggers activate → clears old caches.
+          reg.update().catch(() => {});
+        })
         .catch((err) => console.warn('[App] Service worker registration failed:', err));
     }
 
     // Boot all engine services
     bootServices().catch((err) => {
-      console.error('[App] Service bootstrap failed:', err);
+      reportError(err, 'App.Service_bootstrap_failed');
     });
 
     // Preload critical page chunks during idle time so they're cached
@@ -289,7 +298,6 @@ export default function App() {
         <TOSGuard>
           <GlobalWaitlistListener />
           <WaitlistBanner />
-          <FloatingHamburger />
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false */}
           {isOffline && (
             <div
@@ -338,6 +346,9 @@ export default function App() {
 
               {/* Public Hand Replay — shareable link, no auth required */}
               <Route path="/share/hand/:handId" element={<HandReplayerPage />} />
+
+              {/* Scenario Sim — deterministic UI regression playback, no auth */}
+              <Route path="/sim" element={<SimPage />} />
 
               {/* ═══════════════════════════════════════════════════════════════
                     PROTECTED ROUTES (Auth Required)
@@ -1145,6 +1156,16 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Waitlist">
                         <WaitlistPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/blacklist"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Blacklist Manager">
+                        <BlacklistManagerPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

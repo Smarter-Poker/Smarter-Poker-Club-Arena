@@ -1,6 +1,6 @@
 /**
  * ♠ CLUB ARENA — Tournament Details Page
- * PokerBros-style tournament registration (PLAY CHIPS ONLY)
+ * premium-style tournament registration (PLAY CHIPS ONLY)
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -23,6 +23,7 @@ import PageErrorBoundary from '../../components/common/PageErrorBoundary';
 import { TournamentClock } from '../../components/tournament/TournamentClock';
 import { HandForHandBanner } from '../../components/tournament/HandForHandBanner';
 import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay';
+import { reportError } from '../../utils/errorReporter';
 
 type TabId =
   | 'detail'
@@ -107,7 +108,8 @@ export default function TournamentDetails() {
     try {
       const balance = await WalletService.getPlayerBalance(user.id);
       setWalletBalance(balance);
-    } catch {
+    } catch (e) {
+      reportError(e, 'TournamentDetails.loadWalletBalance');
       /* ignore */
     }
   };
@@ -190,7 +192,13 @@ export default function TournamentDetails() {
                 user_id: newPlayer.user_id,
                 username: newPlayer.username || 'Player',
                 avatar_url: null,
-                chips: newPlayer.chips || tournament?.starting_chips || 0,
+                // BUG FIX: do NOT read tournament.starting_chips here — this
+                // handler is in a closure that captured `tournament` at the time
+                // the effect ran (tournamentId dep), which may be null if the
+                // subscription was set up before loadTournament completed.
+                // Use newPlayer.chips if present; the next loadTournament() call
+                // (triggered by TOURNAMENT_UPDATED) will hydrate the full entry.
+                chips: newPlayer.chips || 0,
                 position: newPlayer.position || undefined,
                 status: newPlayer.status as TournamentEntry['status'],
                 table_id: newPlayer.table_id || null,
@@ -272,7 +280,7 @@ export default function TournamentDetails() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[TournamentDetails] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'TournamentDetails._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TournamentDetails] ⏱️ Realtime channel timed out');
@@ -292,9 +300,11 @@ export default function TournamentDetails() {
               : e
           )
         );
-        toast.info(
-          `${event.payload.username} eliminated — ${event.payload.position}${getOrdinal(event.payload.position)} place`
-        );
+        // BUG FIX: guard against undefined position — getOrdinal(undefined) would
+        // produce "undefinedth" which reads as a broken toast message.
+        const pos = event.payload.position;
+        const posText = pos != null ? `${pos}${getOrdinal(pos)} place` : 'eliminated';
+        toast.info(`${event.payload.username} ${posText}`);
       },
       300
     );
@@ -310,10 +320,44 @@ export default function TournamentDetails() {
       300
     );
 
+    // ── Blind level changes: update tournament state immediately ──
+    const unsubBlind = masterBus.subscribeDebounced(
+      'BLIND_LEVEL_CHANGE',
+      (event) => {
+        if (event.payload.tournamentId !== tournamentId) return;
+        setTournament((prev: any) =>
+          prev ? { ...prev, current_level: event.payload.level } : prev
+        );
+      },
+      300
+    );
+
+    // ── Tournament break notifications ──
+    const unsubBreak = masterBus.subscribeDebounced(
+      'TOURNAMENT_BREAK',
+      (event) => {
+        if (event.payload.tournamentId !== tournamentId) return;
+        toast.info('Tournament break — play resumes shortly');
+      },
+      300
+    );
+
+    const unsubBreakEnd = masterBus.subscribeDebounced(
+      'TOURNAMENT_BREAK_END',
+      (event) => {
+        if (event.payload.tournamentId !== tournamentId) return;
+        toast.info('Break over — play resuming');
+      },
+      300
+    );
+
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       unsubElim();
       unsubMerge();
+      unsubBlind();
+      unsubBreak();
+      unsubBreakEnd();
     };
   }, [tournamentId]);
 
@@ -441,13 +485,14 @@ export default function TournamentDetails() {
               .eq('id', (data as any).union_id)
               .maybeSingle();
             if (unionData?.name && (!getIsMounted || getIsMounted())) setUnionName(unionData.name);
-          } catch {
+          } catch (e) {
+            reportError(e, 'TournamentDetails');
             /* non-critical */
           }
         }
       }
     } catch (error) {
-      console.error('Failed to load tournament:', error);
+      reportError(error, 'TournamentDetails.Failed_to_load_tournament');
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load tournament details');
     }
     if (!getIsMounted || getIsMounted()) setIsLoading(false);
@@ -526,7 +571,7 @@ export default function TournamentDetails() {
       // Defer reload so the UI updates instantly (fixes INP)
       setTimeout(() => loadTournament(), 50);
     } catch (error) {
-      console.error('Registration failed:', error);
+      reportError(error, 'TournamentDetails.Registration_failed');
       const msg = (error as Error).message || 'Unknown error';
       toast.error(`Registration failed: ${msg}`);
     } finally {
@@ -549,7 +594,7 @@ export default function TournamentDetails() {
       // Defer reload so the UI updates instantly (fixes INP)
       setTimeout(() => loadTournament(), 50);
     } catch (error) {
-      console.error('Unregistration failed:', error);
+      reportError(error, 'TournamentDetails.Unregistration_failed');
       const msg = (error as Error).message || 'Unknown error';
       toast.error(`Unregister failed: ${msg}`);
     } finally {
@@ -800,7 +845,9 @@ export default function TournamentDetails() {
               </div>
               <div className="stat">
                 <span className="stat-label">Current Level</span>
-                <span className="stat-value">{tournament.current_level || 0}</span>
+                <span className="stat-value">
+                  {tournament.current_level || (tournament.status === 'RUNNING' ? 1 : '-')}
+                </span>
               </div>
               <div className="stat">
                 <span className="stat-label">Remaining</span>

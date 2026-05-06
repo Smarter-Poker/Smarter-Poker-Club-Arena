@@ -7,7 +7,7 @@
  * street-by-street action replay, and export/share functionality.
  */
 
-import { useState, useEffect, memo, useCallback, useMemo } from 'react';
+import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
 import './HandHistoryPanel.css';
 
 export interface HandHistoryAction {
@@ -178,17 +178,7 @@ function HandEntry({
       {/* Expanded detail */}
       {isExpanded && (
         <div className="hh-entry__detail">
-          {/* Winners */}
-          <div className="hh-entry__winners">
-            {hand.winners.map((w, i) => (
-              <span key={i} className="hh-entry__winner">
-                {w.playerName} won {formatAmount(w.amount)}
-                {w.hand && <span className="hh-entry__hand"> — {w.hand}</span>}
-              </span>
-            ))}
-          </div>
-
-          {/* Street actions */}
+          {/* Street actions — grouped by street per spec §10.4 */}
           {hand.streets.map((street, si) => (
             <div key={si} className="hh-entry__street">
               <div className="hh-entry__street-header">
@@ -215,6 +205,23 @@ function HandEntry({
               </div>
             </div>
           ))}
+
+          {/* X6.2g: Showdown section header per spec §10.4 */}
+          {hand.winners.length > 0 && (
+            <div className="hh-entry__street">
+              <div className="hh-entry__street-header">
+                <span className="hh-entry__street-name">Showdown</span>
+              </div>
+              <div className="hh-entry__winners">
+                {hand.winners.map((w, i) => (
+                  <span key={i} className="hh-entry__winner">
+                    {w.playerName} won {formatAmount(w.amount)}
+                    {w.hand && <span className="hh-entry__hand"> — {w.hand}</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -229,6 +236,10 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
 }: HandHistoryPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [visibleHands, setVisibleHands] = useState<boolean[]>([]);
+  // CA-6 BUG FIX: stagger timers for hand entry animation had no cleanup return.
+  // When the panel closes (isOpen=false) mid-animation, all pending setVisibleHands
+  // calls would fire on the now-unmounted component.
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -256,12 +267,21 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
 
   useEffect(() => {
     if (isOpen) {
+      // Cancel any in-flight stagger timers from a previous open
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
       setVisibleHands([]);
       hands.forEach((_, i) => {
-        setTimeout(() => {
-          setVisibleHands((prev) => [...prev, true]);
-        }, i * 50);
+        staggerTimersRef.current.push(
+          setTimeout(() => {
+            setVisibleHands((prev) => [...prev, true]);
+          }, i * 50)
+        );
       });
+      return () => {
+        staggerTimersRef.current.forEach(clearTimeout);
+        staggerTimersRef.current = [];
+      };
     }
   }, [isOpen, hands]);
 

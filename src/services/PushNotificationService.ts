@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -104,7 +105,10 @@ class PushNotificationServiceClass {
       }
     } catch (error: unknown) {
       // OneSignal SDK v16 intermittent issue — non-blocking, suppress to warn
-      console.debug('[PushService] External user ID set skipped (OneSignal SDK):', (error as Error)?.message || error);
+      console.debug(
+        '[PushService] External user ID set skipped (OneSignal SDK):',
+        (error as Error)?.message || error
+      );
     }
   }
 
@@ -121,7 +125,7 @@ class PushNotificationServiceClass {
       }
       return false;
     } catch (error: unknown) {
-      console.error('[PushService] Permission request failed:', error);
+      reportError(error, 'PushNotificationService.Permission_request_failed');
       return false;
     }
   }
@@ -138,7 +142,7 @@ class PushNotificationServiceClass {
       }
       return false;
     } catch (err) {
-      console.error('[PushNotificationService] Error:', err);
+      reportError(err, 'PushNotificationService.Error');
       return false;
     }
   }
@@ -214,7 +218,7 @@ class PushNotificationServiceClass {
       if (!data || data.length === 0) return userIds;
       return data.map((d) => d.user_id);
     } catch (err) {
-      console.error('[PushNotificationService] Error:', err);
+      reportError(err, 'PushNotificationService.Error');
       return userIds; // On error, send to all
     }
   }
@@ -228,7 +232,7 @@ class PushNotificationServiceClass {
    */
   async notifyTableAvailable(userId: string, tableName: string, tableId: string): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: '🪑 Seat Available!',
+      title: 'Seat Available!',
       message: `A seat opened up at ${tableName}`,
       category: 'table_available',
       url: `/table/${tableId}`,
@@ -246,7 +250,7 @@ class PushNotificationServiceClass {
     minutesUntilStart: number
   ): Promise<boolean> {
     return this.sendToUsers(userIds, {
-      title: ' Tournament Starting Soon!',
+      title: 'Tournament Starting Soon!',
       message: `${tournamentName} starts in ${minutesUntilStart} minutes`,
       category: 'tournament_start',
       url: `/tournament/${tournamentId}`,
@@ -265,11 +269,11 @@ class PushNotificationServiceClass {
   ): Promise<boolean> {
     const message =
       position === 1
-        ? ` You won ${tournamentName}! Prize: ${prize.toLocaleString()} chips`
+        ? `You won ${tournamentName}! Prize: ${prize.toLocaleString()} chips`
         : `You finished ${position}${this.ordinal(position)} in ${tournamentName}${prize > 0 ? ` — ${prize.toLocaleString()} chips` : ''}`;
 
     return this.sendToUser(userId, {
-      title: position === 1 ? ' Tournament Victory!' : ' Tournament Complete',
+      title: position === 1 ? 'Tournament Victory!' : 'Tournament Complete',
       message,
       category: 'tournament_result',
     });
@@ -280,7 +284,7 @@ class PushNotificationServiceClass {
    */
   async notifyAchievement(userId: string, achievementName: string): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: ' Achievement Unlocked!',
+      title: 'Achievement Unlocked!',
       message: `${achievementName}`,
       category: 'achievement',
       url: '/achievements',
@@ -292,7 +296,7 @@ class PushNotificationServiceClass {
    */
   async notifyFriendRequest(userId: string, fromUsername: string): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: ' Friend Request',
+      title: 'Friend Request',
       message: `${fromUsername} wants to be your friend`,
       category: 'friend_request',
       url: '/friends',
@@ -308,7 +312,7 @@ class PushNotificationServiceClass {
     announcement: string
   ): Promise<boolean> {
     return this.sendToUsers(userIds, {
-      title: ` ${clubName}`,
+      title: `${clubName}`,
       message: announcement.substring(0, 100) + (announcement.length > 100 ? '...' : ''),
       category: 'club_announcement',
     });
@@ -319,10 +323,100 @@ class PushNotificationServiceClass {
    */
   async notifySettlement(userId: string, amount: number, periodLabel: string): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: ' Payout Received!',
+      title: 'Payout Received!',
       message: `${amount.toLocaleString()} chips credited for ${periodLabel}`,
       category: 'settlement',
       url: '/wallet',
+    });
+  }
+
+  /**
+   * Notify user it's their turn to act (when app is backgrounded)
+   */
+  async notifyYourTurn(userId: string, tableName: string, tableId: string): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: 'Your Turn!',
+      message: `It's your turn to act at ${tableName}`,
+      category: 'table_available',
+      url: `/table/${tableId}`,
+      data: { tableId, action: 'your_turn' },
+    });
+  }
+
+  /**
+   * Notify user that a club game is starting / has open seats
+   */
+  async notifyClubGameStarting(
+    userIds: string[],
+    clubName: string,
+    tableName: string,
+    tableId: string
+  ): Promise<boolean> {
+    return this.sendToUsers(userIds, {
+      title: `${clubName} — Game Starting`,
+      message: `${tableName} has open seats. Join now!`,
+      category: 'table_available',
+      url: `/table/${tableId}`,
+      data: { tableId, clubName },
+    });
+  }
+
+  /**
+   * Notify user of a new direct message
+   */
+  async notifyNewMessage(
+    userId: string,
+    fromUsername: string,
+    messagePreview: string
+  ): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: `Message from ${fromUsername}`,
+      message: messagePreview.substring(0, 80) + (messagePreview.length > 80 ? '...' : ''),
+      category: 'general',
+      url: '/messages',
+    });
+  }
+
+  /**
+   * Notify user of a daily login reward ready to claim
+   */
+  async notifyDailyReward(userId: string, streak: number): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: 'Daily Reward Ready!',
+      message: `Day ${streak} streak — claim your bonus now`,
+      category: 'general',
+      url: '/bonus',
+    });
+  }
+
+  /**
+   * Notify user of a notable hand (bad beat, huge pot, etc.)
+   */
+  async notifyNotableHand(userId: string, description: string, tableId: string): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: 'Notable Hand!',
+      message: description,
+      category: 'general',
+      url: `/table/${tableId}`,
+      data: { tableId },
+    });
+  }
+
+  /**
+   * Notify user of waitlist position ready (push, not just in-app)
+   */
+  async notifyWaitlistReady(
+    userId: string,
+    tableName: string,
+    tableId: string,
+    position: number
+  ): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: 'Seat Available!',
+      message: `You're #${position} — a seat opened at ${tableName}`,
+      category: 'table_available',
+      url: `/table/${tableId}`,
+      data: { tableId, waitlistPosition: position },
     });
   }
 

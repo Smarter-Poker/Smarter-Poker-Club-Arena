@@ -18,6 +18,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import './NewConversationPage.css';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
+import { reportError } from '../utils/errorReporter';
 
 interface UserResult {
   id: string;
@@ -57,7 +58,7 @@ export default function NewConversationPage() {
         .neq('id', user.id)
         .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
         .limit(20);
-      if (error) console.error('[NewConversation] Profile search failed:', error.message);
+      if (error) reportError(error, 'NewConversationPage.Profile_search_failed');
 
       // Exclude already selected users
       const selectedIds = new Set(selectedUsers.map((u) => u.id));
@@ -74,7 +75,7 @@ export default function NewConversationPage() {
             }))
         );
     } catch (err) {
-      console.error('[NewConversation] Search error:', err);
+      reportError(err, 'NewConversationPage.Search_error');
     }
     if (isMounted.current) setSearching(false);
   }, 300);
@@ -128,7 +129,7 @@ export default function NewConversationPage() {
         }
       }
     } catch (err) {
-      console.error('[NewConversation] Create error:', err);
+      reportError(err, 'NewConversationPage.Create_error');
       toast.error('Failed to create conversation');
     }
     setCreating(false);
@@ -215,7 +216,6 @@ export default function NewConversationPage() {
                 presenceStatus={result.isOnline ? 'online' : 'offline'}
                 showPresence={true}
                 showLevelBadge={false}
-                showXpRing={false}
                 showVipRing={false}
               />
               <div className="result-info">

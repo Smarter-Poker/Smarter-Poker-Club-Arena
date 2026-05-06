@@ -17,6 +17,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './ClubRulesPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 const rulesLineAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -82,7 +83,7 @@ export default function ClubRulesPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[ClubRulesPage] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'ClubRulesPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[ClubRulesPage] ⏱️ Realtime channel timed out');
@@ -182,7 +183,7 @@ export default function ClubRulesPage() {
       }
     } catch (err) {
       if (getIsMounted && !getIsMounted()) return;
-      console.error('Failed to load rules:', err);
+      reportError(err, 'ClubRulesPage.Failed_to_load_rules');
       setLoadError(true);
       toast.error('Failed to load rules');
     } finally {
@@ -208,7 +209,7 @@ export default function ClubRulesPage() {
       toast.success('Club rules updated!');
       masterBus.emit('CLUB_UPDATED', { clubId });
     } catch (err) {
-      console.error('Failed to save rules:', err);
+      reportError(err, 'ClubRulesPage.Failed_to_save_rules');
       toast.error('Failed to save rules');
     }
     setSaving(false);

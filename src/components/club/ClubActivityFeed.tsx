@@ -12,6 +12,7 @@ import { masterBus } from '../../core/MasterBus';
 import { resolveClubIdFilter } from '../../utils/clubIdResolver';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import styles from './ClubActivityFeed.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 export type ActivityType =
   | 'member_join'
@@ -149,7 +150,7 @@ export default function ClubActivityFeed({
         }, i * 60)
       );
     } catch (error) {
-      console.error('Failed to load activities:', error);
+      reportError(error, 'ClubActivityFeed.Failed_to_load_activities');
     }
     if (isMounted.current) setLoading(false);
   };
@@ -202,7 +203,7 @@ export default function ClubActivityFeed({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubActivityFeed] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'ClubActivityFeed._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ClubActivityFeed] ⏱️ Realtime channel timed out');

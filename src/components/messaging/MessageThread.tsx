@@ -22,6 +22,7 @@ import ForwardMessageModal from './ForwardMessageModal';
 import ScheduledMessagePanel from './ScheduledMessagePanel';
 import styles from './MessageThread.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface Reaction {
   emoji: string;
@@ -133,7 +134,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
         setTypingUsers(typing);
       }
     } catch (error) {
-      console.error('Failed to load conversation:', error);
+      reportError(error, 'MessageThread.Failed_to_load_conversation');
     }
   }, [conversationId, user?.id]);
 
@@ -233,7 +234,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           }
         }
       } catch (error) {
-        console.error('Failed to load messages:', error);
+        reportError(error, 'MessageThread.Failed_to_load_messages');
       }
       setLoading(false);
     },
@@ -330,7 +331,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           console.warn('[MessageThread] conversation update failed:', updateErr.message);
       }
     } catch (error) {
-      console.error('Failed to send message:', error);
+      reportError(error, 'MessageThread.Failed_to_send_message');
     }
     setSending(false);
   };
@@ -424,7 +425,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
       }
     } catch (error) {
       // Rollback on error — refetch from server
-      console.error('Failed to sync reaction:', error);
+      reportError(error, 'MessageThread.Failed_to_sync_reaction');
       loadMessages(true);
     }
   };
@@ -441,7 +442,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
       setMessages((prev) => prev.filter((m) => m.id !== messageId));
       masterBus.emit('MESSAGE_DELETED', { messageId });
     } catch (error) {
-      console.error('Failed to delete:', error);
+      reportError(error, 'MessageThread.Failed_to_delete');
     }
   };
 
@@ -456,7 +457,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
         );
       }
     } catch (error) {
-      console.error('Failed to edit:', error);
+      reportError(error, 'MessageThread.Failed_to_edit');
     }
   };
 
@@ -520,7 +521,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[MessageThread] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'MessageThread._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[MessageThread] ⏱️ Realtime channel timed out');
@@ -632,7 +633,6 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
               presenceStatus={otherParticipant.isOnline ? 'online' : 'offline'}
               showPresence={true}
               showLevelBadge={false}
-              showXpRing={false}
               showVipRing={false}
             />
             <div className={styles.headerInfo}>

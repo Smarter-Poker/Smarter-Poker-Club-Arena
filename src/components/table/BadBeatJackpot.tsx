@@ -62,10 +62,17 @@ export function BadBeatJackpot({
         <div className="bbj-widget__label">BAD BEAT JACKPOT</div>
         <div className="bbj-widget__amount">
           {currency}
-          {(Math.trunc(displayAmount * 100) / 100).toLocaleString('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}
+          {/* Dan 2026-04-17: 2-decimal precision was pushing the banner wider
+              than the center gap between hamburger + stats pill at 375px,
+              triggering the "truncated" look Dan flagged. For amounts ≥ 1000
+              we drop the decimals — the cents on a six-figure jackpot aren't
+              informative and burned 3+ chars of width. */}
+          {displayAmount >= 1000
+            ? Math.trunc(displayAmount).toLocaleString('en-US')
+            : (Math.trunc(displayAmount * 100) / 100).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
         </div>
 
         {/* Info Popover */}

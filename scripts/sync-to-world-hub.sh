@@ -1,63 +1,26 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════════
-#  Sync Club Arena dist/ to World Hub public/hub/club-arena/
+# DEPRECATED — use ~/Documents/Smarter-Poker-World-Hub/scripts/sync-club-arena.sh
 # ═══════════════════════════════════════════════════════════════════════════════
+# This script is kept as a thin shim so existing muscle memory keeps working.
+# The canonical deploy path (Phase U5.4) is the WH-side script, which:
+#   - uploads Sentry sourcemaps (silent-no-op slug bug fixed in task #133)
+#   - stages + commits + pushes WH in one atomic operation
 #
-#  Run this after making changes to Club Arena source code.
-#  It builds the SPA, strips source maps, and copies everything to the
-#  World Hub's public/ directory for native serving from smarter.poker.
-#
-#  Usage:
-#    bash scripts/sync-to-world-hub.sh [path-to-world-hub]
-#
-#  Default World Hub path: ../Smarter-Poker-World-Hub
+# TO BE REMOVED after U6 doc sweep once all docs point at the WH script.
 # ═══════════════════════════════════════════════════════════════════════════════
+set -euo pipefail
 
-set -e
+WH="${1:-$HOME/Documents/Smarter-Poker-World-Hub}"
+CANONICAL="$WH/scripts/sync-club-arena.sh"
 
-WORLD_HUB="${1:-../Smarter-Poker-World-Hub}"
-
-if [ ! -d "$WORLD_HUB" ]; then
-  echo "ERROR: World Hub not found at $WORLD_HUB"
-  echo "Usage: bash scripts/sync-to-world-hub.sh [path-to-world-hub]"
+if [ ! -f "$CANONICAL" ]; then
+  echo "ERROR: Canonical script not found at $CANONICAL"
+  echo "       Expected WH at: $WH"
+  echo "       Pass WH path as first arg if it lives elsewhere."
   exit 1
 fi
 
+echo "⚠️  sync-to-world-hub.sh is deprecated. Forwarding to $CANONICAL..."
 echo ""
-echo "=== Step 1: Safety checks ==="
-bash scripts/build-and-verify.sh
-echo ""
-
-echo "=== Step 2: Strip source maps ==="
-find dist -name "*.map" -delete
-echo "  Removed all .map files"
-echo ""
-
-echo "=== Step 3: Sync to World Hub ==="
-TARGET="$WORLD_HUB/public/hub/club-arena"
-rm -rf "$TARGET"
-cp -r dist/ "$TARGET/"
-FILE_COUNT=$(find "$TARGET" -type f | wc -l)
-SIZE=$(du -sh "$TARGET" | cut -f1)
-echo "  Copied $FILE_COUNT files ($SIZE) to $TARGET"
-echo ""
-
-echo "=== Step 4: Verify ==="
-if [ -f "$TARGET/index.html" ] && [ -d "$TARGET/assets" ]; then
-  echo "  index.html: present"
-  echo "  assets/: present ($(ls "$TARGET/assets/"*.js | wc -l) JS files)"
-  echo "  cards/: $([ -d "$TARGET/cards" ] && echo "present" || echo "missing")"
-  echo "  images/: $([ -d "$TARGET/images" ] && echo "present" || echo "missing")"
-  echo ""
-  echo "=== SYNC COMPLETE ==="
-  echo ""
-  echo "  Next steps:"
-  echo "    cd $WORLD_HUB"
-  echo "    git add public/hub/club-arena/"
-  echo "    git commit -m 'chore: update Club Arena dist'"
-  echo "    git push origin main"
-  echo ""
-else
-  echo "  ERROR: Sync failed — missing files in $TARGET"
-  exit 1
-fi
+exec bash "$CANONICAL"

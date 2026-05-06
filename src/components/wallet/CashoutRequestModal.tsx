@@ -5,14 +5,14 @@
  * Modal for players to request chip cashouts from their agent
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
-import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './CashoutRequestModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 // Haptic feedback for mobile-first financial interactions
 const triggerHaptic = (pattern: number | number[] = 10) => {
@@ -21,7 +21,7 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
       navigator.vibrate(pattern);
     }
   } catch (err) {
-    console.error('[CashoutRequestModal] Error:', err);
+    reportError(err, 'CashoutRequestModal.Error');
     /* silent */
   }
 };
@@ -139,6 +139,74 @@ export default function CashoutRequestModal({
   const [loadingPending, setLoadingPending] = useState(true);
   const [mounted, setMounted] = useState(false);
   const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  // CA-16 BUG FIX: autoCloseTimer had no unmount-guard useEffect. If the parent
+  // destroys the modal (route change) while the 2s post-success auto-close
+  // countdown is running, setSuccess(false)/onClose fire on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (autoCloseTimer.current) {
+        clearTimeout(autoCloseTimer.current);
+        autoCloseTimer.current = null;
+      }
+    };
+  }, []);
+
+  // ── Focus Trap: trap focus inside modal when open ──
+  const handleFocusTrap = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !modalRef.current) return;
+
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    },
+    [onClose]
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      document.addEventListener('keydown', handleFocusTrap);
+      // Auto-focus the first focusable element after mount animation
+      const t = setTimeout(() => {
+        if (modalRef.current) {
+          const first = modalRef.current.querySelector<HTMLElement>(
+            'input:not([disabled]), button:not([disabled])'
+          );
+          first?.focus();
+        }
+      }, 100);
+      return () => {
+        document.removeEventListener('keydown', handleFocusTrap);
+        clearTimeout(t);
+        // Restore focus when modal closes
+        previousFocusRef.current?.focus();
+      };
+    }
+  }, [isOpen, handleFocusTrap]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -190,7 +258,7 @@ export default function CashoutRequestModal({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[CashoutRequestModal] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[CashoutRequestModal] ⏱️ Realtime channel timed out');
@@ -218,7 +286,7 @@ export default function CashoutRequestModal({
       const cashouts = await cashoutService.getPlayerCashouts(playerId, clubId);
       if (isMounted.current) setPendingCashouts(cashouts.filter((c) => c.status === 'pending'));
     } catch (err) {
-      console.error('Failed to load pending cashouts:', err);
+      reportError(err, 'CashoutRequestModal.Failed_to_load_pending_cashouts');
     }
     if (isMounted.current) setLoadingPending(false);
   };
@@ -243,11 +311,12 @@ export default function CashoutRequestModal({
     try {
       const lockResult = await checkSettlementLock(clubId);
       if (lockResult.locked) {
-        setError('🔒 Settlement in progress — cashout requests frozen');
-        setIsSubmitting(false);
+        if (isMounted.current) setError('🔒 Settlement in progress — cashout requests frozen');
+        if (isMounted.current) setIsSubmitting(false);
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CashoutRequestModal.handleSubmit');
       // Fail-open: allow cashout if settlement check fails
     }
 
@@ -287,8 +356,14 @@ export default function CashoutRequestModal({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="cashout-modal-title">
-      <div className="cashout-modal" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="modal-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cashout-modal-title"
+    >
+      <div className="cashout-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         {/* Bottom-sheet drag handle */}
         <div className="cashout-drag-handle" />
         <div className="modal-header">

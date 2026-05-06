@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { identityDNA } from '../../core/IdentityDNA';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -20,6 +20,13 @@ import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { preloadRoute } from '../../utils/ChunkPreloader';
+import { useUserTableSettings } from '../../hooks/useUserTableSettings';
+import { TableSettingsPanel } from '../table/TableSettingsPanel';
+import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
+import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { reportError } from '../../utils/errorReporter';
+import { AvatarGallery } from '../customization/AvatarGallery';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -52,16 +59,74 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   // Avatar from persistent header store (avoids duplicate Supabase query)
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
   const [userName, setUserName] = useState<string>('');
+  const [useRealName, setUseRealName] = useState(false);
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
   const { diamonds: diamondBalance } = useWalletStore();
   const [selectedCardColor, setSelectedCardColor] = useState(() => {
     try {
       return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'default';
     } catch (err) {
-      console.error('[HamburgerMenu] Error:', err);
+      reportError(err, 'HamburgerMenu.Error');
       return 'default';
     }
   });
+
+  // Bible V8 §11.1: User table settings (12 toggles) from Supabase
+  const {
+    settings: tableSettings,
+    loading: tableSettingsLoading,
+    toggleSetting: toggleTableSetting,
+  } = useUserTableSettings(user?.id);
+  const [showTableSettings, setShowTableSettings] = useState(false);
+  const [showThemeSettings, setShowThemeSettings] = useState(false);
+
+  const location = useLocation();
+  const [clubLevelInfo, setClubLevelInfo] = useState<ClubLevelInfo | null>(null);
+
+  const match = location.pathname.match(/^\/clubs\/([a-zA-Z0-9-]+)/);
+  const clubId = match ? match[1] : null;
+
+  useEffect(() => {
+    if (!isOpen || !clubId) {
+      if (!clubId) setClubLevelInfo(null);
+      return;
+    }
+    let isMounted = true;
+    const fetchClubLevel = async () => {
+      try {
+        const resolvedId = await resolveClubUUID(clubId!);
+        if (!isMounted) return;
+        const { data } = await supabase
+          .from('clubs')
+          .select(
+            'member_count, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+          )
+          .eq('id', resolvedId)
+          .maybeSingle();
+
+        if (data && isMounted) {
+          setClubLevelInfo(
+            getClubLevel({
+              level: data.level || 1,
+              playerCount: data.member_count || 0,
+              hierarchyUnits: data.hierarchy_units_rounded_up || 0,
+              playerThresholdCurrent: data.player_threshold_current || 0,
+              playerThresholdNext: data.player_threshold_next || 0,
+              hierarchyThresholdCurrent: data.hierarchy_threshold_current || 0,
+              hierarchyThresholdNext: data.hierarchy_threshold_next || 0,
+            })
+          );
+        }
+      } catch {
+        /* club-level fetch is best-effort; silent fallback to defaults above */
+      }
+    };
+    fetchClubLevel();
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, clubId]);
 
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -119,9 +184,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     const sounds = localStorage.getItem(STORAGE_KEYS.SOUNDS);
     const vibrations = localStorage.getItem(STORAGE_KEYS.VIBRATIONS);
     const showBB = localStorage.getItem(STORAGE_KEYS.SHOW_STACK_BB);
+    const useReal = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME);
     if (sounds !== null) setSoundsEnabled(sounds === 'true');
     if (vibrations !== null) setVibrationsEnabled(vibrations === 'true');
     if (showBB !== null) setShowBBEnabled(showBB === 'true');
+    if (useReal !== null) setUseRealName(useReal === 'true');
 
     if (user?.id) {
       supabase
@@ -141,7 +208,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }
           if (data) {
             // Avatar is consumed from useHeaderDataStore — no need to set locally
-            setUserName(data.username || data.display_name || 'Player');
+            const prefUseRealName = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
+            setUserName(
+              prefUseRealName
+                ? data.display_name || data.username || 'Player'
+                : data.username || data.display_name || 'Player'
+            );
             // These columns may not exist on profiles — use optional chaining with defaults
             if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
               setSoundsEnabled(data.sounds_enabled);
@@ -201,7 +273,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     try {
       localStorage.setItem(localKey, String(value));
     } catch (err) {
-      console.error('[HamburgerMenu] Error:', err);
+      reportError(err, 'HamburgerMenu.Error');
     }
     if (user?.id) {
       try {
@@ -210,7 +282,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           .update({ [dbKey]: value })
           .eq('id', user.id);
         if (updateErr) {
-          console.error('[HamburgerMenu] Setting save failed:', updateErr);
+          reportError(updateErr, 'HamburgerMenu.Setting_save_failed');
           toast.error('Setting could not be saved. Please try again.');
           rollback();
           try {
@@ -220,7 +292,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }
         }
       } catch (error) {
-        console.error('Error updating setting:', error);
+        reportError(error, 'HamburgerMenu.Error_updating_setting');
         toast.error('Setting could not be saved. Please try again.');
         rollback();
         try {
@@ -268,13 +340,40 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           .from('profiles')
           .update({ tutorial_completed: false })
           .eq('id', user.id);
-        if (resetErr) console.error('[HamburgerMenu] Tutorial reset save failed:', resetErr);
+        if (resetErr) reportError(resetErr, 'HamburgerMenu.Tutorial_reset_save_failed');
       } catch (error) {
-        console.error('Error resetting tutorial:', error);
+        reportError(error, 'HamburgerMenu.Error_resetting_tutorial');
       }
     }
     toast.info('Tutorial reset! Refresh the page to see the intro again.');
     onClose();
+  };
+
+  const handleUseRealNameToggle = () => {
+    const newValue = !useRealName;
+    setUseRealName(newValue);
+    updateSetting(STORAGE_KEYS.USE_REAL_NAME, 'use_real_name', newValue, () =>
+      setUseRealName(!newValue)
+    );
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'useRealName', value: newValue });
+
+    // Switch the local preview
+    if (user?.id) {
+      supabase
+        .from('profiles')
+        .select('username, display_name')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setUserName(
+              newValue
+                ? data.display_name || data.username || 'Player'
+                : data.username || data.display_name || 'Player'
+            );
+          }
+        });
+    }
   };
 
   const handleLogOut = async () => {
@@ -287,7 +386,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       onClose();
       // AuthGuard handles the redirect to /auth — no manual navigate needed
     } catch (error) {
-      console.error('Error logging out:', error);
+      reportError(error, 'HamburgerMenu.Error_logging_out');
       // Clear store as fallback — AuthGuard will detect and redirect to /auth
       const { useUserStore } = await import('../../stores/useUserStore');
       useUserStore.getState().logout();
@@ -473,6 +572,76 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         <div style={dividerStyle} />
 
         {/* ═══════════════════════════════════════════════════════════════
+                    CLUB LEVEL & PROGRESSION
+                ═══════════════════════════════════════════════════════════════ */}
+        {clubLevelInfo && (
+          <>
+            <div style={{ padding: '8px 16px 16px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    background:
+                      clubLevelInfo.gradient || 'linear-gradient(to right, #4b5563, #374151)',
+                    padding: '4px 10px',
+                    borderRadius: '12px',
+                    color: 'white',
+                    fontWeight: 700,
+                    width: 'fit-content',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+                  }}
+                >
+                  <span style={{ fontSize: '13px', marginRight: '6px' }}>
+                    Lv.{clubLevelInfo.level}
+                  </span>
+                  <span style={{ fontSize: '11px', opacity: 0.9 }}>{clubLevelInfo.tierLabel}</span>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <div
+                    style={{
+                      flex: 1,
+                      height: '8px',
+                      background: 'rgba(255,255,255,0.1)',
+                      borderRadius: '4px',
+                      overflow: 'hidden',
+                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${clubLevelInfo.progressPercent}%`,
+                        height: '100%',
+                        background:
+                          clubLevelInfo.gradient || 'linear-gradient(to right, #4b5563, #374151)',
+                        borderRadius: '4px',
+                        boxShadow: '0 0 10px rgba(255,255,255,0.2)',
+                      }}
+                    />
+                  </div>
+                  <span style={{ fontSize: '12px', color: colors.textSecondary, fontWeight: 700 }}>
+                    {clubLevelInfo.progressPercent}%
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div style={dividerStyle} />
+          </>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════
                     GAME MODES
                 ═══════════════════════════════════════════════════════════════ */}
         <div style={sectionHeaderStyle}>Game Modes</div>
@@ -637,6 +806,30 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </div>
         ))}
 
+        {/* Avatar Customization Trigger */}
+        <div
+          onClick={() => setShowAvatarGallery(true)}
+          style={{
+            ...menuItemStyle,
+            animation: isOpen
+              ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(12 + 17) * 30}ms both`
+              : 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = colors.bgHover;
+            e.currentTarget.style.transform = 'translateX(4px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.transform = 'translateX(0)';
+          }}
+        >
+          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
+            Change Avatar
+          </span>
+          <span style={{ color: colors.textSecondary }}>›</span>
+        </div>
+
         <div style={dividerStyle} />
 
         {/* ═══════════════════════════════════════════════════════════════
@@ -755,28 +948,23 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </button>
         </div>
 
-        {/* Show Stack in BBs Toggle (FREE) */}
+        {/* Use Real Name Toggle */}
         <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>
-              Show Stack in BBs
-            </span>
-            <span style={{ fontSize: 11, color: colors.textSecondary }}>
-              Display stacks as big blind multiples
-            </span>
-          </div>
+          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>
+            Use Real Name (vs Alias)
+          </span>
           <button
-            onClick={handleShowBBToggle}
-            aria-checked={showBBEnabled}
+            onClick={handleUseRealNameToggle}
+            aria-checked={useRealName}
             role="switch"
             style={{
               width: 52,
               height: 28,
               borderRadius: 14,
-              border: showBBEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
+              border: useRealName ? '2px solid #4ade80' : '2px solid #6b7280',
               padding: 2,
               cursor: 'pointer',
-              backgroundColor: showBBEnabled ? '#22c55e' : '#374151',
+              backgroundColor: useRealName ? '#22c55e' : '#374151',
               transition: 'all 0.25s ease',
               display: 'flex',
               alignItems: 'center',
@@ -791,12 +979,44 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 borderRadius: '50%',
                 backgroundColor: 'white',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: showBBEnabled ? 'translateX(24px)' : 'translateX(0)',
+                transform: useRealName ? 'translateX(24px)' : 'translateX(0)',
                 transition: 'transform 0.25s ease',
               }}
             />
           </button>
         </div>
+
+        {/* Bible V8 §11.1: Table Settings — 12 toggles (expandable) */}
+        <div
+          style={{
+            ...menuItemStyle,
+            justifyContent: 'space-between',
+          }}
+          onClick={() => setShowTableSettings(!showTableSettings)}
+        >
+          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Table Settings</span>
+          <span
+            style={{
+              color: colors.textSecondary,
+              fontSize: 18,
+              transform: showTableSettings ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s ease',
+            }}
+          >
+            ›
+          </span>
+        </div>
+        {showTableSettings && (
+          <div style={{ padding: '0 0 8px' }}>
+            <TableSettingsPanel
+              settings={tableSettings}
+              loading={tableSettingsLoading}
+              onToggle={toggleTableSetting}
+              mode="inline"
+              onOpenThemeSettings={() => setShowThemeSettings(true)}
+            />
+          </div>
+        )}
 
         {/* #6: Card Color Customization */}
         <div style={sectionHeaderStyle}>Card Colors</div>
@@ -867,7 +1087,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                   try {
                     masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
                   } catch (err) {
-                    console.error('[HamburgerMenu] Error:', err);
+                    reportError(err, 'HamburgerMenu.Error');
                     /* */
                   }
                   if (user?.id) {
@@ -883,11 +1103,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                         .update({ preferences: { ...prefs, card_color_preset: preset.id } })
                         .eq('id', user.id);
                       if (saveErr) {
-                        console.error('[HamburgerMenu] Card color save failed:', saveErr);
+                        reportError(saveErr, 'HamburgerMenu.Card_color_save_failed');
                         toast.error('Card color could not be saved. Please try again.');
                       }
                     } catch (err) {
-                      console.error('[HamburgerMenu] Error:', err);
+                      reportError(err, 'HamburgerMenu.Error');
                       toast.error('Card color could not be saved. Please try again.');
                     }
                   }
@@ -1106,6 +1326,25 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           Club Arena v1.12
         </div>
       </div>
+
+      {/* Avatar Gallery Modal */}
+      {user && (
+        <AvatarGallery
+          isOpen={showAvatarGallery}
+          onClose={() => setShowAvatarGallery(false)}
+          userId={user.id}
+          currentAvatarUrl={avatarUrl || generateDefaultAvatar()}
+          isVip={isVIP}
+        />
+      )}
+
+      {/* Bible V8 §11.2: Theme Settings Modal */}
+      <ThemeSettingsModal
+        isOpen={showThemeSettings}
+        onClose={() => setShowThemeSettings(false)}
+        userId={user?.id || ''}
+        isVip={isVIP}
+      />
     </>
   );
 }

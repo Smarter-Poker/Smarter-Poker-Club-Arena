@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { reportError } from '../utils/errorReporter';
 
 // ─── Worker-based setTimeout (throttle-proof) ────────────────────────────────
 // Chrome can't throttle Web Worker timers, so we route timing through a worker.
@@ -56,7 +57,8 @@ export function workerTimeout(fn: () => void, ms: number): number {
   _callbacks.set(id, fn);
   try {
     getTimerWorker().postMessage({ id, ms });
-  } catch {
+  } catch (e) {
+    reportError(e, 'useTabKeepAlive.workerTimeout');
     // Fallback to regular setTimeout if Worker fails
     setTimeout(() => {
       const cb = _callbacks.get(id);
@@ -116,7 +118,8 @@ export function useTabKeepAlive(): void {
     // 3. Pre-warm the timer worker so first horse decision doesn't lag
     try {
       getTimerWorker();
-    } catch {
+    } catch (e) {
+      reportError(e, 'useTabKeepAlive.onmessage');
       /* ok */
     }
 

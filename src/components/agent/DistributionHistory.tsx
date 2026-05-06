@@ -15,6 +15,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './DistributionHistory.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface DistributionHistoryProps {
   userId: string;
@@ -85,7 +86,7 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
 
       if (isMounted.current) setRecords(enriched);
     } catch (err) {
-      console.error('[DistributionHistory] Error:', err);
+      reportError(err, 'DistributionHistory.Error');
       if (isMounted.current) setRecords([]);
     } finally {
       if (isMounted.current) setLoading(false);

@@ -10,6 +10,7 @@
 
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -145,7 +146,7 @@ class ThrowableServiceClass {
         diamondCost: remaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
       };
     } catch (err) {
-      console.error('[ThrowableService] Error:', err);
+      reportError(err, 'ThrowableService.Error');
       return { isVip: false, freeThrowsRemaining: 0, diamondCost: DIAMOND_COST_PER_THROW };
     }
   }
@@ -171,7 +172,7 @@ class ThrowableServiceClass {
           .from('throw_usage')
           .insert({ user_id: userId, throwable_id: throwableId });
         if (usageErr) {
-          console.error('[ThrowableService] Failed to record VIP throw usage:', usageErr);
+          reportError(usageErr, 'ThrowableService.Failed_to_record_VIP_throw_usage');
           return { success: false, error: 'Failed to record throw usage' };
         }
         return { success: true };
@@ -208,11 +209,11 @@ class ThrowableServiceClass {
       const { error: usageErr2 } = await supabase
         .from('throw_usage')
         .insert({ user_id: userId, throwable_id: throwableId, paid_diamonds: true });
-      if (usageErr2) console.error('[ThrowableService] Paid throw usage record failed:', usageErr2);
+      if (usageErr2) reportError(usageErr2, 'ThrowableService.Paid_throw_usage_record_failed');
 
       return { success: true };
     } catch (err) {
-      console.error('[ThrowableService] Error:', err);
+      reportError(err, 'ThrowableService.Error');
       return { success: false, error: 'Unexpected error' };
     }
   }

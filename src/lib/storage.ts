@@ -150,6 +150,7 @@ export const STORAGE_KEYS = {
   NOTIFICATIONS_ENABLED: 'club_arena_notifications_enabled',
   LANGUAGE: 'club_arena_language',
   CARD_COLOR: 'club_arena_card_color', // Card back color preset
+  USE_REAL_NAME: 'club_arena_use_real_name', // Show real name instead of alias
 
   // ── Table Settings ──
   TABLE_THEME: 'club_arena_table_theme',

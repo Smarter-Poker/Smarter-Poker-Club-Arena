@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * CLUB HOME PAGE — PokerBros-Style Club Dashboard
+ * CLUB HOME PAGE — Premium-Style Club Dashboard
  * ═══════════════════════════════════════════════════════════════════════════════
  * Main page after entering a club. Shows:
  * - Modified Club Arena header (No Search, Settings = Club Settings)
@@ -26,6 +26,8 @@ import {
   SpinCard,
 } from '../components/lobby/DynamicGameCard';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
+import { BusToastBridge } from '../components/common/BusToastBridge';
+import { DiamondService } from '../services/DiamondService';
 import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
@@ -35,6 +37,11 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import { reportError } from '../utils/errorReporter';
+import { SHARK_CLUB_ID } from '../lib/constants';
+
+// Shark Club fallback logo — used when DB logo_url is null
+const SHARK_CLUB_FALLBACK_LOGO = `${import.meta.env.BASE_URL || '/'}images/shark-club-card-v25.jpg`;
 
 // SWR cache helpers for instant club data display
 function getClubHomeCache(clubId: string) {
@@ -60,6 +67,7 @@ interface ClubData {
   name: string;
   description: string;
   avatar_url: string;
+  logo_url?: string;
   member_count: number;
   online_count: number;
   owner_id: string;
@@ -106,7 +114,9 @@ interface WalletBalances {
   diamonds: number;
 }
 
-type GameFilter = 'ALL' | "Hold'em" | 'Omaha' | 'Mixed' | 'MTT' | 'Spin-It' | 'SN';
+type MainFilter = 'ALL' | 'CASH GAMES' | 'TOURNAMENTS';
+type CashVariant = 'ALL' | "Hold'em" | 'Omaha';
+type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
 type CashSubFilter = 'all' | 'live' | 'empty' | 'full';
 type TournamentSubFilter = 'all' | 'running' | 'registering' | 'late_reg' | 'starting_soon';
 
@@ -124,7 +134,9 @@ export default function ClubHomePage() {
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
   const [wallet, setWallet] = useState<WalletBalances>({ gold: 0, diamonds: 0 });
   const [jackpotAmount, setJackpotAmount] = useState(0);
-  const [activeFilter, setActiveFilter] = useState<GameFilter>('ALL');
+  const [activeMainFilter, setActiveMainFilter] = useState<MainFilter>('ALL');
+  const [cashVariant, setCashVariant] = useState<CashVariant>('ALL');
+  const [tournVariant, setTournVariant] = useState<TournVariant>('ALL');
   const [cashSubFilter, setCashSubFilter] = useState<CashSubFilter>('live');
   const [tournamentSubFilter, setTournamentSubFilter] = useState<TournamentSubFilter>('running');
   const [isOwner, setIsOwner] = useState(false);
@@ -173,7 +185,7 @@ export default function ClubHomePage() {
     tableName: string | null;
   }>({ show: false, tableId: null, tableName: null });
 
-  const filters: GameFilter[] = ['ALL', "Hold'em", 'Omaha', 'Mixed', 'MTT', 'Spin-It', 'SN'];
+  // Confirm modal state for table deletion
 
   useEffect(() => {
     if (clubId) {
@@ -195,8 +207,8 @@ export default function ClubHomePage() {
       const resolvedId = await resolveClubUUID(clubId);
       if (!isMounted) return;
 
-      // Check if this club is in a union — if so, listen on union_id for tables
-      let tableFilter = `club_id=eq.${resolvedId}`;
+      // Check if this club is in a union — if so, listen on union_id in addition to club_id
+      let unionId: string | null = null;
       try {
         const { data: ucCheck } = await supabase
           .from('union_clubs')
@@ -205,63 +217,86 @@ export default function ClubHomePage() {
           .limit(1)
           .maybeSingle();
         if (ucCheck?.union_id) {
-          tableFilter = `union_id=eq.${ucCheck.union_id}`;
+          unionId = ucCheck.union_id;
         }
-      } catch {
-        /* standalone club — use club_id filter */
+      } catch (e) {
+        reportError(e, 'ClubHomePage.setupRealtime');
+        /* standalone club — no union_id */
       }
 
+      if (!isMounted) return;
+
       const channelKey = `club-tables-${clubId}`;
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
+      let channel = masterBus.getOrCreateChannel(channelKey);
+
+      const handleTableChange = (payload: any) => {
+        if (!isMounted) return;
+        if (payload.eventType === 'UPDATE' && payload.new) {
+          setTables((prev) =>
+            prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+          );
+        } else if (payload.eventType === 'INSERT' && payload.new) {
+          setTables((prev) => {
+            if (prev.some((t) => t.id === payload.new.id)) return prev;
+            return [payload.new as any, ...prev];
+          });
+        } else if (payload.eventType === 'DELETE' && payload.old) {
+          setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+        }
+      };
+
+      const handleTournamentChange = (payload: any) => {
+        if (!isMounted) return;
+        if (payload.eventType === 'UPDATE' && payload.new) {
+          setTournaments((prev) =>
+            prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+          );
+        } else if (payload.eventType === 'INSERT' && payload.new) {
+          setTournaments((prev) => {
+            if (prev.some((t) => t.id === payload.new.id)) return prev;
+            return [payload.new as any, ...prev];
+          });
+        } else if (payload.eventType === 'DELETE' && payload.old) {
+          setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+        }
+      };
+
+      // 1. Subscribe to Club Tables
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${resolvedId}` },
+        handleTableChange
+      );
+
+      // 2. Subscribe to Club Tournaments
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tournaments', filter: `club_id=eq.${resolvedId}` },
+        handleTournamentChange
+      );
+
+      // 3. Dual-Channel: Subscribe to Union Tables and Tournaments if applicable
+      if (unionId) {
+        channel = channel.on(
           'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tables',
-            filter: tableFilter,
-          },
-          (payload) => {
-            if (payload.eventType === 'UPDATE' && payload.new) {
-              setTables((prev) =>
-                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-              );
-            } else if (payload.eventType === 'INSERT' && payload.new) {
-              setTables((prev) => [payload.new as any, ...prev]);
-            } else if (payload.eventType === 'DELETE' && payload.old) {
-              setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
-            }
-          }
-        )
-        .on(
+          { event: '*', schema: 'public', table: 'tables', filter: `union_id=eq.${unionId}` },
+          handleTableChange
+        );
+        channel = channel.on(
           'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tournaments',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          (payload) => {
-            if (payload.eventType === 'UPDATE' && payload.new) {
-              setTournaments((prev) =>
-                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-              );
-            } else if (payload.eventType === 'INSERT' && payload.new) {
-              setTournaments((prev) => [payload.new as any, ...prev]);
-            } else if (payload.eventType === 'DELETE' && payload.old) {
-              setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
-            }
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          setWsConnected(status === 'SUBSCRIBED');
-          if (status === 'CHANNEL_ERROR') {
-            console.error('[ClubHomePage] ❌ Tables RT channel error:', err?.message || err);
-          } else if (status === 'TIMED_OUT') {
-            console.warn('[ClubHomePage] ⏱️ Tables RT channel timed out');
-          }
-        });
+          { event: '*', schema: 'public', table: 'tournaments', filter: `union_id=eq.${unionId}` },
+          handleTournamentChange
+        );
+      }
+
+      channel.subscribe((status: string, err?: Error) => {
+        setWsConnected(status === 'SUBSCRIBED');
+        if (status === 'CHANNEL_ERROR') {
+          if (err) reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
+        } else if (status === 'TIMED_OUT') {
+          console.warn('[ClubHomePage] ⏱️ Tables RT channel timed out');
+        }
+      });
     };
 
     setupRealtime().catch((e) => console.warn('[ClubHomePage] Table realtime setup failed:', e));
@@ -311,6 +346,7 @@ export default function ClubHomePage() {
       masterBus.subscribeDebounced('TABLE_SEATED', reload, 300),
       masterBus.subscribeDebounced('TABLE_LEFT', reload, 300),
       masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 300),
+      masterBus.subscribeDebounced('DIAMOND_BALANCE_CHANGED', reload, 300),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
       // Phase 11: Only reload for OUR club's updates (not every club in the platform)
       masterBus.subscribeDebounced(
@@ -391,7 +427,7 @@ export default function ClubHomePage() {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, description, avatar_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
+              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -400,7 +436,7 @@ export default function ClubHomePage() {
       );
 
       if (clubError || !clubData) {
-        console.error('Failed to load club:', clubError);
+        reportError(clubError, 'ClubHomePage.Failed_to_load_club');
         toast.error('Failed to load club details');
         if (!getIsMounted || getIsMounted()) setLoading(false);
         return;
@@ -422,25 +458,21 @@ export default function ClubHomePage() {
         setIsOwner(clubData.owner_id === authUser.id);
 
         // ── Batch: member data + diamond wallet in parallel ──
-        const [memberResult, diamondResult] = await Promise.all([
+        const [memberResult, diamondWallet] = await Promise.all([
           supabase
             .from('club_members')
             .select('chip_balance, role')
             .eq('club_id', resolvedId)
             .eq('user_id', authUser.id)
             .maybeSingle(),
-          supabase
-            .from('diamond_wallets')
-            .select('balance')
-            .eq('user_id', authUser.id)
-            .maybeSingle(),
+          DiamondService.getBalance(authUser.id),
         ]);
 
         if (memberResult.data) {
           if (getIsMounted && !getIsMounted()) return;
           setWallet({
             gold: memberResult.data.chip_balance || 0,
-            diamonds: diamondResult.data?.balance || 0,
+            diamonds: diamondWallet.balance || 0,
           });
           setUserRole(memberResult.data.role || 'member');
         }
@@ -487,7 +519,8 @@ export default function ClubHomePage() {
                 setClub((prev) =>
                   prev ? { ...prev, member_count: totalMembers || prev.member_count || 0 } : prev
                 );
-              } catch {
+              } catch (e) {
+                reportError(e, 'ClubHomePage.setClub');
                 // Fall back to club-level counts
               }
             } else {
@@ -503,7 +536,8 @@ export default function ClubHomePage() {
             }
           }
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubHomePage.setClub');
         // Query error — fail-open for standalone clubs
       }
 
@@ -523,7 +557,8 @@ export default function ClubHomePage() {
             // Also update clubData so the level calculation below uses the live count
             clubData.member_count = liveCount;
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubHomePage.setClub');
           // Fall back to denormalized clubs.member_count
         }
       }
@@ -560,7 +595,8 @@ export default function ClubHomePage() {
               .eq('club_id', resolvedId)
               .limit(1)
               .maybeSingle();
-          } catch {
+          } catch (e) {
+            reportError(e, 'ClubHomePage.async');
             return { data: null, error: null };
           }
         })(),
@@ -652,7 +688,8 @@ export default function ClubHomePage() {
                 refreshedClub.hierarchy_threshold_next ?? clubData.hierarchy_threshold_next;
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubHomePage');
           // RPC not available — use default level
         }
       }
@@ -680,7 +717,7 @@ export default function ClubHomePage() {
         return levelInfo;
       });
     } catch (error: any) {
-      console.error('Error loading club data:', error);
+      reportError(error, 'ClubHomePage.Error_loading_club_data');
       toast.error(error.message || 'Failed to load club data');
     } finally {
       loadingRef.current = false;
@@ -688,61 +725,58 @@ export default function ClubHomePage() {
     }
   };
 
-  // Filter tables (hide tables when MTT/Spin-It/SN tab is active)
-  const showTournaments =
-    activeFilter === 'MTT' || activeFilter === 'SN' || activeFilter === 'Spin-It';
+  // Filter tables
+  const showTournaments = activeMainFilter === 'TOURNAMENTS';
+
   const filteredTables = useMemo(
     () =>
       tables.filter((table) => {
-        if (showTournaments) return false; // Hide tables when viewing tournaments
+        if (activeMainFilter === 'TOURNAMENTS') return false;
 
-        // Game type filter
+        // Game variant filter
         let passesGameFilter = true;
-        if (activeFilter === "Hold'em")
+        if (cashVariant === "Hold'em") {
           passesGameFilter =
             table.game_variant?.toLowerCase().includes('nlh') ||
             table.game_variant?.toLowerCase().includes('holdem');
-        else if (activeFilter === 'Omaha')
+        } else if (cashVariant === 'Omaha') {
           passesGameFilter =
             table.game_variant?.toLowerCase().includes('plo') ||
             table.game_variant?.toLowerCase().includes('omaha');
-        else if (activeFilter === 'Mixed') {
-          const v = table.game_variant?.toLowerCase() || '';
-          passesGameFilter =
-            v.includes('pineapple') ||
-            v.includes('short_deck') ||
-            v.includes('ofc') ||
-            v.includes('mixed') ||
-            v.includes('double');
         }
         if (!passesGameFilter) return false;
 
-        // Cash game sub-filter
+        // Cash game status filter (skip if ALL tab is active)
+        if (activeMainFilter === 'ALL') return true;
+
         if (cashSubFilter === 'live') return table.current_players > 0;
         if (cashSubFilter === 'empty') return table.current_players === 0;
         if (cashSubFilter === 'full') return table.current_players >= table.max_players;
-        return true; // 'all'
+        return true;
       }),
-    [tables, activeFilter, showTournaments, cashSubFilter]
+    [tables, activeMainFilter, cashVariant, cashSubFilter]
   );
 
-  // Filter tournaments for MTT/SN/Spin-It tabs
+  // Filter tournaments
   const filteredTournaments = useMemo(
     () =>
       tournaments.filter((t) => {
+        if (activeMainFilter === 'CASH GAMES') return false;
+
         const isSpin = t.name.toLowerCase().includes('spin');
         const isSNG = !isSpin && (t.name.toLowerCase().includes('sng') || t.max_players <= 10);
         const isMTT = !isSpin && !isSNG;
 
-        // Game type filter
-        let passesGameFilter = false;
-        if (activeFilter === 'MTT') passesGameFilter = isMTT;
-        else if (activeFilter === 'SN') passesGameFilter = isSNG;
-        else if (activeFilter === 'Spin-It') passesGameFilter = isSpin;
-        else if (activeFilter === 'ALL') passesGameFilter = true;
+        // Tournament variant filter
+        let passesGameFilter = true;
+        if (tournVariant === 'MTT') passesGameFilter = isMTT;
+        else if (tournVariant === 'SN') passesGameFilter = isSNG;
+        else if (tournVariant === 'Spin-It') passesGameFilter = isSpin;
+
         if (!passesGameFilter) return false;
 
-        // Tournament sub-filter
+        // Tournament status filter (skip if ALL tab is active)
+        if (activeMainFilter === 'ALL') return true;
         if (tournamentSubFilter === 'all') return true;
         const status = (t.status || '').toUpperCase();
         const startTime = new Date(t.start_time).getTime();
@@ -763,7 +797,7 @@ export default function ClubHomePage() {
           );
         return true;
       }),
-    [tournaments, activeFilter, tournamentSubFilter]
+    [tournaments, activeMainFilter, tournVariant, tournamentSubFilter]
   );
 
   const formatNumber = (num: number) => {
@@ -936,8 +970,10 @@ export default function ClubHomePage() {
       <div className="club-home__club-section">
         <div className="club-home__club-card">
           <div className="club-card__avatar">
-            {club.avatar_url ? (
-              <img src={club.avatar_url} alt={club.name} loading="lazy" />
+            {club.logo_url || club.avatar_url ? (
+              <img src={club.logo_url || club.avatar_url} alt={club.name} loading="lazy" />
+            ) : Number(club.club_id) === SHARK_CLUB_ID ? (
+              <img src={SHARK_CLUB_FALLBACK_LOGO} alt="Shark Club" loading="lazy" />
             ) : (
               <span className="club-card__avatar-placeholder">&#9824;</span>
             )}
@@ -972,7 +1008,8 @@ export default function ClubHomePage() {
                       await navigator.clipboard.writeText(shareUrl);
                       toast.success('Club link copied!');
                     }
-                  } catch {
+                  } catch (e) {
+                    reportError(e, 'ClubHomePage.async');
                     /* user cancelled share */
                   }
                 }}
@@ -980,26 +1017,6 @@ export default function ClubHomePage() {
                 <span className="icon-link"></span>
               </button>
             </div>
-            {clubLevel && (
-              <div className="club-card__level">
-                <div className="club-level-badge" style={{ background: clubLevel.gradient }}>
-                  <span className="club-level-badge__number">Lv.{clubLevel.level}</span>
-                  <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
-                </div>
-                <div className="club-level-progress">
-                  <div className="club-level-progress__bar">
-                    <div
-                      className="club-level-progress__fill"
-                      style={{
-                        width: `${clubLevel.progressPercent}%`,
-                        background: clubLevel.gradient,
-                      }}
-                    />
-                  </div>
-                  <span className="club-level-progress__text">{clubLevel.progressPercent}%</span>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1038,16 +1055,19 @@ export default function ClubHomePage() {
                 GAME TYPE FILTERS
             ═══════════════════════════════════════════════════════════════════ */}
       <div className="club-home__filters">
-        {filters.map((filter) => (
+        <button className="filter-search" onClick={() => haptic.light()}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="M21 21l-4.3-4.3"></path>
+          </svg>
+        </button>
+        {(['ALL', 'CASH GAMES', 'TOURNAMENTS'] as MainFilter[]).map((filter) => (
           <button
             key={filter}
-            className={`filter-tab ${activeFilter === filter ? 'active' : ''}`}
+            className={`filter-tab ${activeMainFilter === filter ? 'active' : ''}`}
             onClick={() => {
               haptic.selection();
-              setActiveFilter(filter);
-              // Reset sub-filters when switching game type (default to active games)
-              setCashSubFilter('live');
-              setTournamentSubFilter('running');
+              setActiveMainFilter(filter);
             }}
           >
             {filter}
@@ -1058,57 +1078,96 @@ export default function ClubHomePage() {
         </button>
       </div>
 
-      {/* SUB-FILTERS: Cash Game status or Tournament status */}
-      <div className="club-home__sub-filters">
-        {!showTournaments ? (
-          // Cash game sub-filters
-          <>
-            {(
-              [
-                { key: 'all', label: 'All Tables' },
-                { key: 'live', label: 'Live Games' },
-                { key: 'empty', label: 'Empty' },
-                { key: 'full', label: 'Full' },
-              ] as { key: CashSubFilter; label: string }[]
-            ).map((sf) => (
-              <button
-                key={sf.key}
-                className={`sub-filter-tab ${cashSubFilter === sf.key ? 'active' : ''}`}
-                onClick={() => {
-                  haptic.selection();
-                  setCashSubFilter(sf.key);
-                }}
-              >
-                {sf.label}
-              </button>
-            ))}
-          </>
-        ) : (
-          // Tournament sub-filters
-          <>
-            {(
-              [
-                { key: 'all', label: 'All' },
-                { key: 'running', label: 'Running' },
-                { key: 'registering', label: 'Registering' },
-                { key: 'late_reg', label: 'Late Reg' },
-                { key: 'starting_soon', label: 'Starting Soon' },
-              ] as { key: TournamentSubFilter; label: string }[]
-            ).map((sf) => (
-              <button
-                key={sf.key}
-                className={`sub-filter-tab ${tournamentSubFilter === sf.key ? 'active' : ''}`}
-                onClick={() => {
-                  haptic.selection();
-                  setTournamentSubFilter(sf.key);
-                }}
-              >
-                {sf.label}
-              </button>
-            ))}
-          </>
-        )}
-      </div>
+      {/* SUB-FILTERS: Variants */}
+      {activeMainFilter !== 'ALL' && (
+        <div className="club-home__sub-filters" style={{ marginTop: '0px', marginBottom: '8px' }}>
+          {activeMainFilter === 'CASH GAMES' ? (
+            <>
+              {(['ALL', "Hold'em", 'Omaha'] as CashVariant[]).map((sf) => (
+                <button
+                  key={sf}
+                  className={`sub-filter-tab ${cashVariant === sf ? 'active' : ''}`}
+                  onClick={() => {
+                    haptic.selection();
+                    setCashVariant(sf);
+                  }}
+                >
+                  {sf}
+                </button>
+              ))}
+            </>
+          ) : (
+            <>
+              {(['ALL', 'MTT', 'Spin-It', 'SN'] as TournVariant[]).map((sf) => (
+                <button
+                  key={sf}
+                  className={`sub-filter-tab ${tournVariant === sf ? 'active' : ''}`}
+                  onClick={() => {
+                    haptic.selection();
+                    setTournVariant(sf);
+                  }}
+                >
+                  {sf}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* SUB-FILTERS: Status */}
+      {activeMainFilter !== 'ALL' && (
+        <div className="club-home__sub-filters" style={{ marginTop: '0px' }}>
+          {activeMainFilter === 'CASH GAMES' ? (
+            // Cash game status sub-filters
+            <>
+              {(
+                [
+                  { key: 'all', label: 'All Tables' },
+                  { key: 'live', label: 'Live Games' },
+                  { key: 'empty', label: 'Empty' },
+                  { key: 'full', label: 'Full' },
+                ] as { key: CashSubFilter; label: string }[]
+              ).map((sf) => (
+                <button
+                  key={sf.key}
+                  className={`sub-filter-tab ${cashSubFilter === sf.key ? 'active' : ''}`}
+                  onClick={() => {
+                    haptic.selection();
+                    setCashSubFilter(sf.key);
+                  }}
+                >
+                  {sf.label}
+                </button>
+              ))}
+            </>
+          ) : (
+            // Tournament status sub-filters
+            <>
+              {(
+                [
+                  { key: 'all', label: 'All' },
+                  { key: 'running', label: 'Running' },
+                  { key: 'registering', label: 'Registering' },
+                  { key: 'late_reg', label: 'Late Reg' },
+                  { key: 'starting_soon', label: 'Starting Soon' },
+                ] as { key: TournamentSubFilter; label: string }[]
+              ).map((sf) => (
+                <button
+                  key={sf.key}
+                  className={`sub-filter-tab ${tournamentSubFilter === sf.key ? 'active' : ''}`}
+                  onClick={() => {
+                    haptic.selection();
+                    setTournamentSubFilter(sf.key);
+                  }}
+                >
+                  {sf.label}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
                 GAMES GRID - Tables & Create New Table Button
@@ -1125,7 +1184,7 @@ export default function ClubHomePage() {
           </Link>
         )}
 
-        {/* EXISTING TABLES — Dynamic PokerBros-style cards */}
+        {/* EXISTING TABLES — Dynamic premium-style cards */}
         {filteredTables.map((table, idx) => (
           <div
             key={table.id}
@@ -1143,7 +1202,7 @@ export default function ClubHomePage() {
           </div>
         ))}
 
-        {/* TOURNAMENT CARDS — Dynamic PokerBros-style cards */}
+        {/* TOURNAMENT CARDS — Dynamic premium-style cards */}
         {filteredTournaments.map((tournament, idx) => {
           const tName = (tournament.name || '').toLowerCase();
           const isSNG = tName.includes('sng') || tournament.max_players <= 10;
@@ -1211,7 +1270,7 @@ export default function ClubHomePage() {
               setTables((prev) => prev.filter((t) => t.id !== id));
               toast.success('Table deleted');
             } catch (err) {
-              console.error('Failed to delete table:', err);
+              reportError(err, 'ClubHomePage.Failed_to_delete_table');
               toast.error('Failed to delete table');
             } finally {
               setDeletingTableId(null);

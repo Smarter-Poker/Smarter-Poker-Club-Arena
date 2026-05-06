@@ -18,6 +18,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { tableService } from '../../services/TableService';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface TableInfo {
   id: string;
@@ -332,6 +333,17 @@ const getStatusBadgeStyle = (status: string): React.CSSProperties => ({
 export default function TableOperationsPanel({ clubId }: Props) {
   const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // CA-24 BUG FIX (part 1): staggerTimersRef had no unmount-guard useEffect.
+  // Also, the expandedTable player stagger below was entirely untracked (bare
+  // forEach + setTimeout). Both patterns cause setState on unmounted component
+  // when the panel is closed while animations are in flight.
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
+    };
+  }, []);
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
   const [seatedPlayers, setSeatedPlayers] = useState<Record<string, SeatedPlayer[]>>({});
@@ -370,18 +382,24 @@ export default function TableOperationsPanel({ clubId }: Props) {
 
   useEffect(() => {
     if (expandedTable && seatedPlayers[expandedTable]) {
+      // CA-24 BUG FIX (part 2): these bare setTimeout calls were not tracked.
+      // Clear existing stagger timers first, then push new ones into the ref.
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
       setVisiblePlayers((prev) => ({
         ...prev,
         [expandedTable]: [],
       }));
-      seatedPlayers[expandedTable].forEach((_, i) => {
-        setTimeout(() => {
-          setVisiblePlayers((prev) => ({
-            ...prev,
-            [expandedTable]: [...(prev[expandedTable] || []), true],
-          }));
-        }, i * 50);
-      });
+      staggerTimersRef.current.push(
+        ...seatedPlayers[expandedTable].map((_, i) =>
+          setTimeout(() => {
+            setVisiblePlayers((prev) => ({
+              ...prev,
+              [expandedTable]: [...(prev[expandedTable] || []), true],
+            }));
+          }, i * 50)
+        )
+      );
     }
   }, [expandedTable, seatedPlayers]);
 
@@ -390,24 +408,37 @@ export default function TableOperationsPanel({ clubId }: Props) {
     const channelKey = 'table-ops-live';
 
     const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
+    const sub = channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
+      () => loadTables()
+    );
+
+    // NOTE (2026-04-19): table_seats listener is now conditionally added with a
+    // table_id filter ONLY when a table is expanded. Previously this was a global
+    // listener (no filter) that fired on every seat change across the entire platform.
+    // table_seats is the engine's highest-write table — filtering is critical.
+    if (expandedTable) {
+      sub.on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
-        () => loadTables()
-      )
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'table_seats' }, () => {
-        // Refresh seated players for expanded table
-        if (expandedTable) loadSeatedPlayers(expandedTable);
-      })
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[TableOperationsPanel] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[TableOperationsPanel] ⏱️ Realtime channel timed out');
-        }
-      });
+        {
+          event: '*',
+          schema: 'public',
+          table: 'table_seats',
+          filter: `table_id=eq.${expandedTable}`,
+        },
+        () => loadSeatedPlayers(expandedTable)
+      );
+    }
+
+    sub.subscribe((status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR') {
+        if (err) reportError(err?.message || err, 'TableOperationsPanel._Realtime_channel_error');
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn('[TableOperationsPanel] ⏱️ Realtime channel timed out');
+      }
+    });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
@@ -461,7 +492,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
       await loadSeatedPlayers(confirmAction.tableId);
       await loadTables();
     } catch (err) {
-      console.error('[TableOperationsPanel] Failed to kick player:', err);
+      reportError(err, 'TableOperationsPanel.Failed_to_kick_player');
     } finally {
       if (isMounted.current) setConfirmAction(null);
       setActionLoading(null);
@@ -475,7 +506,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
       await tableService.closeTable(confirmAction.tableId);
       await loadTables();
     } catch (err) {
-      console.error('[TableOperationsPanel] Failed to close table:', err);
+      reportError(err, 'TableOperationsPanel.Failed_to_close_table');
     } finally {
       if (isMounted.current) setConfirmAction(null);
       setActionLoading(null);

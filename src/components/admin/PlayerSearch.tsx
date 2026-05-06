@@ -8,6 +8,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './PlayerSearch.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface Player {
   id: string;
@@ -84,7 +85,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
       const { data: profiles, error } = await profileQuery;
 
       if (error) {
-        console.error('Search error:', error);
+        reportError(error, 'PlayerSearch.Search_error');
         setResults([]);
         return;
       }
@@ -141,7 +142,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
         setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
       );
     } catch (error) {
-      console.error('Failed to search players:', error);
+      reportError(error, 'PlayerSearch.Failed_to_search_players');
       setResults([]);
     } finally {
       if (isMounted.current) setLoading(false);

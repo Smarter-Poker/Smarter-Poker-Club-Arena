@@ -1,37 +1,139 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  POT DISPLAY — Premium Styles with Design Tokens
- * ═══════════════════════════════════════════════════════════════════════════════
+ * =================================================================================
+ *  POT DISPLAY -- World-Class Premium Styles
+ * =================================================================================
+ *
+ *  The pot is the emotional heartbeat of every poker hand. Every chip that enters
+ *  it represents a decision, a risk, a story. This CSS makes that tangible.
+ *
+ *  Architecture:
+ *  ---------------------------------------------------------------------------------
+ *  SECTION 1 — Design Tokens (custom properties for physics, timing, color)
+ *  SECTION 2 — Container Layout (absolute positioning, z-index hierarchy)
+ *  SECTION 3 — Chip Stack Rendering (multi-layer casino chip with notches, face, shadow)
+ *  SECTION 4 — Chip Drop Animation (spring-physics with squash-stretch on felt contact)
+ *  SECTION 5 — Main Pot Container (glassmorphism, animated border, glass shine sweep)
+ *  SECTION 6 — Pot Amount Text (golden text with animated shimmer on update)
+ *  SECTION 7 — Side Pots (staggered spring entrance, individual glow)
+ *  SECTION 8 — Total Display (emerald accent, subtle pulse)
+ *  SECTION 9 — Increase Indicator (float-up with golden trail)
+ *  SECTION 10 — Runtime Animation Classes (bump, pulse, golden glow, award, collect)
+ *  SECTION 11 — Responsive (768, 640, 480, 380px breakpoints)
+ *  SECTION 12 — Reduced Motion (all animations disabled, instant states)
+ *  ---------------------------------------------------------------------------------
+ *
+ *  Spring Physics Curves:
+ *    --pd-ease-spring: standard overshoot for entrances
+ *    --pd-ease-snap: fast snap with slight rebound
+ *    --pd-ease-bounce: big overshoot for dramatic moments (bump, award)
+ *    --pd-ease-settle: gentle deceleration for float/fade
+ *    --pd-ease-elastic: pronounced wobble for chip impacts
+ *
+ *  Color Palette:
+ *    Gold: #ffd700 (pot amount, border glow, shimmer)
+ *    Royal Blue: #4169e5 (side pots)
+ *    Emerald: #10b981 (total, increase badge)
+ *    Felt contact: rgba(0,0,0,0.7) (chip landing shadow)
  */
 
-@import '../../styles/design-tokens.css';
+/* =================================================================================
+   SECTION 1 — DESIGN TOKENS
+   ================================================================================= */
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   CONTAINER
-   ───────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Spring physics easing curves */
+  --pd-ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --pd-ease-snap: cubic-bezier(0.25, 1.2, 0.5, 1);
+  --pd-ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --pd-ease-settle: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --pd-ease-elastic: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* Timing tokens */
+  --pd-chip-drop-duration: 0.45s;
+  --pd-chip-stagger: 50ms;
+  --pd-side-pot-stagger: 80ms;
+  --pd-bump-duration: 0.6s;
+  --pd-pulse-duration: 0.5s;
+  --pd-increase-duration: 1.2s;
+  --pd-award-duration: 0.65s;
+  --pd-collect-duration: 0.5s;
+  --pd-glow-period: 2s;
+  --pd-shimmer-period: 3s;
+
+  /* Chip sizing */
+  --pd-chip-size: 18px;
+  --pd-chip-face-size: 10px;
+  --pd-chip-notch-width: 4px;
+  --pd-chip-notch-height: 2px;
+  --pd-chip-stack-offset: -2px;
+
+  /* Gold palette */
+  --pd-gold: #ffd700;
+  --pd-gold-dim: rgba(255, 215, 0, 0.2);
+  --pd-gold-mid: rgba(255, 215, 0, 0.4);
+  --pd-gold-bright: rgba(255, 215, 0, 0.6);
+  --pd-gold-glow: rgba(255, 215, 0, 0.15);
+
+  /* Side pot palette */
+  --pd-blue: #4169e5;
+  --pd-blue-bg: rgba(65, 105, 225, 0.15);
+  --pd-blue-border: rgba(65, 105, 225, 0.35);
+  --pd-blue-glow: rgba(65, 105, 225, 0.12);
+
+  /* Emerald palette */
+  --pd-emerald: #10b981;
+  --pd-emerald-bg: rgba(16, 185, 129, 0.12);
+  --pd-emerald-border: rgba(16, 185, 129, 0.3);
+}
+
+/* =================================================================================
+   SECTION 2 — CONTAINER LAYOUT
+   ================================================================================= */
 
 .pot-display {
   position: absolute;
-  top: 50%;
+  top: 38%;
   left: 50%;
-  transform: translate(-50%, -30%);
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   z-index: var(--z-pot, 20);
+  /* Ensure pot doesn't intercept table events outside its visual bounds */
+  pointer-events: none;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   CHIP STACKS
-   ───────────────────────────────────────────────────────────────────────────── */
+/* Re-enable pointer events on interactive children */
+.pot-display__main,
+.pot-display__side-pot,
+.pot-display__total {
+  pointer-events: auto;
+}
+
+/* =================================================================================
+   SECTION 3 — CHIP STACK RENDERING
+   ================================================================================= */
+
+/*
+ * Visual hierarchy: stacks overlap horizontally to form a pile.
+ * Each chip is an absolutely-positioned circle offset vertically by --chip-offset.
+ * Rendering layers per chip (bottom to top):
+ *   1. Base circle with denomination color
+ *   2. Edge shadow (7-layer box-shadow for depth)
+ *   3. Edge notches (::before — 4 white marks at N/S/E/W)
+ *   4. Face ring (child div — inner circle with radial gradient)
+ *   5. Specular highlight (::after — top-left shine)
+ */
 
 .pot-display__chips {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: 50px;
-  margin-bottom: 4px;
+  height: 36px;
+  margin-bottom: 2px;
+  gap: 0;
+  margin-left: -4px;
 }
 
 .pot-display__chip-stack {
@@ -39,52 +141,144 @@
   display: flex;
   flex-direction: column-reverse;
   align-items: center;
+  width: var(--pd-chip-size);
+  height: 44px;
+  margin-left: -6px;
 }
 
 .pot-display__chip {
-  width: 28px;
-  height: 8px;
+  width: var(--pd-chip-size);
+  height: var(--pd-chip-size);
   border-radius: 50%;
   position: absolute;
   bottom: 0;
+  background: var(--chip-color, #e0e0e0);
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
   box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.3),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.2),
-    inset 0 2px 4px rgba(255, 255, 255, 0.1);
-  animation: chipDrop 0.4s ease-out forwards;
+    /* Bottom edge — 3D thickness illusion */
+    0 2px 0 rgba(0, 0, 0, 0.35),
+    /* Ambient shadow on felt */ 0 3px 6px rgba(0, 0, 0, 0.5),
+    /* Contact shadow (tight, dark) */ 0 1px 2px rgba(0, 0, 0, 0.4),
+    /* Inner highlight — top edge catch light */ inset 0 1px 2px rgba(255, 255, 255, 0.3),
+    /* Inner shadow — bottom edge depth */ inset 0 -1px 2px rgba(0, 0, 0, 0.25),
+    /* Inner side highlights for roundness */ inset 2px 0 3px rgba(255, 255, 255, 0.06),
+    inset -2px 0 3px rgba(255, 255, 255, 0.06);
+  animation: pdChipDrop var(--pd-chip-drop-duration) var(--pd-ease-spring) forwards;
   opacity: 0;
+  will-change: transform, opacity;
 }
 
-@keyframes chipDrop {
-  0% {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-
-  50% {
-    opacity: 1;
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateY(var(--chip-offset, 0));
-  }
+/* Edge notches — 4 white marks at N/S/E/W like real casino chips */
+.pot-display__chip::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--pd-chip-notch-width);
+  height: var(--pd-chip-notch-height);
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 0 0 1px 1px;
+  box-shadow:
+    0 16px 0 rgba(255, 255, 255, 0.4),
+    -8px 8px 0 rgba(255, 255, 255, 0.35),
+    8px 8px 0 rgba(255, 255, 255, 0.35);
+  pointer-events: none;
 }
 
-.pot-display__chip-inner {
+/* Specular highlight — top-left shine for 3D pop */
+.pot-display__chip::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  width: 6px;
+  height: 4px;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.35) 0%, transparent 80%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Inner ring — casino chip face pattern */
+.pot-display__chip-face {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 16px;
-  height: 16px;
-  border: 2px dashed rgba(255, 255, 255, 0.3);
+  width: var(--pd-chip-face-size);
+  height: var(--pd-chip-face-size);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
   border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
+  pointer-events: none;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   MAIN POT DISPLAY
-   ───────────────────────────────────────────────────────────────────────────── */
+/* =================================================================================
+   SECTION 4 — CHIP DROP ANIMATION
+   ================================================================================= */
+
+/*
+ * 7-phase spring animation simulating a chip being tossed onto the felt:
+ *   0%   — Above table, tiny, bright flash (catching overhead light)
+ *   20%  — Descending, growing, rotation settling
+ *   40%  — CONTACT with felt — squash horizontally (scaleX > scaleY)
+ *   55%  — Bounce up slightly, stretch vertically (scaleY > scaleX)
+ *   70%  — Micro-bounce, settling
+ *   85%  — Overshoot correction
+ *   100% — Rest position
+ *
+ * The squash-stretch at 40% and 55% is the key to physical believability.
+ * Without it, chips feel like they're being placed, not dropped.
+ */
+
+@keyframes pdChipDrop {
+  0% {
+    opacity: 0;
+    transform: translateY(calc(var(--chip-offset, 0px) - 22px)) scale(0.35);
+    filter: brightness(1.6);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(calc(var(--chip-offset, 0px) - 8px)) scale(0.85)
+      rotate(calc(var(--chip-spin, 0) * 1deg));
+    filter: brightness(1.2);
+  }
+  40% {
+    /* Felt contact — horizontal squash */
+    transform: translateY(calc(var(--chip-offset, 0px) + 1px)) scaleX(1.12) scaleY(0.88);
+    filter: brightness(1.05);
+  }
+  55% {
+    /* Bounce — vertical stretch */
+    transform: translateY(calc(var(--chip-offset, 0px) - 3px)) scaleX(0.95) scaleY(1.06);
+    filter: brightness(1);
+  }
+  70% {
+    /* Micro-bounce */
+    transform: translateY(calc(var(--chip-offset, 0px) + 0.5px)) scaleX(1.02) scaleY(0.98);
+  }
+  85% {
+    transform: translateY(calc(var(--chip-offset, 0px) - 0.5px)) scale(1.005);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(var(--chip-offset, 0px)) scale(1);
+    filter: brightness(1);
+  }
+}
+
+/* =================================================================================
+   SECTION 5 — MAIN POT CONTAINER
+   ================================================================================= */
+
+/*
+ * The pot container is the visual anchor of the table. It uses:
+ *   - 3-stop gradient background with deep purple undertone
+ *   - Glassmorphism (backdrop-filter blur + saturate)
+ *   - 5-layer box-shadow: drop, ambient glow, pixel border, inner top highlight, inner bottom depth
+ *   - Animated glass shine sweep (::before)
+ *   - Gold border that intensifies on interaction
+ */
 
 .pot-display__main {
   display: flex;
@@ -92,85 +286,198 @@
   align-items: center;
   background: linear-gradient(
     145deg,
-    rgba(0, 0, 0, 0.88) 0%,
-    rgba(8, 6, 18, 0.82) 50%,
-    rgba(0, 0, 0, 0.78) 100%
+    rgba(0, 0, 0, 0.9) 0%,
+    rgba(10, 8, 22, 0.85) 50%,
+    rgba(0, 0, 0, 0.8) 100%
   );
-  backdrop-filter: blur(20px) saturate(1.3);
-  -webkit-backdrop-filter: blur(20px) saturate(1.3);
-  border-radius: var(--radius-lg);
-  padding: var(--space-sm) var(--space-xl);
-  border: 1px solid rgba(255, 215, 0, 0.2);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border-radius: var(--radius-lg, 14px);
+  padding: var(--space-sm, 6px) var(--space-xl, 20px);
+  border: 1px solid var(--pd-gold-dim);
   box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.6),
-    0 0 40px rgba(255, 215, 0, 0.06),
-    0 0 0 1px rgba(255, 255, 255, 0.03),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  transition: all var(--duration-normal) var(--ease-out);
+    /* Drop shadow — lifts container off felt */
+    0 6px 28px rgba(0, 0, 0, 0.65),
+    /* Ambient gold glow — "pot is hot" */ 0 0 40px var(--pd-gold-glow),
+    /* Pixel-perfect outer border */ 0 0 0 1px rgba(255, 255, 255, 0.03),
+    /* Inner top highlight — glass edge catch */ inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    /* Inner bottom shadow — depth */ inset 0 -1px 0 rgba(0, 0, 0, 0.25);
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.3s ease,
+    transform 0.25s var(--pd-ease-spring);
   position: relative;
   overflow: hidden;
 }
 
-/* Glass shine effect on pot */
+/* Glass shine sweep — animated light passing across the surface */
 .pot-display__main::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 40%,
+    rgba(255, 215, 0, 0.03) 50%,
+    rgba(255, 255, 255, 0.04) 60%,
+    transparent 100%
+  );
   pointer-events: none;
+  animation: pdGlassSweep 8s ease-in-out infinite;
+  animation-delay: 2s;
 }
 
+@keyframes pdGlassSweep {
+  0%,
+  85%,
+  100% {
+    left: -100%;
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 1;
+  }
+  45% {
+    left: 200%;
+    opacity: 0;
+  }
+}
+
+/* Ambient edge glow — subtle gold ring around pot */
+.pot-display__main::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255, 215, 0, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Clickable state (toggle chips/BB) */
 .pot-display__main--clickable {
   cursor: pointer;
   user-select: none;
 }
 
 .pot-display__main--clickable:hover {
-  border-color: rgba(255, 215, 0, 0.5);
+  border-color: var(--pd-gold-mid);
   box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.4),
-    0 0 35px rgba(255, 215, 0, 0.2);
+    0 6px 24px rgba(0, 0, 0, 0.5),
+    0 0 50px rgba(255, 215, 0, 0.2),
+    0 0 0 1px rgba(255, 215, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  transform: scale(1.02);
 }
 
+.pot-display__main--clickable:active {
+  transform: scale(0.98);
+  transition-duration: 0.1s;
+}
+
+/* Animating state (pot is actively changing) */
 .pot-display__main--animating {
   transform: scale(1.05);
-  border-color: rgba(255, 215, 0, 0.6);
+  border-color: var(--pd-gold-bright);
   box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.4),
-    0 0 40px rgba(255, 215, 0, 0.3);
+    0 6px 24px rgba(0, 0, 0, 0.45),
+    0 0 50px rgba(255, 215, 0, 0.3),
+    0 0 80px rgba(255, 215, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
 }
+
+/* =================================================================================
+   SECTION 6 — POT AMOUNT TEXT
+   ================================================================================= */
 
 .pot-display__label {
   font-size: 0.625rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.55);
   text-transform: uppercase;
   letter-spacing: 0.15em;
   margin-bottom: 2px;
 }
 
 .pot-display__amount {
-  font-size: var(--font-2xl);
-  font-weight: var(--weight-extrabold);
-  color: #ffd700;
+  font-size: var(--font-2xl, 1.25rem);
+  font-weight: var(--weight-extrabold, 800);
+  color: var(--pd-gold);
   font-family: 'JetBrains Mono', monospace;
   text-shadow:
-    0 0 12px rgba(255, 215, 0, 0.4),
-    0 2px 8px rgba(0, 0, 0, 0.6);
+    0 0 14px rgba(255, 215, 0, 0.45),
+    0 0 30px rgba(255, 215, 0, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.65);
   transition:
-    transform var(--duration-normal) var(--ease-bounce),
-    color var(--duration-normal) ease;
+    transform 0.3s var(--pd-ease-bounce),
+    color 0.2s ease;
   letter-spacing: -0.02em;
+  position: relative;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   SIDE POTS
-   ───────────────────────────────────────────────────────────────────────────── */
+/*
+ * Gold shimmer sweep on pot amount text.
+ * Uses a wide linear-gradient clipped to the text via background-clip.
+ * The gradient slides across on each pot update via the --updated class.
+ */
+.pot-display--updated .pot-display__amount {
+  animation: pdAmountBump 0.5s var(--pd-ease-snap);
+}
+
+@keyframes pdAmountBump {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  15% {
+    transform: scale(1.12);
+    filter: brightness(1.4);
+    color: #fff5cc;
+  }
+  35% {
+    transform: scale(0.96);
+    filter: brightness(1.15);
+  }
+  55% {
+    transform: scale(1.04);
+    filter: brightness(1.05);
+    color: var(--pd-gold);
+  }
+  75% {
+    transform: scale(0.99);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+    color: var(--pd-gold);
+  }
+}
+
+/* Legacy compat class */
+.pot-area--updated .pot-amount {
+  animation: pdAmountBump 0.5s var(--pd-ease-snap);
+}
+
+/* =================================================================================
+   SECTION 7 — SIDE POTS
+   ================================================================================= */
+
+/*
+ * Side pots appear when players go all-in with different stack sizes.
+ * Each side pot slides in from below with a staggered delay using --side-pot-index
+ * set inline on the element (or via animationDelay in the component).
+ *
+ * Visual treatment: blue-tinted glassmorphism to distinguish from main pot's gold.
+ */
 
 .pot-display__side-pots {
   display: flex;
@@ -182,23 +489,75 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: rgba(65, 105, 225, 0.2);
-  border: 1px solid rgba(65, 105, 225, 0.4);
+  background: var(--pd-blue-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--pd-blue-border);
   border-radius: 8px;
   padding: 4px 12px;
-  animation: sidePotSlideIn 0.3s ease forwards;
-  opacity: 0;
+  animation: pdSidePotIn 0.4s var(--pd-ease-spring) backwards;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.3),
+    0 0 20px var(--pd-blue-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
-@keyframes sidePotSlideIn {
+/* Stagger each side pot entrance */
+.pot-display__side-pot:nth-child(1) {
+  animation-delay: 0ms;
+}
+.pot-display__side-pot:nth-child(2) {
+  animation-delay: 80ms;
+}
+.pot-display__side-pot:nth-child(3) {
+  animation-delay: 160ms;
+}
+.pot-display__side-pot:nth-child(4) {
+  animation-delay: 240ms;
+}
+.pot-display__side-pot:nth-child(5) {
+  animation-delay: 320ms;
+}
+
+/* Glass top edge on side pots */
+.pot-display__side-pot::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(100, 150, 255, 0.2), transparent);
+  pointer-events: none;
+}
+
+@keyframes pdSidePotIn {
   0% {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(16px) scale(0.7);
+    filter: blur(3px);
   }
-
+  30% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  55% {
+    transform: translateY(-4px) scale(1.05);
+  }
+  72% {
+    transform: translateY(1.5px) scale(0.985);
+  }
+  88% {
+    transform: translateY(-0.5px) scale(1.005);
+  }
   100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -215,11 +574,12 @@
   font-weight: 700;
   color: var(--ca-primary-light, #5b7fee);
   font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 0 8px rgba(91, 127, 238, 0.3);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   TOTAL
-   ───────────────────────────────────────────────────────────────────────────── */
+/* =================================================================================
+   SECTION 8 — TOTAL DISPLAY
+   ================================================================================= */
 
 .pot-display__total {
   display: flex;
@@ -227,9 +587,25 @@
   gap: 6px;
   margin-top: 4px;
   padding: 4px 10px;
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: var(--pd-emerald-bg);
+  border: 1px solid var(--pd-emerald-border);
   border-radius: 6px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 0 16px rgba(16, 185, 129, 0.06);
+  animation: pdTotalFadeIn 0.35s var(--pd-ease-settle) backwards;
+  animation-delay: 0.2s;
+}
+
+@keyframes pdTotalFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .pot-display__total-label {
@@ -243,66 +619,315 @@
 .pot-display__total-amount {
   font-size: 0.875rem;
   font-weight: 700;
-  color: var(--ca-success, #10b981);
+  color: var(--pd-emerald);
   font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   POT UPDATE PULSE ANIMATION
-   ───────────────────────────────────────────────────────────────────────────── */
+/* =================================================================================
+   SECTION 9 — INCREASE INDICATOR
+   ================================================================================= */
 
-.pot-display--updated .pot-display__amount,
-.pot-area--updated .pot-amount {
-  animation: potPulse 0.4s ease-out;
-}
-
-@keyframes potPulse {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.08);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   INCREASE INDICATOR
-   ───────────────────────────────────────────────────────────────────────────── */
+/*
+ * When the pot increases, a green badge floats up from the pot showing "+$XXX".
+ * The animation has 6 phases:
+ *   0%   — Below pot, tiny, blurred (hidden)
+ *   12%  — Pops up with scale overshoot + brightness flash
+ *   30%  — Holds position briefly for readability
+ *   55%  — Begins floating upward, starts fading
+ *   80%  — Nearly gone, drifting up
+ *   100% — Invisible, above pot, blurred out
+ *
+ * A golden glow trail (::after) fades behind it during the float.
+ */
 
 .pot-display__increase {
   position: absolute;
   top: -20px;
   right: -20px;
   padding: 2px 8px;
-  background: rgba(16, 185, 129, 0.9);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.95) 0%, rgba(16, 185, 129, 0.85) 100%);
   color: #ffffff;
   border-radius: 4px;
   font-size: 0.75rem;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
-  animation: increaseFloat 1s ease-out forwards;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+  animation: pdIncreaseFloat var(--pd-increase-duration) var(--pd-ease-settle) forwards;
+  box-shadow:
+    0 2px 8px rgba(16, 185, 129, 0.5),
+    0 0 16px rgba(16, 185, 129, 0.2);
+  pointer-events: none;
+  z-index: 5;
 }
 
-@keyframes increaseFloat {
-  0% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+/* Glow trail behind the floating indicator */
+.pot-display__increase::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 20%;
+  right: 20%;
+  height: 8px;
+  background: radial-gradient(ellipse at center, rgba(16, 185, 129, 0.4) 0%, transparent 80%);
+  border-radius: 50%;
+  animation: pdTrailFade var(--pd-increase-duration) ease forwards;
+  pointer-events: none;
+}
 
+@keyframes pdIncreaseFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.5);
+    filter: blur(3px);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1.18);
+    filter: blur(0);
+  }
+  22% {
+    transform: translateY(-2px) scale(1.02);
+  }
+  30% {
+    transform: translateY(-4px) scale(1);
+    opacity: 1;
+  }
+  55% {
+    transform: translateY(-18px) scale(0.95);
+    opacity: 0.7;
+  }
+  80% {
+    transform: translateY(-32px) scale(0.85);
+    opacity: 0.3;
+  }
   100% {
     opacity: 0;
-    transform: translateY(-30px) scale(0.8);
+    transform: translateY(-42px) scale(0.7);
+    filter: blur(2px);
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   RESPONSIVE
-   ───────────────────────────────────────────────────────────────────────────── */
+@keyframes pdTrailFade {
+  0%,
+  15% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+  }
+}
 
+/* =================================================================================
+   SECTION 10 — RUNTIME ANIMATION CLASSES
+   ================================================================================= */
+
+/*
+ * These classes are toggled by the React component (or a parent controller) to
+ * trigger specific visual events:
+ *
+ *   .pot-display--bump    — Pot receives a large addition (raise, all-in)
+ *   .pot-display--pulse   — Pot changes by a small amount (blind post, call)
+ *   .pot-display--golden  — Showdown mode — pot glows gold while winner is decided
+ *   .pot-display--award   — Pot is awarded to winner — shrinks + brightness flash
+ *   .pot-display--collect — Pot value slides toward winner position (used with --collect-dx/dy)
+ *
+ * All animations preserve the translate(-50%, -50%) base transform.
+ */
+
+/* ── POT BUMP ──
+ * 7-phase spring with brightness flash + gold border intensification.
+ * This is the "someone just shoved 500BB" moment.
+ */
+.pot-display--bump {
+  animation: pdBump var(--pd-bump-duration) var(--pd-ease-spring);
+}
+
+@keyframes pdBump {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+    border-color: var(--pd-gold-dim);
+  }
+  10% {
+    transform: translate(-50%, -50%) scale(1.16);
+    filter: brightness(1.35);
+    border-color: var(--pd-gold-bright);
+  }
+  25% {
+    transform: translate(-50%, -50%) scale(0.93);
+    filter: brightness(1.15);
+  }
+  40% {
+    transform: translate(-50%, -50%) scale(1.07);
+    filter: brightness(1.08);
+    border-color: var(--pd-gold-mid);
+  }
+  58% {
+    transform: translate(-50%, -50%) scale(0.98);
+    filter: brightness(1.02);
+  }
+  76% {
+    transform: translate(-50%, -50%) scale(1.015);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+    border-color: var(--pd-gold-dim);
+  }
+}
+
+/* ── POT PULSE ──
+ * 5-phase for smaller pot changes. Gentler than bump.
+ * Brief brightness spike + slight scale overshoot.
+ */
+.pot-display--pulse {
+  animation: pdPulse var(--pd-pulse-duration) var(--pd-ease-settle);
+}
+
+@keyframes pdPulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(1.06);
+    filter: brightness(1.2);
+  }
+  45% {
+    transform: translate(-50%, -50%) scale(0.985);
+    filter: brightness(1.05);
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.01);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+  }
+}
+
+/* ── GOLDEN GLOW ──
+ * Showdown/winner-reveal breathing glow.
+ * The pot pulses with golden light while the winning hand is being determined.
+ * Multi-property animation: box-shadow expands/contracts, border intensifies,
+ * and a subtle scale breathe adds life.
+ */
+.pot-display--golden {
+  animation: pdGoldenGlow var(--pd-glow-period) ease-in-out infinite;
+}
+
+@keyframes pdGoldenGlow {
+  0%,
+  100% {
+    box-shadow:
+      0 6px 28px rgba(0, 0, 0, 0.6),
+      0 0 30px rgba(255, 215, 0, 0.1),
+      0 0 0 1px rgba(255, 255, 255, 0.03),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+    border-color: var(--pd-gold-dim);
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow:
+      0 6px 24px rgba(0, 0, 0, 0.5),
+      0 0 55px rgba(255, 215, 0, 0.3),
+      0 0 90px rgba(255, 215, 0, 0.12),
+      0 0 120px rgba(255, 215, 0, 0.05),
+      inset 0 1px 0 rgba(255, 215, 0, 0.1),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+    border-color: var(--pd-gold-bright);
+    transform: translate(-50%, -50%) scale(1.015);
+    filter: brightness(1.08);
+  }
+}
+
+/* ── POT AWARD ──
+ * Winner determined — pot "explodes" toward the winning player.
+ * 6-phase: scale up with golden flash, then rapid shrink + brightness blast + fade.
+ * The component removes the pot element after this animation completes.
+ */
+.pot-display--award {
+  animation: pdAward var(--pd-award-duration) cubic-bezier(0.55, 0, 0.3, 1) forwards;
+}
+
+@keyframes pdAward {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+    filter: brightness(1);
+    box-shadow:
+      0 6px 28px rgba(0, 0, 0, 0.6),
+      0 0 40px rgba(255, 215, 0, 0.15);
+  }
+  15% {
+    transform: translate(-50%, -50%) scale(1.18);
+    filter: brightness(1.5);
+    box-shadow:
+      0 6px 24px rgba(0, 0, 0, 0.4),
+      0 0 60px rgba(255, 215, 0, 0.4),
+      0 0 100px rgba(255, 215, 0, 0.15);
+  }
+  35% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 1;
+    filter: brightness(1.8);
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(0.7);
+    opacity: 0.7;
+    filter: brightness(2);
+    box-shadow: 0 0 80px rgba(255, 215, 0, 0.3);
+  }
+  85% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0.2;
+    filter: brightness(2.5);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+    filter: brightness(3);
+    box-shadow: none;
+  }
+}
+
+/* ── POT COLLECT ──
+ * Chips sliding from pot position toward the winner's seat.
+ * Uses --collect-dx and --collect-dy custom properties set by JS
+ * to define the direction vector toward the winning player.
+ */
+.pot-display--collect {
+  animation: pdCollect var(--pd-collect-duration) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes pdCollect {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: 1;
+    filter: brightness(1.3);
+  }
+  100% {
+    transform: translate(calc(-50% + var(--collect-dx, 0px)), calc(-50% + var(--collect-dy, 0px)))
+      scale(0.5);
+    opacity: 0;
+    filter: brightness(1.8);
+  }
+}
+
+/* =================================================================================
+   SECTION 11 — RESPONSIVE
+   ================================================================================= */
+
+/* ── 768px: Tablet ── */
 @media (max-width: 768px) {
   .pot-display {
     transform: translate(-50%, -25%);
@@ -324,13 +949,22 @@
   }
 
   .pot-display__chips {
-    height: 45px;
-    margin-bottom: 6px;
+    height: 40px;
+    margin-bottom: 4px;
   }
 
   .pot-display__chip {
-    width: 24px;
-    height: 7px;
+    width: 16px;
+    height: 16px;
+  }
+
+  .pot-display__chip-face {
+    width: 8px;
+    height: 8px;
+  }
+
+  .pot-display__chip-stack {
+    width: 16px;
   }
 
   .pot-display__side-pots {
@@ -364,6 +998,7 @@
   }
 }
 
+/* ── 640px: Large phone ── */
 @media (max-width: 640px) {
   .pot-display {
     transform: translate(-50%, -28%);
@@ -378,16 +1013,26 @@
   }
 
   .pot-display__chips {
-    height: 42px;
+    height: 38px;
   }
 
   .pot-display__chip {
-    width: 22px;
-    height: 6px;
+    width: 15px;
+    height: 15px;
+  }
+
+  .pot-display__chip-stack {
+    width: 15px;
   }
 }
 
+/* ── 480px: Standard phone ── */
 @media (max-width: 480px) {
+  :root {
+    --pd-chip-drop-duration: 0.35s;
+    --pd-bump-duration: 0.5s;
+  }
+
   .pot-display {
     transform: translate(-50%, -30%);
     gap: 6px;
@@ -410,13 +1055,17 @@
   }
 
   .pot-display__chips {
-    height: 38px;
+    height: 36px;
     margin-bottom: 4px;
   }
 
   .pot-display__chip {
-    width: 20px;
-    height: 5px;
+    width: 14px;
+    height: 14px;
+  }
+
+  .pot-display__chip-stack {
+    width: 14px;
   }
 
   .pot-display__increase {
@@ -427,6 +1076,7 @@
   }
 }
 
+/* ── 380px: Narrow phone (iPhone SE, etc.) ── */
 @media (max-width: 380px) {
   .pot-display {
     transform: translate(-50%, -32%);
@@ -451,12 +1101,16 @@
   }
 
   .pot-display__chips {
-    height: 35px;
+    height: 34px;
   }
 
   .pot-display__chip {
-    width: 18px;
-    height: 5px;
+    width: 13px;
+    height: 13px;
+  }
+
+  .pot-display__chip-stack {
+    width: 13px;
   }
 
   .pot-display__side-pots {
@@ -475,46 +1129,73 @@
     text-overflow: ellipsis;
   }
 }
-/* ═══════════════════════════════════════════════════════════════════════════════
-   PREMIUM RUNTIME ANIMATION CLASSES (Phase 2)
-   ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Pot bump — triggered when pot increases significantly */
-.pot-display--bump {
-  animation: potBump 0.5s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
+/* =================================================================================
+   SECTION 12 — REDUCED MOTION
+   ================================================================================= */
 
-@keyframes potBump {
-  0% {
-    transform: scale(1);
-  }
-  25% {
-    transform: scale(1.12);
-  }
-  50% {
-    transform: scale(0.97);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
+/*
+ * When prefers-reduced-motion is active:
+ *  - All keyframe animations are disabled
+ *  - All transitions are removed
+ *  - Elements appear in their final state immediately
+ *  - Glass sweep is hidden (continuous motion)
+ *  - Golden glow becomes a static border change
+ */
 
-/* Pot pulse — subtle scale when pot changes */
-.pot-display--pulse {
-  animation: potPulse 0.4s ease-out;
-}
+@media (prefers-reduced-motion: reduce) {
+  .pot-display--bump,
+  .pot-display--pulse,
+  .pot-display--golden,
+  .pot-display--award,
+  .pot-display--collect,
+  .pot-display__chip,
+  .pot-display__side-pot,
+  .pot-display__total,
+  .pot-display__increase,
+  .pot-display--updated .pot-display__amount,
+  .pot-area--updated .pot-amount {
+    animation: none !important;
+  }
 
-@keyframes potPulse {
-  0% {
-    transform: scale(1);
-    filter: brightness(1);
+  .pot-display__main,
+  .pot-display__main--clickable,
+  .pot-display__amount {
+    transition: none !important;
   }
-  40% {
-    transform: scale(1.05);
-    filter: brightness(1.15);
+
+  /* Glass sweep disabled */
+  .pot-display__main::before {
+    display: none;
   }
-  100% {
-    transform: scale(1);
-    filter: brightness(1);
+
+  /* Chips appear immediately at rest position */
+  .pot-display__chip {
+    opacity: 1;
+    transform: translateY(var(--chip-offset, 0));
+  }
+
+  /* Side pots appear immediately */
+  .pot-display__side-pot {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Golden glow becomes static gold border */
+  .pot-display--golden {
+    border-color: var(--pd-gold-mid);
+    box-shadow:
+      0 6px 28px rgba(0, 0, 0, 0.6),
+      0 0 40px rgba(255, 215, 0, 0.2);
+  }
+
+  /* Award becomes instant fade */
+  .pot-display--award {
+    opacity: 0;
+  }
+
+  /* Increase badge appears then disappears without float */
+  .pot-display__increase {
+    opacity: 0;
   }
 }

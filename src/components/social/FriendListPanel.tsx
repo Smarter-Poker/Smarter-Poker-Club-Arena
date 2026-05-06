@@ -14,6 +14,7 @@ import { PlayerAvatar } from '../avatars/PlayerAvatar';
 import { haptic } from '../../services/HapticService';
 import type { VipTier, PresenceStatus } from '../avatars/PlayerAvatar';
 import styles from './FriendListPanel.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface Friend {
   id: string;
@@ -120,12 +121,13 @@ function FriendListPanelInner({
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, level, tier, xp')
+            .select('id, username, display_name, avatar_url, level, tier')
             .in('id', allFriendIds);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'FriendListPanel.inboundIds');
           /* non-critical */
         }
       }
@@ -144,7 +146,6 @@ function FriendListPanelInner({
           tableName: undefined,
           level: p?.level || 1,
           vipTier: (p?.tier as VipTier) || 'bronze',
-          xpProgress: Math.min(100, (p?.xp || 0) % 100),
         };
       });
 
@@ -162,7 +163,6 @@ function FriendListPanelInner({
           tableName: undefined,
           level: p?.level || 1,
           vipTier: (p?.tier as VipTier) || 'bronze',
-          xpProgress: Math.min(100, (p?.xp || 0) % 100),
         };
       });
 
@@ -195,7 +195,7 @@ function FriendListPanelInner({
         });
       }
     } catch (err) {
-      console.error('Failed to load friends:', err);
+      reportError(err, 'FriendListPanel.Failed_to_load_friends');
     }
     if (isMounted.current) setLoading(false);
   };
@@ -282,7 +282,7 @@ function FriendListPanelInner({
       .eq('id', friendshipId)
       .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
     if (error) {
-      console.error('Failed to remove friend:', error);
+      reportError(error, 'FriendListPanel.Failed_to_remove_friend');
       return;
     }
     setFriends((prev) => prev.filter((f) => f.id !== friendshipId));
@@ -373,12 +373,10 @@ function FriendListPanelInner({
                 size="md"
                 vipTier={friend.vipTier}
                 level={friend.level}
-                xpProgress={friend.xpProgress}
                 presenceStatus={friend.status}
                 isPlaying={friend.status === 'playing'}
                 showPresence={true}
                 showLevelBadge={true}
-                showXpRing={true}
                 showVipRing={true}
                 onClick={() => {
                   haptic.selection();

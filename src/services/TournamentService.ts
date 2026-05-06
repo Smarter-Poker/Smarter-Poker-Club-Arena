@@ -10,6 +10,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -110,7 +111,7 @@ export interface TournamentConfig {
   spinType?: 'standard' | 'hyper';
 
   // Game Variant (poker game type)
-  gameVariant?: 'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'OFC_PINEAPPLE' | 'SHORT_DECK';
+  gameVariant?: 'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK';
 
   // Satellite Target
   satelliteTarget?: {
@@ -359,51 +360,66 @@ export const PAYOUT_STRUCTURES = {
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const SPIN_RAKE_PERCENT = 0.10; // 10% fee on buy-in
+export const SPIN_RAKE_PERCENT = 0.1; // 10% fee on buy-in
 
-// Pool contribution per spin: 1 buy-in saved from the 3 collected
-export const SPIN_POOL_CONTRIBUTION_MULTIPLIER = 1; // × buy_in per default spin
+// Pool contribution per spin: 1 buy-in saved from the 3 collected.
+// EVERY spin deposits 1× buy_in to pool, then bonus draws happen.
+// This ensures the pool is self-sustaining and club net = exactly 10%.
+export const SPIN_POOL_CONTRIBUTION_MULTIPLIER = 1; // × buy_in per spin (always)
+
+// Maximum negative pool balance a club/union can carry (in chips).
+// When pool is negative, future 2× spin deposits pay it back.
+export const SPIN_POOL_MAX_NEGATIVE = -500;
 
 // Bonus trigger tiers — probability-weighted random check at game start.
-// If a bonus triggers, the bonus amount is capped at current pool balance.
-// The "display multiplier" is what the UI wheel shows. The actual bonus
-// comes from the pool, so the club NEVER loses money.
+// Probabilities are balanced so expected pool draw = expected pool deposit (1× buy_in).
+// This guarantees the club/union net return = exactly 10% over time.
+//
+// Economics per spin (e.g. $1 buy-in):
+//   3 players pay $1.10 each ($1 buy-in + $0.10 fee)
+//   House keeps $0.30 (10% rake) — this is the ONLY house revenue
+//   Prize pool = $3.00 (all 3 buy-ins)
+//   Base payout = $2.00 (2× buy_in to winner)
+//   Pool deposit = $1.00 per spin (always)
+//   Pool draw = bonusBuyIns × buy_in (for bonus tiers)
+//   Expected payout = $3.00 (pool nets to zero over time)
+//   "Free rake spin" (3×) = 3 in, 3 out — players see no rake
 export const SPIN_BONUS_TIERS = {
   standard: [
-    // ~75% of spins: no bonus (default 2× payout, 1× saved to pool)
-    { displayMultiplier: 2, probability: 75.0, bonusBuyIns: 0 },
-    // ~15% of spins: small bonus (3× display, +1 buy-in from pool)
-    { displayMultiplier: 3, probability: 15.0, bonusBuyIns: 1 },
-    // ~6% of spins: medium bonus (5× display, +3 buy-ins from pool)
-    { displayMultiplier: 5, probability: 6.0, bonusBuyIns: 3 },
-    // ~2.5% of spins: large bonus (10× display, +8 buy-ins from pool)
-    { displayMultiplier: 10, probability: 2.5, bonusBuyIns: 8 },
-    // ~1% of spins: big bonus (25× display, +23 buy-ins from pool)
-    { displayMultiplier: 25, probability: 1.0, bonusBuyIns: 23 },
-    // ~0.4% of spins: jackpot (50× display, +48 buy-ins from pool)
-    { displayMultiplier: 50, probability: 0.4, bonusBuyIns: 48, isPremium: true },
-    // ~0.1% of spins: mega jackpot (100× display, +98 buy-ins from pool)
-    { displayMultiplier: 100, probability: 0.1, bonusBuyIns: 98, isPremium: true },
+    // ~76.19% of spins: default (2× payout, 1× deposited to pool, 0 drawn)
+    { displayMultiplier: 2, probability: 76.1904, bonusBuyIns: 0 },
+    // ~14.29% of spins: free-rake spin (3× payout, 1× deposited, 1× drawn — net 0)
+    { displayMultiplier: 3, probability: 14.2857, bonusBuyIns: 1 },
+    // ~5.71% of spins: medium bonus (5× payout, 1× deposited, 3× drawn)
+    { displayMultiplier: 5, probability: 5.7143, bonusBuyIns: 3 },
+    // ~2.38% of spins: large bonus (10× payout, 1× deposited, 8× drawn)
+    { displayMultiplier: 10, probability: 2.381, bonusBuyIns: 8 },
+    // ~0.95% of spins: big bonus (25× payout, 1× deposited, 23× drawn)
+    { displayMultiplier: 25, probability: 0.9524, bonusBuyIns: 23 },
+    // ~0.38% of spins: jackpot (50× payout, 1× deposited, 48× drawn)
+    { displayMultiplier: 50, probability: 0.381, bonusBuyIns: 48, isPremium: true },
+    // ~0.10% of spins: mega jackpot (100× payout, 1× deposited, 98× drawn)
+    { displayMultiplier: 100, probability: 0.0952, bonusBuyIns: 98, isPremium: true },
   ],
   hyper: [
-    { displayMultiplier: 2, probability: 72.0, bonusBuyIns: 0 },
-    { displayMultiplier: 3, probability: 16.0, bonusBuyIns: 1 },
-    { displayMultiplier: 5, probability: 7.0, bonusBuyIns: 3 },
-    { displayMultiplier: 10, probability: 3.0, bonusBuyIns: 8 },
-    { displayMultiplier: 25, probability: 1.2, bonusBuyIns: 23 },
-    { displayMultiplier: 50, probability: 0.6, bonusBuyIns: 48, isPremium: true },
-    { displayMultiplier: 100, probability: 0.2, bonusBuyIns: 98, isPremium: true },
+    { displayMultiplier: 2, probability: 79.562, bonusBuyIns: 0 },
+    { displayMultiplier: 3, probability: 11.6788, bonusBuyIns: 1 },
+    { displayMultiplier: 5, probability: 5.1095, bonusBuyIns: 3 },
+    { displayMultiplier: 10, probability: 2.1898, bonusBuyIns: 8 },
+    { displayMultiplier: 25, probability: 0.8759, bonusBuyIns: 23 },
+    { displayMultiplier: 50, probability: 0.438, bonusBuyIns: 48, isPremium: true },
+    { displayMultiplier: 100, probability: 0.146, bonusBuyIns: 98, isPremium: true },
   ],
 };
 
 // Legacy export — kept for backwards compat but now routes through pool system
 export const SPIN_MULTIPLIERS: Record<string, SpinMultiplier[]> = {
-  standard: SPIN_BONUS_TIERS.standard.map(t => ({
+  standard: SPIN_BONUS_TIERS.standard.map((t) => ({
     multiplier: t.displayMultiplier,
     probability: t.probability,
     isPremium: t.isPremium || false,
   })),
-  hyper: SPIN_BONUS_TIERS.hyper.map(t => ({
+  hyper: SPIN_BONUS_TIERS.hyper.map((t) => ({
     multiplier: t.displayMultiplier,
     probability: t.probability,
     isPremium: t.isPremium || false,
@@ -496,7 +512,7 @@ class TournamentService {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('[TournamentService] Error fetching tournaments:', error);
+      reportError(error, 'TournamentService.Error_fetching_tournaments');
       return [];
     }
 
@@ -578,7 +594,7 @@ class TournamentService {
       .maybeSingle();
 
     if (error) {
-      console.error('[TournamentService] Error fetching tournament:', error);
+      reportError(error, 'TournamentService.Error_fetching_tournament');
       return null;
     }
     return data;
@@ -625,7 +641,7 @@ class TournamentService {
             ? JSON.parse(unionData.settings)
             : unionData.settings || {};
       } catch (err) {
-        console.error('[TournamentService] Error:', err);
+        reportError(err, 'TournamentService.Error');
         settings = {};
       }
       if (settings && settings.crossClubTournaments === false) {
@@ -871,7 +887,7 @@ class TournamentService {
       .maybeSingle();
 
     if (error || !data) {
-      console.error('[TournamentService] Could not re-fetch registered player:', error);
+      reportError(error, 'TournamentService.Could_not_refetch_registered_player');
       throw new Error('Registration succeeded but player data could not be retrieved');
     }
 
@@ -920,7 +936,7 @@ class TournamentService {
           bbj_contribution: 0,
         });
       } catch (e: unknown) {
-        console.error(`[TournamentService] Failed to insert tournament rake_record:`, e);
+        reportError(e, 'TournamentService.Failed_to_insert_tournament_rake_record');
       }
 
       // Update tournament total_rake atomically to prevent lost updates on concurrent registrations
@@ -946,11 +962,11 @@ class TournamentService {
               .update({ total_rake: (tData.total_rake || 0) + rake })
               .eq('id', tournamentId);
             if (fallbackErr)
-              console.error('[TournamentService] total_rake update fallback failed:', fallbackErr);
+              reportError(fallbackErr, 'TournamentService.total_rake_update_fallback_failed');
           }
         }
       } catch (e: unknown) {
-        console.error(`[TournamentService] Failed to update tournament total_rake:`, e);
+        reportError(e, 'TournamentService.Failed_to_update_tournament_total_rake');
       }
 
       // Track at union level if club belongs to a union
@@ -967,10 +983,10 @@ class TournamentService {
               .update({ total_rake: (unionData.total_rake || 0) + rake })
               .eq('id', tournament.union_id);
             if (unionRakeErr)
-              console.error('[TournamentService] union total_rake update failed:', unionRakeErr);
+              reportError(unionRakeErr, 'TournamentService.union_total_rake_update_failed');
           }
         } catch (e: unknown) {
-          console.error(`[TournamentService] Failed to update union total_rake:`, e);
+          reportError(e, 'TournamentService.Failed_to_update_union_total_rake');
         }
       }
     }
@@ -996,10 +1012,7 @@ class TournamentService {
       .eq('id', tournamentId);
 
     if (countError) {
-      console.error(
-        '[TournamentService] Failed to increment registration count, retrying:',
-        countError
-      );
+      reportError(countError, 'TournamentService.Failed_to_increment_registration_count_r');
       // Retry once — this is important for accurate player count
       const { error: retryErr } = await supabase
         .from('tournaments')
@@ -1009,7 +1022,7 @@ class TournamentService {
         })
         .eq('id', tournamentId);
       if (retryErr) {
-        console.error('[TournamentService] WARN: Registration count retry also failed:', retryErr);
+        reportError(retryErr, 'TournamentService.WARN');
       }
     }
 
@@ -1032,7 +1045,7 @@ class TournamentService {
           })
           .eq('id', tournamentId);
       } catch (autoStartErr) {
-        console.error('[TournamentService] SNG auto-start failed:', autoStartErr);
+        reportError(autoStartErr, 'TournamentService.SNG_autostart_failed');
       }
     }
 
@@ -1063,8 +1076,11 @@ class TournamentService {
           while (takenSeats.has(seatNumber) && seatNumber <= openTable.max_players) seatNumber++;
           // Guard: no valid seat found (all seats taken despite current_players check)
           if (seatNumber > openTable.max_players) {
-            console.error(
-              `[TournamentService] Late reg: no valid seat at table ${openTable.id} (race condition)`
+            reportError(
+              new Error(
+                `[TournamentService] Late reg: no valid seat at table ${openTable.id} (race condition)`
+              ),
+              'TournamentService.Late_reg'
             );
             throw new Error('Late registration failed: table is full. Please try again.');
           }
@@ -1077,7 +1093,10 @@ class TournamentService {
           });
 
           if (seatErr) {
-            console.error(`[TournamentService] Late reg seat insert failed: ${seatErr.message}`);
+            reportError(
+              new Error(`[TournamentService] Late reg seat insert failed: ${seatErr.message}`),
+              'TournamentService.Late_reg_seat_insert_failed'
+            );
             console.debug(
               `[TournamentService] Player ${userId.slice(0, 8)} added to alternate list due to seat insert failure.`
             );
@@ -1096,7 +1115,10 @@ class TournamentService {
               .eq('user_id', userId);
 
             if (tpErr) {
-              console.error(`[TournamentService] Late reg player update failed: ${tpErr.message}`);
+              reportError(
+                new Error(`[TournamentService] Late reg player update failed: ${tpErr.message}`),
+                'TournamentService.Late_reg_player_update_failed'
+              );
               // Attempt to clean up the seat we just inserted
               await supabase
                 .from('table_seats')
@@ -1117,17 +1139,23 @@ class TournamentService {
               .eq('id', openTable.id);
 
             if (tableErr)
-              console.error(`[TournamentService] Late reg table count failed: ${tableErr.message}`);
+              reportError(
+                new Error(`[TournamentService] Late reg table count failed: ${tableErr.message}`),
+                'TournamentService.Late_reg_table_count_failed'
+              );
           }
         } else {
-          console.error(
-            `[TournamentService] Late reg: no open table found for ${tournamentId.slice(0, 8)} — adding to alternate list`
+          reportError(
+            new Error(
+              `[TournamentService] Late reg: no open table found for ${tournamentId.slice(0, 8)} — adding to alternate list`
+            ),
+            'TournamentService.Late_reg'
           );
           // No table available — DO NOT refund. Player enters the alternate waitlist.
           // They remain 'registered' in tournament_players and TournamentEngine will seat them.
         }
       } catch (lateRegErr) {
-        console.error('[TournamentService] Late reg seating failed:', lateRegErr);
+        reportError(lateRegErr, 'TournamentService.Late_reg_seating_failed');
       }
     }
 
@@ -1183,7 +1211,7 @@ class TournamentService {
       .select('id');
 
     if (deleteError) {
-      console.error('[TournamentService] Failed to delete registration:', deleteError);
+      reportError(deleteError, 'TournamentService.Failed_to_delete_registration');
       throw new Error('Failed to unregister — please try again');
     }
 
@@ -1207,7 +1235,7 @@ class TournamentService {
     );
 
     if (refundError) {
-      console.error('[TournamentService] Refund to Player Wallet failed:', refundError);
+      reportError(refundError, 'TournamentService.Refund_to_Player_Wallet_failed');
       // Re-register the player since refund failed (rollback)
       const { error: rollbackErr } = await supabase.from('tournament_players').insert({
         tournament_id: tournamentId,
@@ -1217,7 +1245,7 @@ class TournamentService {
         chips: 0,
       });
       if (rollbackErr) {
-        console.error('[TournamentService] CRITICAL: Rollback re-insert ALSO failed:', rollbackErr);
+        reportError(rollbackErr, 'TournamentService.CRITICAL');
       }
       throw new Error('Refund failed — registration restored');
     }
@@ -1258,7 +1286,7 @@ class TournamentService {
       .eq('id', tournamentId);
 
     if (countError) {
-      console.error('[TournamentService] Failed to decrement registration count:', countError);
+      reportError(countError, 'TournamentService.Failed_to_decrement_registration_count');
     }
   }
 
@@ -1298,7 +1326,7 @@ class TournamentService {
     );
 
     if (cancelError) {
-      console.error(`[TournamentService] CRITICAL: atomic_cancel_tournament failed:`, cancelError);
+      reportError(cancelError, 'TournamentService.CRITICAL');
       throw new Error(`Failed to cancel tournament: ${cancelError.message}`);
     }
 
@@ -1440,8 +1468,7 @@ class TournamentService {
         seat_number: tableAssign.nextSeat,
         user_id: player.user_id,
       });
-      if (seatErr)
-        console.error(`[TournamentService] Failed to seat player ${player.user_id}:`, seatErr);
+      if (seatErr) reportError(seatErr, 'TournamentService.Failed_to_seat_player_playeruser_id');
       tableAssign.nextSeat++;
     }
 
@@ -1489,7 +1516,7 @@ class TournamentService {
         try {
           return JSON.parse(raw);
         } catch (err) {
-          console.error('[TournamentService] Error:', err);
+          reportError(err, 'TournamentService.Error');
           return [];
         }
       }
@@ -1498,8 +1525,11 @@ class TournamentService {
 
     // Guard: if position should pay but payout structure is empty/corrupted, log and award 0
     if (payoutArr.length === 0 && position === 1) {
-      console.error(
-        `[TournamentService] CRITICAL: No payout structure for tournament ${tournamentId} — winner gets full pool fallback`
+      reportError(
+        new Error(
+          `[TournamentService] CRITICAL: No payout structure for tournament ${tournamentId} — winner gets full pool fallback`
+        ),
+        'TournamentService.CRITICAL'
       );
     }
 
@@ -1536,10 +1566,7 @@ class TournamentService {
       );
 
       if (prizeError) {
-        console.error(
-          `[TournamentService] CRITICAL: Prize credit to Player Wallet failed:`,
-          prizeError
-        );
+        reportError(prizeError, 'TournamentService.CRITICAL');
         throw new Error(`Failed to credit ${ordinal(position)} place prize of ${prize}`);
       }
 
@@ -1573,7 +1600,7 @@ class TournamentService {
         prizeAmount: prize,
       });
     } catch (err: unknown) {
-      console.error('[Achievements] Tournament trigger failed:', err);
+      reportError(err, 'TournamentService.Tournament_trigger_failed');
     }
   }
 
@@ -1612,7 +1639,7 @@ class TournamentService {
         .eq('id', seat.table_id)
         .maybeSingle();
       if (tableErr) {
-        console.error('eliminatePlayerAuto table lookup failed:', tableErr.message);
+        reportError(tableErr, 'TournamentService.eliminatePlayerAuto_table_lookup_failed');
       }
       if (table?.tournament_id === tournamentId) {
         await supabase
@@ -1787,7 +1814,7 @@ class TournamentService {
       () =>
         supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: tournamentId,
-          p_player_id: userId,
+          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
           p_rebuy_type: tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy',
           p_cost: rebuyCost,
           p_chips: rebuyChips,
@@ -1797,7 +1824,7 @@ class TournamentService {
     );
 
     if (error) {
-      console.error('[TournamentService] Rebuy RPC failed. No chips were deducted:', error);
+      reportError(error, 'TournamentService.Rebuy_RPC_failed_No_chips_were_deducted');
       throw error;
     }
 
@@ -1815,7 +1842,7 @@ class TournamentService {
         payload: { type: 'rebuy', userId, chips: rebuyChips },
       });
     } catch (e: unknown) {
-      console.error('Failed to broadcast rebuy event:', e);
+      reportError(e, 'TournamentService.Failed_to_broadcast_rebuy_event');
     }
 
     return { success: true, newStack: data?.new_stack || rebuyChips };
@@ -1900,7 +1927,7 @@ class TournamentService {
       () =>
         supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: tournamentId,
-          p_player_id: userId,
+          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
           p_rebuy_type: 'addon',
           p_cost: addonCost,
           p_chips: addonChips,
@@ -1910,7 +1937,7 @@ class TournamentService {
     );
 
     if (error) {
-      console.error('[TournamentService] Add-on process failed. No chips were deducted:', error);
+      reportError(error, 'TournamentService.Addon_process_failed_No_chips_were_deduc');
       throw error;
     }
 
@@ -1928,7 +1955,7 @@ class TournamentService {
         payload: { type: 'addon', userId, chips: addonChips },
       });
     } catch (e: unknown) {
-      console.error('Failed to broadcast add-on event:', e);
+      reportError(e, 'TournamentService.Failed_to_broadcast_addon_event');
     }
 
     return { success: true, newStack: data?.new_stack };
@@ -2007,7 +2034,7 @@ class TournamentService {
       () =>
         supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: tournamentId,
-          p_player_id: userId,
+          p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
           p_rebuy_type: 'reentry',
           p_cost: reentryCost,
           p_chips: reentryChips,
@@ -2017,7 +2044,7 @@ class TournamentService {
     );
 
     if (error) {
-      console.error('[TournamentService] Re-entry RPC failed. No chips were deducted:', error);
+      reportError(error, 'TournamentService.Reentry_RPC_failed_No_chips_were_deducte');
       throw error;
     }
 
@@ -2035,7 +2062,7 @@ class TournamentService {
         payload: { type: 'reentry', userId, chips: reentryChips },
       });
     } catch (e: unknown) {
-      console.error('Failed to broadcast re-entry event:', e);
+      reportError(e, 'TournamentService.Failed_to_broadcast_reentry_event');
     }
 
     return { success: true, newEntryId: data?.new_entry_id };
@@ -2082,7 +2109,7 @@ class TournamentService {
         }
       }
     } catch (e: unknown) {
-      console.error('[TournamentService] Could not query rebuy/addon transactions:', e);
+      reportError(e, 'TournamentService.Could_not_query_rebuyaddon_transactions');
     }
 
     // Calculate total prize pool
@@ -2128,7 +2155,7 @@ class TournamentService {
         .update({ prize_pool: finalPool })
         .eq('id', tournamentId);
       if (fallbackErr)
-        console.error('[TournamentService] finalizePrizePool fallback failed:', fallbackErr);
+        reportError(fallbackErr, 'TournamentService.finalizePrizePool_fallback_failed');
     }
 
     console.debug(
@@ -2143,7 +2170,7 @@ class TournamentService {
         payload: { prizePool: finalPool },
       });
     } catch (e: unknown) {
-      console.error('Failed to broadcast prize pool finalization:', e);
+      reportError(e, 'TournamentService.Failed_to_broadcast_prize_pool_finalizat');
     }
 
     return finalPool;
@@ -2165,7 +2192,7 @@ class TournamentService {
     }, 2);
 
     if (error) {
-      console.error('Table balancing error:', error);
+      reportError(error, 'TournamentService.Table_balancing_error');
       return { movesMade: 0 };
     }
 
@@ -2223,7 +2250,7 @@ class TournamentService {
         .from('tables')
         .update({ status: 'closed' })
         .eq('id', tableToBreak.id);
-      if (closeErr) console.error('[TournamentService] Failed to close broken table:', closeErr);
+      if (closeErr) reportError(closeErr, 'TournamentService.Failed_to_close_broken_table');
 
       return { tableMerged: true };
     }
@@ -2295,7 +2322,7 @@ class TournamentService {
           payload: { tableId: finalTable.id, playerCount: count },
         });
       } catch (e: unknown) {
-        console.error('Failed to broadcast final table event:', e);
+        reportError(e, 'TournamentService.Failed_to_broadcast_final_table_event');
       }
     }
 
@@ -2322,7 +2349,7 @@ class TournamentService {
         },
       });
     } catch (e: unknown) {
-      console.error('Failed to broadcast level up:', e);
+      reportError(e, 'TournamentService.Failed_to_broadcast_level_up');
     }
   }
 
@@ -2340,7 +2367,7 @@ class TournamentService {
         payload: eliminatedPlayer,
       });
     } catch (e: unknown) {
-      console.error('Failed to broadcast elimination:', e);
+      reportError(e, 'TournamentService.Failed_to_broadcast_elimination');
     }
   }
 
@@ -2358,7 +2385,7 @@ class TournamentService {
         payload: winner,
       });
     } catch (e: unknown) {
-      console.error('Failed to broadcast winner:', e);
+      reportError(e, 'TournamentService.Failed_to_broadcast_winner');
     }
   }
 
@@ -2382,7 +2409,7 @@ class TournamentService {
       .eq('id', tournamentId);
 
     if (statusError) {
-      console.error('[TournamentService] Failed to mark tournament COMPLETED:', statusError);
+      reportError(statusError, 'TournamentService.Failed_to_mark_tournament_COMPLETED');
       return { success: false };
     }
 
@@ -2395,13 +2422,13 @@ class TournamentService {
         }
       );
       if (prizeError) {
-        console.error('[TournamentService] Prize distribution failed:', prizeError);
+        reportError(prizeError, 'TournamentService.Prize_distribution_failed');
       } else {
         console.debug('[TournamentService] Prizes distributed:', prizeResult);
         masterBus.emit('BALANCE_UPDATED', { source: 'tournament_prizes', tournamentId });
       }
     } catch (prizeErr) {
-      console.error('[TournamentService] Prize distribution exception:', prizeErr);
+      reportError(prizeErr, 'TournamentService.Prize_distribution_exception');
     }
 
     // Submit all placements to POY leaderboard system
@@ -2442,7 +2469,7 @@ class TournamentService {
         }
       }
     } catch (e: unknown) {
-      console.error('[TournamentService] Failed to submit to POY:', e);
+      reportError(e, 'TournamentService.Failed_to_submit_to_POY');
     }
 
     masterBus.emit('TOURNAMENT_COMPLETE', { tournamentId, clubId: tournament.club_id });
@@ -2463,7 +2490,11 @@ class TournamentService {
    * The caller (TournamentEngine) is responsible for checking pool balance
    * and capping the actual bonus payout.
    */
-  spinMultiplier(config: SpinMultiplier[]): { multiplier: number; isPremium: boolean; bonusBuyIns: number } {
+  spinMultiplier(config: SpinMultiplier[]): {
+    multiplier: number;
+    isPremium: boolean;
+    bonusBuyIns: number;
+  } {
     const random = Math.random() * 100;
     let cumulative = 0;
 
@@ -2595,7 +2626,7 @@ class TournamentService {
         .eq('user_id', collectorPlayerId);
 
       if (bountyUpdateError) {
-        console.error('[TournamentService] Failed to update collector bounty:', bountyUpdateError);
+        reportError(bountyUpdateError, 'TournamentService.Failed_to_update_collector_bounty');
       }
 
       // Record bounty payout
@@ -2606,8 +2637,7 @@ class TournamentService {
         bounty_amount: collectorPortion,
         added_to_collector_bounty: addedToHead,
       });
-      if (bountyInsErr)
-        console.error('[TournamentService] Failed to record PKO bounty:', bountyInsErr);
+      if (bountyInsErr) reportError(bountyInsErr, 'TournamentService.Failed_to_record_PKO_bounty');
 
       // Credit bounty to collector's wallet
       if (collectorPortion > 0) {
@@ -2621,10 +2651,7 @@ class TournamentService {
         );
 
         if (bountyWalletError) {
-          console.error(
-            '[TournamentService] Failed to credit bounty to wallet:',
-            bountyWalletError
-          );
+          reportError(bountyWalletError, 'TournamentService.Failed_to_credit_bounty_to_wallet');
         } else {
           // Log bounty transaction
           await WalletService.logTransaction(
@@ -2657,7 +2684,7 @@ class TournamentService {
         is_mystery_revealed: true,
       });
       if (mysteryInsErr)
-        console.error('[TournamentService] Failed to record mystery bounty:', mysteryInsErr);
+        reportError(mysteryInsErr, 'TournamentService.Failed_to_record_mystery_bounty');
 
       // Credit bounty to collector's wallet
       if (mysteryValue > 0) {
@@ -2671,9 +2698,9 @@ class TournamentService {
         );
 
         if (bountyWalletError) {
-          console.error(
-            '[TournamentService] Failed to credit mystery bounty to wallet:',
-            bountyWalletError
+          reportError(
+            bountyWalletError,
+            'TournamentService.Failed_to_credit_mystery_bounty_to_walle'
           );
         } else {
           // Log bounty transaction
@@ -2711,8 +2738,7 @@ class TournamentService {
         collector_player_id: collectorPlayerId,
         bounty_amount: bountyAmount,
       });
-      if (fixedInsErr)
-        console.error('[TournamentService] Failed to record fixed bounty:', fixedInsErr);
+      if (fixedInsErr) reportError(fixedInsErr, 'TournamentService.Failed_to_record_fixed_bounty');
 
       // Credit bounty to collector's wallet
       if (bountyAmount > 0) {
@@ -2726,10 +2752,7 @@ class TournamentService {
         );
 
         if (bountyWalletError) {
-          console.error(
-            '[TournamentService] Failed to credit bounty to wallet:',
-            bountyWalletError
-          );
+          reportError(bountyWalletError, 'TournamentService.Failed_to_credit_bounty_to_wallet');
         } else {
           // Log bounty transaction
           await WalletService.logTransaction(

@@ -10,6 +10,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -149,7 +150,7 @@ export const useUserStore = create<UserState>()(
           if (error) {
             // PGRST116 = no rows returned (profile doesn't exist yet)
             if (error.code !== 'PGRST116') {
-              console.error('[Store] [USER STORE] Load profile error:', error.message);
+              reportError(error, 'useUserStore.USER_STORE_Load_profile_error');
             }
             set({ isLoading: false });
             return null;
@@ -178,7 +179,7 @@ export const useUserStore = create<UserState>()(
 
           return profile;
         } catch (e) {
-          console.error('[Store] [USER STORE] Unexpected error:', e);
+          reportError(e, 'useUserStore.USER_STORE_Unexpected_error');
           set({ isLoading: false });
           return null;
         }

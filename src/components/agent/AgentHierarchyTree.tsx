@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AgentService } from '../../services';
 import './AgentHierarchyTree.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface AgentNode {
   id: string;
@@ -57,7 +58,7 @@ export const AgentHierarchyTree: React.FC<AgentHierarchyTreeProps> = ({
         setExpandedNodes(new Set([rootNode.id]));
       }
     } catch (error) {
-      console.error('Failed to load hierarchy:', error);
+      reportError(error, 'AgentHierarchyTree.Failed_to_load_hierarchy');
     } finally {
       setLoading(false);
     }

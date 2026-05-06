@@ -3,10 +3,11 @@
  * Full-featured cash game creation with ALL settings required before going live
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { tableService } from '../../services/TableService';
 import type { GameVariant, TableSettings } from '../../types/database.types';
 import styles from './CreateTableModal.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface CreateTableModalProps {
   clubId: string;
@@ -21,7 +22,6 @@ const VARIANTS: { value: GameVariant; label: string }[] = [
   { value: 'plo6', label: 'PLO 6-Card' },
   { value: 'plo8', label: 'PLO Hi/Lo (8-or-Better)' },
   { value: 'short_deck', label: 'Short Deck (6+)' },
-  { value: 'ofc', label: 'Open Face Chinese' },
 ];
 
 const STAKE_PRESETS = [
@@ -45,14 +45,19 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
   const [bigBlind, setBigBlind] = useState('2');
   const [maxPlayers, setMaxPlayers] = useState('9');
   const [loading, setLoading] = useState(false);
+  const isMounted = useRef(true);
   const [error, setError] = useState<string | null>(null);
   const [useCustomStakes, setUseCustomStakes] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
+    isMounted.current = true;
     setModalVisible(false);
     const timer = setTimeout(() => setModalVisible(true), 30);
-    return () => clearTimeout(timer);
+    return () => {
+      isMounted.current = false;
+      clearTimeout(timer);
+    };
   }, []);
 
   // ── Buy-in Range ──
@@ -142,12 +147,18 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
         Number(maxPlayers),
         fullSettings
       );
-      onSuccess();
+      if (isMounted.current) {
+        onSuccess();
+      }
     } catch (err) {
-      console.error('Failed to create table:', err);
-      setError((err as Error).message || 'Failed to create table. Please try again.');
+      reportError(err, 'CreateTableModal.Failed_to_create_table');
+      if (isMounted.current) {
+        setError((err as Error).message || 'Failed to create table. Please try again.');
+      }
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -382,20 +393,12 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                   Straddle
                 </label>
 
+                {/* FIX 114: Straddle type dropdown removed — UTG only per Dan's directive */}
                 {settings.straddle_enabled && (
-                  <div style={{ paddingLeft: 20, marginBottom: 4 }}>
-                    <select
-                      className={styles['form-select']}
-                      value={settings.straddle_type || 'utg'}
-                      onChange={(e) =>
-                        setSettings((prev) => ({ ...prev, straddle_type: e.target.value as any }))
-                      }
-                      style={{ fontSize: '0.7rem', padding: '2px 6px' }}
-                    >
-                      <option value="utg">UTG Straddle</option>
-                      <option value="any_position">Any Position</option>
-                      <option value="mississippi">Mississippi</option>
-                    </select>
+                  <div
+                    style={{ paddingLeft: 20, marginBottom: 4, fontSize: '0.7rem', color: '#aaa' }}
+                  >
+                    UTG Straddle (2× BB)
                   </div>
                 )}
 
@@ -479,14 +482,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                 </label>
 
                 {/* ── Double Board ── */}
-                <label className={styles['checkbox-label']}>
-                  <input
-                    type="checkbox"
-                    checked={settings.double_board}
-                    onChange={() => toggleSetting('double_board')}
-                  />
-                  Double Board
-                </label>
+                {/* FIX 116: Double Board removed — dead variant */}
 
                 {/* ── Insurance ── */}
                 <label className={styles['checkbox-label']}>

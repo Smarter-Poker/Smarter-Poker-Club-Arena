@@ -15,11 +15,12 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import { flashPoolEngine, type FlashPoolConfig } from '../engine/FlashPoolEngine';
+// [MIGRATION] flashPoolEngine removed — server-authoritative (join via Supabase RPC)
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -86,7 +87,7 @@ export default function FlashPoolPage() {
       if (!isMounted.current) return;
       setPools(poolList);
     } catch (err) {
-      console.error('[FlashPoolPage] Failed to load pools:', err);
+      reportError(err, 'FlashPoolPage.Failed_to_load_pools');
       if (!isMounted.current) return;
       toast.error('Failed to load pools');
       setPools([]);
@@ -112,7 +113,8 @@ export default function FlashPoolPage() {
           .limit(1)
           .maybeSingle();
         if (data) setUserBalance(data.chip_balance || 0);
-      } catch {
+      } catch (e) {
+        reportError(e, 'FlashPoolPage.loadBalance');
         /* best effort */
       }
     };
@@ -133,7 +135,8 @@ export default function FlashPoolPage() {
             .limit(1)
             .maybeSingle();
           if (data) setUserBalance(data.chip_balance || 0);
-        } catch {
+        } catch (e) {
+          reportError(e, 'FlashPoolPage.async');
           /* best effort */
         }
       },
@@ -193,7 +196,7 @@ export default function FlashPoolPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[FlashPoolPage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'FlashPoolPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[FlashPoolPage] ⏱️ Realtime channel timed out');
@@ -222,9 +225,14 @@ export default function FlashPoolPage() {
       }
       setJoiningPool(pool.poolId);
       try {
-        const joined = flashPoolEngine.joinPool(pool.poolId, user.id, buyIn);
-        if (!joined) {
-          toast.error('Unable to join pool — you may already be in this pool');
+        // Server-authoritative: join pool via Supabase RPC
+        const { error: joinError } = await supabase.rpc('join_flash_pool', {
+          p_pool_id: pool.poolId,
+          p_user_id: user.id,
+          p_buy_in: buyIn,
+        });
+        if (joinError) {
+          toast.error(joinError.message || 'Unable to join pool — you may already be in this pool');
           return;
         }
         toast.success(`Joining ${pool.stakes} flash pool...`);
@@ -234,7 +242,7 @@ export default function FlashPoolPage() {
           buyIn,
         });
       } catch (err) {
-        console.error('[FlashPoolPage] Join failed:', err);
+        reportError(err, 'FlashPoolPage.Join_failed');
         toast.error('Failed to join pool');
       } finally {
         setJoiningPool(null);

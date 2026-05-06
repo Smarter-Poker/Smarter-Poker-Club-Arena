@@ -18,6 +18,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './UnionGamesPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { fmt, fmtChips } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '—';
@@ -259,7 +260,7 @@ export default function UnionGamesPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[UnionGamesPage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'UnionGamesPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[UnionGamesPage] ⏱️ Realtime channel timed out');

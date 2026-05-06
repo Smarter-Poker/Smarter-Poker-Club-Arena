@@ -3,7 +3,7 @@
  *  REAL-TIME RESULTS — Session Stats Panel
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * PokerBros-style real-time results panel showing:
+ * premium-style real-time results panel showing:
  * - Session duration
  * - Table info
  * - Buy-in and winnings
@@ -11,7 +11,7 @@
  * - Observer list
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './RealTimeResults.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -49,6 +49,8 @@ export interface RealTimeResultsProps {
   sessionStats: SessionStats;
   observers: Observer[];
   currency?: string;
+  /** X6.2f: per-hand result rows showing winnings - buyIn per hand */
+  handResults?: Array<{ handNumber: number; result: number }>;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -76,10 +78,15 @@ function formatDateTime(date: Date): string {
 }
 
 function formatAmount(amount: number, currency: string = ''): string {
-  const formatted = amount.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  let formatted: string;
+  if (Math.abs(amount - Math.round(amount)) < 0.005) {
+    formatted = Math.round(amount).toLocaleString('en-US');
+  } else {
+    formatted = amount.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
   return `${currency}${formatted}`;
 }
 
@@ -94,16 +101,35 @@ export function RealTimeResults({
   sessionStats,
   observers,
   currency = '',
+  handResults = [],
 }: RealTimeResultsProps) {
   const [sessionDuration, setSessionDuration] = useState('00:00:00');
   const [mounted, setMounted] = useState(false);
+  // BUG FIX (RTR-1): track mount-animation timer so it cancels on unmount or
+  // on isOpen toggle — prevents stale setState on unmounted component.
+  const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => setMounted(true), 50);
+      // Cancel any pending timer before setting a new one (idempotent)
+      if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
+      mountTimerRef.current = setTimeout(() => {
+        mountTimerRef.current = null;
+        setMounted(true);
+      }, 50);
     } else {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
       setMounted(false);
     }
+    return () => {
+      if (mountTimerRef.current) {
+        clearTimeout(mountTimerRef.current);
+        mountTimerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   // Update session duration every second
@@ -197,6 +223,30 @@ export function RealTimeResults({
             <span className="rtr-value">{sessionStats.handsPlayed}</span>
           </div>
         </div>
+
+        {/* X6.2f: Per-Hand Results */}
+        {handResults.length > 0 && (
+          <div className="rtr-section">
+            <div className="rtr-section-header">Per-Hand Results</div>
+            {handResults
+              .slice(-10)
+              .reverse()
+              .map((hr) => {
+                const isWin = hr.result >= 0;
+                return (
+                  <div key={hr.handNumber} className="rtr-row">
+                    <span className="rtr-label">Hand #{hr.handNumber}:</span>
+                    <span
+                      className={`rtr-value ${isWin ? 'rtr-value--positive' : 'rtr-value--negative'}`}
+                    >
+                      {isWin ? '+' : ''}
+                      {formatAmount(hr.result, currency)}
+                    </span>
+                  </div>
+                );
+              })}
+          </div>
+        )}
 
         {/* Profit/Loss Summary */}
         <div className="rtr-summary">

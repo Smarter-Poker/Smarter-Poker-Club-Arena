@@ -4,6 +4,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './BlockedPlayersList.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface BlockedPlayer {
   id: string;
@@ -80,32 +81,44 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
         })) || []
       );
     } catch (error) {
-      console.error('Failed to load blocked players:', error);
+      reportError(error, 'BlockedPlayersList.Failed_to_load_blocked_players');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUnblock = async (player: BlockedPlayer) => {
+  const handleUnblock = (player: BlockedPlayer) => {
     setUnblocking(player.id);
-    try {
-      // SECURITY: Scope to current user to prevent unblocking others' blocks
-      const { error } = await supabase
+
+    // EAGER STATE SYNCHRONIZATION: Remove from list immediately (BFCache-safe)
+    const prevBlocked = blockedPlayers;
+    setBlockedPlayers((prev) => prev.filter((p) => p.id !== player.id));
+    onUnblock?.(player.blockedUserId);
+    toast.success(`Unblocked ${player.username}`);
+
+    // Fire-and-forget delete with rollback on failure
+    void Promise.resolve(
+      supabase
         .from('user_blocks')
         .delete()
         .eq('id', player.id)
-        .eq('user_id', user?.id || '');
-
-      if (error) throw error;
-
-      setBlockedPlayers((prev) => prev.filter((p) => p.id !== player.id));
-      onUnblock?.(player.blockedUserId);
-      toast.success(`Unblocked ${player.username}`);
-    } catch (error) {
-      toast.error('Failed to unblock player');
-    } finally {
-      setUnblocking(null);
-    }
+        .eq('user_id', user?.id || '')
+    )
+      .then(({ error }) => {
+        if (error) {
+          // Rollback on failure
+          setBlockedPlayers(prevBlocked);
+          toast.error('Failed to unblock player');
+          reportError(error, 'BlockedPlayersList.Failed_to_unblock');
+        }
+        setUnblocking(null);
+      })
+      .catch((error: unknown) => {
+        setBlockedPlayers(prevBlocked);
+        toast.error('Failed to unblock player');
+        reportError(error, 'BlockedPlayersList.Failed_to_unblock');
+        setUnblocking(null);
+      });
   };
 
   if (loading) {

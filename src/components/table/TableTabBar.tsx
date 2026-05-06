@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  TABLE TAB BAR — PokerBros-Style Multi-Table Navigation
+ *  TABLE TAB BAR — Premium-Style Multi-Table Navigation
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Top tab strip for switching between up to 4 concurrent tables.
@@ -104,12 +104,21 @@ export function TableTabBar({
             tableId: activeTabId,
             action: 'LEADERBOARD',
           }),
-        onHelp: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
+        onHelp: () => masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
         onLeaveTable: () =>
           masterBus.emit('TABLE_MENU_ACTION', {
             tableId: activeTabId,
             action: 'LEAVE_TABLE',
+          }),
+        onChangeAvatar: () =>
+          masterBus.emit('TABLE_MENU_ACTION', {
+            tableId: activeTabId,
+            action: 'CHANGE_AVATAR',
+          }),
+        onToggleAlias: () =>
+          masterBus.emit('TABLE_MENU_ACTION', {
+            tableId: activeTabId,
+            action: 'TOGGLE_ALIAS',
           }),
       }),
     [activeTabId]

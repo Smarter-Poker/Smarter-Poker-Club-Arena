@@ -10,9 +10,7 @@
  */
 
 import React from 'react';
-import { haptic } from '../../services/SoundService';
-import './StraddleToggle.css';
-import { straddleEngine } from '../../engine/StraddleEngine';
+import { haptic, soundService } from '../../services/SoundService';
 import './StraddleToggle.css';
 
 export interface StraddleToggleProps {
@@ -36,18 +34,11 @@ export function StraddleToggle({
 }: StraddleToggleProps) {
   if (!isAvailable) return null;
 
+  // FIX 189: Use haptic service instead of raw navigator.vibrate
   const handleToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
     const enabled = e.target.checked;
-    // Safe haptic feedback
-    try {
-      navigator?.vibrate?.(10);
-    } catch (err) {
-
-      console.error("[StraddleToggle] Error:", err);
-      /* noop */
-    }
-    // Wire to engine for bus emission
-    straddleEngine.toggleAutoStraddle(tableId, playerId, enabled);
+    soundService.playStraddle();
+    // Server-authoritative: parent handles the server API call via onToggle
     onToggle(enabled);
   };
 
@@ -65,9 +56,10 @@ export function StraddleToggle({
         </div>
         <div className="straddle-toggle__info">
           <span className="straddle-toggle__label">STRADDLE</span>
+          {/* FIX 190: Format with toLocaleString for proper number display */}
           <span className="straddle-toggle__amount">
             {currency}
-            {amount}
+            {amount.toLocaleString()}
           </span>
         </div>
       </label>

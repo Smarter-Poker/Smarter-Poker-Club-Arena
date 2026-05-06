@@ -8,6 +8,8 @@
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { reportError } from '../utils/errorReporter';
+
 export type ValidationResult = {
   valid: boolean;
   error?: string;
@@ -102,7 +104,8 @@ export function url(message = 'Invalid URL'): Validator<string> {
     try {
       new URL(value);
       return { valid: true };
-    } catch {
+    } catch (e) {
+      reportError(e, 'validation.return');
       return { valid: false, error: message };
     }
   };

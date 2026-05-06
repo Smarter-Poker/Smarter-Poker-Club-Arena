@@ -314,7 +314,7 @@ Example: Player A has 50, Player B has 100, Player C has 200
 | `src/engine/HorseLogic.ts`                | Bot decision engine                                   |
 | `src/services/HandPersistenceService.ts`  | Hand history persistence                              |
 | `src/lib/supabase.ts`                     | Realtime broadcast/subscribe                          |
-| `server/src/engine/ServerTableEngine.ts`  | Server-side engine (Railway)                          |
+| `server/src/engine/ServerTableEngine.ts`  | Server-side engine (Hetzner VPS)                      |
 | `server/src/engine/HandController.ts`     | Server-side hand controller                           |
 
 ### Verified Working (from audit)

@@ -10,21 +10,23 @@ import {
   type ConnectionState,
 } from '../../services/DisconnectProtectionService';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import { useToast } from '../common/Toast';
 import './ConnectionHUD.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ConnectionHUDProps {
   tableId: string;
   userId: string;
 }
 
+// Use Unicode bullet (U+2022) styled via CSS class color — no emoji
 const QUALITY_ICONS: Record<string, string> = {
-  excellent: '🟢',
-  good: '🟡',
-  fair: '🟠',
-  poor: '🔴',
-  disconnected: '⚫',
+  excellent: '\u2022',
+  good: '\u2022',
+  fair: '\u2022',
+  poor: '\u2022',
+  disconnected: '\u2022',
 };
 
 const QUALITY_LABELS: Record<string, string> = {
@@ -85,6 +87,8 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       setAutoActionText(null); // Reset action text
       setShowDisconnectWarning(true);
       wasDisconnectedRef.current = true;
+      // FIX 172: Play disconnect sound (Bible V8 §5.3)
+      if (soundService.isEnabled()) soundService.playDisconnect();
       haptic.double(); // Haptic: disconnect warning
     }
   });
@@ -95,6 +99,8 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       hasTimedOutRef.current = false; // Reset on reconnect
       setAutoActionText(null); // Reset action text
       setShowDisconnectWarning(false);
+      // FIX 172: Play reconnect sound (Bible V8 §5.3)
+      if (soundService.isEnabled()) soundService.playReconnect();
       haptic.medium(); // Haptic: reconnected confirmation
 
       // Show reconnect toast and stale data banner
@@ -164,7 +170,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
           throw new Error('Still disconnected');
         }
       } catch (err) {
-        console.error('[ConnectionHUD] Error:', err);
+        reportError(err, 'ConnectionHUD.Error');
         if (cancelled) return; // Don't schedule if cleaned up during await
         // Exponential backoff: 1s, 2s, 4s, 8s, max 16s
         const delay = Math.min(1000 * Math.pow(2, attempt), 16_000);
@@ -213,7 +219,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
             animation: 'slideInDown 0.3s ease-out',
           }}
         >
-          <span>⚡</span>
+          <span style={{ fontWeight: 700 }}>--</span>
           Reconnected — syncing latest table state...
           <button
             onClick={() => setShowStaleBanner(false)}
@@ -236,7 +242,9 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       {showDisconnectWarning && (
         <div className="conn-dc-warning">
           <div className="conn-dc-container">
-            <span className="conn-dc-icon">📡</span>
+            <span className="conn-dc-icon" style={{ fontSize: '1.5rem', lineHeight: 1 }}>
+              X
+            </span>
             <span className="conn-dc-text">Connection Lost</span>
             {graceCountdown !== null && graceCountdown > 0 && (
               <div className="conn-dc-grace">

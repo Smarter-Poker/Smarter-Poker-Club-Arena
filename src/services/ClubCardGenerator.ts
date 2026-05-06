@@ -13,6 +13,7 @@
  * Uses 3:4 aspect ratio to match the new ClubCardPanel layout.
  */
 
+import { reportError } from '../utils/errorReporter';
 interface CardGeneratorOptions {
   logoUrl: string;
   clubId: number;
@@ -176,7 +177,7 @@ export class ClubCardGenerator {
       };
 
       img.onerror = () => {
-        console.error('[ClubCardGenerator] Failed to load logo image');
+        console.warn('[ClubCardGenerator] Failed to load logo image');
         resolve();
       };
 

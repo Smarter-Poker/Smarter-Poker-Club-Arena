@@ -17,8 +17,9 @@ import { ChipFlowService } from './ChipFlowService';
 import { CreditService } from './CreditService';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
-import { rakebackEngine } from '../engine/RakebackEngine';
+// [MIGRATION] rakebackEngine removed — server-authoritative (Step 6). Settlement via Supabase RPC.
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -58,6 +59,9 @@ export const FinancialCronService = {
   _isRunning: false,
   _lastReconciliation: null as ReconciliationResult | null,
   _lastSuspensionCheck: null as SuspensionCheckResult | null,
+  /** FIX-216: Circuit breaker — disable suspension checks after persistent failures */
+  _suspensionCheckFailed: 0,
+  _suspensionCheckDisabled: false,
   _config: {
     reconciliationIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
     suspensionCheckIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
@@ -173,12 +177,12 @@ export const FinancialCronService = {
           created_at: reconciliationResult.checkedAt,
         });
       } catch (err) {
-        console.error('[FinancialCron] Reconciliation audit log failed:', err);
+        reportError(err, 'FinancialCronService.runReconciliation.auditLog');
       }
 
       return reconciliationResult;
     } catch (err: unknown) {
-      console.error('[FinancialCron] Reconciliation failed:', err);
+      reportError(err, 'FinancialCronService.runReconciliation');
       return { isBalanced: false, difference: -1, checkedAt: new Date().toISOString() };
     }
   },
@@ -193,6 +197,11 @@ export const FinancialCronService = {
    * Otherwise, just log warnings for ops review.
    */
   async runSuspensionCheck(): Promise<SuspensionCheckResult> {
+    // FIX-216: Circuit breaker — skip if disabled after 2+ consecutive global failures
+    if (this._suspensionCheckDisabled) {
+      return { agentsChecked: 0, agentsSuspended: 0, agentsWarned: 0 };
+    }
+
     let agentsChecked = 0;
     let agentsSuspended = 0;
     let agentsWarned = 0;
@@ -206,9 +215,17 @@ export const FinancialCronService = {
         .gt('credit_limit', 0);
 
       if (error || !agents) {
-        console.error('[FinancialCron] Failed to fetch credit agents:', error);
+        this._suspensionCheckFailed++;
+        if (this._suspensionCheckFailed >= 2) {
+          this._suspensionCheckDisabled = true;
+          console.debug('[FinancialCron] Suspension check disabled after repeated failures');
+        }
+        reportError(error, 'FinancialCronService.runSuspensionCheck.fetchAgents');
         return { agentsChecked: 0, agentsSuspended: 0, agentsWarned: 0 };
       }
+
+      // FIX-216: Track per-agent failures; if ALL fail, disable future runs
+      let consecutiveFailures = 0;
 
       for (const agent of agents) {
         agentsChecked++;
@@ -218,6 +235,7 @@ export const FinancialCronService = {
 
         try {
           const result = await CreditService.checkSuspension(agent.id);
+          consecutiveFailures = 0; // Reset on success
 
           if (result.shouldSuspend) {
             if (this._config.autoSuspendEnabled) {
@@ -239,7 +257,16 @@ export const FinancialCronService = {
             }
           }
         } catch (e: unknown) {
-          console.error(`[FinancialCron] Suspension check failed for agent ${agent.id}:`, e);
+          consecutiveFailures++;
+          // FIX-216: If first 3 agents all fail, the infrastructure is broken — stop spamming
+          if (consecutiveFailures >= 3) {
+            this._suspensionCheckDisabled = true;
+            console.debug(
+              '[FinancialCron] Suspension check disabled — CreditService.checkSuspension unavailable'
+            );
+            break;
+          }
+          reportError(e, 'FinancialCronService.runSuspensionCheck.agent', { agentId: agent.id });
         }
       }
 
@@ -247,7 +274,7 @@ export const FinancialCronService = {
       this._lastSuspensionCheck = result;
       return result;
     } catch (err: unknown) {
-      console.error('[FinancialCron] Suspension check failed:', err);
+      reportError(err, 'FinancialCronService.runSuspensionCheck');
       return { agentsChecked, agentsSuspended, agentsWarned };
     }
   },
@@ -279,8 +306,7 @@ export const FinancialCronService = {
         created_at: new Date().toISOString(),
       });
     } catch (err) {
-      console.error('[FinancialCron] Audit insert failed:', err);
-      console.error('[FinancialCron] commission_rate_audit insert failed (table may not exist)');
+      reportError(err, 'FinancialCronService.logRateChange');
     }
   },
 
@@ -290,7 +316,7 @@ export const FinancialCronService = {
 
   /**
    * Settle rakeback for ALL active clubs. Queries the clubs table for active clubs,
-   * then calls rakebackEngine.settleRakeback() for each, which persists accumulated
+   * then settles rakeback via Supabase RPC for each, which persists accumulated
    * rakeback to the `rakeback_periods` table for player claiming via RakebackPage.
    */
   async settleAllClubRakebacks(): Promise<{ clubsSettled: number; totalDistributed: number }> {
@@ -308,15 +334,16 @@ export const FinancialCronService = {
 
       for (const club of clubs) {
         try {
-          const distribution = await rakebackEngine.settleRakeback(club.id);
-          if (distribution.size > 0) {
+          // Server-authoritative: settle rakeback via Supabase RPC
+          const { data: settlement } = await supabase.rpc('settle_club_rakeback', {
+            p_club_id: club.id,
+          });
+          if (settlement && settlement.total_distributed > 0) {
             clubsSettled++;
-            for (const amount of distribution.values()) {
-              totalDistributed += amount;
-            }
+            totalDistributed += settlement.total_distributed;
           }
         } catch (err) {
-          console.error(`[FinancialCron] Rakeback settlement failed for club ${club.id}:`, err);
+          reportError(err, 'FinancialCronService.settleClubRakeback', { clubId: club.id });
         }
       }
 
@@ -326,7 +353,7 @@ export const FinancialCronService = {
         );
       }
     } catch (err) {
-      console.error('[FinancialCron] settleAllClubRakebacks failed:', err);
+      reportError(err, 'FinancialCronService.settleAllClubRakebacks');
     }
 
     return { clubsSettled, totalDistributed };
@@ -374,7 +401,7 @@ export const FinancialCronService = {
             { disputeId: dispute.id, clubId: dispute.club_id }
           );
         } catch (e: unknown) {
-          console.error(`[FinancialCron] Dispute escalation failed for ${dispute.id}:`, e);
+          reportError(e, 'FinancialCronService.escalateStaleDisputes', { disputeId: dispute.id });
         }
       }
 
@@ -388,7 +415,7 @@ export const FinancialCronService = {
         });
       }
     } catch (err: unknown) {
-      console.error('[FinancialCron] Dispute escalation check failed:', err);
+      reportError(err, 'FinancialCronService.escalateStaleDisputes');
     }
     return escalated;
   },

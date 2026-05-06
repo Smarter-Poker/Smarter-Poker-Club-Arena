@@ -13,6 +13,7 @@ import { haptic } from '../services/HapticService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './WaitlistPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 const waitlistCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -58,7 +59,7 @@ export default function WaitlistPage() {
           {
             event: '*',
             schema: 'public',
-            table: 'table_waitlists',
+            table: 'table_waitlist',
           },
           (payload) => {
             loadWaitlistRef.current();
@@ -66,7 +67,7 @@ export default function WaitlistPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[WaitlistPage] ❌ Realtime channel error:', err?.message || err);
+            if (err) reportError(err?.message || err, 'WaitlistPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[WaitlistPage] ⏱️ Realtime channel timed out');
@@ -105,7 +106,7 @@ export default function WaitlistPage() {
           // If the promoted player is the current user, toast + auto-navigate
           const data = event?.payload;
           if (data?.userId === user?.id && data?.tableId) {
-            toast.success('🎉 You have been auto-seated! Redirecting to your table...');
+            toast.success('You have been auto-seated! Redirecting to your table...');
             haptic.heavy();
             setTimeout(() => {
               navigate(`/table/${data.tableId}`);
@@ -143,7 +144,7 @@ export default function WaitlistPage() {
         }))
       );
     } catch (error) {
-      console.error('Failed to load waitlist:', error);
+      reportError(error, 'WaitlistPage.Failed_to_load_waitlist');
     } finally {
       loadingRef.current = false;
       if (!getIsMounted || getIsMounted()) setLoading(false);
@@ -159,7 +160,7 @@ export default function WaitlistPage() {
         setEntries((prev) => prev.filter((e) => e.id !== entryId));
       }
     } catch (error) {
-      console.error('Failed to leave waitlist:', error);
+      reportError(error, 'WaitlistPage.Failed_to_leave_waitlist');
     }
     setLeavingId(null);
   };
@@ -205,14 +206,23 @@ export default function WaitlistPage() {
     };
   }, [entries]);
 
+  // FIX 116: Updated to 9 approved variants — removed dead 'plo'
   const getGameTypeLabel = (type: string): string => {
     switch (type.toLowerCase()) {
       case 'nlh':
         return "No Limit Hold'em";
-      case 'plo':
-        return 'Pot Limit Omaha';
+      case 'plo4':
+        return 'PLO 4-Card';
       case 'plo5':
         return 'PLO 5-Card';
+      case 'plo6':
+        return 'PLO 6-Card';
+      case 'plo8':
+        return 'PLO Hi-Lo';
+      case 'pineapple':
+        return 'Pineapple';
+      case 'short_deck':
+        return 'Short Deck 6+';
       default:
         return type.toUpperCase();
     }
@@ -262,7 +272,7 @@ export default function WaitlistPage() {
                 style={waitlistCardAnimationStyle(idx)}
                 className={`waitlist-card ${entry.position === 1 ? 'next-up' : ''}`}
               >
-                {entry.position === 1 && <div className="next-up-celebration">🎉 You're Next!</div>}
+                {entry.position === 1 && <div className="next-up-celebration">You're Next!</div>}
                 <div className="waitlist-info">
                   <h4 className="table-name">{entry.table_name}</h4>
                   <span className="table-details">

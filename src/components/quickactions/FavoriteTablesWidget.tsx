@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './FavoriteTablesWidget.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface FavoriteTable {
   id: string;
@@ -81,7 +82,7 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
         })) || []
       );
     } catch (error) {
-      console.error('Failed to load favorites:', error);
+      reportError(error, 'FavoriteTablesWidget.Failed_to_load_favorites');
     } finally {
       setLoading(false);
     }
@@ -90,7 +91,10 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
   const removeFavorite = async (favoriteId: string) => {
     // SECURITY: Scope to current user — reject if not authenticated
     if (!user?.id) {
-      console.error('[FavoriteTablesWidget] Cannot remove favorite: no authenticated user');
+      reportError(
+        new Error('[FavoriteTablesWidget] Cannot remove favorite: no authenticated user'),
+        'FavoriteTablesWidget.Cannot_remove_favorite'
+      );
       return;
     }
     const { error } = await supabase
@@ -99,7 +103,7 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
       .eq('id', favoriteId)
       .eq('user_id', user.id);
     if (error) {
-      console.error('Failed to remove favorite:', error);
+      reportError(error, 'FavoriteTablesWidget.Failed_to_remove_favorite');
       return;
     }
     setFavorites((prev) => prev.filter((f) => f.id !== favoriteId));

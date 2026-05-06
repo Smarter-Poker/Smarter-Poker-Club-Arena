@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { CardImage } from '../table/CardImage';
 import type { Card } from '../table/CardImage';
 import styles from './HandReplayViewer.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface HandAction {
   playerId: string;
@@ -136,7 +137,7 @@ export default function HandReplayViewer({
         });
       }
     } catch (error) {
-      console.error('Failed to load hand:', error);
+      reportError(error, 'HandReplayViewer.Failed_to_load_hand');
     }
     setLoading(false);
   };

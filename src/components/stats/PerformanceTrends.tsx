@@ -21,6 +21,7 @@ import { masterBus } from '../../core/MasterBus';
 import { retryFetch } from '../../utils/retryFetch';
 import StatsExportButton from './StatsExportButton';
 import './PerformanceTrends.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PerformanceTrendsProps {
   userId: string;
@@ -42,7 +43,7 @@ function getCached(userId: string, range: TimeRange): SessionRecord[] | null {
     const raw = sessionStorage.getItem(`${CACHE_PREFIX}${userId}_${range}`);
     return raw ? JSON.parse(raw) : null;
   } catch (err) {
-    console.error('[PerformanceTrends] Error:', err);
+    reportError(err, 'PerformanceTrends.Error');
     return null;
   }
 }
@@ -50,7 +51,7 @@ function setCache(userId: string, range: TimeRange, data: SessionRecord[]) {
   try {
     sessionStorage.setItem(`${CACHE_PREFIX}${userId}_${range}`, JSON.stringify(data));
   } catch (err) {
-    console.error('[PerformanceTrends] Error:', err);
+    reportError(err, 'PerformanceTrends.Error');
     /* quota exceeded */
   }
 }
@@ -106,7 +107,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
         }
       }
     } catch (err) {
-      console.error('[PerformanceTrends] Error:', err);
+      reportError(err, 'PerformanceTrends.Error');
       if (isMounted.current) setSessions([]);
     } finally {
       if (isMounted.current) setLoading(false);
@@ -142,7 +143,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[PerformanceTrends] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'PerformanceTrends._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PerformanceTrends] ⏱️ Realtime channel timed out');

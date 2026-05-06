@@ -21,6 +21,7 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -182,7 +183,7 @@ class HorseBugReporterService {
       report.severity === 'medium'
     ) {
       this.persistToSupabase(report).catch((e) =>
-        console.warn('[HorseBugReporter] Failed to persist bug report to Supabase:', e)
+        reportError(e, 'HorseBugReporter.Failed_to_persist')
       );
     }
 
@@ -194,7 +195,12 @@ class HorseBugReporterService {
       low: '\x1b[37m', // white
       info: '\x1b[90m', // gray
     };
-    this.originalConsoleError(
+    // Use console.warn for info/low severity to avoid polluting error console
+    const logFn =
+      report.severity === 'info' || report.severity === 'low'
+        ? console.warn.bind(console)
+        : this.originalConsoleError;
+    logFn(
       `${colors[report.severity]}[BUG:${report.severity.toUpperCase()}] [${report.horseName}@${report.tableName}] ${report.title}\x1b[0m`
     );
   }

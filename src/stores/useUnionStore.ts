@@ -20,6 +20,7 @@ import type {
   ClubSettlement,
   AgentSettlement,
 } from '@/services/SettlementService';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📦 STORE TYPES
@@ -107,7 +108,7 @@ export const useUnionStore = create<UnionState>()(
           const unions = await UnionService.getUnions();
           set({ unions });
         } catch (error) {
-          console.error('[Store] Load unions failed:', error);
+          reportError(error, 'useUnionStore.Load_unions_failed');
         } finally {
           set({ isLoadingUnions: false });
         }
@@ -121,7 +122,7 @@ export const useUnionStore = create<UnionState>()(
           // Also load member clubs
           await get().loadUnionClubs(unionId);
         } catch (error) {
-          console.error('[Store] Load union failed:', error);
+          reportError(error, 'useUnionStore.Load_union_failed');
         } finally {
           set({ isLoadingUnion: false });
         }
@@ -132,7 +133,7 @@ export const useUnionStore = create<UnionState>()(
           const clubs = await UnionService.getUnionClubs(unionId);
           set({ activeUnionClubs: clubs });
         } catch (error) {
-          console.error('[Store] Load union clubs failed:', error);
+          reportError(error, 'useUnionStore.Load_union_clubs_failed');
         }
       },
 
@@ -145,7 +146,7 @@ export const useUnionStore = create<UnionState>()(
           }
           return union;
         } catch (error) {
-          console.error('[Store] Create union failed:', error);
+          reportError(error, 'useUnionStore.Create_union_failed');
           throw error;
         }
       },
@@ -158,7 +159,7 @@ export const useUnionStore = create<UnionState>()(
           }
           return success;
         } catch (error) {
-          console.error('[Store] Join union failed:', error);
+          reportError(error, 'useUnionStore.Join_union_failed');
           throw error;
         }
       },
@@ -171,7 +172,7 @@ export const useUnionStore = create<UnionState>()(
           }
           return success;
         } catch (error) {
-          console.error('[Store] Leave union failed:', error);
+          reportError(error, 'useUnionStore.Leave_union_failed');
           throw error;
         }
       },
@@ -185,7 +186,7 @@ export const useUnionStore = create<UnionState>()(
           }
           return success;
         } catch (error) {
-          console.error('[Store] Approve club failed:', error);
+          reportError(error, 'useUnionStore.Approve_club_failed');
           throw error;
         }
       },
@@ -200,7 +201,7 @@ export const useUnionStore = create<UnionState>()(
           const period = await SettlementService.getCurrentPeriod();
           set({ currentPeriod: period });
         } catch (error) {
-          console.error('[Store] Load current period failed:', error);
+          reportError(error, 'useUnionStore.Load_current_period_failed');
         } finally {
           set({ isLoadingSettlement: false });
         }
@@ -211,7 +212,7 @@ export const useUnionStore = create<UnionState>()(
           const history = await SettlementService.getPeriodHistory(limit);
           set({ periodHistory: history });
         } catch (error) {
-          console.error('[Store] Load period history failed:', error);
+          reportError(error, 'useUnionStore.Load_period_history_failed');
         }
       },
 
@@ -225,7 +226,7 @@ export const useUnionStore = create<UnionState>()(
             agentSettlements: summary.agentSettlements,
           });
         } catch (error) {
-          console.error('[Store] Load settlement summary failed:', error);
+          reportError(error, 'useUnionStore.Load_settlement_summary_failed');
         } finally {
           set({ isLoadingSettlement: false });
         }
@@ -237,7 +238,7 @@ export const useUnionStore = create<UnionState>()(
           const report = await UnionService.getSettlementReport(unionId, periodId);
           set({ consolidatedReport: report });
         } catch (error) {
-          console.error('[Store] Load consolidated report failed:', error);
+          reportError(error, 'useUnionStore.Load_consolidated_report_failed');
         } finally {
           set({ isLoadingSettlement: false });
         }
@@ -248,7 +249,7 @@ export const useUnionStore = create<UnionState>()(
           const summary = await SettlementService.generateSettlements(periodId);
           set({ clubSettlements: summary.clubSettlements });
         } catch (error) {
-          console.error('[Store] Load club settlements failed:', error);
+          reportError(error, 'useUnionStore.Load_club_settlements_failed');
         }
       },
 
@@ -257,7 +258,7 @@ export const useUnionStore = create<UnionState>()(
           const summary = await SettlementService.generateSettlements(periodId);
           set({ agentSettlements: summary.agentSettlements });
         } catch (error) {
-          console.error('[Store] Load agent settlements failed:', error);
+          reportError(error, 'useUnionStore.Load_agent_settlements_failed');
         }
       },
 
@@ -270,7 +271,7 @@ export const useUnionStore = create<UnionState>()(
           }
           return success;
         } catch (error) {
-          console.error('[Store] Close period failed:', error);
+          reportError(error, 'useUnionStore.Close_period_failed');
           throw error;
         }
       },
@@ -282,7 +283,7 @@ export const useUnionStore = create<UnionState>()(
           await get().loadCurrentPeriod();
           return result;
         } catch (error) {
-          console.error('[Store] Execute payouts failed:', error);
+          reportError(error, 'useUnionStore.Execute_payouts_failed');
           throw error;
         }
       },

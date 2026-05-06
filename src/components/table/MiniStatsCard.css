@@ -1,0 +1,192 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * MINI STATS CARD — Upper-Right HUD Widget
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.mini-stats-card {
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  min-width: 120px;
+  max-width: 200px;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ─── Collapsed icon (Dan 2026-04-17 v3) — default state. Icon-only button;
+   text is gone. Tap to open the full session-stats modal. A tiny colored
+   status dot signals P&L direction (green up / red down). Shrunk to 32px
+   per Dan's feedback — the 38px version was too dominant in the top-right. */
+.mini-stats-card--icon {
+  width: 32px;
+  height: 32px;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #e4e6eb;
+  position: relative;
+  cursor: pointer;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.mini-stats-card--icon:active {
+  transform: scale(0.95);
+}
+.mini-stats-card__dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.65);
+}
+
+.mini-stats-card:hover {
+  background: rgba(0, 0, 0, 0.75);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.mini-stats-card:active {
+  transform: scale(0.97);
+}
+
+/* ── Compact View ── */
+.mini-stats-card__compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mini-stats-card__pnl {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.mini-stats-card__sep {
+  color: rgba(255, 255, 255, 0.2);
+  font-weight: 400;
+}
+
+.mini-stats-card__vpip {
+  color: var(--soft-white, #b0b3b8);
+  font-weight: 500;
+  font-size: 11px;
+}
+
+/* ── Expanded Details ── */
+.mini-stats-card--expanded {
+  max-width: 220px;
+}
+
+.mini-stats-card__details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mini-stats-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.mini-stats-card__label {
+  color: var(--soft-white, #b0b3b8);
+  font-weight: 400;
+}
+
+.mini-stats-card__value {
+  color: var(--off-white, #e4e6eb);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Observer Badge (VIP feature) ── */
+.mini-stats-card__observers {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--soft-white, #b0b3b8);
+}
+
+.mini-stats-card__observer-icon {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.mini-stats-card__observer-count {
+  font-weight: 600;
+  color: var(--off-white, #e4e6eb);
+}
+
+.mini-stats-card__observer-vip {
+  font-size: 9px;
+  font-weight: 700;
+  color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: auto;
+}
+
+/* ── Observer Name List (VIP only) ── */
+.mini-stats-card__observer-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.mini-stats-card__observer-name {
+  font-size: 10px;
+  color: var(--soft-white, #b0b3b8);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.mini-stats-card__observer-more {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .mini-stats-card {
+    padding: 6px 10px;
+    min-width: 100px;
+    border-radius: 10px;
+  }
+
+  .mini-stats-card__compact {
+    font-size: 12px;
+  }
+
+  .mini-stats-card__vpip {
+    font-size: 10px;
+  }
+}

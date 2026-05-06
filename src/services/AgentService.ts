@@ -17,6 +17,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -220,7 +221,8 @@ class AgentServiceClass {
           parentAgentName = parentProfile?.display_name;
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentService');
       /* non-critical */
     }
 
@@ -318,7 +320,7 @@ class AgentServiceClass {
         .update({ role: input.role })
         .eq('club_id', input.clubId)
         .eq('user_id', input.userId);
-      if (roleErr) console.error('[AgentService] Failed to update membership role:', roleErr);
+      if (roleErr) reportError(roleErr, 'AgentService.updateMembershipRole');
     }
 
     return this.getAgent(data.id) as Promise<Agent>;
@@ -365,7 +367,7 @@ class AgentServiceClass {
           .update({ role: newRole })
           .eq('club_id', agentFull.club_id)
           .eq('user_id', agentFull.user_id);
-        if (roleErr) console.error('[AgentService] Failed to sync membership role:', roleErr);
+        if (roleErr) reportError(roleErr, 'AgentService.syncMembershipRole');
       }
     }
 
@@ -436,7 +438,10 @@ class AgentServiceClass {
     }
     if (input.isPrepaid && creditLimit > 0) {
       // Pre-paid agents don't get credit lines — force to 0
-      console.error(`[AgentService] Pre-paid agent should not have credit limit, setting to 0`);
+      reportError(
+        'Pre-paid agent has credit limit, setting to 0',
+        'AgentService.updateCreditLimit'
+      );
     }
 
     // 1. Validate the user exists
@@ -468,7 +473,7 @@ class AgentServiceClass {
         .from('profiles')
         .update({ player_number: playerNumber })
         .eq('id', userId);
-      if (numErr) console.error('[AgentService] Failed to assign player_number:', numErr);
+      if (numErr) reportError(numErr, 'AgentService.assignPlayerNumber');
 
       console.debug(`[AgentService] Assigned player_number ${playerNumber} to ${profile.username}`);
     }
@@ -563,10 +568,10 @@ class AgentServiceClass {
       .eq('club_id', resolvedClubId);
 
     if (error) {
-      console.error(
-        `[AgentService] Failed to link player ${playerId} to agent ${agentProfile.username}:`,
-        error
-      );
+      reportError(error, 'AgentService.linkPlayerByReferral', {
+        playerId,
+        agentUsername: agentProfile.username,
+      });
       return { success: false };
     }
 
@@ -578,7 +583,7 @@ class AgentServiceClass {
         active_player_count: (agentRecord as any).active_player_count + 1,
       })
       .eq('id', agentRecord.id);
-    if (countErr) console.error('[AgentService] Failed to update agent player count:', countErr);
+    if (countErr) reportError(countErr, 'AgentService.updatePlayerCount');
 
     console.debug(
       `[AgentService] Linked player ${playerId} under agent ${agentProfile.username} via referral code ${referralCode}`
@@ -608,7 +613,7 @@ class AgentServiceClass {
       .maybeSingle();
 
     if (!agentRecord) {
-      console.error(`[AgentService] Agent ${agentUserId} not found in club ${clubId}`);
+      reportError(`Agent ${agentUserId} not found in club ${clubId}`, 'AgentService.assignPlayer');
       return false;
     }
 
@@ -620,7 +625,7 @@ class AgentServiceClass {
       .eq('club_id', resolvedClubId);
 
     if (error) {
-      console.error(`[AgentService] Failed to assign player:`, error);
+      reportError(error, 'AgentService.assignPlayerToAgent');
       return false;
     }
 
@@ -632,13 +637,13 @@ class AgentServiceClass {
         active_player_count: (agentRecord.active_player_count || 0) + 1,
       })
       .eq('id', agentRecord.id);
-    if (countErr) console.error('[AgentService] Failed to update agent player count:', countErr);
+    if (countErr) reportError(countErr, 'AgentService.updatePlayerCount');
 
     // Audit log — record who assigned the player
     const { data: currentUser } = await supabase.auth.getUser();
     const assignedBy = currentUser?.user?.id || 'system';
     await supabase
-      .from('audit_logs')
+      .from('audit_trail')
       .insert({
         action: 'ASSIGN_PLAYER_TO_AGENT',
         performed_by: assignedBy,
@@ -650,8 +655,7 @@ class AgentServiceClass {
         },
       })
       .then(({ error: logErr }) => {
-        if (logErr)
-          console.warn('[AgentService] Audit log failed (table may not exist):', logErr.message);
+        if (logErr) reportError(logErr, 'AgentService.Audit_log_failed');
       });
 
     masterBus.emit('CLUB_UPDATED', { clubId });
@@ -713,7 +717,7 @@ class AgentServiceClass {
       new_limit: newLimit,
       reason,
     });
-    if (auditErr) console.error('[AgentService] Failed to log credit assignment:', auditErr);
+    if (auditErr) reportError(auditErr, 'AgentService.logCreditAssignment');
 
     // Notify UI of club config changes
     if (agent.club_id) {
@@ -798,7 +802,8 @@ class AgentServiceClass {
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentService.map');
       /* non-critical */
     }
 
@@ -870,7 +875,7 @@ class AgentServiceClass {
     );
 
     if (deductErr || deducted === false) {
-      console.error('[AgentService] selfTransfer deduct failed:', deductErr);
+      reportError(deductErr, 'AgentService.selfTransfer.deduct');
       throw new Error(deductErr?.message || 'Insufficient balance for self-transfer');
     }
 
@@ -889,7 +894,7 @@ class AgentServiceClass {
     );
 
     if (creditErr) {
-      console.error('[AgentService] selfTransfer credit failed:', creditErr);
+      reportError(creditErr, 'AgentService.selfTransfer.credit');
       throw new Error(creditErr.message || 'Self-transfer credit failed');
     }
 
@@ -974,7 +979,10 @@ class AgentServiceClass {
           // Agent → Sub-Agent: Get sub-agent's user_id
           const subAgent = await this.getAgent(dist.toId);
           if (!subAgent) {
-            console.error(`[AgentService] Sub-agent ${dist.toId} not found, skipping`);
+            reportError(
+              `Sub-agent ${dist.toId} not found`,
+              'AgentService.distributeChips.subAgentMissing'
+            );
             continue;
           }
           await ChipFlowService.transfer(
@@ -996,7 +1004,7 @@ class AgentServiceClass {
         }
         distributed += amt;
       } catch (err: unknown) {
-        console.error(`[AgentService] Distribution to ${dist.toId} failed:`, err);
+        reportError(err, 'AgentService.distributeChips', { toId: dist.toId });
         // Continue with remaining distributions — partial failures are logged
       }
     }
@@ -1144,7 +1152,7 @@ class AgentServiceClass {
     );
 
     if (rpcErr) {
-      console.error('[AgentService] Treasury distribution RPC error:', rpcErr);
+      reportError(rpcErr, 'AgentService.treasuryDistribution');
       return { success: false, error: rpcErr.message || 'Distribution failed' };
     }
 

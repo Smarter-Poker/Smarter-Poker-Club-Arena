@@ -21,6 +21,7 @@ import './SessionHistoryPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 interface SessionRecord {
   id: string;
@@ -121,7 +122,7 @@ export default function SessionHistoryPage() {
       setCachedSH(user.id, timeFilter, fetched);
     } catch (err) {
       if (!isMounted.current) return;
-      console.error('[SessionHistory] Load failed:', err);
+      reportError(err, 'SessionHistoryPage.Load_failed');
       toast.error('Failed to load session history');
     } finally {
       loadingRef.current = false;
@@ -162,7 +163,7 @@ export default function SessionHistoryPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[SessionHistoryPage] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'SessionHistoryPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[SessionHistoryPage] ⏱️ Realtime channel timed out');
@@ -321,7 +322,8 @@ export default function SessionHistoryPage() {
                   { key: 'rebuys', label: 'Rebuys' },
                 ]);
                 toast.success('Sessions exported!');
-              } catch {
+              } catch (e) {
+                reportError(e, 'SessionHistoryPage');
                 toast.error('Failed to export sessions.');
               }
             }}

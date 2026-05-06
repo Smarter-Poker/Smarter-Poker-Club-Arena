@@ -10,6 +10,7 @@
  */
 
 // Logo generation via server-side API route (keeps xAI key server-side)
+import { reportError } from '../utils/errorReporter';
 const LOGO_API_URL = '/api/club-arena/generate-logo';
 
 // Logo generation settings
@@ -47,7 +48,7 @@ export async function generateClubLogo(
     const data = await response.json();
 
     if (!response.ok || !data.success) {
-      console.error('[LogoGenerator] API error:', data.error);
+      reportError(data.error, 'LogoGeneratorService.generate.api');
       return {
         success: false,
         error: data.error || `API error: ${response.status}`,
@@ -62,7 +63,7 @@ export async function generateClubLogo(
       logoUrl: resizedDataUrl,
     };
   } catch (error: unknown) {
-    console.error('[LogoGenerator] Logo generation failed:', error);
+    reportError(error, 'LogoGeneratorService.generate');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -104,46 +105,46 @@ async function resizeImage(
  * Logo style presets for quick selection
  */
 export const LOGO_STYLE_PRESETS = [
-  { id: 'shark-modern', name: 'Shark', theme: 'shark', style: 'aggressive' as const, icon: '🦈' },
-  { id: 'dragon-classic', name: 'Dragon', theme: 'dragon', style: 'classic' as const, icon: '🐉' },
-  { id: 'eagle-elegant', name: 'Eagle', theme: 'eagle', style: 'elegant' as const, icon: '🦅' },
-  { id: 'lion-aggressive', name: 'Lion', theme: 'lion', style: 'aggressive' as const, icon: '🦁' },
-  { id: 'phoenix-modern', name: 'Phoenix', theme: 'phoenix', style: 'modern' as const, icon: '🔥' },
-  { id: 'wolf-classic', name: 'Wolf', theme: 'wolf', style: 'classic' as const, icon: '🐺' },
+  { id: 'shark-modern', name: 'Shark', theme: 'shark', style: 'aggressive' as const, icon: 'SH' },
+  { id: 'dragon-classic', name: 'Dragon', theme: 'dragon', style: 'classic' as const, icon: 'DR' },
+  { id: 'eagle-elegant', name: 'Eagle', theme: 'eagle', style: 'elegant' as const, icon: 'EA' },
+  { id: 'lion-aggressive', name: 'Lion', theme: 'lion', style: 'aggressive' as const, icon: 'LI' },
+  { id: 'phoenix-modern', name: 'Phoenix', theme: 'phoenix', style: 'modern' as const, icon: 'PH' },
+  { id: 'wolf-classic', name: 'Wolf', theme: 'wolf', style: 'classic' as const, icon: 'WO' },
   {
     id: 'cards-elegant',
     name: 'Cards',
     theme: 'playing cards and poker chips',
     style: 'elegant' as const,
-    icon: '🂡',
+    icon: 'CA',
   },
   {
     id: 'crown-elegant',
     name: 'Crown',
     theme: 'royal crown with poker elements',
     style: 'elegant' as const,
-    icon: '👑',
+    icon: 'CR',
   },
   {
     id: 'diamond-modern',
     name: 'Diamond',
     theme: 'diamond gemstone',
     style: 'modern' as const,
-    icon: '💎',
+    icon: 'DI',
   },
   {
     id: 'skull-aggressive',
     name: 'Skull',
     theme: 'skull with poker elements',
     style: 'aggressive' as const,
-    icon: '💀',
+    icon: 'SK',
   },
-  { id: 'tiger-playful', name: 'Tiger', theme: 'tiger', style: 'playful' as const, icon: '🐯' },
+  { id: 'tiger-playful', name: 'Tiger', theme: 'tiger', style: 'playful' as const, icon: 'TI' },
   {
     id: 'spade-classic',
     name: 'Spade',
     theme: 'spade suit symbol',
     style: 'classic' as const,
-    icon: '♠️',
+    icon: 'SP',
   },
 ];

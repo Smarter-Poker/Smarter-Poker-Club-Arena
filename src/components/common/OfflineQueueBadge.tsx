@@ -69,7 +69,7 @@ export default function OfflineQueueBadge() {
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
-      <span style={{ fontSize: '1rem' }}>{!isOnline ? '📡' : '⏳'}</span>
+      <span style={{ fontSize: '1rem' }}>{!isOnline ? '--' : '...'}</span>
       {!isOnline ? 'Offline' : `${queueSize} pending`}
       {queueSize > 0 && (
         <span

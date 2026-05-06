@@ -12,6 +12,7 @@ import { useToast } from '../../components/common/Toast';
 import './TournamentDetails.css';
 
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { reportError } from '../../utils/errorReporter';
 
 interface CompletedTournament {
   id: string;
@@ -119,7 +120,7 @@ export default function TournamentResultsPage() {
       setTournaments(completedList);
     } catch (err) {
       if (!isMounted.current) return;
-      console.error('Failed to load tournament results:', err);
+      reportError(err, 'TournamentResultsPage.Failed_to_load_tournament_results');
       toast?.error('Failed to load tournament results');
     }
     if (isMounted.current) setIsLoading(false);
@@ -183,7 +184,7 @@ export default function TournamentResultsPage() {
 
       if (isMounted.current) setResults((data || []) as TournamentResult[]);
     } catch (err) {
-      console.error('[TournamentResults] loadResults error:', err);
+      reportError(err, 'TournamentResultsPage.loadResults_error');
     }
   };
 
@@ -206,7 +207,7 @@ export default function TournamentResultsPage() {
 
       if (isMounted.current) setHandHistory((data || []) as HandHistoryRecord[]);
     } catch (err) {
-      console.error('[TournamentResults] loadHandHistory error:', err);
+      reportError(err, 'TournamentResultsPage.loadHandHistory_error');
     }
   };
 
@@ -276,7 +277,8 @@ export default function TournamentResultsPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[TournamentResultsPage] ❌ Realtime channel error:', err?.message || err);
+          if (err)
+            reportError(err?.message || err, 'TournamentResultsPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TournamentResultsPage] ⏱️ Realtime channel timed out');

@@ -812,3 +812,26 @@ textarea:focus-visible {
     padding-right: env(safe-area-inset-right);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Bible V8 §5.22 / WCAG 2.2 AA: Screen Reader Only Utility
+   Visually hidden but accessible to assistive technology.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Bible V8 §5.22: Focus visible indicator for keyboard navigation */
+:focus-visible {
+  outline: 2px solid #ffd700;
+  outline-offset: 2px;
+}

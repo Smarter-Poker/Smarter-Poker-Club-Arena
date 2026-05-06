@@ -11,6 +11,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import styles from './ForwardMessageModal.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface ForwardMessageModalProps {
   messageId: string;
@@ -41,7 +42,7 @@ export default function ForwardMessageModal({
         setLoading(false);
       })
       .catch((err) => {
-        console.error('[ForwardMessageModal] Failed to load conversations:', err);
+        reportError(err, 'ForwardMessageModal.Failed_to_load_conversations');
         setLoading(false);
       });
   }, [user?.id]);
@@ -68,7 +69,7 @@ export default function ForwardMessageModal({
         toast.error('Failed to forward');
       }
     } catch (err) {
-      console.error('[ForwardMessageModal] Error:', err);
+      reportError(err, 'ForwardMessageModal.Error');
       toast.error('Failed to forward');
     }
     setForwarding(null);

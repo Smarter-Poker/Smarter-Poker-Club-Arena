@@ -215,27 +215,88 @@
 .seat__status-dot--sitting_out {
   background: #6b7280;
 }
+/* FIX 186: Bible V8 §2.3 — Disconnected status indicator */
+.seat__status-dot--disconnected {
+  background: #ef4444;
+  animation: seat-disconnect-pulse 1.5s ease-in-out infinite;
+}
+@keyframes seat-disconnect-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.seat__disconnect-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  z-index: 5;
+  pointer-events: none;
+}
+.seat__disconnect-label {
+  font-size: 0.5rem;
+  font-weight: 800;
+  color: #ef4444;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  animation: disconnectPulse 2s ease-in-out infinite;
+}
+.seat__disconnect-timer {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fbbf24;
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+@keyframes disconnectPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+.seat--disconnected .seat__avatar-img {
+  filter: grayscale(0.7) brightness(0.6);
+}
 
 /* ─── POSITION CHIP (D / SB / BB) — Animated Dealer Button ─────────── */
 
 .seat__position-chip {
   position: absolute;
-  bottom: -2px;
-  right: -4px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 22px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.5625rem;
+  font-size: 0.5rem;
   font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  /* Colors set via inline style per position — no !important override */
   box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.4),
-    inset 0 1px 1px rgba(255, 255, 255, 0.2),
-    0 0 8px rgba(0, 0, 0, 0.2);
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 0 6px rgba(255, 255, 255, 0.3),
+    inset 0 1px 1px rgba(255, 255, 255, 0.4),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.15);
   z-index: 4;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
   animation: dealerButtonAppear 0.4s var(--ease-spring) forwards;
   transition:
     transform 0.2s var(--ease-spring),
@@ -431,8 +492,57 @@
    - A nested ::after masks the inside to reveal only the border ring
 */
 
+/* 2026-04-15 Bible V8 §6.1 — the countdown ring is driven by a CSS
+   @property animation, not a JS hook. This works identically for hero AND
+   opponent turns, and continues running even on hidden / background tabs
+   where rAF is suspended. Prior JS-hook implementation sometimes left the
+   ring stuck at 100% for opponent active seats; the pure-CSS version makes
+   that impossible. Component sets --sp-timer-duration (seconds until
+   deadline) + --sp-timer-delay (negative offset for already-elapsed time
+   on first paint). Re-mounting the info element via React `key` restarts
+   the animation on every new turn. */
+@property --timer-progress {
+  syntax: '<percentage>';
+  inherits: true;
+  initial-value: 100%;
+}
+/* Dan 2026-04-15: yellow for the first 80% of the 15s turn, then snap to red
+ * on the final 3 seconds (last 20%). Drives a second --timer-color variable
+ * animated in parallel with --timer-progress. */
+@property --timer-color {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ffd700;
+}
+@keyframes spTimerRingShrink {
+  from {
+    --timer-progress: 100%;
+  }
+  to {
+    --timer-progress: 0%;
+  }
+}
+@keyframes spTimerColorShift {
+  0% {
+    --timer-color: #ffd700;
+  } /* Yellow from 15s → 3s remaining */
+  80% {
+    --timer-color: #ffd700;
+  }
+  80.01% {
+    --timer-color: #ef4444;
+  } /* Red snap at 3s remaining */
+  100% {
+    --timer-color: #ef4444;
+  }
+}
+
 .seat--active .seat__info {
   border-color: transparent;
+  /* Shrink + color-shift share the same duration/delay so they stay in sync */
+  animation:
+    spTimerRingShrink var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards,
+    spTimerColorShift var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards;
 }
 
 /* Outer glow container */
@@ -443,15 +553,16 @@
   border-radius: 10px;
   background: conic-gradient(
     from 0deg,
-    #ffd700 0%,
-    #ffd700 var(--timer-progress, 100%),
+    var(--timer-color, #ffd700) 0%,
+    var(--timer-color, #ffd700) var(--timer-progress, 100%),
     transparent var(--timer-progress, 100%),
     transparent 100%
   );
   z-index: -2;
-  /* Neon glow */
-  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.6)) drop-shadow(0 0 12px rgba(255, 215, 0, 0.3));
-  transition: opacity 0.3s ease;
+  /* Neon glow — color matches ring; drop-shadow tracks --timer-color implicitly */
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.55))
+    drop-shadow(0 0 10px rgba(255, 107, 53, 0.25));
+  transition: filter 0.3s ease;
   will-change: background;
 }
 
@@ -465,23 +576,13 @@
   z-index: -1;
 }
 
-/* Pulsing urgency — timer below 33% turns orange, below 20% turns red */
+/* Smooth glow on active timer — no pulsing/ticking, just a steady subtle glow */
 .seat--active .seat__info::before {
-  animation: timerSweep 0.8s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.5)) drop-shadow(0 0 10px rgba(255, 215, 0, 0.2));
+  transition: filter 0.3s ease;
 }
 
-@keyframes timerSweep {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.6)) drop-shadow(0 0 12px rgba(255, 215, 0, 0.3));
-  }
-  50% {
-    filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.75))
-      drop-shadow(0 0 16px rgba(255, 215, 0, 0.4));
-  }
-}
-
-/* Timer urgency — color transitions via JS classes */
+/* Timer urgency — smooth color transitions, NO pulsing/ticking */
 .seat--timer-urgent .seat__info::before {
   background: conic-gradient(
     from 0deg,
@@ -490,7 +591,9 @@
     transparent var(--timer-progress, 100%),
     transparent 100%
   ) !important;
-  animation: timerUrgentPulse 0.6s ease-in-out infinite !important;
+  /* Smooth transition, no pulsing animation */
+  filter: drop-shadow(0 0 8px rgba(255, 107, 53, 0.5)) !important;
+  transition: filter 0.5s ease !important;
 }
 
 .seat--timer-critical .seat__info::before {
@@ -501,7 +604,9 @@
     transparent var(--timer-progress, 100%),
     transparent 100%
   ) !important;
-  animation: timerCriticalPulse 0.35s ease-in-out infinite !important;
+  /* Smooth glow, no pulsing animation */
+  filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.6)) !important;
+  transition: filter 0.5s ease !important;
 }
 
 .seat--timer-urgent .seat__avatar {
@@ -510,6 +615,9 @@
     0 0 20px rgba(255, 107, 53, 0.5),
     0 0 40px rgba(255, 107, 53, 0.2),
     0 4px 16px rgba(0, 0, 0, 0.5) !important;
+  transition:
+    border-color 0.5s ease,
+    box-shadow 0.5s ease !important;
 }
 
 .seat--timer-critical .seat__avatar {
@@ -518,50 +626,71 @@
     0 0 24px rgba(239, 68, 68, 0.6),
     0 0 48px rgba(239, 68, 68, 0.25),
     0 4px 16px rgba(0, 0, 0, 0.5) !important;
-  animation: criticalAvatarShake 0.3s ease-in-out infinite !important;
+  /* Smooth transition, NO shake animation */
+  transition:
+    border-color 0.5s ease,
+    box-shadow 0.5s ease !important;
 }
 
-@keyframes timerUrgentPulse {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 8px rgba(255, 107, 53, 0.6))
-      drop-shadow(0 0 16px rgba(255, 107, 53, 0.3));
-  }
-  50% {
-    filter: drop-shadow(0 0 14px rgba(255, 107, 53, 0.9))
-      drop-shadow(0 0 24px rgba(255, 107, 53, 0.5));
-  }
-}
-
-@keyframes timerCriticalPulse {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.7))
-      drop-shadow(0 0 20px rgba(239, 68, 68, 0.4));
-  }
-  50% {
-    filter: drop-shadow(0 0 18px rgba(239, 68, 68, 1)) drop-shadow(0 0 32px rgba(239, 68, 68, 0.6));
-  }
-}
-
-@keyframes criticalAvatarShake {
-  0%,
-  100% {
-    transform: scale(1.04) translateX(0);
-  }
-  25% {
-    transform: scale(1.04) translateX(-1px);
-  }
-  75% {
-    transform: scale(1.04) translateX(1px);
-  }
-}
+/* Removed timerUrgentPulse, timerCriticalPulse, criticalAvatarShake — Dan wants smooth, not ticking */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    STATE VARIANTS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* ─── HERO ────────────────────────────────────────────────────────────── */
+
+/* PokerBros-style avatar timer ring — conic gradient around avatar circle */
+.seat--active .seat__avatar-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    var(--timer-color, #ffd700) 0%,
+    var(--timer-color, #ffd700) var(--timer-progress, 100%),
+    transparent var(--timer-progress, 100%),
+    transparent 100%
+  );
+  z-index: 1;
+  filter: drop-shadow(0 0 4px var(--timer-glow, rgba(255, 215, 0, 0.5)));
+  transition: opacity 0.3s ease;
+  will-change: background;
+}
+
+/* Inner mask for avatar timer ring */
+.seat--active .seat__avatar-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  background: var(--bg-primary, #0a0e17);
+  z-index: 1;
+}
+
+/* Timer urgency on avatar ring */
+.seat--timer-urgent .seat__avatar-wrap::before {
+  background: conic-gradient(
+    from 0deg,
+    #ff6b35 0%,
+    #ff6b35 var(--timer-progress, 100%),
+    transparent var(--timer-progress, 100%),
+    transparent 100%
+  ) !important;
+  filter: drop-shadow(0 0 6px rgba(255, 107, 53, 0.6)) !important;
+}
+
+.seat--timer-critical .seat__avatar-wrap::before {
+  background: conic-gradient(
+    from 0deg,
+    #ef4444 0%,
+    #ef4444 var(--timer-progress, 100%),
+    transparent var(--timer-progress, 100%),
+    transparent 100%
+  ) !important;
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.7)) !important;
+}
 
 .seat--hero .seat__avatar {
   border-color: #ffd700;
@@ -612,6 +741,88 @@
 .seat--folded .seat__avatar {
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/*
+ * Hero hole cards after fold. Keep them visible — the player still wants
+ * to see what they mucked — but desaturate + dim to match the avatar.
+ * Dan's UX rule, 2026-04-14.
+ */
+.seat__cards--folded {
+  opacity: 0.45;
+  filter: grayscale(55%) brightness(0.85);
+  pointer-events: none;
+  transition:
+    opacity 250ms ease,
+    filter 250ms ease;
+}
+
+/* Bible V8 §5.3: Card peek gesture — brief lift on tap/hold */
+.seat__cards--peeking {
+  animation: cardPeekLift 0.3s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes cardPeekLift {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px) scale(1.03);
+  }
+  100% {
+    transform: translateY(-4px) scale(1.01);
+  }
+}
+
+/*
+ * Phase 2 T1-01 — PokerBros signature net-profit "+N" yellow floating text
+ * above the winning seat. Pops in, floats up, fades out over 2.5s. Per
+ * POKERBROS_CLONE_SPEC.md §6 line 544-547:
+ *   "+N" in YELLOW, bold, above hero avatar
+ *   floats upward from hero's chip area
+ *   Duration: 600ms, fades out at end
+ * We use 2.5s so the amount is readable — 600ms is too brief in practice.
+ */
+.seat__net-win {
+  position: absolute;
+  top: -56px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 10px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #ffde5c;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.65),
+    0 0 12px rgba(255, 222, 92, 0.55);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  z-index: 40;
+  pointer-events: none;
+  animation: seat-net-win-float 2500ms cubic-bezier(0.2, 0.7, 0.4, 1) forwards;
+}
+
+@keyframes seat-net-win-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.8);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -4px) scale(1.1);
+  }
+  30% {
+    transform: translate(-50%, -6px) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, -28px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -44px) scale(0.95);
+  }
 }
 
 /* ─── AWAY / SITTING OUT ──────────────────────────────────────────────── */
@@ -675,13 +886,30 @@
   z-index: 10;
 }
 
-/* Hero cards — large, PokerBros-style to the right of avatar, fanned with overlap */
+/* Hero cards — PokerBros signature: cards sit to the RIGHT of the avatar,
+ * 2026-04-17 Dan rewrite: landscape-racetrack layout puts hero at bottom
+ * center of the scaler. The cards need to POP UP from behind the hero pill
+ * so they peek above the bottom rail, PokerBros-style. Anchored at top:0 of
+ * the seat plate and translated up so ~70% of the card height sits above
+ * the plate; the bottom ~30% overlaps the pill (behind it visually, z-index
+ * handles the stacking). Community board is at 50% y so there's still a
+ * ~40px gap between hero cards and the board on a 375px phone. */
 .seat__cards--hero {
   position: absolute;
-  right: -28px;
-  top: 4px;
+  left: 50%;
+  top: 0;
+  /* translateY(-60%) = card pops up 60% of its height above the pill */
+  transform: translate(-50%, -60%);
   display: flex;
+  align-items: flex-end;
+  justify-content: center;
   z-index: 20;
+  gap: 0;
+  pointer-events: none; /* don't block clicks on the avatar/seat below */
+}
+
+.seat__cards--hero > * {
+  pointer-events: auto;
 }
 
 /* Base card size (opponents) */
@@ -712,31 +940,44 @@
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.6);
 }
 
-/* Hero gets LARGE cards — PokerBros signature style, overlapping fan */
+/* Hero cards — PokerBros signature: large, white-bordered, slight horizontal
+ * fan. Per POKERBROS_CLONE_SPEC.md §1: 50-70px wide, slightly fanned,
+ * rank/suit clearly displayed. Two cards rotate in opposite directions
+ * for the fan effect; first card tilts -6deg, second +6deg. */
 .seat__cards--hero .seat__card {
-  width: 48px;
-  height: 68px;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-  margin-left: -10px; /* overlap — second card laps over first */
+  width: 56px;
+  height: 78px;
+  border-radius: 7px;
+  background: #fff;
+  margin-left: -16px;
   animation: heroCardPeek 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) backwards;
   transform-style: preserve-3d;
+  transform-origin: bottom center;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
+/* PokerBros wider fan + slight overlap. Tilted symmetrically so the pair
+ * looks like a real fanned hand rather than two stacked cards. */
 .seat__cards--hero .seat__card:first-child {
   margin-left: 0;
+  margin-right: -10px;
+  transform: rotate(-12deg) translateY(2px);
   animation-delay: 0.1s;
 }
 
 .seat__cards--hero .seat__card:nth-child(2) {
+  transform: rotate(12deg) translateY(2px);
   animation-delay: 0.25s;
 }
 
 .seat__cards--hero .seat__card--face {
-  border: 1.5px solid rgba(255, 215, 0, 0.3);
+  border: 2px solid #ffffff;
+  background: #fff;
   box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.6),
-    0 0 8px rgba(255, 215, 0, 0.08);
+    0 6px 18px rgba(0, 0, 0, 0.55),
+    0 1px 2px rgba(0, 0, 0, 0.45);
   transition:
     transform 0.25s var(--ease-spring, ease),
     box-shadow 0.25s ease;
@@ -803,27 +1044,41 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__action {
+  /* PokerBros: action tag floats clearly ABOVE the avatar, never overlapping.
+   * Seat is ~80px wide, avatar is 56px with some vertical padding. Pushing
+   * the badge 42px above the seat's top ensures a clear gap over the
+   * avatar crown and a comfortable visual spacing from the name box below.
+   * Dan's UX rule 2026-04-14. */
   position: absolute;
-  top: -16px;
+  top: -42px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 2px 10px;
-  border-radius: 4px;
-  font-size: 0.6875rem;
-  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 0.72rem;
+  font-weight: 800;
   white-space: nowrap;
   z-index: 30;
-  animation: actionFadeIn 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1.05;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  animation: actionPopIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  pointer-events: none;
 }
 
-@keyframes actionFadeIn {
+@keyframes actionPopIn {
   0% {
     opacity: 0;
-    transform: translateX(-50%) translateY(4px);
+    transform: translateX(-50%) scale(0.5) translateY(8px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.1) translateY(-2px);
   }
   100% {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(-50%) scale(1) translateY(0);
   }
 }
 
@@ -851,8 +1106,10 @@
 .seat__action--all_in {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   color: #fff;
+  font-size: 0.875rem;
+  padding: 4px 14px;
   animation:
-    actionFadeIn 0.3s ease,
+    actionPopIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275),
     allInPulse 1.5s ease-in-out infinite;
 }
 
@@ -864,6 +1121,64 @@
   50% {
     box-shadow: 0 0 16px rgba(239, 68, 68, 0.7);
   }
+}
+
+/* ─── BET CHIPS — positioned IN FRONT of player toward felt center ──── */
+
+.seat__bet-chips {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* Use CSS custom properties set by seat-wrapper to push chips toward table center */
+  transform: translate(
+    calc(-50% + var(--bet-offset-x, 0px)),
+    calc(-50% + var(--bet-offset-y, 0px))
+  );
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+/* ─── OPPONENT CARD BACKS — Deal-in animation ────────────────────────── */
+
+.seat__cards--opponent .seat__card--back {
+  animation: opponentCardDeal 0.4s ease-out forwards;
+}
+
+@keyframes opponentCardDeal {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--card-rotation, 0deg)) scale(0.3) translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(var(--card-rotation, 0deg)) scale(1) translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   IN-HAND STATE — Subtle yellow glow on all players still in the hand
+   Reference: PokerBros-style highlighting of non-folded players
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat--in-hand .seat__avatar {
+  border-color: rgba(255, 215, 0, 0.6);
+  box-shadow:
+    0 0 10px rgba(255, 215, 0, 0.3),
+    0 0 20px rgba(255, 215, 0, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.seat--in-hand .seat__info {
+  border-color: rgba(255, 215, 0, 0.2);
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.1);
+}
+
+/* The active player (whose turn it is) gets the stronger glow — override in-hand */
+.seat--active.seat--in-hand .seat__avatar {
+  /* Active player styles already defined above — no duplication needed */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1019,6 +1334,62 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   POSITION BADGE — PokerBros parity: SB/BB/UTG/CO/MP/HJ shown per seat
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat__position-badge {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  padding: 1px 5px;
+  background: rgba(15, 15, 20, 0.85);
+  color: #a0a8b8;
+  border-radius: 4px;
+  font-size: 0.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  z-index: 6;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  line-height: 1.3;
+}
+
+/* SB — gold tint */
+.seat__position-badge--sb {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+/* BB — blue tint */
+.seat__position-badge--bb {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+/* UTG / UTG+1 / UTG+2 — red tint (early position = danger zone) */
+.seat__position-badge--utg,
+.seat__position-badge--utgp1,
+.seat__position-badge--utgp2 {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+/* CO / HJ — green tint (late position = strong) */
+.seat__position-badge--co,
+.seat__position-badge--hj {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.2);
+}
+
+/* MP / MP+1 — neutral */
+.seat__position-badge--mp,
+.seat__position-badge--mpp1 {
+  color: #94a3b8;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    ALL-IN BADGE
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -1132,12 +1503,25 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CARD DEALING ANIMATION — Cards fly in from dealer position
+   CARD DEALING ANIMATION -- Per-Seat Card Arrival
+   ═══════════════════════════════════════════════════════════════════════════════
+   When a new hand starts, each seat's hole cards animate in from the dealer
+   direction. This is the "landing" counterpart to DealAnimation's "flight".
+
+   6-phase spring animation:
+     0%  — Off-screen toward dealer, tiny, bright
+     15% — Entering view, growing rapidly
+     40% — Arriving at seat, slight overshoot in scale
+     60% — Micro-bounce back (spring settle)
+     80% — Almost at rest
+     100%— At rest, normal size + rotation
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__cards--dealing .seat__card {
-  animation: cardDealIn calc(0.25s * var(--animation-speed, 1)) ease-out forwards;
+  animation: cardDealIn calc(0.35s * var(--animation-speed, 1))
+    cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
   opacity: 0;
+  will-change: transform, opacity;
 }
 
 .seat__cards--dealing .seat__card:nth-child(1) {
@@ -1151,38 +1535,94 @@
 @keyframes cardDealIn {
   0% {
     opacity: 0;
-    transform: translate(var(--deal-from-x, 0px), var(--deal-from-y, -60px)) scale(0.5) rotate(0deg);
+    transform: translate(var(--deal-from-x, 0px), var(--deal-from-y, -60px)) scale(0.35)
+      rotate(-10deg);
+    filter: brightness(1.5);
   }
-  70% {
+  15% {
+    opacity: 0.8;
+    transform: translate(calc(var(--deal-from-x, 0px) * 0.4), calc(var(--deal-from-y, -60px) * 0.3))
+      scale(0.7) rotate(-5deg);
+    filter: brightness(1.2);
+  }
+  40% {
     opacity: 1;
-    transform: translate(0, 0) scale(1.05) rotate(var(--card-rotation, 0deg));
+    transform: translate(0, -2px) scale(1.08) rotate(calc(var(--card-rotation, 0deg) + 2deg));
+    filter: brightness(1.05);
+  }
+  60% {
+    transform: translate(0, 1px) scale(0.97) rotate(calc(var(--card-rotation, 0deg) - 1deg));
+    filter: brightness(1);
+  }
+  80% {
+    transform: translate(0, 0) scale(1.01) rotate(var(--card-rotation, 0deg));
   }
   100% {
     opacity: 1;
     transform: translate(0, 0) scale(1) rotate(var(--card-rotation, 0deg));
+    filter: brightness(1);
   }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   FOLD ANIMATION — Cards fly to muck/center and fade out
+   FOLD ANIMATION -- World-Class Card Muck
+   ═══════════════════════════════════════════════════════════════════════════════
+   Cards fly toward the muck (center of table) with:
+   - Initial lift (cards picked up off the felt)
+   - Rotation spin (realistic flick toward muck)
+   - Scale-down as cards recede into distance
+   - Brightness dim (cards going face-down into the muck pile)
+   - Blur on exit (depth-of-field effect)
+   - Second card slightly delayed for that satisfying 1-2 toss feel
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__cards--folding .seat__card {
-  animation: cardFoldOut calc(0.3s * var(--animation-speed, 1)) ease-in forwards;
+  animation: cardFoldOut calc(0.38s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.2, 1)
+    forwards;
+  will-change: transform, opacity, filter;
 }
 
 .seat__cards--folding .seat__card:nth-child(2) {
-  animation-delay: 40ms;
+  animation-delay: 55ms;
+  /* Second card rotates the opposite direction for visual variety */
+  --fold-spin: -20deg;
 }
 
 @keyframes cardFoldOut {
   0% {
     opacity: 1;
-    transform: translate(0, 0) rotate(var(--card-rotation, 0deg));
+    transform: translate(0, 0) rotate(var(--card-rotation, 0deg)) scale(1);
+    filter: brightness(1) blur(0);
   }
+  /* Lift phase — cards picked up off felt */
+  15% {
+    opacity: 1;
+    transform: translate(0, -4px) rotate(var(--card-rotation, 0deg)) scale(1.04);
+    filter: brightness(1.1) blur(0);
+  }
+  /* Launch phase — flicking toward muck */
+  40% {
+    opacity: 0.9;
+    transform: translate(
+        calc(var(--fold-to-x, 0px) * 0.5),
+        calc(var(--fold-to-y, -40px) * 0.4 - 6px)
+      )
+      rotate(calc(var(--fold-spin, 18deg) * 0.6)) scale(0.88);
+    filter: brightness(0.95) blur(0);
+  }
+  /* Arrival — reaching muck area, fading */
+  75% {
+    opacity: 0.5;
+    transform: translate(calc(var(--fold-to-x, 0px) * 0.9), calc(var(--fold-to-y, -40px) * 0.85))
+      rotate(var(--fold-spin, 18deg)) scale(0.65);
+    filter: brightness(0.7) blur(0.5px);
+  }
+  /* Gone — into the muck */
   100% {
     opacity: 0;
-    transform: translate(var(--fold-to-x, 0px), var(--fold-to-y, -40px)) scale(0.6) rotate(15deg);
+    transform: translate(var(--fold-to-x, 0px), var(--fold-to-y, -40px))
+      rotate(var(--fold-spin, 18deg)) scale(0.5);
+    filter: brightness(0.5) blur(2px);
   }
 }
 
@@ -1306,14 +1746,18 @@
     height: 58px;
   }
   .seat__cards--hero {
-    right: -24px;
-    top: 2px;
+    /* tablet — right-of-avatar anchor, scaled gap (+4px per Dan) */
+    left: calc(100% + 8px);
+    top: 50%;
+    right: auto;
+    transform: translateY(-50%);
   }
 
   .seat__position-chip {
-    width: 20px;
-    height: 20px;
-    font-size: 0.5rem;
+    min-width: 18px;
+    height: 18px;
+    font-size: 0.45rem;
+    padding: 0 3px;
   }
   .seat--empty {
     width: 54px;
@@ -1376,14 +1820,18 @@
     height: 50px;
   }
   .seat__cards--hero {
-    right: -20px;
-    top: 2px;
+    /* phone — right-of-avatar, scaled gap (+4px per Dan) */
+    left: calc(100% + 7px);
+    top: 50%;
+    right: auto;
+    transform: translateY(-50%);
   }
 
   .seat__position-chip {
-    width: 18px;
-    height: 18px;
-    font-size: 0.45rem;
+    min-width: 16px;
+    height: 16px;
+    font-size: 0.4rem;
+    padding: 0 2px;
   }
   .seat__action {
     font-size: 0.5625rem;
@@ -1442,14 +1890,18 @@
     height: 44px;
   }
   .seat__cards--hero {
-    right: -14px;
-    top: 2px;
+    /* small phone — right-of-avatar, scaled gap (+4px per Dan) */
+    left: calc(100% + 6px);
+    top: 50%;
+    right: auto;
+    transform: translateY(-50%);
   }
 
   .seat__position-chip {
-    width: 16px;
-    height: 16px;
-    font-size: 0.4rem;
+    min-width: 14px;
+    height: 14px;
+    font-size: 0.35rem;
+    padding: 0 2px;
   }
   .seat--empty {
     width: 48px;

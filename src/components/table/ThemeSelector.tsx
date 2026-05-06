@@ -68,6 +68,7 @@ const THEMES: ThemeOption[] = [
 ];
 
 import { STORAGE_KEYS } from '../../lib/storage';
+import { reportError } from '../../utils/errorReporter';
 const STORAGE_KEY = STORAGE_KEYS.TABLE_FELT_THEME;
 
 interface ThemeSelectorProps {
@@ -79,7 +80,7 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
     try {
       return localStorage.getItem(STORAGE_KEY) || 'green';
     } catch (err) {
-      console.error('[ThemeSelector] Error:', err);
+      reportError(err, 'ThemeSelector.Error');
       return 'green';
     }
   });
@@ -98,7 +99,7 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
     try {
       localStorage.setItem(STORAGE_KEY, themeId);
     } catch (err) {
-      console.error('[ThemeSelector] Error:', err);
+      reportError(err, 'ThemeSelector.Error');
       /* localStorage unavailable */
     }
   };

@@ -121,7 +121,7 @@ class ErrorBoundary extends Component<Props, State> {
                   marginBottom: '1rem',
                 }}
               >
-                ⚠️
+                Warning
               </div>
 
               <h1
@@ -174,7 +174,7 @@ class ErrorBoundary extends Component<Props, State> {
                       e.currentTarget.style.transform = 'translateY(0)';
                     }}
                   >
-                    📝 Report Feedback
+                    Report Feedback
                   </button>
                 )}
 
@@ -200,7 +200,7 @@ class ErrorBoundary extends Component<Props, State> {
                     e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
-                  🔄 Reload Page
+                  Reload Page
                 </button>
               </div>
 

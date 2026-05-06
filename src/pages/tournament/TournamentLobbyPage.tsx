@@ -20,6 +20,7 @@ import { resolveClubUUID } from '../../utils/clubIdResolver';
 import styles from './TournamentLobbyPage.module.css';
 
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { reportError } from '../../utils/errorReporter';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -79,7 +80,8 @@ export default function TournamentLobbyPage() {
           .limit(1)
           .maybeSingle();
         if (isMounted.current && data) setIsInUnion(true);
-      } catch {
+      } catch (e) {
+        reportError(e, 'TournamentLobbyPage.async');
         /* fail-open */
       }
     })();
@@ -272,7 +274,8 @@ export default function TournamentLobbyPage() {
         })
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[TournamentLobbyPage] ❌ Realtime channel error:', err?.message || err);
+            if (err)
+              reportError(err?.message || err, 'TournamentLobbyPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[TournamentLobbyPage] ⏱️ Realtime channel timed out');
@@ -383,7 +386,8 @@ export default function TournamentLobbyPage() {
               filterClubIds = allUcRows.map((r) => r.club_id);
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'TournamentLobbyPage.map');
           // Fail-open: just use the single clubId
         }
       }
@@ -523,7 +527,7 @@ export default function TournamentLobbyPage() {
       }
     } catch (error) {
       if (!isMounted.current) return;
-      console.error('Failed to load tournaments:', error);
+      reportError(error, 'TournamentLobbyPage.Failed_to_load_tournaments');
     }
     if (isMounted.current) setLoading(false);
   };
@@ -535,7 +539,7 @@ export default function TournamentLobbyPage() {
       toast.success('Registered! Buy-in deducted from your wallet');
       loadTournaments();
     } catch (error) {
-      console.error('Registration failed:', error);
+      reportError(error, 'TournamentLobbyPage.Registration_failed');
       const msg = (error as Error).message || 'Unknown error';
       toast.error(`Registration failed: ${msg}`);
       throw error; // Re-throw so card can react
@@ -549,7 +553,7 @@ export default function TournamentLobbyPage() {
       toast.success('Unregistered — buy-in refunded to your wallet');
       loadTournaments();
     } catch (error) {
-      console.error('Unregistration failed:', error);
+      reportError(error, 'TournamentLobbyPage.Unregistration_failed');
       const msg = (error as Error).message || 'Unknown error';
       toast.error(`Unregistration failed: ${msg}`);
     }

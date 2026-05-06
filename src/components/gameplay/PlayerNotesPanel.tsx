@@ -15,6 +15,7 @@ import { NOTE_COLORS, PLAYER_TAGS } from '../../services/PlayerNotesService';
 import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import { useToast } from '../common/Toast';
 import styles from './PlayerNotesPanel.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PlayerNote {
   id: string;
@@ -109,7 +110,8 @@ export default function PlayerNotesPanel({
             .select('id, display_name, avatar_url')
             .in('id', tIds);
           if (profs) for (const p of profs) pMap[p.id] = p;
-        } catch {
+        } catch (e) {
+          reportError(e, 'PlayerNotesPanel.Set');
           /* non-critical */
         }
       }

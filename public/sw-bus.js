@@ -21,7 +21,7 @@ const sw = self;
 // DEPLOY VERSION — updated by CI/build to bust the service worker cache.
 // When this changes, the browser detects a new SW → install → activate → clears old caches.
 // Format: ISO timestamp of last deploy. Update via: sed -i "s/DEPLOY_TS.*/DEPLOY_TS = '$(date -u +%Y%m%d%H%M%S)';/" public/sw-bus.js
-const DEPLOY_TS = '20260323183000';
+const DEPLOY_TS = '20260417223500';
 const CACHE_NAME = `club-arena-${DEPLOY_TS}`;
 const MAX_CACHE_ENTRIES = 200; // Evict oldest entries when cache grows beyond this
 
@@ -60,11 +60,24 @@ sw.addEventListener('fetch', (event) => {
       url.pathname.includes('supabase') ||
       url.pathname.includes('realtime')) return;
 
+  // CRITICAL: Never intercept HTML navigation requests — always serve fresh from network.
+  // This prevents the SW from serving a stale index.html that references old chunk hashes.
+  if (event.request.mode === 'navigate' ||
+      event.request.destination === 'document' ||
+      url.pathname.endsWith('.html') ||
+      url.pathname.endsWith('/') ||
+      url.pathname === '/hub/club-arena' ||
+      url.pathname.startsWith('/hub/club-arena/') && !url.pathname.includes('/assets/')) {
+    // Let the browser handle navigation requests normally (network-first)
+    return;
+  }
+
   const isHashedAsset = /[-\.][a-zA-Z0-9_]{4,}\.(js|css|woff2?)$/.test(url.pathname);
   const isImage = /\.(png|jpg|jpeg|webp|svg|gif|ico)$/.test(url.pathname);
 
   if (isHashedAsset) {
     // Cache-first: hashed assets are immutable — serve from cache if available
+    // With network fallback: if cached response is somehow corrupt/stale, try network
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) =>
         cache.match(event.request).then((cached) => {
@@ -76,6 +89,13 @@ sw.addEventListener('fetch', (event) => {
               trimCache(CACHE_NAME, MAX_CACHE_ENTRIES);
             }
             return response;
+          }).catch(() => {
+            // Network failed and no cache — return a proper error so the app
+            // can trigger its chunk-reload recovery logic instead of hanging
+            return new Response('/* chunk load failed */', {
+              status: 503,
+              headers: { 'Content-Type': 'application/javascript' },
+            });
           });
         })
       )
@@ -105,7 +125,7 @@ sw.addEventListener('fetch', (event) => {
       )
     );
   }
-  // All other requests (HTML, API) fall through to normal network fetch
+  // All other requests (API, etc.) fall through to normal network fetch
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

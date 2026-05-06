@@ -22,6 +22,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -122,7 +123,8 @@ export const MembershipService = {
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'MembershipService.map');
       /* non-critical */
     }
 
@@ -287,7 +289,8 @@ export const MembershipService = {
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'MembershipService.map');
       /* non-critical */
     }
 
@@ -408,8 +411,7 @@ export const MembershipService = {
         .select('*', { count: 'exact', head: true })
         .eq('club_id', resolvedId);
 
-      if (totalErr)
-        console.warn('[MembershipService] getMemberCounts total error:', totalErr.message);
+      if (totalErr) reportError(totalErr, 'MembershipService.getMemberCounts_total_error');
 
       const { count: active, error: activeErr } = await supabase
         .from('club_members')
@@ -417,8 +419,7 @@ export const MembershipService = {
         .eq('club_id', resolvedId)
         .in('status', ['active', 'approved']);
 
-      if (activeErr)
-        console.warn('[MembershipService] getMemberCounts active error:', activeErr.message);
+      if (activeErr) reportError(activeErr, 'MembershipService.getMemberCounts_active_error');
 
       const { count: pending, error: pendingErr } = await supabase
         .from('club_members')
@@ -426,8 +427,7 @@ export const MembershipService = {
         .eq('club_id', resolvedId)
         .eq('status', 'pending');
 
-      if (pendingErr)
-        console.warn('[MembershipService] getMemberCounts pending error:', pendingErr.message);
+      if (pendingErr) reportError(pendingErr, 'MembershipService.getMemberCounts_pending_error');
 
       // Estimate online count — creating a channel just to check presenceState()
       // on an unsubscribed channel always returned 0 and caused side-effect churn.
@@ -441,7 +441,7 @@ export const MembershipService = {
         online,
       };
     } catch (err: any) {
-      console.error('[MembershipService] getMemberCounts crashed:', err.message);
+      reportError(err, 'MembershipService.getMemberCounts');
       return { total: 0, active: 0, pending: 0, online: 0 };
     }
   },

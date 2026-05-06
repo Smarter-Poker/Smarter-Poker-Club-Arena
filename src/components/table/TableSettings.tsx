@@ -6,7 +6,7 @@
  * Settings panel with VIP feature gating:
  * - Show Stack in BBs: FREE for everyone
  * - Offline Protection: 1 free per session, VIP unlimited
- * - Auto Time Bank: VIP=free, Non-VIP=5💎 per activation (confirmation popup)
+ * - Auto Time Bank: VIP=free, Non-VIP=5D per activation (confirmation popup)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -14,6 +14,7 @@ import { vipService, FEATURE_PRICING, VIPFeature } from '../../services/VIPServi
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './TableSettings.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface TableSettingsProps {
   isOpen: boolean;
@@ -59,7 +60,7 @@ const SETTINGS: SettingConfig[] = [
     key: 'autoTimeBank',
     feature: 'auto_time_bank',
     label: 'Auto Time Bank',
-    description: 'Auto-uses time bank · VIP free · Non-VIP 5💎 per use',
+    description: 'Auto-uses time bank · VIP free · Non-VIP 5D per use',
     icon: '',
   },
 ];
@@ -92,8 +93,7 @@ export function TableSettings({
         const vip = await vipService.isVIP(user.id);
         setIsVIP(vip);
       } catch (err) {
-
-        console.error("[TableSettings] Error:", err);
+        reportError(err, 'TableSettings.Error');
         setIsVIP(false);
       }
       setLoading(false);
@@ -158,7 +158,7 @@ export function TableSettings({
     setSettings(newSettings);
     onSettingsChange(newSettings);
     setShowTimeBankConfirm(false);
-    toast.info('Auto Time Bank enabled · 5💎 per activation');
+    toast.info('Auto Time Bank enabled · 5D per activation');
   };
 
   if (!isOpen) return null;
@@ -241,14 +241,14 @@ export function TableSettings({
           onClick={() => setShowTimeBankConfirm(false)}
         >
           <div className="table-settings__confirm" onClick={(e) => e.stopPropagation()}>
-            <h4>⏱️ Enable Auto Time Bank?</h4>
+            <h4>Enable Auto Time Bank?</h4>
             <p>
               Each time bank activation will cost{' '}
-              <strong>{FEATURE_PRICING.auto_time_bank.cost} 💎</strong>. Diamonds are automatically
+              <strong>{FEATURE_PRICING.auto_time_bank.cost} D</strong>. Diamonds are automatically
               deducted from your balance.
             </p>
             <div className="table-settings__confirm-vip">
-              <span>💎</span>
+              <span>D</span>
               <div>
                 <strong>VIP Diamond Members</strong> get unlimited time bank for free!
                 <a
@@ -269,7 +269,7 @@ export function TableSettings({
                 Cancel
               </button>
               <button className="confirm-btn confirm-btn--accept" onClick={confirmAutoTimeBank}>
-                Enable (5💎/use)
+                Enable (5D/use)
               </button>
             </div>
           </div>

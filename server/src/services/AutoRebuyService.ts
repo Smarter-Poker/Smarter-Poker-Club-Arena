@@ -15,6 +15,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { reportError } from './errorReporter.js';
 
 const MIN_WALLET_BALANCE = 50000;
 const REFILL_AMOUNT = 100000;
@@ -52,7 +53,7 @@ export class AutoRebuyService {
       // Get all horse profiles along with their wallets
       const { data: horses, error: horseErr } = await supabase
         .from('profiles')
-        .select('id, display_name, username')
+        .select('id, display_name, username, use_real_name')
         .eq('is_horse', true);
 
       if (horseErr || !horses || horses.length === 0) return;
@@ -76,7 +77,9 @@ export class AutoRebuyService {
 
           const horseNameMatch = horses.find((h) => h.id === wallet.user_id);
           const horseName = horseNameMatch
-            ? horseNameMatch.display_name || horseNameMatch.username
+            ? horseNameMatch.use_real_name
+              ? horseNameMatch.display_name || horseNameMatch.username
+              : horseNameMatch.username || horseNameMatch.display_name
             : wallet.user_id;
 
           // Execute ATOMIC wallet refill
@@ -91,8 +94,11 @@ export class AutoRebuyService {
           });
 
           if (creditError) {
-            console.error(
-              `[AutoRebuyService] Failed to refill wallet for ${horseName}: ${creditError.message}`
+            reportError(
+              new Error(
+                `[AutoRebuyService] Failed to refill wallet for ${horseName}: ${creditError.message}`
+              ),
+              'AutoRebuyService.Failed_to_refill_wallet_for_ho'
             );
           } else {
             refilledCount++;
@@ -109,7 +115,10 @@ export class AutoRebuyService {
         );
       }
     } catch (err: any) {
-      console.error(`[AutoRebuyService] Wallet check error: ${err.message}`);
+      reportError(
+        new Error(`[AutoRebuyService] Wallet check error: ${err.message}`),
+        'AutoRebuyService.Wallet_check_error'
+      );
     }
   }
 }

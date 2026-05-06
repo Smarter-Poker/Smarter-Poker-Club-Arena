@@ -14,6 +14,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import './AgentScoreCard.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface AgentScoreCardProps {
   userId: string;
@@ -131,7 +132,7 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
         avgDistribution: avgDist,
       });
     } catch (err) {
-      console.error('[AgentScoreCard] Error:', err);
+      reportError(err, 'AgentScoreCard.Error');
     }
     if (isMounted.current) setLoading(false);
   }, [userId, clubId]);

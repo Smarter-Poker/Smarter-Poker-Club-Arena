@@ -26,6 +26,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 interface HeaderDataState {
   // Data
@@ -108,7 +109,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       state._busUnsubscribers.forEach((unsub) => {
         try {
           unsub();
-        } catch {
+        } catch (e) {
+          reportError(e, 'useHeaderDataStore.forEach');
           /* silent */
         }
       });
@@ -147,7 +149,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: notifCount });
         masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId, count: msgCount });
       } catch (e) {
-        console.error('[HeaderDataStore] Initial load failed:', e);
+        reportError(e, 'useHeaderDataStore.Initial_load_failed');
         // Retry once after 2s — transient network failures are common on mobile
         setTimeout(async () => {
           if (get()._userId !== userId) return; // User switched — abort retry
@@ -174,7 +176,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             persistCount('ca-notif-count', nR.count || 0);
             persistCount('ca-msg-count', mR.count || 0);
           } catch (retryErr) {
-            console.error('[HeaderDataStore] Retry also failed:', retryErr);
+            reportError(retryErr, 'useHeaderDataStore.Retry_also_failed');
             masterBus.emit('SHOW_TOAST', {
               severity: 'warning',
               message: 'Could not load notifications — pull to refresh',
@@ -207,7 +209,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               .eq('user_id', userId)
               .eq('read', false);
             get().setNotificationCount(count || 0);
-          } catch {
+          } catch (e) {
+            reportError(e, 'useHeaderDataStore.async');
             /* silent */
           }
         }
@@ -228,7 +231,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               .eq('receiver_id', userId)
               .eq('is_read', false);
             get().setUnreadMessages(count || 0);
-          } catch {
+          } catch (e) {
+            reportError(e, 'useHeaderDataStore.async');
             /* silent */
           }
         }
@@ -244,7 +248,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               // Re-trigger loadOnce by resetting _loaded flag
               set({ _loaded: false, _channelKey: null });
               get().loadOnce(userId);
-            } catch {
+            } catch (e) {
+              reportError(e, 'useHeaderDataStore.setTimeout');
               /* silent */
             }
           }, 3000);
@@ -258,7 +263,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               masterBus.removeRegisteredChannel(channelKey);
               set({ _loaded: false, _channelKey: null });
               get().loadOnce(userId);
-            } catch {
+            } catch (e) {
+              reportError(e, 'useHeaderDataStore.setTimeout');
               /* silent */
             }
           }, 3000);
@@ -285,7 +291,15 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       }
     });
 
-    set({ _busUnsubscribers: [unsubNotifRead, unsubDmCount] });
+    // ── Sync avatar changes from AvatarGallery (instant, no realtime delay) ──
+    const unsubProfileLoaded = masterBus.subscribe('USER_PROFILE_LOADED', (event) => {
+      const avatarUrl = event.payload?.avatarUrl;
+      if (avatarUrl && typeof avatarUrl === 'string') {
+        get().setAvatarUrl(avatarUrl);
+      }
+    });
+
+    set({ _busUnsubscribers: [unsubNotifRead, unsubDmCount, unsubProfileLoaded] });
   },
 
   teardown: () => {
@@ -298,7 +312,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
     state._busUnsubscribers.forEach((unsub) => {
       try {
         unsub();
-      } catch {
+      } catch (e) {
+        reportError(e, 'useHeaderDataStore.forEach');
         /* silent */
       }
     });

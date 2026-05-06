@@ -12,6 +12,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import './LuckyDrawWheel.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface WheelSegment {
   id: string;
@@ -79,7 +80,7 @@ export default function LuckyDrawWheel({
       winnerId = await onSpin();
     } catch (err) {
       // Error recovery: reset spinning state so user can retry
-      console.error('[LuckyDrawWheel] onSpin failed:', err);
+      reportError(err, 'LuckyDrawWheel.onSpin_failed');
       if (isMounted.current) setSpinning(false);
       return;
     }

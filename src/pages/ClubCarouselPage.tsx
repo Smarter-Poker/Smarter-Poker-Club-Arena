@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * CLUB CAROUSEL PAGE — PokerBros-Style Club Selection
+ * CLUB CAROUSEL PAGE — Premium-Style Club Selection
  * ═══════════════════════════════════════════════════════════════════════════════
  * Shows user's clubs in a swipeable carousel format:
  * - Header with player info, VIP, gold/diamond balances
@@ -23,8 +23,10 @@ import './ClubCarouselPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import haptic from '../services/HapticService';
+import { soundService } from '../services/SoundService';
 import { STORAGE_KEYS } from '../lib/storage';
 import { getClubLevel, getUnionLevel } from '../utils/clubLevels';
+import { reportError } from '../utils/errorReporter';
 
 const SWIPE_THRESHOLD = 50; // px minimum for a horizontal swipe
 
@@ -118,6 +120,7 @@ export default function ClubCarouselPage() {
 
   // #5: Search/filter
   const [searchQuery, setSearchQuery] = useState('');
+  const [isBetaBannerVisible, setIsBetaBannerVisible] = useState(true);
 
   // #3: Offline banner
   const [isOnline, setIsOnline] = useState(
@@ -160,37 +163,11 @@ export default function ClubCarouselPage() {
     };
   }, []);
 
-  // Realtime: refresh when club, union, or union_clubs data changes
-  useEffect(() => {
-    const channelKey = 'club-carousel-live';
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'club_members' }, () => {
-        if (isMounted.current) loadUserData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clubs' }, () => {
-        if (isMounted.current) loadUserData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'unions' }, () => {
-        if (isMounted.current) loadUserData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'union_clubs' }, () => {
-        if (isMounted.current) loadUserData();
-      })
-      .subscribe((status: string, err?: Error) => {
-        // #9: Track WS connection health
-        setWsConnected(status === 'SUBSCRIBED');
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubCarouselPage] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[ClubCarouselPage] ⏱️ Realtime channel timed out');
-        }
-      });
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, []);
+  // NOTE (2026-04-19): Realtime `postgres_changes` listeners on club_members, clubs,
+  // unions, union_clubs REMOVED. These were unfiltered global listeners that fired on
+  // EVERY mutation across ALL clubs/unions. The MasterBus event listeners below
+  // (CLUB_JOINED, CLUB_LEFT, CLUB_UPDATED, UNION_UPDATED, CLUB_SETTINGS_UPDATED)
+  // already handle all cross-page refresh needs.
 
   // ── Bus Listeners: cross-page event reactivity (debounced) ──
   useEffect(() => {
@@ -252,7 +229,8 @@ export default function ClubCarouselPage() {
                 if (n.club_id) badges[n.club_id] = (badges[n.club_id] || 0) + 1;
               }
               setClubBadges(badges);
-            } catch {
+            } catch (e) {
+              reportError(e, 'ClubCarouselPage.async');
               /* non-critical */
             }
           })();
@@ -382,7 +360,8 @@ export default function ClubCarouselPage() {
           if (n.club_id) badges[n.club_id] = (badges[n.club_id] || 0) + 1;
         }
         setClubBadges(badges);
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubCarouselPage.async');
         /* non-critical */
       }
     })();
@@ -408,7 +387,8 @@ export default function ClubCarouselPage() {
           });
           setWallet((prev) => ({ ...prev, diamonds: profileData.diamonds || 0 }));
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubCarouselPage.setWallet');
         /* non-critical */
       }
     },
@@ -461,7 +441,8 @@ export default function ClubCarouselPage() {
             return !loadedUnionIds.has(parentUnionId);
           });
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubCarouselPage.filter');
         /* fail-open */
       }
       return clubList;
@@ -581,7 +562,7 @@ export default function ClubCarouselPage() {
       }
     } catch (error) {
       if (!isMounted.current) return;
-      console.error('Error loading user data:', error);
+      reportError(error, 'ClubCarouselPage.Error_loading_user_data');
       toast.error('Failed to load club data');
       // Clear SWR cache on error so stale data isn't shown on next visit
       try {
@@ -701,10 +682,12 @@ export default function ClubCarouselPage() {
   };
 
   const handleCreateClub = () => {
+    soundService.playButtonClick();
     navigate('/clubs/create');
   };
 
   const handleSearch = () => {
+    soundService.playButtonClick();
     navigate('/clubs'); // Go to full clubs list for search/join
   };
 
@@ -772,6 +755,48 @@ export default function ClubCarouselPage() {
         {!isOnline && (
           <div className="carousel-offline-banner" role="alert">
             <span>⚠ Offline — showing cached data</span>
+          </div>
+        )}
+
+        {/* BETA FREEZE BANNER */}
+        {isBetaBannerVisible && (
+          <div
+            style={{
+              padding: '14px',
+              backgroundColor: 'rgba(255, 170, 0, 0.1)',
+              borderBottom: '1px solid rgba(255,170,0,0.3)',
+              color: '#ffaa00',
+              fontFamily: 'Inter, sans-serif',
+              fontSize: '14px',
+              textAlign: 'center',
+              position: 'relative',
+              zIndex: 100,
+            }}
+          >
+            Live tables temporarily offline for beta testing.{' '}
+            <a
+              href="/hub/club-arena/sim"
+              style={{ color: '#fff', textDecoration: 'underline', fontWeight: '500' }}
+            >
+              Try the scenario stepper: /hub/club-arena/sim
+            </a>
+            <button
+              onClick={() => setIsBetaBannerVisible(false)}
+              style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                color: '#ffaa00',
+                fontSize: '20px',
+                cursor: 'pointer',
+                padding: '4px',
+              }}
+            >
+              ×
+            </button>
           </div>
         )}
 
@@ -855,8 +880,22 @@ export default function ClubCarouselPage() {
               )}
             </div>
           )}
-          <button className="action-btn search" onClick={handleSearch}>
-            <span className="action-icon">SEARCH</span>
+          <button className="action-btn search" onClick={handleSearch} aria-label="Search clubs">
+            <span className="action-icon" aria-hidden="true">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </span>
           </button>
         </div>
 
@@ -1027,8 +1066,39 @@ export default function ClubCarouselPage() {
                             <img src={union.avatarUrl} alt={union.name} loading="lazy" />
                           ) : (
                             <div className="club-card__placeholder">
-                              <span className="chip-icon" style={{ fontSize: '2rem' }}>
-                                🏛️
+                              <span
+                                className="chip-icon"
+                                aria-label="Union"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <svg
+                                  width="56"
+                                  height="56"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.6"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  aria-hidden="true"
+                                >
+                                  <polygon
+                                    points="12,2 22,7 2,7"
+                                    fill="currentColor"
+                                    fillOpacity="0.15"
+                                  />
+                                  <line x1="2" y1="7" x2="22" y2="7" />
+                                  <line x1="5" y1="9" x2="5" y2="18" />
+                                  <line x1="9.5" y1="9" x2="9.5" y2="18" />
+                                  <line x1="14.5" y1="9" x2="14.5" y2="18" />
+                                  <line x1="19" y1="9" x2="19" y2="18" />
+                                  <line x1="3" y1="21" x2="21" y2="21" />
+                                  <line x1="2" y1="18" x2="22" y2="18" />
+                                </svg>
                               </span>
                             </div>
                           )}
@@ -1036,9 +1106,33 @@ export default function ClubCarouselPage() {
                         <div className="club-card__footer">
                           <div
                             className="club-avatar"
-                            style={{ background: 'linear-gradient(135deg, #9b59b6, #8e44ad)' }}
+                            style={{
+                              background: 'linear-gradient(135deg, #9b59b6, #8e44ad)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#fff',
+                            }}
+                            aria-label="Union"
                           >
-                            <span>🏛️</span>
+                            <svg
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <polygon points="12,3 22,8 2,8" />
+                              <line x1="5" y1="10" x2="5" y2="18" />
+                              <line x1="10" y1="10" x2="10" y2="18" />
+                              <line x1="14" y1="10" x2="14" y2="18" />
+                              <line x1="19" y1="10" x2="19" y2="18" />
+                              <line x1="3" y1="21" x2="21" y2="21" />
+                            </svg>
                           </div>
                           <div className="club-info">
                             <span className="club-name">{union.name}</span>

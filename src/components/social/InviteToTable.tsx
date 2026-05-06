@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import './InviteToTable.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface InvitablePlayer {
   id: string;
@@ -48,7 +49,7 @@ export const InviteToTable: React.FC<InviteToTableProps> = ({
       setPlayers(livePlayers);
       setVisibleItems(new Set());
     } catch (error) {
-      console.error('Failed to load players:', error);
+      reportError(error, 'InviteToTable.Failed_to_load_players');
     } finally {
       setLoading(false);
     }
@@ -77,7 +78,7 @@ export const InviteToTable: React.FC<InviteToTableProps> = ({
       await onInvite(Array.from(selected));
       onClose();
     } catch (error) {
-      console.error('Failed to send invites:', error);
+      reportError(error, 'InviteToTable.Failed_to_send_invites');
     } finally {
       setSending(false);
     }

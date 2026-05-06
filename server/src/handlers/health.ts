@@ -1,0 +1,59 @@
+/**
+ * Read-only telemetry handlers — `GET /health`, `GET /`, `GET /metrics`, `GET /ws-metrics`.
+ *
+ * Extracted from `server/src/index.ts` in Phase U3.1 (2026-04-23) as the first
+ * three routes of the index-monolith split. Byte-identical responses preserved.
+ *
+ * These handlers do not mutate engine state. They are safe to call at any time
+ * and are the scraper targets for Prometheus + Hetzner uptime monitoring.
+ */
+
+import type { ServerResponse } from 'http';
+import { sendJSON } from '../http/respond.js';
+
+// Minimal structural typing so handlers don't need to import the GameServer
+// class (which lives in `index.ts`) nor the transport classes. Anything that
+// exposes the right methods satisfies the shape.
+
+export interface HealthDeps {
+  gameServer: { getStatus(): unknown; getPrometheusMetrics(): string };
+}
+
+export interface WsMetricsDeps {
+  tableStateHub: { totalSubscribers(): number };
+  engineWs: { connectionCount(): number };
+}
+
+/** `GET /health` and `GET /` — Hetzner VPS health probe + SHA/status report. */
+export function handleHealth(res: ServerResponse, deps: HealthDeps): void {
+  sendJSON(res, 200, deps.gameServer.getStatus());
+}
+
+/**
+ * `GET /ws-metrics` — Phase 1.1 PR-2 observability.
+ *
+ * Public endpoint (no auth). Exposes counts only, no payloads. Used by
+ * Prometheus + Grafana to track the authoritative WebSocket transport.
+ */
+export function handleWsMetrics(res: ServerResponse, deps: WsMetricsDeps): void {
+  sendJSON(res, 200, {
+    totalSubscribers: deps.tableStateHub.totalSubscribers(),
+    activeConnections: deps.engineWs.connectionCount(),
+  });
+}
+
+/**
+ * `GET /metrics` — Bible V8 §10.4: Prometheus text exposition format.
+ *
+ * Scraped by Prometheus → Grafana dashboards for engine observability.
+ * NOT JSON — emits text/plain with the Prometheus exposition content-type.
+ */
+export function handleMetrics(res: ServerResponse, deps: HealthDeps): void {
+  const body = deps.gameServer.getPrometheusMetrics();
+  // Note: original index.ts does NOT attach CORS_HEADERS to /metrics — keep it
+  // that way for byte-identical behavior. Prometheus scrapers don't need CORS.
+  res.writeHead(200, {
+    'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
+  });
+  res.end(body);
+}

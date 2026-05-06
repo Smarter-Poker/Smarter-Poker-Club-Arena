@@ -9,7 +9,9 @@
  * - Chip stack animations on pot updates
  */
 
-import React, { useMemo, useEffect, useState, memo } from 'react';
+import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
+import { AnimatedNumber } from '../common/AnimatedNumber';
+import { soundService } from '../../services/SoundService';
 import './PotDisplay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -27,7 +29,6 @@ export type PotDisplayMode = 'chips' | 'bb';
 export interface PotDisplayProps {
   mainPot: number;
   sidePots?: SidePot[];
-  previousPot?: number;
   showChipAnimation?: boolean;
   currency?: string;
   bigBlind?: number;
@@ -39,9 +40,11 @@ export interface PotDisplayProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// EXACT precision — no abbreviations, no rounding
+// Always show whole numbers for amounts >= 1. Sub-dollar amounts show 2 decimals.
 function formatAmount(amount: number, currency: string = ''): string {
-  return `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (amount >= 1) return Math.round(amount).toLocaleString('en-US');
+  if (amount > 0) return amount.toFixed(2);
+  return '0';
 }
 
 // Format amount in Big Blinds
@@ -55,31 +58,65 @@ function formatBB(amount: number, bigBlind: number): string {
   return `${bbs.toFixed(1)} BB`;
 }
 
-// Chip denomination colors
+// Real poker chip denomination colors — matches casino standard
+// Descending order so breakdown algorithm picks highest denominations first
 const CHIP_COLORS = [
-  { threshold: 10000, color: '#8B4513', label: '10K' }, // Brown
-  { threshold: 5000, color: '#1E90FF', label: '5K' }, // Blue
-  { threshold: 1000, color: '#1C1C1C', label: '1K' }, // Black
-  { threshold: 500, color: '#800080', label: '500' }, // Purple
-  { threshold: 100, color: '#228B22', label: '100' }, // Green
-  { threshold: 25, color: '#DC143C', label: '25' }, // Red
-  { threshold: 5, color: '#4169E1', label: '5' }, // Blue
-  { threshold: 1, color: '#F5F5F5', label: '1' }, // White
+  { threshold: 100000, color: '#f97316', label: '100K' }, // Orange
+  { threshold: 25000, color: '#14b8a6', label: '25K' }, // Teal
+  { threshold: 5000, color: '#ec4899', label: '5K' }, // Pink
+  { threshold: 1000, color: '#eab308', label: '1K' }, // Yellow
+  { threshold: 500, color: '#a855f7', label: '500' }, // Purple
+  { threshold: 100, color: '#1a1a2e', label: '100' }, // Black
+  { threshold: 25, color: '#22c55e', label: '25' }, // Green
+  { threshold: 5, color: '#ef4444', label: '5' }, // Red
+  { threshold: 1, color: '#e0e0e0', label: '1' }, // White
 ];
 
+/**
+ * Calculate chip breakdown for a pot amount.
+ *
+ * Rules:
+ *  1. Break amount into exact denominations (largest first)
+ *  2. Max 10 chips TOTAL displayed — when over, remove smallest denomination
+ *     chips first until total <= 10
+ *  3. Visual accuracy: 487 = 4 black + 3 green + 2 red + 2 white = 11 → trim 1 white = 10
+ */
+const MAX_TOTAL_CHIPS = 10;
+
 function getChipBreakdown(amount: number): { color: string; count: number; label: string }[] {
+  if (amount <= 0) return [];
+
+  // Step 1: exact breakdown into denominations
   const chips: { color: string; count: number; label: string }[] = [];
-  let remaining = amount;
+  let remaining = Math.round(amount);
 
   for (const chip of CHIP_COLORS) {
     if (remaining >= chip.threshold) {
-      const count = Math.min(Math.floor(remaining / chip.threshold), 8); // Max 8 chips per denom
+      const count = Math.floor(remaining / chip.threshold);
       chips.push({ color: chip.color, count, label: chip.label });
       remaining -= count * chip.threshold;
     }
   }
 
-  return chips.slice(0, 4); // Max 4 denomination stacks visible
+  // Step 2: count total chips
+  let totalChips = chips.reduce((sum, c) => sum + c.count, 0);
+
+  // Step 3: trim from smallest denominations (end of array) until at limit
+  while (totalChips > MAX_TOTAL_CHIPS && chips.length > 0) {
+    const smallest = chips[chips.length - 1];
+    const excess = totalChips - MAX_TOTAL_CHIPS;
+    if (smallest.count <= excess) {
+      // Remove entire denomination
+      totalChips -= smallest.count;
+      chips.pop();
+    } else {
+      // Trim partial
+      smallest.count -= excess;
+      totalChips = MAX_TOTAL_CHIPS;
+    }
+  }
+
+  return chips;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -93,20 +130,33 @@ interface ChipStackProps {
 }
 
 function ChipStack({ color, count, offsetX }: ChipStackProps) {
+  // Show up to 8 physical chips per stack — the visual ceiling for readability
+  const visibleCount = Math.min(count, 8);
+  // Stack height per chip — tighter stacking for that satisfying pile look
+  const chipGap = 2;
   return (
-    <div className="pot-display__chip-stack" style={{ transform: `translateX(${offsetX}px)` }}>
-      {Array.from({ length: Math.min(count, 8) }).map((_, i) => (
+    <div
+      className="pot-display__chip-stack"
+      style={{
+        transform: `translateX(${offsetX}px)`,
+        height: `${18 + visibleCount * chipGap + 10}px`,
+      }}
+    >
+      {Array.from({ length: visibleCount }).map((_, i) => (
         <div
           key={i}
           className="pot-display__chip"
-          style={{
-            backgroundColor: color,
-            transform: `translateY(${-i * 3}px)`,
-            zIndex: count - i,
-            animationDelay: `${i * 50}ms`,
-          }}
+          style={
+            {
+              '--chip-color': color,
+              '--chip-offset': `${-i * chipGap}px`,
+              '--chip-spin': `${(Math.random() - 0.5) * 8}`,
+              zIndex: count - i,
+              animationDelay: `${i * 50}ms`,
+            } as React.CSSProperties
+          }
         >
-          <div className="pot-display__chip-inner" />
+          <div className="pot-display__chip-face" />
         </div>
       ))}
     </div>
@@ -143,61 +193,33 @@ function SidePotBadge({
 function PotDisplayComponent({
   mainPot,
   sidePots = [],
-  previousPot = 0,
   showChipAnimation = true,
   currency = '',
   bigBlind = 0,
   displayMode = 'chips',
   onToggleDisplayMode,
 }: PotDisplayProps) {
-  const [displayPot, setDisplayPot] = useState(mainPot);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [isPotBump, setIsPotBump] = useState(false);
-  const prevPotRef = React.useRef(mainPot);
-
-  // Animated number counting — when mainPot changes, count up from old value to new value over 400ms
+  // Pot update pulse animation — triggers CSS class briefly on change
+  const [isPotUpdated, setIsPotUpdated] = useState(false);
+  const prevPotRef = useRef(mainPot);
   useEffect(() => {
-    setIsAnimating(true);
-
-    // Animate number counting up from current display value
-    const startValue = displayPot;
-    const diff = mainPot - startValue;
-    if (diff === 0) {
-      setIsAnimating(false);
-      return;
-    }
-
-    const startTime = Date.now();
-    const duration = 400;
-
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      if (elapsed >= duration) {
-        setDisplayPot(mainPot);
-        setIsAnimating(false);
-      } else {
-        const progress = elapsed / duration;
-        const currentValue = startValue + diff * progress;
-        setDisplayPot(Math.trunc(currentValue * 100) / 100);
-        requestAnimationFrame(animate);
-      }
-    };
-
-    const frameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frameId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mainPot]);
-
-  // Pot bump animation — when pot increases by >2x previous
-  useEffect(() => {
-    if (mainPot > prevPotRef.current * 2 && prevPotRef.current > 0) {
-      setIsPotBump(true);
-      const timer = setTimeout(() => setIsPotBump(false), 500);
+    if (mainPot !== prevPotRef.current && mainPot > prevPotRef.current) {
+      setIsPotUpdated(true);
+      const timer = setTimeout(() => setIsPotUpdated(false), 500);
       prevPotRef.current = mainPot;
       return () => clearTimeout(timer);
     }
     prevPotRef.current = mainPot;
   }, [mainPot]);
+
+  // Multi-chip splash whenever a NEW side pot appears (all-in split moment)
+  const prevSidePotCountRef = useRef(sidePots.length);
+  useEffect(() => {
+    if (sidePots.length > prevSidePotCountRef.current) {
+      soundService.playChipSplash();
+    }
+    prevSidePotCountRef.current = sidePots.length;
+  }, [sidePots.length]);
 
   // Calculate chip visualization
   const chipBreakdown = useMemo(() => getChipBreakdown(mainPot), [mainPot]);
@@ -212,7 +234,12 @@ function PotDisplayComponent({
   }
 
   return (
-    <div className={`pot-display ${isPotBump ? 'pot-display--bump' : ''}`}>
+    <div
+      className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}`}
+      role="status"
+      aria-live="polite"
+      aria-label={`Pot: ${formatAmount(mainPot, currency)}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
+    >
       {/* Chip Stacks Visualization */}
       {showChipAnimation && mainPot > 0 && (
         <div className="pot-display__chips">
@@ -221,7 +248,7 @@ function PotDisplayComponent({
               key={i}
               color={chip.color}
               count={chip.count}
-              offsetX={i * 22 - chipBreakdown.length * 11}
+              offsetX={i * 8 - chipBreakdown.length * 4}
             />
           ))}
         </div>
@@ -229,15 +256,21 @@ function PotDisplayComponent({
 
       {/* Main Pot Amount — click to toggle chips/BB display */}
       <div
-        className={`pot-display__main ${isAnimating ? 'pot-display__main--animating' : ''} ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''} ${isPotBump ? 'pot-display__main--pulse' : ''}`}
+        className={`pot-display__main ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''}`}
         onClick={onToggleDisplayMode}
         title={onToggleDisplayMode ? 'Click to toggle Chips/BB display' : undefined}
       >
         <span className="pot-display__label">POT</span>
         <span className="pot-display__amount">
-          {displayMode === 'bb' && bigBlind > 0
-            ? formatBB(displayPot, bigBlind)
-            : formatAmount(displayPot, currency)}
+          {displayMode === 'bb' && bigBlind > 0 ? (
+            <AnimatedNumber value={mainPot} duration={350} format={(n) => formatBB(n, bigBlind)} />
+          ) : (
+            <AnimatedNumber
+              value={mainPot}
+              duration={350}
+              format={(n) => formatAmount(n, currency)}
+            />
+          )}
         </span>
       </div>
 
@@ -261,20 +294,20 @@ function PotDisplayComponent({
         <div className="pot-display__total">
           <span className="pot-display__total-label">TOTAL</span>
           <span className="pot-display__total-amount">
-            {displayMode === 'bb' && bigBlind > 0
-              ? formatBB(totalPot, bigBlind)
-              : formatAmount(totalPot, currency)}
+            {displayMode === 'bb' && bigBlind > 0 ? (
+              <AnimatedNumber
+                value={totalPot}
+                duration={350}
+                format={(n) => formatBB(n, bigBlind)}
+              />
+            ) : (
+              <AnimatedNumber
+                value={totalPot}
+                duration={350}
+                format={(n) => formatAmount(n, currency)}
+              />
+            )}
           </span>
-        </div>
-      )}
-
-      {/* Pot Increase Indicator */}
-      {isAnimating && mainPot > previousPot && (
-        <div className="pot-display__increase">
-          +
-          {displayMode === 'bb' && bigBlind > 0
-            ? formatBB(mainPot - previousPot, bigBlind)
-            : formatAmount(mainPot - previousPot, currency)}
         </div>
       )}
     </div>
@@ -284,7 +317,6 @@ function PotDisplayComponent({
 export const PotDisplay = memo(PotDisplayComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.mainPot !== next.mainPot) return false;
-  if (prev.previousPot !== next.previousPot) return false;
   if (prev.showChipAnimation !== next.showChipAnimation) return false;
   if (prev.currency !== next.currency) return false;
   if (prev.bigBlind !== next.bigBlind) return false;

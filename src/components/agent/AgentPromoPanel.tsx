@@ -17,6 +17,7 @@ import { masterBus } from '../../core/MasterBus';
 import { triggerHaptic } from '../../services/HapticService';
 import { resolveAvatarDisplay } from '../../utils/avatarUtils';
 import { checkSettlementLock } from '../../utils/settlementLock';
+import { reportError } from '../../utils/errorReporter';
 
 const FB = {
   bg: '#18191A',
@@ -120,7 +121,7 @@ export default function AgentPromoPanel({
       }));
       if (isMounted.current) setDownline(downlineData as DownlinePlayer[]);
     } catch (e) {
-      console.error('[AgentPromoPanel] Load error:', e);
+      reportError(e, 'AgentPromoPanel.Load_error');
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -160,7 +161,7 @@ export default function AgentPromoPanel({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[AgentPromoPanel] ❌ Realtime channel error:', err?.message || err);
+          if (err) reportError(err?.message || err, 'AgentPromoPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AgentPromoPanel] ⏱️ Realtime channel timed out');
@@ -202,10 +203,11 @@ export default function AgentPromoPanel({
       const lockResult = await checkSettlementLock(clubId);
       if (lockResult.locked) {
         showToast('🔒 Settlement in progress — distributions frozen', 'error');
-        setDistributing(false);
+        if (isMounted.current) setDistributing(false);
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentPromoPanel');
       // Fail-open: allow distribution if settlement check fails
     }
 
@@ -304,7 +306,62 @@ export default function AgentPromoPanel({
       )}
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 20, color: FB.dim }}>Loading...</div>
+        <div style={{ padding: '12px 0' }}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 0',
+                animation: `shimmerFade 1.4s ease-in-out ${i * 0.1}s infinite`,
+              }}
+            >
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background:
+                    'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                  backgroundSize: '200px 100%',
+                  animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    width: `${50 + i * 10}%`,
+                    height: 12,
+                    borderRadius: 4,
+                    background:
+                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    backgroundSize: '200px 100%',
+                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                    marginBottom: 5,
+                  }}
+                />
+                <div
+                  style={{
+                    width: '40%',
+                    height: 10,
+                    borderRadius: 4,
+                    background:
+                      'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    backgroundSize: '200px 100%',
+                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+          <style>{`
+            @keyframes shimmerSlide { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+            @keyframes shimmerFade { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+          `}</style>
+        </div>
       ) : promoBalance <= 0 ? (
         <div
           style={{

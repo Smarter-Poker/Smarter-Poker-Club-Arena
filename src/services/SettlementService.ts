@@ -257,11 +257,7 @@ export const SettlementService = {
       );
 
       if (error) {
-        reportError(
-          error,
-          'SettlementService.calculateAgentSettlement',
-          { periodId, agentId }
-        );
+        reportError(error, 'SettlementService.calculateAgentSettlement', { periodId, agentId });
         // Fall back to calculate_agent_spread if available
         const { data: spreadData, error: spreadError } = await retryAsync(
           () =>
@@ -277,7 +273,11 @@ export const SettlementService = {
         }
 
         // Return default if both fail
-        reportError('Both settlement RPCs failed', 'SettlementService.calculateAgentSettlement.fallback', { periodId, agentId });
+        reportError(
+          'Both settlement RPCs failed',
+          'SettlementService.calculateAgentSettlement.fallback',
+          { periodId, agentId }
+        );
         return {
           id: `${agentId}-${periodId}`,
           periodId,
@@ -295,7 +295,10 @@ export const SettlementService = {
       }
       return data;
     } catch (err: unknown) {
-      reportError(err, 'SettlementService.calculateAgentSettlement.exception', { periodId, agentId });
+      reportError(err, 'SettlementService.calculateAgentSettlement.exception', {
+        periodId,
+        agentId,
+      });
       throw err;
     }
   },
@@ -408,7 +411,11 @@ export const SettlementService = {
         agentsPaid++;
         totalDisbursed += settlement.net_settlement;
       } catch (err: unknown) {
-        reportError(err, 'SettlementService.executeMondayPayouts.agentPay', { settlementId: settlement.id, agentId: settlement.agent_id, amount: settlement.net_settlement });
+        reportError(err, 'SettlementService.executeMondayPayouts.agentPay', {
+          settlementId: settlement.id,
+          agentId: settlement.agent_id,
+          amount: settlement.net_settlement,
+        });
         // Revert status to 'failed' so ops can identify and manually retry
         const errMsg = err instanceof Error ? err.message : String(err);
         await supabase
@@ -486,7 +493,10 @@ export const SettlementService = {
         playersWithRakeback++;
         totalDisbursed += snapshot.rakeback_earned;
       } catch (err: unknown) {
-        reportError(err, 'SettlementService.executeMondayPayouts.playerRakeback', { playerId: snapshot.player_id, amount: snapshot.rakeback_earned });
+        reportError(err, 'SettlementService.executeMondayPayouts.playerRakeback', {
+          playerId: snapshot.player_id,
+          amount: snapshot.rakeback_earned,
+        });
       }
     }
 

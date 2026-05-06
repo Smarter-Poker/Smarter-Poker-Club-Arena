@@ -44,9 +44,7 @@ export interface BatchSettlementResult {
   errors: string[];
 }
 
-export type StackEventType =
-  | 'STACK_RACE_DETECTED'
-  | 'STACK_SETTLEMENT';
+export type StackEventType = 'STACK_RACE_DETECTED' | 'STACK_SETTLEMENT';
 
 export interface StackEvent {
   type: StackEventType;

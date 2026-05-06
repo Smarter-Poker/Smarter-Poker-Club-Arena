@@ -266,7 +266,12 @@ class SessionStatsServiceClass {
     try {
       const retryCount = (payload.retry_count as number) || 0;
       if (retryCount >= 3) {
-        reportError(new Error(`[SessionStats] Offline session dropped after ${retryCount} failures to prevent poison pill loop.`), 'SessionStatsService.Offline_session_dropped_after_retryCount');
+        reportError(
+          new Error(
+            `[SessionStats] Offline session dropped after ${retryCount} failures to prevent poison pill loop.`
+          ),
+          'SessionStatsService.Offline_session_dropped_after_retryCount'
+        );
         return;
       }
 

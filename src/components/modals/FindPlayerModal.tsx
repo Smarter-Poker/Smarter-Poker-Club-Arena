@@ -226,7 +226,9 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
       if (scopeLoadingRef.current) return;
       scopeLoadingRef.current = true;
       try {
-        const { data: { user: authUser } } = await getAuthUser();
+        const {
+          data: { user: authUser },
+        } = await getAuthUser();
         if (!authUser?.id || cancelled) return;
         const scope = await getUserSearchScope(authUser.id);
         if (cancelled) return;
@@ -250,7 +252,9 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
     }
 
     loadScope();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   // Stagger result entrance animations
@@ -264,22 +268,19 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
   }, [searchResults]);
 
   // Sort helper
-  const sortResults = useCallback(
-    (results: PlayerResult[], field: SortField): PlayerResult[] => {
-      return [...results].sort((a, b) => {
-        const aVal =
-          field === 'display_name'
-            ? (a.display_name || a.username || '').toLowerCase()
-            : (a.username || '').toLowerCase();
-        const bVal =
-          field === 'display_name'
-            ? (b.display_name || b.username || '').toLowerCase()
-            : (b.username || '').toLowerCase();
-        return aVal.localeCompare(bVal);
-      });
-    },
-    []
-  );
+  const sortResults = useCallback((results: PlayerResult[], field: SortField): PlayerResult[] => {
+    return [...results].sort((a, b) => {
+      const aVal =
+        field === 'display_name'
+          ? (a.display_name || a.username || '').toLowerCase()
+          : (a.username || '').toLowerCase();
+      const bVal =
+        field === 'display_name'
+          ? (b.display_name || b.username || '').toLowerCase()
+          : (b.username || '').toLowerCase();
+      return aVal.localeCompare(bVal);
+    });
+  }, []);
 
   const handleSortChange = useCallback(
     (field: SortField) => {
@@ -319,12 +320,14 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
       if (!isMountedRef.current) return;
 
       if (players && players.length > 0) {
-        setSuggestions(players.map((p: any) => ({
-          id: p.id,
-          username: p.username || '',
-          display_name: p.display_name || null,
-          avatar_url: p.avatar_url || null,
-        })));
+        setSuggestions(
+          players.map((p: any) => ({
+            id: p.id,
+            username: p.username || '',
+            display_name: p.display_name || null,
+            avatar_url: p.avatar_url || null,
+          }))
+        );
         setShowSuggestions(true);
       } else {
         setSuggestions([]);
@@ -337,21 +340,24 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
     }
   }, []);
 
-  const handleInputChange = useCallback((value: string) => {
-    setSearchQuery(value);
+  const handleInputChange = useCallback(
+    (value: string) => {
+      setSearchQuery(value);
 
-    // Clear previous debounce
-    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+      // Clear previous debounce
+      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
 
-    if (value.trim().length >= 3) {
-      suggestDebounceRef.current = setTimeout(() => {
-        fetchSuggestions(value);
-      }, 350);
-    } else {
-      setSuggestions([]);
-      setShowSuggestions(false);
-    }
-  }, [fetchSuggestions]);
+      if (value.trim().length >= 3) {
+        suggestDebounceRef.current = setTimeout(() => {
+          fetchSuggestions(value);
+        }, 350);
+      } else {
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+    },
+    [fetchSuggestions]
+  );
 
   const handleSuggestionClick = (player: SuggestedPlayer) => {
     haptic.selection();
@@ -377,7 +383,9 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
       const scope = searchScopeRef.current;
       if (!scope) {
         // Scope not loaded yet — try loading
-        const { data: { user: authUser } } = await getAuthUser();
+        const {
+          data: { user: authUser },
+        } = await getAuthUser();
         if (!authUser?.id) {
           setError('You must be logged in to search.');
           return;
@@ -449,14 +457,16 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
           try {
             const { data: seatData } = await supabase
               .from('table_seats')
-              .select(`
+              .select(
+                `
                 id,
                 table_id,
                 tables:table_id (
                   id, name, game_variant, small_blind, big_blind, status, club_id,
                   clubs:club_id (name)
                 )
-              `)
+              `
+              )
               .eq('user_id', player.id)
               .is('left_at', null)
               .limit(4);
@@ -464,12 +474,18 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
             if (seatData) {
               for (const seat of seatData) {
                 const table = (seat as Record<string, unknown>).tables as {
-                  id: string; name: string; game_variant: string;
-                  small_blind: number; big_blind: number; status: string;
+                  id: string;
+                  name: string;
+                  game_variant: string;
+                  small_blind: number;
+                  big_blind: number;
+                  status: string;
                   clubs: { name: string } | { name: string }[] | null;
                 } | null;
                 if (table && (table.status === 'active' || table.status === 'running')) {
-                  const clubName = Array.isArray(table.clubs) ? table.clubs[0]?.name : table.clubs?.name;
+                  const clubName = Array.isArray(table.clubs)
+                    ? table.clubs[0]?.name
+                    : table.clubs?.name;
                   tables.push({
                     id: table.id,
                     name: toTitleCase(table.name || 'Cash Game'),
@@ -481,20 +497,24 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                 }
               }
             }
-          } catch { /* non-critical */ }
+          } catch {
+            /* non-critical */
+          }
 
           // Tournament Presence
           if (tables.length < 4) {
             try {
               const { data: tournamentData } = await supabase
                 .from('tournament_players')
-                .select(`
+                .select(
+                  `
                   id, tournament_id,
                   tournaments:tournament_id (
                     id, name, status, buy_in_amount, club_id,
                     clubs:club_id (name)
                   )
-                `)
+                `
+                )
                 .eq('user_id', player.id)
                 .in('status', ['registered', 'playing'])
                 .limit(4 - tables.length);
@@ -502,11 +522,19 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
               if (tournamentData) {
                 for (const reg of tournamentData) {
                   const tournament = (reg as Record<string, unknown>).tournaments as {
-                    id: string; name: string; status: string; buy_in_amount: number;
+                    id: string;
+                    name: string;
+                    status: string;
+                    buy_in_amount: number;
                     clubs: { name: string } | { name: string }[] | null;
                   } | null;
-                  if (tournament && (tournament.status === 'running' || tournament.status === 'late_reg')) {
-                    const clubName = Array.isArray(tournament.clubs) ? tournament.clubs[0]?.name : tournament.clubs?.name;
+                  if (
+                    tournament &&
+                    (tournament.status === 'running' || tournament.status === 'late_reg')
+                  ) {
+                    const clubName = Array.isArray(tournament.clubs)
+                      ? tournament.clubs[0]?.name
+                      : tournament.clubs?.name;
                     tables.push({
                       id: tournament.id,
                       name: toTitleCase(tournament.name || 'Tournament'),
@@ -518,7 +546,9 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                   }
                 }
               }
-            } catch { /* non-critical */ }
+            } catch {
+              /* non-critical */
+            }
           }
 
           return {
@@ -634,9 +664,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                         )}
                       </div>
                       <div className={styles.suggestInfo}>
-                        <span className={styles.suggestName}>
-                          {s.display_name || s.username}
-                        </span>
+                        <span className={styles.suggestName}>{s.display_name || s.username}</span>
                         {s.display_name && s.username && (
                           <span className={styles.suggestAlias}>@{s.username}</span>
                         )}

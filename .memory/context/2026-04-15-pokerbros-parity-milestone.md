@@ -11,14 +11,14 @@ The Smarter Poker Club Arena platform now meets or exceeds PokerBros parity acro
 
 ## Commits
 
-| Phase | Commit | Doc |
-|---|---|---|
-| A + B + C bundled | `77d8e3dc` | `2026-04-15-phase-A-signoff.md` + `-B-` + `-C-` + `2026-04-14-basic-functionality-push.md` + `problems/007-v5-drop-orphans-outage.md` |
-| D — Club / agent / union economy | `fcdfd03c` | `2026-04-15-phase-D-signoff.md` |
-| E — VIP / IAP / daily rewards | `58eddd4e` | `2026-04-15-phase-E-signoff.md` |
-| F — Security & anti-cheat | `9f305d8c` | `2026-04-15-phase-F-signoff.md` |
-| G — Real-time & multi-tabling | `20386861` | `2026-04-15-phase-G-signoff.md` |
-| H — Analytics & reporting | `a9700673` | `2026-04-15-phase-H-signoff.md` |
+| Phase                            | Commit     | Doc                                                                                                                                   |
+| -------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| A + B + C bundled                | `77d8e3dc` | `2026-04-15-phase-A-signoff.md` + `-B-` + `-C-` + `2026-04-14-basic-functionality-push.md` + `problems/007-v5-drop-orphans-outage.md` |
+| D — Club / agent / union economy | `fcdfd03c` | `2026-04-15-phase-D-signoff.md`                                                                                                       |
+| E — VIP / IAP / daily rewards    | `58eddd4e` | `2026-04-15-phase-E-signoff.md`                                                                                                       |
+| F — Security & anti-cheat        | `9f305d8c` | `2026-04-15-phase-F-signoff.md`                                                                                                       |
+| G — Real-time & multi-tabling    | `20386861` | `2026-04-15-phase-G-signoff.md`                                                                                                       |
+| H — Analytics & reporting        | `a9700673` | `2026-04-15-phase-H-signoff.md`                                                                                                       |
 
 ## Live engine telemetry (at signoff time)
 

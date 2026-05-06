@@ -25,11 +25,11 @@ import type { StateMachine } from './StateMachine.js';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type PreActionType =
-  | 'auto_fold'       // Always fold
+  | 'auto_fold' // Always fold
   | 'auto_check_fold' // Check if free, fold if bet
-  | 'auto_check'      // Check if free, clear if bet
-  | 'auto_call'       // Call any bet
-  | 'auto_call_any';  // Call any amount (dangerous!)
+  | 'auto_check' // Check if free, clear if bet
+  | 'auto_call' // Call any bet
+  | 'auto_call_any'; // Call any amount (dangerous!)
 
 export interface PreActionEntry {
   playerId: string;

@@ -88,7 +88,10 @@ export class MixedGameEngine {
   ): void {
     const variants = MIXED_GAME_PRESETS[presetName];
     if (!variants) {
-      reportError(new Error(`[MixedGameEngine] Unknown preset: ${presetName}`), 'MixedGameEngine.Unknown_preset');
+      reportError(
+        new Error(`[MixedGameEngine] Unknown preset: ${presetName}`),
+        'MixedGameEngine.Unknown_preset'
+      );
       return;
     }
 

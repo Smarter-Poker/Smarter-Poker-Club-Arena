@@ -261,7 +261,9 @@ export const FinancialCronService = {
           // FIX-216: If first 3 agents all fail, the infrastructure is broken — stop spamming
           if (consecutiveFailures >= 3) {
             this._suspensionCheckDisabled = true;
-            console.debug('[FinancialCron] Suspension check disabled — CreditService.checkSuspension unavailable');
+            console.debug(
+              '[FinancialCron] Suspension check disabled — CreditService.checkSuspension unavailable'
+            );
             break;
           }
           reportError(e, 'FinancialCronService.runSuspensionCheck.agent', { agentId: agent.id });

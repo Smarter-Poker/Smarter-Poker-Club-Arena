@@ -16,9 +16,7 @@
       "title": "WH Hub · 99.9%",
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
       "id": 1,
-      "targets": [
-        { "expr": "slo:wh_hub:budget_remaining_30d", "refId": "A" }
-      ],
+      "targets": [{ "expr": "slo:wh_hub:budget_remaining_30d", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -45,9 +43,7 @@
       "title": "CA Hub · 99.9%",
       "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
       "id": 2,
-      "targets": [
-        { "expr": "slo:ca_hub:budget_remaining_30d", "refId": "A" }
-      ],
+      "targets": [{ "expr": "slo:ca_hub:budget_remaining_30d", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -74,9 +70,7 @@
       "title": "Engine · 99.95%",
       "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
       "id": 3,
-      "targets": [
-        { "expr": "slo:engine:budget_remaining_30d", "refId": "A" }
-      ],
+      "targets": [{ "expr": "slo:engine:budget_remaining_30d", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -103,9 +97,7 @@
       "title": "Engine tick · 99% < 50ms",
       "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
       "id": 4,
-      "targets": [
-        { "expr": "slo:engine_tick:budget_remaining_30d", "refId": "A" }
-      ],
+      "targets": [{ "expr": "slo:engine_tick:budget_remaining_30d", "refId": "A" }],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
@@ -143,7 +135,11 @@
       "id": 10,
       "targets": [
         { "expr": "slo:wh_hub:error_ratio_1h", "refId": "A", "legendFormat": "error ratio 1h" },
-        { "expr": "14.4 * (1 - 0.999)", "refId": "B", "legendFormat": "fast-burn threshold (14.4x)" },
+        {
+          "expr": "14.4 * (1 - 0.999)",
+          "refId": "B",
+          "legendFormat": "fast-burn threshold (14.4x)"
+        },
         { "expr": "6 * (1 - 0.999)", "refId": "C", "legendFormat": "medium-burn threshold (6x)" },
         { "expr": "3 * (1 - 0.999)", "refId": "D", "legendFormat": "slow-burn threshold (3x)" }
       ],
@@ -153,7 +149,9 @@
           "custom": { "lineInterpolation": "smooth", "fillOpacity": 15 }
         }
       },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] } }
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
     },
     {
       "type": "timeseries",
@@ -162,7 +160,11 @@
       "id": 11,
       "targets": [
         { "expr": "slo:ca_hub:error_ratio_1h", "refId": "A", "legendFormat": "error ratio 1h" },
-        { "expr": "14.4 * (1 - 0.999)", "refId": "B", "legendFormat": "fast-burn threshold (14.4x)" },
+        {
+          "expr": "14.4 * (1 - 0.999)",
+          "refId": "B",
+          "legendFormat": "fast-burn threshold (14.4x)"
+        },
         { "expr": "6 * (1 - 0.999)", "refId": "C", "legendFormat": "medium-burn threshold (6x)" },
         { "expr": "3 * (1 - 0.999)", "refId": "D", "legendFormat": "slow-burn threshold (3x)" }
       ],
@@ -172,7 +174,9 @@
           "custom": { "lineInterpolation": "smooth", "fillOpacity": 15 }
         }
       },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] } }
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
     },
     {
       "type": "timeseries",
@@ -181,7 +185,11 @@
       "id": 12,
       "targets": [
         { "expr": "slo:engine:error_ratio_1h", "refId": "A", "legendFormat": "error ratio 1h" },
-        { "expr": "14.4 * (1 - 0.9995)", "refId": "B", "legendFormat": "fast-burn threshold (14.4x)" },
+        {
+          "expr": "14.4 * (1 - 0.9995)",
+          "refId": "B",
+          "legendFormat": "fast-burn threshold (14.4x)"
+        },
         { "expr": "6 * (1 - 0.9995)", "refId": "C", "legendFormat": "medium-burn threshold (6x)" },
         { "expr": "3 * (1 - 0.9995)", "refId": "D", "legendFormat": "slow-burn threshold (3x)" }
       ],
@@ -191,7 +199,9 @@
           "custom": { "lineInterpolation": "smooth", "fillOpacity": 15 }
         }
       },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] } }
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
     },
     {
       "type": "timeseries",

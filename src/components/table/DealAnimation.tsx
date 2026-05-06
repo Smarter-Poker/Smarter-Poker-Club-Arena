@@ -165,13 +165,15 @@ function DealAnimationComponent({
         <div
           key={card.id}
           className="deal-animation__card"
-          style={{
-            '--origin-x': `${card.originX}%`,
-            '--origin-y': `${card.originY}%`,
-            '--target-x': `${card.targetX}%`,
-            '--target-y': `${card.targetY}%`,
-            '--delay': `${card.delay}ms`,
-          } as React.CSSProperties}
+          style={
+            {
+              '--origin-x': `${card.originX}%`,
+              '--origin-y': `${card.originY}%`,
+              '--target-x': `${card.targetX}%`,
+              '--target-y': `${card.targetY}%`,
+              '--delay': `${card.delay}ms`,
+            } as React.CSSProperties
+          }
         />
       ))}
     </div>

@@ -467,7 +467,8 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
               <div className="theme-vip-prompt__icon">VIP</div>
               <h4 className="theme-vip-prompt__title">VIP Theme Unlocked</h4>
               <p className="theme-vip-prompt__text">
-                This theme is exclusive to VIP members. Upgrade to unlock premium themes, tables, and more.
+                This theme is exclusive to VIP members. Upgrade to unlock premium themes, tables,
+                and more.
               </p>
               <div className="theme-vip-prompt__actions">
                 <button

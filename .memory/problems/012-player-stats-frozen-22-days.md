@@ -10,15 +10,15 @@
 
 Phase H signoff listed `player_stats` as the backing store for `PlayerStatsDashboard`, `AdvancedStatsSummary`, `AchievementTriggerService`, `LeaderboardService`, and admin analytics. H-2 live verification found:
 
-| Check | Live value |
-|---|---|
-| `player_stats` rows total | 128 |
-| Rows with `updated_at > NOW() - 7 days` | 0 |
-| Rows with `updated_at > NOW() - 30 days` | 128 (all at same timestamp) |
-| Rows with `total_rake > 0` | **0** |
-| Max `updated_at` | 2026-03-24 20:18:03 (22 days ago) |
-| Top user `hands_played` | 5,571 |
-| Top user `total_rake` | $0.00 |
+| Check                                    | Live value                        |
+| ---------------------------------------- | --------------------------------- |
+| `player_stats` rows total                | 128                               |
+| Rows with `updated_at > NOW() - 7 days`  | 0                                 |
+| Rows with `updated_at > NOW() - 30 days` | 128 (all at same timestamp)       |
+| Rows with `total_rake > 0`               | **0**                             |
+| Max `updated_at`                         | 2026-03-24 20:18:03 (22 days ago) |
+| Top user `hands_played`                  | 5,571                             |
+| Top user `total_rake`                    | $0.00                             |
 
 Every top-10 player had **identical** `updated_at` (2026-03-24 20:18:03.522016) — signature of a one-time bulk backfill. Since then: zero updates. But `hand_history` shows 22,566 hands in the last 7 days — the data is flowing, just not into player_stats.
 
@@ -49,6 +49,7 @@ Extended `RakebackSettlerService.runSettlement()` (2b section) to also upsert `p
 - Idempotent in the sense that the settler resumes from `lastSettledAt` so no double-counting across ticks.
 
 Settler now does FOUR things per 30-min tick, all from the same rake_records read:
+
 1. Player rakeback periods (BUG 008)
 2. Agent commissions (BUG 009)
 3. Player stats freshness — hands_played + total_rake (BUG 012)

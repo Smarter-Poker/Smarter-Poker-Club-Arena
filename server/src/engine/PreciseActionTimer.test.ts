@@ -21,8 +21,12 @@ function makeScheduler() {
   return {
     sched,
     nowFn: () => now,
-    advance(ms: number) { now += ms; },
-    tick() { if (intervalCb) intervalCb(); },
+    advance(ms: number) {
+      now += ms;
+    },
+    tick() {
+      if (intervalCb) intervalCb();
+    },
   };
 }
 
@@ -50,10 +54,14 @@ describe('PreciseActionTimer (DeadlineScheduler backend)', () => {
 
   it('expiry fires onExpiry callback at the deadline tick', () => {
     let fired = false;
-    timer.startTimer('t', 'p1', 500, () => { fired = true; });
-    h.advance(499); h.tick();
+    timer.startTimer('t', 'p1', 500, () => {
+      fired = true;
+    });
+    h.advance(499);
+    h.tick();
     expect(fired).toBe(false);
-    h.advance(2); h.tick();
+    h.advance(2);
+    h.tick();
     expect(fired).toBe(true);
     expect(events.map((e) => e.type)).toEqual(['TIMER_STARTED', 'TIMER_EXPIRED']);
     expect(h.sched.size()).toBe(0);
@@ -61,10 +69,13 @@ describe('PreciseActionTimer (DeadlineScheduler backend)', () => {
 
   it('cancelTimer removes from scheduler and emits TIMER_CANCELLED', () => {
     let fired = false;
-    timer.startTimer('t', 'p1', 500, () => { fired = true; });
+    timer.startTimer('t', 'p1', 500, () => {
+      fired = true;
+    });
     timer.cancelTimer('t', 'p1');
     expect(h.sched.size()).toBe(0);
-    h.advance(1000); h.tick();
+    h.advance(1000);
+    h.tick();
     expect(fired).toBe(false);
     expect(events.map((e) => e.type)).toEqual(['TIMER_STARTED', 'TIMER_CANCELLED']);
   });
@@ -76,37 +87,49 @@ describe('PreciseActionTimer (DeadlineScheduler backend)', () => {
     expect(h.sched.size()).toBe(1);
     expect(h.sched.nextDeadlineMs()).toBe(h.nowFn() + 1000);
     // Events emitted: START, CANCEL (implicit by cancelTimer inside startTimer), START
-    expect(events.map((e) => e.type)).toEqual(['TIMER_STARTED', 'TIMER_CANCELLED', 'TIMER_STARTED']);
+    expect(events.map((e) => e.type)).toEqual([
+      'TIMER_STARTED',
+      'TIMER_CANCELLED',
+      'TIMER_STARTED',
+    ]);
   });
 
   it('extendTimer pushes the deadline out and re-schedules', () => {
     let fired = false;
-    timer.startTimer('t', 'p1', 500, () => { fired = true; });
+    timer.startTimer('t', 'p1', 500, () => {
+      fired = true;
+    });
     h.advance(400);
     timer.extendTimer('t', 'p1', 1000);
     expect(h.sched.nextDeadlineMs()).toBe(h.nowFn() - 400 + 500 + 1000);
     // Should NOT fire at original deadline
-    h.advance(200); h.tick();
+    h.advance(200);
+    h.tick();
     expect(fired).toBe(false);
     // Fires at new extended deadline
-    h.advance(1000); h.tick();
+    h.advance(1000);
+    h.tick();
     expect(fired).toBe(true);
   });
 
   it('pauseTimer cancels scheduler entry; resumeTimer re-registers at new deadline', () => {
     let fired = false;
-    timer.startTimer('t', 'p1', 500, () => { fired = true; });
+    timer.startTimer('t', 'p1', 500, () => {
+      fired = true;
+    });
     h.advance(200);
     timer.pauseTimer('t', 'p1');
     expect(h.sched.size()).toBe(0);
     // Even if we advance past the original deadline, nothing fires
-    h.advance(10_000); h.tick();
+    h.advance(10_000);
+    h.tick();
     expect(fired).toBe(false);
     // Resume: 300ms remaining from when we paused (500-200)
     timer.resumeTimer('t', 'p1');
     expect(h.sched.size()).toBe(1);
     expect(h.sched.nextDeadlineMs()).toBe(h.nowFn() + 300);
-    h.advance(300); h.tick();
+    h.advance(300);
+    h.tick();
     expect(fired).toBe(true);
   });
 
@@ -139,25 +162,34 @@ describe('PreciseActionTimer (DeadlineScheduler backend)', () => {
     timer.dispose();
     expect(h.sched.size()).toBe(0);
     // Scheduler itself is still alive — register a new entry to prove it
-    h.sched.schedule({ tableId: 'x', eventId: 'y', deadlineMs: h.nowFn() + 100, callback: () => {} });
+    h.sched.schedule({
+      tableId: 'x',
+      eventId: 'y',
+      deadlineMs: h.nowFn() + 100,
+      callback: () => {},
+    });
     expect(h.sched.size()).toBe(1);
   });
 
   it('expired timer with no onExpiry still emits TIMER_EXPIRED and cleans up', () => {
     timer.startTimer('t', 'p1', 500);
-    h.advance(600); h.tick();
+    h.advance(600);
+    h.tick();
     expect(events.map((e) => e.type)).toEqual(['TIMER_STARTED', 'TIMER_EXPIRED']);
     expect(timer.hasTimer('t', 'p1')).toBe(false);
   });
 
   it('cancelled-between-schedule-and-tick: scheduler fires but onExpired returns early', () => {
     let fired = false;
-    timer.startTimer('t', 'p1', 500, () => { fired = true; });
+    timer.startTimer('t', 'p1', 500, () => {
+      fired = true;
+    });
     // Simulate the scheduler still holding a pending entry (legitimate race
     // if cancel happens after scheduler peek but before fire). Directly
     // delete the Map entry but leave scheduler alone.
     (timer as any).deadlines.clear();
-    h.advance(600); h.tick();
+    h.advance(600);
+    h.tick();
     expect(fired).toBe(false); // onExpired early-returned
   });
 });

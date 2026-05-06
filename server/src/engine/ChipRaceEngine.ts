@@ -87,13 +87,15 @@ export class ChipRaceEngine {
         tournamentId,
         removedDenomination: oldDenomination,
         newSmallestDenomination: newDenomination,
-        players: [{
-          playerId,
-          stack: newStack,
-          fractionalChips,
-          lotteryValue: 0,
-          chipsAwarded,
-        }],
+        players: [
+          {
+            playerId,
+            stack: newStack,
+            fractionalChips,
+            lotteryValue: 0,
+            chipsAwarded,
+          },
+        ],
         totalFractionalCollected: fractionalChips,
         totalNewChipsDistributed: chipsAwarded > 0 ? 1 : 0,
       };
@@ -153,7 +155,11 @@ export class ChipRaceEngine {
 
   private emitEvent(event: ChipRaceEvent): void {
     if (this.onEvent) {
-      try { this.onEvent(event); } catch (err) { reportError(err, 'ChipRaceEngine.eventHandler'); }
+      try {
+        this.onEvent(event);
+      } catch (err) {
+        reportError(err, 'ChipRaceEngine.eventHandler');
+      }
     }
   }
 }

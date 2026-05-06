@@ -25,7 +25,10 @@
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+  transition:
+    transform 0.15s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .tbc-widget:hover {
@@ -62,7 +65,8 @@
 }
 
 @keyframes tbcPulse {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(255, 107, 182, 0.25);
   }
   50% {

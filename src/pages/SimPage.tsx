@@ -90,18 +90,14 @@ const SimPage: React.FC = () => {
           <h1 className="sim-page__title">Club Arena — Sim</h1>
         </div>
         <p className="sim-page__subtitle">
-          Deterministic scenario playback. No live engine. Each step is a scripted state
-          snapshot of what the UI SHOULD render at that moment.
+          Deterministic scenario playback. No live engine. Each step is a scripted state snapshot of
+          what the UI SHOULD render at that moment.
         </p>
 
         <div className="sim-page__controls">
           <label className="sim-page__label">
             Scenario
-            <select
-              className="sim-page__select"
-              value={scenarioIdx}
-              onChange={onPickScenario}
-            >
+            <select className="sim-page__select" value={scenarioIdx} onChange={onPickScenario}>
               {ALL_SCENARIOS.map((s, i) => (
                 <option key={s.id} value={i}>
                   {s.name}

@@ -10,6 +10,7 @@ Also: BBJ fee is determined by stakes, not player count. Player count only
 matters for the ELIGIBILITY threshold (minimum 3 dealt in).
 
 IMPLEMENTATION:
+
 - File: server/src/config/RakeConfig.ts
 - Constant: BBJ_RULES.minPlayersDealt = 3
 - Previous value: 4 (wrong)

@@ -83,42 +83,44 @@ export function TableSettingsPanel({
 
       {/* Toggle List */}
       <div className="tsp-list">
-        {TABLE_SETTINGS_META.filter((m) => typeof settings[m.key] === 'boolean').map((meta, idx) => {
-          const isEnabled = !!settings[meta.key];
-          const isVisible = visibleItems.has(idx);
+        {TABLE_SETTINGS_META.filter((m) => typeof settings[m.key] === 'boolean').map(
+          (meta, idx) => {
+            const isEnabled = !!settings[meta.key];
+            const isVisible = visibleItems.has(idx);
 
-          return (
-            <div
-              key={meta.key}
-              className={`tsp-item ${isEnabled ? 'tsp-item--active' : ''}`}
-              onClick={() => onToggle(meta.key)}
-              style={{
-                opacity: isVisible ? 1 : 0,
-                transform: isVisible ? 'translateY(0)' : 'translateY(6px)',
-                transition: 'opacity 0.3s ease, transform 0.3s ease',
-              }}
-            >
-              <div className="tsp-item__info">
-                <span className="tsp-item__label">{meta.label}</span>
-                <span className="tsp-item__desc">{meta.description}</span>
-              </div>
-              <button
-                className={`tsp-toggle ${isEnabled ? 'tsp-toggle--on' : 'tsp-toggle--off'}`}
-                role="switch"
-                aria-checked={isEnabled ? 'true' : 'false'}
-                aria-label={`${meta.label}: ${isEnabled ? 'on' : 'off'}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggle(meta.key);
+            return (
+              <div
+                key={meta.key}
+                className={`tsp-item ${isEnabled ? 'tsp-item--active' : ''}`}
+                onClick={() => onToggle(meta.key)}
+                style={{
+                  opacity: isVisible ? 1 : 0,
+                  transform: isVisible ? 'translateY(0)' : 'translateY(6px)',
+                  transition: 'opacity 0.3s ease, transform 0.3s ease',
                 }}
               >
-                <span className="tsp-toggle__track">
-                  <span className="tsp-toggle__thumb" />
-                </span>
-              </button>
-            </div>
-          );
-        })}
+                <div className="tsp-item__info">
+                  <span className="tsp-item__label">{meta.label}</span>
+                  <span className="tsp-item__desc">{meta.description}</span>
+                </div>
+                <button
+                  className={`tsp-toggle ${isEnabled ? 'tsp-toggle--on' : 'tsp-toggle--off'}`}
+                  role="switch"
+                  aria-checked={isEnabled ? 'true' : 'false'}
+                  aria-label={`${meta.label}: ${isEnabled ? 'on' : 'off'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle(meta.key);
+                  }}
+                >
+                  <span className="tsp-toggle__track">
+                    <span className="tsp-toggle__thumb" />
+                  </span>
+                </button>
+              </div>
+            );
+          }
+        )}
       </div>
 
       {/* Theme Settings Link */}

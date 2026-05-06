@@ -11,10 +11,11 @@ This is NEVER weighted by pot contribution under ANY circumstances.
 This is the KEY element for determining weekly player and agent earnings.
 
 IMPLEMENTATION:
+
 - File: server/src/engine/RakebackEngine.ts
 - Method: recordHandRake()
-- Formula: equalShare = Math.round((totalRake / playerCount) * 100) / 100
+- Formula: equalShare = Math.round((totalRake / playerCount) \* 100) / 100
 - Filter: All entries in contributions map with invested >= 0
 
-PREVIOUS (WRONG): (potContribution / totalPotContributions) * totalRake (weighted)
+PREVIOUS (WRONG): (potContribution / totalPotContributions) \* totalRake (weighted)
 CORRECT: totalRake / playerCount (equal share)

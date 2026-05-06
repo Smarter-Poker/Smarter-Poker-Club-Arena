@@ -8,7 +8,6 @@
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-
 import { reportError } from '../utils/errorReporter';
 
 export type ValidationResult = {

@@ -19,8 +19,13 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undef
 
 // SECURITY: No hardcoded fallback credentials — env vars are required
 if (!supabaseUrl || !supabaseAnonKey) {
-  reportError(new Error('[Supabase] VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in environment variables. ' +
-      'Check your .env file.'), 'supabase.Supabase_VITE_SUPABASE_URL_and_VITE_SUPA');
+  reportError(
+    new Error(
+      '[Supabase] VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in environment variables. ' +
+        'Check your .env file.'
+    ),
+    'supabase.Supabase_VITE_SUPABASE_URL_and_VITE_SUPA'
+  );
 }
 
 // Create the Supabase client with realtime enabled for live traffic
@@ -232,7 +237,10 @@ if (typeof window !== 'undefined') {
             String(err).includes('Invalid Refresh Token') ||
             String(err).includes('invalid_grant')
           ) {
-            reportError(new Error('[Supabase] Refresh token is dead — forcing sign out'), 'supabase.Refresh_token_is_dead__forcing_sign_out');
+            reportError(
+              new Error('[Supabase] Refresh token is dead — forcing sign out'),
+              'supabase.Refresh_token_is_dead__forcing_sign_out'
+            );
             supabase.auth
               .signOut()
               .catch((e) => console.warn('[Supabase] Failed to force sign out:', e));

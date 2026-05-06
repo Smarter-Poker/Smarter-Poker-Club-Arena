@@ -57,6 +57,7 @@ The `RETURNING` pattern is strictly better than the naive "SELECT, then INSERT" 
 ### Part B — Server code (pending Hetzner redeploy)
 
 `server/src/services/supabase.ts` — 4 direct INSERT sites now also include `balance_after`:
+
 - **Auto-rebuy topup**: compute `newBalance = wallet.balance - rebuyAmount` before the UPDATE, reuse in INSERT.
 - **Leave-table cashout (primary)**: compute `newBalance = currentBalance + stack` for the upsert, reuse in INSERT.
 - **Leave-table cashout (alternate, `atomicCashout`)**: read post-upsert `wallets.balance` and use.
@@ -67,16 +68,19 @@ These changes ship via the CA repo but require a Hetzner container rebuild (`./s
 ## Verification plan
 
 Once the SQL migration is live (ALREADY APPLIED):
+
 - Any fresh buy-in via `atomic_table_buyin` RPC populates `balance_after`. Expected burn rate: 187 buyins per 24h → one verifiable row every ~8 minutes.
 - Any fresh cashout via `atomic_table_cashout` RPC populates `balance_after`. Rarer.
 - Any bust-rebuy via `atomic_table_rebuy` RPC populates `balance_after` AND no longer errors on the reference_id/wallet_type mismatch.
 
 Once the server code ships to Hetzner:
+
 - Auto-rebuy topups populate `balance_after` (category='rebuy' from supabase.ts path).
 - Leave-table cashouts populate `balance_after`.
 - Horse wallet refills populate `balance_after`.
 
 Post-deploy verification query:
+
 ```sql
 SELECT
   DATE_TRUNC('minute', created_at) AS minute,
@@ -89,6 +93,7 @@ GROUP BY 1, 2
 ORDER BY 1 DESC
 LIMIT 20;
 ```
+
 All rows post-migration should satisfy `rows = with_balance`. Any row with `with_balance < rows` is a new-regression and means a new INSERT site was added that bypasses the fix.
 
 ## Related

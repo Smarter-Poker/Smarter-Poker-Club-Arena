@@ -55,39 +55,39 @@ The deprecated repo `Smarter-Poker/Club-Arena-Design` is archived (read-only). D
 
 ### Tier 1: Game engine → Hetzner
 
-| Source | Where in repo |
-|---|---|
-| Build root | `server/` subdirectory |
-| Hetzner server | id `125093929`, `ash-dc1` (Ashburn VA), IP `178.156.160.206`, CPX11 |
-| Hostname | `engine.smarter.poker` |
-| Process manager | systemd + Docker container `club-arena-engine` |
-| Auto-deploy on push? | **No** — manual SSH-based deploy |
-| How to deploy | `bash server/deploy-hetzner.sh` (runs on Mac, SSHs to Hetzner) |
-| Protocol | WebSocket: `wss://engine.smarter.poker/ws/table/:tableId`, Bearer JWT auth |
-| Bible governance | V8 Bible Law 1.16 — discrete named events only, no snapshot-diffs, no polling. Latency budget < 100ms broadcast. |
+| Source               | Where in repo                                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Build root           | `server/` subdirectory                                                                                           |
+| Hetzner server       | id `125093929`, `ash-dc1` (Ashburn VA), IP `178.156.160.206`, CPX11                                              |
+| Hostname             | `engine.smarter.poker`                                                                                           |
+| Process manager      | systemd + Docker container `club-arena-engine`                                                                   |
+| Auto-deploy on push? | **No** — manual SSH-based deploy                                                                                 |
+| How to deploy        | `bash server/deploy-hetzner.sh` (runs on Mac, SSHs to Hetzner)                                                   |
+| Protocol             | WebSocket: `wss://engine.smarter.poker/ws/table/:tableId`, Bearer JWT auth                                       |
+| Bible governance     | V8 Bible Law 1.16 — discrete named events only, no snapshot-diffs, no polling. Latency budget < 100ms broadcast. |
 
 ### Tier 2: Vite frontend → Vercel
 
-| Source | Where in repo |
-|---|---|
-| Build root | repo root (`vite.config.ts`, `package.json`, `src/`) |
-| Output | `dist/` (per `vercel.json`) |
-| Vercel project | `club-arena` (id `prj_oaCq8RYhExLRUYizLG93li0uX468`) |
-| Auto-deploy on push? | **No** — `vercel.json` has `git.deploymentEnabled: false` |
-| How to deploy | Manual: `vercel --prod` from repo root, or trigger from Vercel dashboard |
-| Visible at | `smarter.poker/hub/club-arena/*` (served as static assets via World Hub) and `club.smarter.poker/` (redirect) |
+| Source               | Where in repo                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Build root           | repo root (`vite.config.ts`, `package.json`, `src/`)                                                          |
+| Output               | `dist/` (per `vercel.json`)                                                                                   |
+| Vercel project       | `club-arena` (id `prj_oaCq8RYhExLRUYizLG93li0uX468`)                                                          |
+| Auto-deploy on push? | **No** — `vercel.json` has `git.deploymentEnabled: false`                                                     |
+| How to deploy        | Manual: `vercel --prod` from repo root, or trigger from Vercel dashboard                                      |
+| Visible at           | `smarter.poker/hub/club-arena/*` (served as static assets via World Hub) and `club.smarter.poker/` (redirect) |
 
 ### Tier 3: Operations REST API → Vercel (different repo!)
 
-| Source | Where |
-|---|---|
-| Build root | `Smarter-Poker/Smarter-Poker-World-Hub` (different repo!), `pages/api/club-arena/` |
-| Vercel project | `hub-vanguard` (production World Hub project) |
-| Auto-deploy on push? | **YES** — `git push` to World Hub `main` triggers Vercel auto-build |
-| How to deploy | `cd ~/Documents/Smarter-Poker-World-Hub && git push origin main` |
-| Visible at | `smarter.poker/api/club-arena/*` |
-| Auth | Server-side Supabase JWT validation per route |
-| Caveats | Each route is its own Pages Router file; not a shared Hono router |
+| Source               | Where                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| Build root           | `Smarter-Poker/Smarter-Poker-World-Hub` (different repo!), `pages/api/club-arena/` |
+| Vercel project       | `hub-vanguard` (production World Hub project)                                      |
+| Auto-deploy on push? | **YES** — `git push` to World Hub `main` triggers Vercel auto-build                |
+| How to deploy        | `cd ~/Documents/Smarter-Poker-World-Hub && git push origin main`                   |
+| Visible at           | `smarter.poker/api/club-arena/*`                                                   |
+| Auth                 | Server-side Supabase JWT validation per route                                      |
+| Caveats              | Each route is its own Pages Router file; not a shared Hono router                  |
 
 **These three deploy paths can desync.** A `git push` to `main` of THIS repo only updates source — neither auto-deploys. A push to World Hub's `main` deploys Tier 3 immediately. If a fix touches more than one tier, all relevant deploys must be triggered.
 
@@ -126,6 +126,7 @@ Bypass with `git push --no-verify` only in genuine emergencies.
 ## What's in scope for this repo vs other repos
 
 **In scope (Tiers 1 + 2, edit here):**
+
 - Bible V8 game logic (`server/src/`)
 - All real-time action validators, state machines, engines
 - Vite frontend code (`src/`)
@@ -133,6 +134,7 @@ Bypass with `git push --no-verify` only in genuine emergencies.
 - Player-facing UI components
 
 **Out of scope (Tier 3 — edit `Smarter-Poker-World-Hub` instead):**
+
 - Cashier flows (buyin, cashout, approve-cashout)
 - Club admin (create-club, manage-table, club-branding, lobby-ordering)
 - Agent operations (agent-dashboard, agent-credit, manage-agent)
@@ -144,6 +146,7 @@ Bypass with `git push --no-verify` only in genuine emergencies.
 - Player notes, retention analytics
 
 **Out of scope (different products entirely):**
+
 - World Hub UI (`Smarter-Poker/Smarter-Poker-World-Hub` `pages/`, `src/components/`)
 - Commander Orb (`Smarter-Poker/smarter-poker-commander`)
 - Cron handlers (`Smarter-Poker/smarter-poker-workers`)

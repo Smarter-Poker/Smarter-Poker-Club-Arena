@@ -31,11 +31,11 @@ worst_drift   : $143,085,053.85
 
 By entity type and severity:
 
-| entity_type     | severity  | n   | min_drift        | max_drift        | sum_drift          |
-|-----------------|-----------|-----|------------------|------------------|--------------------|
-| club_treasury   | critical  | 2   | $10,000.00       | $22,459.07       | $32,459.07         |
-| player_wallet   | critical  | 584 | −$5,512,178.77   | $143,085,053.85  | $804,531,028.23    |
-| player_wallet   | warn      | 1   | −$1.00           | −$1.00           | −$1.00             |
+| entity_type   | severity | n   | min_drift      | max_drift       | sum_drift       |
+| ------------- | -------- | --- | -------------- | --------------- | --------------- |
+| club_treasury | critical | 2   | $10,000.00     | $22,459.07      | $32,459.07      |
+| player_wallet | critical | 584 | −$5,512,178.77 | $143,085,053.85 | $804,531,028.23 |
+| player_wallet | warn     | 1   | −$1.00         | −$1.00          | −$1.00          |
 
 The single `warn` row (−$1.00) is harmless rounding. Everything else is the finding.
 
@@ -110,6 +110,7 @@ Because zero of the 586 had a match in the `horses` table (my original theory wa
 
 **Round 1** — safe targets (579 rows: never-signed-in + null-role + clubs):
 For each row, inserted a `chip_ledger` row with `category='legacy_seed_reconcile'`:
+
 - `drift > 0` → `from_type='system_mint'` → `to_type='player_wallet'|'club_treasury'`, `amount = drift`
 - `drift < 0` → `from_type='player_wallet'|'club_treasury'` → `to_type='system_burn'`, `amount = -drift`
 

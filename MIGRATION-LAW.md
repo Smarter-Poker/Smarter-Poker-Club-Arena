@@ -1,4 +1,5 @@
 # MIGRATION LAW — ABSOLUTE ENFORCEMENT RULES
+
 ## Zero Exceptions. Zero Shortcuts. Zero Rubber-Stamping.
 
 **Created:** 2026-03-24
@@ -128,6 +129,7 @@ After Step 1, the client (TablePage.tsx and all components) must ONLY:
 3. **RENDER** whatever the server tells it to render
 
 The client MUST NOT:
+
 - Calculate game state
 - Determine whose turn it is
 - Validate actions locally
@@ -171,9 +173,9 @@ changed".**
   a flat top-level payload — never nested under `.data`, never inside a
   giant snapshot blob.
 - Snapshots (`broadcastCurrentState`) exist ONLY as a SAFETY NET for:
-    1. New WebSocket clients connecting mid-hand (need a starting state)
-    2. Reconnect resync after network drop
-    3. Idempotent reconciliation if a discrete event was lost in transit
+  1. New WebSocket clients connecting mid-hand (need a starting state)
+  2. Reconnect resync after network drop
+  3. Idempotent reconciliation if a discrete event was lost in transit
 
   Snapshots MUST NOT be the trigger for any animation, sound, label,
   countdown, or other UX cue. UX is event-driven; snapshots are
@@ -195,6 +197,7 @@ changed".**
 ### What this requires
 
 For every visible aspect / feature / detail in the UI, the engine MUST:
+
 1. Emit a named discrete event the moment that aspect changes.
 2. The client MUST receive that event over the WS hub and update the UI
    directly from the event payload.
@@ -206,6 +209,7 @@ For every visible aspect / feature / detail in the UI, the engine MUST:
 
 Any agent shipping work in Club Arena MUST audit their changes against
 this law:
+
 - Did you add a UX feature whose trigger is "the snapshot updated"?
   → REWRITE it to fire from a discrete event.
 - Did you read state from a polling interval?
@@ -214,12 +218,13 @@ this law:
   detail (a fold animation, a stack change, a chat message, a sound,
   a countdown tick)?
   → ADD the discrete event emit on the server AND wire the client
-    handler.
+  handler.
 
 ### Verification
 
 Every PR that adds or touches a visible UX feature MUST include in its
 commit message a one-line confirmation:
+
 > "Real-time law: triggered by `<event_name>` discrete WS event, no
 > snapshot diff."
 
@@ -299,8 +304,9 @@ duplicate is back — stop and fix the duplicate before any further deploys.
 ### 11.5 LIVE-VERIFY LANGUAGE (the only sentence you may use)
 
 A commit is "deployed" only when you have personally observed:
+
 > "Production `<url>` served `<expected-bundle-hash>` at `<UTC timestamp>` and
->  the fixed behavior was confirmed via cold-load test at that timestamp."
+> the fixed behavior was confirmed via cold-load test at that timestamp."
 
 Any other wording — "should be live," "deploy triggered," "Vercel will pick
 it up in a few minutes," "my push went through" — is NOT acceptable and does
@@ -311,6 +317,7 @@ NOT satisfy this law.
 ## ENFORCEMENT
 
 These laws are checked at every step by:
+
 1. The agent re-reading this file before starting any new step
 2. Grep verification commands after every removal
 3. TypeScript compilation after every change

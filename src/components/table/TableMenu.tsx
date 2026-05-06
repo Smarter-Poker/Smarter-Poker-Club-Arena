@@ -233,7 +233,11 @@ export function TableMenu({
     if (useReal !== null) setUseRealName(useReal === 'true');
     // Fetch VIP status once
     if (user?.id) {
-      supabase.from('profiles').select('is_vip, tier').eq('id', user.id).maybeSingle()
+      supabase
+        .from('profiles')
+        .select('is_vip, tier')
+        .eq('id', user.id)
+        .maybeSingle()
         .then(({ data }) => {
           if (data) setIsVip(data.is_vip || data.tier === 'vip' || false);
         });
@@ -243,7 +247,7 @@ export function TableMenu({
   const handleUseRealNameToggle = () => {
     const newValue = !useRealName;
     setUseRealName(newValue);
-    
+
     // Optimistic local storage update
     localStorage.setItem(STORAGE_KEYS.USE_REAL_NAME, String(newValue));
     masterBus.emit('SETTINGS_CHANGED', { setting: 'useRealName', value: newValue });
@@ -282,10 +286,10 @@ export function TableMenu({
           label: useRealName ? 'Using Real Name (vs Alias)' : 'Using Alias (vs Real Name)',
           icon: <NameTagIcon />,
           onClick: handleUseRealNameToggle,
-        }
-      ] as MenuAction[]
+        },
+      ] as MenuAction[],
     },
-    ...propSections
+    ...propSections,
   ];
 
   // Sound cue on menu open
@@ -485,7 +489,7 @@ export function TableMenu({
           )}
         </div>
       )}
-      
+
       {/* Avatar Gallery Modal */}
       {user && (
         <AvatarGallery

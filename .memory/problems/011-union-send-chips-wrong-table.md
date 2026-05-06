@@ -10,15 +10,17 @@
 
 Phase D signoff claimed union → club chip transfer as a working PokerBros-parity feature. D-2 #4 live verification found:
 
-| Check | Live value |
-|---|---|
-| `union_wallet_transactions` rows last 30 days | 0 |
-| `union_wallet_transactions` with `tx_type='send_to_club'` last 30 days | 0 |
+| Check                                                                  | Live value |
+| ---------------------------------------------------------------------- | ---------- |
+| `union_wallet_transactions` rows last 30 days                          | 0          |
+| `union_wallet_transactions` with `tx_type='send_to_club'` last 30 days | 0          |
 
 RPC body ended with:
+
 ```sql
 INSERT INTO public.union_transactions (...) VALUES (...);
 ```
+
 but `public.union_transactions` **does not exist**. The actual union audit table is `public.union_wallet_transactions` (found via `\dt union*`).
 
 Every attempt to run `fn_union_send_chips_to_club` raised PostgreSQL 42P01, rolling back the entire transaction (debit + credit + audit). Net result: zero chips ever moved across the union → club boundary in production.

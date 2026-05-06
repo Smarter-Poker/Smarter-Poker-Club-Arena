@@ -25,15 +25,17 @@ export default function PreActionPanel({
   onPreAction,
   selectedAction,
 }: PreActionPanelProps) {
-
-  const toggleAction = useCallback((action: PreAction) => {
-    haptic.light();
-    if (selectedAction === action) {
-      onPreAction(null);
-    } else {
-      onPreAction(action);
-    }
-  }, [selectedAction, onPreAction]);
+  const toggleAction = useCallback(
+    (action: PreAction) => {
+      haptic.light();
+      if (selectedAction === action) {
+        onPreAction(null);
+      } else {
+        onPreAction(action);
+      }
+    },
+    [selectedAction, onPreAction]
+  );
 
   if (!handActive) return null;
 

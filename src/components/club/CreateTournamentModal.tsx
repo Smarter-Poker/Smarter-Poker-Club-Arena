@@ -44,9 +44,9 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   // ── Core Config ──
   const [name, setName] = useState('');
   const [format, setFormat] = useState<TournamentFormat>('mtt_freezeout');
-  const [gameVariant, setGameVariant] = useState<
-    'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK'
-  >('NLH');
+  const [gameVariant, setGameVariant] = useState<'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK'>(
+    'NLH'
+  );
   const [buyIn, setBuyIn] = useState('10');
   const [rake, setRake] = useState('1');
   const [startingChips, setStartingChips] = useState('1500');

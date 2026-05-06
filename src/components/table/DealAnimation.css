@@ -88,14 +88,10 @@
   box-shadow:
     /* Drop shadow */
     0 3px 10px rgba(0, 0, 0, 0.6),
-    /* Edge shadow */
-    0 1px 3px rgba(0, 0, 0, 0.4),
-    /* Ambient glow during flight */
-    0 0 16px rgba(26, 58, 122, 0.3),
-    /* Inner top highlight */
-    inset 0 1px 0 rgba(255, 255, 255, 0.15),
-    /* Inner bottom shadow */
-    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+    /* Edge shadow */ 0 1px 3px rgba(0, 0, 0, 0.4),
+    /* Ambient glow during flight */ 0 0 16px rgba(26, 58, 122, 0.3),
+    /* Inner top highlight */ inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    /* Inner bottom shadow */ inset 0 -1px 0 rgba(0, 0, 0, 0.3);
   /* Start at dealer position */
   left: var(--origin-x, 50%);
   top: var(--origin-y, 50%);
@@ -137,19 +133,15 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   background:
     /* Center diamond — gold accent */
-    radial-gradient(
-      ellipse 30% 40% at center,
-      var(--da-card-diamond) 0%,
-      transparent 100%
-    ),
+    radial-gradient(ellipse 30% 40% at center, var(--da-card-diamond) 0%, transparent 100%),
     /* Cross-hatch pattern */
     repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 3px,
-      var(--da-card-pattern) 3px,
-      var(--da-card-pattern) 4px
-    ),
+        45deg,
+        transparent,
+        transparent 3px,
+        var(--da-card-pattern) 3px,
+        var(--da-card-pattern) 4px
+      ),
     repeating-linear-gradient(
       -45deg,
       transparent,
@@ -221,7 +213,8 @@
 
 /* Motion trail animation — appears during mid-flight, fades before landing */
 @keyframes dealTrail {
-  0%, 5% {
+  0%,
+  5% {
     opacity: 0;
   }
   15% {
@@ -230,7 +223,8 @@
   60% {
     opacity: 0.4;
   }
-  85%, 100% {
+  85%,
+  100% {
     opacity: 0;
   }
 }

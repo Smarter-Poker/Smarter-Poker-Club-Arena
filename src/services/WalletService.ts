@@ -530,10 +530,18 @@ export const WalletService = {
           .insert({
             performed_by: userId,
             from_type:
-              type === 'debit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_mint',
+              type === 'debit'
+                ? 'player_wallet'
+                : relatedEntityId
+                  ? 'player_wallet'
+                  : 'system_mint',
             from_entity_id: type === 'debit' ? userId : relatedEntityId,
             to_type:
-              type === 'credit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_burn',
+              type === 'credit'
+                ? 'player_wallet'
+                : relatedEntityId
+                  ? 'player_wallet'
+                  : 'system_burn',
             to_entity_id: type === 'credit' ? userId : relatedEntityId,
             amount: ledgerAmount,
             category,
@@ -547,7 +555,13 @@ export const WalletService = {
       }
 
       if (error) {
-        reportError(error, 'WalletService.logTransaction', { userId, walletType, amount, type, category });
+        reportError(error, 'WalletService.logTransaction', {
+          userId,
+          walletType,
+          amount,
+          type,
+          category,
+        });
         // PARTIAL FAILURE RECOVERY: financial op succeeded but audit trail failed
         // Fire a critical alert so ops can manually reconcile
         // FIX: await the async logCritical call to prevent unhandled rejections
@@ -558,7 +572,13 @@ export const WalletService = {
         );
       }
     } catch (err: unknown) {
-      reportError(err, 'WalletService.logTransaction.catch', { userId, walletType, amount, type, category });
+      reportError(err, 'WalletService.logTransaction.catch', {
+        userId,
+        walletType,
+        amount,
+        type,
+        category,
+      });
       // FIX: await the async logCritical call to prevent unhandled rejections
       await FinancialAlertService.logCritical(
         'WalletService.logTransaction',

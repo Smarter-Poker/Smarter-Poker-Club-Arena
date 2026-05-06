@@ -93,7 +93,10 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
                 >
                   Lv.{uLevel.level}
                 </span>
-                <span className="stat-label" style={{ color: uLevel.color, fontSize: '0.6rem', fontWeight: 600 }}>
+                <span
+                  className="stat-label"
+                  style={{ color: uLevel.color, fontSize: '0.6rem', fontWeight: 600 }}
+                >
                   {uLevel.tierLabel}
                 </span>
               </div>
@@ -107,28 +110,34 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
               </div>
             </div>
             {/* Level Progress Bar */}
-            <div style={{
-              width: '100%',
-              height: '4px',
-              background: 'rgba(255,255,255,0.08)',
-              borderRadius: '2px',
-              margin: '8px 0 4px',
-              overflow: 'hidden',
-            }}>
-              <div style={{
-                width: `${uLevel.progressPercent}%`,
-                height: '100%',
-                background: uLevel.gradient,
+            <div
+              style={{
+                width: '100%',
+                height: '4px',
+                background: 'rgba(255,255,255,0.08)',
                 borderRadius: '2px',
-                transition: 'width 0.6s ease-out',
-              }} />
+                margin: '8px 0 4px',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  width: `${uLevel.progressPercent}%`,
+                  height: '100%',
+                  background: uLevel.gradient,
+                  borderRadius: '2px',
+                  transition: 'width 0.6s ease-out',
+                }}
+              />
             </div>
-            <div style={{
-              textAlign: 'right',
-              fontSize: '0.55rem',
-              color: 'rgba(255,255,255,0.4)',
-              marginBottom: '4px',
-            }}>
+            <div
+              style={{
+                textAlign: 'right',
+                fontSize: '0.55rem',
+                color: 'rgba(255,255,255,0.4)',
+                marginBottom: '4px',
+              }}
+            >
               {uLevel.progressPercent}% to Lv.{Math.min(uLevel.level + 1, 50)}
             </div>
           </>

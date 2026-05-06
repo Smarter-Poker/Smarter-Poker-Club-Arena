@@ -6,14 +6,14 @@
 
 ## Connection Details
 
-| Field | Value |
-|-------|-------|
-| IP Address | `178.156.160.206` |
-| SSH User | `root` |
-| Remote Path | `/opt/club-arena` |
-| Container Name | `club-arena-engine` |
-| Health Check | `https://engine.smarter.poker/health` |
-| Port | `8080` |
+| Field          | Value                                 |
+| -------------- | ------------------------------------- |
+| IP Address     | `178.156.160.206`                     |
+| SSH User       | `root`                                |
+| Remote Path    | `/opt/club-arena`                     |
+| Container Name | `club-arena-engine`                   |
+| Health Check   | `https://engine.smarter.poker/health` |
+| Port           | `8080`                                |
 
 ## Deploy Process
 

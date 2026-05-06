@@ -6,15 +6,15 @@
 
 ## Project Details
 
-| Field | Value |
-|-------|-------|
-| Vercel Project | `hub-vanguard` |
-| Project ID | `prj_op66GkZyZcygXQKm76iyycfVFAQx` |
-| Domain | `smarter.poker` |
-| Token | `vcp_8kIgZkEiE0YNlrmUvjdaXfNZxrzPZsdTksANXVsyAhbnjEg1Hl3q470C` |
-| GitHub Repo | `Smarter-Poker/Smarter-Poker-World-Hub` |
-| Club Arena Path | `public/hub/club-arena/` |
-| Production URL | `https://smarter.poker/hub/club-arena/` |
+| Field           | Value                                                          |
+| --------------- | -------------------------------------------------------------- |
+| Vercel Project  | `hub-vanguard`                                                 |
+| Project ID      | `prj_op66GkZyZcygXQKm76iyycfVFAQx`                             |
+| Domain          | `smarter.poker`                                                |
+| Token           | `vcp_8kIgZkEiE0YNlrmUvjdaXfNZxrzPZsdTksANXVsyAhbnjEg1Hl3q470C` |
+| GitHub Repo     | `Smarter-Poker/Smarter-Poker-World-Hub`                        |
+| Club Arena Path | `public/hub/club-arena/`                                       |
+| Production URL  | `https://smarter.poker/hub/club-arena/`                        |
 
 ## Deploy Pipeline
 

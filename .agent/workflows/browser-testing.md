@@ -11,6 +11,7 @@ description: How to test features in the browser — ALL testing on smarter.poke
 > **`https://smarter.poker/hub/club-arena/`**
 >
 > **NEVER** test on:
+>
 > - `localhost:5173` or any localhost URL
 > - `localhost:3000` or any dev server
 > - `club-arena.vercel.app` or any Vercel preview URL
@@ -44,6 +45,7 @@ description: How to test features in the browser — ALL testing on smarter.poke
 ## What Localhost Is For
 
 The ONLY acceptable use of `localhost:5173` is:
+
 - Running `npm run build` to verify compilation
 - Running `npx tsc --noEmit` to check TypeScript
 - Running `npm run dev` to confirm the dev server starts (health check only)

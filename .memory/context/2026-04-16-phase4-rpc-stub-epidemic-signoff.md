@@ -3,12 +3,12 @@
 **Type:** CONTEXT
 **Scope:** Dan's directive to keep finding non-Hetzner-dependent silent failures while
 we wait on the Hetzner redeploy. Explicit asks:
-  (1) client/UI audits,
-  (2) SQL RPC silent-success audits,
-  (3) RLS gap audits,
-  (4) .contains/.filter JSONB Layer-D audits,
-  (5) Bible V8 / PokerBros spec gap scan,
-  (6) anything else non-Hetzner.
+(1) client/UI audits,
+(2) SQL RPC silent-success audits,
+(3) RLS gap audits,
+(4) .contains/.filter JSONB Layer-D audits,
+(5) Bible V8 / PokerBros spec gap scan,
+(6) anything else non-Hetzner.
 **Outcome:** 20+ critical silent-success RPC stubs replaced with real atomic
 implementations, ALL LIVE on Supabase via MCP apply_migration. Second
 BUG 021 Layer D instance found + fixed. 1 client signature mismatch fixed.
@@ -32,23 +32,23 @@ failure). Full catalog in `.memory/problems/025-silent-success-rpc-stub-epidemic
 All DB migrations applied via Supabase MCP. Every caller (cron, API, client)
 that invokes any of these RPCs starts doing real work on its NEXT call.
 
-| Migration | What it activates |
-|---|---|
-| bug_025_distribute_chips_real_impl | agent treasury→member distribution |
-| bug_025_fn_request_cashout_real_impl | player cashout request + escrow lock |
-| bug_025_mint_club_chips_real_impl | admin chip mint to club pool (unified signature) |
-| bug_025_message_reactions_table_and_toggle | new `message_reactions` table + RLS + toggle |
-| bug_025_treasury_credit_debit_real_impl | clubs.chip_treasury mutations (rake, settlement, overlay) |
-| bug_025_chip_lock_unlock_for_table_real_impl | ChipBridge tournament buy-in lock/unlock |
-| bug_025_cashout_approve_cancel_atomic_real_impl | agent approve/cancel cashout |
-| bug_025_complete_daily_challenge_real_impl | memory challenge completion + diamonds |
-| bug_025_fn_credit_debit_chips_real_impl | atomic player chip_balance mutations |
-| bug_025_union_wallet_real_impl | union_wallets per-wallet dispatch |
-| bug_025_messenger_rpcs_real_impl | send/mark-read/delete message + media upload |
-| bug_025_tournament_register_unregister_real_impl | real tournament registration with chip debit |
-| bug_025_transfer_family_real_impl | 5 transfer RPCs (agent/promo/generic) |
-| bug_025_misc_stubs_real_impl | 6 misc (leave club, commission, prepaid credit, horses, session close, scheduled content) |
-| bug_025_drop_shadowing_stub_overloads | removed stub overloads shadowing real award_bbj / claim_reward |
+| Migration                                        | What it activates                                                                         |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| bug_025_distribute_chips_real_impl               | agent treasury→member distribution                                                        |
+| bug_025_fn_request_cashout_real_impl             | player cashout request + escrow lock                                                      |
+| bug_025_mint_club_chips_real_impl                | admin chip mint to club pool (unified signature)                                          |
+| bug_025_message_reactions_table_and_toggle       | new `message_reactions` table + RLS + toggle                                              |
+| bug_025_treasury_credit_debit_real_impl          | clubs.chip_treasury mutations (rake, settlement, overlay)                                 |
+| bug_025_chip_lock_unlock_for_table_real_impl     | ChipBridge tournament buy-in lock/unlock                                                  |
+| bug_025_cashout_approve_cancel_atomic_real_impl  | agent approve/cancel cashout                                                              |
+| bug_025_complete_daily_challenge_real_impl       | memory challenge completion + diamonds                                                    |
+| bug_025_fn_credit_debit_chips_real_impl          | atomic player chip_balance mutations                                                      |
+| bug_025_union_wallet_real_impl                   | union_wallets per-wallet dispatch                                                         |
+| bug_025_messenger_rpcs_real_impl                 | send/mark-read/delete message + media upload                                              |
+| bug_025_tournament_register_unregister_real_impl | real tournament registration with chip debit                                              |
+| bug_025_transfer_family_real_impl                | 5 transfer RPCs (agent/promo/generic)                                                     |
+| bug_025_misc_stubs_real_impl                     | 6 misc (leave club, commission, prepaid credit, horses, session close, scheduled content) |
+| bug_025_drop_shadowing_stub_overloads            | removed stub overloads shadowing real award_bbj / claim_reward                            |
 
 ## What's committed but needs Vercel deploy
 

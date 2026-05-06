@@ -105,18 +105,34 @@ function TransactionSkeleton() {
     <div className="transaction-history">
       <div className="transaction-history__header">
         <div className="tx-skeleton-bar" style={{ width: '140px', height: '16px' }} />
-        <div className="tx-skeleton-bar" style={{ width: '80px', height: '28px', borderRadius: '6px' }} />
+        <div
+          className="tx-skeleton-bar"
+          style={{ width: '80px', height: '28px', borderRadius: '6px' }}
+        />
       </div>
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="transaction-row tx-skeleton-row" style={{ animationDelay: `${i * 0.08}s` }}>
+        <div
+          key={i}
+          className="transaction-row tx-skeleton-row"
+          style={{ animationDelay: `${i * 0.08}s` }}
+        >
           <div className="tx-skeleton-circle" />
           <div className="details">
-            <div className="tx-skeleton-bar" style={{ width: `${60 + Math.random() * 40}%`, height: '13px' }} />
-            <div className="tx-skeleton-bar" style={{ width: `${40 + Math.random() * 30}%`, height: '10px', marginTop: '4px' }} />
+            <div
+              className="tx-skeleton-bar"
+              style={{ width: `${60 + Math.random() * 40}%`, height: '13px' }}
+            />
+            <div
+              className="tx-skeleton-bar"
+              style={{ width: `${40 + Math.random() * 30}%`, height: '10px', marginTop: '4px' }}
+            />
           </div>
           <div className="amounts">
             <div className="tx-skeleton-bar" style={{ width: '60px', height: '14px' }} />
-            <div className="tx-skeleton-bar" style={{ width: '45px', height: '10px', marginTop: '4px' }} />
+            <div
+              className="tx-skeleton-bar"
+              style={{ width: '45px', height: '10px', marginTop: '4px' }}
+            />
           </div>
         </div>
       ))}
@@ -250,7 +266,13 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
     <div className="transaction-history">
       <div className="transaction-history__header">
         <h3> Transaction History</h3>
-        <select value={filter} onChange={(e) => { setFilter(e.target.value); setTxPage(1); }}>
+        <select
+          value={filter}
+          onChange={(e) => {
+            setFilter(e.target.value);
+            setTxPage(1);
+          }}
+        >
           <option value="all">All</option>
           <option value="credit">Credits</option>
           <option value="debit">Debits</option>

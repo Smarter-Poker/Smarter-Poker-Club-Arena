@@ -93,7 +93,6 @@ export function TableSettings({
         const vip = await vipService.isVIP(user.id);
         setIsVIP(vip);
       } catch (err) {
-
         reportError(err, 'TableSettings.Error');
         setIsVIP(false);
       }

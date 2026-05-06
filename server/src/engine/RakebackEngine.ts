@@ -210,9 +210,7 @@ export class RakebackEngine {
     // Persist to rakeback_periods table
     if (rows.length > 0) {
       try {
-        const { error } = await this.supabase
-          .from('rakeback_periods')
-          .insert(rows);
+        const { error } = await this.supabase.from('rakeback_periods').insert(rows);
 
         if (error) {
           reportError(error, 'RakebackEngine.Failed_to_persist_rakeback_per');

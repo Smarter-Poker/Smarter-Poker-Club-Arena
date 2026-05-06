@@ -182,6 +182,7 @@ server. NO snapshot diffing. NO polling. NO setInterval clock-watch. NO
 #### Required pattern
 
 For every visible aspect / feature / detail in the UI:
+
 1. The engine emits a named discrete event the moment that aspect
    changes, with a flat payload containing only the fields the client
    needs to render the change.
@@ -194,6 +195,7 @@ For every visible aspect / feature / detail in the UI:
 #### Audit obligation
 
 Any agent shipping work that touches a visible UX aspect MUST:
+
 - Verify the trigger is a discrete event, not a snapshot diff or
   polling interval.
 - If a snapshot-driven UX path exists, list it in `MIGRATION-CHANGELOG.md`
@@ -203,6 +205,7 @@ Any agent shipping work that touches a visible UX aspect MUST:
 
 Every PR adding or touching visible UX MUST include in its commit
 message a one-line confirmation:
+
 > Real-time law: triggered by `<event_name>` discrete WS event, no
 > snapshot diff.
 

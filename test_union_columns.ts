@@ -8,17 +8,22 @@ async function run() {
   const response = await fetch(url, {
     method: 'OPTIONS', // often reveals schema
     headers: {
-      'apikey': process.env.VITE_SUPABASE_ANON_KEY!,
-      'Authorization': `Bearer ${process.env.VITE_SUPABASE_ANON_KEY!}`
-    }
+      apikey: process.env.VITE_SUPABASE_ANON_KEY!,
+      Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY!}`,
+    },
   });
-  
+
   const hdrs = Array.from(response.headers.entries());
-  console.log("Headers:", hdrs);
+  console.log('Headers:', hdrs);
 
   // Another trick: Select a non-existent column to see the hint
-  const { error } = await createClient(process.env.VITE_SUPABASE_URL!, process.env.VITE_SUPABASE_ANON_KEY!).from('unions').select('fakecolumn').limit(1);
-  console.log("columns hint:", error?.hint);
-
+  const { error } = await createClient(
+    process.env.VITE_SUPABASE_URL!,
+    process.env.VITE_SUPABASE_ANON_KEY!
+  )
+    .from('unions')
+    .select('fakecolumn')
+    .limit(1);
+  console.log('columns hint:', error?.hint);
 }
 run();

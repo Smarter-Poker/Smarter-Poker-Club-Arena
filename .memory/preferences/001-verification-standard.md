@@ -9,6 +9,7 @@ AND EVERY FEATURE AND RUN A COMPARISON AGAINST THE V8 BIBLE BEFORE CLAIMING
 SUCCESS."
 
 REQUIREMENTS:
+
 1. Read every line of code in the function being verified
 2. Compare against the Bible V8 spec section by section
 3. Check all wiring, routing, and optimization
@@ -19,6 +20,7 @@ REQUIREMENTS:
 8. Don't skip ahead — follow the spec order
 
 TOOLS TO USE:
+
 - Multi-agent code review for deep analysis
 - Swarm orchestration for parallel verification
 - Session memory to track what's been verified

@@ -244,8 +244,7 @@ export class HorseLifecycleManager {
     details: Record<string, unknown>
   ): Promise<void> {
     console.log(
-      `[HorseLifecycle] horse=${horseId.slice(0, 8)} event=${event} ` +
-        JSON.stringify(details)
+      `[HorseLifecycle] horse=${horseId.slice(0, 8)} event=${event} ` + JSON.stringify(details)
     );
   }
 
@@ -373,7 +372,12 @@ export class HorseLifecycleManager {
                 p_amount: buyInAmount,
               });
               if (refundErr)
-                reportError(new Error(`[HorseLifecycle] SNG cancel refund FAILED for ${player.user_id.slice(0, 8)}: ${refundErr.message}`), 'HorseLifecycle.SNG_cancel_refund_FAILED_for_p');
+                reportError(
+                  new Error(
+                    `[HorseLifecycle] SNG cancel refund FAILED for ${player.user_id.slice(0, 8)}: ${refundErr.message}`
+                  ),
+                  'HorseLifecycle.SNG_cancel_refund_FAILED_for_p'
+                );
             }
           }
 

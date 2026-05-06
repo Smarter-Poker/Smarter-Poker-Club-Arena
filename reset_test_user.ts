@@ -5,36 +5,36 @@ dotenv.config();
 const supabase = createClient(process.env.VITE_SUPABASE_URL!, process.env.VITE_SUPABASE_ANON_KEY!);
 
 async function run() {
-  console.log("Signing in...");
+  console.log('Signing in...');
   const { data, error } = await supabase.auth.signInWithPassword({
     email: 'daniel@bekavactrading.com',
-    password: 'Bek454545!!'
+    password: 'Bek454545!!',
   });
-  
+
   if (error) {
-    console.error("Login failed:", error);
+    console.error('Login failed:', error);
     return;
   }
-  
+
   const userId = data.user.id;
-  console.log("Logged in user:", userId);
-  
+  console.log('Logged in user:', userId);
+
   // Reset the display name and username
   const { error: updateProfErr } = await supabase
     .from('profiles')
     .update({ username: 'Player1234', display_name: 'New Player' })
     .eq('id', userId);
-    
-  if (updateProfErr) console.error("Error updating profile:", updateProfErr);
-  
+
+  if (updateProfErr) console.error('Error updating profile:', updateProfErr);
+
   const { error: updateUsrErr } = await supabase
     .from('users')
     .update({ username: 'Player1234' })
     .eq('id', userId);
-    
-  if (updateUsrErr) console.error("Error updating users:", updateUsrErr);
-  
-  console.log("Reset successful. User should now see the Complete Profile modal.");
+
+  if (updateUsrErr) console.error('Error updating users:', updateUsrErr);
+
+  console.log('Reset successful. User should now see the Complete Profile modal.');
 }
 
 run();

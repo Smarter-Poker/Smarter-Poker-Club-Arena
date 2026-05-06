@@ -227,7 +227,8 @@ class ClubMessagingPermissionsClass {
             .select('user_id')
             .eq('club_id', await resolveClubUUID(clubId))
             .neq('user_id', userId);
-          if (aErr) reportError(aErr, 'ClubMessagingPermissions.getMessagableUsers_allmembers_error');
+          if (aErr)
+            reportError(aErr, 'ClubMessagingPermissions.getMessagableUsers_allmembers_error');
           return allMembers?.map((m) => m.user_id) || [];
         }
 
@@ -248,8 +249,10 @@ class ClubMessagingPermissionsClass {
                 .in('role', ['owner', 'admin', 'agent'])
                 .neq('user_id', userId),
             ]);
-          if (pErr) reportError(pErr, 'ClubMessagingPermissions.getMessagableUsers_agentplayers_error');
-          if (mErr) reportError(mErr, 'ClubMessagingPermissions.getMessagableUsers_agentmgmt_error');
+          if (pErr)
+            reportError(pErr, 'ClubMessagingPermissions.getMessagableUsers_agentplayers_error');
+          if (mErr)
+            reportError(mErr, 'ClubMessagingPermissions.getMessagableUsers_agentmgmt_error');
 
           players?.forEach((p) => messagableUserIds.push(p.user_id));
           management?.forEach((m) => messagableUserIds.push(m.user_id));
@@ -266,7 +269,8 @@ class ClubMessagingPermissionsClass {
             .select('user_id')
             .eq('club_id', await resolveClubUUID(clubId))
             .in('role', ['owner', 'admin']);
-          if (adErr) reportError(adErr, 'ClubMessagingPermissions.getMessagableUsers_playeradmins_error');
+          if (adErr)
+            reportError(adErr, 'ClubMessagingPermissions.getMessagableUsers_playeradmins_error');
           admins?.forEach((a) => messagableUserIds.push(a.user_id));
           break;
         }

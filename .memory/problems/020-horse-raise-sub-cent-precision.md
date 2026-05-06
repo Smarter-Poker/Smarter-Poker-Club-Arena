@@ -18,6 +18,7 @@ WHERE created_at > NOW() - INTERVAL '1 hour';
 ```
 
 **46% of all hand actions in the last hour had sub-cent precision.** Sample values:
+
 - `5.007319350536557`
 - `5.1456674836726615`
 - `4.9231`
@@ -46,6 +47,7 @@ const toCents = (n: number): number => Math.round(n * 100) / 100;
 Wrapped every `amount:` output that uses `Math.random()` or multiplier-based sizing with `toCents(...)`:
 
 **Preflop sites (6):**
+
 - Line 111: `toCents(Math.min(stack, currentBet * 2.5))` — 3-bet response
 - Line 116: `toCents(Math.min(stack, currentBet * 3))` — raise vs open
 - Line 119: `toCents(Math.min(stack, openSize))` — nut hand open
@@ -57,12 +59,12 @@ Wrapped every `amount:` output that uses `Math.random()` or multiplier-based siz
 
 ## Deploy status
 
-| Layer | Status |
-|---|---|
-| Server code fix in `HorseLogic.ts` | ✅ committed to CA repo main |
-| Activation in production engine | ⏳ pending Hetzner redeploy (`./server/deploy-hetzner.sh`) |
+| Layer                              | Status                                                     |
+| ---------------------------------- | ---------------------------------------------------------- |
+| Server code fix in `HorseLogic.ts` | ✅ committed to CA repo main                               |
+| Activation in production engine    | ⏳ pending Hetzner redeploy (`./server/deploy-hetzner.sh`) |
 
-Until redeploy, horses keep emitting sub-cent amounts into `hand_history.actions`. No financial loss because the engine's pot arithmetic uses the same amount end-to-end — a horse raises 5.007319 and the pot has exactly 5.007319. The issue is *audit integrity* and *Bible V8 §2.6 compliance*.
+Until redeploy, horses keep emitting sub-cent amounts into `hand_history.actions`. No financial loss because the engine's pot arithmetic uses the same amount end-to-end — a horse raises 5.007319 and the pot has exactly 5.007319. The issue is _audit integrity_ and _Bible V8 §2.6 compliance_.
 
 ## Verification plan
 

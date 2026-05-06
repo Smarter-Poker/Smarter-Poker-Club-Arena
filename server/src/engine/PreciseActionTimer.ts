@@ -32,9 +32,9 @@ import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.j
 export interface ActionDeadline {
   tableId: string;
   playerId: string;
-  deadline: number;          // Absolute ms timestamp
-  durationMs: number;        // Original duration
-  startedAt: number;         // When timer was started
+  deadline: number; // Absolute ms timestamp
+  durationMs: number; // Original duration
+  startedAt: number; // When timer was started
   isPaused: boolean;
   pausedRemainingMs: number;
   onExpiry: (() => void) | null;

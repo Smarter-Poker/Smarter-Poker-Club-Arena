@@ -182,7 +182,9 @@ class HorseBugReporterService {
       report.severity === 'high' ||
       report.severity === 'medium'
     ) {
-      this.persistToSupabase(report).catch((e) => reportError(e, 'HorseBugReporter.Failed_to_persist'));
+      this.persistToSupabase(report).catch((e) =>
+        reportError(e, 'HorseBugReporter.Failed_to_persist')
+      );
     }
 
     // Log with severity color
@@ -194,9 +196,10 @@ class HorseBugReporterService {
       info: '\x1b[90m', // gray
     };
     // Use console.warn for info/low severity to avoid polluting error console
-    const logFn = report.severity === 'info' || report.severity === 'low'
-      ? console.warn.bind(console)
-      : this.originalConsoleError;
+    const logFn =
+      report.severity === 'info' || report.severity === 'low'
+        ? console.warn.bind(console)
+        : this.originalConsoleError;
     logFn(
       `${colors[report.severity]}[BUG:${report.severity.toUpperCase()}] [${report.horseName}@${report.tableName}] ${report.title}\x1b[0m`
     );

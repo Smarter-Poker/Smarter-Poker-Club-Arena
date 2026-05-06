@@ -242,7 +242,9 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       {showDisconnectWarning && (
         <div className="conn-dc-warning">
           <div className="conn-dc-container">
-            <span className="conn-dc-icon" style={{ fontSize: '1.5rem', lineHeight: 1 }}>X</span>
+            <span className="conn-dc-icon" style={{ fontSize: '1.5rem', lineHeight: 1 }}>
+              X
+            </span>
             <span className="conn-dc-text">Connection Lost</span>
             {graceCountdown !== null && graceCountdown > 0 && (
               <div className="conn-dc-grace">

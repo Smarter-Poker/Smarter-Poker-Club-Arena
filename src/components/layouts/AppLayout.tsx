@@ -58,7 +58,9 @@ export default function AppLayout() {
       {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 
       {/* Force Poker Alias Selection for Google Auth users */}
-      {profileReady && <CompleteProfileModal isOpen={showProfileModal} onComplete={finishProfile} />}
+      {profileReady && (
+        <CompleteProfileModal isOpen={showProfileModal} onComplete={finishProfile} />
+      )}
 
       {/* Global Header — Always visible except on active table pages */}
       {/* Lobby (/) = pageDepth 1 (HUB button), Sub-pages = pageDepth 2 (Back button) */}

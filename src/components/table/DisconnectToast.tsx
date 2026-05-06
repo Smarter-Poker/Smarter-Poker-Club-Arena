@@ -63,25 +63,16 @@ export default function DisconnectToast({
 
   if (state === 'MISSING') {
     return (
-      <div
-        className="disconnect-toast disconnect-toast--missing"
-        role="status"
-        aria-live="polite"
-      >
+      <div className="disconnect-toast disconnect-toast--missing" role="status" aria-live="polite">
         <span className="disconnect-toast__spinner" aria-hidden="true" />
-        <span>
-          Reconnecting — {remainingSec ?? '...'}s until auto-action
-        </span>
+        <span>Reconnecting — {remainingSec ?? '...'}s until auto-action</span>
       </div>
     );
   }
 
   if (state === 'DISCONNECTED') {
     return (
-      <div
-        className="disconnect-toast disconnect-toast--disconnected"
-        role="alert"
-      >
+      <div className="disconnect-toast disconnect-toast--disconnected" role="alert">
         <span>Session lost. Refresh to rejoin the table.</span>
       </div>
     );

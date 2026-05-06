@@ -171,7 +171,10 @@ export class StateVerifier {
         })),
       };
 
-      reportError(violations.map((v) => `${v.severity.toUpperCase()}: ${v.type} — ${v.message}`).join('; '), 'StateVerifier.violationslength_violations_de');
+      reportError(
+        violations.map((v) => `${v.severity.toUpperCase()}: ${v.type} — ${v.message}`).join('; '),
+        'StateVerifier.violationslength_violations_de'
+      );
 
       if (this.onViolation) {
         try {
@@ -364,10 +367,7 @@ export class StateVerifier {
     }
   }
 
-  private verifyPlayerCounts(
-    context: VerificationContext,
-    violations: IntegrityViolation[]
-  ): void {
+  private verifyPlayerCounts(context: VerificationContext, violations: IntegrityViolation[]): void {
     const nonFolded = context.players.filter((p) => !p.is_folded).length;
     const allIn = context.players.filter((p) => p.is_all_in).length;
     const active = nonFolded - allIn;
@@ -383,10 +383,7 @@ export class StateVerifier {
     }
   }
 
-  private verifyPotSanity(
-    context: VerificationContext,
-    violations: IntegrityViolation[]
-  ): void {
+  private verifyPotSanity(context: VerificationContext, violations: IntegrityViolation[]): void {
     if (context.pot < 0) {
       violations.push({
         type: 'NEGATIVE_POT',

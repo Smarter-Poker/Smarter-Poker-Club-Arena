@@ -152,9 +152,7 @@ export class EngineWebSocketServer {
 
       const token = extractBearerToken(req.headers['sec-websocket-protocol']);
       if (!token) {
-        socket.write(
-          'HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
-        );
+        socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
         socket.destroy();
         return;
       }
@@ -364,8 +362,8 @@ export class EngineWebSocketServer {
     const size = Array.isArray(raw)
       ? raw.reduce((n, b) => n + b.length, 0)
       : raw instanceof ArrayBuffer
-      ? raw.byteLength
-      : (raw as Buffer).length;
+        ? raw.byteLength
+        : (raw as Buffer).length;
     if (size > MAX_INBOUND_MESSAGE_BYTES) {
       try {
         conn.ws.close(CLOSE_BAD_REQUEST, 'payload too large');

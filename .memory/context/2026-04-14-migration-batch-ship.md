@@ -15,12 +15,12 @@ production. V8 Bible compliance at 97% verified across 115 tracked items.
 
 ## Commits Landed (Smarter-Poker-Club-Arena main)
 
-| SHA        | Scope |
-|------------|-------|
+| SHA        | Scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `11fa041d` | NO-GO-2 client (TablePage event-router migration to engineLastEvent + Supabase `broadcastHandState` pipe deletion) + NO-GO-3 server (4 parallel clocks → `DeadlineScheduler`: InsuranceEngine, RunItTwiceEngine, TableBreakEngine, ServerTableEngine.heartbeatCheckInterval — horse heartbeat synthesis preserved) + Phase 1.3 PR-C+D (ActionErrorToast wired with `submitActionWithToast` wrapper across 11 call sites + Snap-to-hint) + Phase 2 Batch A (T1-02 vertical slider, T1-08 dot toggles + swipe, T1-03 numeric keypad, T1-05 pot shipping curved-arc fan) |
-| `b9992387` | STEP 8 / V8 §11.1 dead-toggle wiring (voice/text_message, emoji_enabled, auto_time_bank, enhanced_view) + Phase 2 Batch B (§5.6 Fold Protection Dialog, §5.7 Timebank Counter bottom-left widget) |
-| `15801e90` | Phase 2 Batch C (T1-09 GTO 4-preset postflop 33/50/75/POT + T1-10 Q/W/E desktop keyboard shortcuts) + COMPLIANCE-TRACKER Chapter 11 entries |
-| `3f60fa3a` | `supabase/migrations/20260414_user_table_settings_alias_columns.sql` — adds `use_alias` + `table_alias` columns the client hook was upserting into silently (applied to prod via Supabase MCP) |
+| `b9992387` | STEP 8 / V8 §11.1 dead-toggle wiring (voice/text_message, emoji_enabled, auto_time_bank, enhanced_view) + Phase 2 Batch B (§5.6 Fold Protection Dialog, §5.7 Timebank Counter bottom-left widget)                                                                                                                                                                                                                                                                                                                                                                     |
+| `15801e90` | Phase 2 Batch C (T1-09 GTO 4-preset postflop 33/50/75/POT + T1-10 Q/W/E desktop keyboard shortcuts) + COMPLIANCE-TRACKER Chapter 11 entries                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `3f60fa3a` | `supabase/migrations/20260414_user_table_settings_alias_columns.sql` — adds `use_alias` + `table_alias` columns the client hook was upserting into silently (applied to prod via Supabase MCP)                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## Bundle Commits (Smarter-Poker-World-Hub main)
 
@@ -29,13 +29,13 @@ production. V8 Bible compliance at 97% verified across 115 tracked items.
 
 ## REALIGN Kill Switches
 
-| Switch | Meaning | Status |
-|--------|---------|--------|
-| K1     | Supabase hand-state channel still live | GREEN |
-| K2     | `subscribeToHandState` still exported/called | GREEN |
-| K3     | Dead parallel engine paths | GREEN |
-| K6     | Parallel clocks (engines running own setTimeout/setInterval) | GREEN |
-| K10    | Pending deadlines lost on engine restart | GREEN |
+| Switch | Meaning                                                      | Status |
+| ------ | ------------------------------------------------------------ | ------ |
+| K1     | Supabase hand-state channel still live                       | GREEN  |
+| K2     | `subscribeToHandState` still exported/called                 | GREEN  |
+| K3     | Dead parallel engine paths                                   | GREEN  |
+| K6     | Parallel clocks (engines running own setTimeout/setInterval) | GREEN  |
+| K10    | Pending deadlines lost on engine restart                     | GREEN  |
 
 ## Infrastructure
 

@@ -106,7 +106,6 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
       toast.success('Announcement deleted');
       loadAnnouncements();
     } catch (err) {
-
       reportError(err, 'ClubAnnouncementsList.Error');
       toast.error('Failed to delete');
     }

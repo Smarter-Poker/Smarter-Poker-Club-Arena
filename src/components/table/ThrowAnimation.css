@@ -79,8 +79,7 @@
   display: block;
   animation: throwIconSpin var(--throw-flight-duration) var(--throw-ease-arc) forwards;
   transform-origin: center center;
-  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5))
-          drop-shadow(0 0 8px rgba(255, 215, 0, 0.15));
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 8px rgba(255, 215, 0, 0.15));
 }
 
 @keyframes throwIconSpin {
@@ -115,9 +114,7 @@
     throwArcX var(--throw-flight-duration) var(--throw-ease-arc) forwards,
     throwArcY var(--throw-flight-duration) var(--throw-ease-launch) forwards,
     throwArcScale var(--throw-flight-duration) var(--throw-ease-arc) forwards;
-  filter:
-    drop-shadow(0 0 16px rgba(255, 215, 0, 0.25))
-    drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 0 16px rgba(255, 215, 0, 0.25)) drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5));
 }
 
 /* Horizontal motion: linear interpolation from→to */
@@ -187,9 +184,7 @@
   left: var(--from-x);
   top: var(--from-y);
   animation: throwFloat 0.55s var(--throw-ease-arc) forwards;
-  filter:
-    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3))
-    drop-shadow(0 0 10px rgba(255, 255, 255, 0.1));
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3)) drop-shadow(0 0 10px rgba(255, 255, 255, 0.1));
 }
 
 .throw-animation__projectile--float .throw-animation__icon {
@@ -207,31 +202,44 @@
   }
   35% {
     transform: translate(
-      calc((var(--to-x) - var(--from-x)) * 0.4 - 50%),
-      calc((var(--to-y) - var(--from-y)) * 0.3 - 50% - 50px)
-    ) scale(1.05);
+        calc((var(--to-x) - var(--from-x)) * 0.4 - 50%),
+        calc((var(--to-y) - var(--from-y)) * 0.3 - 50% - 50px)
+      )
+      scale(1.05);
   }
   65% {
     transform: translate(
-      calc((var(--to-x) - var(--from-x)) * 0.75 - 50%),
-      calc((var(--to-y) - var(--from-y)) * 0.75 - 50% - 15px)
-    ) scale(0.95);
+        calc((var(--to-x) - var(--from-x)) * 0.75 - 50%),
+        calc((var(--to-y) - var(--from-y)) * 0.75 - 50% - 15px)
+      )
+      scale(0.95);
   }
   100% {
     transform: translate(
-      calc(var(--to-x) - var(--from-x) - 50%),
-      calc(var(--to-y) - var(--from-y) - 50%)
-    ) scale(1);
+        calc(var(--to-x) - var(--from-x) - 50%),
+        calc(var(--to-y) - var(--from-y) - 50%)
+      )
+      scale(1);
     opacity: 1;
   }
 }
 
 @keyframes floatIconPulse {
-  0% { transform: scale(0.5) rotate(0deg); }
-  25% { transform: scale(1.2) rotate(-10deg); }
-  50% { transform: scale(0.9) rotate(5deg); }
-  75% { transform: scale(1.05) rotate(-3deg); }
-  100% { transform: scale(1) rotate(0deg); }
+  0% {
+    transform: scale(0.5) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.2) rotate(-10deg);
+  }
+  50% {
+    transform: scale(0.9) rotate(5deg);
+  }
+  75% {
+    transform: scale(1.05) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
 }
 
 /* ---------------------------------------------------------------------------------
@@ -261,10 +269,18 @@
 }
 
 @keyframes trailFade {
-  0% { opacity: 0; }
-  15% { opacity: 0.9; }
-  70% { opacity: 0.6; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 /* =================================================================================
@@ -282,8 +298,12 @@
 }
 
 @keyframes impactEntrance {
-  from { scale: 0.5; }
-  to { scale: 1; }
+  from {
+    scale: 0.5;
+  }
+  to {
+    scale: 1;
+  }
 }
 
 /* -- Impact Icon: slam-in with overshoot bounce -- */
@@ -395,14 +415,42 @@
 }
 
 @keyframes screenShake {
-  0% { transform: translate(0, 0); }
-  10% { transform: translate(var(--impact-shake-intensity), calc(var(--impact-shake-intensity) * -0.5)); }
-  20% { transform: translate(calc(var(--impact-shake-intensity) * -0.8), var(--impact-shake-intensity)); }
-  30% { transform: translate(calc(var(--impact-shake-intensity) * 0.6), calc(var(--impact-shake-intensity) * -0.7)); }
-  40% { transform: translate(calc(var(--impact-shake-intensity) * -0.4), calc(var(--impact-shake-intensity) * 0.5)); }
-  50% { transform: translate(calc(var(--impact-shake-intensity) * 0.3), calc(var(--impact-shake-intensity) * -0.3)); }
-  60% { transform: translate(calc(var(--impact-shake-intensity) * -0.2), calc(var(--impact-shake-intensity) * 0.2)); }
-  100% { transform: translate(0, 0); }
+  0% {
+    transform: translate(0, 0);
+  }
+  10% {
+    transform: translate(var(--impact-shake-intensity), calc(var(--impact-shake-intensity) * -0.5));
+  }
+  20% {
+    transform: translate(calc(var(--impact-shake-intensity) * -0.8), var(--impact-shake-intensity));
+  }
+  30% {
+    transform: translate(
+      calc(var(--impact-shake-intensity) * 0.6),
+      calc(var(--impact-shake-intensity) * -0.7)
+    );
+  }
+  40% {
+    transform: translate(
+      calc(var(--impact-shake-intensity) * -0.4),
+      calc(var(--impact-shake-intensity) * 0.5)
+    );
+  }
+  50% {
+    transform: translate(
+      calc(var(--impact-shake-intensity) * 0.3),
+      calc(var(--impact-shake-intensity) * -0.3)
+    );
+  }
+  60% {
+    transform: translate(
+      calc(var(--impact-shake-intensity) * -0.2),
+      calc(var(--impact-shake-intensity) * 0.2)
+    );
+  }
+  100% {
+    transform: translate(0, 0);
+  }
 }
 
 /* =================================================================================
@@ -427,14 +475,46 @@
 }
 
 /* 8 directional particle animations */
-.throw-animation__particle:nth-child(1) { --p-angle: 0deg; --p-dist: 50px; animation-delay: 0ms; }
-.throw-animation__particle:nth-child(2) { --p-angle: 45deg; --p-dist: 60px; animation-delay: 15ms; }
-.throw-animation__particle:nth-child(3) { --p-angle: 90deg; --p-dist: 45px; animation-delay: 30ms; }
-.throw-animation__particle:nth-child(4) { --p-angle: 135deg; --p-dist: 55px; animation-delay: 10ms; }
-.throw-animation__particle:nth-child(5) { --p-angle: 180deg; --p-dist: 50px; animation-delay: 25ms; }
-.throw-animation__particle:nth-child(6) { --p-angle: 225deg; --p-dist: 65px; animation-delay: 5ms; }
-.throw-animation__particle:nth-child(7) { --p-angle: 270deg; --p-dist: 40px; animation-delay: 20ms; }
-.throw-animation__particle:nth-child(8) { --p-angle: 315deg; --p-dist: 55px; animation-delay: 35ms; }
+.throw-animation__particle:nth-child(1) {
+  --p-angle: 0deg;
+  --p-dist: 50px;
+  animation-delay: 0ms;
+}
+.throw-animation__particle:nth-child(2) {
+  --p-angle: 45deg;
+  --p-dist: 60px;
+  animation-delay: 15ms;
+}
+.throw-animation__particle:nth-child(3) {
+  --p-angle: 90deg;
+  --p-dist: 45px;
+  animation-delay: 30ms;
+}
+.throw-animation__particle:nth-child(4) {
+  --p-angle: 135deg;
+  --p-dist: 55px;
+  animation-delay: 10ms;
+}
+.throw-animation__particle:nth-child(5) {
+  --p-angle: 180deg;
+  --p-dist: 50px;
+  animation-delay: 25ms;
+}
+.throw-animation__particle:nth-child(6) {
+  --p-angle: 225deg;
+  --p-dist: 65px;
+  animation-delay: 5ms;
+}
+.throw-animation__particle:nth-child(7) {
+  --p-angle: 270deg;
+  --p-dist: 40px;
+  animation-delay: 20ms;
+}
+.throw-animation__particle:nth-child(8) {
+  --p-angle: 315deg;
+  --p-dist: 55px;
+  animation-delay: 35ms;
+}
 
 @keyframes particleScatter {
   0% {
@@ -442,8 +522,7 @@
     opacity: 1;
   }
   30% {
-    transform:
-      translate(
+    transform: translate(
         calc(cos(var(--p-angle)) * var(--p-dist) * 0.6),
         calc(sin(var(--p-angle)) * var(--p-dist) * 0.6)
       )
@@ -451,8 +530,7 @@
     opacity: 0.9;
   }
   100% {
-    transform:
-      translate(
+    transform: translate(
         calc(cos(var(--p-angle)) * var(--p-dist)),
         calc(sin(var(--p-angle)) * var(--p-dist) + 30px)
       )
@@ -463,23 +541,111 @@
 
 /* Fallback for browsers without cos()/sin() -- radial burst */
 @supports not (transform: translate(calc(cos(0deg) * 1px), 0)) {
-  .throw-animation__particle:nth-child(1) { animation-name: pFallback1; }
-  .throw-animation__particle:nth-child(2) { animation-name: pFallback2; }
-  .throw-animation__particle:nth-child(3) { animation-name: pFallback3; }
-  .throw-animation__particle:nth-child(4) { animation-name: pFallback4; }
-  .throw-animation__particle:nth-child(5) { animation-name: pFallback5; }
-  .throw-animation__particle:nth-child(6) { animation-name: pFallback6; }
-  .throw-animation__particle:nth-child(7) { animation-name: pFallback7; }
-  .throw-animation__particle:nth-child(8) { animation-name: pFallback8; }
+  .throw-animation__particle:nth-child(1) {
+    animation-name: pFallback1;
+  }
+  .throw-animation__particle:nth-child(2) {
+    animation-name: pFallback2;
+  }
+  .throw-animation__particle:nth-child(3) {
+    animation-name: pFallback3;
+  }
+  .throw-animation__particle:nth-child(4) {
+    animation-name: pFallback4;
+  }
+  .throw-animation__particle:nth-child(5) {
+    animation-name: pFallback5;
+  }
+  .throw-animation__particle:nth-child(6) {
+    animation-name: pFallback6;
+  }
+  .throw-animation__particle:nth-child(7) {
+    animation-name: pFallback7;
+  }
+  .throw-animation__particle:nth-child(8) {
+    animation-name: pFallback8;
+  }
 
-  @keyframes pFallback1 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(50px, 0) scale(0); opacity:0; } }
-  @keyframes pFallback2 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(42px, -42px) scale(0); opacity:0; } }
-  @keyframes pFallback3 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(0, -45px) scale(0); opacity:0; } }
-  @keyframes pFallback4 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(-39px, -39px) scale(0); opacity:0; } }
-  @keyframes pFallback5 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(-50px, 0) scale(0); opacity:0; } }
-  @keyframes pFallback6 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(-46px, 46px) scale(0); opacity:0; } }
-  @keyframes pFallback7 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(0, 40px) scale(0); opacity:0; } }
-  @keyframes pFallback8 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(39px, 39px) scale(0); opacity:0; } }
+  @keyframes pFallback1 {
+    0% {
+      transform: translate(0, 0) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(50px, 0) scale(0);
+      opacity: 0;
+    }
+  }
+  @keyframes pFallback2 {
+    0% {
+      transform: translate(0, 0) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(42px, -42px) scale(0);
+      opacity: 0;
+    }
+  }
+  @keyframes pFallback3 {
+    0% {
+      transform: translate(0, 0) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(0, -45px) scale(0);
+      opacity: 0;
+    }
+  }
+  @keyframes pFallback4 {
+    0% {
+      transform: translate(0, 0) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(-39px, -39px) scale(0);
+      opacity: 0;
+    }
+  }
+  @keyframes pFallback5 {
+    0% {
+      transform: translate(0, 0) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(-50px, 0) scale(0);
+      opacity: 0;
+    }
+  }
+  @keyframes pFallback6 {
+    0% {
+      transform: translate(0, 0) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(-46px, 46px) scale(0);
+      opacity: 0;
+    }
+  }
+  @keyframes pFallback7 {
+    0% {
+      transform: translate(0, 0) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(0, 40px) scale(0);
+      opacity: 0;
+    }
+  }
+  @keyframes pFallback8 {
+    0% {
+      transform: translate(0, 0) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(39px, 39px) scale(0);
+      opacity: 0;
+    }
+  }
 }
 
 /* =================================================================================
@@ -487,7 +653,7 @@
    ================================================================================= */
 
 /* ---- TOMATO: Red splatter ---- */
-.throw-animation__impact[data-type="tomato"] .throw-animation__burst {
+.throw-animation__impact[data-type='tomato'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 50, 50, 0.7) 0%,
@@ -496,25 +662,41 @@
     transparent 75%
   );
 }
-.throw-animation__impact[data-type="tomato"] .throw-animation__particle {
+.throw-animation__impact[data-type='tomato'] .throw-animation__particle {
   --particle-color: #ff4444;
   width: 8px;
   height: 6px;
   border-radius: 40%;
 }
-.throw-animation__impact[data-type="tomato"] .throw-animation__impact-icon {
+.throw-animation__impact[data-type='tomato'] .throw-animation__impact-icon {
   animation: tomatoSplat 0.6s var(--throw-ease-impact) forwards;
 }
 @keyframes tomatoSplat {
-  0% { transform: scale(1.8); filter: brightness(1.5); opacity: 1; }
-  10% { transform: scale(0.5) scaleY(0.6); filter: brightness(1.3); }
-  25% { transform: scale(1.4) scaleY(0.7); }
-  50% { transform: scale(1.1); opacity: 1; }
-  100% { transform: scale(0.3) scaleY(0.4); opacity: 0; filter: saturate(0.5); }
+  0% {
+    transform: scale(1.8);
+    filter: brightness(1.5);
+    opacity: 1;
+  }
+  10% {
+    transform: scale(0.5) scaleY(0.6);
+    filter: brightness(1.3);
+  }
+  25% {
+    transform: scale(1.4) scaleY(0.7);
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.3) scaleY(0.4);
+    opacity: 0;
+    filter: saturate(0.5);
+  }
 }
 
 /* ---- EGG: Crack + drip ---- */
-.throw-animation__impact[data-type="egg"] .throw-animation__burst {
+.throw-animation__impact[data-type='egg'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 253, 231, 0.8) 0%,
@@ -523,25 +705,40 @@
     transparent 80%
   );
 }
-.throw-animation__impact[data-type="egg"] .throw-animation__particle {
+.throw-animation__impact[data-type='egg'] .throw-animation__particle {
   --particle-color: #fffde7;
   width: 5px;
   height: 8px;
   border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
 }
-.throw-animation__impact[data-type="egg"] .throw-animation__impact-icon {
+.throw-animation__impact[data-type='egg'] .throw-animation__impact-icon {
   animation: eggCrack 0.7s var(--throw-ease-impact) forwards;
 }
 @keyframes eggCrack {
-  0% { transform: scale(1.5) rotate(-10deg); filter: brightness(1.8); opacity: 1; }
-  15% { transform: scale(0.8) rotate(5deg); filter: brightness(1); }
-  30% { transform: scale(1.2) rotate(-2deg); }
-  50% { transform: scale(1) rotate(0deg); opacity: 1; }
-  100% { transform: scale(0.5) translateY(15px); opacity: 0; }
+  0% {
+    transform: scale(1.5) rotate(-10deg);
+    filter: brightness(1.8);
+    opacity: 1;
+  }
+  15% {
+    transform: scale(0.8) rotate(5deg);
+    filter: brightness(1);
+  }
+  30% {
+    transform: scale(1.2) rotate(-2deg);
+  }
+  50% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.5) translateY(15px);
+    opacity: 0;
+  }
 }
 
 /* ---- SNOWBALL: Frost burst ---- */
-.throw-animation__impact[data-type="snowball"] .throw-animation__burst {
+.throw-animation__impact[data-type='snowball'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(225, 245, 254, 0.8) 0%,
@@ -550,24 +747,38 @@
     transparent 75%
   );
 }
-.throw-animation__impact[data-type="snowball"] .throw-animation__particle {
+.throw-animation__impact[data-type='snowball'] .throw-animation__particle {
   --particle-color: #e1f5fe;
   width: 5px;
   height: 5px;
   box-shadow: 0 0 8px rgba(200, 230, 255, 0.8);
 }
-.throw-animation__impact[data-type="snowball"] .throw-animation__impact-icon {
+.throw-animation__impact[data-type='snowball'] .throw-animation__impact-icon {
   animation: snowPoof 0.6s var(--throw-ease-impact) forwards;
 }
 @keyframes snowPoof {
-  0% { transform: scale(1.6); filter: brightness(2) blur(0px); opacity: 1; }
-  20% { transform: scale(0.7); filter: brightness(1.3) blur(1px); }
-  40% { transform: scale(1.2); filter: brightness(1) blur(0px); }
-  100% { transform: scale(0.4); filter: brightness(1.5) blur(3px); opacity: 0; }
+  0% {
+    transform: scale(1.6);
+    filter: brightness(2) blur(0px);
+    opacity: 1;
+  }
+  20% {
+    transform: scale(0.7);
+    filter: brightness(1.3) blur(1px);
+  }
+  40% {
+    transform: scale(1.2);
+    filter: brightness(1) blur(0px);
+  }
+  100% {
+    transform: scale(0.4);
+    filter: brightness(1.5) blur(3px);
+    opacity: 0;
+  }
 }
 
 /* ---- WATER BALLOON: Splash wave ---- */
-.throw-animation__impact[data-type="water-balloon"] .throw-animation__burst {
+.throw-animation__impact[data-type='water-balloon'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(79, 195, 247, 0.7) 0%,
@@ -578,12 +789,25 @@
   animation: waterSplashRing 0.8s var(--throw-ease-arc) forwards;
 }
 @keyframes waterSplashRing {
-  0% { transform: scale(0.1) scaleY(0.5); opacity: 1; filter: brightness(2); }
-  20% { transform: scale(0.8) scaleY(1.2); opacity: 0.9; }
-  40% { transform: scale(1.5) scaleY(0.8); opacity: 0.6; }
-  100% { transform: scale(3) scaleY(0.6); opacity: 0; }
+  0% {
+    transform: scale(0.1) scaleY(0.5);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  20% {
+    transform: scale(0.8) scaleY(1.2);
+    opacity: 0.9;
+  }
+  40% {
+    transform: scale(1.5) scaleY(0.8);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(3) scaleY(0.6);
+    opacity: 0;
+  }
 }
-.throw-animation__impact[data-type="water-balloon"] .throw-animation__particle {
+.throw-animation__impact[data-type='water-balloon'] .throw-animation__particle {
   --particle-color: #4fc3f7;
   width: 4px;
   height: 7px;
@@ -591,7 +815,7 @@
 }
 
 /* ---- PIE: Cream splatter ---- */
-.throw-animation__impact[data-type="pie"] .throw-animation__burst {
+.throw-animation__impact[data-type='pie'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 253, 231, 0.9) 0%,
@@ -600,25 +824,39 @@
     transparent 80%
   );
 }
-.throw-animation__impact[data-type="pie"] .throw-animation__particle {
+.throw-animation__impact[data-type='pie'] .throw-animation__particle {
   --particle-color: #fffde7;
   width: 10px;
   height: 6px;
   border-radius: 40%;
 }
-.throw-animation__impact[data-type="pie"] .throw-animation__impact-icon {
+.throw-animation__impact[data-type='pie'] .throw-animation__impact-icon {
   animation: pieSplat 0.65s var(--throw-ease-impact) forwards;
 }
 @keyframes pieSplat {
-  0% { transform: scale(1.8) rotate(-20deg); filter: brightness(1.5); opacity: 1; }
-  10% { transform: scale(0.6) scaleY(0.5) rotate(10deg); }
-  25% { transform: scale(1.5) scaleY(0.65) rotate(-5deg); }
-  50% { transform: scale(1.1) scaleY(0.85) rotate(0deg); opacity: 1; }
-  100% { transform: scale(0.3) scaleY(0.3) translateY(10px); opacity: 0; }
+  0% {
+    transform: scale(1.8) rotate(-20deg);
+    filter: brightness(1.5);
+    opacity: 1;
+  }
+  10% {
+    transform: scale(0.6) scaleY(0.5) rotate(10deg);
+  }
+  25% {
+    transform: scale(1.5) scaleY(0.65) rotate(-5deg);
+  }
+  50% {
+    transform: scale(1.1) scaleY(0.85) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.3) scaleY(0.3) translateY(10px);
+    opacity: 0;
+  }
 }
 
 /* ---- FIREWORKS: Multi-color explosion ---- */
-.throw-animation__impact[data-type="fireworks"] .throw-animation__burst {
+.throw-animation__impact[data-type='fireworks'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 100, 100, 0.6) 0%,
@@ -630,31 +868,51 @@
   animation: fireworksMultiBurst 1.2s var(--throw-ease-arc) forwards;
 }
 @keyframes fireworksMultiBurst {
-  0% { transform: scale(0.05); opacity: 0; filter: brightness(3); }
-  8% { opacity: 1; }
-  25% { transform: scale(1.2); filter: brightness(2); }
-  50% { transform: scale(2); opacity: 0.7; filter: brightness(1.5); }
-  75% { transform: scale(2.8); opacity: 0.3; }
-  100% { transform: scale(3.5); opacity: 0; filter: brightness(1); }
+  0% {
+    transform: scale(0.05);
+    opacity: 0;
+    filter: brightness(3);
+  }
+  8% {
+    opacity: 1;
+  }
+  25% {
+    transform: scale(1.2);
+    filter: brightness(2);
+  }
+  50% {
+    transform: scale(2);
+    opacity: 0.7;
+    filter: brightness(1.5);
+  }
+  75% {
+    transform: scale(2.8);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(3.5);
+    opacity: 0;
+    filter: brightness(1);
+  }
 }
-.throw-animation__impact[data-type="fireworks"] .throw-animation__particle {
+.throw-animation__impact[data-type='fireworks'] .throw-animation__particle {
   width: 4px;
   height: 12px;
   border-radius: 2px;
   box-shadow: 0 0 10px var(--particle-color, #ffd700);
 }
-.throw-animation__impact[data-type="fireworks"] .throw-animation__particle:nth-child(odd) {
+.throw-animation__impact[data-type='fireworks'] .throw-animation__particle:nth-child(odd) {
   --particle-color: #ff4444;
 }
-.throw-animation__impact[data-type="fireworks"] .throw-animation__particle:nth-child(even) {
+.throw-animation__impact[data-type='fireworks'] .throw-animation__particle:nth-child(even) {
   --particle-color: #4fc3f7;
 }
-.throw-animation__impact[data-type="fireworks"] .throw-animation__particle:nth-child(3n) {
+.throw-animation__impact[data-type='fireworks'] .throw-animation__particle:nth-child(3n) {
   --particle-color: #ffd700;
 }
 
 /* ---- LIGHTNING: Electric flash ---- */
-.throw-animation__impact[data-type="lightning"] .throw-animation__burst {
+.throw-animation__impact[data-type='lightning'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 255, 255, 0.9) 0%,
@@ -665,15 +923,42 @@
   animation: lightningFlash 0.5s ease-out forwards;
 }
 @keyframes lightningFlash {
-  0% { transform: scale(0.3); opacity: 0; filter: brightness(4); }
-  5% { opacity: 1; filter: brightness(5); }
-  15% { transform: scale(2); filter: brightness(3); opacity: 0.9; }
-  30% { transform: scale(0.8); filter: brightness(1); opacity: 0.3; }
-  45% { transform: scale(1.5); filter: brightness(3); opacity: 0.7; }
-  60% { transform: scale(1); filter: brightness(1); opacity: 0.2; }
-  100% { transform: scale(2.5); filter: brightness(0.5); opacity: 0; }
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+    filter: brightness(4);
+  }
+  5% {
+    opacity: 1;
+    filter: brightness(5);
+  }
+  15% {
+    transform: scale(2);
+    filter: brightness(3);
+    opacity: 0.9;
+  }
+  30% {
+    transform: scale(0.8);
+    filter: brightness(1);
+    opacity: 0.3;
+  }
+  45% {
+    transform: scale(1.5);
+    filter: brightness(3);
+    opacity: 0.7;
+  }
+  60% {
+    transform: scale(1);
+    filter: brightness(1);
+    opacity: 0.2;
+  }
+  100% {
+    transform: scale(2.5);
+    filter: brightness(0.5);
+    opacity: 0;
+  }
 }
-.throw-animation__impact[data-type="lightning"] .throw-animation__particle {
+.throw-animation__impact[data-type='lightning'] .throw-animation__particle {
   --particle-color: #96c8ff;
   width: 2px;
   height: 16px;
@@ -682,7 +967,7 @@
 }
 
 /* ---- DIAMOND RAIN: Prismatic sparkle ---- */
-.throw-animation__impact[data-type="diamond-rain"] .throw-animation__burst {
+.throw-animation__impact[data-type='diamond-rain'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(200, 230, 255, 0.7) 0%,
@@ -693,26 +978,42 @@
   animation: diamondShimmer 1s ease-out forwards;
 }
 @keyframes diamondShimmer {
-  0% { transform: scale(0.1) rotate(0deg); opacity: 0; }
-  10% { opacity: 1; }
-  30% { transform: scale(1.5) rotate(90deg); opacity: 0.8; }
-  60% { transform: scale(2) rotate(180deg); opacity: 0.4; }
-  100% { transform: scale(3) rotate(270deg); opacity: 0; }
+  0% {
+    transform: scale(0.1) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  30% {
+    transform: scale(1.5) rotate(90deg);
+    opacity: 0.8;
+  }
+  60% {
+    transform: scale(2) rotate(180deg);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(3) rotate(270deg);
+    opacity: 0;
+  }
 }
-.throw-animation__impact[data-type="diamond-rain"] .throw-animation__particle {
+.throw-animation__impact[data-type='diamond-rain'] .throw-animation__particle {
   --particle-color: #96c8ff;
   width: 6px;
   height: 6px;
   transform: rotate(45deg);
   border-radius: 1px;
-  box-shadow: 0 0 10px rgba(150, 200, 255, 0.8), 0 0 20px rgba(212, 168, 75, 0.4);
+  box-shadow:
+    0 0 10px rgba(150, 200, 255, 0.8),
+    0 0 20px rgba(212, 168, 75, 0.4);
 }
-.throw-animation__impact[data-type="diamond-rain"] .throw-animation__particle:nth-child(odd) {
+.throw-animation__impact[data-type='diamond-rain'] .throw-animation__particle:nth-child(odd) {
   --particle-color: #d4a84b;
 }
 
 /* ---- CHAMPAGNE: Golden bubbles ---- */
-.throw-animation__impact[data-type="champagne"] .throw-animation__burst {
+.throw-animation__impact[data-type='champagne'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 215, 0, 0.6) 0%,
@@ -721,7 +1022,7 @@
     transparent 80%
   );
 }
-.throw-animation__impact[data-type="champagne"] .throw-animation__particle {
+.throw-animation__impact[data-type='champagne'] .throw-animation__particle {
   --particle-color: #ffe082;
   border-radius: 50%;
   width: 5px;
@@ -730,7 +1031,7 @@
 }
 
 /* ---- TROPHY: Golden gleam ---- */
-.throw-animation__impact[data-type="trophy"] .throw-animation__burst {
+.throw-animation__impact[data-type='trophy'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 215, 0, 0.8) 0%,
@@ -741,12 +1042,26 @@
   animation: trophyGleam 0.9s ease-out forwards;
 }
 @keyframes trophyGleam {
-  0% { transform: scale(0.1); opacity: 1; filter: brightness(3); }
-  20% { transform: scale(1.5); filter: brightness(2); }
-  50% { transform: scale(2); opacity: 0.6; }
-  100% { transform: scale(2.5); opacity: 0; filter: brightness(1); }
+  0% {
+    transform: scale(0.1);
+    opacity: 1;
+    filter: brightness(3);
+  }
+  20% {
+    transform: scale(1.5);
+    filter: brightness(2);
+  }
+  50% {
+    transform: scale(2);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+    filter: brightness(1);
+  }
 }
-.throw-animation__impact[data-type="trophy"] .throw-animation__particle {
+.throw-animation__impact[data-type='trophy'] .throw-animation__particle {
   --particle-color: #ffd700;
   width: 4px;
   height: 8px;
@@ -754,7 +1069,7 @@
 }
 
 /* ---- DRAGON: Fire explosion ---- */
-.throw-animation__impact[data-type="dragon"] .throw-animation__burst {
+.throw-animation__impact[data-type='dragon'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 87, 34, 0.7) 0%,
@@ -766,24 +1081,41 @@
   animation: dragonFire 1s ease-out forwards;
 }
 @keyframes dragonFire {
-  0% { transform: scale(0.1); opacity: 0; filter: brightness(4) hue-rotate(0deg); }
-  10% { opacity: 1; }
-  30% { transform: scale(2); filter: brightness(2) hue-rotate(15deg); }
-  60% { transform: scale(2.5); opacity: 0.5; filter: brightness(1.5) hue-rotate(-10deg); }
-  100% { transform: scale(3); opacity: 0; filter: brightness(0.8) hue-rotate(0deg); }
+  0% {
+    transform: scale(0.1);
+    opacity: 0;
+    filter: brightness(4) hue-rotate(0deg);
+  }
+  10% {
+    opacity: 1;
+  }
+  30% {
+    transform: scale(2);
+    filter: brightness(2) hue-rotate(15deg);
+  }
+  60% {
+    transform: scale(2.5);
+    opacity: 0.5;
+    filter: brightness(1.5) hue-rotate(-10deg);
+  }
+  100% {
+    transform: scale(3);
+    opacity: 0;
+    filter: brightness(0.8) hue-rotate(0deg);
+  }
 }
-.throw-animation__impact[data-type="dragon"] .throw-animation__particle {
+.throw-animation__impact[data-type='dragon'] .throw-animation__particle {
   --particle-color: #ff5722;
   width: 6px;
   height: 10px;
   border-radius: 50% 50% 20% 20%;
 }
-.throw-animation__impact[data-type="dragon"] .throw-animation__particle:nth-child(odd) {
+.throw-animation__impact[data-type='dragon'] .throw-animation__particle:nth-child(odd) {
   --particle-color: #ff9800;
 }
 
 /* ---- TSUNAMI: Wave crash ---- */
-.throw-animation__impact[data-type="tsunami"] .throw-animation__burst {
+.throw-animation__impact[data-type='tsunami'] .throw-animation__burst {
   background: radial-gradient(
     ellipse 120% 80%,
     rgba(30, 136, 229, 0.6) 0%,
@@ -793,12 +1125,25 @@
   animation: tsunamiCrash 0.9s ease-out forwards;
 }
 @keyframes tsunamiCrash {
-  0% { transform: scale(0.2) scaleX(0.5); opacity: 1; filter: brightness(2); }
-  25% { transform: scale(1.5) scaleX(1.8); opacity: 0.8; }
-  50% { transform: scale(2) scaleX(2.2); opacity: 0.4; }
-  100% { transform: scale(2.5) scaleX(2.5) scaleY(0.6); opacity: 0; }
+  0% {
+    transform: scale(0.2) scaleX(0.5);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  25% {
+    transform: scale(1.5) scaleX(1.8);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(2) scaleX(2.2);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(2.5) scaleX(2.5) scaleY(0.6);
+    opacity: 0;
+  }
 }
-.throw-animation__impact[data-type="tsunami"] .throw-animation__particle {
+.throw-animation__impact[data-type='tsunami'] .throw-animation__particle {
   --particle-color: #4fc3f7;
   width: 4px;
   height: 7px;
@@ -806,7 +1151,7 @@
 }
 
 /* ---- CROWN: Regal radiance ---- */
-.throw-animation__impact[data-type="crown"] .throw-animation__burst {
+.throw-animation__impact[data-type='crown'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 215, 0, 0.7) 0%,
@@ -815,7 +1160,7 @@
     transparent 75%
   );
 }
-.throw-animation__impact[data-type="crown"] .throw-animation__particle {
+.throw-animation__impact[data-type='crown'] .throw-animation__particle {
   --particle-color: #ffd700;
   width: 5px;
   height: 5px;
@@ -825,7 +1170,7 @@
 }
 
 /* ---- BEER: Foam splash ---- */
-.throw-animation__impact[data-type="beer"] .throw-animation__burst {
+.throw-animation__impact[data-type='beer'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 183, 77, 0.6) 0%,
@@ -834,7 +1179,7 @@
     transparent 75%
   );
 }
-.throw-animation__impact[data-type="beer"] .throw-animation__particle {
+.throw-animation__impact[data-type='beer'] .throw-animation__particle {
   --particle-color: #ffe082;
   width: 6px;
   height: 6px;
@@ -843,7 +1188,7 @@
 }
 
 /* ---- CONFETTI: Multi-color rectangles ---- */
-.throw-animation__impact[data-type="confetti"] .throw-animation__burst {
+.throw-animation__impact[data-type='confetti'] .throw-animation__burst {
   background: radial-gradient(
     circle,
     rgba(255, 215, 0, 0.5) 0%,
@@ -852,19 +1197,35 @@
     transparent 70%
   );
 }
-.throw-animation__impact[data-type="confetti"] .throw-animation__particle {
+.throw-animation__impact[data-type='confetti'] .throw-animation__particle {
   width: 8px;
   height: 4px;
   border-radius: 1px;
 }
-.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(1) { --particle-color: #ff4444; }
-.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(2) { --particle-color: #4caf50; }
-.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(3) { --particle-color: #ffd700; }
-.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(4) { --particle-color: #2196f3; }
-.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(5) { --particle-color: #9c27b0; }
-.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(6) { --particle-color: #ff9800; }
-.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(7) { --particle-color: #e91e63; }
-.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(8) { --particle-color: #00bcd4; }
+.throw-animation__impact[data-type='confetti'] .throw-animation__particle:nth-child(1) {
+  --particle-color: #ff4444;
+}
+.throw-animation__impact[data-type='confetti'] .throw-animation__particle:nth-child(2) {
+  --particle-color: #4caf50;
+}
+.throw-animation__impact[data-type='confetti'] .throw-animation__particle:nth-child(3) {
+  --particle-color: #ffd700;
+}
+.throw-animation__impact[data-type='confetti'] .throw-animation__particle:nth-child(4) {
+  --particle-color: #2196f3;
+}
+.throw-animation__impact[data-type='confetti'] .throw-animation__particle:nth-child(5) {
+  --particle-color: #9c27b0;
+}
+.throw-animation__impact[data-type='confetti'] .throw-animation__particle:nth-child(6) {
+  --particle-color: #ff9800;
+}
+.throw-animation__impact[data-type='confetti'] .throw-animation__particle:nth-child(7) {
+  --particle-color: #e91e63;
+}
+.throw-animation__impact[data-type='confetti'] .throw-animation__particle:nth-child(8) {
+  --particle-color: #00bcd4;
+}
 
 /* =================================================================================
    LINGER -- Post-Impact Persistent Effect (optional, for premium throwables)
@@ -880,13 +1241,22 @@
 }
 
 @keyframes lingerFade {
-  0% { opacity: 0.6; filter: brightness(1); }
-  50% { opacity: 0.3; filter: brightness(0.8); }
-  100% { opacity: 0; filter: brightness(0.5); }
+  0% {
+    opacity: 0.6;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.3;
+    filter: brightness(0.8);
+  }
+  100% {
+    opacity: 0;
+    filter: brightness(0.5);
+  }
 }
 
 /* Linger: Tomato drip stain */
-.throw-animation__linger[data-type="tomato"] {
+.throw-animation__linger[data-type='tomato'] {
   width: 30px;
   height: 20px;
   background: radial-gradient(ellipse, rgba(255, 50, 50, 0.35) 0%, transparent 70%);
@@ -894,7 +1264,7 @@
 }
 
 /* Linger: Egg yolk puddle */
-.throw-animation__linger[data-type="egg"] {
+.throw-animation__linger[data-type='egg'] {
   width: 25px;
   height: 15px;
   background: radial-gradient(ellipse, rgba(255, 235, 59, 0.3) 0%, transparent 70%);
@@ -902,7 +1272,7 @@
 }
 
 /* Linger: Frost patch */
-.throw-animation__linger[data-type="snowball"] {
+.throw-animation__linger[data-type='snowball'] {
   width: 35px;
   height: 35px;
   background: radial-gradient(circle, rgba(200, 230, 255, 0.25) 0%, transparent 65%);

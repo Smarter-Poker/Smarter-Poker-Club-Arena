@@ -11,9 +11,10 @@
  */
 export function parseTableIdFromPath(pathname: string | undefined): string | null {
   if (!pathname) return null;
-  const m = /^\/ws\/table\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i.exec(
-    pathname
-  );
+  const m =
+    /^\/ws\/table\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i.exec(
+      pathname
+    );
   return m ? m[1].toLowerCase() : null;
 }
 
@@ -26,10 +27,11 @@ export function extractBearerToken(
   rawProtocolHeader: string | string[] | undefined
 ): string | null {
   if (!rawProtocolHeader) return null;
-  const joined = Array.isArray(rawProtocolHeader)
-    ? rawProtocolHeader.join(',')
-    : rawProtocolHeader;
-  const parts = joined.split(',').map((s) => s.trim()).filter(Boolean);
+  const joined = Array.isArray(rawProtocolHeader) ? rawProtocolHeader.join(',') : rawProtocolHeader;
+  const parts = joined
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const bearerIdx = parts.findIndex((p) => p.toLowerCase() === 'bearer');
   if (bearerIdx === -1) return null;
   const next = parts[bearerIdx + 1];

@@ -318,7 +318,10 @@ class BonusServiceClass {
       );
 
       if (error) {
-        reportError(new Error('[Bonus] increment_bonus_progress RPC not available - returning silently'), 'BonusService.increment_bonus_progress_RPC_not_availab');
+        reportError(
+          new Error('[Bonus] increment_bonus_progress RPC not available - returning silently'),
+          'BonusService.increment_bonus_progress_RPC_not_availab'
+        );
         return 0;
       }
 
@@ -366,7 +369,10 @@ class BonusServiceClass {
         }
         break;
       default:
-        reportError(new Error(`[Bonus] Unknown reward type: ${type}`), 'BonusService.Unknown_reward_type');
+        reportError(
+          new Error(`[Bonus] Unknown reward type: ${type}`),
+          'BonusService.Unknown_reward_type'
+        );
         return;
     }
 

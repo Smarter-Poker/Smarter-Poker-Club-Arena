@@ -10,12 +10,12 @@
 
 Live SQL audit of TestAlias99 showed 1,269 matching hands; UI showed "No Hands Recorded Yet".
 
-| Layer | Issue | Fix | Status |
-|---|---|---|---|
-| A | Service queried `hand_players` (0 rows) instead of `hand_history` (5.1M rows) | Rewrote `getPlayerHands` + new `mapHandHistoryRow` | ✅ Bundle `index-Dug_if_k-v6.js` |
-| B | Realtime filter referenced non-existent column `player_ids` | Removed filter; refresh on any INSERT | ✅ Same bundle |
-| C | `hand_history` had only `service_role` SELECT policy | Added `authenticated` RLS via `players @> auth.uid()` | ✅ SQL migration LIVE |
-| D | Supabase JS `.contains('col', [{key: val}])` serialized unquoted keys → invalid JSON | Pre-stringify via `JSON.stringify([{userId}])` | ✅ Bundle `index-DX1xPYhK-v6.js` |
+| Layer | Issue                                                                                | Fix                                                   | Status                           |
+| ----- | ------------------------------------------------------------------------------------ | ----------------------------------------------------- | -------------------------------- |
+| A     | Service queried `hand_players` (0 rows) instead of `hand_history` (5.1M rows)        | Rewrote `getPlayerHands` + new `mapHandHistoryRow`    | ✅ Bundle `index-Dug_if_k-v6.js` |
+| B     | Realtime filter referenced non-existent column `player_ids`                          | Removed filter; refresh on any INSERT                 | ✅ Same bundle                   |
+| C     | `hand_history` had only `service_role` SELECT policy                                 | Added `authenticated` RLS via `players @> auth.uid()` | ✅ SQL migration LIVE            |
+| D     | Supabase JS `.contains('col', [{key: val}])` serialized unquoted keys → invalid JSON | Pre-stringify via `JSON.stringify([{userId}])`        | ✅ Bundle `index-DX1xPYhK-v6.js` |
 
 Cold-load verified: https://smarter.poker/hub/club-arena/hand-history → 25 HANDS, BIGGEST POT 861.66, 4+ hand rows with pot sizes, Replay/Analyze/Share buttons, plain-text tabs (emoji violation cleaned).
 
@@ -71,6 +71,7 @@ bash server/deploy-hetzner.sh
 ```
 
 Expected outcomes post-restart:
+
 - `/health` → `activeTables >= 2` (confirm BUG 022 recovery)
 - `rake_records` populating on every hand end
 - `rakeback_periods` + `agent_commissions` + `player_stats.updated_at` all freshening within 30 min (settler daemon)
@@ -81,6 +82,7 @@ Expected outcomes post-restart:
 - Old MTT tournaments that were nuked (all 133) already have `ended_at` backfilled by SQL
 
 Verification SQL:
+
 ```sql
 -- Engine fleet recovery
 SELECT activeTables FROM (SELECT ...) -- via /health endpoint

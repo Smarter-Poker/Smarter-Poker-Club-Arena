@@ -4462,10 +4462,7 @@ export class ServerTableEngine {
       // persists in hand_state_snapshots.disconnect_states forever.
       // Round 64: extended to also call timeBankEngine.removePlayer so the
       // playerBanks Map sheds its entry too — same architectural fix.
-      const cashedOutIds = await processLeavePending(
-        this.tableId,
-        this.tableInfo?.club_id || ''
-      );
+      const cashedOutIds = await processLeavePending(this.tableId, this.tableInfo?.club_id || '');
       for (const userId of cashedOutIds) {
         this.disconnectEngine.unregisterPlayer(this.tableId, userId);
         this.timeBankEngine.removePlayer(this.tableId, userId);

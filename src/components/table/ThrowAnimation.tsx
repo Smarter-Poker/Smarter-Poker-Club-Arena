@@ -23,13 +23,16 @@ import './ThrowAnimation.css';
 
 /** Throwables that trigger screen shake on impact */
 const HEAVY_IMPACT_TYPES = new Set([
-  'tomato', 'pie', 'water-balloon', 'dragon', 'tsunami', 'lightning',
+  'tomato',
+  'pie',
+  'water-balloon',
+  'dragon',
+  'tsunami',
+  'lightning',
 ]);
 
 /** Throwables that leave a linger stain */
-const LINGER_TYPES = new Set([
-  'tomato', 'egg', 'snowball', 'water-balloon', 'pie',
-]);
+const LINGER_TYPES = new Set(['tomato', 'egg', 'snowball', 'water-balloon', 'pie']);
 
 /** Number of particles spawned on impact */
 const PARTICLE_COUNT = 8;
@@ -87,10 +90,13 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
 
     // Linger -> done
     const lingerTimer = hasLinger
-      ? setTimeout(() => {
-          setPhase('done');
-          onComplete();
-        }, FLIGHT_DURATION + IMPACT_DURATION + LINGER_DURATION)
+      ? setTimeout(
+          () => {
+            setPhase('done');
+            onComplete();
+          },
+          FLIGHT_DURATION + IMPACT_DURATION + LINGER_DURATION
+        )
       : undefined;
 
     return () => {
@@ -126,9 +132,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       {phase === 'throw' && (
         <div
           className={`throw-animation__projectile ${
-            isReaction
-              ? 'throw-animation__projectile--float'
-              : 'throw-animation__projectile--arc'
+            isReaction ? 'throw-animation__projectile--float' : 'throw-animation__projectile--arc'
           }`}
           style={
             {

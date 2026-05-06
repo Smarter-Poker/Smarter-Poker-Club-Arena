@@ -29,7 +29,8 @@
   }
   50% {
     opacity: 1;
-    transform: scale(1.1) translate(calc(var(--chip-from-x, 0) * 0.4), calc(var(--chip-from-y, 0) * 0.4));
+    transform: scale(1.1)
+      translate(calc(var(--chip-from-x, 0) * 0.4), calc(var(--chip-from-y, 0) * 0.4));
   }
   100% {
     opacity: 1;
@@ -37,15 +38,51 @@
   }
 }
 
-.chip-bet--from-seat-0 { --chip-from-x: 0px; --chip-from-y: -200px; animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards; }
-.chip-bet--from-seat-1 { --chip-from-x: 160px; --chip-from-y: -140px; animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards; }
-.chip-bet--from-seat-2 { --chip-from-x: 200px; --chip-from-y: 0px; animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards; }
-.chip-bet--from-seat-3 { --chip-from-x: 160px; --chip-from-y: 140px; animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards; }
-.chip-bet--from-seat-4 { --chip-from-x: 0px; --chip-from-y: 200px; animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards; }
-.chip-bet--from-seat-5 { --chip-from-x: -160px; --chip-from-y: 140px; animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards; }
-.chip-bet--from-seat-6 { --chip-from-x: -200px; --chip-from-y: 0px; animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards; }
-.chip-bet--from-seat-7 { --chip-from-x: -160px; --chip-from-y: -140px; animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards; }
-.chip-bet--from-seat-8 { --chip-from-x: 0px; --chip-from-y: -100px; animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards; }
+.chip-bet--from-seat-0 {
+  --chip-from-x: 0px;
+  --chip-from-y: -200px;
+  animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards;
+}
+.chip-bet--from-seat-1 {
+  --chip-from-x: 160px;
+  --chip-from-y: -140px;
+  animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards;
+}
+.chip-bet--from-seat-2 {
+  --chip-from-x: 200px;
+  --chip-from-y: 0px;
+  animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards;
+}
+.chip-bet--from-seat-3 {
+  --chip-from-x: 160px;
+  --chip-from-y: 140px;
+  animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards;
+}
+.chip-bet--from-seat-4 {
+  --chip-from-x: 0px;
+  --chip-from-y: 200px;
+  animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards;
+}
+.chip-bet--from-seat-5 {
+  --chip-from-x: -160px;
+  --chip-from-y: 140px;
+  animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards;
+}
+.chip-bet--from-seat-6 {
+  --chip-from-x: -200px;
+  --chip-from-y: 0px;
+  animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards;
+}
+.chip-bet--from-seat-7 {
+  --chip-from-x: -160px;
+  --chip-from-y: -140px;
+  animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards;
+}
+.chip-bet--from-seat-8 {
+  --chip-from-x: 0px;
+  --chip-from-y: -100px;
+  animation: chipBetFromSeat var(--chip-bet-duration) var(--chip-ease-out) forwards;
+}
 
 /* ================================================================
    WIN ANIMATION -- Chips slide from center to winning seat
@@ -62,7 +99,8 @@
   }
   70% {
     opacity: 1;
-    transform: scale(0.95) translate(calc(var(--chip-to-x, 0) * 0.8), calc(var(--chip-to-y, 0) * 0.8));
+    transform: scale(0.95)
+      translate(calc(var(--chip-to-x, 0) * 0.8), calc(var(--chip-to-y, 0) * 0.8));
     filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.3));
   }
   100% {
@@ -72,15 +110,51 @@
   }
 }
 
-.chip-win--to-seat-0 { --chip-to-x: 0px; --chip-to-y: -200px; animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards; }
-.chip-win--to-seat-1 { --chip-to-x: 160px; --chip-to-y: -140px; animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards; }
-.chip-win--to-seat-2 { --chip-to-x: 200px; --chip-to-y: 0px; animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards; }
-.chip-win--to-seat-3 { --chip-to-x: 160px; --chip-to-y: 140px; animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards; }
-.chip-win--to-seat-4 { --chip-to-x: 0px; --chip-to-y: 200px; animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards; }
-.chip-win--to-seat-5 { --chip-to-x: -160px; --chip-to-y: 140px; animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards; }
-.chip-win--to-seat-6 { --chip-to-x: -200px; --chip-to-y: 0px; animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards; }
-.chip-win--to-seat-7 { --chip-to-x: -160px; --chip-to-y: -140px; animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards; }
-.chip-win--to-seat-8 { --chip-to-x: 0px; --chip-to-y: -100px; animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards; }
+.chip-win--to-seat-0 {
+  --chip-to-x: 0px;
+  --chip-to-y: -200px;
+  animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards;
+}
+.chip-win--to-seat-1 {
+  --chip-to-x: 160px;
+  --chip-to-y: -140px;
+  animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards;
+}
+.chip-win--to-seat-2 {
+  --chip-to-x: 200px;
+  --chip-to-y: 0px;
+  animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards;
+}
+.chip-win--to-seat-3 {
+  --chip-to-x: 160px;
+  --chip-to-y: 140px;
+  animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards;
+}
+.chip-win--to-seat-4 {
+  --chip-to-x: 0px;
+  --chip-to-y: 200px;
+  animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards;
+}
+.chip-win--to-seat-5 {
+  --chip-to-x: -160px;
+  --chip-to-y: 140px;
+  animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards;
+}
+.chip-win--to-seat-6 {
+  --chip-to-x: -200px;
+  --chip-to-y: 0px;
+  animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards;
+}
+.chip-win--to-seat-7 {
+  --chip-to-x: -160px;
+  --chip-to-y: -140px;
+  animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards;
+}
+.chip-win--to-seat-8 {
+  --chip-to-x: 0px;
+  --chip-to-y: -100px;
+  animation: chipWinToSeat var(--chip-win-duration) var(--chip-ease-in) forwards;
+}
 
 /* ================================================================
    POT MERGE -- Multiple bets converge to center
@@ -93,7 +167,9 @@
   }
   60% {
     opacity: 1;
-    transform: scale(1.05) translate(calc(var(--merge-from-x, 80px) * 0.2), calc(var(--merge-from-y, 0) * 0.2)) rotate(30deg);
+    transform: scale(1.05)
+      translate(calc(var(--merge-from-x, 80px) * 0.2), calc(var(--merge-from-y, 0) * 0.2))
+      rotate(30deg);
   }
   100% {
     opacity: 1;
@@ -101,11 +177,25 @@
   }
 }
 
-.chip-merge { animation: chipMerge var(--chip-merge-duration) var(--chip-ease-elastic) forwards; }
-.chip-merge--from-left { --merge-from-x: -100px; --merge-from-y: 0; }
-.chip-merge--from-right { --merge-from-x: 100px; --merge-from-y: 0; }
-.chip-merge--from-top { --merge-from-x: 0; --merge-from-y: -80px; }
-.chip-merge--from-bottom { --merge-from-x: 0; --merge-from-y: 80px; }
+.chip-merge {
+  animation: chipMerge var(--chip-merge-duration) var(--chip-ease-elastic) forwards;
+}
+.chip-merge--from-left {
+  --merge-from-x: -100px;
+  --merge-from-y: 0;
+}
+.chip-merge--from-right {
+  --merge-from-x: 100px;
+  --merge-from-y: 0;
+}
+.chip-merge--from-top {
+  --merge-from-x: 0;
+  --merge-from-y: -80px;
+}
+.chip-merge--from-bottom {
+  --merge-from-x: 0;
+  --merge-from-y: 80px;
+}
 
 /* ================================================================
    SIDE POT FORMATION
@@ -118,7 +208,8 @@
   }
   50% {
     opacity: 1;
-    transform: scale(1.05) translate(calc(var(--sidepot-x, 80px) * 0.7), calc(var(--sidepot-y, 40px) * 0.7));
+    transform: scale(1.05)
+      translate(calc(var(--sidepot-x, 80px) * 0.7), calc(var(--sidepot-y, 40px) * 0.7));
   }
   100% {
     opacity: 1;
@@ -126,10 +217,21 @@
   }
 }
 
-.chip-sidepot { animation: chipSidepot 0.4s var(--chip-ease-out) forwards; }
-.chip-sidepot--right { --sidepot-x: 90px; --sidepot-y: 30px; }
-.chip-sidepot--left { --sidepot-x: -90px; --sidepot-y: 30px; }
-.chip-sidepot--below { --sidepot-x: 0px; --sidepot-y: 70px; }
+.chip-sidepot {
+  animation: chipSidepot 0.4s var(--chip-ease-out) forwards;
+}
+.chip-sidepot--right {
+  --sidepot-x: 90px;
+  --sidepot-y: 30px;
+}
+.chip-sidepot--left {
+  --sidepot-x: -90px;
+  --sidepot-y: 30px;
+}
+.chip-sidepot--below {
+  --sidepot-x: 0px;
+  --sidepot-y: 70px;
+}
 
 /* ================================================================
    CHIP STACK VISUALS
@@ -210,7 +312,8 @@
 }
 
 @keyframes chipAllinFlash {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(255, 215, 0, 0);
   }
   30% {
@@ -249,13 +352,27 @@
    ================================================================ */
 
 @media (prefers-reduced-motion: reduce) {
-  .chip-bet--from-seat-0, .chip-bet--from-seat-1, .chip-bet--from-seat-2,
-  .chip-bet--from-seat-3, .chip-bet--from-seat-4, .chip-bet--from-seat-5,
-  .chip-bet--from-seat-6, .chip-bet--from-seat-7, .chip-bet--from-seat-8,
-  .chip-win--to-seat-0, .chip-win--to-seat-1, .chip-win--to-seat-2,
-  .chip-win--to-seat-3, .chip-win--to-seat-4, .chip-win--to-seat-5,
-  .chip-win--to-seat-6, .chip-win--to-seat-7, .chip-win--to-seat-8,
-  .chip-merge, .chip-sidepot, .chip-allin {
+  .chip-bet--from-seat-0,
+  .chip-bet--from-seat-1,
+  .chip-bet--from-seat-2,
+  .chip-bet--from-seat-3,
+  .chip-bet--from-seat-4,
+  .chip-bet--from-seat-5,
+  .chip-bet--from-seat-6,
+  .chip-bet--from-seat-7,
+  .chip-bet--from-seat-8,
+  .chip-win--to-seat-0,
+  .chip-win--to-seat-1,
+  .chip-win--to-seat-2,
+  .chip-win--to-seat-3,
+  .chip-win--to-seat-4,
+  .chip-win--to-seat-5,
+  .chip-win--to-seat-6,
+  .chip-win--to-seat-7,
+  .chip-win--to-seat-8,
+  .chip-merge,
+  .chip-sidepot,
+  .chip-allin {
     animation: none;
     opacity: 1;
     transform: none;

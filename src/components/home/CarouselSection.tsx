@@ -46,7 +46,11 @@ export interface ClubStats {
 export interface CarouselSectionProps {
   displayClubs: UserClub[];
   sharkClubId: string | null;
-  sharkClubStats: { totalMembers: number | null; clubLevel: number | null; activePlayers: number | null };
+  sharkClubStats: {
+    totalMembers: number | null;
+    clubLevel: number | null;
+    activePlayers: number | null;
+  };
   clubStats: Record<string, ClubStats>;
   pinnedClubIds: string[];
   navigate: (path: string) => void;
@@ -133,7 +137,6 @@ export default function CarouselSection({
       }
     }, 400);
     return () => clearTimeout(timeout);
-     
   }, []);
 
   // Enhancement #7: Haptic on scroll snap
@@ -296,7 +299,12 @@ export default function CarouselSection({
                 clubLevel={stats?.clubLevel ?? 1}
                 activePlayers={stats?.activePlayers ?? 0}
                 clubId={club.club_id}
-                cardImageUrl={club.card_image_url || (Number(club.club_id) === SHARK_CLUB_ID ? `${import.meta.env.BASE_URL || '/'}images/shark-club-card-v25.jpg` : undefined)}
+                cardImageUrl={
+                  club.card_image_url ||
+                  (Number(club.club_id) === SHARK_CLUB_ID
+                    ? `${import.meta.env.BASE_URL || '/'}images/shark-club-card-v25.jpg`
+                    : undefined)
+                }
                 logoUrl={club.logo_url}
                 entityType={club.entity_type || 'club'}
               />

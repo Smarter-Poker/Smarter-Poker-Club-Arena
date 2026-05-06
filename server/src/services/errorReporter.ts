@@ -68,11 +68,7 @@ export function initSentry(): void {
  * @param context - A short string identifying where the error occurred
  * @param extra - Optional additional data to attach to the Sentry event
  */
-export function reportError(
-  error: unknown,
-  context: string,
-  extra?: Record<string, any>
-): void {
+export function reportError(error: unknown, context: string, extra?: Record<string, any>): void {
   // Always log to console for stdout/stderr visibility
   console.error(`[${context}]`, error);
 
@@ -100,11 +96,7 @@ export function reportError(
 /**
  * Report a warning-level issue (non-fatal but noteworthy).
  */
-export function reportWarning(
-  message: string,
-  context: string,
-  data?: Record<string, any>
-): void {
+export function reportWarning(message: string, context: string, data?: Record<string, any>): void {
   console.warn(`[${context}] ${message}`);
 
   if (!initialized) return;

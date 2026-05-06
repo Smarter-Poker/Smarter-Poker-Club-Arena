@@ -77,9 +77,9 @@ export class AutoRebuyService {
 
           const horseNameMatch = horses.find((h) => h.id === wallet.user_id);
           const horseName = horseNameMatch
-            ? (horseNameMatch.use_real_name 
-                ? (horseNameMatch.display_name || horseNameMatch.username)
-                : (horseNameMatch.username || horseNameMatch.display_name))
+            ? horseNameMatch.use_real_name
+              ? horseNameMatch.display_name || horseNameMatch.username
+              : horseNameMatch.username || horseNameMatch.display_name
             : wallet.user_id;
 
           // Execute ATOMIC wallet refill
@@ -94,7 +94,12 @@ export class AutoRebuyService {
           });
 
           if (creditError) {
-            reportError(new Error(`[AutoRebuyService] Failed to refill wallet for ${horseName}: ${creditError.message}`), 'AutoRebuyService.Failed_to_refill_wallet_for_ho');
+            reportError(
+              new Error(
+                `[AutoRebuyService] Failed to refill wallet for ${horseName}: ${creditError.message}`
+              ),
+              'AutoRebuyService.Failed_to_refill_wallet_for_ho'
+            );
           } else {
             refilledCount++;
             console.log(
@@ -110,7 +115,10 @@ export class AutoRebuyService {
         );
       }
     } catch (err: any) {
-      reportError(new Error(`[AutoRebuyService] Wallet check error: ${err.message}`), 'AutoRebuyService.Wallet_check_error');
+      reportError(
+        new Error(`[AutoRebuyService] Wallet check error: ${err.message}`),
+        'AutoRebuyService.Wallet_check_error'
+      );
     }
   }
 }

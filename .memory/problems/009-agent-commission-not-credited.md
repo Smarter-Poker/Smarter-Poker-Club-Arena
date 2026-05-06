@@ -10,14 +10,14 @@
 
 After fixing BUG 008 (rakeback settler missing), continued live verification of D-2 #2 (Agent commission credit). Result:
 
-| Check | Live value |
-|---|---|
-| Total agents in DB | 68 |
-| Agents with `pending_commission > 0` | 0 |
-| Agents with `weekly_rake_generated > 0` | 0 |
-| Agents with `lifetime_earnings > 0` | 0 |
-| `agent_commissions` rows last 7 days | 0 |
-| Total rake recorded last 7 days | $30,136.94 |
+| Check                                   | Live value |
+| --------------------------------------- | ---------- |
+| Total agents in DB                      | 68         |
+| Agents with `pending_commission > 0`    | 0          |
+| Agents with `weekly_rake_generated > 0` | 0          |
+| Agents with `lifetime_earnings > 0`     | 0          |
+| `agent_commissions` rows last 7 days    | 0          |
+| Total rake recorded last 7 days         | $30,136.94 |
 
 Despite $30K in rake passing through 68 active agents' clubs in 7 days, **not one agent was ever credited a single chip**.
 
@@ -26,9 +26,11 @@ Despite $30K in rake passing through 68 active agents' clubs in 7 days, **not on
 1. **Server engine has zero references** to `queueCommissionCredits`, `agent_commissions`, `pending_commission`. The full agent commission logic exists in `src/services/RakeService.ts` (CLIENT) but was never ported to `server/src/`. After Bible V8 server-authoritative migration, the agent commission flow was orphaned.
 
 2. **Existing `increment_agent_rake` RPC was broken** — definition was:
+
    ```sql
    UPDATE profiles SET rake_generated = COALESCE(rake_generated, 0) + p_amount WHERE id = p_agent_id;
    ```
+
    But `profiles.rake_generated` column **does not exist**. So even if some code path called the RPC, it would silently UPDATE 0 rows and return `void` with no error. A perfect silent failure.
 
 3. **`RakebackEngine.recordHandRake` only tracks player rakeback** — it has no agent commission code path at all. Agent commission was supposed to be a parallel flow but only existed in the orphaned client service.
@@ -50,6 +52,7 @@ Combined effect: agents could be created, assigned players, set commission rates
 Extended `RakebackSettlerService.runSettlement()` to also iterate the per-hand `rake_records` and call `credit_agent_commission_from_rake` for each dealt-in player. The RPC silently no-ops if the player has no agent in that club (clean separation: settler doesn't need to know agent topology).
 
 This means every 30 minutes:
+
 - Player rakeback periods get upserted (BUG 008 fix)
 - Agent commissions get credited (BUG 009 fix)
 - Both flow from the same `rake_records` audit log ServerTableEngine writes at end-of-hand

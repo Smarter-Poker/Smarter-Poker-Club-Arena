@@ -60,7 +60,6 @@ export default function SettlementReceipt({
         if (isMounted.current) setCopied(false);
       }, 2000);
     } catch (err) {
-
       reportError(err, 'SettlementReceipt.Error');
       // Fallback: select text
     }

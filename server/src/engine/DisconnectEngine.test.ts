@@ -15,14 +15,21 @@ function mkScheduler() {
   const sched = new DeadlineScheduler({
     tickMs: 100,
     now: () => now,
-    setInterval: (fn) => { cb = fn; return 1 as any; },
-    clearInterval: () => { cb = null; },
+    setInterval: (fn) => {
+      cb = fn;
+      return 1 as any;
+    },
+    clearInterval: () => {
+      cb = null;
+    },
   });
   sched.start();
   return {
     sched,
     nowFn: () => now,
-    advance(ms: number) { now += ms; },
+    advance(ms: number) {
+      now += ms;
+    },
   };
 }
 

@@ -102,14 +102,10 @@
   box-shadow:
     /* Elevation shadow */
     0 4px 16px rgba(0, 0, 0, 0.4),
-    /* Contact shadow (close to felt) */
-    0 1px 4px rgba(0, 0, 0, 0.25),
-    /* Ambient fill */
-    0 0 1px rgba(0, 0, 0, 0.15),
-    /* Top inner highlight */
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    /* Bottom inner shadow */
-    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+    /* Contact shadow (close to felt) */ 0 1px 4px rgba(0, 0, 0, 0.25),
+    /* Ambient fill */ 0 0 1px rgba(0, 0, 0, 0.15),
+    /* Top inner highlight */ inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    /* Bottom inner shadow */ inset 0 -1px 0 rgba(0, 0, 0, 0.08);
 
   transition:
     transform 0.3s var(--cc-ease-spring),
@@ -158,7 +154,9 @@
 }
 
 @keyframes ccCardSheen {
-  0%, 75%, 100% {
+  0%,
+  75%,
+  100% {
     left: -120%;
     opacity: 0;
   }
@@ -243,15 +241,22 @@
 
 /* ---- 3D Flip Deal (primary flop animation) ---- */
 .community-cards__card--dealing {
-  animation: ccCardFlip3D calc(var(--cc-deal-duration) * var(--animation-speed, 1)) var(--cc-ease-spring) forwards;
+  animation: ccCardFlip3D calc(var(--cc-deal-duration) * var(--animation-speed, 1))
+    var(--cc-ease-spring) forwards;
   will-change: transform, opacity;
   transform-style: preserve-3d;
 }
 
 /* Stagger flop cards: 100ms apart per PokerBros spec */
-.community-cards__card--dealing:nth-of-type(1) { animation-delay: 0ms; }
-.community-cards__card--dealing:nth-of-type(2) { animation-delay: var(--cc-flop-stagger); }
-.community-cards__card--dealing:nth-of-type(3) { animation-delay: calc(var(--cc-flop-stagger) * 2); }
+.community-cards__card--dealing:nth-of-type(1) {
+  animation-delay: 0ms;
+}
+.community-cards__card--dealing:nth-of-type(2) {
+  animation-delay: var(--cc-flop-stagger);
+}
+.community-cards__card--dealing:nth-of-type(3) {
+  animation-delay: calc(var(--cc-flop-stagger) * 2);
+}
 
 @keyframes ccCardFlip3D {
   0% {
@@ -291,7 +296,8 @@
 
 /* ---- Turn Card (4th) -- Dramatic side reveal ---- */
 .community-cards__card--turn {
-  animation: ccTurnReveal calc(var(--cc-turn-duration) * var(--animation-speed, 1)) var(--cc-ease-spring) forwards !important;
+  animation: ccTurnReveal calc(var(--cc-turn-duration) * var(--animation-speed, 1))
+    var(--cc-ease-spring) forwards !important;
 }
 
 @keyframes ccTurnReveal {
@@ -333,7 +339,8 @@
 
 /* ---- River Card (5th) -- Maximum drama, slower, bigger ---- */
 .community-cards__card--river {
-  animation: ccRiverReveal calc(var(--cc-river-duration) * var(--animation-speed, 1)) var(--cc-ease-spring) forwards !important;
+  animation: ccRiverReveal calc(var(--cc-river-duration) * var(--animation-speed, 1))
+    var(--cc-ease-spring) forwards !important;
 }
 
 @keyframes ccRiverReveal {
@@ -389,21 +396,18 @@
   box-shadow:
     /* Inner gold ring */
     0 0 0 3px rgba(255, 215, 0, 0.6),
-    /* Close glow */
-    0 0 12px var(--cc-gold-glow),
-    /* Medium glow */
-    0 0 24px var(--cc-gold-subtle),
-    /* Far glow */
-    0 0 48px rgba(255, 215, 0, 0.15),
-    /* Card elevation shadow */
-    0 4px 12px rgba(0, 0, 0, 0.3);
+    /* Close glow */ 0 0 12px var(--cc-gold-glow),
+    /* Medium glow */ 0 0 24px var(--cc-gold-subtle),
+    /* Far glow */ 0 0 48px rgba(255, 215, 0, 0.15),
+    /* Card elevation shadow */ 0 4px 12px rgba(0, 0, 0, 0.3);
   border: 2px solid rgba(255, 215, 0, 0.5);
   animation: ccHighlightPulse 1.8s ease-in-out infinite;
   z-index: 4;
 }
 
 @keyframes ccHighlightPulse {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow:
       0 0 0 3px rgba(255, 215, 0, 0.5),
       0 0 12px var(--cc-gold-glow),
@@ -439,8 +443,15 @@
 }
 
 @keyframes ccGlowPulse {
-  0%, 100% { opacity: 0.6; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.08); }
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
 }
 
 /* =================================================================================
@@ -700,8 +711,13 @@
 }
 
 @keyframes ccHandNameShimmer {
-  0% { left: -120%; }
-  45%, 100% { left: 160%; }
+  0% {
+    left: -120%;
+  }
+  45%,
+  100% {
+    left: 160%;
+  }
 }
 
 @keyframes ccHandNameIn {
@@ -742,9 +758,15 @@
     --cc-card-radius: 5px;
   }
 
-  .community-cards__corner-rank { font-size: 0.9375rem; }
-  .community-cards__corner-suit { font-size: 0.8125rem; }
-  .community-cards__center-suit { font-size: 1.75rem; }
+  .community-cards__corner-rank {
+    font-size: 0.9375rem;
+  }
+  .community-cards__corner-suit {
+    font-size: 0.8125rem;
+  }
+  .community-cards__center-suit {
+    font-size: 1.75rem;
+  }
 }
 
 @media (max-width: 640px) {
@@ -754,9 +776,15 @@
     --cc-card-gap: 5px;
   }
 
-  .community-cards__corner-rank { font-size: 0.875rem; }
-  .community-cards__corner-suit { font-size: 0.75rem; }
-  .community-cards__center-suit { font-size: 1.5rem; }
+  .community-cards__corner-rank {
+    font-size: 0.875rem;
+  }
+  .community-cards__corner-suit {
+    font-size: 0.75rem;
+  }
+  .community-cards__center-suit {
+    font-size: 1.5rem;
+  }
 }
 
 @media (max-width: 480px) {
@@ -767,9 +795,15 @@
     --cc-card-radius: 4px;
   }
 
-  .community-cards__corner-rank { font-size: 0.8125rem; }
-  .community-cards__corner-suit { font-size: 0.6875rem; }
-  .community-cards__center-suit { font-size: 1.25rem; }
+  .community-cards__corner-rank {
+    font-size: 0.8125rem;
+  }
+  .community-cards__corner-suit {
+    font-size: 0.6875rem;
+  }
+  .community-cards__center-suit {
+    font-size: 1.25rem;
+  }
 
   .community-cards__hand-name {
     font-size: 0.9rem;
@@ -789,9 +823,15 @@
     --cc-card-radius: 3px;
   }
 
-  .community-cards__corner-rank { font-size: 0.75rem; }
-  .community-cards__corner-suit { font-size: 0.625rem; }
-  .community-cards__center-suit { font-size: 1.1rem; }
+  .community-cards__corner-rank {
+    font-size: 0.75rem;
+  }
+  .community-cards__corner-suit {
+    font-size: 0.625rem;
+  }
+  .community-cards__center-suit {
+    font-size: 1.1rem;
+  }
 
   .community-cards__hand-name {
     font-size: 0.5rem;

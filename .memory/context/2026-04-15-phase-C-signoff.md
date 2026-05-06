@@ -7,56 +7,57 @@
 
 ## Tournament feature inventory — already shipped
 
-| Feature | Code locations | Status |
-|---|---|---|
-| **MTT** (multi-table) | `TournamentService.ts`, `TableBalancer.ts`, `TableBreakEngine.ts`, `ChipRaceEngine.ts` | ✅ |
-| **SNG** (sit & go) | `TournamentService.ts` (`'sng'` enum) | ✅ |
-| **Spin** (3-handed hyper) | `TournamentService.spinMultiplier:2470`, `SpinAndGoLobby.tsx` | ✅ |
-| **Spin multiplier** (random 2x–100x w/ bonus buy-ins) | `spinMultiplier(config: SpinMultiplier[])` returns `{ multiplier, isPremium, bonusBuyIns }` | ✅ |
-| **Satellite** | `TournamentType` enum `'satellite'`, payout = ticket-based | ✅ |
-| **Late registration** | `late_reg_levels` + `late_reg_mins` columns on `tournaments` | ✅ |
-| **Rebuy** | `is_rebuy`, `rebuy_cost`, `rebuy_chips`, `rebuy_levels` + `RebuyModal.tsx` | ✅ |
-| **Re-entry** | `is_reentry` toggle | ✅ |
-| **Add-on** | `add_on_available`, `addon_cost`, `addon_chips`, `addon_levels` + `AddOnModal.tsx` | ✅ |
-| **Bounty** (standard) | `is_bounty`, `bounty_amount` | ✅ |
-| **PKO** (progressive bounty) | `is_pko`, type `'progressive_bounty'` (50% to knocker, 50% to head) | ✅ |
-| **Mystery Bounty** | `is_mystery_bounty`, `mystery_bounty_min/max` + `MysteryBountyReveal.tsx` | ✅ |
-| **Multi-day MTT** | `is_multi_day`, `total_days`, `day_number` | ✅ Bonus |
-| **X-MTT** (cross-table) | `is_xmtt` flag | ✅ Bonus |
-| **Flighted** | `flight_number` column | ✅ Bonus |
-| **Hand-for-hand bubble play** | `HandForHandBanner.tsx` | ✅ |
-| **Final table overlay** | `FinalTableOverlay.tsx` | ✅ |
-| **Heads-up overlay** | `HeadsUpOverlay.tsx` | ✅ |
-| **Elimination overlay** | `EliminationOverlay.tsx` | ✅ |
-| **Live chip counts** | `LiveChipCounts.tsx`, `TournamentChipCount.tsx` | ✅ |
-| **Tournament clock** | `TournamentClock.tsx`, `BlindLevelProgress.tsx`, `BlindTimer.tsx` | ✅ |
-| **Blind-structure builder** | `BlindStructure.tsx`, `BlindStructureBuilder.tsx` | ✅ |
-| **Payout structure + editor** | `PayoutStructure.tsx`, `PayoutStructureEditor.tsx`, `PayoutEngine.ts` | ✅ |
-| **Tournament standings** | `TournamentStandings.tsx` | ✅ |
-| **Tournament stats dashboard** | `TournamentStatsDashboard.tsx` | ✅ |
-| **Tournament registration** | `TournamentRegistration.tsx` | ✅ |
-| **Hole-card reveal** (showdowns / ESPN-style) | `HoleCardReveal.tsx` | ✅ |
-| **Auto chip-race** (low-denom cleanup) | `ChipRaceEngine.ts` | ✅ |
-| **Table balancer** (move shortest table on bust) | `TableBalancer.ts` | ✅ |
-| **Table break** (consolidation as field shrinks) | `TableBreakEngine.ts` | ✅ |
+| Feature                                               | Code locations                                                                              | Status   |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------- |
+| **MTT** (multi-table)                                 | `TournamentService.ts`, `TableBalancer.ts`, `TableBreakEngine.ts`, `ChipRaceEngine.ts`      | ✅       |
+| **SNG** (sit & go)                                    | `TournamentService.ts` (`'sng'` enum)                                                       | ✅       |
+| **Spin** (3-handed hyper)                             | `TournamentService.spinMultiplier:2470`, `SpinAndGoLobby.tsx`                               | ✅       |
+| **Spin multiplier** (random 2x–100x w/ bonus buy-ins) | `spinMultiplier(config: SpinMultiplier[])` returns `{ multiplier, isPremium, bonusBuyIns }` | ✅       |
+| **Satellite**                                         | `TournamentType` enum `'satellite'`, payout = ticket-based                                  | ✅       |
+| **Late registration**                                 | `late_reg_levels` + `late_reg_mins` columns on `tournaments`                                | ✅       |
+| **Rebuy**                                             | `is_rebuy`, `rebuy_cost`, `rebuy_chips`, `rebuy_levels` + `RebuyModal.tsx`                  | ✅       |
+| **Re-entry**                                          | `is_reentry` toggle                                                                         | ✅       |
+| **Add-on**                                            | `add_on_available`, `addon_cost`, `addon_chips`, `addon_levels` + `AddOnModal.tsx`          | ✅       |
+| **Bounty** (standard)                                 | `is_bounty`, `bounty_amount`                                                                | ✅       |
+| **PKO** (progressive bounty)                          | `is_pko`, type `'progressive_bounty'` (50% to knocker, 50% to head)                         | ✅       |
+| **Mystery Bounty**                                    | `is_mystery_bounty`, `mystery_bounty_min/max` + `MysteryBountyReveal.tsx`                   | ✅       |
+| **Multi-day MTT**                                     | `is_multi_day`, `total_days`, `day_number`                                                  | ✅ Bonus |
+| **X-MTT** (cross-table)                               | `is_xmtt` flag                                                                              | ✅ Bonus |
+| **Flighted**                                          | `flight_number` column                                                                      | ✅ Bonus |
+| **Hand-for-hand bubble play**                         | `HandForHandBanner.tsx`                                                                     | ✅       |
+| **Final table overlay**                               | `FinalTableOverlay.tsx`                                                                     | ✅       |
+| **Heads-up overlay**                                  | `HeadsUpOverlay.tsx`                                                                        | ✅       |
+| **Elimination overlay**                               | `EliminationOverlay.tsx`                                                                    | ✅       |
+| **Live chip counts**                                  | `LiveChipCounts.tsx`, `TournamentChipCount.tsx`                                             | ✅       |
+| **Tournament clock**                                  | `TournamentClock.tsx`, `BlindLevelProgress.tsx`, `BlindTimer.tsx`                           | ✅       |
+| **Blind-structure builder**                           | `BlindStructure.tsx`, `BlindStructureBuilder.tsx`                                           | ✅       |
+| **Payout structure + editor**                         | `PayoutStructure.tsx`, `PayoutStructureEditor.tsx`, `PayoutEngine.ts`                       | ✅       |
+| **Tournament standings**                              | `TournamentStandings.tsx`                                                                   | ✅       |
+| **Tournament stats dashboard**                        | `TournamentStatsDashboard.tsx`                                                              | ✅       |
+| **Tournament registration**                           | `TournamentRegistration.tsx`                                                                | ✅       |
+| **Hole-card reveal** (showdowns / ESPN-style)         | `HoleCardReveal.tsx`                                                                        | ✅       |
+| **Auto chip-race** (low-denom cleanup)                | `ChipRaceEngine.ts`                                                                         | ✅       |
+| **Table balancer** (move shortest table on bust)      | `TableBalancer.ts`                                                                          | ✅       |
+| **Table break** (consolidation as field shrinks)      | `TableBreakEngine.ts`                                                                       | ✅       |
 
 ## Coverage vs PokerBros spec
 
-| PokerBros spec row | Status |
-|---|---|
-| MTT | ✅ |
-| SNG | ✅ |
-| Spin-It (3-player hyper-turbo, random multiplier 2x-100x) | ✅ |
-| Starting stacks | ✅ |
-| Blind level duration | ✅ |
-| Antes | ✅ wired via `ante_enabled` (FIX 219) |
-| Late registration period | ✅ `late_reg_levels` + `late_reg_mins` |
-| Re-entry / rebuy | ✅ both supported |
-| Prize distribution | ✅ `payout_structure` + `PayoutEngine` |
+| PokerBros spec row                                        | Status                                 |
+| --------------------------------------------------------- | -------------------------------------- |
+| MTT                                                       | ✅                                     |
+| SNG                                                       | ✅                                     |
+| Spin-It (3-player hyper-turbo, random multiplier 2x-100x) | ✅                                     |
+| Starting stacks                                           | ✅                                     |
+| Blind level duration                                      | ✅                                     |
+| Antes                                                     | ✅ wired via `ante_enabled` (FIX 219)  |
+| Late registration period                                  | ✅ `late_reg_levels` + `late_reg_mins` |
+| Re-entry / rebuy                                          | ✅ both supported                      |
+| Prize distribution                                        | ✅ `payout_structure` + `PayoutEngine` |
 
 ## Areas that exceed PokerBros baseline
 
 The platform already has features PokerBros does not offer:
+
 - **Mystery Bounty** with min/max range + reveal animation.
 - **Multi-day MTT** with day numbers.
 - **X-MTT** (cross-table aggregations).

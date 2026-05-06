@@ -30,6 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/Smarter-Poker/Smarter-Poker-Club-Ar
 ```
 
 The script will:
+
 1. Verify docker / docker compose / git / caddy are installed
 2. Clone (or fast-forward) the club-arena + world-hub repos under `/opt/`
 3. Symlink stack config into `/opt/smarter-poker-monitoring/`
@@ -38,6 +39,7 @@ The script will:
 6. `docker compose up -d` and run health checks
 
 After first run, you still need two manual touches:
+
 - Edit `/opt/smarter-poker-monitoring/.env` with real credentials
 - Generate a basic-auth hash (`caddy hash-password --plaintext 'pw'`) and replace
   the two `REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT` placeholders in

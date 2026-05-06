@@ -248,7 +248,11 @@ export class TableBalancer {
 
   private emitEvent(event: TableBalancerEvent): void {
     if (this.onEvent) {
-      try { this.onEvent(event); } catch (err) { reportError(err, 'TableBalancer.eventHandler'); }
+      try {
+        this.onEvent(event);
+      } catch (err) {
+        reportError(err, 'TableBalancer.eventHandler');
+      }
     }
   }
 }

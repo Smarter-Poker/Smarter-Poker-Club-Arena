@@ -99,6 +99,7 @@ for (const t of staleTourneys || []) {
 ```
 
 Four changes:
+
 1. **Threshold: 2h → 12h.** Accommodates legitimate deep-stack MTTs. Still catches genuinely crashed tournaments.
 2. **Liveness check via hand_history.** Any tournament with a hand in the last hour is considered active and skipped.
 3. **`ended_at` now set** on every cancellation by this path.
@@ -106,20 +107,22 @@ Four changes:
 
 ## Deploy status
 
-| Layer | Status |
-|---|---|
-| SQL backfill (133 tournaments) | ✅ LIVE applied via Supabase MCP |
-| `server/src/index.ts` fix | ✅ committed to CA repo main |
+| Layer                           | Status                                                     |
+| ------------------------------- | ---------------------------------------------------------- |
+| SQL backfill (133 tournaments)  | ✅ LIVE applied via Supabase MCP                           |
+| `server/src/index.ts` fix       | ✅ committed to CA repo main                               |
 | Activation in production engine | ⏳ pending Hetzner redeploy (`./server/deploy-hetzner.sh`) |
 
 ## Verification plan
 
 Once the Hetzner engine picks up the new code:
+
 1. Create a test MTT, let it run past the 12h mark (or fake `created_at` to >12h ago).
 2. Ensure the engine doesn't cancel it as long as `hand_history` has rows in the last hour.
 3. Kill the engine cold, don't deal any hands for 1+ hour, restart engine. Confirm THAT tournament does get cancelled with `ended_at` set.
 
 Run the live query post-deploy:
+
 ```sql
 SELECT status, COUNT(*) FROM tournaments
 WHERE created_at > '<deploy-time>'

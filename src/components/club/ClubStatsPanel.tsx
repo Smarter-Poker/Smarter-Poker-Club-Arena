@@ -35,21 +35,21 @@ export const ClubStatsPanel: FC<ClubStatsPanelProps> = ({
       <div className="stats-overlay">
         <div className="stats-group members-group">
           <span className="stat-label">MEMBERS</span>
-          <span className={totalMembers !== null ? "stat-value" : "stat-value loading-pulse"}>
+          <span className={totalMembers !== null ? 'stat-value' : 'stat-value loading-pulse'}>
             {totalMembers !== null ? Math.max(1, totalMembers).toLocaleString() : '...'}
           </span>
         </div>
 
         <div className="stats-group level-group">
           <span className="stat-label">LEVEL</span>
-          <span className={clubLevel !== null ? "stat-value" : "stat-value loading-pulse"}>
+          <span className={clubLevel !== null ? 'stat-value' : 'stat-value loading-pulse'}>
             {clubLevel !== null ? Math.max(1, clubLevel) : '•'}
           </span>
         </div>
 
         <div className="stats-group active-group">
           <span className="stat-label">ACTIVE</span>
-          <span className={activePlayers !== null ? "stat-value" : "stat-value loading-pulse"}>
+          <span className={activePlayers !== null ? 'stat-value' : 'stat-value loading-pulse'}>
             {activePlayers !== null ? activePlayers.toLocaleString() : '...'}
           </span>
         </div>

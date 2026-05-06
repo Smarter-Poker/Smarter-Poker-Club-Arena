@@ -370,7 +370,6 @@ function HandReplay3DComponent({
     // Intentionally omit onReady — stored in onReadyRef to avoid scene rebuild
     // on inline-arrow identity change. active/seatCount/feltColor are the true
     // scene-rebuild triggers.
-     
   }, [active, seatCount, feltColor]);
 
   // Listen for replay step events from HandReplayEngine via MasterBus

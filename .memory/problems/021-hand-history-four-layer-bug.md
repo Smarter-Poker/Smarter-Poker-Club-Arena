@@ -28,6 +28,7 @@ Page used `filter: 'player_ids=cs.{${user.id}}'`. Column `player_ids` doesn't ex
 `hand_history` had ONLY a `service_role` SELECT policy. Authenticated users could never read rows, regardless of correct queries.
 
 **Fix:** added migration `20260416_bug_021_hand_history_authenticated_select.sql`:
+
 ```sql
 CREATE POLICY "hand_history_authenticated_select" ON public.hand_history
   FOR SELECT TO authenticated
@@ -35,6 +36,7 @@ CREATE POLICY "hand_history_authenticated_select" ON public.hand_history
     players @> jsonb_build_array(jsonb_build_object('userId', auth.uid()::text))
   );
 ```
+
 Applied LIVE via Supabase MCP.
 
 ## Layer D — Supabase JS serialization bug
@@ -48,14 +50,16 @@ After layers A/B/C, queries now reached PostgREST but errored:
 Supabase-JS `.contains('column', [{userId: x}])` serializes the JS array/object with unquoted keys, producing invalid JSON. The builder accepts strings verbatim though.
 
 **Fix:** pre-stringify explicitly:
+
 ```ts
 const containmentJson = JSON.stringify([{ userId }]);
-supabase.from('hand_history').contains('players', containmentJson)
+supabase.from('hand_history').contains('players', containmentJson);
 ```
 
 ## Live verification (cold-load, Law 11 §11.2)
 
 Fresh Chrome tab → `https://smarter.poker/hub/club-arena/hand-history?final=2026-04-16T00:34` →
+
 - Served bundle `index-DX1xPYhK-v6.js` (confirmed via head fetch)
 - Stats bar: **25 HANDS**, BIGGEST POT: **861.66**
 - 4+ hand rows visible with pot sizes, timestamps, player counts, Replay/Analyze/Share buttons

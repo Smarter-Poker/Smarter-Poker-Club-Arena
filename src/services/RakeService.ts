@@ -634,7 +634,10 @@ export const RakeService = {
               .eq('club_id', resolvedClubId)
               .eq('user_id', attr.userId);
             if (fallbackErr) {
-              reportError(fallbackErr, 'RakeService.distributeHandRake.allFailed', { userId: attr.userId, rakeCredit: attr.rakeCredit });
+              reportError(fallbackErr, 'RakeService.distributeHandRake.allFailed', {
+                userId: attr.userId,
+                rakeCredit: attr.rakeCredit,
+              });
             }
           }
         } catch (e: unknown) {

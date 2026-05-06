@@ -182,7 +182,6 @@ export const SettlementCronService = {
               },
             });
           } catch (err) {
-
             reportError(err, 'SettlementCronService.edgeFunctionAlert');
           }
 
@@ -266,10 +265,7 @@ export const SettlementCronService = {
       return { passed, totalCredits, totalDebits, difference };
     } catch (err: unknown) {
       // FAIL-CLOSED: Unexpected errors also block settlement
-      reportError(
-        err,
-        'SettlementCronService.canaryCheckError'
-      );
+      reportError(err, 'SettlementCronService.canaryCheckError');
       return { passed: false, totalCredits: 0, totalDebits: 0, difference: -1 };
     }
   },

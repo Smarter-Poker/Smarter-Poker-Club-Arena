@@ -32,7 +32,9 @@ describe('parseTableIdFromPath', () => {
 
   it('rejects path-traversal attempts', () => {
     expect(parseTableIdFromPath('/ws/table/../admin')).toBeNull();
-    expect(parseTableIdFromPath('/ws/table/6e1f8768-3baa-479e-b912-b8736123e840/../admin')).toBeNull();
+    expect(
+      parseTableIdFromPath('/ws/table/6e1f8768-3baa-479e-b912-b8736123e840/../admin')
+    ).toBeNull();
   });
 });
 

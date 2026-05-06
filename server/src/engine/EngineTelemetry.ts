@@ -61,8 +61,8 @@ interface HandTiming {
 }
 
 // Bible V8 §9.1 Performance Thresholds
-const ACTION_PROCESSING_THRESHOLD_MS = 50;   // §9.1.1: < 50ms server-side
-const BROADCAST_LATENCY_THRESHOLD_MS = 100;  // §9.1.2: < 100ms to all clients
+const ACTION_PROCESSING_THRESHOLD_MS = 50; // §9.1.1: < 50ms server-side
+const BROADCAST_LATENCY_THRESHOLD_MS = 100; // §9.1.2: < 100ms to all clients
 
 interface ActionTiming {
   tableId: string;
@@ -425,8 +425,12 @@ export class EngineTelemetry {
 
     lines.push('# HELP poker_threshold_violations_total SLA threshold violations');
     lines.push('# TYPE poker_threshold_violations_total counter');
-    lines.push(`poker_threshold_violations_total{type="action_processing"} ${perf.processingViolations}`);
-    lines.push(`poker_threshold_violations_total{type="broadcast_latency"} ${perf.broadcastViolations}`);
+    lines.push(
+      `poker_threshold_violations_total{type="action_processing"} ${perf.processingViolations}`
+    );
+    lines.push(
+      `poker_threshold_violations_total{type="broadcast_latency"} ${perf.broadcastViolations}`
+    );
 
     // Per-table metrics
     lines.push('# HELP poker_table_hands_dealt Hands dealt per table');
@@ -472,7 +476,11 @@ export class EngineTelemetry {
 
   private emitEvent(event: TelemetryEvent): void {
     if (this.onEvent) {
-      try { this.onEvent(event); } catch (err) { reportError(err, 'EngineTelemetry.eventHandler'); }
+      try {
+        this.onEvent(event);
+      } catch (err) {
+        reportError(err, 'EngineTelemetry.eventHandler');
+      }
     }
   }
 }

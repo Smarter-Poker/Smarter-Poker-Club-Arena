@@ -165,33 +165,36 @@ export function CashierModal({
   }, [amount, activeTab, canAddAmount, canWithdrawAmount]);
 
   // ── Focus Trap: trap focus inside modal when open ──
-  const handleFocusTrap = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-      return;
-    }
-    if (e.key !== 'Tab' || !modalRef.current) return;
-
-    const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    );
-    if (focusable.length === 0) return;
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-
-    if (e.shiftKey) {
-      if (document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
+  const handleFocusTrap = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
       }
-    } else {
-      if (document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
+      if (e.key !== 'Tab' || !modalRef.current) return;
+
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
-    }
-  }, [onClose]);
+    },
+    [onClose]
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -223,7 +226,9 @@ export function CashierModal({
             ? cashierTabs[(idx + 1) % cashierTabs.length]
             : cashierTabs[(idx - 1 + cashierTabs.length) % cashierTabs.length];
         handleTabChange(next);
-        const btn = document.querySelector(`[aria-controls="table-cashier-panel-${next}"]`) as HTMLElement;
+        const btn = document.querySelector(
+          `[aria-controls="table-cashier-panel-${next}"]`
+        ) as HTMLElement;
         btn?.focus();
       }
     },
@@ -233,11 +238,19 @@ export function CashierModal({
   if (!isOpen) return null;
 
   return (
-    <div className="cashier-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="table-cashier-title">
+    <div
+      className="cashier-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="table-cashier-title"
+    >
       <div className="cashier-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="cashier-modal__header">
-          <h2 id="table-cashier-title" className="cashier-modal__title">Cashier</h2>
+          <h2 id="table-cashier-title" className="cashier-modal__title">
+            Cashier
+          </h2>
           <button className="cashier-modal__close" onClick={onClose}>
             ×
           </button>
@@ -260,7 +273,12 @@ export function CashierModal({
         </div>
 
         {/* Tabs */}
-        <div className="cashier-modal__tabs" role="tablist" aria-label="Cashier actions" onKeyDown={handleTabKeyDown}>
+        <div
+          className="cashier-modal__tabs"
+          role="tablist"
+          aria-label="Cashier actions"
+          onKeyDown={handleTabKeyDown}
+        >
           <button
             role="tab"
             tabIndex={activeTab === 'add' ? 0 : -1}
@@ -286,7 +304,12 @@ export function CashierModal({
         </div>
 
         {/* Amount Input */}
-        <div className="cashier-modal__input-section" id={`table-cashier-panel-${activeTab}`} role="tabpanel" aria-labelledby={`table-cashier-tab-${activeTab}`}>
+        <div
+          className="cashier-modal__input-section"
+          id={`table-cashier-panel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`table-cashier-tab-${activeTab}`}
+        >
           <div className="cashier-modal__input-wrapper">
             <span className="cashier-modal__currency">{currency}</span>
             <input

@@ -25,9 +25,9 @@ interface ChipDenom {
 }
 
 const DENOMINATIONS: ChipDenom[] = [
-  { value: 1, color: '#e0e0e0', accent: '#ababab', label: '1' },     // White
-  { value: 5, color: '#ef4444', accent: '#b91c1c', label: '5' },     // Red
-  { value: 25, color: '#22c55e', accent: '#15803d', label: '25' },   // Green
+  { value: 1, color: '#e0e0e0', accent: '#ababab', label: '1' }, // White
+  { value: 5, color: '#ef4444', accent: '#b91c1c', label: '5' }, // Red
+  { value: 25, color: '#22c55e', accent: '#15803d', label: '25' }, // Green
   { value: 100, color: '#1a1a2e', accent: '#374151', label: '100' }, // Black
   { value: 500, color: '#7c3aed', accent: '#5b21b6', label: '500' }, // Violet
   { value: 1000, color: '#f97316', accent: '#ea580c', label: '1K' }, // Orange
@@ -124,9 +124,7 @@ export function ChipPhysics({
   }
 
   return (
-    <div
-      className={`chip-physics ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
-    >
+    <div className={`chip-physics ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}>
       {/* Full chip stacks — only used for pot display, not per-player bets */}
       <div className="cp-stacks">
         {breakdown.map(({ denom, count }, groupIdx) => (

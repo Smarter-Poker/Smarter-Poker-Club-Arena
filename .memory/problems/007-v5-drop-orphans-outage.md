@@ -7,6 +7,7 @@
 ## What broke
 
 The v5 bundle push via the GitHub Contents API ran a "drop orphans" pass:
+
 ```js
 for (const it of cur.tree) {
   if (it.type !== 'blob') continue;
@@ -34,6 +35,7 @@ for (const it of cur.tree) {
 ## Code change
 
 `vite.config.ts`:
+
 ```ts
 rollupOptions: {
   output: {
@@ -57,9 +59,9 @@ Bump `-v6` → `-v7` on any future emergency cache-bust.
 
 ## Commit ladder
 
-| Repo | Commit | Purpose |
-|---|---|---|
-| WH | `2fa7c88e` | v5 ship that broke (class-collision fix + accidental drop) |
-| WH | `b01aed56` | HOTFIX: restored deleted vendor-supabase + 2 other chunks |
-| WH | `c25085fc` | v6 cache-bust: every chunk renamed with `-v6` suffix |
-| CA | `c25085fc` source side | vite.config.ts entry/chunk/asset name change + main.tsx cache-bust token |
+| Repo | Commit                 | Purpose                                                                  |
+| ---- | ---------------------- | ------------------------------------------------------------------------ |
+| WH   | `2fa7c88e`             | v5 ship that broke (class-collision fix + accidental drop)               |
+| WH   | `b01aed56`             | HOTFIX: restored deleted vendor-supabase + 2 other chunks                |
+| WH   | `c25085fc`             | v6 cache-bust: every chunk renamed with `-v6` suffix                     |
+| CA   | `c25085fc` source side | vite.config.ts entry/chunk/asset name change + main.tsx cache-bust token |

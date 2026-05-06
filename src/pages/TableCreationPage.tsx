@@ -18,14 +18,7 @@ const sectionAnimationStyle = (index: number) => ({
 });
 
 // FIX 116: 9 approved variants only
-type GameType =
-  | 'nlh'
-  | 'plo4'
-  | 'plo5'
-  | 'plo6'
-  | 'plo8'
-  | 'pineapple'
-  | 'short_deck';
+type GameType = 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'pineapple' | 'short_deck';
 
 interface TableSettings {
   name: string;

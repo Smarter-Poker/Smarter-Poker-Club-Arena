@@ -59,8 +59,6 @@ export interface PlayerAvatarProps {
   className?: string;
 }
 
-
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // POKER CHIP SVG (for "Playing Now" indicator)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -128,8 +126,6 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
     >
       {/* VIP Status Ring (outermost glow) */}
       {showVipRing && vipTier !== 'bronze' && <div className={`vip-status-ring tier-${vipTier}`} />}
-
-
 
       {/* Avatar Image/Initials */}
       <div className="player-avatar-image">

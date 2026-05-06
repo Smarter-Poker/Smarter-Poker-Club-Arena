@@ -18,6 +18,7 @@ Step 7: TOURNAMENT & EXTRAS
 Step 8: TABLE SETTINGS & THEME CUSTOMIZATION
 
 VERIFIED AREAS (Round 19):
+
 - §7.1 All-in equity / side pots ✅
 - §7.2 Run It Twice (2-run + 3-run) ✅
 - §7.3 Insurance (per-street, leader-only) ✅
@@ -37,6 +38,7 @@ VERIFIED AREAS (Round 19):
 - §7.20 Mixed game rotation ✅ (not wired, Phase 8+)
 
 KNOWN GAPS:
+
 - MixedGameEngine ported but not wired (Phase 8+)
 - No mid-hand resume from crash (chips conserved via DB)
 - Leaderboards/achievements/VIP not in server (Phase 7+)

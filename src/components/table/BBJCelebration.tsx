@@ -147,7 +147,7 @@ export function BBJCelebration({
       clearTimeout(t4);
       clearInterval(counterInterval);
     };
-  }, [visible, totalPayout]);  
+  }, [visible, totalPayout]);
   // ↑ onComplete accessed via onCompleteRef to prevent timer reset on parent re-render
 
   // ── Spawn particles ──

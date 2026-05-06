@@ -165,10 +165,8 @@ class DeadlineHeap {
       const left = i * 2 + 1;
       const right = i * 2 + 2;
       let smallest = i;
-      if (left < n && this.arr[left].deadlineMs < this.arr[smallest].deadlineMs)
-        smallest = left;
-      if (right < n && this.arr[right].deadlineMs < this.arr[smallest].deadlineMs)
-        smallest = right;
+      if (left < n && this.arr[left].deadlineMs < this.arr[smallest].deadlineMs) smallest = left;
+      if (right < n && this.arr[right].deadlineMs < this.arr[smallest].deadlineMs) smallest = right;
       if (smallest === i) break;
       [this.arr[smallest], this.arr[i]] = [this.arr[i], this.arr[smallest]];
       i = smallest;

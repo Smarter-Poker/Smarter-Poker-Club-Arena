@@ -10,12 +10,12 @@
 
 Phase D-2 #1 live SQL verification (per-hand equal-share rake) found:
 
-| Table | Rows in last 7 days | Total tracked |
-|---|---|---|
-| `rake_history` (table-level) | 6,869 | $30,136.94 |
-| `rake_records` (per-player JSONB) | 0 (table empty) | — |
-| `rakeback_periods` (per-player accumulator) | 0 | — |
-| `rakeback_distributions` (per-player payout) | 0 | — |
+| Table                                        | Rows in last 7 days | Total tracked |
+| -------------------------------------------- | ------------------- | ------------- |
+| `rake_history` (table-level)                 | 6,869               | $30,136.94    |
+| `rake_records` (per-player JSONB)            | 0 (table empty)     | —             |
+| `rakeback_periods` (per-player accumulator)  | 0                   | —             |
+| `rakeback_distributions` (per-player payout) | 0                   | —             |
 
 Engine was actively recording rake at the table level (most recent insert: 30 seconds before the audit) but the per-player split was never being persisted anywhere durable.
 
@@ -69,6 +69,7 @@ Wired into `server/src/index.ts` startup (Step 5b) and shutdown.
 ## DECISION D-001 / FIX 144 — STILL HOLDS
 
 Equal-share method is preserved end-to-end:
+
 - Engine: `equalShare = totalRake / playerCount` per dealt-in player
 - Durable write: `player_contributions` JSONB captures per-player contribution (used only to identify dealt-in players, not to weight)
 - Settler: re-derives `equalShare = rake_amount / dealtInCount` from the JSONB

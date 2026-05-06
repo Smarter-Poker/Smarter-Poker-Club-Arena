@@ -7,19 +7,19 @@
 
 ## Code coverage — every PokerBros variant has end-to-end wiring
 
-| Variant | DB enum | Engine evaluator | Lobby/CreateTable UI | Notes |
-|---|---|---|---|---|
-| NLH (Texas Hold'em) | `'nlh'` | `evaluateHand` | ✅ default | Live + verified across hundreds of hands. |
-| PLO 4-Card | `'plo4'` | `evaluateOmahaHand` | ✅ `CreateTableModal.tsx:20` + `TableCreationPage.tsx:48` | 4 hole + must use exactly 2. Pot-limit max bet enforced via `calculateBettingState.maxRaise`. |
-| PLO 5-Card | `'plo5'` | `evaluateOmahaHand` (5-card variant) | ✅ `:21` + `:56` | `getCardsPerPlayer` returns 5. |
-| PLO 6-Card | `'plo6'` | `evaluateOmahaHand` (6-card variant) | ✅ `:22` + `:64` | `getCardsPerPlayer` returns 6. |
-| PLO 8 (Hi-Lo) | `'plo8'` | `evaluateOmahaHand` + `evaluateOmahaLowHand` | ✅ `:23` + `:72` | Pot split between high + qualifying low; `determineWinners:580` branches on `isHiLo`. |
-| Short Deck (Hold'em 6+) | `'short_deck'` | `evaluateHand` w/ `isShortDeck=true` | ✅ `:24` + `:88` | Flush beats full house, A-6-7-8-9 = wheel; deck-prep removes 2-5 before shuffle. |
-| Pineapple (Crazy Pineapple) | `'pineapple'` | `evaluateHand` (3 hole pre-discard, 2 hole post-discard) | ✅ `:80` | `HandStage` includes `'pineapple_discard'`; `PINEAPPLE_DISCARD_REQUIRED` event emitted to client. |
-| OFC | `'ofc'` | `OFCDealingOrchestrator` + `OFCPineappleEngine` | ✅ `:104` | Open-face Chinese: 5/5/3 split rows. |
-| OFC Pineapple | `'ofc_pineapple'` | Same | ✅ | OFC variant with 3-card draws and discards. |
-| Bomb Pot (modifier, not variant) | `bomb_pot.frequency > 0` | `HandController.postBombPotAntes` + `start()` | ✅ Toggle + frequency configurable | Skips preflop, deals to flop. |
-| Double Board (modifier) | `double_board: true` setting | Re-uses `RunItTwiceEngine` 2-board path | ✅ | Two boards run simultaneously; pot split by board winner. |
+| Variant                          | DB enum                      | Engine evaluator                                         | Lobby/CreateTable UI                                      | Notes                                                                                             |
+| -------------------------------- | ---------------------------- | -------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| NLH (Texas Hold'em)              | `'nlh'`                      | `evaluateHand`                                           | ✅ default                                                | Live + verified across hundreds of hands.                                                         |
+| PLO 4-Card                       | `'plo4'`                     | `evaluateOmahaHand`                                      | ✅ `CreateTableModal.tsx:20` + `TableCreationPage.tsx:48` | 4 hole + must use exactly 2. Pot-limit max bet enforced via `calculateBettingState.maxRaise`.     |
+| PLO 5-Card                       | `'plo5'`                     | `evaluateOmahaHand` (5-card variant)                     | ✅ `:21` + `:56`                                          | `getCardsPerPlayer` returns 5.                                                                    |
+| PLO 6-Card                       | `'plo6'`                     | `evaluateOmahaHand` (6-card variant)                     | ✅ `:22` + `:64`                                          | `getCardsPerPlayer` returns 6.                                                                    |
+| PLO 8 (Hi-Lo)                    | `'plo8'`                     | `evaluateOmahaHand` + `evaluateOmahaLowHand`             | ✅ `:23` + `:72`                                          | Pot split between high + qualifying low; `determineWinners:580` branches on `isHiLo`.             |
+| Short Deck (Hold'em 6+)          | `'short_deck'`               | `evaluateHand` w/ `isShortDeck=true`                     | ✅ `:24` + `:88`                                          | Flush beats full house, A-6-7-8-9 = wheel; deck-prep removes 2-5 before shuffle.                  |
+| Pineapple (Crazy Pineapple)      | `'pineapple'`                | `evaluateHand` (3 hole pre-discard, 2 hole post-discard) | ✅ `:80`                                                  | `HandStage` includes `'pineapple_discard'`; `PINEAPPLE_DISCARD_REQUIRED` event emitted to client. |
+| OFC                              | `'ofc'`                      | `OFCDealingOrchestrator` + `OFCPineappleEngine`          | ✅ `:104`                                                 | Open-face Chinese: 5/5/3 split rows.                                                              |
+| OFC Pineapple                    | `'ofc_pineapple'`            | Same                                                     | ✅                                                        | OFC variant with 3-card draws and discards.                                                       |
+| Bomb Pot (modifier, not variant) | `bomb_pot.frequency > 0`     | `HandController.postBombPotAntes` + `start()`            | ✅ Toggle + frequency configurable                        | Skips preflop, deals to flop.                                                                     |
+| Double Board (modifier)          | `double_board: true` setting | Re-uses `RunItTwiceEngine` 2-board path                  | ✅                                                        | Two boards run simultaneously; pot split by board winner.                                         |
 
 ## Source files inventory
 

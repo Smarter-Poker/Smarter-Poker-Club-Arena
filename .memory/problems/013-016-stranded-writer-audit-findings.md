@@ -57,12 +57,12 @@ SELECT target, EXISTS(...) AS exists FROM (VALUES
 
 ## Status after all four fixes
 
-| Fix | Type | Mechanism | Applied live |
-|---|---|---|---|
-| BUG 013 | code | both union_transactions writes → union_wallet_transactions | pending deploy |
-| BUG 014 | schema | CREATE TABLE bbj_payouts + bbj_payout_recipients | ✅ yes |
-| BUG 015 | schema | CREATE TABLE tournament_bounties + UK + RLS | ✅ yes |
-| BUG 016 | code | removed dead club_wallets probe, atomic clubs.chip_pool | pending deploy |
+| Fix     | Type   | Mechanism                                                  | Applied live   |
+| ------- | ------ | ---------------------------------------------------------- | -------------- |
+| BUG 013 | code   | both union_transactions writes → union_wallet_transactions | pending deploy |
+| BUG 014 | schema | CREATE TABLE bbj_payouts + bbj_payout_recipients           | ✅ yes         |
+| BUG 015 | schema | CREATE TABLE tournament_bounties + UK + RLS                | ✅ yes         |
+| BUG 016 | code   | removed dead club_wallets probe, atomic clubs.chip_pool    | pending deploy |
 
 ## Related
 

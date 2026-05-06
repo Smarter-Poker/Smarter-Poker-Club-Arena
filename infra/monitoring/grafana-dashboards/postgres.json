@@ -21,9 +21,7 @@
       "title": "Replication lag (seconds)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "targets": [
-        { "expr": "pg_replication_lag_seconds", "legendFormat": "{{ instance }}" }
-      ],
+      "targets": [{ "expr": "pg_replication_lag_seconds", "legendFormat": "{{ instance }}" }],
       "fieldConfig": { "defaults": { "unit": "s" } }
     },
     {

@@ -48,7 +48,10 @@ export function secureRandomInt(exclusiveMax: number): number {
   // Fallback: Math.random() (non-crypto, log warning once)
   if (!_warnedFallback) {
     _warnedFallback = true;
-    reportError(new Error('[CryptoRandom] No crypto API available — falling back to Math.random()'), 'CryptoRandom.No_crypto_API_available__falli');
+    reportError(
+      new Error('[CryptoRandom] No crypto API available — falling back to Math.random()'),
+      'CryptoRandom.No_crypto_API_available__falli'
+    );
   }
   return Math.floor(Math.random() * exclusiveMax);
 }

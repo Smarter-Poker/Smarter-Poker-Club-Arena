@@ -403,7 +403,10 @@ export const LeaderboardService = {
         total: allStats.length,
       };
     } catch (err: unknown) {
-      reportError(err instanceof Error ? err.message : String(err), 'LeaderboardService.LeaderboardServicegetUserRank_error');
+      reportError(
+        err instanceof Error ? err.message : String(err),
+        'LeaderboardService.LeaderboardServicegetUserRank_error'
+      );
       return null;
     }
   },

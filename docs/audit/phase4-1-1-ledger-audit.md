@@ -17,13 +17,13 @@ Every balance mutation on these tables/columns must go through an atomic Postgre
 
 The launch plan referenced four RPC names; the live DB uses equivalent, better-named functions:
 
-| Plan name                      | Actual RPC in prod DB                                  | Signature                                                    |
-|--------------------------------|--------------------------------------------------------|--------------------------------------------------------------|
-| `increment_player_wallet`      | `atomic_credit_wallet_and_log` / `atomic_deduct_wallet_and_log` / `atomic_wallet_transfer` | `(p_user_id, p_amount, p_category, p_description, ...)` |
-|                                | (legacy) `credit_player_wallet`, `deduct_player_wallet`, `add_to_player_wallet` | `(p_user_id uuid, p_amount numeric)` |
-| `increment_club_wallet`        | `increment_club_chip_pool`                             | `(p_club_id uuid, p_amount numeric)`                         |
-| `increment_club_chip_pool`     | `increment_club_chip_pool`                             | same                                                         |
-| `increment_union_wallet`       | `fn_union_credit_wallet` / `fn_union_debit_wallet` / `increment_union_chip_balance` | `(p_union_id, p_wallet, p_amount, p_tx_type, ...)` |
+| Plan name                  | Actual RPC in prod DB                                                                      | Signature                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| `increment_player_wallet`  | `atomic_credit_wallet_and_log` / `atomic_deduct_wallet_and_log` / `atomic_wallet_transfer` | `(p_user_id, p_amount, p_category, p_description, ...)` |
+|                            | (legacy) `credit_player_wallet`, `deduct_player_wallet`, `add_to_player_wallet`            | `(p_user_id uuid, p_amount numeric)`                    |
+| `increment_club_wallet`    | `increment_club_chip_pool`                                                                 | `(p_club_id uuid, p_amount numeric)`                    |
+| `increment_club_chip_pool` | `increment_club_chip_pool`                                                                 | same                                                    |
+| `increment_union_wallet`   | `fn_union_credit_wallet` / `fn_union_debit_wallet` / `increment_union_chip_balance`        | `(p_union_id, p_wallet, p_amount, p_tx_type, ...)`      |
 
 Rake & ancillary counters also have dedicated RPCs:
 `increment_club_rake`, `increment_union_rake`, `increment_agent_rake`, `increment_rake_generated`.
@@ -51,7 +51,7 @@ None of these touch `clubs.chip_pool` or any balance-bearing column. ✅ No viol
 
 **WH source (`src/**`, `pages/api/**`):** Zero matches for `.from('wallets').update(...)`.
 
-**CA source (`src/**` and `server/src/**`):** Zero matches for `.from('wallets').update(...)`.
+**CA source (`src/**`and`server/src/**`):** Zero matches for `.from('wallets').update(...)`.
 
 **Raw `UPDATE wallets` in .sql files:** All occurrences inside `supabase/migrations/*.sql` files that DEFINE the atomic RPCs (`20260313_fix_wallet_tx_consistency.sql`, `20260313_atomic_horse_seating.sql`, `20260313_mass_fund_horses.sql`). These are the function bodies — legitimate.
 

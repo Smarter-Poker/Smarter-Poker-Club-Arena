@@ -39,6 +39,7 @@ unrecorded at the DB level.
 ## Stubs confirmed and fixed
 
 All had identical bodies of the shape:
+
 ```sql
 BEGIN RETURN jsonb_build_object('success', true); END;
 -- or
@@ -47,71 +48,71 @@ BEGIN NULL; END;
 
 ### Treasury & balance (most critical)
 
-| RPC | Callers | Was doing |
-|---|---|---|
-| `fn_credit_treasury(club_id, amount, reason, metadata)` | rake settlements, union rakeback cron, auto-settlement, rakeback API, union-wallet API, manage-agent, leave-club | nothing |
-| `fn_debit_treasury(club_id, amount, reason, metadata)` | tournament overlay debit, settle-period payout, rakeback, auto-settlement | nothing |
-| `fn_credit_chips(club_id, user_id, amount, reason, metadata)` | auto-settlement-distribute cron, manage-agent, rakeback, union BBJ payouts | nothing |
-| `fn_debit_chips(club_id, user_id, amount, reason, metadata)` | auto-settlement-distribute cron, manage-agent | nothing |
-| `fn_union_credit_wallet(union_id, wallet, amount, ...)` | union-rakeback cron, union-wallet API (×3) | nothing |
-| `fn_union_debit_wallet(union_id, wallet, amount, ...)` | union-rakeback cron, union-wallet API (×2 + BBJ) | nothing |
-| `lock_chips_for_table(club_id, user_id, table_id, amount)` | ChipBridge.lockChips (tournament buy-ins), table-chips API | returning `{success, locked}` without locking anything |
-| `unlock_chips_from_table(club_id, user_id, table_id, amount)` | ChipBridge.unlockChips, GameController, tournaments, tournament-cron, union-games, table-chips | returning `{success, unlocked}` without refunding |
+| RPC                                                           | Callers                                                                                                          | Was doing                                              |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `fn_credit_treasury(club_id, amount, reason, metadata)`       | rake settlements, union rakeback cron, auto-settlement, rakeback API, union-wallet API, manage-agent, leave-club | nothing                                                |
+| `fn_debit_treasury(club_id, amount, reason, metadata)`        | tournament overlay debit, settle-period payout, rakeback, auto-settlement                                        | nothing                                                |
+| `fn_credit_chips(club_id, user_id, amount, reason, metadata)` | auto-settlement-distribute cron, manage-agent, rakeback, union BBJ payouts                                       | nothing                                                |
+| `fn_debit_chips(club_id, user_id, amount, reason, metadata)`  | auto-settlement-distribute cron, manage-agent                                                                    | nothing                                                |
+| `fn_union_credit_wallet(union_id, wallet, amount, ...)`       | union-rakeback cron, union-wallet API (×3)                                                                       | nothing                                                |
+| `fn_union_debit_wallet(union_id, wallet, amount, ...)`        | union-rakeback cron, union-wallet API (×2 + BBJ)                                                                 | nothing                                                |
+| `lock_chips_for_table(club_id, user_id, table_id, amount)`    | ChipBridge.lockChips (tournament buy-ins), table-chips API                                                       | returning `{success, locked}` without locking anything |
+| `unlock_chips_from_table(club_id, user_id, table_id, amount)` | ChipBridge.unlockChips, GameController, tournaments, tournament-cron, union-games, table-chips                   | returning `{success, unlocked}` without refunding      |
 
 ### Cashout
 
-| RPC | Callers | Was doing |
-|---|---|---|
-| `fn_request_cashout` | CashoutService (client) | returning fake UUID without inserting or debiting escrow |
-| `fn_approve_cashout_atomic` | approve-cashout API | returning success without updating status or crediting treasury |
-| `fn_cancel_cashout_atomic` | approve-cashout API, cancel-my-cashout API | returning success without refunding player from escrow |
+| RPC                         | Callers                                    | Was doing                                                       |
+| --------------------------- | ------------------------------------------ | --------------------------------------------------------------- |
+| `fn_request_cashout`        | CashoutService (client)                    | returning fake UUID without inserting or debiting escrow        |
+| `fn_approve_cashout_atomic` | approve-cashout API                        | returning success without updating status or crediting treasury |
+| `fn_cancel_cashout_atomic`  | approve-cashout API, cancel-my-cashout API | returning success without refunding player from escrow          |
 
 ### Tournament
 
-| RPC | Callers | Was doing |
-|---|---|---|
-| `fn_tournament_atomic_register` | tournaments API registration handler | returning success without creating `tournament_registrations` row or debiting chips |
-| `fn_tournament_unregister_counter` | tournaments API unregister handler | returning success without decrementing counter or prize pool |
+| RPC                                | Callers                              | Was doing                                                                           |
+| ---------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------- |
+| `fn_tournament_atomic_register`    | tournaments API registration handler | returning success without creating `tournament_registrations` row or debiting chips |
+| `fn_tournament_unregister_counter` | tournaments API unregister handler   | returning success without decrementing counter or prize pool                        |
 
 ### Agent / promo / transfer
 
-| RPC | Callers | Was doing |
-|---|---|---|
-| `distribute_chips` | AgentService (client) | returning success without debiting treasury or crediting member |
-| `mint_club_chips` | WalletService (client) + AdminDashboardPage | returning success without crediting chip_pool (plus param-name mismatch bug on both client sites) |
-| `mint_club_promo` | promo-wallet API | returning success without crediting promo_balance |
-| `transfer_chips_agent_to_player` | distribute-chips API | returning success without moving chips |
-| `transfer_promo_club_to_agent` | promo-wallet API | returning success without transferring |
-| `transfer_promo_agent_to_player` | distribute-chips + distribute-promo APIs | returning success without transferring |
-| `fn_transfer_chips` | (any future caller) | returning success without transferring |
-| `fn_pay_commission_atomic` | commission payout flow | returning success without paying |
-| `fn_add_prepaid_credit_atomic` | agent-credit API | returning success without adding credit line |
+| RPC                              | Callers                                     | Was doing                                                                                         |
+| -------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `distribute_chips`               | AgentService (client)                       | returning success without debiting treasury or crediting member                                   |
+| `mint_club_chips`                | WalletService (client) + AdminDashboardPage | returning success without crediting chip_pool (plus param-name mismatch bug on both client sites) |
+| `mint_club_promo`                | promo-wallet API                            | returning success without crediting promo_balance                                                 |
+| `transfer_chips_agent_to_player` | distribute-chips API                        | returning success without moving chips                                                            |
+| `transfer_promo_club_to_agent`   | promo-wallet API                            | returning success without transferring                                                            |
+| `transfer_promo_agent_to_player` | distribute-chips + distribute-promo APIs    | returning success without transferring                                                            |
+| `fn_transfer_chips`              | (any future caller)                         | returning success without transferring                                                            |
+| `fn_pay_commission_atomic`       | commission payout flow                      | returning success without paying                                                                  |
+| `fn_add_prepaid_credit_atomic`   | agent-credit API                            | returning success without adding credit line                                                      |
 
 ### Messenger
 
-| RPC | Callers | Was doing |
-|---|---|---|
-| `fn_send_message` | messenger.js (×2), services/MessagingService.js, social-media, home-games/message-host, request-cashout notification | returning `gen_random_uuid()` as fake message_id without inserting the row |
-| `fn_mark_messages_read` | services/MessagingService.js | nothing |
-| `fn_delete_message` | messenger.js (×2) | nothing |
-| `fn_toggle_message_reaction` | client MessagingService | returning success without toggling anything (also no `message_reactions` table existed) |
-| `fn_complete_media_upload` | MediaUploadService | nothing |
+| RPC                          | Callers                                                                                                              | Was doing                                                                               |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `fn_send_message`            | messenger.js (×2), services/MessagingService.js, social-media, home-games/message-host, request-cashout notification | returning `gen_random_uuid()` as fake message_id without inserting the row              |
+| `fn_mark_messages_read`      | services/MessagingService.js                                                                                         | nothing                                                                                 |
+| `fn_delete_message`          | messenger.js (×2)                                                                                                    | nothing                                                                                 |
+| `fn_toggle_message_reaction` | client MessagingService                                                                                              | returning success without toggling anything (also no `message_reactions` table existed) |
+| `fn_complete_media_upload`   | MediaUploadService                                                                                                   | nothing                                                                                 |
 
 ### Misc
 
-| RPC | Callers | Was doing |
-|---|---|---|
-| `fn_leave_club_atomic` | (expected: leave-club flow) | returning success without removing membership |
-| `mass_fund_horses` | horse-launch API | returning success without funding horses |
-| `close_table_session` | anti-cheat API | returning success without closing session |
-| `publish_scheduled_content` | ContentScheduler cron | returning success without publishing anything |
-| `complete_daily_challenge` | DailyChallengeService | returning success without inserting completion or awarding diamonds |
+| RPC                         | Callers                     | Was doing                                                           |
+| --------------------------- | --------------------------- | ------------------------------------------------------------------- |
+| `fn_leave_club_atomic`      | (expected: leave-club flow) | returning success without removing membership                       |
+| `mass_fund_horses`          | horse-launch API            | returning success without funding horses                            |
+| `close_table_session`       | anti-cheat API              | returning success without closing session                           |
+| `publish_scheduled_content` | ContentScheduler cron       | returning success without publishing anything                       |
+| `complete_daily_challenge`  | DailyChallengeService       | returning success without inserting completion or awarding diamonds |
 
 ### Shadowing overloads dropped
 
-| RPC | Why dropped |
-|---|---|
-| `award_bbj(club_id, winner_id, amount)` | 3-param stub shadowing the real 18-param function |
+| RPC                                     | Why dropped                                            |
+| --------------------------------------- | ------------------------------------------------------ |
+| `award_bbj(club_id, winner_id, amount)` | 3-param stub shadowing the real 18-param function      |
 | `claim_reward(user_id, reward_id uuid)` | 2-param stub shadowing the real 3-param implementation |
 
 ## Root cause
@@ -188,6 +189,7 @@ All should show non-zero under real organic traffic.
 ## Impact
 
 Before fix:
+
 - ~3 weeks of rake accumulation never credited to `clubs.chip_treasury`
 - Agent commissions marked paid but no chips moved
 - Tournament buy-ins debited via direct `atomic_table_buyin` path OR not at all
@@ -199,6 +201,7 @@ Before fix:
   diamond ledger or completion row
 
 After fix:
+
 - All RPCs now do the real atomic work with proper FOR UPDATE locking and
   audit rows
 - `chip_transactions` / `union_wallet_transactions` / `messages` / `tournament_registrations`

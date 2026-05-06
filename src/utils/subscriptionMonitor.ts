@@ -51,8 +51,13 @@ class SubscriptionMonitor {
 
     // Log if at max
     if (this.subscriptions.size >= SUBSCRIPTION_MAX) {
-      reportError(new Error(`[SubscriptionMonitor] Max subscriptions (${SUBSCRIPTION_MAX}) reached! ` +
-          `Current: ${this.subscriptions.size}. This may cause memory leaks.`), 'subscriptionMonitor.SubscriptionMonitor_Max_subscriptions_SU');
+      reportError(
+        new Error(
+          `[SubscriptionMonitor] Max subscriptions (${SUBSCRIPTION_MAX}) reached! ` +
+            `Current: ${this.subscriptions.size}. This may cause memory leaks.`
+        ),
+        'subscriptionMonitor.SubscriptionMonitor_Max_subscriptions_SU'
+      );
     }
   }
 

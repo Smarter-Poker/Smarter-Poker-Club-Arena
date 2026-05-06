@@ -52,7 +52,10 @@ class TournamentTimerServiceClass {
    */
   startTimer(tournamentId: string): void {
     if (this.activeTimers.has(tournamentId)) {
-      reportError(new Error(`[TournamentTimer] Timer already running for ${tournamentId}`), 'TournamentTimerService.Timer_already_running_for_tournamentId');
+      reportError(
+        new Error(`[TournamentTimer] Timer already running for ${tournamentId}`),
+        'TournamentTimerService.Timer_already_running_for_tournamentId'
+      );
       return;
     }
 

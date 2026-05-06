@@ -148,7 +148,7 @@ const TABLE_TRANSITIONS: StateTransition<TableStatus>[] = [
   { from: 'closing', to: 'closed' },
   { from: 'waiting', to: 'closing' },
   { from: 'empty', to: 'closing' },
-  { from: 'waiting', to: 'empty' },  // last player leaves
+  { from: 'waiting', to: 'empty' }, // last player leaves
   { from: 'seating', to: 'waiting' }, // player leaves during seating
 ];
 
@@ -190,7 +190,7 @@ const HAND_TRANSITIONS: StateTransition<HandFSMState>[] = [
   { from: 'dealing', to: 'preflop' },
   { from: 'preflop', to: 'flop' },
   { from: 'flop', to: 'pineapple_discard' }, // Pineapple variant
-  { from: 'flop', to: 'turn' },              // Normal variants
+  { from: 'flop', to: 'turn' }, // Normal variants
   { from: 'pineapple_discard', to: 'turn' },
   { from: 'turn', to: 'river' },
   { from: 'river', to: 'showdown' },
@@ -340,7 +340,7 @@ export type PreActionFSMState =
 const PRE_ACTION_TRANSITIONS: StateTransition<PreActionFSMState>[] = [
   { from: 'idle', to: 'queued' },
   { from: 'queued', to: 'validating' },
-  { from: 'queued', to: 'idle' },         // cleared by player or new hand
+  { from: 'queued', to: 'idle' }, // cleared by player or new hand
   { from: 'validating', to: 'executing' },
   { from: 'validating', to: 'invalidated' },
   { from: 'executing', to: 'executed' },
@@ -385,7 +385,7 @@ export type RecoveryFSMState =
 const RECOVERY_TRANSITIONS: StateTransition<RecoveryFSMState>[] = [
   { from: 'healthy', to: 'desync_detected' },
   { from: 'desync_detected', to: 'resync_required' },
-  { from: 'desync_detected', to: 'healthy' },    // transient — resolved itself
+  { from: 'desync_detected', to: 'healthy' }, // transient — resolved itself
   { from: 'resync_required', to: 'resyncing' },
   { from: 'resyncing', to: 'resync_complete' },
   { from: 'resyncing', to: 'recovery_failed' },

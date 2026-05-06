@@ -87,11 +87,14 @@ class AutoRebuyServiceCore {
       };
 
       // Try to claim leadership after a short random delay (jitter to avoid simultaneous claims)
-      setTimeout(() => {
-        if (!this.isLeader && Date.now() - this.lastLeaderHeartbeat > 5000) {
-          this.claimLeadership();
-        }
-      }, Math.random() * 2000 + 500);
+      setTimeout(
+        () => {
+          if (!this.isLeader && Date.now() - this.lastLeaderHeartbeat > 5000) {
+            this.claimLeadership();
+          }
+        },
+        Math.random() * 2000 + 500
+      );
 
       // Check for stale leader every 10 seconds
       this.leaderHeartbeatHandle = setInterval(() => {
@@ -107,7 +110,9 @@ class AutoRebuyServiceCore {
       reportError(e, 'AutoRebuyService.setInterval');
       // BroadcastChannel not available — just become leader (single tab)
       this.isLeader = true;
-      console.debug(`[AutoRebuy:${this.tabId}] BroadcastChannel unavailable — becoming leader by default`);
+      console.debug(
+        `[AutoRebuy:${this.tabId}] BroadcastChannel unavailable — becoming leader by default`
+      );
     }
   }
 
@@ -132,7 +137,9 @@ class AutoRebuyServiceCore {
 
     this.isRunning = true;
     this.initLeaderElection();
-    console.debug(`[AutoRebuy:${this.tabId}] Starting monitoring (interval: ${this.monitoringInterval}ms)`);
+    console.debug(
+      `[AutoRebuy:${this.tabId}] Starting monitoring (interval: ${this.monitoringInterval}ms)`
+    );
 
     // Initial check (delayed to let leader election settle)
     setTimeout(() => this.checkAllTables(), 3000);
@@ -286,8 +293,10 @@ class AutoRebuyServiceCore {
 
       if (fetchErr || !currentSeat) {
         console.debug(
-          '[AutoRebuy] Could not find seat for rebuy — horse ' + horseId + ': ' +
-          (fetchErr?.message || 'seat not found')
+          '[AutoRebuy] Could not find seat for rebuy — horse ' +
+            horseId +
+            ': ' +
+            (fetchErr?.message || 'seat not found')
         );
         return false;
       }

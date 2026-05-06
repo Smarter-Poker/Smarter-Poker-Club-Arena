@@ -312,7 +312,11 @@ export class TableBreakEngine {
 
   private emitEvent(event: TableBreakEvent): void {
     if (this.onEvent) {
-      try { this.onEvent(event); } catch (err) { reportError(err, 'TableBreakEngine.eventHandler'); }
+      try {
+        this.onEvent(event);
+      } catch (err) {
+        reportError(err, 'TableBreakEngine.eventHandler');
+      }
     }
   }
 }

@@ -104,8 +104,7 @@ export function TableTabBar({
             tableId: activeTabId,
             action: 'LEADERBOARD',
           }),
-        onHelp: () =>
-          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
+        onHelp: () => masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
         onLeaveTable: () =>
           masterBus.emit('TABLE_MENU_ACTION', {
             tableId: activeTabId,

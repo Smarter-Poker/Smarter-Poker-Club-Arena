@@ -228,7 +228,10 @@ export class RunItTwiceEngine {
     const runs = state.chosenRuns || state.maxRuns || 2;
     const cardsNeeded = 5 - existingBoard.length;
     if (remainingDeck.length < cardsNeeded * runs) {
-      reportError(new Error(`[RunItTwiceEngine] Not enough cards for ${runs} runouts at ${tableId}`), 'RunItTwiceEngine.Not_enough_cards_for_runs_runo');
+      reportError(
+        new Error(`[RunItTwiceEngine] Not enough cards for ${runs} runouts at ${tableId}`),
+        'RunItTwiceEngine.Not_enough_cards_for_runs_runo'
+      );
       return null;
     }
 

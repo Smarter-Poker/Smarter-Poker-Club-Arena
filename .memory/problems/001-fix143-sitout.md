@@ -16,4 +16,5 @@ Also added isSittingOut() filter to dealingLoop() so sitting-out players
 aren't dealt into the next hand.
 
 FILES CHANGED:
+
 - server/src/engine/ServerTableEngine.ts (4 locations)

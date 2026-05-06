@@ -76,7 +76,9 @@ export const SessionTimer: React.FC<SessionTimerProps> = ({
   return (
     <div className="session-timer">
       <div className="timer-display">
-        <span className="timer-icon" aria-hidden>T</span>
+        <span className="timer-icon" aria-hidden>
+          T
+        </span>
         <span className="timer-value">{formatTime(elapsed)}</span>
         <span className="session-status" style={{ background: status.color }}>
           {status.label}

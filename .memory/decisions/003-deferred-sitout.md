@@ -10,6 +10,7 @@ their turn comes (via DisconnectEngine.onPlayerTurn()). Bible V8 §7.12 says
 "Player sits out during a hand (can't fold mid-hand, wait until next hand)."
 
 IMPLEMENTATION:
+
 - File: server/src/engine/ServerTableEngine.ts
 - Added: pendingSitOut: Set<string> instance variable
 - Modified: sitOut() — queues to pendingSitOut during active hand

@@ -7,82 +7,82 @@
 
 ## Server-side WebSocket transport
 
-| Feature | Code location | Status |
-|---|---|---|
-| Engine WebSocket server | `server/src/transport/EngineWebSocketServer.ts:1-324` | ✅ |
-| In-process pub/sub hub | `server/src/transport/TableStateHub.ts:1-254` (per-tableId fanout, monotonic `seq`, RFC-6902 JSON Patch deltas) | ✅ |
-| WS helpers | `server/src/transport/wsHelpers.ts` | ✅ |
-| Snapshot-on-subscribe | `TableStateHub.subscribe()` immediately delivers latest snapshot — no wait for next event | ✅ |
-| Gap detection + RESYNC | Monotonic `seq` per tableId; client detects missing `seq` and requests RESYNC | ✅ |
-| Broadcast await on TURN_CHANGE only | FIX 217 — non-critical events stay fire-and-forget for throughput | ✅ |
-| Test coverage | `EngineWebSocketServer.test.ts` (76 lines), `TableStateHub.test.ts` (209 lines) | ✅ |
+| Feature                             | Code location                                                                                                   | Status |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------ |
+| Engine WebSocket server             | `server/src/transport/EngineWebSocketServer.ts:1-324`                                                           | ✅     |
+| In-process pub/sub hub              | `server/src/transport/TableStateHub.ts:1-254` (per-tableId fanout, monotonic `seq`, RFC-6902 JSON Patch deltas) | ✅     |
+| WS helpers                          | `server/src/transport/wsHelpers.ts`                                                                             | ✅     |
+| Snapshot-on-subscribe               | `TableStateHub.subscribe()` immediately delivers latest snapshot — no wait for next event                       | ✅     |
+| Gap detection + RESYNC              | Monotonic `seq` per tableId; client detects missing `seq` and requests RESYNC                                   | ✅     |
+| Broadcast await on TURN_CHANGE only | FIX 217 — non-critical events stay fire-and-forget for throughput                                               | ✅     |
+| Test coverage                       | `EngineWebSocketServer.test.ts` (76 lines), `TableStateHub.test.ts` (209 lines)                                 | ✅     |
 
 ## Client-side WS + Realtime stack
 
-| Feature | Code location | Status |
-|---|---|---|
-| Reconnecting WebSocket | `src/services/ReconnectingWebSocket.ts:1-307` (exponential backoff, queue while disconnected) | ✅ |
-| Engine state client | `src/services/EngineStateClient.ts:1-319` | ✅ |
-| Table WebSocket adapter | `src/services/TableWebSocket.ts:1-551` | ✅ |
-| Realtime channel service | `src/services/RealtimeChannelService.ts:1-740` (Supabase Realtime channels: club, union, table, wallet) | ✅ |
-| Wallet realtime channel | `20260314_wallet_transactions_realtime.sql` + `RealtimeChannelService` subscribes | ✅ |
-| Realtime publication fix | `20260314_realtime_publication_fix.sql` (added missing tables to `supabase_realtime` publication) | ✅ |
+| Feature                  | Code location                                                                                           | Status |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- | ------ |
+| Reconnecting WebSocket   | `src/services/ReconnectingWebSocket.ts:1-307` (exponential backoff, queue while disconnected)           | ✅     |
+| Engine state client      | `src/services/EngineStateClient.ts:1-319`                                                               | ✅     |
+| Table WebSocket adapter  | `src/services/TableWebSocket.ts:1-551`                                                                  | ✅     |
+| Realtime channel service | `src/services/RealtimeChannelService.ts:1-740` (Supabase Realtime channels: club, union, table, wallet) | ✅     |
+| Wallet realtime channel  | `20260314_wallet_transactions_realtime.sql` + `RealtimeChannelService` subscribes                       | ✅     |
+| Realtime publication fix | `20260314_realtime_publication_fix.sql` (added missing tables to `supabase_realtime` publication)       | ✅     |
 
 ## Presence
 
-| Feature | Code location | Status |
-|---|---|---|
-| Presence service (Supabase Realtime presence) | `src/services/PresenceService.ts:1-328` (join, leave, sync handlers) | ✅ |
-| Auto-leave on tab close | `PresenceService.handleUnload` — `leaveAll()` on `beforeunload` | ✅ |
-| Online players list | `src/components/presence/OnlinePlayersList.tsx` | ✅ |
-| Presence indicator (per user) | `src/components/presence/PresenceIndicator.tsx` | ✅ |
-| Per-channel presence (club / union / table) | `PresenceService.join(channel, userId, presence)` | ✅ |
+| Feature                                       | Code location                                                        | Status |
+| --------------------------------------------- | -------------------------------------------------------------------- | ------ |
+| Presence service (Supabase Realtime presence) | `src/services/PresenceService.ts:1-328` (join, leave, sync handlers) | ✅     |
+| Auto-leave on tab close                       | `PresenceService.handleUnload` — `leaveAll()` on `beforeunload`      | ✅     |
+| Online players list                           | `src/components/presence/OnlinePlayersList.tsx`                      | ✅     |
+| Presence indicator (per user)                 | `src/components/presence/PresenceIndicator.tsx`                      | ✅     |
+| Per-channel presence (club / union / table)   | `PresenceService.join(channel, userId, presence)`                    | ✅     |
 
 ## Multi-tabling
 
-| Feature | Code location | Status |
-|---|---|---|
-| Multi-table manager | `src/components/multitable/MultiTableManager.tsx` | ✅ |
-| Multi-table view (grid) | `src/components/multitable/MultiTableView.tsx` | ✅ |
-| Mini table (small render mode) | `src/components/multitable/MiniTable.tsx` | ✅ |
-| Table switcher | `src/components/multitable/TableSwitcher.tsx` | ✅ |
-| Table tabs (active table indicator) | `src/components/multitable/TableTabs.tsx` | ✅ |
-| Cross-tab BroadcastChannel sync | `src/core/MasterBus.ts:1073-1467` (`smarter-poker-master-bus` channel; events relayed across tabs without re-broadcasting) | ✅ |
-| Action-required-on-other-table notification | wired through `NotificationToast.tsx` + `MultiTableManager` | ✅ |
+| Feature                                     | Code location                                                                                                              | Status |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Multi-table manager                         | `src/components/multitable/MultiTableManager.tsx`                                                                          | ✅     |
+| Multi-table view (grid)                     | `src/components/multitable/MultiTableView.tsx`                                                                             | ✅     |
+| Mini table (small render mode)              | `src/components/multitable/MiniTable.tsx`                                                                                  | ✅     |
+| Table switcher                              | `src/components/multitable/TableSwitcher.tsx`                                                                              | ✅     |
+| Table tabs (active table indicator)         | `src/components/multitable/TableTabs.tsx`                                                                                  | ✅     |
+| Cross-tab BroadcastChannel sync             | `src/core/MasterBus.ts:1073-1467` (`smarter-poker-master-bus` channel; events relayed across tabs without re-broadcasting) | ✅     |
+| Action-required-on-other-table notification | wired through `NotificationToast.tsx` + `MultiTableManager`                                                                | ✅     |
 
 ## Notifications
 
-| Feature | Code location | Status |
-|---|---|---|
-| Notification center | `src/components/notifications/NotificationCenter.tsx` | ✅ |
-| Notification dropdown | `src/components/notifications/NotificationDropdown.tsx` | ✅ |
-| Toast notifications | `src/components/notifications/NotificationToast.tsx` | ✅ |
-| In-app alerts | `src/components/notifications/InAppAlerts.tsx` | ✅ |
-| Notification grouping | `src/components/notifications/NotificationGrouper.tsx` | ✅ |
-| Per-notification item rendering | `src/components/notifications/NotificationItem.tsx` | ✅ |
+| Feature                         | Code location                                           | Status |
+| ------------------------------- | ------------------------------------------------------- | ------ |
+| Notification center             | `src/components/notifications/NotificationCenter.tsx`   | ✅     |
+| Notification dropdown           | `src/components/notifications/NotificationDropdown.tsx` | ✅     |
+| Toast notifications             | `src/components/notifications/NotificationToast.tsx`    | ✅     |
+| In-app alerts                   | `src/components/notifications/InAppAlerts.tsx`          | ✅     |
+| Notification grouping           | `src/components/notifications/NotificationGrouper.tsx`  | ✅     |
+| Per-notification item rendering | `src/components/notifications/NotificationItem.tsx`     | ✅     |
 
 ## Reliability hardening (post-mortem fixes)
 
-| Issue | Fix | Status |
-|---|---|---|
-| Broadcast fire-and-forget timing on TURN_CHANGE | FIX 217 — await broadcast on TURN_CHANGE before starting timer | ✅ |
-| Stale deadline_ms in TURN_CHANGE broadcast | Stamp `playerTurnStartTime` BEFORE `broadcastCurrentState` (2026-04-14 fix) | ✅ |
-| Hidden-tab rAF suspension breaking opponent timer rings | Pure CSS `@property --timer-progress` animation (browser-native, runs even when tab hidden) | ✅ |
-| `seat--${status}` class collision with `seat--active` | Skip `seat--${status}` when `status === 'active'` (2026-04-15 fix) | ✅ |
-| Bust → no rebuy path | `atomic_table_rebuy` RPC + TablePage useEffect + BuyInModal rebuy mode (2026-04-15 fix) | ✅ |
+| Issue                                                   | Fix                                                                                         | Status |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------ |
+| Broadcast fire-and-forget timing on TURN_CHANGE         | FIX 217 — await broadcast on TURN_CHANGE before starting timer                              | ✅     |
+| Stale deadline_ms in TURN_CHANGE broadcast              | Stamp `playerTurnStartTime` BEFORE `broadcastCurrentState` (2026-04-14 fix)                 | ✅     |
+| Hidden-tab rAF suspension breaking opponent timer rings | Pure CSS `@property --timer-progress` animation (browser-native, runs even when tab hidden) | ✅     |
+| `seat--${status}` class collision with `seat--active`   | Skip `seat--${status}` when `status === 'active'` (2026-04-15 fix)                          | ✅     |
+| Bust → no rebuy path                                    | `atomic_table_rebuy` RPC + TablePage useEffect + BuyInModal rebuy mode (2026-04-15 fix)     | ✅     |
 
 ## Coverage vs PokerBros spec
 
-| PokerBros spec row | Status |
-|---|---|
-| Real-time hand state push | ✅ WS via Hetzner |
-| Auto-reconnect on network drop | ✅ `ReconnectingWebSocket` |
-| Resync after gap | ✅ `seq`-based gap detection |
-| Multi-table view (4-up grid) | ✅ |
-| Cross-tab synchronization | ✅ BroadcastChannel |
-| Action-required indicator on inactive tabs | ✅ |
-| Online player presence | ✅ |
-| In-app notifications | ✅ |
+| PokerBros spec row                         | Status                       |
+| ------------------------------------------ | ---------------------------- |
+| Real-time hand state push                  | ✅ WS via Hetzner            |
+| Auto-reconnect on network drop             | ✅ `ReconnectingWebSocket`   |
+| Resync after gap                           | ✅ `seq`-based gap detection |
+| Multi-table view (4-up grid)               | ✅                           |
+| Cross-tab synchronization                  | ✅ BroadcastChannel          |
+| Action-required indicator on inactive tabs | ✅                           |
+| Online player presence                     | ✅                           |
+| In-app notifications                       | ✅                           |
 
 ## Areas that exceed PokerBros baseline
 

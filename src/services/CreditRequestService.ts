@@ -83,7 +83,9 @@ class CreditRequestServiceClass {
         request.requestedAmount
       );
     } catch (e: unknown) {
-      reportError(e, 'CreditRequestService.submitRequest.notify', { approverId: request.approverId });
+      reportError(e, 'CreditRequestService.submitRequest.notify', {
+        approverId: request.approverId,
+      });
     }
 
     return this.mapRequest(data);
@@ -201,7 +203,9 @@ class CreditRequestServiceClass {
         url: '/wallet',
       });
     } catch (e: unknown) {
-      reportError(e, 'CreditRequestService.approveRequest.notify', { requesterId: request.requester_id });
+      reportError(e, 'CreditRequestService.approveRequest.notify', {
+        requesterId: request.requester_id,
+      });
     }
 
     return this.mapRequest(data);
@@ -244,7 +248,9 @@ class CreditRequestServiceClass {
         category: 'wallet_credit',
       });
     } catch (e: unknown) {
-      reportError(e, 'CreditRequestService.denyRequest.notify', { requesterId: request.requester_id });
+      reportError(e, 'CreditRequestService.denyRequest.notify', {
+        requesterId: request.requester_id,
+      });
     }
 
     return this.mapRequest(data);
@@ -287,7 +293,11 @@ class CreditRequestServiceClass {
     );
 
     if (error) {
-      reportError(error, 'CreditRequestService.executeCreditTransfer', { fromUserId, toUserId, amount });
+      reportError(error, 'CreditRequestService.executeCreditTransfer', {
+        fromUserId,
+        toUserId,
+        amount,
+      });
       throw new Error('Credit transfer failed');
     }
 

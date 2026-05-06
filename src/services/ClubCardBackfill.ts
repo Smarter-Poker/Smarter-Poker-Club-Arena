@@ -99,7 +99,10 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
       const publicUrl = urlData?.publicUrl;
 
       if (!publicUrl) {
-        reportError(new Error(`[ClubCardBackfill] No public URL for ${club.name}`), 'ClubCardBackfill.No_public_URL_for_clubname');
+        reportError(
+          new Error(`[ClubCardBackfill] No public URL for ${club.name}`),
+          'ClubCardBackfill.No_public_URL_for_clubname'
+        );
         continue;
       }
 

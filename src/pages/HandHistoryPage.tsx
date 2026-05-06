@@ -303,13 +303,7 @@ export default function HandHistoryPage() {
             className={`hh-filter-chip ${filter === f ? 'active' : ''}`}
             onClick={() => setFilter(f)}
           >
-            {f === 'all'
-              ? 'All Hands'
-              : f === 'won'
-                ? 'Won'
-                : f === 'lost'
-                  ? 'Lost'
-                  : 'Big Pots'}
+            {f === 'all' ? 'All Hands' : f === 'won' ? 'Won' : f === 'lost' ? 'Lost' : 'Big Pots'}
           </button>
         ))}
       </div>

@@ -190,27 +190,33 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   // Listen for break start/end events (handle both event name variants)
   // TournamentEngine emits TOURNAMENT_BREAK / TOURNAMENT_BREAK_END
   // TournamentTimerService emits BREAK_START / BREAK_END
-  const handleBreakStart = useCallback((payload: any) => {
-    if (payload?.tournamentId === tournamentId) {
-      setClock((prev) => ({
-        ...prev,
-        isBreak: true,
-        breakTimeRemaining: payload.durationMinutes ? payload.durationMinutes * 60 : 300,
-        breakStartTime: Date.now(),
-      }));
-    }
-  }, [tournamentId]);
-  const handleBreakEnd = useCallback((payload: any) => {
-    if (payload?.tournamentId === tournamentId) {
-      setClock((prev) => ({
-        ...prev,
-        isBreak: false,
-        breakTimeRemaining: 0,
-        breakStartTime: undefined,
-      }));
-      refreshState();
-    }
-  }, [tournamentId, refreshState]);
+  const handleBreakStart = useCallback(
+    (payload: any) => {
+      if (payload?.tournamentId === tournamentId) {
+        setClock((prev) => ({
+          ...prev,
+          isBreak: true,
+          breakTimeRemaining: payload.durationMinutes ? payload.durationMinutes * 60 : 300,
+          breakStartTime: Date.now(),
+        }));
+      }
+    },
+    [tournamentId]
+  );
+  const handleBreakEnd = useCallback(
+    (payload: any) => {
+      if (payload?.tournamentId === tournamentId) {
+        setClock((prev) => ({
+          ...prev,
+          isBreak: false,
+          breakTimeRemaining: 0,
+          breakStartTime: undefined,
+        }));
+        refreshState();
+      }
+    },
+    [tournamentId, refreshState]
+  );
   useMasterBusSubscription('TOURNAMENT_BREAK', handleBreakStart);
   useMasterBusSubscription('BREAK_START', handleBreakStart);
   useMasterBusSubscription('TOURNAMENT_BREAK_END', handleBreakEnd);

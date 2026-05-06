@@ -6,6 +6,6 @@ const supabase = createClient(process.env.VITE_SUPABASE_URL!, process.env.VITE_S
 
 async function run() {
   const { data, error } = await supabase.from('unions').select('*').limit(1);
-  console.log("unions response:", JSON.stringify({ data, error }, null, 2));
+  console.log('unions response:', JSON.stringify({ data, error }, null, 2));
 }
 run();

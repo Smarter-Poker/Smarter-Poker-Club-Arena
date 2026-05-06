@@ -1,4 +1,5 @@
 # SESSION START PROMPT
+
 ## Paste this EXACTLY at the start of every new Claude session for the migration
 
 ---
@@ -27,13 +28,13 @@ Current status: [TELL ME WHAT STEP YOU'RE ON AFTER READING THE CHANGELOG]
 
 ## What each file does (for Dan's reference):
 
-| File | Purpose |
-|------|---------|
-| `MIGRATION-LAW.md` | 10 laws preventing skipping, rubber-stamping, building before cleanup |
-| `MASTER-MIGRATION-DOCUMENT.md` | Complete architecture: 22 engine files, server gaps, 7-step execution order |
-| `STEP1-REMOVAL-CATALOG.md` | Every handControllerRef (51), broadcastLocalHandState (14), performAction (14), import (6) with exact line numbers |
-| `MIGRATION-CHANGELOG.md` | Running log of every change made — the agent reads this to know where to resume |
-| `BIBLE-V8-REFERENCE.md` | The full Ultra-Master System Bible v8 spec the engine must comply with |
+| File                           | Purpose                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `MIGRATION-LAW.md`             | 10 laws preventing skipping, rubber-stamping, building before cleanup                                              |
+| `MASTER-MIGRATION-DOCUMENT.md` | Complete architecture: 22 engine files, server gaps, 7-step execution order                                        |
+| `STEP1-REMOVAL-CATALOG.md`     | Every handControllerRef (51), broadcastLocalHandState (14), performAction (14), import (6) with exact line numbers |
+| `MIGRATION-CHANGELOG.md`       | Running log of every change made — the agent reads this to know where to resume                                    |
+| `BIBLE-V8-REFERENCE.md`        | The full Ultra-Master System Bible v8 spec the engine must comply with                                             |
 
 ## Correct Phase Order (SACRED — see Law 1):
 

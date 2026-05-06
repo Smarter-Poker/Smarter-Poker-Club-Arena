@@ -30,6 +30,7 @@ $$
 ```
 
 Two compound bugs:
+
 1. The **INSERT targets `clawback_audit_log` which doesn't exist** → every call raises PostgreSQL 42P01.
 2. Even if the audit row succeeded, the stub **returned `success: true` without touching chip_transactions, wallets, or agents** — the chips stayed where they were regardless.
 
@@ -51,13 +52,13 @@ Function signature unchanged — `AgentService.clawbackDistribution` works witho
 
 ## Safety invariants
 
-| Invariant | Enforced by |
-|---|---|
-| Only within 10-min window | `reversible_until < NOW()` check (agent UI sets `reversible_until = NOW() + 10 min` on distribution) |
-| Never clawback a reversed tx twice | `is_reversed OR clawed_back` early-out |
-| Never clawback across clubs | `club_id <> p_club_id` rejection |
-| Never create negative balance | `v_to_user_balance < 0 → RAISE EXCEPTION` (rolls back the whole tx) |
-| Atomic (all-or-nothing) | Single plpgsql function with implicit transaction; any RAISE rolls back all UPDATEs |
+| Invariant                          | Enforced by                                                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Only within 10-min window          | `reversible_until < NOW()` check (agent UI sets `reversible_until = NOW() + 10 min` on distribution) |
+| Never clawback a reversed tx twice | `is_reversed OR clawed_back` early-out                                                               |
+| Never clawback across clubs        | `club_id <> p_club_id` rejection                                                                     |
+| Never create negative balance      | `v_to_user_balance < 0 → RAISE EXCEPTION` (rolls back the whole tx)                                  |
+| Atomic (all-or-nothing)            | Single plpgsql function with implicit transaction; any RAISE rolls back all UPDATEs                  |
 
 ## Verification queued
 

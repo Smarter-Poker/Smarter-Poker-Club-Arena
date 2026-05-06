@@ -211,7 +211,8 @@ export default function LeaderboardPage() {
 
   // Callback for leaderboard updates
   const handleLeaderboardUpdate = useCallback(() => {
-    if (activeTabRef.current === 'rankings') loadLeaderboardRef.current(true, () => isMountedRef.current);
+    if (activeTabRef.current === 'rankings')
+      loadLeaderboardRef.current(true, () => isMountedRef.current);
   }, []);
 
   useMasterBusChannel({
@@ -225,7 +226,8 @@ export default function LeaderboardPage() {
 
   // Callback for tournament updates
   const handleTournamentLeaderboardUpdate = useCallback(() => {
-    if (activeTabRef.current === 'tournaments') loadTournamentStatsRef.current(() => isMountedRef.current);
+    if (activeTabRef.current === 'tournaments')
+      loadTournamentStatsRef.current(() => isMountedRef.current);
   }, []);
 
   useMasterBusChannel({

@@ -90,7 +90,8 @@
   display: flex;
   flex-direction: column-reverse;
   align-items: center;
-  animation: cpStackEnter 0.45s var(--cp-ease-spring) calc(var(--group-idx, 0) * var(--cp-stack-stagger)) both;
+  animation: cpStackEnter 0.45s var(--cp-ease-spring)
+    calc(var(--group-idx, 0) * var(--cp-stack-stagger)) both;
   transform-origin: bottom center;
 }
 
@@ -137,18 +138,12 @@
   box-shadow:
     /* Bottom edge shadow (3D depth) */
     0 1.5px 0 rgba(0, 0, 0, 0.4),
-    /* Ambient shadow on felt */
-    0 2px 4px rgba(0, 0, 0, 0.45),
-    /* Subtle felt contact */
-    0 0.5px 1px rgba(0, 0, 0, 0.3),
-    /* Inner top highlight (overhead light) */
-    inset 0 2px 3px rgba(255, 255, 255, 0.3),
-    /* Inner bottom shadow (curvature) */
-    inset 0 -2px 3px rgba(0, 0, 0, 0.25),
-    /* Inner left edge light */
-    inset 2px 0 2px rgba(255, 255, 255, 0.08),
-    /* Inner right edge shadow */
-    inset -2px 0 2px rgba(0, 0, 0, 0.08);
+    /* Ambient shadow on felt */ 0 2px 4px rgba(0, 0, 0, 0.45),
+    /* Subtle felt contact */ 0 0.5px 1px rgba(0, 0, 0, 0.3),
+    /* Inner top highlight (overhead light) */ inset 0 2px 3px rgba(255, 255, 255, 0.3),
+    /* Inner bottom shadow (curvature) */ inset 0 -2px 3px rgba(0, 0, 0, 0.25),
+    /* Inner left edge light */ inset 2px 0 2px rgba(255, 255, 255, 0.08),
+    /* Inner right edge shadow */ inset -2px 0 2px rgba(0, 0, 0, 0.08);
 
   transition: transform 0.15s var(--cp-ease-spring);
 }
@@ -190,11 +185,7 @@
   border-radius: 50%;
   pointer-events: none;
   /* Subtle radial gradient on ring interior */
-  background: radial-gradient(
-    circle,
-    rgba(255, 255, 255, 0.05) 0%,
-    transparent 70%
-  );
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
   z-index: 1;
 }
 
@@ -279,15 +270,13 @@
    Each chip has a unique trajectory based on --chip-idx for organic spread. */
 
 .cp--splash .cp-chip {
-  animation: cpChipSplash var(--cp-splash-duration) var(--cp-ease-spring) calc(var(--chip-idx, 0) * var(--cp-chip-stagger)) both;
+  animation: cpChipSplash var(--cp-splash-duration) var(--cp-ease-spring)
+    calc(var(--chip-idx, 0) * var(--cp-chip-stagger)) both;
 }
 
 @keyframes cpChipSplash {
   0% {
-    transform:
-      translateY(-35px)
-      translateX(calc((var(--chip-idx, 0) - 2) * 16px))
-      scale(0.2)
+    transform: translateY(-35px) translateX(calc((var(--chip-idx, 0) - 2) * 16px)) scale(0.2)
       rotate(calc(var(--chip-idx, 0) * 60deg));
     opacity: 0;
     filter: brightness(1.8);
@@ -300,35 +289,22 @@
     filter: brightness(1.3);
   }
   40% {
-    transform:
-      translateY(6px)
-      translateX(calc((var(--chip-idx, 0) - 2) * 5px))
-      scale(1.15)
+    transform: translateY(6px) translateX(calc((var(--chip-idx, 0) - 2) * 5px)) scale(1.15)
       rotate(calc(var(--chip-idx, 0) * 20deg));
     /* Squash on felt impact */
     border-radius: 48% 48% 52% 52%;
   }
   55% {
-    transform:
-      translateY(-3px)
-      translateX(calc((var(--chip-idx, 0) - 2) * 2px))
-      scale(0.93)
+    transform: translateY(-3px) translateX(calc((var(--chip-idx, 0) - 2) * 2px)) scale(0.93)
       rotate(calc(var(--chip-idx, 0) * 8deg));
     border-radius: 50%;
   }
   70% {
-    transform:
-      translateY(1px)
-      translateX(calc((var(--chip-idx, 0) - 2) * 0.5px))
-      scale(1.04)
+    transform: translateY(1px) translateX(calc((var(--chip-idx, 0) - 2) * 0.5px)) scale(1.04)
       rotate(calc(var(--chip-idx, 0) * 2deg));
   }
   85% {
-    transform:
-      translateY(-0.5px)
-      translateX(0)
-      scale(0.99)
-      rotate(0deg);
+    transform: translateY(-0.5px) translateX(0) scale(0.99) rotate(0deg);
   }
   100% {
     transform: translateY(0) translateX(0) scale(1) rotate(0deg);
@@ -397,8 +373,7 @@
     filter: brightness(1);
   }
   15% {
-    transform:
-      translate(
+    transform: translate(
         calc(var(--collect-dx, 0px) * 0.15),
         calc(var(--collect-dy, -30px) * 0.15 - 15px)
       )
@@ -406,8 +381,7 @@
     filter: brightness(1.15);
   }
   40% {
-    transform:
-      translate(
+    transform: translate(
         calc(var(--collect-dx, 0px) * 0.5),
         calc(var(--collect-dy, -30px) * 0.5 - 10px)
       )
@@ -415,8 +389,7 @@
     opacity: 0.9;
   }
   70% {
-    transform:
-      translate(
+    transform: translate(
         calc(var(--collect-dx, 0px) * 0.85),
         calc(var(--collect-dy, -30px) * 0.85 - 4px)
       )
@@ -424,9 +397,7 @@
     opacity: 0.6;
   }
   100% {
-    transform:
-      translate(var(--collect-dx, 0px), var(--collect-dy, -30px))
-      scale(0.1);
+    transform: translate(var(--collect-dx, 0px), var(--collect-dy, -30px)) scale(0.1);
     opacity: 0;
     filter: brightness(1.5);
   }
@@ -516,18 +487,42 @@
 }
 
 @keyframes cpAllInShake {
-  0% { transform: translate(0, 0); }
-  8% { transform: translate(3px, -1px); }
-  16% { transform: translate(-2px, 2px); }
-  24% { transform: translate(2px, -2px); }
-  32% { transform: translate(-3px, 1px); }
-  40% { transform: translate(2px, -1px); }
-  48% { transform: translate(-1px, 2px); }
-  56% { transform: translate(1px, -1px); }
-  64% { transform: translate(-1px, 0.5px); }
-  72% { transform: translate(0.5px, -0.5px); }
-  80% { transform: translate(-0.5px, 0); }
-  100% { transform: translate(0, 0); }
+  0% {
+    transform: translate(0, 0);
+  }
+  8% {
+    transform: translate(3px, -1px);
+  }
+  16% {
+    transform: translate(-2px, 2px);
+  }
+  24% {
+    transform: translate(2px, -2px);
+  }
+  32% {
+    transform: translate(-3px, 1px);
+  }
+  40% {
+    transform: translate(2px, -1px);
+  }
+  48% {
+    transform: translate(-1px, 2px);
+  }
+  56% {
+    transform: translate(1px, -1px);
+  }
+  64% {
+    transform: translate(-1px, 0.5px);
+  }
+  72% {
+    transform: translate(0.5px, -0.5px);
+  }
+  80% {
+    transform: translate(-0.5px, 0);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
 }
 
 /* =================================================================================

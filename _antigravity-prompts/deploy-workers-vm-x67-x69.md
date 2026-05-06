@@ -42,6 +42,7 @@ bash scripts/deploy-workers.sh
 ```
 
 The script:
+
 1. Verifies local prereqs (SSH key + Keychain entries)
 2. SSHes to the workers VM
 3. `docker compose pull` (fetches the just-built `:latest` from GHCR)

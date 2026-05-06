@@ -333,7 +333,9 @@
   font-weight: 600;
   cursor: pointer;
   border: none;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
 }
 
 .theme-vip-prompt__btn:active {

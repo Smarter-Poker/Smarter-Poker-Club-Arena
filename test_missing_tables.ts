@@ -5,12 +5,17 @@ const supabase = createClient(process.env.VITE_SUPABASE_URL!, process.env.VITE_S
 
 async function run() {
   const tables = [
-    'credit_invoices', 'settlement_invoices', 
-    'user_achievements', 'training_user_achievements', 
-    'union_wallets', 'union_bank', 
-    'audit_logs', 'club_arena_audit_logs', 'platform_audit_logs'
+    'credit_invoices',
+    'settlement_invoices',
+    'user_achievements',
+    'training_user_achievements',
+    'union_wallets',
+    'union_bank',
+    'audit_logs',
+    'club_arena_audit_logs',
+    'platform_audit_logs',
   ];
-  
+
   for (const table of tables) {
     const { error } = await supabase.from(table).select('*').limit(1);
     if (error && error.code === '42P01') {

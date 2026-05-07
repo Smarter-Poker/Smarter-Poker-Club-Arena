@@ -2176,9 +2176,28 @@ export class ServerTableEngine {
           await this.sleep(500);
         }
       } catch (err) {
-        this.consecutiveErrors++;
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isTransient =
+          errMsg.includes('Project not specified') ||
+          errMsg.includes('ECONNRESET') ||
+          errMsg.includes('ETIMEDOUT') ||
+          errMsg.includes('Failed to fetch');
+
+        if (!isTransient) {
+          this.consecutiveErrors++;
+        }
+
         const backoffMs = Math.min(3000 * Math.pow(2, this.consecutiveErrors - 1), 30000);
-        reportError(err, 'ServerTableEnginethistableId.Error_attempt_thisconsecutiveE');
+
+        if (!isTransient) {
+          reportError(err, 'ServerTableEnginethistableId.Error_attempt_thisconsecutiveE');
+        } else {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Transient network error during deal cycle:`,
+            errMsg
+          );
+        }
+
         if (this.consecutiveErrors >= 10) {
           reportError(
             new Error(`[ServerTableEngine:${this.tableId}] Too many errors — stopping`),

@@ -41,12 +41,22 @@ export function initSentry(): void {
         Sentry.onUnhandledRejectionIntegration(),
       ],
 
-      // Filter out noise
+      // Filter out noise — transient network errors + Supabase connectivity blips
       beforeSend(event, hint) {
         const error = hint.originalException as Error | undefined;
-        if (error?.message?.includes('ECONNRESET')) return null;
-        if (error?.message?.includes('EPIPE')) return null;
-        if (error?.message?.includes('socket hang up')) return null;
+        const msg = error?.message ?? '';
+        // Standard Node.js network transients
+        if (msg.includes('ECONNRESET')) return null;
+        if (msg.includes('EPIPE')) return null;
+        if (msg.includes('socket hang up')) return null;
+        // Supabase/PostgREST connectivity errors — fired when the Supabase API
+        // gateway is temporarily unreachable or the connection is unauthenticated
+        // at the HTTP level (e.g. "Project not specified" from PostgREST).
+        // These are transient infrastructure blips, not code bugs.
+        if (msg.includes('Project not specified')) return null;
+        if (msg.includes('FetchError') && msg.includes('supabase')) return null;
+        if (msg.includes('Failed to fetch') && msg.includes('supabase')) return null;
+        if (msg.includes('ETIMEDOUT') && msg.includes('supabase')) return null;
         return event;
       },
     });

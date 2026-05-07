@@ -685,15 +685,27 @@ export class ServerTableEngine {
       if (state.currentPlayerSeat !== seat) return;
 
       // Bible V8 §6.2: Auto-activate time bank when primary timer expires
-      if (!this.timeBankActivatedThisTurn) {
+      // FIX: Guard against race condition where the player already submitted an action
+      // and the FSM advanced to 'processing' or 'complete' before this timer callback fired.
+      // Only attempt time bank auto-activation if the turn is still in 'timer_running'.
+      if (!this.timeBankActivatedThisTurn && this.turnFSM.state === 'timer_running') {
         const autoActivated = this.timeBankEngine.onPrimaryTimerExpired(
           this.tableId,
           userId,
           () => {
             // Time bank itself expired — auto-fold/check
             // Bible V8 §3.3: Turn FSM — time_bank_active → expired → processing → complete
-            this.turnFSM.transition('expired');
-            this.turnFSM.transition('processing');
+            // Guard: only transition if we're still in time_bank_active
+            if (this.turnFSM.state === 'time_bank_active') {
+              this.turnFSM.transition('expired');
+              this.turnFSM.transition('processing');
+            } else {
+              // Turn was already resolved (player acted during time bank delay) — bail silently
+              console.warn(
+                `[ServerTableEngine:${this.tableId}] Time bank expiry skipped — FSM already in '${this.turnFSM.state}' (race condition: player acted)`
+              );
+              return;
+            }
             if (!this.running || !this.handController) return;
             const tbState = this.handController.getState();
             if (tbState.currentPlayerSeat !== seat) return;
@@ -748,6 +760,14 @@ export class ServerTableEngine {
 
         if (autoActivated) {
           // Bible V8 §3.3: Turn FSM — timer_running → time_bank_active
+          // FIX: Double-check FSM state before transitioning — another callback may have
+          // advanced it to 'processing' between the outer guard and here (tight race window).
+          if (this.turnFSM.state !== 'timer_running') {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] Time bank auto-activation skipped — FSM is '${this.turnFSM.state}' (expected timer_running). Turn already resolved.`
+            );
+            return;
+          }
           this.turnFSM.transition('time_bank_active');
           this.timeBankActivatedThisTurn = true;
           // Bible V8 §2.15: Log time bank activation

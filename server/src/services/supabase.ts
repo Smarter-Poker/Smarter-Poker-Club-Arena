@@ -63,7 +63,10 @@ export async function loadTable(tableId: string) {
     .eq('id', tableId)
     .maybeSingle();
 
-  if (error) throw new Error(`Failed to load table ${tableId}: ${error.message}`);
+  if (error) {
+    const msg = error.message || (error as any).details || JSON.stringify(error);
+    throw new Error(`Failed to load table ${tableId}: ${msg}`);
+  }
   if (!data) throw new Error(`Table ${tableId} not found`);
   return data;
 }

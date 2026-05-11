@@ -57,6 +57,8 @@ export function initSentry(): void {
         if (msg.includes('FetchError') && msg.includes('supabase')) return null;
         if (msg.includes('Failed to fetch') && msg.includes('supabase')) return null;
         if (msg.includes('ETIMEDOUT') && msg.includes('supabase')) return null;
+        if (msg.includes('Could not query the database for the schema cache')) return null;
+        if (msg.includes('schema cache')) return null;
         return event;
       },
     });
@@ -86,7 +88,21 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
   if (!initialized) return;
 
   try {
-    const err = error instanceof Error ? error : new Error(String(error));
+    let err: Error;
+    if (error instanceof Error) {
+      err = error;
+    } else if (typeof error === 'object' && error !== null) {
+      const msg = (error as any).message || (error as any).error_description || (error as any).details || JSON.stringify(error);
+      err = new Error(msg);
+    } else {
+      err = new Error(String(error));
+    }
+
+    // Truncate massive HTML error payloads
+    if (err.message.includes('<!DOCTYPE html>')) {
+      err.message = err.message.substring(0, 200) + '... [Supabase HTML Error Truncated]';
+    }
+
     err.message = `[${context}] ${err.message}`;
 
     Sentry.captureException(err, {

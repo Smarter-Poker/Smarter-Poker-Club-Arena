@@ -2197,11 +2197,17 @@ export class ServerTableEngine {
         }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
+        // BUG-SENTRY-7463185461 FIX: 'fetch failed' is the Node.js wording for
+        // a transient Supabase network blip — same as browser's 'Failed to fetch'.
+        // Both must be listed or they increment consecutiveErrors and fire Sentry.
         const isTransient =
           errMsg.includes('Project not specified') ||
           errMsg.includes('ECONNRESET') ||
           errMsg.includes('ETIMEDOUT') ||
-          errMsg.includes('Failed to fetch');
+          errMsg.includes('Failed to fetch') ||
+          errMsg.includes('fetch failed') ||
+          errMsg.includes('ENOTFOUND') ||
+          errMsg.includes('socket hang up');
 
         if (!isTransient) {
           this.consecutiveErrors++;
@@ -2233,11 +2239,33 @@ export class ServerTableEngine {
 
   private async refreshBlinds(): Promise<void> {
     if (!this.tableInfo || !this.isTournamentTable()) return;
-    const data = await loadTable(this.tableId);
-    if (data) {
-      this.tableInfo.small_blind = data.small_blind;
-      this.tableInfo.big_blind = data.big_blind;
-      this.tableInfo.ante = data.ante;
+    // BUG-SENTRY-7463185461 FIX: retry up to 3x on transient fetch failures.
+    // A single Node.js 'TypeError: fetch failed' (Supabase network blip) was
+    // bubbling through to dealingLoop, triggering the Sentry error reporter
+    // and incrementing consecutiveErrors toward the 10-error shutdown threshold.
+    // Retrying here absorbs one-off network hiccups before they reach the loop.
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const data = await loadTable(this.tableId);
+        if (data) {
+          this.tableInfo.small_blind = data.small_blind;
+          this.tableInfo.big_blind = data.big_blind;
+          this.tableInfo.ante = data.ante;
+        }
+        return; // success
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        const isTransient =
+          msg.includes('fetch failed') ||
+          msg.includes('Failed to fetch') ||
+          msg.includes('ECONNRESET') ||
+          msg.includes('ETIMEDOUT') ||
+          msg.includes('ENOTFOUND') ||
+          msg.includes('socket hang up');
+        if (!isTransient || attempt === MAX_ATTEMPTS) throw err;
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
     }
   }
 

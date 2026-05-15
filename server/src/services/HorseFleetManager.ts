@@ -191,7 +191,10 @@ export class HorseFleetManager {
         .in('status', ['waiting', 'running']);
 
       if (tablesError || !tables) {
-        reportError(tablesError, 'HorseFleet.Failed_to_fetch_tables');
+        const errMsg =
+          tablesError?.message ||
+          (typeof tablesError === 'object' ? JSON.stringify(tablesError) : String(tablesError));
+        reportError(new Error(errMsg), 'HorseFleet.Failed_to_fetch_tables');
         return;
       }
 

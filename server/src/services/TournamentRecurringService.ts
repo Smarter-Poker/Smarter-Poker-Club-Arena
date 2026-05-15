@@ -931,7 +931,7 @@ export class TournamentRecurringService {
         lastError = error;
         reportError(
           new Error(
-            `[RecurringService] XMTT creation attempt ${attempt}/3 failed: ${error?.message}`
+            `[RecurringService] XMTT creation attempt ${attempt}/3 failed: ${error?.message || JSON.stringify(error) || 'Unknown error'}`
           ),
           'RecurringService.XMTT_creation_attempt_attempt3'
         );
@@ -940,7 +940,7 @@ export class TournamentRecurringService {
       if (!tournament) {
         reportError(
           new Error(
-            `[RecurringService] XMTT creation FAILED after 3 retries: ${lastError?.message}`
+            `[RecurringService] XMTT creation FAILED after 3 retries: ${lastError?.message || JSON.stringify(lastError) || 'Unknown error'}`
           ),
           'RecurringService.XMTT_creation_FAILED_after_3_r'
         );
@@ -1079,7 +1079,7 @@ export class TournamentRecurringService {
         lastError = error;
         reportError(
           new Error(
-            `[RecurringService] Tournament creation attempt ${attempt}/3 failed: ${error?.message}`
+            `[RecurringService] Tournament creation attempt ${attempt}/3 failed: ${error?.message || JSON.stringify(error) || 'Unknown error'}`
           ),
           'RecurringService.Tournament_creation_attempt_at'
         );
@@ -1088,7 +1088,7 @@ export class TournamentRecurringService {
       if (!tournament) {
         reportError(
           new Error(
-            `[RecurringService] Tournament creation FAILED after 3 retries: ${lastError?.message}`
+            `[RecurringService] Tournament creation FAILED after 3 retries: ${lastError?.message || JSON.stringify(lastError) || 'Unknown error'}`
           ),
           'RecurringService.Tournament_creation_FAILED_aft'
         );
@@ -1162,7 +1162,9 @@ export class TournamentRecurringService {
 
       if (error || !sng) {
         reportError(
-          new Error(`[TournamentRecurring] SNG creation failed: ${error?.message}`),
+          new Error(
+            `[TournamentRecurring] SNG creation failed: ${error?.message || JSON.stringify(error) || 'Unknown error'}`
+          ),
           'TournamentRecurring.SNG_creation_failed'
         );
         return { tournamentId: null, registered: 0 };
@@ -1235,7 +1237,9 @@ export class TournamentRecurringService {
 
       if (error || !spin) {
         reportError(
-          new Error(`[TournamentRecurring] Spin creation failed: ${error?.message}`),
+          new Error(
+            `[TournamentRecurring] Spin creation failed: ${error?.message || JSON.stringify(error) || 'Unknown error'}`
+          ),
           'TournamentRecurring.Spin_creation_failed'
         );
         return { tournamentId: null, registered: 0 };

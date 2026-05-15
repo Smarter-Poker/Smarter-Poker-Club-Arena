@@ -87,9 +87,19 @@ export class RakebackSettlerService {
     this.isRunning = true;
     console.log(`[RakebackSettler] Starting (interval: ${SETTLEMENT_INTERVAL_MS / 60000}m)`);
     // Run once immediately on startup, then every 30 min
-    this.runSettlement().catch((e) => reportError(e, 'RakebackSettler.startup_run'));
+    this.runSettlement().catch((e: any) =>
+      reportError(
+        new Error(e?.message || JSON.stringify(e) || String(e)),
+        'RakebackSettler.startup_run'
+      )
+    );
     this.intervalHandle = setInterval(() => {
-      this.runSettlement().catch((e) => reportError(e, 'RakebackSettler.interval_run'));
+      this.runSettlement().catch((e: any) =>
+        reportError(
+          new Error(e?.message || JSON.stringify(e) || String(e)),
+          'RakebackSettler.interval_run'
+        )
+      );
     }, SETTLEMENT_INTERVAL_MS);
   }
 
@@ -131,7 +141,10 @@ export class RakebackSettlerService {
       .limit(10000);
 
     if (fetchErr) {
-      reportError(fetchErr, 'RakebackSettler.fetch_failed');
+      reportError(
+        new Error(fetchErr?.message || JSON.stringify(fetchErr) || String(fetchErr)),
+        'RakebackSettler.fetch_failed'
+      );
       return;
     }
 
@@ -373,7 +386,10 @@ export class RakebackSettlerService {
           .eq('id', existing.id);
         if (error) {
           failures++;
-          reportError(error, 'RakebackSettler.update_failed');
+          reportError(
+            new Error(error?.message || JSON.stringify(error) || String(error)),
+            'RakebackSettler.update_failed'
+          );
         } else {
           upserts++;
         }
@@ -392,7 +408,10 @@ export class RakebackSettlerService {
         });
         if (error) {
           failures++;
-          reportError(error, 'RakebackSettler.insert_failed');
+          reportError(
+            new Error(error?.message || JSON.stringify(error) || String(error)),
+            'RakebackSettler.insert_failed'
+          );
         } else {
           upserts++;
         }

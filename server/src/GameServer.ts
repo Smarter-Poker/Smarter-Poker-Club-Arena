@@ -603,7 +603,9 @@ export class GameServer {
           .in('status', ['waiting', 'running']);
 
         if (error) {
-          reportError(error, 'GameServer.Cash_table_discovery_error');
+          const errMsg =
+            error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+          reportError(new Error(errMsg), 'GameServer.Cash_table_discovery_error');
           await this.sleep(TABLE_DISCOVERY_INTERVAL);
           continue;
         }
@@ -642,7 +644,12 @@ export class GameServer {
           }
         }
       } catch (err) {
-        reportError(err, 'GameServer.Cash_table_discovery_error');
+        const errMsg =
+          err instanceof Error
+            ? err.message
+            : (err as any)?.message ||
+              (typeof err === 'object' ? JSON.stringify(err) : String(err));
+        reportError(new Error(errMsg), 'GameServer.Cash_table_discovery_error');
       }
 
       await this.sleep(TABLE_DISCOVERY_INTERVAL);
@@ -1528,13 +1535,17 @@ export class TournamentManager {
               ante: safeAnte,
             })
             .eq('id', tableId);
-          if (blindErr)
+          if (blindErr) {
+            const blindMsg = blindErr.message?.includes('<!DOCTYPE html>')
+              ? 'Cloudflare/Supabase HTML Error (502/504)'
+              : blindErr.message || JSON.stringify(blindErr) || 'Unknown error';
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Blind update failed for table ${tableId.slice(0, 8)}: ${blindErr.message}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Blind update failed for table ${tableId.slice(0, 8)}: ${blindMsg}`
               ),
               'TournamentthistournamentIdslic.Blind_update_failed_for_table_'
             );
+          }
 
           // Phase X5 (2026-04-28): emit level_up discrete event so clients
           // can trigger the level-up popup + sound + haptic per Bible V8 §5

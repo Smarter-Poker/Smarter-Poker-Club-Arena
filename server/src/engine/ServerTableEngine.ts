@@ -2196,7 +2196,11 @@ export class ServerTableEngine {
           await this.sleep(500);
         }
       } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
+        const errMsg =
+          err instanceof Error
+            ? err.message
+            : (err as any)?.message ||
+              (typeof err === 'object' ? JSON.stringify(err) : String(err));
         // BUG-SENTRY-7463185461 FIX: 'fetch failed' is the Node.js wording for
         // a transient Supabase network blip — same as browser's 'Failed to fetch'.
         // Both must be listed or they increment consecutiveErrors and fire Sentry.

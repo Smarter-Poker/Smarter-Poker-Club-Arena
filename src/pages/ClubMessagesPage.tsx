@@ -1,68 +1,46 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB MESSAGES PAGE — Dedicated Club Conversations View
+ *  CLUB MESSAGES PAGE — Embedded World Hub Messenger (Club-Scoped)
  * ═══════════════════════════════════════════════════════════════════════════════
- * Facebook Marketplace-style dedicated view for club messages
- * Separated from personal DMs for clean organization
+ * Embeds the premium multi-identity messenger with the club identity pre-selected.
+ * Shares the same PostMessage bridge, skeleton loading, and bottomPad support
+ * as the general MessagesPage — ensuring a consistent UX across both entry points.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { masterBus } from '../core/MasterBus';
-import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { useToast } from '../components/common/Toast';
-import { formatRelativeShort as formatTime } from '@/lib/date';
+import { useHeaderDataStore } from '../stores/useHeaderDataStore';
 import ClubBottomNav from '../components/club/ClubBottomNav';
-import MessageThread from '../components/messaging/MessageThread';
 import './ClubMessagesPage.css';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { reportError } from '../utils/errorReporter';
 
-interface ClubConversation {
-  id: string;
-  clubId: string;
-  clubName: string;
-  clubLogo: string;
-  lastMessage: string;
-  lastMessageTime: string;
-  unreadCount: number;
-  participantCount: number;
-}
+const BOTTOM_NAV_HEIGHT_PX = 56;
 
 export default function ClubMessagesPage() {
-  const navigate = useNavigate();
-  useVisibilityRefresh(() => loadClubConversations());
-  const { conversationId, clubId: urlClubId } = useParams<{
-    conversationId?: string;
-    clubId?: string;
-  }>();
   const { user } = useAuthUser();
-  const toast = useToast();
+  const setUnreadMessages = useHeaderDataStore((s) => s.setUnreadMessages);
+  const setMessengerPageActive = useHeaderDataStore((s) => s.setMessengerPageActive);
 
-  const [conversations, setConversations] = useState<ClubConversation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedConversation, setSelectedConversation] = useState<string | null>(
-    conversationId || null
-  );
+  useEffect(() => {
+    setMessengerPageActive(true);
+    return () => setMessengerPageActive(false);
+  }, [setMessengerPageActive]);
+
+  const { clubId: urlClubId } = useParams<{ clubId?: string }>();
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const [clubId, setClubId] = useState<string | undefined>(urlClubId);
-  const [visibleConversations, setVisibleConversations] = useState<Set<string>>(new Set());
-  const [loadError, setLoadError] = useState(false);
-  const loadingRef = useRef(false);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
     setUserRole('member');
-    setSelectedConversation(null);
-    setVisibleConversations(new Set());
-    setLoadError(false);
-    loadingRef.current = false;
+    setClubId(urlClubId);
+    // Reset skeleton so it shows again for the new club's load
+    setIframeLoaded(false);
   }, [urlClubId]);
-
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
   // Hydrate userRole from club_members so BottomNav shows correct tabs
   useEffect(() => {
@@ -84,7 +62,6 @@ export default function ClubMessagesPage() {
         }
       } catch (e) {
         reportError(e, 'ClubMessagesPage.async');
-        /* non-critical */
       }
     })();
     return () => {
@@ -92,261 +69,58 @@ export default function ClubMessagesPage() {
     };
   }, [clubId, user?.id]);
 
-  // Load club conversations
-  const loadClubConversations = useCallback(
-    async (getIsMounted?: () => boolean) => {
-      if (!user?.id) return;
-      if (loadingRef.current) return;
-      loadingRef.current = true;
-      setLoadError(false);
-      if (!getIsMounted || getIsMounted()) setLoading(true);
-      try {
-        // SWR: show cached conversations instantly
-        const swrKey = `msg_cache_${user.id}`;
-        try {
-          const cached = sessionStorage.getItem(swrKey);
-          if (cached) {
-            const c = JSON.parse(cached);
-            if (Array.isArray(c)) {
-              setConversations(c);
-              setLoading(false);
-            }
-          }
-        } catch (e) {
-          reportError(e, 'ClubMessagesPage.async');
-          /* corrupt cache */
-        }
-
-        const { data: clubConvs, error: convError } = await supabase
-          .from('conversations')
-          .select(
-            `
-                    id,
-                    club_id,
-                    updated_at,
-                    clubs(id, name, logo_url)
-                `
-          )
-          .contains('participant_ids', [user.id])
-          .eq('category', 'club')
-          .order('updated_at', { ascending: false });
-
-        if (getIsMounted && !getIsMounted()) return;
-        if (convError || !clubConvs) {
-          reportError(convError, 'ClubMessagesPage.Failed_to_load_club_conversations');
-          return;
-        }
-
-        const mapped: ClubConversation[] = await Promise.all(
-          clubConvs.map(async (conv: any) => {
-            const { data: lastMsg } = await supabase
-              .from('messages')
-              .select('content, created_at')
-              .eq('conversation_id', conv.id)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-
-            const { count: unreadCount } = await supabase
-              .from('messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('conversation_id', conv.id)
-              .eq('receiver_id', user.id)
-              .eq('is_read', false);
-
-            return {
-              id: conv.id,
-              clubId: conv.club_id,
-              clubName: conv.clubs?.name || 'Unknown Club',
-              clubLogo: conv.clubs?.logo_url || '/default-club.png',
-              lastMessage: lastMsg?.content || '',
-              lastMessageTime: lastMsg?.created_at || conv.updated_at,
-              unreadCount: unreadCount || 0,
-              participantCount: 0,
-            };
-          })
-        );
-
-        if (getIsMounted && !getIsMounted()) return;
-        setConversations(mapped);
-
-        // SWR: cache successful fetch
-        try {
-          sessionStorage.setItem(swrKey, JSON.stringify(mapped.slice(0, 15)));
-        } catch {
-          /* storage full */
-        }
-      } catch (error) {
-        reportError(error, 'ClubMessagesPage.Failed_to_load_club_conversations');
-        setLoadError(true);
-        if (!getIsMounted || getIsMounted()) toast.error('Failed to load club conversations');
-      } finally {
-        loadingRef.current = false;
-        if (!getIsMounted || getIsMounted()) setLoading(false);
+  // ── PostMessage Bridge: receive unread count from embedded messenger ──
+  // Keeps CA GlobalHeader badge in real-time sync with the iframe's live count.
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const { type, source } = event.data || {};
+      if (source !== 'smarter-poker-messenger') return;
+      if (type === 'MESSENGER_UNREAD_COUNT' && typeof event.data.count === 'number') {
+        setUnreadMessages(event.data.count);
       }
-    },
-    [user?.id]
-  );
-
-  // Load club conversations on mount
-  useEffect(() => {
-    let isMounted = true;
-    loadClubConversations(() => isMounted);
-    return () => {
-      isMounted = false;
     };
-  }, [loadClubConversations]);
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [setUnreadMessages]);
 
-  // Real-time updates when receiving messages
-  useMasterBusChannel({
-    channelName: user?.id ? 'club-messages-updates' : null,
-    table: 'messages',
-    filter: user?.id ? `receiver_id=eq.${user.id}` : null,
-    event: '*',
-    onPayload: () => {
-      loadClubConversations();
-    },
-    enabled: !!user?.id,
+  // Build iframe URL — force club identity + pass bottom nav height
+  const messengerParams = new URLSearchParams({
+    hideHeader: 'true',
+    ...(clubId && { clubId }),
+    ...(clubId && { bottomPad: String(BOTTOM_NAV_HEIGHT_PX) }),
   });
-
-  // ── Bus Listeners: cross-page message event reactivity (debounced) ──
-  useEffect(() => {
-    const unsubs = [
-      masterBus.subscribeDebounced('NOTIFICATION_READ', () => loadClubConversations(), 500),
-      // Phase 4: Cross-page sync (ported from World Hub messages.js)
-      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', () => loadClubConversations(), 500),
-      masterBus.subscribeDebounced('MESSAGE_RECEIVED', () => loadClubConversations(), 500),
-      masterBus.subscribeDebounced('PLAYER_KICKED', () => loadClubConversations(), 500),
-    ];
-    return () => unsubs.forEach((u) => u());
-  }, [loadClubConversations]);
-
-  // Stagger animation for conversations
-  useEffect(() => {
-    if (conversations.length === 0) return;
-    setVisibleConversations(new Set());
-    const timers = conversations.map((conv, index) =>
-      setTimeout(() => {
-        setVisibleConversations((prev) => new Set(prev).add(conv.id));
-      }, index * 60)
-    );
-    return () => timers.forEach((t) => clearTimeout(t));
-  }, [conversations]);
-
-  const handleSelect = (id: string) => {
-    setSelectedConversation(id);
-    if (isMobile) {
-      navigate(`/messages/clubs/${id}`);
-    }
-  };
-
-  const handleBack = () => {
-    setSelectedConversation(null);
-    if (isMobile) {
-      navigate('/messages/clubs');
-    }
-  };
-
-  // Mobile: Show thread if selected
-  if (isMobile && selectedConversation) {
-    return (
-      <div className="club-messages-page full-height">
-        <MessageThread conversationId={selectedConversation} onBack={handleBack} />
-      </div>
-    );
-  }
-
-  // Calculate total unread
-  const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+  const messengerUrl = clubId
+    ? `/hub/messenger?${messengerParams.toString()}`
+    : '/hub/messenger?hideHeader=true';
 
   return (
     <div className="club-messages-page">
-      {/* Summary Bar */}
-      <div className="club-messages-summary">
-        <span className="summary-icon">◈</span>
-        <span className="summary-text">
-          {conversations.length} club{conversations.length !== 1 ? 's' : ''}
-          {totalUnread > 0 && ` · ${totalUnread} unread`}
-        </span>
-      </div>
-
-      {/* Club Conversation List */}
-      <div className="club-messages-list">
-        {loadError && !loading ? (
-          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa' }}>
-            <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</p>
-            <p style={{ marginBottom: '16px' }}>Failed to load conversations</p>
-            <button
-              onClick={() => loadClubConversations()}
-              style={{
-                padding: '10px 24px',
-                background: 'rgba(24, 119, 242, 0.15)',
-                border: '1px solid rgba(24, 119, 242, 0.3)',
-                borderRadius: '8px',
-                color: '#1877f2',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              Retry
-            </button>
-          </div>
-        ) : loading ? (
-          <div className="loading-state">
-            <PageSkeleton variant="list" />
-          </div>
-        ) : conversations.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">◈</span>
-            <p>No club messages yet</p>
-            <p className="hint">Join a club to start chatting!</p>
-          </div>
-        ) : (
-          conversations.map((conv) => (
-            <div
-              key={conv.id}
-              className={`club-conversation-item ${selectedConversation === conv.id ? 'selected' : ''} ${conv.unreadCount > 0 ? 'unread' : ''} ${visibleConversations.has(conv.id) ? 'fadeInUp' : 'hidden'}`}
-              style={
-                visibleConversations.has(conv.id)
-                  ? undefined
-                  : { opacity: 0, transform: 'translateY(8px)' }
-              }
-              onClick={() => handleSelect(conv.id)}
-            >
-              {/* Club Logo */}
-              <div className="club-logo-container">
-                <img
-                  src={conv.clubLogo}
-                  alt={conv.clubName}
-                  className="club-logo"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/default-club.png';
-                  }}
-                />
-              </div>
-
-              {/* Content */}
-              <div className="club-conversation-content">
-                <div className="club-conversation-header">
-                  <span className="club-name">{conv.clubName}</span>
-                  <span className="message-time">{formatTime(conv.lastMessageTime)}</span>
-                </div>
-                <div className="club-conversation-preview">
-                  <span className="last-message">{conv.lastMessage || 'No messages yet'}</span>
-                  {conv.unreadCount > 0 && <span className="unread-badge">{conv.unreadCount}</span>}
-                </div>
+      {/* Skeleton shimmer — fades out when iframe is ready */}
+      {!iframeLoaded && (
+        <div className="club-messages-skeleton" aria-hidden="true">
+          <div className="skeleton-header" />
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="skeleton-row">
+              <div className="skeleton-avatar" />
+              <div className="skeleton-lines">
+                <div className="skeleton-line skeleton-line--name" />
+                <div className="skeleton-line skeleton-line--preview" />
               </div>
             </div>
-          ))
-        )}
-      </div>
-
-      {/* Desktop: Split view with thread */}
-      {!isMobile && selectedConversation && (
-        <div className="club-messages-thread">
-          <MessageThread conversationId={selectedConversation} onBack={handleBack} />
+          ))}
         </div>
       )}
+
+      <iframe
+        ref={iframeRef}
+        src={messengerUrl}
+        title={clubId ? 'Club Messenger' : 'Smarter.Poker Messenger'}
+        allow="camera; microphone; display-capture; autoplay"
+        loading="lazy"
+        onLoad={() => setIframeLoaded(true)}
+        style={{ opacity: iframeLoaded ? 1 : 0, transition: 'opacity 0.25s ease' }}
+      />
 
       {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
     </div>

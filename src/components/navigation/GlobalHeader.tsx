@@ -171,6 +171,25 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
     }
   });
 
+  // ── PostMessage Bridge: receive real-time signals from embedded messenger iframe ──
+  // Complements the MessagesPage-level listener — handles the case where the user
+  // navigates away from /messages while the iframe is still mounted in React's tree.
+  useEffect(() => {
+    const handleIframeMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const { type, source } = event.data || {};
+      if (source !== 'smarter-poker-messenger') return;
+
+      if (type === 'MESSENGER_UNREAD_COUNT' && typeof event.data.count === 'number') {
+        // setUnreadMessages has a self-echo guard — safe to call here even if
+        // MessagesPage already handled the same event.
+        useHeaderDataStore.getState().setUnreadMessages(event.data.count);
+      }
+    };
+    window.addEventListener('message', handleIframeMessage);
+    return () => window.removeEventListener('message', handleIframeMessage);
+  }, []);
+
   /** Safe back-nav: uses history if available, otherwise falls back to home */
   const handleBackClick = () => {
     if (inAppNavCountRef.current > 0) {
@@ -188,6 +207,22 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
       window.location.href = path;
     });
   }, []);
+
+  const [prefetchedMessenger, setPrefetchedMessenger] = useState(false);
+
+  const prefetchMessenger = useCallback(() => {
+    if (prefetchedMessenger) return;
+    setPrefetchedMessenger(true);
+
+    // 1. Prefetch the React component chunk
+    import('../../pages/MessagesPage').catch(() => {});
+
+    // 2. Prefetch the iframe's URL
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = '/hub/messenger?hideHeader=true';
+    document.head.appendChild(link);
+  }, [prefetchedMessenger]);
 
   const handleHubClick = () => {
     navigateToHub('/hub');
@@ -288,7 +323,9 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           {authUser?.id && (
             <button
               className={styles.orbBtn}
-              onClick={() => navigateToHub('/hub/messenger')}
+              onClick={() => navigate('/messages')}
+              onMouseEnter={prefetchMessenger}
+              onTouchStart={prefetchMessenger}
               aria-label="Open Messenger"
             >
               <img

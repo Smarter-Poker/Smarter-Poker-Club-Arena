@@ -1,257 +1,130 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB MESSAGES PAGE — Metal UI Theme
- *  Brushed Steel + Cyan Glow Messaging
+ *  CLUB MESSAGES PAGE — Metal UI Theme (Iframe Embedding)
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 .club-messages-page {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
+  position: relative;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #000;
+  box-sizing: border-box;
+  /* Spacing for GlobalHeader */
+  padding-top: 60px;
 }
 
-.club-messages-page.full-height {
-    height: 100vh;
+@media (max-width: 1024px) {
+  .club-messages-page {
+    padding-top: 52px;
+  }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   SUMMARY BAR — Metal Header
-   ───────────────────────────────────────────────────────────────────────────── */
-
-@keyframes slideDownSpring {
-    0% {
-        opacity: 0;
-        transform: translateY(-20px);
-    }
-    100% {
-        opacity: 1;
-        transform: translateY(0);
-    }
+@media (max-width: 600px) {
+  .club-messages-page {
+    padding-top: 48px;
+  }
 }
 
-.club-messages-summary {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-    color: #fff;
-    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(16px) saturate(1.2);
-    -webkit-backdrop-filter: blur(16px) saturate(1.2);
-    animation: slideDownSpring 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.summary-icon {
-    font-size: 24px;
-}
-
-.summary-text {
-    font-size: 14px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+.club-messages-page iframe {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: transparent;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   CLUB LIST — Metal Rows
+   SKELETON LOADING STATE
    ───────────────────────────────────────────────────────────────────────────── */
 
-.club-messages-list {
-    flex: 1;
-    overflow-y: auto;
+.club-messages-skeleton {
+  position: absolute;
+  inset: 0;
+  top: 60px;
+  background: #0a0a14;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  animation: skeletonFadeIn 0.15s ease forwards;
 }
 
-.club-conversation-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: linear-gradient(145deg,
-            rgba(255, 255, 255, 0.04) 0%,
-            rgba(100, 100, 100, 0.02) 100%);
-    border-bottom: 1px solid #1a2332;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    backdrop-filter: blur(16px) saturate(1.2);
-    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+@media (max-width: 1024px) {
+  .club-messages-skeleton {
+    top: 52px;
+  }
 }
 
-.club-conversation-item:hover {
-    background: linear-gradient(145deg,
-            rgba(255, 255, 255, 0.07) 0%,
-            rgba(100, 100, 100, 0.04) 100%);
-    border-left: 3px solid #00d4ff;
-    box-shadow: 0 0 12px rgba(0, 212, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    transform: translateX(4px);
+@media (max-width: 600px) {
+  .club-messages-skeleton {
+    top: 48px;
+  }
 }
 
-.club-conversation-item.selected {
-    background: linear-gradient(145deg,
-            rgba(0, 212, 255, 0.1) 0%,
-            rgba(0, 212, 255, 0.03) 100%);
-    border-left: 3px solid #00d4ff;
-    box-shadow: 0 0 12px rgba(0, 212, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+@keyframes skeletonFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.club-conversation-item.unread {
-    background: linear-gradient(145deg,
-            rgba(255, 255, 255, 0.08) 0%,
-            rgba(100, 100, 100, 0.04) 100%);
-    border-left: 3px solid #00d4ff;
+.skeleton-header {
+  height: 56px;
+  background: linear-gradient(135deg, rgba(0, 136, 255, 0.08) 0%, rgba(0, 245, 255, 0.04) 100%);
+  border-bottom: 1px solid rgba(0, 180, 255, 0.12);
+  flex-shrink: 0;
 }
 
-.club-conversation-item.unread .club-name {
-    font-weight: 700;
-    color: #00d4ff;
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.club-conversation-item.unread .last-message {
-    color: #fff;
-    font-weight: 500;
+.skeleton-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  animation: shimmer 1.4s ease-in-out infinite;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   CLUB LOGO — Metal Frame
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.club-logo-container {
-    position: relative;
-    flex-shrink: 0;
+.skeleton-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.club-logo {
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    object-fit: cover;
-    background: linear-gradient(145deg, #1a2332 0%, #0d1520 100%);
-    border: 2px solid #2a3a4a;
+.skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  animation: shimmer 1.4s ease-in-out infinite;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   CONTENT
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.club-conversation-content {
-    flex: 1;
-    min-width: 0;
+.skeleton-line--name {
+  width: 35%;
+  animation-delay: 0.1s;
 }
 
-.club-conversation-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
+.skeleton-line--preview {
+  width: 65%;
+  animation-delay: 0.2s;
 }
 
-.club-name {
-    font-size: 15px;
-    font-weight: 600;
-    color: #fff;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.message-time {
-    font-size: 12px;
-    color: #6a7a8a;
-    flex-shrink: 0;
-}
-
-.club-conversation-preview {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.last-message {
-    font-size: 13px;
-    color: #8a9aaa;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex: 1;
-}
-
-.unread-badge {
-    background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 3px 10px;
-    border-radius: 12px;
-    margin-left: 8px;
-    flex-shrink: 0;
-    box-shadow: 0 0 10px rgba(0, 212, 255, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   EMPTY STATE
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 48px 24px;
-    text-align: center;
-}
-
-.empty-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
+@keyframes shimmer {
+  0%,
+  100% {
     opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
 }
-
-.empty-state p {
-    color: #8a9aaa;
-    margin: 0;
-}
-
-.empty-state .hint {
-    font-size: 13px;
-    color: #6a7a8a;
-    margin-top: 4px;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   LOADING
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.loading-state {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 48px;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   RESPONSIVE — Desktop Split View
-   ───────────────────────────────────────────────────────────────────────────── */
-
-@media (min-width: 768px) {
-    .club-messages-page {
-        flex-direction: row;
-    }
-
-    .club-messages-list {
-        width: 360px;
-        border-right: 2px solid #1a2332;
-        flex-shrink: 0;
-    }
-
-    .club-messages-thread {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-    }
-}
-/* ═══════ PREMIUM ANIMATIONS ═══════ */
-@keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.hidden { opacity: 0; transform: translateY(8px); }
-.fadeInUp { animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }

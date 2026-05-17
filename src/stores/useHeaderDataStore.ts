@@ -33,6 +33,7 @@ interface HeaderDataState {
   avatarUrl: string | null;
   notificationCount: number;
   unreadMessages: number;
+  isMessengerPageActive: boolean;
 
   // Loading guards
   _loaded: boolean;
@@ -45,6 +46,7 @@ interface HeaderDataState {
   setAvatarUrl: (url: string | null) => void;
   setNotificationCount: (count: number) => void;
   setUnreadMessages: (count: number) => void;
+  setMessengerPageActive: (active: boolean) => void;
   teardown: () => void;
 }
 
@@ -69,6 +71,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   avatarUrl: null,
   notificationCount: hydrateCount('ca-notif-count'),
   unreadMessages: hydrateCount('ca-msg-count'),
+  isMessengerPageActive: false,
 
   _loaded: false,
   _userId: null,
@@ -88,6 +91,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
     persistCount('ca-msg-count', count);
     masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId: get()._userId || '', count });
   },
+
+  setMessengerPageActive: (active) => set({ isMessengerPageActive: active }),
 
   /**
    * Load header data ONCE for a given userId.
@@ -224,6 +229,15 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           filter: `receiver_id=eq.${userId}`,
         },
         async () => {
+          // If the premium iframe messenger is currently active in the view,
+          // it owns the unread count authoritatively. Skip the database query
+          // and manual count calculation to avoid a race condition + wasted query.
+          if (get().isMessengerPageActive) {
+            console.debug(
+              '[HeaderDataStore] Skipping RT messages query because iframe messenger is active.'
+            );
+            return;
+          }
           try {
             const { count } = await supabase
               .from('messages')

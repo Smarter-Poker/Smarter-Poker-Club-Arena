@@ -240,23 +240,14 @@ export default function PublicProfilePage() {
     if (isMounted.current) setActionLoading(false);
   };
 
-  // Start or resume a DM conversation
-  const handleMessage = async () => {
-    if (!user?.id || !userId) return;
-    setActionLoading(true);
-    try {
-      const conv = await messagingService.startConversation(user.id, userId);
-      if (!isMounted.current) return;
-      if (conv) {
-        navigate(`/messages/${conv.id}`);
-      } else {
-        if (isMounted.current) toast.error('Failed to start conversation');
-      }
-    } catch (err) {
-      reportError(err, 'PublicProfilePage.Message_error');
-      if (isMounted.current) toast.error('Failed to start conversation');
-    }
-    if (isMounted.current) setActionLoading(false);
+  // Message this player — uses compose deep-link into the embedded messenger.
+  // The messenger already has full 'start or resume conversation' logic internally
+  // (router.query.uid path in messenger.js line 2721), so no pre-flight Supabase
+  // call is needed. This saves a round-trip and eliminates the old broken
+  // navigate('/messages/:convId') pattern that pointed at a non-existent route.
+  const handleMessage = () => {
+    if (!userId) return;
+    navigate(`/messages?compose=${userId}`);
   };
 
   // Block confirmed

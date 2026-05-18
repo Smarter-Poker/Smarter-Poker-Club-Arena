@@ -1,0 +1,58 @@
+name: Update Hetzner .env (utility)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write INTERNAL_API_KEY to Hetzner .env and restart container
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          envs: INTERNAL_API_KEY
+          script_stop: true
+          script: |
+            ENV_FILE="/opt/club-arena/server/.env"
+            KEY="INTERNAL_API_KEY"
+
+            # Update existing line or append if missing
+            if grep -q "^${KEY}=" "$ENV_FILE" 2>/dev/null; then
+              sed -i "s|^${KEY}=.*|${KEY}=${INTERNAL_API_KEY}|" "$ENV_FILE"
+              echo "UPDATED ${KEY} in ${ENV_FILE}"
+            else
+              echo "${KEY}=${INTERNAL_API_KEY}" >> "$ENV_FILE"
+              echo "ADDED ${KEY} to ${ENV_FILE}"
+            fi
+
+            # Confirm (value redacted)
+            grep "^${KEY}=" "$ENV_FILE" | sed 's/=.*/=***REDACTED***/'
+
+            # Restart container so new env is picked up
+            docker stop  club-arena-engine 2>/dev/null || true
+            docker rm    club-arena-engine 2>/dev/null || true
+            docker run \
+              --name club-arena-engine \
+              --restart unless-stopped \
+              -p 3001:3001 \
+              --env-file "$ENV_FILE" \
+              -d \
+              club-arena-engine:latest
+
+            # Health check with retries
+            for i in 1 2 3 4 5 6; do
+              sleep 5
+              STATUS=$(curl -sf https://engine.smarter.poker/health 2>/dev/null || echo '{"running":false}')
+              echo "Health check ${i}/6: ${STATUS}"
+              if echo "$STATUS" | grep -q '"running":true'; then
+                echo "Container healthy"
+                exit 0
+              fi
+            done
+            echo "Health check failed after 30s"
+            exit 1

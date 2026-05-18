@@ -1,12 +1,22 @@
 import { useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { engineChannelClient } from '../services/EngineStateClient';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from './useAuthUser';
 
 /**
  * Scopes realtime financial listeners (wallets, chip_ledger) exclusively
  * to components that need them (Cashier, Player Wallet).
- * Eliminates redundant global realtime subscriptions to optimize Supabase billing.
+ *
+ * Phase 2 (2026-05-18): Migrated from Supabase Realtime postgres_changes
+ * to the Hetzner engine WebSocket FINANCIAL_UPDATE message, eliminating
+ * all Supabase Realtime connections from this hook.
+ *
+ * The engine server sends FINANCIAL_UPDATE messages when:
+ *   - A wallet row is updated (balance change)
+ *   - A chip_ledger row is inserted (transaction in or out)
+ *
+ * Server-side contract (FINANCIAL_UPDATE message shape):
+ *   { type: 'FINANCIAL_UPDATE', userId, walletType, available, total, ledgerEntry? }
  */
 export function useRealtimeFinancials() {
   const { user } = useAuthUser();
@@ -15,68 +25,34 @@ export function useRealtimeFinancials() {
   useEffect(() => {
     if (!userId || userId === 'guest') return;
 
-    // Use a deterministic channel name scoped to the user's financial session
-    const channelName = `scoped_financials:${userId}`;
-    const channel = supabase.channel(channelName);
+    console.info(`[RealtimeFinancials] Activating engine WS listener for user ${userId}`);
 
-    channel
-      // 1. Wallets (Financial integrity)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'wallets', filter: `user_id=eq.${userId}` },
-        (payload) => {
-          console.debug('[RealtimeFinancials] External Wallet mutation detected:', payload);
-          masterBus.emit('BALANCE_UPDATED', { source: 'postgres_sync' });
-          const w = payload.new as any;
-          masterBus.emit('WALLET_REFRESHED', {
-            walletType: w.wallet_type || 'PLAYER',
-            available: (w.balance || 0) - (w.locked_balance || 0),
-            total: w.balance || 0,
-          });
-        }
-      )
-      // 2. Chip Ledger (incoming)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chip_ledger',
-          filter: `to_entity_id=eq.${userId}`,
-        },
-        (payload) => {
-          console.debug('[RealtimeFinancials] New ledger entry (incoming):', payload);
-          masterBus.emit('BALANCE_UPDATED', { source: 'chip_ledger_realtime' });
-          (masterBus as any).emit('TRANSACTION_LOGGED', { entry: payload.new, direction: 'in' });
-        }
-      )
-      // 3. Chip Ledger (outgoing)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chip_ledger',
-          filter: `performed_by=eq.${userId}`,
-        },
-        (payload) => {
-          console.debug('[RealtimeFinancials] New ledger entry (outgoing):', payload);
-          masterBus.emit('BALANCE_UPDATED', { source: 'chip_ledger_realtime' });
-          (masterBus as any).emit('TRANSACTION_LOGGED', { entry: payload.new, direction: 'out' });
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-          console.info(`[RealtimeFinancials] ✅ Hook Active for user ${userId}.`);
-        } else if (status === 'CHANNEL_ERROR') {
-          console.debug(`[RealtimeFinancials] ❌ Channel error:`, err);
-        }
+    const unsubscribe = engineChannelClient.onFinancialUpdate((msg) => {
+      // Only process messages for this user
+      if (msg.userId !== userId) return;
+
+      console.debug('[RealtimeFinancials] Financial update received:', msg);
+
+      masterBus.emit('BALANCE_UPDATED', { source: 'engine_ws_financial_update' });
+      masterBus.emit('WALLET_REFRESHED', {
+        walletType: msg.walletType,
+        available: msg.available,
+        total: msg.total,
       });
 
+      // If a ledger entry is included, emit TRANSACTION_LOGGED
+      if (msg.ledgerEntry) {
+        const entry = msg.ledgerEntry as { direction?: string };
+        (masterBus as unknown as { emit: (event: string, payload: unknown) => void }).emit(
+          'TRANSACTION_LOGGED',
+          { entry: msg.ledgerEntry, direction: entry.direction ?? 'in' }
+        );
+      }
+    });
+
     return () => {
-      console.info(`[RealtimeFinancials] Cleaning up listeners for user ${userId}.`);
-      channel.unsubscribe();
-      supabase.removeChannel(channel);
+      console.info(`[RealtimeFinancials] Removing engine WS listener for user ${userId}`);
+      unsubscribe();
     };
   }, [userId]);
 }

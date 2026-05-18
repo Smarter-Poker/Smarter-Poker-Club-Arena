@@ -3,7 +3,8 @@
  * Manages poker tables and game sessions
  */
 
-import { supabase, subscribeToTable } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { engineChannelClient } from './EngineStateClient';
 import type { PokerTable, TableSettings, GameVariant, HandState } from '../types/database.types';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
@@ -495,13 +496,18 @@ class TableService {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   /**
-   * Subscribe to table updates
+   * Subscribe to table metadata updates (player count, status changes).
+   *
+   * Phase 2 (2026-05-18): Migrated from Supabase Realtime postgres_changes
+   * to the Hetzner engine WebSocket TABLE_META_UPDATE message. Returns an
+   * unsubscribe function matching the old interface.
    */
   subscribeToTable(tableId: string, callback: (table: PokerTable) => void): () => void {
-    return subscribeToTable<PokerTable>('tables', callback, {
-      column: 'id',
-      value: tableId,
+    const unsubscribe = engineChannelClient.onTableMetaUpdate((msg) => {
+      if (msg.tableId !== tableId) return;
+      callback(msg.table as PokerTable);
     });
+    return unsubscribe;
   }
 
   /**

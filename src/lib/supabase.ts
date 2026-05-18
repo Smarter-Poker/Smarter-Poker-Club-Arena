@@ -3,9 +3,13 @@
  *  CLUB ENGINE — Supabase Client Configuration
  * ═══════════════════════════════════════════════════════════════════════════════
  * Connects to PokerIQ-Production (kuklfnapbkmacvwxktbh)
+ *
+ * Phase 2 (2026-05-18): Removed subscribeToTable() and set eventsPerSecond: 0
+ * to prevent any accidental Supabase Realtime connections. All real-time
+ * functionality has been migrated to the Hetzner engine WebSocket.
  */
 
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 import {
   readLocalSession as readLocalSessionShared,
   getTokenExpiry,
@@ -28,8 +32,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// Create the Supabase client with realtime enabled for live traffic
-// CRITICAL: storageKey MUST match Hub's 'smarter-poker-auth' for same-origin SSO
+// Create the Supabase client.
+// CRITICAL: storageKey MUST match Hub's 'smarter-poker-auth' for same-origin SSO.
+// eventsPerSecond: 0 — disables the Supabase Realtime heartbeat / multiplexer.
+// All real-time functionality now goes through the Hetzner engine WebSocket.
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   auth: {
     autoRefreshToken: true,
@@ -41,11 +47,15 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     // The default lock implementation acquires an exclusive Web Lock that
     // never releases if the initial getSession() network call is slow,
     // causing every subsequent auth operation to deadlock permanently.
-    lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<any>) => fn(),
+    lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>) => fn(),
   },
   realtime: {
     params: {
-      eventsPerSecond: 10,
+      // 0 = effectively disabled. Supabase Realtime is no longer used in
+      // Club Arena — all channels have been migrated to the Hetzner WebSocket.
+      // This prevents the Supabase client from opening a Realtime WS connection
+      // which would count against MAU even if no channels are subscribed.
+      eventsPerSecond: 0,
     },
   },
 });
@@ -89,65 +99,6 @@ export async function getAuthUser(timeoutMs = 5000) {
     return { data: { user: null }, error: err };
   }
 }
-
-// Filter options for realtime subscriptions
-interface SubscribeFilter {
-  column: string;
-  value: string;
-}
-
-// Subscribe to realtime changes on a database table
-export function subscribeToTable<T>(
-  tableName: string,
-  callback: (data: T) => void,
-  filter?: SubscribeFilter
-): () => void {
-  const channelName = filter ? `${tableName}:${filter.column}:${filter.value}` : tableName;
-
-  const channel: RealtimeChannel = supabase
-    .channel(channelName)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: tableName,
-        filter: filter ? `${filter.column}=eq.${filter.value}` : undefined,
-      },
-      (payload) => {
-        callback(payload.new as T);
-      }
-    )
-    .subscribe((status: string, err?: Error) => {
-      if (status === 'CHANNEL_ERROR') {
-        console.debug(
-          `[subscribeToTable] ❌ Channel error on ${channelName}:`,
-          err?.message || err
-        );
-      }
-      if (status === 'TIMED_OUT') {
-        console.debug(`[subscribeToTable] ⏱️ Channel ${channelName} timed out — auto-reconnecting`);
-      }
-    });
-
-  // Return unsubscribe function
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// REALTIME BROADCAST — Ephemeral hand state (no database table needed)
-// ══════════════════════════════════════════════════════════════════════════════
-// HeadlessTableEngine broadcasts hand state updates to a channel per table.
-// useTableStore subscribes to the same channel to receive live game data.
-// This is much faster than postgres_changes and doesn't require a hand_states table.
-
-// Phase 1.1 PR-5 (NO-GO-2): broadcastHandState / cleanupBroadcastChannel /
-// subscribeToHandState and the `hand-state:{tableId}` Supabase Realtime
-// channel DELETED. Game state comes from the engine's native WebSocket at
-// wss://engine.smarter.poker/ws/table/:tableId, wired through
-// src/hooks/useEngineTableState.ts + src/services/EngineStateClient.ts.
 
 // Export type-safe database interface
 export type SupabaseClient = typeof supabase;

@@ -1,0 +1,126 @@
+name: Auto-Deploy Hetzner Engine (on server/ changes)
+
+# Automatically redeploys the Hetzner engine whenever server/** files change
+# on the main branch. No manual confirmation required — this is CI/CD.
+#
+# Required repo secrets:
+#   HETZNER_SSH_KEY  — full contents of the deploy private key
+#   HETZNER_HOST     — Hetzner VPS IP (e.g. 178.156.160.206)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'server/**'
+
+concurrency:
+  group: deploy-hetzner
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Hetzner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+      SSH_USER: root
+      CONTAINER: club-arena-engine
+      REPO_DIR: /opt/club-arena
+      ENGINE_URL: https://engine.smarter.poker
+
+    steps:
+      - name: Checkout (for audit trail)
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null
+
+      - name: Capture pre-deploy state
+        id: pre
+        run: |
+          BEFORE_SHA=$(ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
+            "cd $REPO_DIR && git rev-parse HEAD" 2>&1 || echo "unknown")
+          echo "before_sha=$BEFORE_SHA" >> $GITHUB_OUTPUT
+          echo "Pre-deploy commit on host: $BEFORE_SHA"
+
+      - name: Pre-flight Sentry check
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
+            "grep -q '^SENTRY_DSN=..' /opt/club-arena/server/.env 2>/dev/null \
+              && echo '   ✅ SENTRY_DSN present' \
+              || echo '   ⚠️  SENTRY_DSN missing — non-blocking'"
+
+      - name: Pull latest code on host
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
+            "cd $REPO_DIR && git fetch origin && git reset --hard origin/main"
+
+      - name: Rebuild Docker image
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
+            "cd $REPO_DIR/server && docker build -t $CONTAINER ."
+
+      - name: Stop and remove old container
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
+            "docker stop $CONTAINER 2>/dev/null || true && docker rm $CONTAINER 2>/dev/null || true"
+
+      - name: Start new container
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
+            "docker run -d \
+              --name $CONTAINER \
+              --restart always \
+              -p 8080:8080 \
+              --env-file $REPO_DIR/server/.env \
+              $CONTAINER"
+
+      - name: Health check (retry 6×5s)
+        id: health
+        run: |
+          sleep 5
+          for i in 1 2 3 4 5 6; do
+            HEALTH=$(curl -sf "$ENGINE_URL/health" || echo "FAILED")
+            if echo "$HEALTH" | grep -q '"running":true'; then
+              echo "✅ Engine healthy on attempt $i"
+              echo "$HEALTH" | python3 -m json.tool
+              UPTIME=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('uptime', -1))")
+              echo "uptime=$UPTIME" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "Attempt $i: not ready, waiting 5s..."
+            sleep 5
+          done
+          echo "::error::Health check failed after 6 attempts"
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
+            "docker logs --tail 80 $CONTAINER" || true
+          exit 1
+
+      - name: Post-deploy summary
+        id: post
+        run: |
+          AFTER_SHA=$(ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
+            "cd $REPO_DIR && git rev-parse HEAD")
+          echo "## Auto-deploy summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Trigger: push to main (server/ files changed)" >> $GITHUB_STEP_SUMMARY
+          echo "- Before: \`${{ steps.pre.outputs.before_sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- After:  \`$AFTER_SHA\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Engine uptime: ${{ steps.health.outputs.uptime }}s" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: $ENGINE_URL" >> $GITHUB_STEP_SUMMARY
+
+      - name: Prune old Docker images
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
+            "docker image prune -f" || true
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy

@@ -2,15 +2,23 @@
  * HTTP request router for the Hetzner game server.
  *
  * Extracted from `server/src/index.ts` in Phase U3.4 (2026-04-23). Returns
- * a request listener compatible with `http.createServer(listener)`.
+ * a request listener compatible with `http.createServer(listener)`.\
  * Every route dispatches to a handler in `./handlers/*` — this module owns
  * URL/method matching only, never business logic.
  *
  * The router is a factory (`createRouter(deps) -> requestListener`) rather
- * than a plain function so that the `gameServer`, `tableStateHub`, and
- * `engineWs` singletons can be injected from `index.ts` at bootstrap.
- * Handlers each declare the bits of those singletons they actually touch;
- * this router accepts the union shape and trusts the handler-level checks.
+ * than a plain function so that the `gameServer`, `tableStateHub`,
+ * `engineWs`, and `channelHub` singletons can be injected from `index.ts`
+ * at bootstrap. Handlers each declare the bits of those singletons they
+ * actually touch; this router accepts the union shape and trusts the
+ * handler-level checks.
+ *
+ * Phase U4 (2026-05-18): added three server-side broadcast routes:
+ *   POST /channels/club/:clubId/event
+ *   POST /channels/tournament/:tournamentId/event
+ *   POST /channels/lobby/update
+ * These are called from the World Hub / admin to push events to connected
+ * clients. They require `Authorization: Bearer <INTERNAL_API_KEY>`.
  */
 
 import type { IncomingMessage, ServerResponse } from 'http';
@@ -31,6 +39,11 @@ import { handleDiscard } from './handlers/discard.js';
 import { handleAdminPause, handleAdminResume, handleAdminKick } from './handlers/admin.js';
 import { handlePostBB } from './handlers/postbb.js';
 import { handleGetActions, handleGetState } from './handlers/state.js';
+import type { ChannelHub } from './hub/ChannelHub.js';
+
+// ─── Internal API key (set in Hetzner env, same secret used by World Hub) ─────
+
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
 /**
  * Structural shape the router needs.
@@ -63,6 +76,59 @@ export interface RouterDeps {
   gameServer: AnyGameServer;
   tableStateHub: { totalSubscribers(): number };
   engineWs: { connectionCount(): number };
+  channelHub: ChannelHub;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Read and JSON-parse the request body. Returns null on parse failure or if
+ * the body exceeds MAX_BODY_BYTES.
+ */
+const MAX_BODY_BYTES = 64 * 1024;
+
+async function readBody(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+
+    req.on('data', (chunk: Buffer) => {
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_BODY_BYTES) {
+        resolve(null);
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        resolve(JSON.parse(raw) as Record<string, unknown>);
+      } catch {
+        resolve(null);
+      }
+    });
+
+    req.on('error', () => resolve(null));
+  });
+}
+
+/**
+ * Verify the Authorization: Bearer <token> header against INTERNAL_API_KEY.
+ * Returns true if valid, false otherwise.
+ */
+function verifyInternalKey(req: IncomingMessage): boolean {
+  if (!INTERNAL_API_KEY) {
+    // If the key is not configured, reject all requests to these routes.
+    console.warn('[Router] INTERNAL_API_KEY is not set — rejecting channel broadcast request');
+    return false;
+  }
+  const auth = req.headers['authorization'];
+  if (typeof auth !== 'string') return false;
+  const parts = auth.split(' ');
+  if (parts.length !== 2 || parts[0]?.toLowerCase() !== 'bearer') return false;
+  return parts[1] === INTERNAL_API_KEY;
 }
 
 /**
@@ -72,7 +138,7 @@ export interface RouterDeps {
 export function createRouter(
   deps: RouterDeps
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const { gameServer, tableStateHub, engineWs } = deps;
+  const { gameServer, tableStateHub, engineWs, channelHub } = deps;
 
   return async (req, res) => {
     const method = req.method || 'GET';
@@ -130,6 +196,66 @@ export function createRouter(
     const stateMatch = url.match(/^\/state\/([^/]+)$/);
     if (method === 'GET' && stateMatch) {
       return handleGetState(req, res, stateMatch[1], { gameServer });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Channel broadcast routes (Phase U4 — Realtime migration)
+    // Called by World Hub / admin to push events to connected clients.
+    // Require Authorization: Bearer <INTERNAL_API_KEY>.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // POST /channels/club/:clubId/event
+    const clubEventMatch = url.match(/^\/channels\/club\/([^/]+)\/event$/);
+    if (method === 'POST' && clubEventMatch) {
+      if (!verifyInternalKey(req)) {
+        return sendJSON(res, 401, { error: 'Unauthorized' });
+      }
+      const clubId = clubEventMatch[1];
+      const body = await readBody(req);
+      if (!body) {
+        return sendJSON(res, 400, { error: 'Invalid or missing JSON body' });
+      }
+      channelHub.broadcastToClub(clubId, {
+        type: 'CLUB_EVENT',
+        clubId,
+        event: body,
+      });
+      return sendJSON(res, 200, { ok: true, clubId });
+    }
+
+    // POST /channels/tournament/:tournamentId/event
+    const tournamentEventMatch = url.match(/^\/channels\/tournament\/([^/]+)\/event$/);
+    if (method === 'POST' && tournamentEventMatch) {
+      if (!verifyInternalKey(req)) {
+        return sendJSON(res, 401, { error: 'Unauthorized' });
+      }
+      const tournamentId = tournamentEventMatch[1];
+      const body = await readBody(req);
+      if (!body) {
+        return sendJSON(res, 400, { error: 'Invalid or missing JSON body' });
+      }
+      channelHub.broadcastToTournament(tournamentId, {
+        type: 'TOURNAMENT_EVENT',
+        tournamentId,
+        event: body,
+      });
+      return sendJSON(res, 200, { ok: true, tournamentId });
+    }
+
+    // POST /channels/lobby/update
+    if (method === 'POST' && url === '/channels/lobby/update') {
+      if (!verifyInternalKey(req)) {
+        return sendJSON(res, 401, { error: 'Unauthorized' });
+      }
+      const body = await readBody(req);
+      if (!body) {
+        return sendJSON(res, 400, { error: 'Invalid or missing JSON body' });
+      }
+      channelHub.broadcastToLobby({
+        type: 'LOBBY_UPDATE',
+        payload: body,
+      });
+      return sendJSON(res, 200, { ok: true });
     }
 
     // ─────────────────────────────────────────────────────────────────────────

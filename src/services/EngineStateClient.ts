@@ -10,6 +10,12 @@
  * reconnect with exponential backoff, seq-gap RESYNC requests, and token
  * refresh if the server closes with 4401.
  *
+ * Phase 2 (2026-05-18): Extended with a second connection path at
+ * /ws/channel for non-table channels (club presence, tournament events,
+ * lobby, hand replay, financials, table meta). The EngineChannelClient
+ * class below handles those. RealtimeChannelService uses EngineChannelClient
+ * as its transport, eliminating all Supabase Realtime connections.
+ *
  * This file does NOT depend on any React or Zustand code so it can be unit-
  * tested with jsdom. The React binding lives in hooks/useEngineTableState.
  */
@@ -341,3 +347,501 @@ export class EngineStateClient {
 }
 
 export default EngineStateClient;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EngineChannelClient — general-purpose channel transport
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Connects to wss://engine.smarter.poker/ws/channel (new endpoint — see
+// server-side requirements note at bottom). Carries all non-table real-time
+// channels: club presence, tournament events, lobby, hand replay, financials,
+// and table-meta updates.
+//
+// Same auth scheme as EngineStateClient: Sec-WebSocket-Protocol: bearer, <jwt>.
+// Same PING/PONG heartbeat protocol.
+//
+// CLIENT → SERVER messages:
+//   JOIN_CLUB            { type, clubId }
+//   LEAVE_CLUB           { type, clubId }
+//   UPDATE_PRESENCE      { type, clubId, status, currentTableId? }
+//   JOIN_TOURNAMENT      { type, tournamentId }
+//   LEAVE_TOURNAMENT     { type, tournamentId }
+//   JOIN_LOBBY           { type }
+//   LEAVE_LOBBY          { type }
+//   REQUEST_HAND_REPLAY  { type, handId }
+//
+// SERVER → CLIENT messages:
+//   CLUB_PRESENCE_UPDATE { type, clubId, members, event, changed? }
+//   CLUB_EVENT           { type, clubId, event }
+//   TOURNAMENT_EVENT     { type, tournamentId, event }
+//   LOBBY_UPDATE         { type, type: 'club_activity'|'tournament_starting'|'jackpot_hit', payload }
+//   HAND_REPLAY_EVENT    { type, handId, event }
+//   TABLE_META_UPDATE    { type, tableId, table }
+//   FINANCIAL_UPDATE     { type, userId, walletType, available, total, ledgerEntry? }
+//   PING                 { type, ts }
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import type { ClubPresence, ClubEvent, TournamentEvent, HandEvent } from './RealtimeChannelService';
+import type { PokerTable } from '../types/database.types';
+
+// ─── Server → Client message types ───────────────────────────────────────────
+
+export interface ChannelPingMessage {
+  type: 'PING';
+  ts: number;
+}
+export interface ClubPresenceUpdateMessage {
+  type: 'CLUB_PRESENCE_UPDATE';
+  clubId: string;
+  members: ClubPresence[];
+  event: 'sync' | 'join' | 'leave';
+  changed?: ClubPresence;
+}
+export interface ClubEventMessage {
+  type: 'CLUB_EVENT';
+  clubId: string;
+  event: ClubEvent;
+}
+export interface TournamentEventMessage {
+  type: 'TOURNAMENT_EVENT';
+  tournamentId: string;
+  event: TournamentEvent;
+}
+export interface LobbyUpdateMessage {
+  type: 'LOBBY_UPDATE';
+  kind: 'club_activity' | 'tournament_starting' | 'jackpot_hit';
+  payload: unknown;
+}
+export interface HandReplayEventMessage {
+  type: 'HAND_REPLAY_EVENT';
+  handId: string;
+  event: HandEvent;
+}
+export interface TableMetaUpdateMessage {
+  type: 'TABLE_META_UPDATE';
+  tableId: string;
+  table: Partial<PokerTable>;
+}
+export interface FinancialUpdateMessage {
+  type: 'FINANCIAL_UPDATE';
+  userId: string;
+  walletType: string;
+  available: number;
+  total: number;
+  ledgerEntry?: unknown;
+}
+
+export type ChannelServerMessage =
+  | ChannelPingMessage
+  | ClubPresenceUpdateMessage
+  | ClubEventMessage
+  | TournamentEventMessage
+  | LobbyUpdateMessage
+  | HandReplayEventMessage
+  | TableMetaUpdateMessage
+  | FinancialUpdateMessage;
+
+// ─── Client → Server message types ───────────────────────────────────────────
+
+export type ChannelClientMessage =
+  | { type: 'JOIN_CLUB'; clubId: string }
+  | { type: 'LEAVE_CLUB'; clubId: string }
+  | { type: 'UPDATE_PRESENCE'; clubId: string; status: 'online' | 'at_table' | 'away'; currentTableId?: string }
+  | { type: 'JOIN_TOURNAMENT'; tournamentId: string }
+  | { type: 'LEAVE_TOURNAMENT'; tournamentId: string }
+  | { type: 'JOIN_LOBBY' }
+  | { type: 'LEAVE_LOBBY' }
+  | { type: 'REQUEST_HAND_REPLAY'; handId: string }
+  | { type: 'PONG'; ts: number };
+
+// ─── Listener registrations ───────────────────────────────────────────────────
+
+type Listener<T> = (msg: T) => void;
+
+interface ChannelListeners {
+  onClubPresence: Set<Listener<ClubPresenceUpdateMessage>>;
+  onClubEvent: Set<Listener<ClubEventMessage>>;
+  onTournamentEvent: Set<Listener<TournamentEventMessage>>;
+  onLobbyUpdate: Set<Listener<LobbyUpdateMessage>>;
+  onHandReplayEvent: Set<Listener<HandReplayEventMessage>>;
+  onTableMetaUpdate: Set<Listener<TableMetaUpdateMessage>>;
+  onFinancialUpdate: Set<Listener<FinancialUpdateMessage>>;
+}
+
+// ─── EngineChannelClient ──────────────────────────────────────────────────────
+
+export interface EngineChannelClientOptions {
+  /** Base URL, e.g. https://engine.smarter.poker. Scheme is rewritten to ws(s). */
+  baseUrl: string;
+  /** Called every time fresh auth is needed. */
+  getToken: () => Promise<string | null>;
+  /** Called when connection status changes. */
+  onStatus?: (status: EngineConnectionStatus) => void;
+  /** Maximum reconnect attempts. Default: 10. */
+  maxRetries?: number;
+  /** Initial backoff ms. Default: 1000. */
+  initialDelay?: number;
+  /** Max backoff ms. Default: 30000. */
+  maxDelay?: number;
+}
+
+export class EngineChannelClient {
+  private opts: Required<EngineChannelClientOptions>;
+  private ws: WebSocket | null = null;
+  private status: EngineConnectionStatus = 'idle';
+  private retryCount = 0;
+  private reconnectTimer: number | null = null;
+  private intentionalClose = false;
+
+  private listeners: ChannelListeners = {
+    onClubPresence: new Set(),
+    onClubEvent: new Set(),
+    onTournamentEvent: new Set(),
+    onLobbyUpdate: new Set(),
+    onHandReplayEvent: new Set(),
+    onTableMetaUpdate: new Set(),
+    onFinancialUpdate: new Set(),
+  };
+
+  // Queue of messages to send once connected
+  private sendQueue: ChannelClientMessage[] = [];
+
+  constructor(opts: EngineChannelClientOptions) {
+    this.opts = {
+      onStatus: () => undefined,
+      maxRetries: 10,
+      initialDelay: 1000,
+      maxDelay: 30_000,
+      ...opts,
+    };
+  }
+
+  /** Open the channel connection. Safe to call multiple times (no-op if already connected). */
+  async connect(): Promise<void> {
+    if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
+    this.intentionalClose = false;
+    this.retryCount = 0;
+    await this.openOnce();
+  }
+
+  /** Close the channel connection permanently. */
+  disconnect(): void {
+    this.intentionalClose = true;
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      try {
+        this.ws.close(1000, 'intentional');
+      } catch {
+        /* ignore */
+      }
+      this.ws = null;
+    }
+    this.setStatus('idle');
+  }
+
+  /** Current connection status. */
+  getStatus(): EngineConnectionStatus {
+    return this.status;
+  }
+
+  // ─── Send helpers ─────────────────────────────────────────────────────────
+
+  /**
+   * Send a typed client → server message.
+   * If the socket isn't open yet, the message is queued and sent on connect.
+   */
+  send(msg: ChannelClientMessage): void {
+    const data = JSON.stringify(msg);
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(data);
+      } catch (err) {
+        console.warn('[EngineChannelClient] send failed:', err);
+      }
+    } else {
+      // Queue for when the connection opens
+      this.sendQueue.push(msg);
+      // Auto-connect on first send
+      void this.connect();
+    }
+  }
+
+  // ─── Listener registration ────────────────────────────────────────────────
+  //
+  // Each method follows the same pattern:
+  //   onXxx(listener) → returns an unsubscribe function () => void
+  //
+  // Auto-connects the channel on first listener registration.
+
+  onClubPresence(listener: Listener<ClubPresenceUpdateMessage>): () => void {
+    this.listeners.onClubPresence.add(listener);
+    void this.connect();
+    return () => this.listeners.onClubPresence.delete(listener);
+  }
+
+  onClubEvent(listener: Listener<ClubEventMessage>): () => void {
+    this.listeners.onClubEvent.add(listener);
+    void this.connect();
+    return () => this.listeners.onClubEvent.delete(listener);
+  }
+
+  onTournamentEvent(listener: Listener<TournamentEventMessage>): () => void {
+    this.listeners.onTournamentEvent.add(listener);
+    void this.connect();
+    return () => this.listeners.onTournamentEvent.delete(listener);
+  }
+
+  onLobbyUpdate(listener: Listener<LobbyUpdateMessage>): () => void {
+    this.listeners.onLobbyUpdate.add(listener);
+    void this.connect();
+    return () => this.listeners.onLobbyUpdate.delete(listener);
+  }
+
+  onHandReplayEvent(listener: Listener<HandReplayEventMessage>): () => void {
+    this.listeners.onHandReplayEvent.add(listener);
+    void this.connect();
+    return () => this.listeners.onHandReplayEvent.delete(listener);
+  }
+
+  onTableMetaUpdate(listener: Listener<TableMetaUpdateMessage>): () => void {
+    this.listeners.onTableMetaUpdate.add(listener);
+    void this.connect();
+    return () => this.listeners.onTableMetaUpdate.delete(listener);
+  }
+
+  onFinancialUpdate(listener: Listener<FinancialUpdateMessage>): () => void {
+    this.listeners.onFinancialUpdate.add(listener);
+    void this.connect();
+    return () => this.listeners.onFinancialUpdate.delete(listener);
+  }
+
+  // ─── Internal ─────────────────────────────────────────────────────────────
+
+  private async openOnce(): Promise<void> {
+    this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
+    const token = await this.opts.getToken();
+    if (!token) {
+      this.scheduleReconnect();
+      return;
+    }
+
+    const wsUrl = this.opts.baseUrl.replace(/^http/, 'ws') + '/ws/channel';
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl, ['bearer', token]);
+    } catch {
+      this.scheduleReconnect();
+      return;
+    }
+    this.ws = ws;
+
+    ws.onopen = () => {
+      this.retryCount = 0;
+      this.setStatus('connected');
+      // Flush any queued messages
+      const queued = this.sendQueue.splice(0);
+      for (const msg of queued) {
+        try {
+          ws.send(JSON.stringify(msg));
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
+    ws.onmessage = (e) => {
+      let msg: ChannelServerMessage | null = null;
+      try {
+        msg = JSON.parse(e.data as string) as ChannelServerMessage;
+      } catch {
+        return;
+      }
+      if (!msg || typeof (msg as { type?: string }).type !== 'string') return;
+      this.handleMessage(msg);
+    };
+
+    ws.onclose = (e) => {
+      if (this.intentionalClose) return;
+      if (e.code === CLOSE_AUTH_FAILED) {
+        this.setStatus('auth_failed');
+        this.scheduleReconnect();
+        return;
+      }
+      this.scheduleReconnect();
+    };
+
+    ws.onerror = () => {
+      // Errors are always followed by onclose; handle there.
+    };
+  }
+
+  private handleMessage(msg: ChannelServerMessage): void {
+    switch (msg.type) {
+      case 'PING': {
+        try {
+          this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      case 'CLUB_PRESENCE_UPDATE': {
+        this.emit('onClubPresence', msg);
+        return;
+      }
+      case 'CLUB_EVENT': {
+        this.emit('onClubEvent', msg);
+        return;
+      }
+      case 'TOURNAMENT_EVENT': {
+        this.emit('onTournamentEvent', msg);
+        return;
+      }
+      case 'LOBBY_UPDATE': {
+        this.emit('onLobbyUpdate', msg);
+        return;
+      }
+      case 'HAND_REPLAY_EVENT': {
+        this.emit('onHandReplayEvent', msg);
+        return;
+      }
+      case 'TABLE_META_UPDATE': {
+        this.emit('onTableMetaUpdate', msg);
+        return;
+      }
+      case 'FINANCIAL_UPDATE': {
+        this.emit('onFinancialUpdate', msg);
+        return;
+      }
+    }
+  }
+
+  private emit<K extends keyof ChannelListeners>(
+    key: K,
+    msg: ChannelListeners[K] extends Set<Listener<infer M>> ? M : never
+  ): void {
+    // Use setTimeout(0) for same reason as EngineStateClient EVENT handler:
+    // prevent React 18 batching from dropping rapid sequential messages
+    // (e.g. FINANCIAL_UPDATE arriving back-to-back for wallet + ledger).
+    setTimeout(() => {
+      (this.listeners[key] as Set<Listener<typeof msg>>).forEach((listener) => {
+        try {
+          listener(msg);
+        } catch (err) {
+          console.error(`[EngineChannelClient] ${key} listener threw:`, err);
+        }
+      });
+    }, 0);
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer !== null) return;
+    if (this.retryCount >= this.opts.maxRetries) {
+      this.setStatus('failed');
+      return;
+    }
+    this.retryCount++;
+    this.setStatus('reconnecting');
+    const base = Math.min(
+      this.opts.initialDelay * Math.pow(2, this.retryCount - 1),
+      this.opts.maxDelay
+    );
+    const jitter = Math.random() * base * 0.3;
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.openOnce();
+    }, base + jitter);
+  }
+
+  private setStatus(status: EngineConnectionStatus): void {
+    if (this.status === status) return;
+    this.status = status;
+    this.opts.onStatus(status);
+  }
+}
+
+// ─── Singleton ────────────────────────────────────────────────────────────────
+//
+// A single EngineChannelClient is shared across the whole app, analogous to
+// how the Supabase client is a singleton. Auth token is read lazily from
+// localStorage (same key as the Supabase session) so it always uses the
+// latest token without needing an explicit setter.
+
+const ENGINE_BASE_URL = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL
+  ?? 'https://engine.smarter.poker';
+
+const AUTH_STORAGE_KEY = 'smarter-poker-auth';
+
+function readTokenFromStorage(): string | null {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_STORAGE_KEY) : null;
+    if (!raw) return null;
+    const data = JSON.parse(raw) as { access_token?: string };
+    return data?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export const engineChannelClient = new EngineChannelClient({
+  baseUrl: ENGINE_BASE_URL,
+  getToken: async () => readTokenFromStorage(),
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SERVER-SIDE REQUIREMENTS (documentation — no code change needed here)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The Hetzner engine server (server/src/) needs the following additions to
+// support the new /ws/channel endpoint:
+//
+// 1. New WS endpoint: /ws/channel
+//    In server/src/transport/EngineWebSocketServer.ts (or a new
+//    ChannelWebSocketServer.ts), add handling for upgrade requests whose
+//    pathname is '/ws/channel'. Same auth scheme (bearer subprotocol + JWT).
+//
+// 2. New message router in the channel WS handler:
+//    switch (msg.type) {
+//      case 'JOIN_CLUB':           // track { userId, clubId } → send CLUB_PRESENCE_UPDATE sync
+//      case 'LEAVE_CLUB':          // remove tracking, send CLUB_PRESENCE_UPDATE leave
+//      case 'UPDATE_PRESENCE':     // update status in club presence map, broadcast to club
+//      case 'JOIN_TOURNAMENT':     // subscribe this conn to tournament:tournamentId events
+//      case 'LEAVE_TOURNAMENT':    // unsubscribe
+//      case 'JOIN_LOBBY':          // subscribe this conn to lobby:global events
+//      case 'LEAVE_LOBBY':         // unsubscribe
+//      case 'REQUEST_HAND_REPLAY': // start streaming HandEvent sequence for handId
+//      case 'PONG':                // update lastPongAt for heartbeat
+//    }
+//
+// 3. Server-side club presence map:
+//    Map<clubId, Map<userId, ClubPresence>>  — maintained in memory.
+//    On JOIN_CLUB: add entry, broadcast CLUB_PRESENCE_UPDATE {event:'join', changed} to all
+//    club subscribers.
+//    On LEAVE_CLUB / connection close: remove entry, broadcast {event:'leave', changed}.
+//    On UPDATE_PRESENCE: update entry, broadcast {event:'sync', members: [...]}.
+//
+// 4. Tournament event fan-out:
+//    When the GameServer fires tournament events (eliminations, level_up, etc.),
+//    it should call channelHub.broadcastToTournament(tournamentId, event) which
+//    sends TOURNAMENT_EVENT to all subscribed channel connections.
+//
+// 5. Lobby fan-out:
+//    Periodic or event-driven LOBBY_UPDATE messages broadcast to all
+//    JOIN_LOBBY subscribers (club_activity counts, tournament_starting alerts).
+//
+// 6. Financial updates:
+//    When atomic_credit_wallet_and_log or atomic_table_cashout runs,
+//    the engine should broadcast FINANCIAL_UPDATE to the affected userId's
+//    channel connection (if online).
+//
+// 7. Table meta updates:
+//    When tables row changes (player count, status), broadcast TABLE_META_UPDATE
+//    to connections that have joined the relevant club or are in the lobby.
+//
+// 8. Hand replay:
+//    On REQUEST_HAND_REPLAY, fetch hand events from the DB and stream
+//    HAND_REPLAY_EVENT messages to the requesting connection at the requested
+//    speed (default 1 event/second).

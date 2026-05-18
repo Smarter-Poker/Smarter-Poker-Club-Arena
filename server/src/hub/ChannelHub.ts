@@ -21,6 +21,8 @@
  *
  * Thread safety: Node.js is single-threaded, so all Map/Set operations are
  * inherently safe. No locking needed.
+ *
+ * @version 1.1.0 — 2026-05-18
  */
 
 import { WebSocket } from 'ws';

@@ -348,12 +348,12 @@ export class ChannelWebSocketServer {
       for (let i = 0; i < actions.length; i++) {
         await new Promise<void>((resolve) => setTimeout(resolve, HAND_REPLAY_DELAY_MS));
 
-        // Check connection is still alive before sending
-        const ws = this.connections.get(
-          // Look up by userId — find the ws whose conn.userId matches
-          [...this.connections.entries()].find(([, c]) => c.userId === userId)?.[0] as WebSocket
-        );
-        if (!ws || ws.readyState !== 1 /* ws.OPEN */) break;
+        // Check connection is still alive before sending next frame.
+        // connections is Map<WebSocket, ConnectionState> — look up the ConnectionState by userId,
+        // then check ws.readyState directly (avoids the TS2339 error from accessing readyState
+        // on ConnectionState instead of WebSocket).
+        const connEntry = [...this.connections.values()].find((c) => c.userId === userId);
+        if (!connEntry || connEntry.ws.readyState !== WebSocket.OPEN) break;
 
         channelHub.sendToUser(userId, {
           type: 'HAND_REPLAY_EVENT',

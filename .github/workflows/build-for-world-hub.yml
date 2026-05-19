@@ -1,0 +1,61 @@
+name: Build for World Hub Sync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-world-hub-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-store:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Club Arena
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Club Arena
+        env:
+          NODE_ENV: production
+          VITE_ANTIGRAVITY_ENABLED: 'true'
+          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
+          VITE_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1a2xmbmFwYmttYWN2d3hrdGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MzA4NDQsImV4cCI6MjA4MzMwNjg0NH0.ZGFrUYq7yAbkveFdudh4q_Xk0qN0AZ-jnu4FkX9YKjo'
+          VITE_ENGINE_URL: 'https://engine.smarter.poker'
+          VITE_APP_ENV: production
+        run: npm run build
+
+      - name: Commit dist to sync branch
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+          BRANCH="build/world-hub-sync-${SHORT_SHA}"
+          echo "SYNC_BRANCH=${BRANCH}" >> $GITHUB_ENV
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git checkout -b "${BRANCH}"
+          # Stage only the dist directory
+          git add --force dist/
+          git commit -m "build: compiled dist for world hub sync (${SHORT_SHA})"
+          git push origin "${BRANCH}"
+          echo "Sync branch pushed: ${BRANCH}"
+
+      - name: Output sync branch name
+        run: |
+          echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Sync branch: \`${{ env.SYNC_BRANCH }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Use this branch to copy \`dist/\` into World Hub \`public/hub/club-arena/\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "dist/index.html and dist/assets/ contain the latest compiled build." >> $GITHUB_STEP_SUMMARY

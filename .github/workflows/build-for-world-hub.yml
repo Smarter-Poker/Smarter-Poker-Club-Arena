@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      HUSKY: '0'
     outputs:
       sync_branch: ${{ steps.set-branch.outputs.sync_branch }}
 
@@ -52,7 +54,7 @@ jobs:
           git checkout -b "${BRANCH}"
           git add --force dist/
           git commit -m "build: compiled dist for world hub sync (${SHORT_SHA})"
-          git push origin "${BRANCH}"
+          git push --no-verify origin "${BRANCH}"
 
       - name: Build summary
         run: |

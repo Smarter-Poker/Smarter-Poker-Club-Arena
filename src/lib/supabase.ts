@@ -47,8 +47,8 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     // The default lock implementation acquires an exclusive Web Lock that
     // never releases if the initial getSession() network call is slow,
     // causing every subsequent auth operation to deadlock permanently.
-    // LockFunc requires Promise<void> return — await fn() then return void.
-    lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>): Promise<void> => {
+    // LockFunc signature: (name, acquireTimeout, fn: () => Promise<void>) => Promise<void>
+    lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<void>): Promise<void> => {
       await fn();
     },
   },

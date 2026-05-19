@@ -47,12 +47,11 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
     // The default lock implementation acquires an exclusive Web Lock that
     // never releases if the initial getSession() network call is slow,
     // causing every subsequent auth operation to deadlock permanently.
-    // LockFunc fn param uses Promise<any> to satisfy TS strictFunctionTypes
-    // contravariance — the actual return value is never used by the caller.
+    // Runtime: immediately invokes fn() without acquiring any Web Lock.
+    // Cast bypasses LockFunc type incompatibility — the type varies across
+    // @supabase/supabase-js minor versions (generic vs. concrete overloads).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<any>): Promise<void> => {
-      await fn();
-    },
+    lock: (async (_name: any, _acquireTimeout: any, fn: any) => fn()) as any,
   },
   realtime: {
     params: {

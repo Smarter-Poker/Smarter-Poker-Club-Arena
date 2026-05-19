@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      sync_branch: ${{ steps.set-branch.outputs.sync_branch }}
 
     steps:
       - name: Checkout Club Arena
@@ -39,23 +41,65 @@ jobs:
         run: npm run build
 
       - name: Commit dist to sync branch
+        id: set-branch
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
           BRANCH="build/world-hub-sync-${SHORT_SHA}"
+          echo "sync_branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "SYNC_BRANCH=${BRANCH}" >> $GITHUB_ENV
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git checkout -b "${BRANCH}"
-          # Stage only the dist directory
           git add --force dist/
           git commit -m "build: compiled dist for world hub sync (${SHORT_SHA})"
           git push origin "${BRANCH}"
-          echo "Sync branch pushed: ${BRANCH}"
 
-      - name: Output sync branch name
+      - name: Build summary
         run: |
           echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "Sync branch: \`${{ env.SYNC_BRANCH }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "Use this branch to copy \`dist/\` into World Hub \`public/hub/club-arena/\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "dist/index.html and dist/assets/ contain the latest compiled build." >> $GITHUB_STEP_SUMMARY
+          echo "Proceeding to sync directly to World Hub..." >> $GITHUB_STEP_SUMMARY
+
+  sync-to-world-hub:
+    needs: build-and-store
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Club Arena sync branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-and-store.outputs.sync_branch }}
+          path: club-arena-build
+
+      - name: Checkout World Hub
+        uses: actions/checkout@v4
+        with:
+          repository: Smarter-Poker/Smarter-Poker-World-Hub
+          token: ${{ secrets.WORLD_HUB_SYNC_TOKEN }}
+          path: world-hub
+
+      - name: Sync dist/ to World Hub public/hub/club-arena/
+        run: |
+          rsync -av --delete \
+            club-arena-build/dist/ \
+            world-hub/public/hub/club-arena/
+
+      - name: Commit and push to World Hub
+        run: |
+          cd world-hub
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add public/hub/club-arena/
+          if git diff --cached --quiet; then
+            echo "No changes to sync — World Hub already up to date."
+          else
+            git commit -m "chore(club-arena): sync build ${{ github.sha }}"
+            git push
+            echo "World Hub updated successfully."
+          fi
+
+      - name: Sync summary
+        run: |
+          echo "### Sync Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Club Arena \`dist/\` → World Hub \`public/hub/club-arena/\`" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY

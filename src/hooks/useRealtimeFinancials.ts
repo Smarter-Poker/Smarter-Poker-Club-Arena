@@ -35,7 +35,9 @@ export function useRealtimeFinancials() {
 
       masterBus.emit('BALANCE_UPDATED', { source: 'engine_ws_financial_update' });
       masterBus.emit('WALLET_REFRESHED', {
-        walletType: msg.walletType,
+        // Cast: msg.walletType arrives as string from WebSocket JSON;
+        // masterBus WALLET_REFRESHED payload requires the strict union type.
+        walletType: msg.walletType as 'PLAYER' | 'BUSINESS' | 'PROMO',
         available: msg.available,
         total: msg.total,
       });

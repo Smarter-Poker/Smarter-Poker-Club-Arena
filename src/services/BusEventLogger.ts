@@ -35,6 +35,9 @@ class BusEventLoggerService {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private unsubscribes: (() => void)[] = [];
   private started = false;
+  // Rate-limit flush error reporting — max 1 Sentry event per 5 min window
+  private _lastFlushErrorAt = 0;
+  private readonly _FLUSH_ERROR_COOLDOWN_MS = 5 * 60_000;
 
   /** Start listening to critical events and batching to Supabase */
   start(): void {
@@ -77,12 +80,26 @@ class BusEventLoggerService {
       const { error } = await supabase.from('bus_event_log').insert(toFlush);
 
       if (error) {
-        reportError(error, 'BusEventLogger.flush');
+        // Rate-limit Sentry reporting for flush failures — transient network timeouts
+        // (TypeError: Load failed) can recur every 10s and would flood Sentry.
+        const now = Date.now();
+        if (now - this._lastFlushErrorAt > this._FLUSH_ERROR_COOLDOWN_MS) {
+          this._lastFlushErrorAt = now;
+          reportError(error, 'BusEventLogger.flush');
+        } else {
+          console.debug('[BusEventLogger] flush error (rate-limited):', error.message);
+        }
         // Re-queue failed entries (up to limit)
         this.batch = [...toFlush.slice(-10), ...this.batch].slice(0, MAX_BATCH_SIZE);
       }
     } catch (e: unknown) {
-      reportError(e, 'BusEventLogger.flush.catch');
+      const now = Date.now();
+      if (now - this._lastFlushErrorAt > this._FLUSH_ERROR_COOLDOWN_MS) {
+        this._lastFlushErrorAt = now;
+        reportError(e, 'BusEventLogger.flush.catch');
+      } else {
+        console.debug('[BusEventLogger] flush exception (rate-limited):', e);
+      }
     }
   }
 

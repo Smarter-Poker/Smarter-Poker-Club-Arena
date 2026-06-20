@@ -81,11 +81,28 @@ export const FinancialAlertService = {
         created_at: alert.createdAt,
       });
       if (insertErr) {
-        reportError(insertErr, 'FinancialAlertService._log.insert', { severity, source, message });
+        // RLS policy violations (code 42501) mean the client-side SPA user lacks INSERT
+        // permission on financial_alerts — expected for non-admin sessions. Log to console
+        // only; do NOT report to Sentry as this is a known config-level permission boundary.
+        const isRLSViolation =
+          insertErr.code === '42501' ||
+          insertErr.message?.includes('row-level security') ||
+          insertErr.message?.includes('permission denied');
+        if (isRLSViolation) {
+          console.warn(
+            `[FinancialAlert] Insert blocked by RLS (expected for client session): ${source} — ${message}`
+          );
+        } else {
+          reportError(insertErr, 'FinancialAlertService._log.insert', {
+            severity,
+            source,
+            message,
+          });
+        }
       }
     } catch (err: unknown) {
-      // If the table doesn't exist yet, log to console as fallback
-      reportError(err, 'FinancialAlertService._log.catch', { severity, source, message });
+      // If the table doesn't exist yet, log to console as fallback — non-fatal
+      console.warn('[FinancialAlertService] Insert failed (non-fatal):', err);
     }
 
     // 2. Emit bus event for real-time dashboard

@@ -323,7 +323,17 @@ class TableService {
         .maybeSingle();
 
       if (seatError || !seat) {
-        reportError(seatError, 'TableService.seatNotFound');
+        // Only report to Sentry when there's an actual DB error — not when seat simply
+        // doesn't exist (race condition: player already left, double-click, etc.)
+        if (seatError) {
+          reportError(seatError, 'TableService.seatNotFound');
+        } else {
+          console.warn('[TableService] leaveTable: seat not found (may have already left)', {
+            tableId,
+            seatNumber,
+            userId,
+          });
+        }
         return { success: false, chipsReturned: 0 };
       }
 

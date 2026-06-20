@@ -2032,7 +2032,12 @@ export default function TablePage({
             });
         }
       } else {
-        reportError(new Error('[Leave] Failed to leave table'), 'TablePage.Failed_to_leave_table');
+        // Non-success leave is expected when: player is mid-hand (leave_pending is set),
+        // seat already cleared, or double-tap. Not a Sentry-worthy production bug.
+        console.warn(
+          '[Leave] leaveTable returned false — may be mid-hand or seat already cleared',
+          { tableId, userId, heroSeat: tableState.heroSeat }
+        );
         setLeaveNotice(
           'Unable to leave right now. You may be in an active hand — you will leave after it completes.'
         );

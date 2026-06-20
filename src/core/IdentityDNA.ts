@@ -371,9 +371,17 @@ class IdentityDNACore {
       .maybeSingle();
 
     if (error) {
-      // Profile might not exist yet - this is okay for new users
-      if (error.code !== 'PGRST116') {
+      // PGRST116 = row not found (new user, profile not yet created)
+      // 42501 = permission denied — expected when anon/unauthenticated session hits RLS
+      // Both are non-actionable — do not report to Sentry
+      const isBenign =
+        error.code === 'PGRST116' ||
+        error.code === '42501' ||
+        error.message?.includes('permission denied');
+      if (!isBenign) {
         reportError(error, 'IdentityDNA.Load_error');
+      } else {
+        console.debug('[IdentityDNA] Profile load skipped (expected):', error.code, error.message);
       }
       return null;
     }

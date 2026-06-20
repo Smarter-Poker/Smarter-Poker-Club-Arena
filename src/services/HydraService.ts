@@ -32,6 +32,30 @@ import { reportError } from '../utils/errorReporter';
 // MODULE-LEVEL CIRCUIT BREAKERS — prevent Sentry flood on persistent DB errors
 // These reset after a cooldown so transient errors still get reported.
 // ═══════════════════════════════════════════════════════════════════════════════
+function makeCircuitBreaker(threshold = 3, cooldownMs = 5 * 60_000, label = 'circuit') {
+  let failures = 0,
+    trippedAt = 0;
+  return {
+    isOpen(): boolean {
+      if (failures < threshold) return false;
+      if (Date.now() - trippedAt > cooldownMs) {
+        failures = 0;
+        trippedAt = 0;
+        return false;
+      }
+      return true;
+    },
+    trip(): void {
+      failures++;
+      if (failures >= threshold && trippedAt === 0) {
+        trippedAt = Date.now();
+        console.debug(
+          `[HydraService] ${label} OPEN — silencing repeated errors for ${cooldownMs / 60_000} min`
+        );
+      }
+    },
+  };
+}
 const _cb = {
   seatQueryFailures: 0,
   seatQueryTrippedAt: 0,
@@ -39,7 +63,6 @@ const _cb = {
   isSeatQueryOpen(): boolean {
     if (this.seatQueryFailures < 3) return false;
     if (Date.now() - this.seatQueryTrippedAt > 5 * 60_000) {
-      // 5 min cooldown — allow one retry pass
       this.seatQueryFailures = 0;
       this.seatQueryTrippedAt = 0;
       return false;
@@ -54,6 +77,8 @@ const _cb = {
     }
   },
 };
+// Separate circuit breaker for the seatHorse table-info query (transient network timeouts)
+const _tableInfoCb = makeCircuitBreaker(3, 5 * 60_000, 'seatHorse table-info circuit');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -504,7 +529,16 @@ export const HydraService = {
       .select('max_players')
       .eq('id', tableId)
       .maybeSingle();
-    if (tableErr) reportError(tableErr, 'HydraService.seatHorse_table_error');
+    // Transient network errors (TypeError: Load failed) should NOT flood Sentry.
+    // Gate behind a circuit breaker — only report when it first trips, then silence for 5 min.
+    if (tableErr) {
+      if (!_tableInfoCb.isOpen()) {
+        _tableInfoCb.trip();
+        reportError(tableErr, 'HydraService.seatHorse_table_error');
+      } else {
+        console.debug('[HydraService] seatHorse_table_error (circuit open):', tableErr.message);
+      }
+    }
 
     const maxSeats = tableData?.max_players || 9;
     let availableSeat = 0;

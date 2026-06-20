@@ -48,6 +48,32 @@ class AutoRebuyServiceCore {
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private rebuyInProgress: Set<string> = new Set(); // Track concurrent rebuys by horse:table
 
+  // ── Network circuit breaker — suppress Sentry spam on transient Supabase timeouts ──
+  private _netCb = (() => {
+    let failures = 0,
+      trippedAt = 0;
+    const THRESHOLD = 3,
+      COOLDOWN_MS = 5 * 60_000;
+    return {
+      isOpen(): boolean {
+        if (failures < THRESHOLD) return false;
+        if (Date.now() - trippedAt > COOLDOWN_MS) {
+          failures = 0;
+          trippedAt = 0;
+          return false;
+        }
+        return true;
+      },
+      trip(): void {
+        failures++;
+        if (failures >= THRESHOLD && trippedAt === 0) {
+          trippedAt = Date.now();
+          console.debug('[AutoRebuy] Network circuit OPEN — silencing repeated Supabase errors');
+        }
+      },
+    };
+  })();
+
   // ── Tab leader election (prevents multi-tab race conditions) ──
   private tabId = Math.random().toString(36).slice(2, 10);
   private isLeader = false;
@@ -199,7 +225,14 @@ class AutoRebuyServiceCore {
         .in('status', ['active', 'waiting', 'running']);
 
       if (tableError) {
-        reportError(tableError, 'AutoRebuyService.checkAllTables.fetchTables');
+        // Transient network failures (TypeError: Load failed) should not flood Sentry.
+        // Gate behind the instance-level circuit breaker.
+        if (!this._netCb.isOpen()) {
+          this._netCb.trip();
+          reportError(tableError, 'AutoRebuyService.checkAllTables.fetchTables');
+        } else {
+          console.debug('[AutoRebuy] fetchTables error (circuit open):', tableError.message);
+        }
         return;
       }
 

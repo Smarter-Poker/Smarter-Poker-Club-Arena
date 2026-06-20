@@ -313,6 +313,15 @@ export async function setPreAction(
       body: JSON.stringify({ tableId, action, maxCallAmount }),
     });
     if (!response.ok) {
+      // HTTP 400 = invalid pre-action (not player's turn, not in hand) —
+      // this is an expected user-state mismatch, NOT a server bug. Do not
+      // report to Sentry; just return the error for the caller to handle.
+      if (response.status === 400) {
+        console.debug(
+          `[GameServerAPI] setPreAction rejected (HTTP 400) — player not in hand or not their turn`
+        );
+        return { success: false, error: `Server error (${response.status})` };
+      }
       circuitBreaker.recordFailure(
         new Error(`HTTP ${response.status}`),
         'GameServerAPI.setPreAction'

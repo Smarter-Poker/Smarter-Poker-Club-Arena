@@ -195,7 +195,7 @@ export const useWalletStore = create<WalletState>()(
         }
       },
 
-      loadTransactions: async (userId: string, limit = 50) => {
+      loadTransactions: async (userId: string, limit = 25) => {
         set({ isLoadingTransactions: true });
         try {
           const txHistory = await WalletService.getTransactionHistory(userId, { limit });

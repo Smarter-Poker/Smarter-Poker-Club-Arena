@@ -6,7 +6,7 @@
  * Behavior-preserving extraction — same cache semantics, same fallback order,
  * same background-refresh pattern.
  *
- * Auth performance fix (2026-04-14) — `supabase.auth.getUser()` is a network
+ * Auth performance fix (2026-04-14) — `supabase.auth.getUser(token)` is a network
  * round-trip to GoTrue that costs 2-4 seconds on every request. Heartbeats,
  * /action, /preaction etc. were ALL serialised behind that. The strategy is:
  *

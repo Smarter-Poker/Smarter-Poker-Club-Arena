@@ -228,6 +228,22 @@ export class HandController {
       }
     }
 
+    // AUDIT FIX 2026-07-19: "Post BB to enter" — new players post ONLY a live
+    // BB (no dead SB). They act on it like a normal blind.
+    if (this.config.bbOnlyPosts && this.config.bbOnlyPosts.length > 0) {
+      for (const bp of this.config.bbOnlyPosts) {
+        const p = this.state.players.find((pl) => pl.seat === bp.seat);
+        if (p && p.seat !== sbSeat && p.seat !== bbSeat && !p.is_sitting_out) {
+          const amt = Math.min(bigBlind, p.stack);
+          p.bet = amt;
+          p.totalInvested += amt;
+          p.stack -= amt;
+          this.state.pot += amt;
+          if (p.stack === 0) p.is_all_in = true;
+        }
+      }
+    }
+
     if (this.config.ante) {
       if (this.config.bigBlindAnte && bbPlayer) {
         // Bible V8 §4.3: BBA — Big blind posts ante for entire table
@@ -260,6 +276,12 @@ export class HandController {
           straddler.stack -= straddleAmount;
           this.state.pot += straddleAmount;
           this.state.currentBet = straddleAmount;
+          // AUDIT FIX 2026-07-19: the straddle is a live blind that raises the
+          // BB — the minimum raise is to DOUBLE the straddle (4×BB for a 2×BB
+          // straddle). Track lastRaise/minRaise = straddle amount so the raise
+          // floor is currentBet + straddle (was left at BB → only 3×BB).
+          this.state.lastRaise = straddleAmount;
+          this.state.minRaise = straddleAmount;
           // Straddle is live — straddler can raise when action comes back (§4.4)
           if (straddler.stack === 0) straddler.is_all_in = true;
 

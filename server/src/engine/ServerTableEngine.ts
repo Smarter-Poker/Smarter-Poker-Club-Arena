@@ -23,7 +23,6 @@ import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
 import { AtomicStackService, type StackSettlement } from './AtomicStackService.js';
 import { StraddleEngine } from './StraddleEngine.js';
-import { MixedGameEngine } from './MixedGameEngine.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
 import { monteCarloEquity } from './MonteCarloEquity.js';
@@ -32,7 +31,6 @@ import { RakebackEngine } from './RakebackEngine.js';
 import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
-import { OFCDealingOrchestrator } from './OFCDealingOrchestrator.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
 import {
   getFullRakeConfig,
@@ -262,7 +260,6 @@ export class ServerTableEngine {
 
   // ── Step 6: Ported Advanced Modules ──
   private straddleEngine: StraddleEngine;
-  private mixedGameEngine: MixedGameEngine;
   private runItTwiceEngine: RunItTwiceEngine;
   private insuranceEngine: InsuranceEngine;
   private rakebackEngine: RakebackEngine;
@@ -271,7 +268,6 @@ export class ServerTableEngine {
   private chipRaceEngine: ChipRaceEngine;
   private tableBalancer: TableBalancer;
   private tableBreakEngine: TableBreakEngine;
-  private ofcOrchestrator: OFCDealingOrchestrator;
   private engineTelemetry: EngineTelemetry;
 
   constructor(tableId: string) {
@@ -329,9 +325,6 @@ export class ServerTableEngine {
     this.straddleEngine = new StraddleEngine((event) => {
       console.log(`[ServerTableEngine:${tableId}] Straddle: ${event.type}`);
     });
-    this.mixedGameEngine = new MixedGameEngine((event) => {
-      console.log(`[ServerTableEngine:${tableId}] MixedGame: ${event.type}`);
-    });
     this.runItTwiceEngine = new RunItTwiceEngine((event) => {
       console.log(`[ServerTableEngine:${tableId}] RIT: ${event.type}`);
     });
@@ -351,9 +344,6 @@ export class ServerTableEngine {
     });
     this.tableBreakEngine = new TableBreakEngine((event) => {
       console.log(`[ServerTableEngine:${tableId}] TableBreak: ${event.type}`);
-    });
-    this.ofcOrchestrator = new OFCDealingOrchestrator((event) => {
-      console.log(`[ServerTableEngine:${tableId}] OFC: ${event.type}`);
     });
     this.engineTelemetry = new EngineTelemetry((event) => {
       console.log(
@@ -449,9 +439,6 @@ export class ServerTableEngine {
         });
       }
 
-      // FIX 116: Mixed game mode removed from GameVariant — 'mixed' is dead.
-      // MixedGameEngine configuration block removed.
-
       // FIX 104: Configure RakebackEngine for this table's club
       if (this.tableInfo.club_id) {
         this.rakebackEngine.configure(this.tableInfo.club_id, {
@@ -531,13 +518,11 @@ export class ServerTableEngine {
 
     // Step 6: Dispose advanced modules
     this.straddleEngine.disposeAll();
-    this.mixedGameEngine.disposeAll();
     this.runItTwiceEngine.disposeAll();
     this.insuranceEngine.disposeAll();
     this.rakebackEngine.disposeAll();
 
     // Step 7: Dispose tournament & extras modules
-    this.ofcOrchestrator.disposeAll();
     this.engineTelemetry.dispose();
     // Note: chipRaceEngine, tableBalancer, tableBreakEngine are stateless per-call — no dispose needed
 
@@ -3215,24 +3200,7 @@ export class ServerTableEngine {
         this.runItTwiceEngine.dispose(this.tableId);
         this.insuranceEngine.dispose(this.tableId);
         // Note: straddleEngine persists (auto-straddle enrollment persists)
-        // Note: mixedGameEngine persists (variant rotation is multi-hand)
         // Note: rakebackEngine persists (accumulates across hands)
-
-        // Step 6: Mixed game rotation — notify after each hand
-        // FIX 159: Bible V8 §7.20 — when variant rotates, UPDATE tableInfo.game_variant
-        // so the NEXT hand uses the new variant for dealing, evaluation, and validation.
-        if (this.mixedGameEngine.isActive(this.tableId)) {
-          const activePlayers = this.handController
-            ? this.handController.getState().players.filter((p) => !p.is_folded).length
-            : 0;
-          const newVariant = this.mixedGameEngine.onHandComplete(this.tableId, activePlayers);
-          if (newVariant && this.tableInfo) {
-            console.log(
-              `[ServerTableEngine:${this.tableId}] Mixed game rotation: ${this.tableInfo.game_variant} → ${newVariant}`
-            );
-            this.tableInfo.game_variant = newVariant;
-          }
-        }
 
         // SETTLEMENT STEP 12: Calculate rakeback (done in postHandTasks)
         // SETTLEMENT STEP 9-11: Leaderboards, achievements, VIP points (done in postHandTasks)

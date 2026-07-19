@@ -557,6 +557,28 @@ export class InsuranceEngine {
     this.tableConfigs.delete(tableId);
   }
 
+  /**
+   * AUDIT FIX 2026-07-19: Per-street re-offer previously called dispose(), which
+   * wiped ALL offers (including ones the player had already ACCEPTED and paid a
+   * premium for) and reset the table config to defaults. Coverage then silently
+   * vanished unless it was accepted on the very last offerable street. This
+   * clears only still-'offered' (unaccepted) offers, cancels their deadlines,
+   * and preserves accepted offers + the table config so settlement still pays.
+   */
+  clearPendingOffers(tableId: string): void {
+    const offers = this.activeOffers.get(tableId);
+    if (!offers) return;
+    const kept: InsuranceOffer[] = [];
+    for (const offer of offers) {
+      if (offer.status === 'offered') {
+        this.scheduler.cancel(tableId, this.offerEventId(offer.playerId));
+      } else {
+        kept.push(offer);
+      }
+    }
+    this.activeOffers.set(tableId, kept);
+  }
+
   disposeAll(): void {
     for (const [tableId] of this.activeOffers) {
       this.dispose(tableId);

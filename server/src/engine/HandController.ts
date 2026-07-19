@@ -396,6 +396,13 @@ export class HandController {
     const validation = validateAction(action, amount, player.stack, bettingState);
     if (!validation.valid) return false;
 
+    // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): reject a `raise` that
+    // cannot legally reopen betting — e.g. a player who already acted and now
+    // faces only a sub-full-raise all-in may call or fold, not re-raise. This is
+    // the authoritative server enforcement; getAvailableActions hides the button
+    // but a hand-crafted action must be rejected here too. `all_in` is exempt.
+    if (action === 'raise' && !this.canReopenBetting(player)) return false;
+
     let actualAmount = 0;
     let isFullRaiseFlag: boolean | undefined;
 
@@ -1105,13 +1112,74 @@ export class HandController {
     const toCall = this.state.currentBet - player.bet;
     if (toCall === 0) {
       actions.push('check');
-      if (player.stack > 0) actions.push('bet');
+      // FIX-A1 2026-07-19: when there is no bet to call, an opening wager is a
+      // `bet` (currentBet===0, e.g. post-flop checked to this player). But when a
+      // bet already exists and this player owes nothing — the BB or straddler
+      // exercising their option preflop — the legal move is a `raise`, not a
+      // `bet` (validateAction rejects `bet` while currentBet>0). Offering `bet`
+      // there left the option un-actionable from the menu.
+      if (player.stack > 0) {
+        if (this.state.currentBet === 0) actions.push('bet');
+        else if (this.canReopenBetting(player)) actions.push('raise');
+      }
     } else {
       actions.push('call');
-      if (player.stack > toCall) actions.push('raise');
+      // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): only offer `raise`
+      // when the player can legally REOPEN betting. A sub-full-raise all-in does
+      // not reopen action for a player who has already voluntarily acted this
+      // street and is not now facing a full raise since their last action.
+      if (player.stack > toCall && this.canReopenBetting(player)) actions.push('raise');
     }
     actions.push('all_in');
     return actions;
+  }
+
+  /**
+   * Bible V8 §4.14 / TDA Rule 44 — may this player legally REOPEN betting (i.e.
+   * make a `raise`)? A raise or all-in of less than a full raise does NOT reopen
+   * betting to a player who has already voluntarily acted this street and is not
+   * currently facing a full raise made since their last action. This mirrors the
+   * full-aggressor logic used by isBettingRoundComplete so both agree.
+   *
+   * Note: this gates the explicit `raise` action only. A player may always go
+   * `all_in` for their remaining stack even when it does not reopen betting.
+   */
+  private canReopenBetting(player: SeatPlayer): boolean {
+    const stageActions = this.state.actionHistory.filter((a) => a.stage === this.state.stage);
+
+    // Index of the last FULL aggression this street: a normal bet/raise, or an
+    // all-in flagged isFullRaise. Short all-ins carry isFullRaise=false and are
+    // never counted, so they cannot reopen betting.
+    let lastFullAggressorSeat = -1;
+    let lastFullAggressorIdx = -1;
+    for (let i = 0; i < stageActions.length; i++) {
+      const a = stageActions[i];
+      if (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise)) {
+        lastFullAggressorSeat = a.seat;
+        lastFullAggressorIdx = i;
+      }
+    }
+
+    // The player's own last voluntary action index this street. Forced blind and
+    // straddle posts are NOT recorded in actionHistory, so a yet-to-act BB or
+    // straddler reads as -1 here and correctly retains the option to raise.
+    let playerLastIdx = -1;
+    for (let i = stageActions.length - 1; i >= 0; i--) {
+      if (stageActions[i].seat === player.seat) {
+        playerLastIdx = i;
+        break;
+      }
+    }
+
+    if (lastFullAggressorSeat !== -1 && lastFullAggressorSeat !== player.seat) {
+      // Reopened only if the full raise landed AFTER the player's last action.
+      return playerLastIdx < lastFullAggressorIdx;
+    }
+
+    // No full aggression this street (only limps / short all-ins), or the player
+    // is themselves the last full aggressor: they may raise only if they have not
+    // yet voluntarily acted (an open-raise or the blind/straddle option).
+    return playerLastIdx === -1;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

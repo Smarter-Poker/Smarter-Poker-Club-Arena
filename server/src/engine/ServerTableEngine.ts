@@ -2455,7 +2455,12 @@ export class ServerTableEngine {
         playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
       },
       bbjConfig: {
-        enabled: fullRakeConfig.bbjEnabled,
+        // FIX-A2 2026-07-19: gate the BBJ fee-drop on the table's bbj_percent,
+        // not just variant eligibility. The payout path is already gated on
+        // bbj_percent > 0 (see runout handler), so with bbj_percent == 0 the fee
+        // was dropped from every qualifying pot but could NEVER be won — players
+        // charged for an unwinnable jackpot (and banked nowhere if no pool row).
+        enabled: fullRakeConfig.bbjEnabled && ((this.tableInfo as any)?.bbj_percent ?? 0) > 0,
         feeBB: fullRakeConfig.bbjFeeBB,
         minPotBB: fullRakeConfig.rules.minPotBB,
         minPlayersDealt: fullRakeConfig.rules.minPlayersDealt,
@@ -4802,7 +4807,12 @@ export class ServerTableEngine {
         playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
       },
       bbjConfig: {
-        enabled: fullRakeConfig.bbjEnabled,
+        // FIX-A2 2026-07-19: gate the BBJ fee-drop on the table's bbj_percent,
+        // not just variant eligibility. The payout path is already gated on
+        // bbj_percent > 0 (see runout handler), so with bbj_percent == 0 the fee
+        // was dropped from every qualifying pot but could NEVER be won — players
+        // charged for an unwinnable jackpot (and banked nowhere if no pool row).
+        enabled: fullRakeConfig.bbjEnabled && ((this.tableInfo as any)?.bbj_percent ?? 0) > 0,
         feeBB: fullRakeConfig.bbjFeeBB,
         minPotBB: fullRakeConfig.rules.minPotBB,
         minPlayersDealt: fullRakeConfig.rules.minPlayersDealt,

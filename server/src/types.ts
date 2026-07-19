@@ -119,10 +119,6 @@ export interface TableInfo {
   min_players?: number;
   /** Bible V8 §2.1: Table display name */
   name?: string;
-  /** FIX 104: Mixed game preset name (e.g., 'HOLDEM_OMAHA') */
-  mixed_game_preset?: string;
-  /** FIX 104: Hands per variant before rotation */
-  mixed_game_hands_per_variant?: number;
   /** Bible V8 §4.2: Wait-for-BB — new players must wait for BB to reach them */
   wait_for_big_blind?: boolean;
   /** Bible V8 §4.2: Auto-post blinds when returning from sit-out */

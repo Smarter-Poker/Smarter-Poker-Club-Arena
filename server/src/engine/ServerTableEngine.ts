@@ -880,6 +880,11 @@ export class ServerTableEngine {
       // Bible V8 §3.3: Turn FSM — processing → complete
       this.turnFSM.transition('complete');
 
+      // AUDIT FIX 2026-07-19: count this timeout for a CONNECTED player so an
+      // AFK player is auto-sat-out after the cap (was only counted on the
+      // disconnect path — an app-open-but-idle player never got sat out).
+      this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
+
       this.engineTelemetry.recordTimerExpired(this.tableId);
       const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
       try {
@@ -1821,6 +1826,11 @@ export class ServerTableEngine {
     if (state.currentPlayerSeat !== player.seat) {
       return { success: false, error: 'Not your turn' };
     }
+
+    // AUDIT FIX 2026-07-19: the player is present and acting — clear any
+    // consecutive-timeout streak so a single AFK lapse doesn't accumulate
+    // toward an auto-sit-out.
+    this.disconnectEngine.recordPlayerActed(this.tableId, userId);
 
     const seat = player.seat;
     const toCall = Math.max(0, state.currentBet - player.bet);

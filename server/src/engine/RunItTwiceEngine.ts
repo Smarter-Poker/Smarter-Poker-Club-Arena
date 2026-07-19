@@ -178,9 +178,20 @@ export class RunItTwiceEngine {
     const state = this.activeOffers.get(tableId);
     if (!state || state.status !== 'offered') return false;
 
+    // Only a player actually in this all-in can consent to running it twice.
+    if (!state.allPlayerIds.includes(playerId)) return false;
+
     state.acceptedBy.add(playerId);
 
-    if (state.acceptedBy.has(state.offeredBy) && state.acceptedBy.has(state.offeredTo)) {
+    // FIX-A8 2026-07-19 (Bible V8 §4.20): running it twice requires UNANIMOUS
+    // consent from EVERY all-in player, not just the chooser + one opponent.
+    // With 3+ all-in players the old check (offeredBy && offeredTo) flipped to
+    // 'accepted' as soon as the single primary opponent accepted, running the
+    // board twice against the other all-in player(s) without their agreement.
+    // acceptedBy is pre-seeded with the chooser, so this reduces to the original
+    // behavior for the heads-up (2-player) case.
+    const everyoneAccepted = state.allPlayerIds.every((id) => state.acceptedBy.has(id));
+    if (everyoneAccepted) {
       state.status = 'accepted';
       // Phase 1.2 PR-G-real: cancel pending expiry deadline.
       this.scheduler.cancel(tableId, RunItTwiceEngine.OFFER_EVENT_ID);

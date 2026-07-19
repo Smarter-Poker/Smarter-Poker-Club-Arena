@@ -304,6 +304,14 @@ export class ServerTableEngine {
       console.log(
         `[ServerTableEngine:${tableId}] Disconnect: ${event.type} player=${event.playerId}`
       );
+      // AUDIT FIX 2026-07-19: when a player reconnects DURING their own turn,
+      // the disconnect countdown is cancelled but no action timer was ever
+      // armed (onPlayerTurn returned false and handleTurnChange bailed). The
+      // hand then stalls until the 10-minute void — a griefing / stack-reclaim
+      // exploit. Re-arm the normal turn timer for the reconnecting player.
+      if (event.type === 'PLAYER_RECONNECTED') {
+        this.rearmTurnTimerIfCurrent(event.playerId);
+      }
     });
     this.preActionEngine = new PreActionEngine((event) => {
       console.log(
@@ -1363,34 +1371,39 @@ export class ServerTableEngine {
 
       return { success: true, immediate: false };
     } else {
-      // Between hands: remove immediately via atomic cashout
-      atomicCashout(userId, this.tableId, player.seat_number)
-        .then(() => {
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
-          );
-          // Round 57: clear DisconnectEngine state so we don't leak the
-          // user's FSM entry into snapshot.disconnect_states forever.
-          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          // Round 64: same pattern for TimeBankEngine — playerBanks Map leaks
-          // ghost entries otherwise. Cancels any pending timebank timer too.
-          this.timeBankEngine.removePlayer(this.tableId, userId);
-          // Round 66: clear auto-straddle enrollment so the Set doesn't keep
-          // stale entries (and a returning player's preference is fresh).
-          this.straddleEngine.removePlayer(this.tableId, userId);
-          // R66 sweep: PreActionEngine FSM + queue cleanup.
-          this.preActionEngine.removePlayer(this.tableId, userId);
-        })
-        .catch((err) => {
-          console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
-          // Fallback: mark seat as left directly
-          markSeatAsLeft(this.tableId, userId, player.seat_number);
-          // Round 57: still unregister even on the fallback path.
-          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-          this.timeBankEngine.removePlayer(this.tableId, userId);
-          this.straddleEngine.removePlayer(this.tableId, userId);
-          this.preActionEngine.removePlayer(this.tableId, userId);
-        });
+      // Between hands: remove immediately via atomic cashout.
+      // AUDIT FIX 2026-07-19: the hand controller is nulled at HAND_COMPLETE
+      // BEFORE postHandTasks (which runs syncStacks) finishes. A leave arriving
+      // in that window would take this branch and cash out the STALE pre-hand
+      // seat stack — the pot won vanishes (or a bust is refunded). Wait for any
+      // in-flight settlement to persist the final stack first.
+      const finishCashout = () =>
+        atomicCashout(userId, this.tableId, player.seat_number)
+          .then(() => {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
+            );
+            this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+            this.timeBankEngine.removePlayer(this.tableId, userId);
+            this.straddleEngine.removePlayer(this.tableId, userId);
+            this.preActionEngine.removePlayer(this.tableId, userId);
+          })
+          .catch((err) => {
+            console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
+            markSeatAsLeft(this.tableId, userId, player.seat_number);
+            this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+            this.timeBankEngine.removePlayer(this.tableId, userId);
+            this.straddleEngine.removePlayer(this.tableId, userId);
+            this.preActionEngine.removePlayer(this.tableId, userId);
+          });
+
+      if (this.postHandTasksPromise) {
+        // Settlement for the just-finished hand is still writing stacks — cash
+        // out only after it lands.
+        this.postHandTasksPromise.then(finishCashout, finishCashout);
+      } else {
+        finishCashout();
+      }
 
       return { success: true, immediate: true };
     }
@@ -2472,15 +2485,25 @@ export class ServerTableEngine {
       // With time banks + insurance/RIT pauses, 10 minutes is a safe ceiling.
       // The old 60s timeout was killing hands prematurely mid-action.
       const HAND_SAFETY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+      // Declared with `let` so the timeout callback can call it (see AUDIT FIX).
+      let unsub: () => void = () => {};
       const handTimeout = setTimeout(() => {
         console.warn(
           `[ServerTableEngine:${this.tableId}] Hand ${handNumber} timed out after 10 minutes`
         );
+        // AUDIT FIX 2026-07-19: previously the timeout nulled the controller but
+        // left the HAND_COMPLETE listener attached and action timers running. A
+        // late completion (e.g. a pending horse think-timer) could then fire the
+        // HAND_COMPLETE branch and null the NEXT live hand's controller. Detach
+        // the listener and cancel this table's action timers on timeout.
+        unsub();
+        this.preciseTimer.clearTable(this.tableId);
+        this.actionValidator.clearTable(this.tableId);
         this.handController = null;
         resolve();
       }, HAND_SAFETY_TIMEOUT_MS);
 
-      const unsub = this.handController!.onEvent((event: HandEvent) => {
+      unsub = this.handController!.onEvent((event: HandEvent) => {
         this.handleHandEvent(event, players);
 
         if (event.type === 'HAND_COMPLETE') {
@@ -3829,6 +3852,23 @@ export class ServerTableEngine {
   /**
    * Handle horse AI turn — INSTANT decisions, no browser timers needed
    */
+  /**
+   * AUDIT FIX 2026-07-19: re-arm the action timer when a player reconnects on
+   * their own turn (the disconnect countdown was cancelled with no replacement
+   * timer). No-op unless a hand is live and it's genuinely this player's turn.
+   */
+  private rearmTurnTimerIfCurrent(userId: string): void {
+    if (!this.handController) return;
+    const state = this.handController.getState();
+    const player = state.players.find((p) => p.user_id === userId);
+    if (!player || player.seat !== state.currentPlayerSeat) return;
+    if (player.is_folded || player.is_all_in || player.is_sitting_out) return;
+    this.handleTurnChange(
+      { type: 'TURN_CHANGE', seat: player.seat, availableActions: [] } as HandEvent,
+      this.seatedPlayers
+    );
+  }
+
   private handleTurnChange(event: HandEvent, players: SeatedPlayer[]): void {
     if (event.type !== 'TURN_CHANGE' || !this.handController) return;
 

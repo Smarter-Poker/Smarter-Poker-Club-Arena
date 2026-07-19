@@ -5944,11 +5944,11 @@ export default function TablePage({
               its seconds-remaining were invisible. Render it as a fixed overlay
               above the action area while active/engaging. The banks-remaining
               counter (TimebankCounter) is separate and already shows. */}
-          {showTimeBank && (
+          {timeBankActive && (
             <div
               style={{
                 position: 'fixed',
-                bottom: '18%',
+                bottom: '22%',
                 left: '50%',
                 transform: 'translateX(-50%)',
                 zIndex: 60,

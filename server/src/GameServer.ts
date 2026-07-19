@@ -1590,12 +1590,21 @@ export class TournamentManager {
             'TournamentthistournamentIdslic.Level_persist_failed'
           );
 
-        // FIX 151: Chip race when denomination changes on level-up
-        // If the new small blind is a larger denomination than the previous level's,
-        // remove the old denomination via fair chip-race lottery.
+        // FIX-B (chip race) 2026-07-19 — DISABLED. Two independent audits found
+        // this block actively corrupts chip integrity and it has no purpose in a
+        // digital engine (stacks are exact integers; there are no physical chips
+        // to "color up"). The prior logic (a) triggered on `smallBlind >
+        // prevSmallBlind`, i.e. almost EVERY level, treating the small blind as a
+        // chip denomination (it is not) and running `stack % smallBlind` which
+        // mints/destroys chips each level; and (b) wrote the raced stack back
+        // scoped ONLY by user_id (not table_id), overwriting the SAME user's
+        // stack at any other cash/tournament table — cross-table chip corruption.
+        // Re-enable only behind a real denomination-removal schedule + a
+        // table-scoped write-back + a chips-in-play conservation assertion.
+        const CHIP_RACE_ENABLED = false;
         const prevLevelData = blindStructure[prevLevel] || blindStructure[0];
         const prevSmallBlind = prevLevelData?.smallBlind || level.smallBlind;
-        if (level.smallBlind > prevSmallBlind) {
+        if (CHIP_RACE_ENABLED && level.smallBlind > prevSmallBlind) {
           try {
             // Gather all tournament player stacks across all tables
             const playerStacks = new Map<string, number>();

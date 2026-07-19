@@ -49,6 +49,7 @@ CREATE OR REPLACE FUNCTION save_hand_state_snapshot(
   p_stage TEXT
 ) RETURNS VOID
 LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'public'
 AS $$
 BEGIN
   INSERT INTO hand_state_snapshots (

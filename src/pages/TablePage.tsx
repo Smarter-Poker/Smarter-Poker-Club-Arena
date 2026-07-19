@@ -180,7 +180,6 @@ import { SpectatorOverlay } from '../components/table/SpectatorOverlay';
 import { TableReactions } from '../components/table/TableReactions';
 import { useTableKeyboard } from '../hooks/useTableKeyboard';
 
-import { PremiumPot } from '../components/table/PremiumPot';
 import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
 import { HoleCardReveal } from '../components/tournament/HoleCardReveal';
 import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
@@ -736,6 +735,11 @@ export default function TablePage({
         boardStage: mapped.boardStage as BoardStage,
         dealerSeat: mapped.dealerSeat,
         currentPlayerSeat: mapped.currentPlayerSeat,
+        // AUDIT FIX 2026-07-19: the authoritative WS merge dropped handNumber, so
+        // the on-table hand number never advanced (froze at the connect-time
+        // GAME_START value) and the hand-change effect that drives per-hand
+        // stats + the deal animation never re-fired. Carry it through.
+        handNumber: mapped.handNumber > 0 ? mapped.handNumber : prev.handNumber,
         players: nextPlayers,
         positions: mapped.positions as PositionBadge[],
         lastActions: mapped.lastActions as LastAction[],
@@ -3765,7 +3769,6 @@ export default function TablePage({
   //HandController removed — server is authoritative
   // Only keeping state needed by other parts of the component
   // ═══════════════════════════════════════════════════════════════════════════
-  const [displayHandNumber, setDisplayHandNumber] = useState<number | null>(null);
 
   // Keep a ref to the latest tableState for use inside event closures
   const tableStateRef = useRef(tableState);
@@ -5599,7 +5602,9 @@ export default function TablePage({
             {tableState.tableName && (
               <span className="header-table-name">{tableState.tableName}</span>
             )}
-            <span className="header-game-type">{tableState.gameType}</span>
+            <span className="header-game-type">
+              {tableState.gameType ? getGameVariantLabel(tableState.gameType) : ''}
+            </span>
             <span className="header-blinds">{tableState.blinds}</span>
           </div>
           <div className="header-center__bottom-row">
@@ -5800,9 +5805,12 @@ export default function TablePage({
           <div className="table-felt">
             <div className="table-rail">
               <div className="table-surface">
-                {/* Hand Number Display — shown on table felt during active hands */}
-                {displayHandNumber != null && (
-                  <div className="hand-number-display">Hand #{displayHandNumber}</div>
+                {/* Hand Number Display — shown on table felt during active hands.
+                    AUDIT FIX 2026-07-19: drive from the authoritative
+                    tableState.handNumber (setDisplayHandNumber was never called,
+                    so this never rendered). */}
+                {tableState.handNumber != null && tableState.handNumber > 0 && (
+                  <div className="hand-number-display">Hand #{tableState.handNumber}</div>
                 )}
                 {/* Pot Display — click to toggle chips/BB */}
                 <div className="pot-area">
@@ -5813,16 +5821,11 @@ export default function TablePage({
                     displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
                     onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
                   />
-                  {/* Premium Pot — animated counter + tier glow overlay */}
-                  <PremiumPot
-                    mainPot={tableState.pot}
-                    sidePots={tableState.sidePots.map((sp, i) => ({
-                      id: `sp_${i}`,
-                      amount: sp.amount,
-                      eligible: sp.eligiblePlayers?.map(String) || [],
-                    }))}
-                    compact
-                  />
+                  {/* AUDIT FIX 2026-07-19: removed the duplicate PremiumPot —
+                      it rendered the SAME pot total in the same .pot-area as
+                      PotDisplay, drawing the number twice (stacked). PotDisplay
+                      already shows the amount + a chip stack next to it + side
+                      pots, which is the single authoritative pot display. */}
                   {/* Phase 2 T1-04 — PokerBros signature: hand strength label
                    *  floats at pot center for ~1s on ANY win (showdown or not).
                    *  2026-04-16 fix: removed boardStage === 'showdown' gate —
@@ -5832,7 +5835,7 @@ export default function TablePage({
                   {winnerInfo.handName && (
                     <div
                       className="pot-hand-strength"
-                      key={`hand-${displayHandNumber ?? 0}-${winnerInfo.handName}`}
+                      key={`hand-${tableState.handNumber ?? 0}-${winnerInfo.handName}`}
                       role="status"
                     >
                       {winnerInfo.handName}
@@ -5922,6 +5925,46 @@ export default function TablePage({
               seatPositions={seatPositions}
               onComplete={() => setDealAnimationKey(0)}
             />
+          )}
+
+          {/* AUDIT FIX 2026-07-19: mount the chip-flight layer. Every wager
+              (bet/raise/call/all-in) + blinds + pot-to-winner already pushes
+              events into `chipAnimations`, but the ChipAnimationManager was
+              never rendered anywhere, so no chips ever flew to the pot or to
+              winners (and the array leaked, never draining). Render it here as
+              a full-felt overlay. */}
+          <ChipAnimationManager
+            animations={chipAnimations}
+            onAnimationComplete={handleAnimationComplete}
+          />
+
+          {/* AUDIT FIX 2026-07-19: the TimeBank "engaging" panel (extra-time
+              countdown + activate/buy) was imported but never mounted, so when
+              the primary timer expired the time bank had no distinct visual and
+              its seconds-remaining were invisible. Render it as a fixed overlay
+              above the action area while active/engaging. The banks-remaining
+              counter (TimebankCounter) is separate and already shows. */}
+          {showTimeBank && (
+            <div
+              style={{
+                position: 'fixed',
+                bottom: '18%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 60,
+                pointerEvents: 'auto',
+              }}
+            >
+              <TimeBank
+                isVisible={true}
+                isActive={timeBankActive}
+                banksRemaining={timeBanksRemaining}
+                totalTime={actionTimeSeconds}
+                timeRemaining={timeBankTimeRemaining}
+                onActivate={handleActivateTimeBank}
+                onBuyMore={handleBuyTimeBank}
+              />
+            </div>
           )}
 
           {/* Player Seats */}

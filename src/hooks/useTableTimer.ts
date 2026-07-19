@@ -77,8 +77,12 @@ export function useTableTimer({
   useEffect(() => {
     let seconds = initialTime;
     if (turnDeadlineMs && turnDeadlineMs > 0) {
+      // AUDIT FIX 2026-07-19: when we have an authoritative deadline that has
+      // ALREADY passed (e.g. reconnecting/resyncing onto an expired turn), seed
+      // 0 — NOT a fresh full timer. The old fallback reset an expired turn to
+      // initialTime, which could re-fire onTimeout (double time-bank / auto-fold)
+      // and disagreed with the CSS ring (which correctly lands at 0).
       seconds = Math.max(0, (turnDeadlineMs - Date.now()) / 1000);
-      if (seconds <= 0) seconds = initialTime;
     }
     setTotalTime(seconds);
     setTimeRemaining(seconds);

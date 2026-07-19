@@ -3705,6 +3705,14 @@ export class ServerTableEngine {
     // FIX 139: Pass shortDeck to insurance engine for correct equity calculations
     const isShortDeckInsurance = this.tableInfo?.game_variant === 'short_deck';
 
+    // FIX-A12: full all-in set with each player's at-risk (their own committed
+    // chips) so the engine prices the leader against the KNOWN opponent hands.
+    const allInForOffer = allInPlayers.map((p) => ({
+      playerId: p.user_id,
+      holeCards: p.cards || [],
+      atRisk: p.totalInvested ?? 0,
+    }));
+
     // Check if this is the first street of offers or a recalculation
     const existingOffers = this.insuranceEngine.getOffers(this.tableId);
 
@@ -3714,9 +3722,11 @@ export class ServerTableEngine {
         const offers = this.insuranceEngine.createOffers(
           this.tableId,
           `${this.tableId}:${this.handCount}`,
-          [bestHandPlayer], // ONLY the leader gets insurance
+          bestHandPlayer.playerId, // ONLY the leader is offered; priced vs the rest
+          allInForOffer,
           result.board,
           pot,
+          variant,
           isShortDeckInsurance
         );
 
@@ -3745,9 +3755,11 @@ export class ServerTableEngine {
           const offers = this.insuranceEngine.createOffers(
             this.tableId,
             `${this.tableId}:${this.handCount}`,
-            [bestHandPlayer],
+            bestHandPlayer.playerId,
+            allInForOffer,
             result.board,
             pot,
+            variant,
             isShortDeckInsurance
           );
 
@@ -4349,7 +4361,7 @@ export class ServerTableEngine {
           clubId: this.tableInfo.club_id,
           handNumber: this.handCount,
           playerId: settlement.playerId,
-          equityPercent: 0, // Equity was in the offer, not settlement — will enhance later
+          equityPercent: settlement.equity, // FIX-A12: real equity the premium was priced on
           premium: settlement.premium,
           insuredAmount: settlement.insuredAmount,
           payout: settlement.payout,

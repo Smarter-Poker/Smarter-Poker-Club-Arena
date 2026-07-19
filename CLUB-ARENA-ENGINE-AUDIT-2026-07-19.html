@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Club Arena — Poker Engine Audit &amp; Remediation (2026-07-19)</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1e2740; --ink:#e8edf6; --mut:#9fb0cc;
+    --line:#2a3550; --crit:#ff5d6c; --high:#ff9f43; --med:#ffd166; --low:#7bdff2;
+    --ok:#3ddc84; --acc:#6ea8fe;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--acc);text-decoration:none}
+  .wrap{max-width:1060px;margin:0 auto;padding:28px 20px 100px}
+  header.hero{background:linear-gradient(135deg,#1a2440,#12182a);border:1px solid var(--line);border-radius:16px;padding:26px 28px;margin-bottom:24px}
+  h1{margin:0 0 6px;font-size:26px;letter-spacing:.2px}
+  .sub{color:var(--mut);font-size:14px}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin:18px 0 4px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat .n{font-size:22px;font-weight:700}
+  .stat .l{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.6px}
+  nav{position:sticky;top:0;background:rgba(15,20,32,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 0;margin:0 0 24px;z-index:5}
+  nav a{margin-right:16px;font-size:13px;color:var(--mut)}
+  nav a:hover{color:var(--ink)}
+  h2{font-size:20px;margin:34px 0 10px;padding-top:8px;border-top:1px solid var(--line)}
+  h2:first-of-type{border-top:none}
+  h3{font-size:16px;margin:22px 0 6px}
+  p{margin:8px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:12px 0}
+  .fix{border-left:4px solid var(--ok)}
+  .item{border-left:4px solid var(--line)}
+  .item.crit{border-left-color:var(--crit)} .item.high{border-left-color:var(--high)}
+  .item.med{border-left-color:var(--med)} .item.low{border-left-color:var(--low)}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.5px;padding:2px 8px;border-radius:20px;text-transform:uppercase;vertical-align:middle}
+  .t-crit{background:rgba(255,93,108,.16);color:var(--crit)} .t-high{background:rgba(255,159,67,.16);color:var(--high)}
+  .t-med{background:rgba(255,209,102,.16);color:var(--med)} .t-low{background:rgba(123,223,242,.16);color:var(--low)}
+  .t-ok{background:rgba(61,220,132,.16);color:var(--ok)} .t-live{background:rgba(110,168,254,.16);color:var(--acc)}
+  .titleline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:4px}
+  .titleline .h{font-weight:700;font-size:15px}
+  code,.loc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--panel2);padding:1px 6px;border-radius:5px;color:#cfe0ff}
+  .meta{color:var(--mut);font-size:13px;margin:6px 0}
+  .meta b{color:var(--ink)}
+  ul{margin:8px 0;padding-left:20px} li{margin:3px 0}
+  .deploy{background:var(--panel2)}
+  .pill{font-size:12px;padding:2px 9px;border-radius:20px;border:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .note{color:var(--mut);font-size:13px;font-style:italic}
+  .foot{color:var(--mut);font-size:12px;margin-top:40px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+  <h1>Club Arena — Poker Engine Audit &amp; Remediation</h1>
+  <div class="sub">Server-authoritative NLH/PLO engine (Hetzner) + Vite client. Audit &amp; fixes — 19 Jul 2026.</div>
+  <div class="grid">
+    <div class="stat"><div class="n">23</div><div class="l">Live tables</div></div>
+    <div class="stat"><div class="n">22</div><div class="l">Live tournaments</div></div>
+    <div class="stat"><div class="n">20,953</div><div class="l">Hands dealt (uptime)</div></div>
+    <div class="stat"><div class="n">9</div><div class="l">Fixes shipped to branch</div></div>
+    <div class="stat"><div class="n">134/134</div><div class="l">Server tests green</div></div>
+  </div>
+  <p class="note">Branch <code>audit/engine-hardening-2026-07-19</code> pushed to Smarter-Poker-Club-Arena. RLS migration applied live. Engine + client fixes await deploy (see Deploy).</p>
+</header>
+
+<nav>
+  <a href="#summary">Summary</a>
+  <a href="#fixed">Fixed</a>
+  <a href="#open">Open findings</a>
+  <a href="#deploy">Deploy</a>
+  <a href="#verified">Verified correct</a>
+</nav>
+
+<h2 id="summary">Executive summary</h2>
+<div class="card">
+<p>The engine is genuinely server-authoritative and, at the per-hand level, close to PokerBros/ClubGG grade: the action timer, betting-round termination, side-pot math, hand evaluation (incl. Omaha and short-deck), rake caps, sit-out/leave sequencing, and the WebSocket transport are all well-built and heavily iterated. The client-side authoritative engine was genuinely removed — the client is a rendering terminal.</p>
+<p>The real problems cluster at the <b>boundaries</b>: authentication, funding, a few money-math edges (uncalled bets, all-in-from-blinds, Run-It-Twice, insurance), dealer-button rotation, and the snapshot→UI mapping. Five independent deep-audit passes (betting rules, pot/showdown math, timers/seating/lifecycle, client contract, and a full test baseline) produced ~40 findings; the most severe were personally re-verified against the code before any change.</p>
+<p>This session <b>fixed and tested the highest-confidence, well-contained issues</b> — including the two most dangerous security holes — and stopped short of rushing the remaining money-math changes into a live, real-stakes engine. Those are documented below with exact locations and recommended fixes for a careful, deploy-gated follow-up.</p>
+</div>
+
+<h2 id="fixed">What was fixed (this session)</h2>
+<p class="meta">All server changes are on the branch and pass <b>134/134 server tests</b> + <code>tsc</code> clean + sim green. Deploy status per item.</p>
+
+<div class="card fix">
+  <div class="titleline"><span class="tag t-crit">Critical</span><span class="tag t-ok">Fixed + test</span><span class="tag t-live">Needs Hetzner deploy</span><span class="h">Unsigned-JWT acceptance → full account impersonation</span></div>
+  <div class="meta"><b>Where:</b> <code>server/src/http/auth.ts</code></div>
+  <p>The "local-decode fallback" trusted a JWT's own <code>sub</code>/<code>exp</code> claims <b>without verifying the signature</b>. A forged token <code>header.{"sub":"&lt;victim&gt;","exp":9999999999}.x</code> was accepted on every request (it never entered the cache, so it always took the unverified path) — enabling reading any player's hole cards via <code>GET /state</code>, folding/cashing-out victims, or minting chips. Removed the unsigned path; tokens are now GoTrue-verified before trust, with a 60s cache + single-flight so the hot path stays one round-trip. New <code>auth.test.ts</code> proves a forged token is rejected.</p>
+</div>
+
+<div class="card fix">
+  <div class="titleline"><span class="tag t-crit">Critical</span><span class="tag t-ok">Fixed + applied live</span><span class="h">Hole-card table hardening (hand_state_snapshots)</span></div>
+  <div class="meta"><b>Where:</b> <code>supabase/migrations/20260719_hand_state_snapshots_rls.sql</code> — <b>applied to prod DB</b></div>
+  <p>The crash-recovery table persists full hand state (incl. every player's hole cards) after each action. Prod already had RLS + a service-role-only policy (the live read-hole-cards hole was already closed), but the repo migration didn't reflect it. Added <code>FORCE ROW LEVEL SECURITY</code> + revoked <code>anon</code>/<code>authenticated</code> grants (defense in depth) and fixed the <code>save_hand_state_snapshot</code> upsert to refresh <code>hand_number</code> on conflict (a stale-void recovery bug). Verified live: <code>relforcerowsecurity=true</code>, anon/auth SELECT = false.</p>
+</div>
+
+<div class="card fix">
+  <div class="titleline"><span class="tag t-crit">Critical</span><span class="tag t-ok">Fixed + test</span><span class="tag t-live">Needs Hetzner deploy</span><span class="h">Uncalled bet was raked</span></div>
+  <div class="meta"><b>Where:</b> <code>HandController.completeHand</code> → new <code>returnUncalledBet()</code></div>
+  <p>The uncalled portion of a final bet stayed in <code>state.pot</code>, so rake and the BBJ fee were charged on the bettor's <b>own returned chips</b> (bet 100 into a 20 pot, all fold → raked 120, not 20), and the payout scaling shaved rake off the refund. Now the uncalled amount is returned to the bettor before pots/rake are computed — the textbook rule — making rake, side pots, and chips-in-front all correct at once. Test asserts rake = 5% of the contested $20 (=$1), not $120.</p>
+</div>
+
+<div class="card fix">
+  <div class="titleline"><span class="tag t-crit">Critical</span><span class="tag t-ok">Fixed + test</span><span class="tag t-live">Needs Hetzner deploy</span><span class="h">All-in blind poster auto-folded / everyone-all-in hand hung</span></div>
+  <div class="meta"><b>Where:</b> <code>HandController.setNextPlayer / start</code> → new <code>nextActionableSeat()</code></div>
+  <p>The preflop first-actor branch didn't skip all-in players, so a short all-in SB/BB was handed the turn and then auto-folded on timeout — forfeiting pot equity. And when the blinds put <i>everyone</i> all-in, <code>start()</code> emitted a no-op turn and the hand hung until the 10-minute safety void (blinds effectively refunded). Both now route through a shared next-actionable-seat helper; the all-in-from-blinds case advances straight into the board runout. Tests cover both.</p>
+</div>
+
+<div class="card fix">
+  <div class="titleline"><span class="tag t-high">High</span><span class="tag t-ok">Fixed + test</span><span class="tag t-live">Needs World Hub sync</span><span class="h">Client: blinds invisible, BB shown "Call" instead of "Check", wrong call sizes</span></div>
+  <div class="meta"><b>Where:</b> <code>src/utils/mapEngineSnapshot.ts</code></div>
+  <p>The mapper derived per-seat "chips in front" purely from <code>action_history</code>, which never contains blind/straddle posts, and dropped the authoritative <code>players[].bet</code> the engine publishes. So blind posters showed $0, the BB's toCall math was wrong (Call instead of Check), and call amounts mis-sized. Now mapped from <code>players[].bet</code>. Tests added.</p>
+</div>
+
+<div class="card fix">
+  <div class="titleline"><span class="tag t-high">High</span><span class="tag t-ok">Fixed + test</span><span class="tag t-live">Needs World Hub sync</span><span class="h">Client: raise slider committed more chips than shown</span></div>
+  <div class="meta"><b>Where:</b> <code>src/pages/TablePage.tsx</code> (ActionPanel wiring)</div>
+  <p>The engine's <code>min_raise</code> is a raise <i>increment</i> (max(BB,lastRaise)); the ActionPanel treats its <code>minRaise</code>/<code>maxRaise</code> props as raise-<b>to</b> absolute amounts (matching the engine, whose raise floor is <code>currentBet + min_raise</code>). Passing the bare increment made the slider bottom out below the current bet, so confirming silently committed the server-clamped amount — more than the button showed. Now passes raise-to values (floor = currentBet + increment; all-in-to = stack + bet; PLO pot cap matched to the engine).</p>
+</div>
+
+<div class="card fix">
+  <div class="titleline"><span class="tag t-high">High</span><span class="tag t-ok">Fixed + test</span><span class="tag t-live">Needs World Hub sync</span><span class="h">Client: side-pot eligibility never rendered</span></div>
+  <div class="meta"><b>Where:</b> <code>src/utils/mapEngineSnapshot.ts</code></div>
+  <p><code>pots[].eligible</code> holds user-ids; the client treated them as seat numbers, so the seat lookup always missed and side-pot eligibility rendered empty in multi-way all-ins. Now resolves user-id → seat.</p>
+</div>
+
+<div class="card fix">
+  <div class="titleline"><span class="tag t-high">High</span><span class="tag t-ok">Fixed</span><span class="tag t-live">Needs World Hub sync</span><span class="h">Fresh/CI builds shipped a table wired to nothing</span></div>
+  <div class="meta"><b>Where:</b> <code>src/pages/TablePage.tsx</code>, <code>.env.example</code></div>
+  <p><code>VITE_USE_ENGINE_WS</code> defaulted OFF; any build without the gitignored <code>.env</code> setting it to <code>1</code> connected to no game-state source (seats loaded, but no hand state/timers/action echo). Now defaults ON (only <code>=0</code> opts out) and documented.</p>
+</div>
+
+<div class="card fix">
+  <div class="titleline"><span class="tag t-low">Test infra</span><span class="tag t-ok">Fixed</span><span class="h">49 uncollectable handler tests + 1 stale assertion</span></div>
+  <div class="meta"><b>Where:</b> <code>server/src/services/supabase.ts</code>, <code>TableStateHub.test.ts</code></div>
+  <p><code>supabase.ts</code> called <code>process.exit(1)</code> at import when the service-role key was absent, aborting the whole handler suite; now skipped under the test runner with a placeholder key. Corrected the stale <code>TableStateHub</code> no-op-seq assertion to match the deliberate Round-25 reconnect-FSM fix. Server suite went 78 → 134 passing.</p>
+</div>
+
+<h2 id="open">Open findings (verified — recommended follow-up)</h2>
+<p class="meta">These are real and located, but are money-math/lifecycle changes on a live real-stakes engine that deserve their own careful, tested, deploy-gated cycle. Ordered by severity. <b>Note:</b> with the JWT hole closed, the exploitable-by-anyone surface is largely shut; most items below require being an authenticated seated player or specific game states.</p>
+
+<div class="card item crit">
+  <div class="titleline"><span class="tag t-crit">Critical</span><span class="h">/addchips mints chips — no wallet debit</span></div>
+  <div class="meta"><b>Where:</b> <code>handlers/addchips.ts</code> → <code>ServerTableEngine.addChips</code> / <code>_applyAddOnImmediate</code></div>
+  <p>Between hands, a seated player can POST <code>/addchips {amount}</code> and the engine adds it straight to the stack and <code>table_seats.stack</code> with <b>no wallet/club-balance debit and no max-buy-in cap</b> on the immediate path. The queued path's "refund" also credits <code>club_members.balance</code> with never-debited chips. <b>Fix:</b> debit via an atomic RPC (<code>atomic_table_rebuy</code> exists) before crediting the stack, enforce <code>stack + amount ≤ max_buy_in</code> on both paths, and only refund amounts actually debited. Highest-priority open item.</p>
+</div>
+
+<div class="card item crit">
+  <div class="titleline"><span class="tag t-crit">Critical</span><span class="h">Run It Twice destroys the entire pot</span></div>
+  <div class="meta"><b>Where:</b> <code>ServerTableEngine.dealAndResolveRIT</code> (~:3451) reads <code>handController.getPots()</code></div>
+  <p><code>getPots()</code> returns <code>[]</code> until <code>completeHand()</code> runs, but RIT resolves before it. The distribution loop iterates zero pots → nobody is credited; the stacks are debited but the pot is never paid. StateVerifier then logs a chip-conservation critical but doesn't repair it. Additionally RIT credits rake to the club without collecting it, and ignores PLO8 low and short-deck rankings. <b>Any table with RIT enabled + an accepted offer confiscates the whole pot today.</b> Fix: compute pots before RIT distribution; deduct rake once from the pot before per-board split; evaluate each board with the table's variant rules.</p>
+</div>
+
+<div class="card item crit">
+  <div class="titleline"><span class="tag t-crit">Critical</span><span class="h">Insurance is exploitable / non-functional</span></div>
+  <div class="meta"><b>Where:</b> <code>ServerTableEngine</code> (~:3689) + <code>InsuranceEngine</code> + <code>MonteCarloEquity</code></div>
+  <p>Multiple compounding bugs: only the leader is passed in → <code>numOpponents = 0</code> → equity computes as 100% and full-pot coverage is offered for a <b>$0 premium</b>; accepting with ≥2 cards to come is silently erased by an unconditional <code>dispose()</code> on the next street; premiums are priced against <b>random</b> opponent hands rather than the known all-in hands; and the "chop = push" check treats an uncalled-bet return as a pot win and voids coverage on exactly the unequal-stack all-in insurance exists for. Fix requires reworking offer lifecycle + equity inputs together; keep insurance disabled on live tables until then.</p>
+</div>
+
+<div class="card item high">
+  <div class="titleline"><span class="tag t-high">High</span><span class="h">Dealer button tracked by array index, not seat</span></div>
+  <div class="meta"><b>Where:</b> <code>ServerTableEngine</code> ~:2326 (<code>dealerSeatIndex % players.length</code>)</div>
+  <p>The button is an index into the mutable per-hand roster, so a bust/leave/join can move it backward, skip seats, or make the same players post the BB twice / never. No dead-button handling. Fix: track the button by seat number and advance to the next occupied seat clockwise (PokerBros moving/dead-button rules). Also fix <code>getBBSeatIndex</code> to use the same roster that is actually dealt (wait-for-BB release can fire on the wrong hand).</p>
+</div>
+
+<div class="card item high">
+  <div class="titleline"><span class="tag t-high">High</span><span class="h">Reconnect during disconnect countdown leaves no timer → stall/void exploit</span></div>
+  <div class="meta"><b>Where:</b> <code>ServerTableEngine.handleTurnChange</code> + <code>DisconnectEngine</code></div>
+  <p>A disconnected player whose turn arrives gets no turn timer (only the 30s disconnect countdown); a single heartbeat cancels that countdown without arming a turn timer. The hand then freezes until the 10-minute void, which nulls the controller <b>without settlement</b> — a losing player facing a big river bet can void the hand and reclaim their stack, repeatably. Fix: on reconnect during one's turn, start the normal action timer (or let the countdown keep running until they act).</p>
+</div>
+
+<div class="card item high">
+  <div class="titleline"><span class="tag t-high">High</span><span class="h">Settlement races player leave → winnings lost / losses refunded</span></div>
+  <div class="meta"><b>Where:</b> <code>ServerTableEngine</code> leave path vs <code>postHandTasks</code>/<code>syncStacks</code></div>
+  <p>At <code>HAND_COMPLETE</code> the controller is nulled while <code>syncStacks</code> runs async. A <code>/leave</code> in that window cashes out the <b>stale pre-hand stack</b> and sets <code>left_at</code>, so the pot vanishes (or a bust is refunded). Fix: await <code>postHandTasksPromise</code> before cashing out, or cash out from the settled in-memory stack.</p>
+</div>
+
+<div class="card item high">
+  <div class="titleline"><span class="tag t-high">High</span><span class="h">Tournament rebalance / chip-race move players &amp; write stacks mid-hand</span></div>
+  <div class="meta"><b>Where:</b> <code>GameServer.executePlayerMoves</code> (~:2764), chip-race (~:1593)</div>
+  <p>Table-break moves run before <code>waitForHandComplete</code>; gap rebalance moves never wait at all. A player who wins a pot on the source table arrives at the new table with their pre-pot stack (the winnings evaporate). Chip-race writes stacks mid-hand that the next <code>syncStacks</code> overwrites. Fix: execute seat moves and chip races only between hands on the source table, mutating engine-authoritative stacks.</p>
+</div>
+
+<div class="card item high">
+  <div class="titleline"><span class="tag t-high">High</span><span class="h">Post-break blind level-up swallowed; no auto-sit-out for AFK players</span></div>
+  <div class="meta"><b>Where:</b> <code>GameServer.resumeFromBreak</code> (~:982); <code>DisconnectEngine</code> timeout counting</div>
+  <p>After a synchronized break, the level-up increments the counter without writing new blinds / emitting <code>level_up</code>, and can freeze progression entirely deep in a structure. Separately, a connected-but-AFK player is never auto-sat-out (consecutive timeouts are only counted on the disconnect path), so they're blinded down forever and slow the table; nothing auto-removes a long sit-out either. Fix: reuse the normal level-transition routine on resume; count timeouts on every expiry path → auto-sit-out; auto-stand after N idle minutes.</p>
+</div>
+
+<div class="card item high">
+  <div class="titleline"><span class="tag t-high">High</span><span class="h">10-minute hand-timeout leaks the event listener</span></div>
+  <div class="meta"><b>Where:</b> <code>ServerTableEngine</code> ~:2469 (timeout path doesn't <code>unsub()</code>)</div>
+  <p>On the safety timeout the controller is nulled but the <code>HAND_COMPLETE</code> listener isn't removed and pending horse timers aren't cancelled; a late completion can null the <i>next</i> live hand's controller, orphaning it. Fix: <code>unsub()</code> + cancel pending timers on the timeout path.</p>
+</div>
+
+<div class="card item med">
+  <div class="titleline"><span class="tag t-med">Medium</span><span class="h">Rules/label edges &amp; auto-muck leak</span></div>
+  <ul>
+    <li><b>Auto-muck defeated:</b> the <code>showdown_cards_revealed</code> event broadcasts every non-folded showdown hand to the whole table, bypassing the winner/voluntary/auto-muck gating used elsewhere. (<code>ServerTableEngine</code> ~:2791)</li>
+    <li><b>Min-raise over a straddle</b> is 3×BB instead of 4×BB (<code>lastRaise</code> not updated when the straddle is posted). (<code>HandController</code> ~:244)</li>
+    <li><b>Short all-in BB</b> lowers the whole table's price of entry and min-raise base (<code>currentBet = min(BB, stack)</code>). (<code>HandController</code> ~:190)</li>
+    <li><b>Betting not re-restricted:</b> after a short all-in that doesn't reopen, a player who already acted may still submit a full re-raise (validator has no reopen check). (<code>ServerActionValidator</code>)</li>
+    <li><b>3-handed position labels</b> show SB/BB swapped vs the blinds actually posted. (<code>ServerTableEngine</code> ~:4589)</li>
+    <li><b>Post-BB-to-enter</b> charges a dead SB on top of the live BB. (<code>ServerTableEngine</code> ~:1474)</li>
+  </ul>
+</div>
+
+<div class="card item med">
+  <div class="titleline"><span class="tag t-med">Medium</span><span class="h">Client rendering edges</span></div>
+  <ul>
+    <li><b>Dealer button double-rotated:</b> renders at the wrong seat when the hero isn't physical seat 1. (<code>DealerButton</code> / <code>TablePage</code> seat mapping)</li>
+    <li><b>POT_WIN animation off-by-one:</b> winner particles/chips fly to the seat next to the actual winner. (<code>TablePage</code> ~:4174)</li>
+    <li><b>Stale hero hole cards</b> can persist across hands if a realtime insert is dropped (poll stops after first success; <code>HAND_STARTED</code> doesn't clear hero cards). (<code>TablePage</code>)</li>
+    <li><b>Optimistic call flicker:</b> records the full bet level rather than the incremental call, so the chip count jumps after the echo. (<code>TablePage</code> ~:4838)</li>
+  </ul>
+</div>
+
+<div class="card item low">
+  <div class="titleline"><span class="tag t-low">Low</span><span class="h">Minor / hardening</span></div>
+  <ul>
+    <li>Duplicate-action suppression is defeated (dedup key includes a server timestamp) — relies on the 250ms rate limit. </li>
+    <li><code>Deck.shuffle</code> uses modulo-biased indices (~2⁻³²) while an unbiased <code>secureRandomInt</code> exists in <code>CryptoRandom.ts</code> — negligible but should use the unbiased path.</li>
+    <li><code>AtomicStackService</code> versioned settle results are computed but only logged, not enforced.</li>
+    <li>Crash recovery marks incomplete hands complete and starts fresh (no true resume); <code>DeadlineScheduler.rehydrate</code> has no callers.</li>
+    <li>The old server <code>test-engine-math.mjs</code> expects rake truncation; the engine intentionally rounds (documented). Stale test, not a bug.</li>
+    <li>~33 client unit tests fail on <b>pre-existing</b> deleted-service imports / emoji-removal assertions (e.g. <code>tableService.subscribeToHand</code>) — test debt unrelated to gameplay.</li>
+  </ul>
+</div>
+
+<h2 id="deploy">Deploy status &amp; next steps</h2>
+<div class="card deploy">
+  <table>
+    <tr><th>Change</th><th>Where it runs</th><th>Status</th></tr>
+    <tr><td>RLS / snapshot hardening + upsert fix</td><td>Supabase (prod DB)</td><td><span class="pill" style="color:var(--ok)">Applied live</span></td></tr>
+    <tr><td>Auth, uncalled-bet, all-in edges (server)</td><td>Hetzner engine</td><td><span class="pill" style="color:var(--high)">On branch — needs <code>server/deploy-hetzner.sh</code></span></td></tr>
+    <tr><td>Client mapper / ActionPanel / WS flag</td><td>smarter.poker/hub/club-arena</td><td><span class="pill" style="color:var(--high)">On branch — needs World Hub sync</span></td></tr>
+  </table>
+  <p style="margin-top:10px"><b>To ship the branch:</b></p>
+  <ul>
+    <li>Review &amp; merge <code>audit/engine-hardening-2026-07-19</code> into <code>main</code>.</li>
+    <li><b>Engine:</b> from <code>~/Documents/club-arena</code> run <code>bash server/deploy-hetzner.sh</code> (needs the <code>.ssh/hetzner_deploy</code> key). The auth, uncalled-bet, and all-in fixes only take effect once the Hetzner container is redeployed.</li>
+    <li><b>Client:</b> from <code>~/Documents/Smarter-Poker-World-Hub</code> run <code>bash scripts/sync-club-arena.sh "feat(ca): audit hardening client"</code> to build + sync + deploy.</li>
+    <li>Because there are 23 live tables + 22 tournaments in flight, prefer deploying the engine at a low-traffic window; the engine restart cashes seated stacks to wallets on boot (no chip loss) but voids any in-flight hand.</li>
+  </ul>
+</div>
+
+<h2 id="verified">Verified working (spot-checked correct)</h2>
+<div class="card">
+<p>For confidence, these were traced and confirmed correct: all 10 hand rankings incl. wheel/steel-wheel/royal and full kicker depth; best-5-of-7 and Omaha exactly-2+3; short-deck ranking swap (when the flag is passed); level-based side-pot amounts &amp; eligibility; odd-chip to first seat left of the button; integer-cents payout conservation with over/undershoot repair; rake percentage + player-count caps + no-flop-no-drop; unbiased <code>secureRandomInt</code> (rejection sampling) and 52-unique-card deck integrity with disjoint RIT board slices; server-side deadline-driven action timer with time-bank; sit-out/leave deferral to hand boundaries; disconnect countdown + reconnect snapshot resync; hole-card scrubbing in the WS/polling paths; tournament lifecycle (blind timer, eliminations, payouts, PKO/mystery bounty, late-reg, hand-for-hand); and a fully server-trusted action submission path (userId from JWT, turn+amount validated and clamped).</p>
+</div>
+
+<div class="foot">
+  Compiled by a Cowork session, 2026-07-19 04:16 UTC. Findings from five independent deep-audit passes; the highest-severity items were re-verified against the source before any change. Branch: <code>audit/engine-hardening-2026-07-19</code>. Live DB migration: <code>hand_state_snapshots_rls_hardening_20260719</code>.
+</div>
+</div>
+</body>
+</html>

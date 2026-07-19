@@ -3679,9 +3679,9 @@ export class ServerTableEngine {
       // Subsequent streets: recalculate equity and re-evaluate leadership.
       // Clear old offers and create new one for the current leader.
       if (bestHandPlayer) {
-        // Dispose old offers and create fresh for the new leader
-        this.insuranceEngine.dispose(this.tableId);
-        this.insuranceEngine.configure(this.tableId, { enabled: true });
+        // AUDIT FIX 2026-07-19: clear only still-pending offers — do NOT wipe
+        // already-accepted (paid-for) coverage or reset the table config.
+        this.insuranceEngine.clearPendingOffers(this.tableId);
 
         // Only re-offer if the leader hasn't declined for hand
         const prevOffers = existingOffers;

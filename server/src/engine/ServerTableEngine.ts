@@ -111,6 +111,10 @@ export class ServerTableEngine {
   private tableInfo: TableInfo | null = null;
   private seatedPlayers: SeatedPlayer[] = [];
   private dealerSeatIndex: number = 0;
+  // AUDIT FIX 2026-07-19: the button is tracked by SEAT NUMBER (not an array
+  // index) so roster changes (bust/leave/join) can't move it backward, skip a
+  // seat, or double-post a blind. 0 = no hand dealt yet.
+  private lastButtonSeat: number = 0;
   private consecutiveErrors: number = 0;
 
   // Bankroll Management: Track how many times a horse has re-bought at this table.
@@ -2315,14 +2319,24 @@ export class ServerTableEngine {
       avatar_url: p.avatar_url ?? '',
     }));
 
-    // Rotate dealer
-    this.dealerSeatIndex = this.dealerSeatIndex % players.length;
-    const dealerSeat = players[this.dealerSeatIndex].seat_number;
+    // Rotate dealer — AUDIT FIX 2026-07-19: SEAT-based moving button. Advance to
+    // the next occupied seat clockwise from the previous button seat. If that
+    // seat's player busted/left, getNextSeat naturally lands on the next present
+    // player (dead-button behavior) — the button never moves backward, skips a
+    // seat, or lands twice.
+    const sortedSeats = players.map((p) => p.seat_number).sort((a, b) => a - b);
+    const prevButtonSeat = this.lastButtonSeat;
+    const dealerSeat =
+      prevButtonSeat > 0 ? this.getNextSeat(prevButtonSeat, players) : sortedSeats[0];
     this.currentHandDealerSeat = dealerSeat;
-    this.dealerSeatIndex++;
+    this.lastButtonSeat = dealerSeat;
+    // Keep the legacy index roughly in sync for any remaining reads (defensive).
+    this.dealerSeatIndex = Math.max(0, sortedSeats.indexOf(dealerSeat)) + 1;
 
-    // Bible V8 §6: Detect orbit completion (dealer wrapped around table) → refill time banks
-    if (this.dealerSeatIndex > 0 && this.dealerSeatIndex % players.length === 0) {
+    // Bible V8 §6: Orbit complete (button wrapped past the top seat) → refill
+    // time banks. With seat-based rotation, a wrap means the new button seat is
+    // not strictly greater than the previous one.
+    if (prevButtonSeat > 0 && dealerSeat <= prevButtonSeat) {
       this.timeBankEngine.onOrbitComplete(this.tableId);
     }
 
@@ -4449,13 +4463,15 @@ export class ServerTableEngine {
         ? Number(this.tableInfo.max_buy_in)
         : (this.tableInfo?.big_blind || 2) * 200;
 
-      // Calculate who will be the next Big Blind
-      // If 2 players: BB is the non-dealer. dealerSeatIndex currently points to the NEXT dealer.
-      // So next dealer is at this.dealerSeatIndex % players.length. BB is at (this.dealerSeatIndex + 1) % players.length.
-      // If >2 players: BB is at (this.dealerSeatIndex + 2) % players.length.
-      const bbOffset = players.length === 2 ? 1 : 2;
-      const nextBbSeatIndex = (this.dealerSeatIndex + bbOffset) % players.length;
-      const nextBbPlayer = players[nextBbSeatIndex];
+      // Calculate who will be the next Big Blind — AUDIT FIX 2026-07-19:
+      // seat-based from the current button. Next hand's button is the next
+      // occupied seat clockwise from lastButtonSeat; BB is one seat past SB
+      // (HU: BB is the non-button, i.e. one seat past the button).
+      const nextButtonSeat = this.getNextSeat(this.lastButtonSeat, players);
+      const nextSbSeat =
+        players.length === 2 ? nextButtonSeat : this.getNextSeat(nextButtonSeat, players);
+      const nextBbSeat = this.getNextSeat(nextSbSeat, players);
+      const nextBbPlayer = players.find((p) => p.seat_number === nextBbSeat);
 
       const cashedOutHorses = players.filter((p) => {
         if (!p.is_horse) return false;
@@ -4595,14 +4611,28 @@ export class ServerTableEngine {
    * Bible V8 §4.2: Get the BB seat for the current deal.
    * Used by wait-for-BB logic to know when a waiting player can enter.
    */
+  /**
+   * Predict the BB seat for the hand ABOUT to be dealt (called before dealHand
+   * rotates the button). AUDIT FIX 2026-07-19: seat-based, computed from the
+   * previous button seat over the same roster the deal will use — including
+   * players waiting for the BB, so a waiting player's seat can be recognised as
+   * the BB and they can be released. (Index-based version used the stale
+   * dealerSeatIndex over a differently-filtered roster and released players on
+   * the wrong hand.)
+   */
   private getBBSeatIndex(): number {
-    const players = this.seatedPlayers.filter(
+    // Roster that CAN hold the button/blinds this hand: has chips and isn't
+    // sitting out. Waiting-for-BB players are included so the moving BB can
+    // reach their seat and trigger release.
+    const roster = this.seatedPlayers.filter(
       (p) => p.stack > 0 && !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)
     );
-    if (players.length < 2) return -1;
-    const dealerSeat = players[this.dealerSeatIndex % players.length]?.seat_number ?? 0;
-    const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
-    return this.getNextSeat(sbSeat, players);
+    if (roster.length < 2) return -1;
+    const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
+    const nextButton =
+      this.lastButtonSeat > 0 ? this.getNextSeat(this.lastButtonSeat, roster) : sortedSeats[0];
+    const sbSeat = roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
+    return this.getNextSeat(sbSeat, roster);
   }
 
   private getNextSeat(fromSeat: number, players: SeatedPlayer[]): number {

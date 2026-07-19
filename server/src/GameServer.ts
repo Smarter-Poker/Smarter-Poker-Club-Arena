@@ -978,18 +978,16 @@ export class TournamentManager {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
     await this.broadcast('break_ended', { level: this.currentLevel });
 
-    // Restart blind timer with saved remaining time
+    // Restart blind timer with saved remaining time. AUDIT FIX 2026-07-19: on
+    // fire, run the SAME full level transition as the normal timer (writes
+    // blinds to tables, emits level_up, chip race, late-reg/add-on) instead of
+    // a bare currentLevel++ that left table blinds unchanged and could freeze
+    // escalation.
     if (this.savedBlindTimerRemaining > 0) {
       const blindStructure = this.tournamentCache?.blind_structure || [];
       this.blindTimerStartedAt = Date.now();
       this.blindTimer = setTimeout(() => {
-        if (!this.running) return;
-        this.currentLevel++;
-        if (this.currentLevel >= blindStructure.length) {
-          this.currentLevel = blindStructure.length - 1;
-          return;
-        }
-        this.startBlindTimer(blindStructure);
+        void this.advanceBlindLevel(blindStructure);
       }, this.savedBlindTimerRemaining);
     }
 
@@ -1477,15 +1475,25 @@ export class TournamentManager {
 
   private startBlindTimer(blindStructure: any[]): void {
     if (blindStructure.length === 0) return;
+    const currentLevelData = blindStructure[this.currentLevel] || blindStructure[0];
+    const durationMs = (currentLevelData?.durationMinutes || 10) * 60 * 1000;
+    this.blindTimerStartedAt = Date.now();
+    this.blindTimer = setTimeout(() => {
+      void this.advanceBlindLevel(blindStructure);
+    }, durationMs);
+  }
 
-    // Use a recursive timeout pattern to handle per-level durations
-    const scheduleNextLevel = () => {
-      if (!this.running) return;
-      const currentLevelData = blindStructure[this.currentLevel] || blindStructure[0];
-      const durationMs = (currentLevelData?.durationMinutes || 10) * 60 * 1000;
-
-      this.blindTimerStartedAt = Date.now();
-      this.blindTimer = setTimeout(async () => {
+  /**
+   * AUDIT FIX 2026-07-19: the full level-transition (write blinds to every
+   * table, persist current_level, emit level_up, chip race, late-reg / add-on
+   * checks) extracted so BOTH the normal blind timer AND resumeFromBreak run it.
+   * Previously resumeFromBreak hand-rolled a timer that only did currentLevel++
+   * without touching table blinds — so the post-break level-up was swallowed and
+   * escalation could freeze entirely.
+   */
+  private async advanceBlindLevel(blindStructure: any[]): Promise<void> {
+    {
+      {
         if (!this.running) return;
         const prevLevel = this.currentLevel;
         this.currentLevel++;
@@ -1513,7 +1521,7 @@ export class TournamentManager {
 
         // Skip any break entries that might still be in old blind structures
         if (level.isBreak) {
-          scheduleNextLevel();
+          this.startBlindTimer(blindStructure);
           return;
         }
 
@@ -1703,12 +1711,10 @@ export class TournamentManager {
           }
         }
 
-        // Schedule the next level
-        scheduleNextLevel();
-      }, durationMs);
-    };
-
-    scheduleNextLevel();
+        // Schedule the next level (waits the new level's duration, then advances)
+        this.startBlindTimer(blindStructure);
+      }
+    }
   }
 
   private async triggerAddOnPeriod(): Promise<void> {
@@ -2770,12 +2776,19 @@ export class TournamentManager {
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Breaking table ${bt.tableId.slice(0, 8)} — moving ${breakMoves.length} players`
           );
+
+          // AUDIT FIX 2026-07-19: wait for the source table's current hand to
+          // finish (so syncStacks has persisted final stacks) BEFORE moving
+          // players. Previously executePlayerMoves ran first and read the
+          // pre-hand stack, so a player who won/lost the in-flight hand arrived
+          // at the new table with the wrong stack (chips created/destroyed).
+          const engine = this.tableEngines.get(bt.tableId);
+          if (engine) await this.waitForHandComplete(bt.tableId);
+
           await this.executePlayerMoves(breakMoves);
 
           // Close the broken table's engine
-          const engine = this.tableEngines.get(bt.tableId);
           if (engine) {
-            await this.waitForHandComplete(bt.tableId);
             await engine.stop();
           }
           this.tableEngines.delete(bt.tableId);
@@ -2833,6 +2846,15 @@ export class TournamentManager {
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Rebalancing: ${moves.length} moves (gap was ${score.gap}, target ≤1)`
           );
+
+          // AUDIT FIX 2026-07-19: gap rebalance previously moved players with no
+          // regard for in-flight hands. Wait for each source table's current
+          // hand to complete (final stacks persisted) before moving.
+          const sourceTables = [...new Set(moves.map((m) => m.fromTableId))];
+          for (const t of sourceTables) {
+            await this.waitForHandComplete(t);
+          }
+
           await this.executePlayerMoves(moves);
 
           await this.broadcast('table_rebalance', {

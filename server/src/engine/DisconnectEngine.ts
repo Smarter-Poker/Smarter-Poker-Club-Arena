@@ -284,6 +284,30 @@ export class DisconnectEngine {
     this.preciseTimer.cancelTimer(tableId, `disconnect:${playerId}`);
   }
 
+  /**
+   * AUDIT FIX 2026-07-19: a CONNECTED player who lets the action timer expire
+   * (app open but AFK) was never counted toward auto-sit-out — only the
+   * disconnect path incremented consecutiveTimeouts — so an AFK player sat at
+   * the table forever, posting blinds and stalling every hand. Call this from
+   * the connected-player timer-expiry path so the same cap applies to everyone.
+   */
+  recordConnectedTimeout(tableId: string, playerId: string): void {
+    const key = `${tableId}:${playerId}`;
+    const state = this.playerStates.get(key);
+    if (!state) return;
+    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+    state.consecutiveTimeouts++;
+    if (state.consecutiveTimeouts >= config.maxConsecutiveTimeouts) {
+      this.sitOut(tableId, playerId, 'forced');
+    }
+  }
+
+  /** A player acted voluntarily — clear their consecutive-timeout streak. */
+  recordPlayerActed(tableId: string, playerId: string): void {
+    const state = this.playerStates.get(`${tableId}:${playerId}`);
+    if (state) state.consecutiveTimeouts = 0;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // SIT OUT MANAGEMENT
   // ═══════════════════════════════════════════════════════════════════════════

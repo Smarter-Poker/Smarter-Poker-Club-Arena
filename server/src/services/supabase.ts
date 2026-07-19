@@ -1057,14 +1057,50 @@ export async function processBBJPayout(params: {
       return null;
     }
 
-    // 3. Calculate payout amounts from the MAIN pool balance
-    const totalPayout =
-      Math.round(pool.main_balance * (params.payoutTotalPercent / 100) * 100) / 100;
-    const loserShare = Math.round(totalPayout * 0.5 * 100) / 100; // 50% to loser (bad beat holder)
-    const winnerShare = Math.round(totalPayout * 0.25 * 100) / 100; // 25% to winner
-    const tableShareTotal = Math.round((totalPayout - loserShare - winnerShare) * 100) / 100; // 25% to table
+    // 3-5. FIX-A4 2026-07-19: atomic + idempotent payout via RPC. The RPC locks
+    // the pool row, computes the payout from the LOCKED balance (no stale-read
+    // mint), claims the hand via a unique (pool,table,hand) key before
+    // decrementing, and records bbj_payouts — all in one transaction. Replaces
+    // the previous non-atomic read-modify-write that could double-pay on
+    // simultaneous hits or a task retry.
+    const { data: rpcRows, error: rpcErr } = await supabase.rpc('bbj_atomic_payout', {
+      p_pool_id: pool.id,
+      p_table_id: params.tableId,
+      p_hand_number: params.handNumber,
+      p_payout_total_percent: params.payoutTotalPercent,
+      p_loser_user_id: params.loserUserId, // BBJ "winner" (bad-beat holder, 50%)
+      p_winner_user_id: params.winnerUserId, // BBJ "loser" (hand winner, 25%)
+      p_dealt_in_count: params.dealtInPlayerIds.length,
+      p_metadata: {
+        winner_hand_name: params.loserHandName,
+        loser_hand_name: params.winnerHandName,
+        status: 'completed',
+      },
+    });
 
-    // Table share split equally among all dealt-in players (excluding loser and winner who already get shares)
+    if (rpcErr) {
+      reportError(rpcErr, 'processBBJPayout.Atomic_rpc_failed');
+      return null;
+    }
+
+    const rpc = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (!rpc || !rpc.applied) {
+      // already_paid (retry / concurrent) or empty/zero pool — do NOT credit stacks.
+      if (rpc?.already_paid) {
+        console.warn(
+          `[processBBJPayout] Skipped — hand ${params.tableId}#${params.handNumber} already paid on pool ${pool.id}`
+        );
+      }
+      return null;
+    }
+
+    const totalPayout = Number(rpc.total_payout);
+    const loserShare = Number(rpc.loser_share);
+    const winnerShare = Number(rpc.winner_share);
+    const tableShareTotal = Number(rpc.table_share);
+
+    // Table share split equally among all dealt-in players (excluding loser and
+    // winner who already get their own shares).
     const tableOnlyPlayers = params.dealtInPlayerIds.filter(
       (id) => id !== params.loserUserId && id !== params.winnerUserId
     );
@@ -1073,69 +1109,7 @@ export async function processBBJPayout(params: {
         ? Math.round((tableShareTotal / tableOnlyPlayers.length) * 100) / 100
         : 0;
 
-    // 4. Deduct from pool main_balance and update stats (read-then-increment for correct totals)
-    const { data: poolStats } = await supabase
-      .from('bbj_pools')
-      .select('total_paid_out, hit_count')
-      .eq('id', pool.id)
-      .maybeSingle();
-
-    const currentTotalPaidOut = Number(poolStats?.total_paid_out ?? 0);
-    const currentHitCount = Number(poolStats?.hit_count ?? 0);
-
-    const { error: poolErr } = await supabase
-      .from('bbj_pools')
-      .update({
-        main_balance: Math.max(0, pool.main_balance - totalPayout),
-        total_paid_out: currentTotalPaidOut + totalPayout,
-        hit_count: currentHitCount + 1,
-        last_hit_at: new Date().toISOString(),
-        last_hit_amount: totalPayout,
-        last_winner_id: params.loserUserId, // "winner" in BBJ terms = the bad beat loser
-        last_loser_id: params.winnerUserId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', pool.id);
-
-    if (poolErr) {
-      reportError(poolErr, 'processBBJPayout.Pool_update_failed');
-      return null;
-    }
-
-    // 5. Record the payout in bbj_payouts table
-    // hand_id is NULL (server uses hand_history table, not legacy hands table)
-    // hand_number + table_id provide the reference instead
-    //
-    // Round 63 fix: winner_hand_name / loser_hand_name / status are NOT real
-    // columns in bbj_payouts — every prior insert silently failed. Hand names
-    // now go into the JSONB `metadata` field; status is implicit (rows only
-    // exist for completed payouts).
-    const { data: payoutRecord, error: payoutErr } = await supabase
-      .from('bbj_payouts')
-      .insert({
-        pool_id: pool.id,
-        hand_id: null, // Nullable after migration 20260325_bbj_payouts_hand_id_nullable
-        table_id: params.tableId,
-        hand_number: params.handNumber,
-        winner_user_id: params.loserUserId, // BBJ "winner" = the bad beat loser (gets 50%)
-        loser_user_id: params.winnerUserId, // BBJ "loser" = the hand winner (gets 25%)
-        total_amount: totalPayout,
-        winner_share: loserShare,
-        loser_share: winnerShare,
-        table_share: tableShareTotal,
-        table_player_count: params.dealtInPlayerIds.length,
-        metadata: {
-          winner_hand_name: params.loserHandName,
-          loser_hand_name: params.winnerHandName,
-          status: 'completed',
-        },
-      })
-      .select('id')
-      .maybeSingle();
-
-    if (payoutErr) {
-      reportError(payoutErr, 'processBBJPayout.Payout_record_failed');
-    }
+    const payoutRecord = rpc.payout_id ? { id: rpc.payout_id as string } : null;
 
     // 6. Record individual table share recipients
     if (payoutRecord && tableOnlyPlayers.length > 0) {

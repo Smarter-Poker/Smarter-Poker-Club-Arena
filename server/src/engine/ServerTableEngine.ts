@@ -27,7 +27,7 @@ import { MixedGameEngine } from './MixedGameEngine.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
 import { monteCarloEquity } from './MonteCarloEquity.js';
-import { evaluateHand, evaluateOmahaHand, compareHands } from './PokerEngine.js';
+import { evaluateHand, evaluateOmahaHand, compareHands, determineWinners } from './PokerEngine.js';
 import { RakebackEngine } from './RakebackEngine.js';
 import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
@@ -3439,87 +3439,61 @@ export class ServerTableEngine {
       boards.push([...existingBoard, ...runCards]);
     }
 
-    // Get pots from HandController for per-pot evaluation
-    const pots = this.handController.getPots();
-    const variant = this.tableInfo?.game_variant || 'nlh';
-    const isOmaha = variant.startsWith('plo');
-    const evaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
+    // AUDIT FIX 2026-07-19: RIT previously read getPots() — which is `[]` until
+    // completeHand() runs (after RIT) — so NOBODY was paid and the whole pot was
+    // destroyed; it also distributed the full pot with NO rake while
+    // finalizeRunout reported rake as collected (minting chips). Now we:
+    //   1. return the uncalled bet (completeHand's rule, which RIT skips),
+    //   2. compute LIVE pots from contributions,
+    //   3. evaluate each board with determineWinners (correct for split pots,
+    //      short-deck, and PLO8 hi-lo — the old ad-hoc evaluator ignored all of
+    //      these), taking each board's 1/runs share,
+    //   4. deduct rake + BBJ ONCE (Bible V8 §4.20) before crediting stacks.
+    this.handController.settleUncalledBet();
+    const pots = this.handController.computeLivePots();
+    const variant = this.handController.getVariant();
+    const dealerSeat = this.handController.getDealerSeat();
+    const state = this.handController.getState();
 
-    // Distribution: playerId → total chips won across all boards
-    const totalDistribution = new Map<string, number>();
-
-    // For each pot, split across boards and evaluate
-    for (const pot of pots) {
-      const potPerBoard = pot.amount / runs;
-
-      for (let boardIdx = 0; boardIdx < runs; boardIdx++) {
-        const board = boards[boardIdx];
-
-        // Find the best hand among eligible players for this pot on this board
-        let bestPlayerId = '';
-        let bestHand: import('../types.js').EvaluatedHand | null = null;
-        const tiedPlayers: string[] = [];
-
-        for (const playerId of pot.eligiblePlayers) {
-          const player = allInPlayers.find((p) => p.user_id === playerId);
-          if (!player || !player.cards || player.cards.length === 0) continue;
-
-          const hand = evaluator(player.cards, board);
-
-          if (!bestHand) {
-            bestHand = hand;
-            bestPlayerId = playerId;
-            tiedPlayers.length = 0;
-            tiedPlayers.push(playerId);
-          } else {
-            const cmp = compareHands(hand, bestHand);
-            if (cmp > 0) {
-              bestHand = hand;
-              bestPlayerId = playerId;
-              tiedPlayers.length = 0;
-              tiedPlayers.push(playerId);
-            } else if (cmp === 0) {
-              tiedPlayers.push(playerId);
-            }
-          }
-        }
-
-        // Distribute this board's share of this pot
-        if (tiedPlayers.length > 1) {
-          // Split pot among tied players on this board
-          const splitAmount = potPerBoard / tiedPlayers.length;
-          for (const pid of tiedPlayers) {
-            totalDistribution.set(pid, (totalDistribution.get(pid) || 0) + splitAmount);
-          }
-        } else if (bestPlayerId) {
-          totalDistribution.set(
-            bestPlayerId,
-            (totalDistribution.get(bestPlayerId) || 0) + potPerBoard
-          );
-        }
+    // Distribution: playerId → total chips won across all boards (pre-rake).
+    const rawDistribution = new Map<string, number>();
+    for (let boardIdx = 0; boardIdx < runs; boardIdx++) {
+      const board = boards[boardIdx];
+      // determineWinners handles hi-lo split, short-deck, ties/odd-chip.
+      const boardWinnersFull = determineWinners(state.players, board, pots, variant, dealerSeat);
+      for (const w of boardWinnersFull) {
+        rawDistribution.set(w.userId, (rawDistribution.get(w.userId) || 0) + w.amount / runs);
       }
     }
 
-    // Round to cents and fix rounding errors
+    // Deduct rake + BBJ once, scaling every winner proportionally (integer cents).
     const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
-    let distributed = 0;
-    const entries = [...totalDistribution.entries()];
-    for (const [pid, amount] of entries) {
-      const rounded = Math.trunc(amount * 100) / 100;
-      totalDistribution.set(pid, rounded);
-      distributed += rounded;
+    const { rake, bbjFee } = this.handController.computeRakeAndBBJ();
+    const netPot = Math.max(0, totalPot - rake - bbjFee);
+    const rawTotal = [...rawDistribution.values()].reduce((s, a) => s + a, 0) || 1;
+
+    const totalDistribution = new Map<string, number>();
+    const netCents = Math.round(netPot * 100);
+    let assignedCents = 0;
+    const rawEntries = [...rawDistribution.entries()];
+    for (const [pid, amount] of rawEntries) {
+      const cents = Math.round((Math.round(amount * 100) * netCents) / Math.round(rawTotal * 100));
+      totalDistribution.set(pid, cents / 100);
+      assignedCents += cents;
     }
-    // Give rounding remainder to first winner
-    if (entries.length > 0 && Math.abs(totalPot - distributed) > 0.001) {
-      const [firstPid] = entries[0];
-      totalDistribution.set(
-        firstPid,
-        (totalDistribution.get(firstPid) || 0) + (totalPot - distributed)
-      );
+    // Repair rounding drift so sum(distribution) === netPot exactly.
+    let remainderCents = netCents - assignedCents;
+    for (let i = 0; i < rawEntries.length && remainderCents !== 0; i++) {
+      const [pid] = rawEntries[i];
+      const step = remainderCents > 0 ? 1 : -1;
+      const cur = Math.round((totalDistribution.get(pid) || 0) * 100);
+      if (cur + step >= 0) {
+        totalDistribution.set(pid, (cur + step) / 100);
+        remainderCents -= step;
+      }
     }
 
     // Apply distributions to player stacks
-    const state = this.handController.getState();
     for (const [playerId, amount] of totalDistribution) {
       const enginePlayer = state.players.find((p) => p.user_id === playerId);
       const seatedPlayer = this.seatedPlayers.find((p) => p.user_id === playerId);
@@ -3539,13 +3513,19 @@ export class ServerTableEngine {
     });
 
     // Resolve in RIT engine (for event emission and cleanup)
-    // Use first eligible winner per board for the engine's simpler tracking
+    // Use first eligible winner per board for the engine's simpler tracking.
+    const isOmaha = variant.startsWith('plo');
+    const isShortDeck = variant === 'short_deck';
+    const boardEvaluator = isOmaha
+      ? evaluateOmahaHand
+      : (h: import('../types.js').Card[], c: import('../types.js').Card[]) =>
+          evaluateHand(h, c, isShortDeck);
     const boardWinners = boards.map((board) => {
       let best: import('../types.js').EvaluatedHand | null = null;
       let winnerId = '';
       for (const p of allInPlayers) {
         if (!p.cards || p.cards.length === 0) continue;
-        const hand = evaluator(p.cards, board);
+        const hand = boardEvaluator(p.cards, board);
         if (!best || compareHands(hand, best) > 0) {
           best = hand;
           winnerId = p.user_id;

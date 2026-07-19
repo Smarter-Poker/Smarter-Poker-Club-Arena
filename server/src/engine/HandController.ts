@@ -1133,4 +1133,57 @@ export class HandController {
   getPots(): import('../types.js').Pot[] {
     return this.state.pots.map((p) => ({ ...p, eligiblePlayers: [...p.eligiblePlayers] }));
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Runout-settlement helpers (shared by ServerTableEngine's RIT path so it
+  // uses the SAME uncalled-bet / pot / rake logic as completeHand). AUDIT FIX
+  // 2026-07-19: RIT previously read getPots() (empty before completeHand) and
+  // distributed the FULL pot with no rake — destroying the pot and minting
+  // rake. These expose the canonical pieces.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Return the uncalled bet to its bettor (idempotent-ish; call once). */
+  public settleUncalledBet(): number {
+    return this.returnUncalledBet();
+  }
+
+  /** Live side pots computed from current contributions (not the cached ones). */
+  public computeLivePots(): import('../types.js').Pot[] {
+    return calculatePots(this.state.players);
+  }
+
+  /** Rake + BBJ fee for the current pot, using the same rules as completeHand. */
+  public computeRakeAndBBJ(): { rake: number; bbjFee: number } {
+    const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
+    const rake = calculateRake(
+      this.state.pot,
+      this.state.sawFlop,
+      this.config.rakeConfig,
+      playerCount
+    );
+    let bbjFee = 0;
+    const bbjCfg = this.config.bbjConfig;
+    if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
+      const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
+      const potInBB = this.state.pot / this.config.bigBlind;
+      if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {
+        bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
+      }
+    }
+    if (rake + bbjFee > this.state.pot) {
+      const overage = rake + bbjFee - this.state.pot;
+      bbjFee = overage <= bbjFee ? bbjFee - overage : 0;
+    }
+    return { rake, bbjFee };
+  }
+
+  /** Dealer seat (for odd-chip allocation in RIT). */
+  public getDealerSeat(): number {
+    return this.state.dealerSeat;
+  }
+
+  /** Variant for this hand. */
+  public getVariant(): import('../types.js').GameVariant {
+    return this.config.gameVariant;
+  }
 }

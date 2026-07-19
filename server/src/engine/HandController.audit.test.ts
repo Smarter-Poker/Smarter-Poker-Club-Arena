@@ -126,3 +126,32 @@ describe('HandController — all-in blind edge cases (AUDIT FIX)', () => {
     expect(seat(1).stack + seat(2).stack).toBeGreaterThan(0);
   });
 });
+
+describe('HandController — RIT settlement helpers (AUDIT FIX)', () => {
+  it('computeLivePots returns real pots at the all-in runout point (getPots was empty)', () => {
+    // HU both all-in preflop (equal stacks) → ALL_IN_RUNOUT pause. This is the
+    // exact point ServerTableEngine.dealAndResolveRIT runs. getPots() is [] here
+    // (only completeHand fills it); computeLivePots() must return the real pot.
+    const players = mkPlayers([500, 500]);
+    const { hc, events } = harness(mkConfig(), players, 1);
+    hc.start();
+    // seat1 (button/SB) shoves, seat2 (BB) calls all-in.
+    hc.performAction(1, 'all_in', 0);
+    hc.performAction(2, 'call', 0);
+
+    expect(events.some((e) => e.type === 'ALL_IN_RUNOUT')).toBe(true);
+
+    const stalePots = hc.getPots();
+    const livePots = hc.computeLivePots();
+    // The pre-fix source of the pot-destruction bug:
+    expect(stalePots.length).toBe(0);
+    // The fix: live pots reflect the $1000 all-in pot with both players eligible.
+    const liveTotal = livePots.reduce((s, p) => s + p.amount, 0);
+    expect(liveTotal).toBe(1000);
+    expect(livePots[0].eligiblePlayers.length).toBe(2);
+
+    // Rake is computed once on the contested $1000 pot (5% = $50, under cap).
+    const { rake } = hc.computeRakeAndBBJ();
+    expect(rake).toBe(50);
+  });
+});

@@ -58,15 +58,16 @@ describe('TableStateHub', () => {
       expect(delta.patch).toEqual([{ op: 'replace', path: '/pot', value: 15 }]);
     });
 
-    it('skips empty-patch publishes but still advances seq', () => {
+    it('skips empty-patch publishes and does NOT advance seq (Round 25 reconnect-FSM fix)', () => {
       const sub = makeSub('s1');
       hub.subscribe(TABLE, sub);
       hub.publish(TABLE, { pot: 10 });
-      hub.publish(TABLE, { pot: 10 }); // identical
+      hub.publish(TABLE, { pot: 10 }); // identical — no-op
       // Only the SNAPSHOT should have been sent; no empty DELTA.
       expect(sub.outbox).toHaveLength(1);
-      // But seq advanced internally.
-      expect(hub.lastSeq(TABLE)).toBe(2);
+      // seq must stay put: advancing it on a no-op makes the next real DELTA
+      // look like a gap to the client, triggering a spurious full resync.
+      expect(hub.lastSeq(TABLE)).toBe(1);
     });
 
     it('fans out to all open subscribers', () => {

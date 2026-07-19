@@ -20,7 +20,7 @@
  * FIX 78: House margin 5%→20%, partial coverage slider, per-street recalc
  */
 
-import { monteCarloEquity } from './MonteCarloEquity.js';
+import { insuranceEquity } from './InsuranceEquity.js';
 import type { Card } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.js';
@@ -71,6 +71,8 @@ export interface InsuranceSettlement {
   insuredAmount: number;
   premium: number;
   payout: number;
+  /** Equity % the premium was priced on (for the audit ledger). */
+  equity: number;
   /** true = insurance paid out (player lost the hand) */
   won: boolean;
 }
@@ -149,86 +151,104 @@ export class InsuranceEngine {
   createOffers(
     tableId: string,
     handId: string,
-    allInPlayers: Array<{ playerId: string; holeCards: Card[] }>,
+    leaderId: string,
+    allInPlayers: Array<{ playerId: string; holeCards: Card[]; atRisk: number }>,
     board: Card[],
     pot: number,
+    variant: string,
     shortDeck: boolean = false
   ): InsuranceOffer[] {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     if (!config.enabled || pot < config.minPotForInsurance) return [];
+    // Need the leader plus at least one opponent whose known cards we price against.
     if (allInPlayers.length < 2) return [];
-    // Insurance requires cards still to come (board < 5). Board can be 0 (preflop all-in).
+    // Insurance requires cards still to come (board can be 0 for a preflop all-in).
     if (board.length >= 5) return [];
 
-    const offers: InsuranceOffer[] = [];
-    const numOpponents = allInPlayers.length - 1;
+    const leader = allInPlayers.find((p) => p.playerId === leaderId);
+    if (!leader) return [];
 
-    for (const player of allInPlayers) {
-      // FIX 139: Pass shortDeck flag for correct Short Deck hand rankings in equity calculation
-      const equity = monteCarloEquity(
-        player.holeCards,
-        board,
-        numOpponents,
-        config.equityIterations,
-        shortDeck
-      );
-
-      // Max insurable = pot amount (maxInsurablePercent defaults to 100%)
-      const maxInsurable = pot * (config.maxInsurablePercent / 100);
-      const lossProbability = 1 - equity / 100;
-      // Full insured amount = the portion of pot the player "expects" to win
-      const fullInsuredAmount =
-        Math.round(Math.min(maxInsurable, pot * (equity / 100)) * 100) / 100;
-      // Full premium = insuredAmount × lossProbability × houseMargin (20% edge)
-      const fullPremium =
-        Math.round(fullInsuredAmount * lossProbability * config.houseMargin * 100) / 100;
-
-      const offer: InsuranceOffer = {
-        tableId,
-        handId,
-        playerId: player.playerId,
-        holeCards: player.holeCards,
-        equity,
-        fullPremium,
-        premium: fullPremium, // Default: 100% coverage
-        fullInsuredAmount,
-        insuredAmount: fullInsuredAmount, // Default: 100% coverage
-        coveragePercent: 100,
-        status: 'offered',
-        declinedForHand: false,
-      };
-
-      // Phase 1.2 PR-G-real: replace setTimeout with DeadlineScheduler entry.
-      this.scheduler.schedule({
-        tableId,
-        eventId: this.offerEventId(player.playerId),
-        deadlineMs: Date.now() + config.offerTimeoutSeconds * 1000,
-        callback: () => {
-          if (offer.status === 'offered') {
-            this.decline(tableId, player.playerId);
-          }
-        },
-      });
-
-      offers.push(offer);
-
-      this.emitEvent({
-        type: 'INSURANCE_OFFERED',
-        tableId,
-        handId,
-        playerId: player.playerId,
-        equity,
-        fullPremium,
-        premium: fullPremium,
-        fullInsuredAmount,
-        insuredAmount: fullInsuredAmount,
-        coveragePercent: 100,
-        pot,
-      });
+    const existing = this.activeOffers.get(tableId) ?? [];
+    // If the leader already locked coverage on an earlier street, don't re-offer.
+    if (
+      existing.some(
+        (o) => o.playerId === leader.playerId && (o.status === 'accepted' || o.status === 'settled')
+      )
+    ) {
+      return [];
     }
 
-    this.activeOffers.set(tableId, offers);
-    return offers;
+    const opponentHands = allInPlayers
+      .filter((p) => p.playerId !== leaderId)
+      .map((p) => p.holeCards);
+    if (opponentHands.length === 0) return [];
+
+    // FIX-A12: price from the TRUE all-in equity against the KNOWN opponent
+    // hands (exact enumeration of the remaining board), not vs random cards.
+    const { equity } = insuranceEquity(leader.holeCards, opponentHands, board, variant, shortDeck);
+    const lossProbability = Math.max(0, Math.min(1, 1 - equity / 100));
+
+    // Insured amount = what the leader can actually LOSE (their own committed
+    // chips this hand), capped by the max-insurable fraction of the pot.
+    const maxInsurable = pot * (config.maxInsurablePercent / 100);
+    const fullInsuredAmount = Math.round(Math.min(leader.atRisk, maxInsurable) * 100) / 100;
+    // Premium = fair cost x houseMargin. houseMargin 1.20 => a 20% edge banked by
+    // the club/union. Player EV = payout*pLoss - premium = -(margin-1)*fair < 0.
+    const fullPremium =
+      Math.round(fullInsuredAmount * lossProbability * config.houseMargin * 100) / 100;
+
+    if (fullInsuredAmount <= 0) return [];
+
+    const offer: InsuranceOffer = {
+      tableId,
+      handId,
+      playerId: leader.playerId,
+      holeCards: leader.holeCards,
+      equity,
+      fullPremium,
+      premium: fullPremium, // default 100% coverage; scaled in acceptPartial
+      fullInsuredAmount,
+      insuredAmount: fullInsuredAmount,
+      coveragePercent: 100,
+      status: 'offered',
+      declinedForHand: false,
+    };
+
+    // Phase 1.2 PR-G-real: expiry via DeadlineScheduler.
+    this.scheduler.schedule({
+      tableId,
+      eventId: this.offerEventId(leader.playerId),
+      deadlineMs: Date.now() + config.offerTimeoutSeconds * 1000,
+      callback: () => {
+        if (offer.status === 'offered') {
+          this.decline(tableId, leader.playerId);
+        }
+      },
+    });
+
+    // MERGE (do NOT overwrite): keep already-accepted/settled coverage from
+    // earlier streets; replace only a prior still-'offered' entry for this leader.
+    const merged = existing.filter(
+      (o) => !(o.playerId === leader.playerId && o.status === 'offered')
+    );
+    merged.push(offer);
+    this.activeOffers.set(tableId, merged);
+
+    this.emitEvent({
+      type: 'INSURANCE_OFFERED',
+      tableId,
+      handId,
+      playerId: leader.playerId,
+      equity,
+      fullPremium,
+      premium: fullPremium,
+      fullInsuredAmount,
+      insuredAmount: fullInsuredAmount,
+      coveragePercent: 100,
+      pot,
+    });
+
+    return [offer];
   }
 
   /**
@@ -302,111 +322,6 @@ export class InsuranceEngine {
   }
 
   /**
-   * Recalculate equity and premiums for all offers when a new street is dealt.
-   * Called by ServerTableEngine when board changes (turn/river dealt during insurance window).
-   *
-   * Key behaviors:
-   * - Recalculates equity for all players
-   * - Updates premiums dynamically per-street
-   * - If a player who "Declined Now" (not "Declined for Hand") was NOT the leader before
-   *   but IS now the leader, they get a new offer (equity shifted in their favor)
-   * - Players who "Declined for Hand" are NEVER re-offered
-   */
-  recalculateOffers(
-    tableId: string,
-    newBoard: Card[],
-    pot: number,
-    shortDeck: boolean = false
-  ): void {
-    const offers = this.activeOffers.get(tableId);
-    if (!offers) return;
-
-    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
-    const maxInsurable = pot * (config.maxInsurablePercent / 100);
-    const numOpponents = offers.length - 1;
-
-    // First pass: recalculate equity for ALL offers
-    for (const offer of offers) {
-      // FIX 139: Pass shortDeck flag for correct Short Deck hand rankings
-      const newEquity = monteCarloEquity(
-        offer.holeCards,
-        newBoard,
-        numOpponents,
-        config.equityIterations,
-        shortDeck
-      );
-
-      const lossProbability = 1 - newEquity / 100;
-      const newFullInsured =
-        Math.round(Math.min(maxInsurable, pot * (newEquity / 100)) * 100) / 100;
-      const newFullPremium =
-        Math.round(newFullInsured * lossProbability * config.houseMargin * 100) / 100;
-
-      const oldEquity = offer.equity;
-      offer.equity = newEquity;
-      offer.fullInsuredAmount = newFullInsured;
-      offer.fullPremium = newFullPremium;
-
-      // Recalculate actual premium/insured based on current coverage selection
-      const coverageMultiplier = offer.coveragePercent / 100;
-      offer.insuredAmount = Math.round(newFullInsured * coverageMultiplier * 100) / 100;
-      offer.premium = Math.round(newFullPremium * coverageMultiplier * 100) / 100;
-
-      // Re-offer to players who only declined THIS street (not for hand)
-      // if their equity has now become the highest (they took the lead)
-      if (offer.status === 'declined' && !offer.declinedForHand && newEquity > oldEquity) {
-        // Player's equity improved — they may now be the leader. Re-offer insurance.
-        offer.status = 'offered';
-        offer.coveragePercent = 100;
-        offer.insuredAmount = newFullInsured;
-        offer.premium = newFullPremium;
-
-        // Phase 1.2 PR-G-real: re-arm the expiry deadline via DeadlineScheduler.
-        this.scheduler.schedule({
-          tableId,
-          eventId: this.offerEventId(offer.playerId),
-          deadlineMs: Date.now() + config.offerTimeoutSeconds * 1000,
-          callback: () => {
-            if (offer.status === 'offered') {
-              this.decline(tableId, offer.playerId);
-            }
-          },
-        });
-
-        this.emitEvent({
-          type: 'INSURANCE_OFFERED',
-          tableId,
-          handId: offer.handId,
-          playerId: offer.playerId,
-          equity: newEquity,
-          fullPremium: newFullPremium,
-          premium: newFullPremium,
-          fullInsuredAmount: newFullInsured,
-          insuredAmount: newFullInsured,
-          coveragePercent: 100,
-          reoffered: true,
-          board: newBoard,
-        });
-      } else if (offer.status === 'offered') {
-        // Still pending — just update the numbers
-        this.emitEvent({
-          type: 'INSURANCE_RECALCULATED',
-          tableId,
-          handId: offer.handId,
-          playerId: offer.playerId,
-          equity: newEquity,
-          fullPremium: newFullPremium,
-          premium: offer.premium,
-          fullInsuredAmount: newFullInsured,
-          insuredAmount: offer.insuredAmount,
-          coveragePercent: offer.coveragePercent,
-          board: newBoard,
-        });
-      }
-    }
-  }
-
-  /**
    * Get a premium preview for a specific coverage percentage.
    * Used by the client slider to show real-time cost/payout as user adjusts.
    */
@@ -459,6 +374,7 @@ export class InsuranceEngine {
           insuredAmount: offer.insuredAmount,
           premium: 0, // PUSH — no premium charged
           payout: 0, // PUSH — no payout
+          equity: offer.equity,
           won: false,
         };
         settlements.push(settlement);
@@ -485,6 +401,7 @@ export class InsuranceEngine {
         insuredAmount: offer.insuredAmount,
         premium: offer.premium,
         payout,
+        equity: offer.equity,
         won: playerLost,
       };
 

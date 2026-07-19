@@ -77,7 +77,10 @@ export interface EnginePublishedState {
   turn_deadline_ms?: number;
   /** Phase 1.2 PR-F: per-user disconnect FSM map for client UI. */
   disconnect_states?: Record<string, DisconnectFsmEntry>;
-  pots: Array<{ amount: number; eligible: number[] }>;
+  // NOTE: `eligible` holds USER IDs (strings) as emitted by the engine's
+  // calculatePots(); older/mocked payloads may carry seat numbers. The mapper
+  // resolves both to seat numbers.
+  pots: Array<{ amount: number; eligible: Array<string | number> }>;
   action_history: EngineActionRecord[];
   players: EnginePublicPlayer[];
 }
@@ -241,9 +244,33 @@ export function mapEngineSnapshot(
     s.stage ?? 'preflop'
   );
 
+  // AUDIT FIX 2026-07-19 (client-1): the authoritative per-seat current-street
+  // wager is `players[].bet` on the snapshot — it includes blinds, straddles,
+  // and dead blinds, which never appear in `action_history`. Deriving the
+  // chips-in-front purely from action_history left blind posters showing $0,
+  // made the BB see "Call BB" instead of "Check", and mis-sized call amounts.
+  // The engine resets `bet` to 0 on each street, so this is exactly the
+  // current-street contribution. Overwrite the action-derived amounts with it
+  // (labels in `lastActions` still come from action_history, which is correct
+  // — blinds carry no action label, only chips + a position badge).
+  for (const p of s.players) {
+    const idx = p.seat - 1;
+    if (idx < 0 || idx >= maxSeats) continue;
+    if (p.is_folded) continue; // folded seats show no chips in front
+    lastBetAmounts[idx] = p.bet ?? 0;
+  }
+
+  // AUDIT FIX 2026-07-19 (client-5): `pots[].eligible` holds USER IDs, not seat
+  // numbers. The old code passed them straight through as `eligibleSeats`, so
+  // the seat lookup (players[seat-1]) always missed and side-pot eligibility
+  // never rendered. Resolve each user_id to its seat number here.
+  const seatByUserId = new Map<string, number>();
+  for (const p of s.players) seatByUserId.set(p.user_id, p.seat);
   const sidePots = (s.pots ?? []).map((p) => ({
     amount: p.amount,
-    eligibleSeats: p.eligible ?? [],
+    eligibleSeats: ((p.eligible ?? []) as unknown[])
+      .map((e) => (typeof e === 'string' ? (seatByUserId.get(e) ?? -1) : (e as number)))
+      .filter((seat) => seat > 0),
   }));
 
   // Action timer deadline.

@@ -23,14 +23,24 @@ if (!SUPABASE_SERVICE_ROLE_KEY) {
     new Error('[Supabase] FATAL: SUPABASE_SERVICE_ROLE_KEY is not set!'),
     'Supabase.FATAL'
   );
-  process.exit(1);
+  // Under the test runner the service-role key is intentionally absent (handlers
+  // are exercised with mocked Supabase); exiting the process aborts the whole
+  // suite. Only hard-exit in a real runtime.
+  if (!process.env.VITEST) {
+    process.exit(1);
+  }
 }
+
+// createClient throws if the key is falsy; supply a harmless placeholder under
+// the test runner so module import doesn't blow up before mocks are applied.
+const EFFECTIVE_SERVICE_ROLE_KEY =
+  SUPABASE_SERVICE_ROLE_KEY || (process.env.VITEST ? 'test-placeholder-key' : '');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE ROLE CLIENT — Full DB access, bypasses RLS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+export const supabase: SupabaseClient = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
   auth: {
     autoRefreshToken: false,
     persistSession: false,

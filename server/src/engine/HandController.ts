@@ -161,7 +161,16 @@ export class HandController {
     this.dealHoleCards();
     this.handFSM.transition('preflop');
     this.setNextPlayer();
-    this.emitTurnChange();
+    // AUDIT FIX 2026-07-19: if the blinds/antes put everyone all-in (e.g. HU
+    // where both stacks <= their blind), no player can act. Previously
+    // emitTurnChange() no-op'd on currentPlayerSeat === -1 and the hand hung
+    // until the 10-minute safety void (blinds effectively refunded). Advance
+    // straight into the runout instead.
+    if (this.state.currentPlayerSeat === -1) {
+      this.advanceGame();
+    } else {
+      this.emitTurnChange();
+    }
   }
 
   private postBlinds(): void {
@@ -757,7 +766,52 @@ export class HandController {
   // Hand Completion
   // ─────────────────────────────────────────────────────────────────────────
 
+  /**
+   * AUDIT FIX 2026-07-19: Return the uncalled portion of the final bet to the
+   * bettor BEFORE forming pots / taking rake — the textbook rule. Previously
+   * the excess stayed in `state.pot`, so rake and the BBJ fee were charged on
+   * the bettor's own returned chips (e.g. bet 100 into a 20 pot, all fold →
+   * rake was taken on 120, not 20), and the proportional payout scaling shaved
+   * rake off the refund. Refunding here makes rake, side pots, and chips-in-
+   * front all correct at once. Returns the amount refunded (0 if none).
+   */
+  private returnUncalledBet(): number {
+    const invAll = this.state.players.map((p) => ({
+      p,
+      inv: p.totalInvested ?? p.bet ?? 0,
+    }));
+    const withMoney = invAll.filter((x) => x.inv > 0);
+    if (withMoney.length < 2) {
+      // Nobody, or a single contributor (e.g. a walk) — nothing was "called",
+      // but there's also no contest, so leave it for the normal award path.
+      return 0;
+    }
+    const sorted = [...withMoney].sort((a, b) => b.inv - a.inv);
+    const top = sorted[0];
+    const second = sorted[1];
+    // Only a UNIQUE, non-folded highest contributor can have an uncalled bet.
+    if (top.inv <= second.inv) return 0;
+    if (top.p.is_folded) return 0;
+    const uncalled = Math.round((top.inv - second.inv) * 100) / 100;
+    if (uncalled <= 0) return 0;
+
+    top.p.stack += uncalled;
+    top.p.totalInvested = Math.round((top.inv - uncalled) * 100) / 100;
+    top.p.bet = Math.max(0, Math.round((top.p.bet - uncalled) * 100) / 100);
+    this.state.pot = Math.max(0, Math.round((this.state.pot - uncalled) * 100) / 100);
+    this.emit({
+      type: 'UNCALLED_BET_RETURNED',
+      seat: top.p.seat,
+      userId: top.p.user_id,
+      amount: uncalled,
+    });
+    return uncalled;
+  }
+
   private completeHand(): void {
+    // Return any uncalled bet to the bettor before rake / pot formation.
+    this.returnUncalledBet();
+
     const pots = calculatePots(this.state.players);
     this.state.pots = pots;
     const activePlayers = this.getActivePlayers();
@@ -952,6 +1006,38 @@ export class HandController {
     return activePlayers[0]?.seat ?? -1;
   }
 
+  /** Is this seat currently able to act (not folded, all-in, or sitting out)? */
+  private isSeatActionable(seat: number): boolean {
+    const p = this.state.players.find((x) => x.seat === seat);
+    return !!(p && !p.is_folded && !p.is_all_in && !p.is_sitting_out);
+  }
+
+  /**
+   * Walk clockwise from `fromSeat` to the next seat that can act. If `inclusive`
+   * and `fromSeat` itself can act, returns it unchanged. Returns -1 if no seat
+   * can act (everyone remaining is all-in / folded / sitting out).
+   *
+   * AUDIT FIX 2026-07-19: the preflop first-actor branch previously skipped
+   * this normalization, so a player who posted an all-in blind (short SB/BB)
+   * could be handed the turn and then auto-folded on timeout — forfeiting their
+   * pot equity. All turn assignment now flows through here.
+   */
+  private nextActionableSeat(fromSeat: number, inclusive = false): number {
+    if (inclusive && this.isSeatActionable(fromSeat)) return fromSeat;
+    let seat = this.getNextActiveSeat(fromSeat);
+    let iterations = 0;
+    const maxIterations = this.state.players.length + 1;
+    while (iterations < maxIterations) {
+      if (this.isSeatActionable(seat)) return seat;
+      const next = this.getNextActiveSeat(seat);
+      if (next === seat) break; // no progress possible
+      seat = next;
+      iterations++;
+      if (seat === fromSeat) break; // full loop, no actionable seat
+    }
+    return this.isSeatActionable(seat) ? seat : -1;
+  }
+
   private setNextPlayer(): void {
     const activePlayers = this.getActivePlayers().filter((p) => !p.is_all_in);
     if (activePlayers.length === 0) {
@@ -963,34 +1049,26 @@ export class HandController {
     const isHeadsUp = allActive.length === 2;
 
     if (this.state.stage === 'preflop' && this.state.actionHistory.length === 0) {
+      let candidate: number;
       if (isHeadsUp) {
-        this.state.currentPlayerSeat = this.state.dealerSeat;
+        candidate = this.state.dealerSeat;
       } else {
         const sbSeat = this.getNextActiveSeat(this.state.dealerSeat);
         const bbSeat = this.getNextActiveSeat(sbSeat);
         // Bible V8 §4.4: If straddles are posted, first to act is left of last straddler
         if (this.config.straddles && this.config.straddles.length > 0) {
           const lastStraddleSeat = this.config.straddles[this.config.straddles.length - 1].seat;
-          this.state.currentPlayerSeat = this.getNextActiveSeat(lastStraddleSeat);
+          candidate = this.getNextActiveSeat(lastStraddleSeat);
         } else {
-          this.state.currentPlayerSeat = this.getNextActiveSeat(bbSeat);
+          candidate = this.getNextActiveSeat(bbSeat);
         }
       }
+      // Skip past any all-in/folded blind poster to the first player who can act.
+      this.state.currentPlayerSeat = this.nextActionableSeat(candidate, true);
       return;
     }
 
-    let nextSeat = this.getNextActiveSeat(this.state.currentPlayerSeat);
-    let iterations = 0;
-    const maxIterations = this.state.players.length;
-
-    while (iterations < maxIterations) {
-      const player = this.state.players.find((p) => p.seat === nextSeat);
-      if (player && !player.is_folded && !player.is_all_in && !player.is_sitting_out) break;
-      nextSeat = this.getNextActiveSeat(nextSeat);
-      iterations++;
-      if (nextSeat === this.state.currentPlayerSeat) break;
-    }
-    this.state.currentPlayerSeat = nextSeat;
+    this.state.currentPlayerSeat = this.nextActionableSeat(this.state.currentPlayerSeat, false);
   }
 
   private emitTurnChange(): void {

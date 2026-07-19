@@ -10,9 +10,23 @@
  * round-trip to GoTrue that costs 2-4 seconds on every request. Heartbeats,
  * /action, /preaction etc. were ALL serialised behind that. The strategy is:
  *
- *   1. Fast path: in-memory cache with 60s TTL
- *   2. Local-decode fallback: trust the JWT's own exp claim, refresh cache in bg
- *   3. Last resort: full GoTrue verify (cache miss AND local decode rejected)
+ *   1. Fast path: in-memory cache with 60s TTL keyed on the exact token, so a
+ *      token is verified against GoTrue at most once per 60s.
+ *   2. Cache miss: full GoTrue verify (validates the signature) before we
+ *      trust any claim. A short single-flight map coalesces concurrent
+ *      requests carrying the same token so a burst (heartbeat + action + state)
+ *      only triggers one verify.
+ *
+ * SECURITY FIX (2026-07-19) — the previous "local-decode fallback" trusted the
+ * JWT's own `sub`/`exp` claims WITHOUT verifying the signature. A forged token
+ * (`header.{"sub":"<victim>","exp":9999999999}.x`) was accepted on every
+ * request (it never entered the cache, so it always took the unverified path),
+ * allowing full account impersonation: reading opponents' hole cards via
+ * GET /state, folding a victim's hand, cashing them out, or minting chips via
+ * /addchips. The unsigned path is removed — a token is now only trusted after
+ * GoTrue verifies its signature. The 60s cache keeps the common (repeat-token)
+ * case a single network round-trip per minute; the single-flight map keeps a
+ * concurrent burst to one round-trip.
  */
 
 import type { IncomingMessage } from 'http';
@@ -20,17 +34,18 @@ import { supabase } from '../services/supabase.js';
 
 const AUTH_CACHE_TTL_MS = 60_000; // 60s — tradeoff: faster response vs less-fresh revocation
 const authCache = new Map<string, { userId: string; expiresAt: number }>();
+// Coalesce concurrent verifications of the same token (single-flight).
+const inFlight = new Map<string, Promise<{ userId: string } | null>>();
 
-/** Manually decode a Supabase JWT payload (base64url middle segment). */
-function decodeJwtPayload(token: string): { sub?: string; exp?: number } | null {
+async function verifyWithGoTrue(token: string): Promise<{ userId: string } | null> {
   try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    // base64url -> base64
-    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
-    const json = Buffer.from(padded, 'base64').toString('utf-8');
-    return JSON.parse(json);
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user?.id) return null;
+    authCache.set(token, {
+      userId: data.user.id,
+      expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+    });
+    return { userId: data.user.id };
   } catch {
     return null;
   }
@@ -45,51 +60,23 @@ export async function authenticateRequest(
   const token = authHeader.slice(7);
   if (!token) return null;
 
-  // Fast path: cached verification still fresh (and not past JWT exp).
+  // Fast path: cached, signature-verified result still fresh.
   const cached = authCache.get(token);
   const now = Date.now();
   if (cached && cached.expiresAt > now) {
     return { userId: cached.userId };
   }
 
-  // Local-decode fallback: if the JWT's own exp hasn't passed, trust it for
-  // this request and refresh the GoTrue cache in the background. Avoids
-  // blocking the player on a slow auth network call. Falls back to a full
-  // GoTrue verify only if local decode also failed.
-  const claims = decodeJwtPayload(token);
-  if (claims?.sub && typeof claims.exp === 'number' && claims.exp * 1000 > now) {
-    const userId = claims.sub;
-    // Background refresh — don't await. Even if it fails, we still served
-    // this request from local decode.
-    void supabase.auth.getUser(token).then(
-      ({ data, error }) => {
-        if (!error && data?.user?.id) {
-          authCache.set(token, {
-            userId: data.user.id,
-            expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
-          });
-        }
-      },
-      () => {
-        /* silent — local decode already accepted */
-      }
-    );
-    return { userId };
-  }
+  // Cache miss — always verify the signature via GoTrue before trusting any
+  // claim. Single-flight so a concurrent burst only verifies once.
+  const existing = inFlight.get(token);
+  if (existing) return existing;
 
-  // Last resort: full GoTrue verify. Only hit when both cache miss AND local
-  // decode rejected (token expired or malformed).
-  try {
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) return null;
-    authCache.set(token, {
-      userId: data.user.id,
-      expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
-    });
-    return { userId: data.user.id };
-  } catch {
-    return null;
-  }
+  const p = verifyWithGoTrue(token).finally(() => {
+    inFlight.delete(token);
+  });
+  inFlight.set(token, p);
+  return p;
 }
 
 // Periodic cleanup of the auth cache — keeps memory bounded under churn.

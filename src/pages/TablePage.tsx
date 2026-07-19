@@ -642,9 +642,17 @@ export default function TablePage({
   // Phase 1.1 PR-3: authoritative engine WS. Always mounted so the WS
   // connection is warm; the snapshot is only APPLIED to tableState when the
   // feature flag is on. That isolates any behavior change to the flag flip.
+  //
+  // AUDIT FIX 2026-07-19 (client-3): the client-side authoritative engine was
+  // ripped out (PR-5) and the server now publishes ONLY over this WS — there is
+  // no legacy fallback. The flag previously DEFAULTED OFF, so any build without
+  // the gitignored `.env` setting `VITE_USE_ENGINE_WS=1` (fresh checkout, CI, a
+  // new machine) shipped a table that connected to nothing: seats loaded from
+  // the DB but no hand state, no timers, no action echo. Default ON now; only an
+  // explicit `VITE_USE_ENGINE_WS=0` opts out.
   const USE_ENGINE_WS =
     (import.meta as unknown as { env: Record<string, string | undefined> }).env
-      ?.VITE_USE_ENGINE_WS === '1';
+      ?.VITE_USE_ENGINE_WS !== '0';
   const {
     snapshot: engineSnapshot,
     status: engineWsStatus,
@@ -6133,19 +6141,29 @@ export default function TablePage({
                   const serverCurrentBet = tableState.currentBet || 0;
                   const callAmount = Math.min(Math.max(0, serverCurrentBet - heroBet), heroStack);
 
-                  // Use server's authoritative minRaise (Bible V8 §4.14)
-                  // Fallback to local calc only if server hasn't broadcast yet
-                  const minRaise =
-                    tableState.minRaise && tableState.minRaise > 0
-                      ? tableState.minRaise
-                      : Math.max(bb * 2, serverCurrentBet + bb);
+                  // AUDIT FIX 2026-07-19 (client-2): the server's `min_raise` is
+                  // the raise *increment* (max(BB, lastRaise)), but ActionPanel
+                  // treats its `minRaise`/`maxRaise` props as raise-TO absolute
+                  // amounts (matching the engine, which reads `raise` amounts as
+                  // raise-TO with floor currentBet + min_raise). Passing the bare
+                  // increment made the slider bottom out BELOW the current bet, so
+                  // confirming committed far more than the button showed. Convert
+                  // to raise-TO here.
+                  const raiseIncrement =
+                    tableState.minRaise && tableState.minRaise > 0 ? tableState.minRaise : bb;
+                  // Raise-TO floor. When currentBet===0 (first bet of a street)
+                  // this is the min bet (= one increment = BB).
+                  const minRaise = serverCurrentBet + raiseIncrement;
 
-                  // Bible V8 §4.14: maxRaise = stack for NL, pot-limited for PLO
+                  // Bible V8 §4.14: raise-TO ceiling. All-in-to = stack + own
+                  // current bet (engine: maxRaiseTo = player.stack + player.bet).
+                  const allInTo = heroStack + heroBet;
                   const gameVariant = tableState.gameType?.toLowerCase() || '';
                   const isPotLimit = gameVariant.startsWith('plo'); // FIX 116: 'flo' dead variant removed
-                  const maxRaise = isPotLimit
-                    ? Math.min(heroStack, tableState.pot + callAmount + callAmount)
-                    : heroStack;
+                  // Pot-limit raise-TO cap = currentBet + (pot + toCall). Matches
+                  // engine FIX 142 (never over-offer past the server's clamp).
+                  const potLimitRaiseTo = serverCurrentBet + tableState.pot + callAmount;
+                  const maxRaise = isPotLimit ? Math.min(allInTo, potLimitRaiseTo) : allInTo;
 
                   return (
                     <>
@@ -6153,7 +6171,7 @@ export default function TablePage({
                         canFold={true}
                         canCheck={callAmount === 0}
                         canCall={callAmount > 0}
-                        canRaise={heroStack > callAmount && heroStack >= minRaise}
+                        canRaise={heroStack > callAmount && allInTo >= minRaise}
                         canAllIn={heroStack > 0}
                         callAmount={callAmount}
                         minRaise={minRaise}

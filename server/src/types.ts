@@ -264,6 +264,7 @@ export type HandEvent =
   | { type: 'PINEAPPLE_DISCARD_REQUIRED'; seats: number[] } // FIX 120: Crazy Pineapple
   | { type: 'SHOWDOWN'; results: ShowdownResult[] }
   | { type: 'WINNERS'; winners: Winner[] }
+  | { type: 'UNCALLED_BET_RETURNED'; seat: number; userId: string; amount: number }
   | { type: 'HAND_COMPLETE'; handNumber: number; rake: number; bbjFee: number };
 
 export interface ShowdownResult {

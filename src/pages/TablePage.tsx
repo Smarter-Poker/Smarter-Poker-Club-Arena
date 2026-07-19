@@ -4458,12 +4458,11 @@ export default function TablePage({
       setIsRabbitAvailable(false);
       serverRabbitCardsRef.current = [];
       setCurrentBoard([]);
-      // Phase 2 T1-08-deal (2026-04-14 BUG-H fix): trigger the deal animation
-      // so cards visibly fly from the dealer toward each active seat at the
-      // start of the new hand. The DealAnimation component is mounted but
-      // remained at key=0 forever — Dan reported "no deal animation" during
-      // E2E. Bumping the key remounts + replays the animation.
-      setDealAnimationKey((k) => k + 1);
+      // NOTE: the deal animation is triggered by the discrete HAND_STARTED
+      // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
+      // used to live here was removed — now that handNumber advances via the
+      // snapshot merge, this effect fires per hand too, and a second bump here
+      // double-triggered the deal animation.
     }
   }, [tableState.handNumber, tableState.heroSeat, tableState.players]);
 
@@ -5952,7 +5951,7 @@ export default function TablePage({
                 left: '50%',
                 transform: 'translateX(-50%)',
                 zIndex: 60,
-                pointerEvents: 'auto',
+                pointerEvents: 'none',
               }}
             >
               <TimeBank

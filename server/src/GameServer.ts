@@ -1837,15 +1837,24 @@ export class TournamentManager {
             .eq('tournament_id', this.tournamentId)
             .eq('status', 'playing');
 
-          // Position calculation for simultaneous busts:
-          // All players busting at the same time get TIED (same position)
-          // If 10 playing and 3 bust simultaneously, all 3 get position 10 (tied)
-          // Single bust: position = playingCount (e.g., 10 remaining → 10th place)
+          // FIX-B2 2026-07-19: assign DISTINCT finishing places to players busted
+          // in the same sweep. The old code gave them all one shared position, so
+          // eliminatePlayer (which pays payouts.find(place === position)) paid that
+          // one place multiple times and never paid the place(s) between — a
+          // prize-pool leak + double-pay + wrong standings. Standard rule: a larger
+          // stack finishes higher, so order the busted set by chip count and hand
+          // out places from the bottom up (worst = smallest stack = lowest place).
+          // basePosition = players still 'playing' (busted included); the worst
+          // finisher takes basePosition, the next takes basePosition-1, etc. With
+          // >=1 survivor these are all >= 2, leaving 1st for finishTournament.
+          // (Exact-tie ordering by hand-start stack for a genuine same-hand double
+          // bust is a documented follow-up; distinct places is money-correct now.)
           const basePosition = playingCount || busted.length;
+          const bustedOrdered = [...busted].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
 
-          for (let i = 0; i < busted.length; i++) {
-            // All simultaneous busts get the same position (tied)
-            await this.eliminatePlayer(busted[i].user_id, basePosition);
+          for (let i = 0; i < bustedOrdered.length; i++) {
+            const position = Math.max(1, basePosition - i);
+            await this.eliminatePlayer(bustedOrdered[i].user_id, position);
           }
         }
 

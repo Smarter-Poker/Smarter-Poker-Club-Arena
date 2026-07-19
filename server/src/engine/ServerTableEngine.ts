@@ -123,6 +123,9 @@ export class ServerTableEngine {
 
   // Bible V8 §4.2: Track players returning from sit-out who must post dead blind
   private returningFromSitout: Set<string> = new Set();
+  // AUDIT FIX 2026-07-19: new players who chose "Post BB to enter" — they post
+  // only a live BB (no dead SB), unlike returningFromSitout (missed blinds).
+  private postingBBToEnter: Set<string> = new Set();
 
   // Bible V8 §4.2: Players waiting for BB position before they can play
   private waitingForBB: Set<string> = new Set();
@@ -1490,8 +1493,10 @@ export class ServerTableEngine {
       return { success: false, error: 'Player is not waiting for BB' };
     }
     this.waitingForBB.delete(userId);
-    // Mark as returning — dead blind (1× BB) will be posted on the next deal
-    this.returningFromSitout.add(userId);
+    // AUDIT FIX 2026-07-19: post ONLY a live BB to enter (no dead SB). Route
+    // through postingBBToEnter, not returningFromSitout (which owes a dead SB
+    // for a MISSED blind).
+    this.postingBBToEnter.add(userId);
     return { success: true };
   }
 
@@ -2435,6 +2440,13 @@ export class ServerTableEngine {
               .filter((p) => this.returningFromSitout.has(p.user_id))
               .map((p) => ({ seat: p.seat_number }))
           : undefined,
+      // AUDIT FIX 2026-07-19: "Post BB to enter" players post a live BB only.
+      bbOnlyPosts:
+        this.postingBBToEnter.size > 0
+          ? players
+              .filter((p) => this.postingBBToEnter.has(p.user_id))
+              .map((p) => ({ seat: p.seat_number }))
+          : undefined,
       rakeConfig: {
         percent: fullRakeConfig.rakePercent,
         cap: fullRakeConfig.rakeCap,
@@ -2455,6 +2467,9 @@ export class ServerTableEngine {
     // Bible V8 §4.2: Clear returning-from-sitout after dead blinds are passed to config
     if (this.returningFromSitout.size > 0) {
       this.returningFromSitout.clear();
+    }
+    if (this.postingBBToEnter.size > 0) {
+      this.postingBBToEnter.clear();
     }
 
     // Step 4: Record initial chip totals for state verification
@@ -2823,22 +2838,10 @@ export class ServerTableEngine {
             hand_ranking: r.handRanking,
           })),
         });
-        // Phase X5 (2026-04-28): explicit cards-revealed event so clients
-        // can run the per-card flip animation without inferring from
-        // hand_history.winners[].hand parsing. Bible V8 §1.16 + §5
-        // (Animation Doctrine) require a discrete reveal trigger.
-        this.hub?.emitEvent(this.tableId, {
-          type: 'showdown_cards_revealed',
-          table_id: this.tableId,
-          hand_number: this.handCount,
-          reveals: this.currentHandShowdownResults.map((r) => ({
-            user_id: r.userId,
-            cards: r.holeCards ?? [],
-            best_hand_label: r.handName,
-            best_hand_rank: r.handRanking,
-          })),
-          timestamp: Date.now(),
-        });
+        // AUDIT FIX 2026-07-19: the showdown_cards_revealed event (which carries
+        // hole cards) is emitted in the WINNERS handler instead of here — at
+        // SHOWDOWN time the winners aren't known yet, so it could not respect
+        // auto-muck and leaked every showdown hand to the whole table.
         break;
 
       case 'WINNERS':
@@ -2869,6 +2872,36 @@ export class ServerTableEngine {
           }
         }
         this.broadcastCurrentState();
+        // AUDIT FIX 2026-07-19: emit the hole-card reveal HERE (winners now
+        // known) and respect auto-muck — reveal cards only for winners, players
+        // who voluntarily showed, or when auto-muck is disabled for the table.
+        // Previously this fired at SHOWDOWN for every participant, leaking
+        // losing hands on auto-muck tables.
+        {
+          const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true;
+          const reveals = this.currentHandShowdownResults
+            .filter((r) => {
+              if (!autoMuckEnabled) return true;
+              if (this.currentHandWinnerIds.includes(r.userId)) return true;
+              if (this.showHandPlayers?.has(r.userId)) return true;
+              return false;
+            })
+            .map((r) => ({
+              user_id: r.userId,
+              cards: r.holeCards ?? [],
+              best_hand_label: r.handName,
+              best_hand_rank: r.handRanking,
+            }));
+          if (reveals.length > 0) {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'showdown_cards_revealed',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              reveals,
+              timestamp: Date.now(),
+            });
+          }
+        }
         // Phase 2 T1-05 (spec §6 Pot Shipping Animation): emit a discrete
         // pot_win event so the client can fire its curved-arc chip fan to
         // each winner. Fires for BOTH contested showdowns AND uncontested
@@ -4625,11 +4658,13 @@ export class ServerTableEngine {
       labels.set(seats[dealerIdx], 'BTN');
       labels.set(seats[(dealerIdx + 1) % n], 'BB');
     } else if (n === 3) {
-      // FIX 177: Bible V8 Appendix B: 3 players → BTN/SB, BB, UTG
-      // BTN IS the SB in 3-player (no separate SB position). Third player is UTG.
+      // AUDIT FIX 2026-07-19: 3-handed is BTN, SB, BB — the button is NOT the SB
+      // (that's heads-up only). postBlinds posts SB at dealer+1 and BB at
+      // dealer+2, so the previous BTN/BB/UTG labels mislabeled the SB as BB and
+      // the BB as UTG on every 3-handed hand.
       labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'BB');
-      labels.set(seats[(dealerIdx + 2) % n], 'UTG');
+      labels.set(seats[(dealerIdx + 1) % n], 'SB');
+      labels.set(seats[(dealerIdx + 2) % n], 'BB');
     } else {
       // 4+ players — BTN, SB, BB, then positional names
       labels.set(seats[dealerIdx], 'BTN');

@@ -127,6 +127,20 @@ describe('HandController — all-in blind edge cases (AUDIT FIX)', () => {
   });
 });
 
+describe('HandController — straddle min-raise (AUDIT FIX)', () => {
+  it('min raise over a 2xBB straddle is to 4xBB (increment = straddle amount)', () => {
+    // 4 players, 1/2. UTG (seat 4) straddles to 4. Min raise-to must be 8 (4xBB),
+    // i.e. increment (state.minRaise) === the straddle amount, not the BB.
+    const players = mkPlayers([1000, 1000, 1000, 1000]);
+    const cfg = mkConfig({ straddles: [{ seat: 4, amount: 4 }] });
+    const { hc } = harness(cfg, players, 1);
+    hc.start();
+    const st = (hc as unknown as { state: { currentBet: number; minRaise: number } }).state;
+    expect(st.currentBet).toBe(4); // straddle is the live bet level
+    expect(st.minRaise).toBe(4); // increment = straddle -> raise-to floor 4+4 = 8
+  });
+});
+
 describe('HandController — RIT settlement helpers (AUDIT FIX)', () => {
   it('computeLivePots returns real pots at the all-in runout point (getPots was empty)', () => {
     // HU both all-in preflop (equal stacks) → ALL_IN_RUNOUT pause. This is the

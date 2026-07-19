@@ -186,6 +186,12 @@ export interface HandConfig {
   insuranceEnabled?: boolean;
   /** Bible V8 §4.2: Dead blinds — seats of players returning from sit-out who must post SB+BB */
   deadBlinds?: { seat: number }[];
+  /**
+   * AUDIT FIX 2026-07-19: seats of NEW players who chose "Post BB to enter".
+   * They post ONLY a live big blind (no dead SB) — they haven't missed a blind,
+   * they're buying in early out of position. Distinct from deadBlinds.
+   */
+  bbOnlyPosts?: { seat: number }[];
   /** Bible V8 §1.9 / Appendix A: BBJ config for this hand */
   bbjConfig?: {
     /** Whether BBJ is enabled for this variant */

@@ -1100,66 +1100,78 @@ export class ServerTableEngine {
    * If no hand is in progress, chips are applied immediately (no cap concern
    * because no pot can change the player's stack before next hand).
    */
-  public addChips(
-    userId: string,
-    amount: number
-  ): { success: boolean; error?: string; queued?: boolean } {
-    const player = this.seatedPlayers.find((p) => p.user_id === userId);
-    if (!player) return { success: false, error: 'Player not seated' };
-
-    // If a hand is active, queue the add-on for post-hand processing
-    if (this.handController) {
-      const existing = this.pendingAddOns.get(userId) || 0;
-      this.pendingAddOns.set(userId, existing + amount);
-      console.log(
-        `[ServerTableEngine:${this.tableId}] Add-on queued for ${userId}: +${amount} (total pending: ${existing + amount}) — hand in progress`
-      );
-      // Broadcast so client shows "pending add-on" indicator
-      this.broadcastCurrentState();
-      return { success: true, queued: true };
-    }
-
-    // No hand in progress — apply immediately (standard behavior)
-    this._applyAddOnImmediate(userId, player, amount);
-    return { success: true };
+  /** Table max buy-in (DB value or 200×BB fallback). */
+  private getMaxBuyIn(): number {
+    return this.tableInfo?.max_buy_in
+      ? Number(this.tableInfo.max_buy_in)
+      : (this.tableInfo?.big_blind || 2) * 200;
   }
 
   /**
-   * Apply add-on chips immediately (no hand in progress).
-   * Also persists to database and broadcasts.
+   * AUDIT FIX 2026-07-19: `POST /addchips` previously credited the stack with
+   * NO wallet debit and no buy-in cap — a seated player could mint chips. Now
+   * the amount is capped to the table max buy-in BEFORE any money moves, and
+   * the player's PLAYER wallet is debited atomically via `atomic_table_addon`;
+   * the stack is only credited if that debit succeeds.
+   *
+   *  - Between hands: the RPC also bumps table_seats.stack (apply_to_seat=true)
+   *    and we credit the in-memory stack immediately.
+   *  - Mid-hand: the RPC debits the wallet only (the engine owns the live stack
+   *    and persists it in postHandTasks); the debited amount is queued and
+   *    applied to the stack after the hand.
    */
-  private _applyAddOnImmediate(userId: string, player: SeatedPlayer, amount: number): void {
-    player.stack += amount;
+  public async addChips(
+    userId: string,
+    amount: number
+  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'Player not seated' };
+    if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
 
-    // Persist to database for crash safety
+    const maxBuyIn = this.getMaxBuyIn();
     const { supabase } = require('../services/supabase.js');
-    supabase
-      .from('table_seats')
-      .select('stack')
-      .eq('table_id', this.tableId)
-      .eq('user_id', userId)
-      .is('left_at', null)
-      .maybeSingle()
-      .then(({ data }: { data: any }) => {
-        if (data && data.stack !== undefined) {
-          supabase
-            .from('table_seats')
-            .update({ stack: data.stack + amount })
-            .eq('table_id', this.tableId)
-            .eq('user_id', userId)
-            .is('left_at', null)
-            .then(({ error }: { error: any }) => {
-              if (error) {
-                reportError(error, `ServerTableEngine.${this.tableId}.addChips_db_update_failed`, {
-                  userId,
-                  amount,
-                });
-              }
-            });
-        }
-      });
+    const midHand = !!this.handController;
 
+    // Effective current chips for the cap: mid-hand include already-queued
+    // (already-debited) pending add-ons so we never exceed the ceiling.
+    const pending = this.pendingAddOns.get(userId) || 0;
+    const effectiveStack = midHand ? player.stack + pending : player.stack;
+    const headroom = Math.max(0, maxBuyIn - effectiveStack);
+    const applied = Math.min(amount, headroom);
+    if (applied <= 0) {
+      return { success: false, error: 'Already at the maximum buy-in for this table' };
+    }
+
+    // Debit the wallet atomically. apply_to_seat only between hands.
+    const { error } = await supabase.rpc('atomic_table_addon', {
+      p_user_id: userId,
+      p_table_id: this.tableId,
+      p_amount: applied,
+      p_apply_to_seat: !midHand,
+    });
+    if (error) {
+      const msg = String(error.message || '');
+      const clean = /insufficient/i.test(msg) ? 'Insufficient wallet balance' : 'Add-on failed';
+      reportError(error, `ServerTableEngine.${this.tableId}.addChips_debit_failed`, {
+        userId,
+        amount: applied,
+      });
+      return { success: false, error: clean };
+    }
+
+    if (midHand) {
+      this.pendingAddOns.set(userId, pending + applied);
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Add-on debited + queued for ${userId}: +${applied} (pending ${pending + applied}) — hand in progress`
+      );
+      this.broadcastCurrentState();
+      return { success: true, queued: true, applied };
+    }
+
+    // Between hands — wallet debited AND table_seats bumped by the RPC.
+    player.stack += applied;
     this.broadcastCurrentState();
+    return { success: true, applied };
   }
 
   /**
@@ -1171,53 +1183,42 @@ export class ServerTableEngine {
   private async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
     if (this.pendingAddOns.size === 0) return;
 
-    // Determine max buy-in: use table's DB value, or fallback to big_blind * 200
-    const maxBuyIn = this.tableInfo?.max_buy_in
-      ? Number(this.tableInfo.max_buy_in)
-      : (this.tableInfo?.big_blind || 2) * 200;
-
+    const maxBuyIn = this.getMaxBuyIn();
     const { supabase } = require('../services/supabase.js');
 
-    for (const [userId, requestedAmount] of this.pendingAddOns.entries()) {
+    // NOTE: each `debitedAmount` here was ALREADY debited from the player's
+    // wallet at request time (atomic_table_addon, apply_to_seat=false). Here we
+    // only apply it to the (now-settled) stack, capped at max buy-in, and
+    // refund any excess back to the PLAYER wallet.
+    for (const [userId, debitedAmount] of this.pendingAddOns.entries()) {
       const player = players.find((p) => p.user_id === userId);
       if (!player) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] Pending add-on for ${userId} — player no longer seated, refunding`
+          `[ServerTableEngine:${this.tableId}] Pending add-on for ${userId} — player no longer seated, refunding ${debitedAmount}`
         );
-        // Refund to wallet
-        await this._refundAddOnToWallet(userId, requestedAmount);
+        await this._refundAddOnToWallet(userId, debitedAmount);
         continue;
       }
 
-      const currentStack = player.stack;
-      const headroom = Math.max(0, maxBuyIn - currentStack);
+      const headroom = Math.max(0, maxBuyIn - player.stack);
+      const actualAddOn = Math.min(debitedAmount, headroom);
+      const refundAmount = Math.round((debitedAmount - actualAddOn) * 100) / 100;
 
-      if (headroom <= 0) {
-        // Player already at or above max — full cancel, refund to wallet
-        console.log(
-          `[ServerTableEngine:${this.tableId}] Add-on CANCELED for ${userId}: stack ${currentStack} already >= max ${maxBuyIn}. Refunding ${requestedAmount} to wallet.`
-        );
-        await this._refundAddOnToWallet(userId, requestedAmount);
-        continue;
+      if (actualAddOn > 0) {
+        player.stack += actualAddOn;
+        // syncStacks already ran (STEP 8) before this (STEP 8e), so persist the
+        // add-on to table_seats directly here.
+        await supabase
+          .from('table_seats')
+          .update({ stack: player.stack })
+          .eq('table_id', this.tableId)
+          .eq('user_id', userId)
+          .is('left_at', null);
       }
-
-      const actualAddOn = Math.min(requestedAmount, headroom);
-      const refundAmount = requestedAmount - actualAddOn;
-
-      // Apply the capped amount
-      player.stack += actualAddOn;
-
-      // Persist to database
-      await supabase
-        .from('table_seats')
-        .update({ stack: player.stack })
-        .eq('table_id', this.tableId)
-        .eq('user_id', userId)
-        .is('left_at', null);
 
       if (refundAmount > 0) {
         console.log(
-          `[ServerTableEngine:${this.tableId}] Add-on REDUCED for ${userId}: requested ${requestedAmount}, applied ${actualAddOn}, refunding ${refundAmount} (stack ${currentStack} + ${actualAddOn} = ${player.stack}, max ${maxBuyIn})`
+          `[ServerTableEngine:${this.tableId}] Add-on capped for ${userId}: debited ${debitedAmount}, applied ${actualAddOn}, refunding ${refundAmount} to wallet`
         );
         await this._refundAddOnToWallet(userId, refundAmount);
       } else {
@@ -1232,40 +1233,31 @@ export class ServerTableEngine {
   }
 
   /**
-   * Refund unused add-on chips back to the player's club wallet.
-   * Called when add-on is reduced or fully canceled after hand completion.
+   * Refund unused add-on chips back to the player's PLAYER wallet (the same
+   * balance atomic_table_addon debited). Uses atomic_credit_wallet_and_log so
+   * the refund is logged and matches the debit side.
    */
   private async _refundAddOnToWallet(userId: string, amount: number): Promise<void> {
     if (amount <= 0) return;
     try {
       const { supabase } = require('../services/supabase.js');
-      const clubId = this.tableInfo?.club_id;
-      if (!clubId) {
-        reportError(
-          new Error('Cannot refund add-on — no club_id'),
-          `ServerTableEngine.${this.tableId}.refund_missing_club_id`,
-          { userId, amount }
-        );
-        return;
-      }
-
-      // Credit back to club_members balance
-      const { data: member } = await supabase
-        .from('club_members')
-        .select('balance')
-        .eq('club_id', clubId)
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (member) {
-        await supabase
-          .from('club_members')
-          .update({ balance: (member.balance || 0) + amount })
-          .eq('club_id', clubId)
-          .eq('user_id', userId);
-
+      const { error } = await supabase.rpc('atomic_credit_wallet_and_log', {
+        p_user_id: userId,
+        p_amount: amount,
+        p_category: 'addon_refund',
+        p_description: 'Add-on exceeded table max buy-in — refunded',
+        p_table_id: this.tableId,
+        p_hand_id: null,
+        p_related_entity_id: null,
+      });
+      if (error) {
+        reportError(error, `ServerTableEngine.${this.tableId}.addon_refund_failed`, {
+          userId,
+          amount,
+        });
+      } else {
         console.log(
-          `[ServerTableEngine:${this.tableId}] Refunded ${amount} chips to ${userId}'s wallet (club ${clubId})`
+          `[ServerTableEngine:${this.tableId}] Refunded ${amount} chips to ${userId}'s PLAYER wallet`
         );
       }
     } catch (err) {

@@ -1401,6 +1401,12 @@ export default function TablePage({
   const seatDealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // CA-20 BUG FIX: handRevealTimerRef tracks the 6s setShowHandRevealModal(false) timer.
   const handRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // AUDIT FIX 2026-07-19: hand-aware hero hole-card fetch. heroHandRef tracks the
+  // current hand number so the poll never applies a PREVIOUS hand's cards; the
+  // fetch fn is exposed so HAND_STARTED can re-arm it (recovering a dropped
+  // realtime insert) after clearing stale cards.
+  const heroHandRef = useRef<number>(0);
+  const heroCardFetchRef = useRef<(() => void) | null>(null);
   // CA-21 BUG FIX: bbjTimerRef tracks the 3s BBJ celebration delay timer.
   const bbjTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // CA-22 BUG FIX: handCompleteTimerRef tracks the 3s HAND_COMPLETE table-reset timer.
@@ -2191,7 +2197,7 @@ export default function TablePage({
       if (cancelled) return;
       const { data } = await supabase
         .from('table_hole_cards')
-        .select('cards')
+        .select('cards, hand_number')
         .eq('table_id', tableId)
         .eq('user_id', userId)
         .order('hand_number', { ascending: false })
@@ -2199,6 +2205,19 @@ export default function TablePage({
         .maybeSingle();
 
       if (cancelled) return;
+
+      // AUDIT FIX 2026-07-19: don't apply a row from a DIFFERENT (older) hand.
+      // Once we know the current hand number (set on HAND_STARTED), require the
+      // fetched row to match it — otherwise a delayed insert would let the
+      // previous hand's cards render on the new hand.
+      if (
+        data &&
+        heroHandRef.current > 0 &&
+        typeof (data as any).hand_number === 'number' &&
+        (data as any).hand_number !== heroHandRef.current
+      ) {
+        return;
+      }
 
       if (data && data.cards) {
         let cardsApplied = false;
@@ -2244,8 +2263,13 @@ export default function TablePage({
     fetchExistingHand();
     retryTimer = setTimeout(fetchExistingHand, 2000);
     pollTimer = setInterval(fetchExistingHand, 5000);
+    // Expose so HAND_STARTED can re-arm the fetch for the new hand.
+    heroCardFetchRef.current = () => {
+      if (!cancelled) fetchExistingHand();
+    };
     return () => {
       cancelled = true;
+      heroCardFetchRef.current = null;
       if (retryTimer) clearTimeout(retryTimer);
       if (pollTimer) clearInterval(pollTimer);
     };
@@ -3933,14 +3957,30 @@ export default function TablePage({
       // change. The four events below were added with this fix; client must
       // act on them directly, never wait for snapshot diff.
       case 'HAND_STARTED': {
+        // AUDIT FIX 2026-07-19: track the new hand number and CLEAR hero hole
+        // cards so a dropped card-insert can't leave the previous hand's cards
+        // showing; then re-arm the hand-aware fetch to recover the new cards.
+        {
+          const hn = Number((evt.data as any)?.hand_number) || 0;
+          if (hn > 0) heroHandRef.current = hn;
+        }
         // Reset visual state instantly so the new hand starts crisp.
-        setTableState((prev) => ({
-          ...prev,
-          lastActions: prev.lastActions.map(() => null),
-          lastBetAmounts: prev.lastBetAmounts.map(() => 0),
-          communityCards: [],
-          boardStage: 'preflop',
-        }));
+        setTableState((prev) => {
+          const players = prev.players.map((p) =>
+            p && p.id === userId ? { ...p, holeCards: [], showCards: false } : p
+          );
+          return {
+            ...prev,
+            players,
+            lastActions: prev.lastActions.map(() => null),
+            lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+            communityCards: [],
+            boardStage: 'preflop',
+          };
+        });
+        // Re-fetch the hero's cards for the new hand (recovers a dropped insert).
+        heroCardFetchRef.current?.();
+        setTimeout(() => heroCardFetchRef.current?.(), 1500);
         // BUG 030 fix: clear prior hand's winner state IMMEDIATELY so the
         // "Three of a Kind" hand-strength label and winner banner cannot
         // bleed into the new hand if the table cycles faster than the 3s
@@ -4179,7 +4219,10 @@ export default function TablePage({
             (p) => p && winnerIds.includes(p.id)
           );
           if (firstWinnerIdx >= 0) {
-            const seatPct = seatPositions[firstWinnerIdx + 1] || { x: 50, y: 50 };
+            // AUDIT FIX 2026-07-19: seatPositions is physical-seat-indexed
+            // (players[] index = seatNumber-1); the +1 sent the burst to the
+            // seat one past the winner. The PLAYER_ACTION path uses no offset.
+            const seatPct = seatPositions[firstWinnerIdx] || { x: 50, y: 50 };
             setWinnerParticle({
               active: true,
               origin: {
@@ -4234,7 +4277,8 @@ export default function TablePage({
             // SeatPlayer.id is the userId — players[] index = seatNumber - 1.
             const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
             if (seatIdx < 0) continue;
-            const seatPct = seatPositions[seatIdx + 1] || { x: 50, y: 50 };
+            // AUDIT FIX 2026-07-19: physical-seat index — no +1 (see above).
+            const seatPct = seatPositions[seatIdx] || { x: 50, y: 50 };
             const winnerPos = {
               x: (seatPct.x / 100) * window.innerWidth,
               y: (seatPct.y / 100) * window.innerHeight,
@@ -4484,15 +4528,17 @@ export default function TablePage({
   // Expose the flat positions array for legacy references (same length, rotated)
   const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
 
-  // ── Dealer Button visual index (after hero rotation) ──
-  // dealerSeat is 1-indexed physical seat. Convert to 0-indexed rotated visual index.
+  // ── Dealer Button seat index ──
+  // AUDIT FIX 2026-07-19: DealerButton indexes `seatPositions`, which is ALREADY
+  // physical-seat-indexed AND already hero-rotated (seatPositions[physIdx] =
+  // rotated screen pos for physical seat physIdx). Feeding it a separately
+  // hero-rotated visual index applied the rotation TWICE, rendering the button
+  // at the wrong seat whenever the hero wasn't physical seat 1. Pass the plain
+  // physical index (dealerSeat - 1).
   const dealerVisualIndex = useMemo(() => {
     if (tableState.dealerSeat <= 0) return -1;
-    const physIdx = tableState.dealerSeat - 1;
-    const maxP = baseSeatPositions.length;
-    const heroIdx = tableState.heroSeat > 0 ? tableState.heroSeat - 1 : 0;
-    return (physIdx - heroIdx + maxP) % maxP;
-  }, [tableState.dealerSeat, tableState.heroSeat, baseSeatPositions.length]);
+    return tableState.dealerSeat - 1;
+  }, [tableState.dealerSeat]);
 
   // Find player at specific seat (1-indexed)
   const getPlayerAtSeat = useCallback(

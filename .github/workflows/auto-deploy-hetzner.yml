@@ -13,6 +13,10 @@ on:
       - main
     paths:
       - 'server/**'
+      # Test-only / sim changes never affect the runtime Docker image, so they
+      # must NOT trigger a live-engine restart (a restart voids in-flight hands).
+      - '!server/**/*.test.ts'
+      - '!server/sim/**'
 
 concurrency:
   group: deploy-hetzner

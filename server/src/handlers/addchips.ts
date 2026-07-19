@@ -15,7 +15,12 @@ export interface AddchipsDeps {
   gameServer: {
     getTableEngine(tableId: string):
       | {
-          addChips(userId: string, amount: number): { success: boolean; [k: string]: unknown };
+          addChips(
+            userId: string,
+            amount: number
+          ):
+            | { success: boolean; [k: string]: unknown }
+            | Promise<{ success: boolean; [k: string]: unknown }>;
         }
       | null
       | undefined;
@@ -46,7 +51,7 @@ export async function handleAddchips(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    const result = engine.addChips(userId, amount);
+    const result = await engine.addChips(userId, amount);
     return sendJSON(res, result.success ? 200 : 400, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.addchips_error');

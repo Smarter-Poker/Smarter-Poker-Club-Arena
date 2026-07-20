@@ -437,6 +437,8 @@ export class ServerTableEngine {
           enabled: true,
           maxStraddles: 1, // FIX 114: UTG straddle only — always 1
           straddleMultiplier: 2, // Standard 2x BB
+          // A6/A7: mandatory UTG straddle when the host chose "Auto UTG Straddle"
+          mandatoryUtg: (this.tableInfo as any).auto_utg_straddle === true,
         });
       }
 
@@ -2384,6 +2386,8 @@ export class ServerTableEngine {
         enabled: true,
         maxStraddles: 1, // FIX 114: UTG only — always 1
         straddleMultiplier: 2,
+        // A6/A7: mandatory UTG straddle when the host chose "Auto UTG Straddle"
+        mandatoryUtg: (this.tableInfo as any).auto_utg_straddle === true,
       };
       this.straddleEngine.configure(this.tableId, straddleConfig);
       const result = this.straddleEngine.processStraddles(

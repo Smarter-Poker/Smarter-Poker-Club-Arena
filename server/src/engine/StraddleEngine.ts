@@ -25,6 +25,14 @@ export interface StraddleConfig {
   /** FIX 114: maxStraddles always 1 (UTG only, no re-straddles) */
   maxStraddles: number;
   straddleMultiplier: number;
+  /**
+   * A6/A7 2026-07-20: table-level MANDATORY UTG straddle. When true the UTG
+   * player auto-posts the straddle every hand regardless of individual opt-in
+   * enrollment (the "Auto UTG Straddle" host setting). When false, only players
+   * who opted in via toggleAutoStraddle straddle (the "Voluntary Straddle" host
+   * setting). Undefined is treated as false (voluntary-only).
+   */
+  mandatoryUtg?: boolean;
 }
 
 export interface StraddleState {
@@ -140,7 +148,9 @@ export class StraddleEngine {
     // No Mississippi (multi-position) straddles allowed.
     for (const { seat, playerId } of seatOrder) {
       if (straddleCount >= maxStraddles) break;
-      if (!state.enrolledPlayers.has(playerId)) break;
+      // A6/A7: in mandatory-UTG mode the UTG player straddles regardless of
+      // opt-in; otherwise only opted-in (enrolled) players straddle.
+      if (!config.mandatoryUtg && !state.enrolledPlayers.has(playerId)) break;
       // FIX 114: Only UTG straddle — always break after first straddle
       if (straddleCount > 0) break;
 

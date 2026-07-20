@@ -28,8 +28,10 @@ const DEFAULT_THEME: UserThemeSelection = {
 };
 
 /**
- * Maps Bible V8 game variant strings to theme game types.
- * Bible V8 §11.2.1: ALL | NLH | FLH | 6+ | PLO | FLO | OFC | MIXED | MTT | SNG
+ * Maps a game variant string to a theme game type. Categories match the
+ * platform's approved variants only — FIX 116 removed FLH / FLO / MIXED, so
+ * those branches are gone (they could never match a selectable game type).
+ * Approved: ALL | NLH | 6+ (short deck) | PLO | PINEAPPLE | MTT | SNG.
  */
 function getThemeGameType(
   gameVariant?: string,
@@ -42,11 +44,9 @@ function getThemeGameType(
   }
   const v = (gameVariant || '').toLowerCase();
   if (v.includes('nlh') || v === 'no_limit_holdem') return 'NLH';
-  if (v.includes('flh') || v === 'fixed_limit_holdem') return 'FLH';
   if (v.includes('short') || v.includes('6+')) return '6+';
+  if (v.includes('pineapple')) return 'PINEAPPLE';
   if (v.includes('plo')) return 'PLO';
-  if (v.includes('flo')) return 'FLO';
-  if (v.includes('mixed') || v.includes('horse')) return 'MIXED';
   return 'ALL';
 }
 

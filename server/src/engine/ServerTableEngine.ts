@@ -1744,6 +1744,13 @@ export class ServerTableEngine {
       return { success: false, error: 'No active hand' };
     }
 
+    // FIX-D3 2026-07-19 (Bible V8 §11): honor the table's show-hand toggle. The
+    // column was loaded but never checked, so voluntary show-hand was always
+    // allowed even when the host disabled it. Default allowed unless explicitly off.
+    if ((this.tableInfo as { show_hand_enabled?: boolean })?.show_hand_enabled === false) {
+      return { success: false, error: 'Showing hands is disabled at this table' };
+    }
+
     const state = this.handController.getState();
     if (state.stage !== 'showdown') {
       return { success: false, error: 'Can only show hand during showdown' };
@@ -3222,7 +3229,12 @@ export class ServerTableEngine {
         // the player already saw. Round 65: gate on board.length < 5.
         const board = this.handController?.getState()?.communityCards ?? [];
         const handReachedRiver = board.length >= 5;
-        if (this.currentHandRabbitCards.length > 0 && !handReachedRiver) {
+        // FIX-D3 2026-07-19 (Bible V8 §11): honor the table's rabbit-hunt toggle.
+        // The event was emitted unconditionally, offering rabbit hunt even where
+        // the host disabled it. Default allowed unless explicitly off.
+        const rabbitAllowed =
+          (this.tableInfo as { allow_rabbit_hunt?: boolean })?.allow_rabbit_hunt !== false;
+        if (this.currentHandRabbitCards.length > 0 && !handReachedRiver && rabbitAllowed) {
           this.hub?.emitEvent(this.tableId, {
             type: 'rabbit_hunt_available',
             table_id: this.tableId,

@@ -73,6 +73,7 @@ interface TableConfig {
   tripleBoard: boolean;
   pineappleHoldem: boolean;
   sevenDeuceEnabled: boolean;
+  sevenDeuceAmountBB: number;
   nitGame: boolean;
   capEnabled: boolean;
   noRathole: boolean;
@@ -203,6 +204,7 @@ const DEFAULT_CONFIG: TableConfig = {
   tripleBoard: false,
   pineappleHoldem: false,
   sevenDeuceEnabled: false,
+  sevenDeuceAmountBB: 2,
   nitGame: false,
   capEnabled: false,
   noRathole: false,
@@ -580,6 +582,9 @@ export default function TableConfigPage() {
     triple_board: config.tripleBoard,
     pineapple_holdem: config.pineappleHoldem,
     seven_deuce_enabled: config.sevenDeuceEnabled,
+    // 7-2 bounty size in big blinds each other dealt-in player pays a post-flop
+    // 7-2 winner. Only meaningful when the toggle is on; default 2 BB.
+    seven_deuce_amount: config.sevenDeuceEnabled ? config.sevenDeuceAmountBB : 2,
     nit_game: config.nitGame,
     cap_enabled: config.capEnabled,
     no_rathole: config.noRathole,
@@ -970,8 +975,19 @@ export default function TableConfigPage() {
           label="Seven-Deuce"
           value={config.sevenDeuceEnabled}
           onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
-          tooltip="Bonus for winning with 7-2"
+          tooltip="Winner holding any 7-2 collects a bounty from each other player (post-flop only)"
         />
+        {config.sevenDeuceEnabled && (
+          <Slider
+            label="7-2 Bounty"
+            value={config.sevenDeuceAmountBB}
+            onChange={(v) => updateConfig('sevenDeuceAmountBB', v)}
+            min={0.5}
+            max={10}
+            step={0.5}
+            suffix=" Big Blind"
+          />
+        )}
         <Toggle
           label="NIT Game"
           value={config.nitGame}

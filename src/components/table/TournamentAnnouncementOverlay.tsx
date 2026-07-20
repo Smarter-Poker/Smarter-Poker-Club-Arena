@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import './TournamentAnnouncementOverlay.css';
 
 interface TournamentAnnouncementProps {
-  type: 'hand_for_hand' | 'bubble_burst' | 'final_table' | 'level_up' | null;
+  type: 'hand_for_hand' | 'bubble_burst' | 'final_table' | 'level_up' | 'seven_deuce_bounty' | null;
   data?: any;
   onDismiss: () => void;
 }
@@ -69,6 +69,14 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       title: `LEVEL ${data?.level || 1}`,
       subtitle: `Blinds: ${data?.smallBlind ?? '—'}/${data?.bigBlind ?? '—'}${data?.ante ? ` Ante: ${data.ante}` : ''}`,
       color: '#3b82f6',
+    },
+    seven_deuce_bounty: {
+      icon: '72',
+      title: 'SEVEN-DEUCE BOUNTY',
+      subtitle: data?.winnerName
+        ? `${data.winnerName} won with 7-2 — collected ${data?.amount ?? ''} from the table`
+        : `Won with 7-2 — collected ${data?.amount ?? ''} from the table`,
+      color: '#ef4444',
     },
   };
 

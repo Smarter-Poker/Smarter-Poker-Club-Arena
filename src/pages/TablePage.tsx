@@ -2558,6 +2558,20 @@ export default function TablePage({
         return; // Don't process as regular state
       }
 
+      // Seven-Deuce bounty: a player won a post-flop pot holding 7-2 and
+      // collected a bounty from every other dealt-in player. Announce it (the
+      // winner's seat is already highlighted by the POT_WIN banner this hand);
+      // the bounty-adjusted stacks arrive via the follow-up state broadcast.
+      if (eventType === 'seven_deuce_bounty') {
+        const collected = Number((handState as any).total_collected ?? 0);
+        const amountLabel = `$${collected.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`;
+        setAnnouncement({ type: 'seven_deuce_bounty', data: { amount: amountLabel } });
+        return;
+      }
+
       // Rabbit Hunt: Server sends remaining deck cards after hand completes
       if (eventType === 'rabbit_hunt_available') {
         const rabbitCards = (handState.rabbit_cards as any[]) || [];

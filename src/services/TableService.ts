@@ -211,6 +211,7 @@ class TableService {
           : 0,
         time_bank_seconds: defaultSettings.time_bank_seconds ?? 30,
         time_bank_enabled: (defaultSettings.time_bank_seconds ?? 0) > 0,
+        wait_for_big_blind: defaultSettings.wait_for_big_blind ?? true,
       })
       .select()
       .maybeSingle();

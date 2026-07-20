@@ -367,6 +367,17 @@ export class ServerTableEngine {
   }
 
   /**
+   * The button (dealer) seat of the most recently dealt hand. Used by the
+   * TournamentEngine's table balancer to pick the correct player to move
+   * (B6: the player who is big blind due next). Returns 0 before the first
+   * hand is dealt, in which case the balancer falls back to its stack-based
+   * heuristic.
+   */
+  public getCurrentButtonSeat(): number {
+    return this.currentHandDealerSeat;
+  }
+
+  /**
    * Start the dealing pipeline
    */
   async start(): Promise<void> {

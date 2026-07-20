@@ -2776,6 +2776,9 @@ export class TournamentManager {
         tableId,
         playerCount: (seats || []).length,
         maxSeats: tableRow?.max_players || 9,
+        // B6: current button seat (0 before the first hand) so the balancer can
+        // move the big-blind-due-next player instead of the smallest stack.
+        buttonSeat: this.tableEngines.get(tableId)?.getCurrentButtonSeat() ?? 0,
         players: (seats || []).map((s: any) => ({
           userId: s.user_id,
           stack: s.stack || 0,
@@ -2849,6 +2852,9 @@ export class TournamentManager {
           tableId,
           playerCount: (seats || []).length,
           maxSeats: tableRow?.max_players || 9,
+          // B6: current button seat (0 before the first hand) so the balancer
+          // can move the big-blind-due-next player instead of the smallest stack.
+          buttonSeat: this.tableEngines.get(tableId)?.getCurrentButtonSeat() ?? 0,
           players: (seats || []).map((s: any) => ({
             userId: s.user_id,
             stack: s.stack || 0,
@@ -3113,6 +3119,9 @@ export class TournamentManager {
         tableId,
         playerCount: (seats || []).length,
         maxSeats: maxPerTable,
+        // B6: current button seat (0 before the first hand) so the balancer can
+        // move the big-blind-due-next player instead of the smallest stack.
+        buttonSeat: this.tableEngines.get(tableId)?.getCurrentButtonSeat() ?? 0,
         players: (seats || []).map((s: any) => ({
           userId: s.user_id,
           stack: s.stack || 0,

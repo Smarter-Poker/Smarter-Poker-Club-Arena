@@ -124,6 +124,8 @@ export interface TableSettings {
   ante_enabled: boolean; // BB ante or regular ante
   ante_amount: number; // Ante in chips (0 = no ante)
   no_rathole: boolean; // Prevent players from leaving and re-sitting with fewer chips
+  seven_deuce_enabled?: boolean; // 7-2 game: post-flop 7-2 winner collects a bounty
+  seven_deuce_amount?: number; // 7-2 bounty in big blinds each other player pays (default 2)
   double_board: boolean; // Double board run-out
   time_limit_minutes: number; // Auto-close table after N minutes (0 = unlimited)
   action_time_seconds: number; // Per-action time limit (default 15)

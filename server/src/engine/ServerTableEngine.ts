@@ -30,6 +30,7 @@ import { evaluateHand, evaluateOmahaHand, compareHands, determineWinners } from 
 import { RakebackEngine } from './RakebackEngine.js';
 import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
+import { computeSevenDeuceBounties } from './SevenDeuceBounty.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
 import {
@@ -3130,6 +3131,138 @@ export class ServerTableEngine {
                 enginePlayer.stack = Math.max(0, enginePlayer.stack - settlement.premium);
               }
             }
+          }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // SEVEN-DEUCE BOUNTY (7-2 game) — Bible V8 §11 table option
+        // A player who WINS a pot holding any 7 and any 2 collects a fixed bounty
+        // (default 2 big blinds, configurable per table) from every OTHER player
+        // dealt into the hand. Rule (Dan 2026-07-20): the hand MUST have seen a
+        // flop to qualify — pots won pre-flop pay no bounty. Any 7 + any 2
+        // qualifies. NLH only (meaningless in PLO; short-deck has no deuces).
+        // The bounty is a player-to-player table-stack transfer (zero-sum,
+        // chip-conserving); each payer pays only up to their remaining stack so
+        // no chips are ever minted. Both the seated + engine stack copies are
+        // mutated here so syncStacks() in postHandTasks persists the result.
+        // ═══════════════════════════════════════════════════════════════════════
+        const sevenDeuceEnabled = (this.tableInfo as any)?.seven_deuce_enabled === true;
+        const sevenDeuceSawFlop = this.currentHandCommunityCards.length >= 3;
+        const sevenDeuceIsNlh = (this.tableInfo?.game_variant || 'nlh') === 'nlh';
+        if (
+          sevenDeuceEnabled &&
+          sevenDeuceSawFlop &&
+          sevenDeuceIsNlh &&
+          this.tableInfo &&
+          this.currentHandWinners.length > 0 &&
+          this.handController
+        ) {
+          const bb = this.tableInfo.big_blind || 0;
+          const bbMultiple = Number((this.tableInfo as any)?.seven_deuce_amount ?? 2) || 2;
+          const bountyPerPayer = Math.round(bb * bbMultiple * 100) / 100;
+
+          if (bountyPerPayer > 0) {
+            const sdState = this.handController.getState();
+            const sdDealtIn = players.map((p) => {
+              const enginePlayer = sdState.players.find((ep) => ep.user_id === p.user_id);
+              const seatedPlayer = this.seatedPlayers.find((sp) => sp.user_id === p.user_id);
+              return {
+                userId: p.user_id,
+                cards: enginePlayer?.cards ?? [],
+                stack: seatedPlayer?.stack ?? enginePlayer?.stack ?? 0,
+              };
+            });
+
+            const sdTransfers = computeSevenDeuceBounties(
+              this.currentHandWinnerIds,
+              sdDealtIn,
+              bountyPerPayer
+            );
+
+            let sdAnyApplied = false;
+            for (const transfer of sdTransfers) {
+              // Apply debits to each payer (re-cap at the live stack in case an
+              // earlier transfer this hand already took chips) and credit the
+              // winner. Mutate BOTH the seated + engine stack copies.
+              let applied = 0;
+              const appliedPayers: Array<{ userId: string; amount: number }> = [];
+              for (const payer of transfer.payers) {
+                const seatedPayer = this.seatedPlayers.find((p) => p.user_id === payer.userId);
+                const enginePayer = sdState.players.find((p) => p.user_id === payer.userId);
+                const liveStack = Math.max(
+                  0,
+                  Math.round((seatedPayer?.stack ?? enginePayer?.stack ?? 0) * 100) / 100
+                );
+                const pay = Math.min(payer.amount, liveStack);
+                if (pay <= 0) continue;
+                if (seatedPayer)
+                  seatedPayer.stack = Math.round((seatedPayer.stack - pay) * 100) / 100;
+                if (enginePayer)
+                  enginePayer.stack = Math.round((enginePayer.stack - pay) * 100) / 100;
+                applied = Math.round((applied + pay) * 100) / 100;
+                appliedPayers.push({ userId: payer.userId, amount: pay });
+              }
+
+              if (applied <= 0) continue;
+              sdAnyApplied = true;
+
+              const seatedWinner = this.seatedPlayers.find(
+                (p) => p.user_id === transfer.winnerUserId
+              );
+              const engineWinner = sdState.players.find((p) => p.user_id === transfer.winnerUserId);
+              if (seatedWinner)
+                seatedWinner.stack = Math.round((seatedWinner.stack + applied) * 100) / 100;
+              if (engineWinner)
+                engineWinner.stack = Math.round((engineWinner.stack + applied) * 100) / 100;
+
+              const winnerCards = engineWinner?.cards ?? [];
+              console.log(
+                `[ServerTableEngine:${this.tableId}] 7-2 BOUNTY: ${transfer.winnerUserId} won post-flop with 7-2 -> +$${applied} from ${appliedPayers.length} players`
+              );
+
+              // Reveal the 7-2 (even on a fold-around win) + announce the bounty.
+              this.hub?.emitEvent(this.tableId, {
+                type: 'seven_deuce_bounty',
+                table_id: this.tableId,
+                hand_number: this.handCount,
+                winner_user_id: transfer.winnerUserId,
+                total_collected: applied,
+                per_player_amount: transfer.perPlayerAmount,
+                payers: appliedPayers,
+                hole_cards: winnerCards.map((c) => ({ rank: c.rank, suit: c.suit })),
+              });
+
+              // Durable audit trail (fire-and-forget, non-fatal).
+              if (this.tableInfo.club_id) {
+                const sdClubId = this.tableInfo.club_id;
+                const sdHandNo = this.handCount;
+                Promise.resolve(
+                  supabase.from('seven_deuce_bounties').insert({
+                    table_id: this.tableId,
+                    club_id: sdClubId,
+                    hand_number: sdHandNo,
+                    winner_user_id: transfer.winnerUserId,
+                    total_collected: applied,
+                    per_player_amount: transfer.perPlayerAmount,
+                    payers: appliedPayers,
+                  })
+                )
+                  .then(({ error }: { error: unknown }) => {
+                    if (error)
+                      console.warn(
+                        '[Engine] seven_deuce_bounties insert failed (non-fatal):',
+                        error
+                      );
+                  })
+                  .catch((sdErr: unknown) =>
+                    console.warn('[Engine] seven_deuce_bounties insert threw (non-fatal):', sdErr)
+                  );
+              }
+            }
+
+            // Re-broadcast so clients see the bounty-adjusted stacks immediately
+            // (the WINNERS snapshot went out before these transfers were applied).
+            if (sdAnyApplied) this.broadcastCurrentState();
           }
         }
 

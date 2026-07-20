@@ -212,6 +212,12 @@ class TableService {
         time_bank_seconds: defaultSettings.time_bank_seconds ?? 30,
         time_bank_enabled: (defaultSettings.time_bank_seconds ?? 0) > 0,
         wait_for_big_blind: defaultSettings.wait_for_big_blind ?? true,
+        // 7-2 game: winner holding any 7-2 collects a bounty (in BB) from each
+        // other dealt-in player, post-flop only. Engine reads these columns.
+        seven_deuce_enabled: defaultSettings.seven_deuce_enabled ?? false,
+        seven_deuce_amount: defaultSettings.seven_deuce_enabled
+          ? defaultSettings.seven_deuce_amount || 2
+          : 2,
       })
       .select()
       .maybeSingle();

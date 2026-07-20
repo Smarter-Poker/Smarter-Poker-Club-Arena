@@ -201,8 +201,14 @@ class TableService {
         ante_enabled: defaultSettings.ante_enabled ?? false,
         ante: defaultSettings.ante_amount ?? 0,
         bomb_pot_enabled: defaultSettings.bomb_pot_enabled ?? false,
-        bomb_pot_frequency: defaultSettings.bomb_pot_frequency ?? 0,
-        bomb_pot_ante_multiplier: defaultSettings.bomb_pot_ante_bb ?? 0,
+        // FIX-D10: engine only fires bomb pots when frequency > 0. Default to
+        // every 10 hands / 2x BB ante when enabled but unspecified.
+        bomb_pot_frequency: defaultSettings.bomb_pot_enabled
+          ? defaultSettings.bomb_pot_frequency || 10
+          : 0,
+        bomb_pot_ante_multiplier: defaultSettings.bomb_pot_enabled
+          ? defaultSettings.bomb_pot_ante_bb || 2
+          : 0,
         time_bank_seconds: defaultSettings.time_bank_seconds ?? 30,
         time_bank_enabled: (defaultSettings.time_bank_seconds ?? 0) > 0,
       })

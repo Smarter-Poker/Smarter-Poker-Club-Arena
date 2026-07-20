@@ -236,9 +236,6 @@ export class TableBalancer {
       // Reflect the placement so the next player spreads + gets a distinct seat.
       target.playerCount++;
       target.players.push({ ...player, seat: toSeat });
-
-      target.playerCount++;
-      target.players.push({ ...player, seat: toSeat });
     }
 
     return moves;

@@ -4359,6 +4359,37 @@ export class ServerTableEngine {
       }
     }
 
+    // SETTLEMENT STEP 12b: Promo playthrough accrual (unlock-by-wagering).
+    // Any player who has an outstanding promo balance accrues their per-hand
+    // wagered amount toward the playthrough requirement. When the threshold is
+    // met, promo_apply_playthrough RELEASES the promo into cashable chip_balance
+    // (atomic, FOR UPDATE, idempotent no-op when no promo is outstanding).
+    // Cash tables only — tournament chips never carry a promo playthrough.
+    // Fire-and-forget per player: non-blocking to gameplay, failures are logged
+    // but never surface to the table (the wager is durably in rake_records above,
+    // and the next hand's accrual is additive so nothing is lost permanently).
+    if (!this.isTournamentTable() && this.tableInfo?.club_id) {
+      const promoClubId = this.tableInfo.club_id;
+      for (const [uid, amt] of this.currentHandContributions.entries()) {
+        if (!uid || amt <= 0) continue;
+        Promise.resolve(
+          supabase.rpc('promo_apply_playthrough', {
+            p_club_id: promoClubId,
+            p_user_id: uid,
+            p_wagered: amt,
+          })
+        )
+          .then(({ error }: { error: unknown }) => {
+            if (error) {
+              console.warn('[Engine] promo_apply_playthrough failed (non-fatal):', error);
+            }
+          })
+          .catch((ppErr: unknown) => {
+            console.warn('[Engine] promo_apply_playthrough threw (non-fatal):', ppErr);
+          });
+      }
+    }
+
     // 3b. Bible V8 §4.19: Log insurance settlements (settled in HAND_COMPLETE handler)
     // Insurance premiums → union bank (or club bank for standalone)
     // Insurance payouts → from union bank (or club bank) to player

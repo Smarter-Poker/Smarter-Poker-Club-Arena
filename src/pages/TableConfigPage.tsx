@@ -570,6 +570,12 @@ export default function TableConfigPage() {
 
     // Game variants
     bomb_pot_enabled: config.bombPotEnabled,
+    // FIX-D10 2026-07-19: the engine only fires bomb pots when
+    // bomb_pot_frequency > 0, but the config page exposes just an on/off toggle,
+    // so "enabled" bomb pots never occurred. Write sensible defaults when enabled
+    // (every 10 hands, 2x BB ante per Bible V8 §4.22) until the UI exposes knobs.
+    bomb_pot_frequency: config.bombPotEnabled ? 10 : 0,
+    bomb_pot_ante_multiplier: config.bombPotEnabled ? 2 : 0,
     double_board: config.doubleBoard,
     triple_board: config.tripleBoard,
     pineapple_holdem: config.pineappleHoldem,

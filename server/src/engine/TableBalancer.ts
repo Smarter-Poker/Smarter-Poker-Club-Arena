@@ -211,7 +211,13 @@ export class TableBalancer {
     const targets = [...otherTables].sort((a, b) => a.playerCount - b.playerCount);
 
     for (const player of table.players) {
-      // Find target with fewest players that has an open seat
+      // FIX-B7 2026-07-19: spread broken-table players to the LEAST-full target
+      // each iteration, and REFLECT each placement. The old code never updated
+      // the chosen target's playerCount/players, so it (a) dumped everyone onto
+      // targets[0] until full instead of balancing, and (b) called findOpenSeat
+      // against a stale player list — returning the SAME seat for every player →
+      // seat collisions. Re-sort by occupancy, then increment + record the seat.
+      targets.sort((a, b) => a.playerCount - b.playerCount);
       const target = targets.find((t) => t.playerCount < t.maxSeats);
       if (!target) break;
 
@@ -226,6 +232,10 @@ export class TableBalancer {
         toSeat,
         reason: `Table break: ${table.tableId.slice(0, 8)} dissolved`,
       });
+
+      // Reflect the placement so the next player spreads + gets a distinct seat.
+      target.playerCount++;
+      target.players.push({ ...player, seat: toSeat });
 
       target.playerCount++;
       target.players.push({ ...player, seat: toSeat });

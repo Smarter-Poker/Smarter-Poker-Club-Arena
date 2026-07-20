@@ -54,7 +54,11 @@ interface ThemeAsset {
 // CONSTANTS — Bible V8 §11.2.1 Game Types
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const GAME_TYPES = ['ALL', 'NLH', 'FLH', '6+', 'PLO', 'FLO', 'MIXED', 'MTT', 'SNG'] as const;
+// Game-type categories for per-game-type theming. Must match the platform's
+// approved variants — FIX 116 removed FLH / FLO / MIXED (dead variants), so
+// they no longer appear here (a user could otherwise save a theme against a
+// game type that can never be played). Pineapple is an approved variant.
+const GAME_TYPES = ['ALL', 'NLH', '6+', 'PLO', 'PINEAPPLE', 'MTT', 'SNG'] as const;
 
 const TABS: { key: ThemeTab; label: string }[] = [
   { key: 'themes', label: 'Themes' },

@@ -135,6 +135,15 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
   ],
   button: [
     {
+      // FIX-D7 2026-07-19: the app default is 'classic-white' but it wasn't a
+      // selectable tile, so a fresh user / Reset showed no button highlighted.
+      // Add it (matches the [data-button-theme='classic-white'] CSS token).
+      id: 'classic-white',
+      name: 'Classic White',
+      thumbnail: 'linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%)',
+      vipOnly: false,
+    },
+    {
       id: 'red-d-gear',
       name: 'Red D',
       thumbnail: 'linear-gradient(135deg, #c62828, #e53935)',

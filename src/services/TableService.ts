@@ -186,6 +186,25 @@ class TableService {
         current_players: 0,
         status: 'waiting',
         settings: defaultSettings,
+        // FIX-D1 2026-07-19: the engine (loadTable in server) reads TOP-LEVEL
+        // columns, NOT the `settings` JSONB. Writing host gameplay choices only
+        // into the JSONB meant straddle / run-it-twice / bomb-pot / insurance /
+        // ante / auto-muck / time-bank selected at table creation were silently
+        // ignored. Mirror the merged settings into the canonical columns the
+        // engine actually consumes. (Key-name mapping: run_it_twice ->
+        // run_it_twice_enabled, auto_muck -> auto_muck_enabled, ante_amount ->
+        // ante, bomb_pot_ante_bb -> bomb_pot_ante_multiplier.)
+        straddle_enabled: defaultSettings.straddle_enabled ?? false,
+        run_it_twice_enabled: defaultSettings.run_it_twice ?? false,
+        auto_muck_enabled: defaultSettings.auto_muck ?? true,
+        insurance_enabled: defaultSettings.insurance_enabled ?? false,
+        ante_enabled: defaultSettings.ante_enabled ?? false,
+        ante: defaultSettings.ante_amount ?? 0,
+        bomb_pot_enabled: defaultSettings.bomb_pot_enabled ?? false,
+        bomb_pot_frequency: defaultSettings.bomb_pot_frequency ?? 0,
+        bomb_pot_ante_multiplier: defaultSettings.bomb_pot_ante_bb ?? 0,
+        time_bank_seconds: defaultSettings.time_bank_seconds ?? 30,
+        time_bank_enabled: (defaultSettings.time_bank_seconds ?? 0) > 0,
       })
       .select()
       .maybeSingle();

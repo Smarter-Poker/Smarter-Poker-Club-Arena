@@ -600,6 +600,12 @@ export default function TableConfigPage() {
     auto_utg_straddle: config.autoUtgStraddle,
     voluntary_straddle: config.voluntaryStraddle,
     insurance_enabled: config.insuranceEnabled,
+    // FIX-D2 2026-07-19: the engine reads the canonical top-level columns
+    // straddle_enabled / run_it_twice_enabled, NOT auto_utg_straddle /
+    // voluntary_straddle / run_it_mode. Without these mirrors, straddle and
+    // run-it-twice configured on this page never took effect.
+    straddle_enabled: config.autoUtgStraddle || config.voluntaryStraddle,
+    run_it_twice_enabled: config.runItMode !== 'none',
 
     // Run it multi-times
     run_it_mode: config.runItMode,

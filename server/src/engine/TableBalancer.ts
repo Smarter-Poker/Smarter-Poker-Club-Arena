@@ -24,6 +24,12 @@ export interface BalancerTable {
   playerCount: number;
   maxSeats: number;
   players: BalancerPlayer[];
+  /**
+   * B6: the current button (dealer) seat, when known. Lets the balancer move
+   * the player who is big blind due next (standard tournament rule) instead of
+   * the smallest stack. Omit / 0 to fall back to the stack-based heuristic.
+   */
+  buttonSeat?: number;
 }
 
 export interface BalancerPlayer {
@@ -54,6 +60,54 @@ export type TableBalancerEventType = 'TABLE_BALANCE_EXECUTED';
 export interface TableBalancerEvent {
   type: TableBalancerEventType;
   [key: string]: unknown;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// B6 — BIG-BLIND-DUE-NEXT MOVE ORDERING (pure, unit-tested)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Order a table's players by who should be moved FIRST under the standard
+ * tournament rule: move the player who is big blind due next. Blinds progress
+ * clockwise, so after the current hand the button advances to the current small
+ * blind, and the big blind advances one occupied seat. The player who would
+ * post the NEXT big blind (the occupied seat immediately clockwise after the
+ * current big blind) has "waited longest" and is moved first; the player who
+ * just posted the big blind is moved last (they'd otherwise pay twice).
+ *
+ * Returns null when the button seat is unknown/invalid or the table has fewer
+ * than 3 players (no meaningful blind order — e.g. heads-up), signalling the
+ * caller to fall back to its stack-based heuristic.
+ */
+export function orderPlayersForMove(
+  players: BalancerPlayer[],
+  buttonSeat: number | undefined
+): BalancerPlayer[] | null {
+  if (!buttonSeat || buttonSeat <= 0) return null;
+  if (players.length < 3) return null;
+
+  const bySeat = new Map(players.map((p) => [p.seat, p]));
+  const occupied = players.map((p) => p.seat).sort((a, b) => a - b);
+  if (!bySeat.has(buttonSeat)) return null; // button seat not occupied — bail
+
+  // Clockwise occupied seats starting STRICTLY after `startSeat`, wrapping,
+  // length === occupied.length (ends back at startSeat).
+  const clockwiseAfter = (startSeat: number): number[] => {
+    const idx = occupied.indexOf(startSeat);
+    const n = occupied.length;
+    const out: number[] = [];
+    for (let i = 1; i <= n; i++) out.push(occupied[(idx + i) % n]);
+    return out;
+  };
+
+  // Current SB = first occupied after button; current BB = the one after that.
+  const afterButton = clockwiseAfter(buttonSeat); // [SB, BB, ...]
+  const bbSeat = afterButton[1];
+
+  // Move order = clockwise starting at the seat after the current BB. That seat
+  // is "big blind due next"; the current BB lands last.
+  const moveOrderSeats = clockwiseAfter(bbSeat);
+  return moveOrderSeats.map((seat) => bySeat.get(seat)!).filter(Boolean);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -144,8 +198,13 @@ export class TableBalancer {
     for (const over of overSeated) {
       let excess = over.playerCount - over.target;
 
-      // Pick players with smallest stacks to move (least disruptive)
-      const movablePlayers = [...over.players].sort((a, b) => a.stack - b.stack);
+      // B6: move the player who is big blind due next (standard tournament
+      // rule — fair because they pay exactly one BB, at the destination). Falls
+      // back to smallest-stack ("least disruptive") when the button seat is
+      // unknown or the table is too small for a meaningful blind order.
+      const movablePlayers =
+        orderPlayersForMove(over.players, over.buttonSeat) ??
+        [...over.players].sort((a, b) => a.stack - b.stack);
 
       for (const under of underSeated) {
         if (excess <= 0) break;

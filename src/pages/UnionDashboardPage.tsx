@@ -136,6 +136,18 @@ export default function UnionDashboardPage() {
   const [agents, setAgents] = useState<UnionAgent[]>([]);
   const [admins, setAdmins] = useState<UnionAdmin[]>([]);
   const [wallets, setWallets] = useState<UnionWallet | null>(null);
+  const [bbjPool, setBbjPool] = useState<{
+    id: string;
+    main_balance: number;
+    backup_balance: number;
+    promo_balance: number;
+    total_contributed: number;
+    total_paid_out: number;
+    hit_count: number;
+    last_hit_at: string | null;
+    last_hit_amount: number;
+  } | null>(null);
+  const [bbjFundAmount, setBbjFundAmount] = useState('');
   const [recentPeriods, setRecentPeriods] = useState<SettlementPeriod[]>([]);
 
   // Applications
@@ -339,6 +351,19 @@ export default function UnionDashboardPage() {
       .eq('union_id', uid)
       .maybeSingle();
     if (mountedRef.current) setWallets(walletRow);
+
+    // BBJ UNIFICATION 2026-07-21: the shared jackpot lives in the union's
+    // bbj_pools row (engine-fed contributions + manual funding + payouts) —
+    // NOT in union_wallets.bbj_wallet. Load it for the BBJ tiles.
+    const { data: poolRow } = await supabase
+      .from('bbj_pools')
+      .select(
+        'id, main_balance, backup_balance, promo_balance, total_contributed, total_paid_out, hit_count, last_hit_at, last_hit_amount'
+      )
+      .eq('union_id', uid)
+      .eq('status', 'active')
+      .maybeSingle();
+    if (mountedRef.current) setBbjPool(poolRow);
 
     // settlement_periods is a global table (no club_id column) — query by status/date instead
     const { data: periods } = await supabase
@@ -806,9 +831,11 @@ export default function UnionDashboardPage() {
                 </div>
                 <div className="admin-stat-card">
                   <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
-                    {fmt(wallets.bbj_wallet)}
+                    {fmt(bbjPool?.main_balance ?? 0)}
                   </div>
-                  <div className="admin-stat-label">BBJ Pool</div>
+                  <div className="admin-stat-label">
+                    BBJ Pool{bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}
+                  </div>
                 </div>
                 <div className="admin-stat-card">
                   <div className="admin-stat-value" style={{ color: '#C084FC' }}>
@@ -1177,6 +1204,64 @@ export default function UnionDashboardPage() {
                     }}
                   >
                     Deposit
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* FUND BBJ POOL — union bank -> shared jackpot (BBJ unification 2026-07-21) */}
+            {isLead && (
+              <div
+                className="admin-card"
+                style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #F7C52A' }}
+              >
+                <h3 className="admin-card-title" style={{ color: '#F7C52A' }}>
+                  Fund BBJ Pool
+                </h3>
+                <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+                  Move chips from the Union Bank into the shared Bad Beat Jackpot. Split across
+                  main/backup/promo per your union BBJ settings.
+                  {bbjPool
+                    ? ` Current pool: ${fmt(bbjPool.main_balance)} main / ${fmt(bbjPool.backup_balance)} backup / ${fmt(bbjPool.promo_balance)} promo.`
+                    : ' No active pool found.'}
+                </p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <input
+                    className="admin-input"
+                    style={{ flex: '0 0 150px' }}
+                    type="number"
+                    min="1"
+                    placeholder="Amount"
+                    value={bbjFundAmount}
+                    onChange={(e) => setBbjFundAmount(e.target.value)}
+                  />
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    style={{ background: '#F7C52A', color: '#000' }}
+                    disabled={processing || !bbjFundAmount}
+                    onClick={async () => {
+                      setProcessing(true);
+                      setError(null);
+                      try {
+                        const amt = parseInt(bbjFundAmount || '0', 10);
+                        if (isNaN(amt) || amt <= 0) {
+                          setError('Enter a valid amount');
+                          setProcessing(false);
+                          return;
+                        }
+                        await unionApi.fundBbjPool(unionId!, amt);
+                        setSuccess(`${amt.toLocaleString()} chips moved to the BBJ pool`);
+                        setBbjFundAmount('');
+                        masterBus.emit('BALANCE_UPDATED', { source: 'bbj_fund' });
+                        loadDashboard(unionId);
+                      } catch (err: any) {
+                        setError(err.message || 'BBJ funding failed');
+                      } finally {
+                        setProcessing(false);
+                      }
+                    }}
+                  >
+                    Fund Jackpot
                   </button>
                 </div>
               </div>

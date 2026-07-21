@@ -127,6 +127,7 @@ export class HandController {
       ...p,
       bet: 0,
       totalInvested: 0,
+      deadInvested: 0,
       cards: [],
       is_folded: false,
       is_all_in: false,
@@ -213,6 +214,7 @@ export class HandController {
           // Dead SB goes straight to pot (dead money, not a live bet)
           const deadSBAmount = Math.min(smallBlind, dbPlayer.stack);
           dbPlayer.totalInvested += deadSBAmount;
+          dbPlayer.deadInvested = (dbPlayer.deadInvested ?? 0) + deadSBAmount;
           dbPlayer.stack -= deadSBAmount;
           this.state.pot += deadSBAmount;
           // Live BB — counts as their current bet
@@ -250,6 +252,9 @@ export class HandController {
         const totalBBA = this.config.ante * activePlayers.length;
         const bbaAmount = Math.min(totalBBA, bbPlayer.stack);
         bbPlayer.totalInvested += bbaAmount;
+        // Dead money: the BB fronts the whole table's ante. It belongs to the
+        // pot, not to the BB as an uncalled bet or a private side pot.
+        bbPlayer.deadInvested = (bbPlayer.deadInvested ?? 0) + bbaAmount;
         bbPlayer.stack -= bbaAmount;
         this.state.pot += bbaAmount;
         if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
@@ -258,6 +263,8 @@ export class HandController {
         for (const player of this.state.players.filter((p) => !p.is_sitting_out)) {
           const anteAmount = Math.min(this.config.ante, player.stack);
           player.totalInvested += anteAmount;
+          // Dead money — antes never count as a live bet toward a call.
+          player.deadInvested = (player.deadInvested ?? 0) + anteAmount;
           player.stack -= anteAmount;
           this.state.pot += anteAmount;
           if (player.stack === 0) player.is_all_in = true;
@@ -805,27 +812,32 @@ export class HandController {
    * front all correct at once. Returns the amount refunded (0 if none).
    */
   private returnUncalledBet(): number {
-    const invAll = this.state.players.map((p) => ({
-      p,
-      inv: p.totalInvested ?? p.bet ?? 0,
-    }));
-    const withMoney = invAll.filter((x) => x.inv > 0);
+    // Compare LIVE invested only (totalInvested minus dead money such as antes /
+    // Big Blind Ante / dead small blinds). Dead money can never be an uncalled
+    // bet — otherwise the BB who fronts a Big Blind Ante is refunded the whole
+    // table's ante whenever it is the unique top contributor.
+    const invAll = this.state.players.map((p) => {
+      const dead = p.deadInvested ?? 0;
+      const total = p.totalInvested ?? p.bet ?? 0;
+      return { p, live: Math.max(0, Math.round((total - dead) * 100) / 100) };
+    });
+    const withMoney = invAll.filter((x) => x.live > 0);
     if (withMoney.length < 2) {
-      // Nobody, or a single contributor (e.g. a walk) — nothing was "called",
-      // but there's also no contest, so leave it for the normal award path.
+      // Nobody, or a single live contributor (e.g. a walk) — nothing was
+      // "called", but there's also no contest, so leave it for the award path.
       return 0;
     }
-    const sorted = [...withMoney].sort((a, b) => b.inv - a.inv);
+    const sorted = [...withMoney].sort((a, b) => b.live - a.live);
     const top = sorted[0];
     const second = sorted[1];
-    // Only a UNIQUE, non-folded highest contributor can have an uncalled bet.
-    if (top.inv <= second.inv) return 0;
+    // Only a UNIQUE, non-folded highest live contributor can have an uncalled bet.
+    if (top.live <= second.live) return 0;
     if (top.p.is_folded) return 0;
-    const uncalled = Math.round((top.inv - second.inv) * 100) / 100;
+    const uncalled = Math.round((top.live - second.live) * 100) / 100;
     if (uncalled <= 0) return 0;
 
     top.p.stack += uncalled;
-    top.p.totalInvested = Math.round((top.inv - uncalled) * 100) / 100;
+    top.p.totalInvested = Math.round(((top.p.totalInvested ?? 0) - uncalled) * 100) / 100;
     top.p.bet = Math.max(0, Math.round((top.p.bet - uncalled) * 100) / 100);
     this.state.pot = Math.max(0, Math.round((this.state.pot - uncalled) * 100) / 100);
     this.emit({

@@ -415,9 +415,22 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   const activePlayers = players.filter((p) => !p.is_folded);
   if (activePlayers.length === 0) return [];
 
-  const getInvestment = (p: SeatPlayer) => p.totalInvested ?? p.bet ?? 0;
+  // Side-pot levels are defined by LIVE invested only. Dead money (antes, a Big
+  // Blind Ante the BB fronts for the table, dead small blinds) belongs in the
+  // pot but must not create a private side pot for whoever posted it — it is
+  // summed and added to the main (first) pot, contested by all eligible players.
+  const getInvestment = (p: SeatPlayer) =>
+    Math.max(0, (p.totalInvested ?? p.bet ?? 0) - (p.deadInvested ?? 0));
+  const deadTotal =
+    Math.round(players.reduce((s, p) => s + (p.deadInvested ?? 0), 0) * 100) / 100;
   const allContributors = players.filter((p) => getInvestment(p) > 0);
-  if (allContributors.length === 0) return [];
+
+  // No live money at all (e.g. everyone folded to dead antes): the dead money
+  // forms a single pot contested by the remaining non-folded players.
+  if (allContributors.length === 0) {
+    if (deadTotal <= 0) return [];
+    return [{ amount: deadTotal, eligiblePlayers: activePlayers.map((p) => p.user_id) }];
+  }
 
   const sortedInvestments = [...new Set(allContributors.map((p) => getInvestment(p)))].sort(
     (a, b) => a - b
@@ -440,8 +453,17 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
     previousLevel = level;
   }
 
+  // Fold the dead money into the main (first / most-contested) pot.
+  if (pots.length > 0 && deadTotal > 0) {
+    pots[0].amount = Math.round((pots[0].amount + deadTotal) * 100) / 100;
+  }
+
   // Merge pots with identical eligible players
-  if (pots.length === 0) return [];
+  if (pots.length === 0) {
+    return deadTotal > 0
+      ? [{ amount: deadTotal, eligiblePlayers: activePlayers.map((p) => p.user_id) }]
+      : [];
+  }
   const merged: Pot[] = [pots[0]];
   for (let i = 1; i < pots.length; i++) {
     const last = merged[merged.length - 1];

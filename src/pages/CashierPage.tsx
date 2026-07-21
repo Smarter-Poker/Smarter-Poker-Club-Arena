@@ -1011,7 +1011,7 @@ export default function CashierPage() {
             text: `Sent ${value.toLocaleString()} chips to ${recipient?.username}`,
           });
         loadBalances(user.id);
-        loadRecipients(); // Refresh balances
+        loadRecipients(true); // Force refresh — a send just changed recipient balances; skip the 60s cache
         setSelectedRecipient('');
         notifyWalletChange(user.id, value);
         notifyWalletChange(selectedRecipient, value);
@@ -1712,7 +1712,7 @@ export default function CashierPage() {
                   setAmount('');
                   setSelectedRecipient('');
                   loadBalances(user.id);
-                  loadRecipients();
+                  loadRecipients(true); // Force refresh — distribution just changed recipient balances
                   // Notify both sender and recipient for cross-page sync
                   notifyWalletChange(user.id, value);
                   notifyWalletChange(selectedRecipient, value);

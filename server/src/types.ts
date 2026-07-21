@@ -49,6 +49,14 @@ export interface SeatPlayer {
   stack: number;
   bet: number;
   totalInvested: number;
+  /**
+   * Dead money portion of totalInvested — antes, a Big Blind Ante posted by the
+   * BB on behalf of the whole table, and dead small blinds. Dead money sits in
+   * the pot but must NOT count as a live bet: it is excluded from uncalled-bet
+   * detection and from side-pot level calculation (otherwise the poster gets a
+   * private side pot / an uncalled-bet refund for chips that belong to the pot).
+   */
+  deadInvested?: number;
   cards: Card[];
   is_folded: boolean;
   is_all_in: boolean;

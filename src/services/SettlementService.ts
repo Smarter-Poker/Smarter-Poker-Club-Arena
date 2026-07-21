@@ -506,10 +506,12 @@ export const SettlementService = {
         'SettlementService.executeMondayPayouts.partial',
         { periodId, totalSucceeded, totalExpected }
       );
+      // DB CHECK allows only open|processing|settled|disputed. 'disputed' is the
+      // canonical "needs manual reconciliation" state for a partial payout run.
       await supabase
         .from('settlement_periods')
         .update({
-          status: 'partial',
+          status: 'disputed',
           notes: `${totalSucceeded}/${totalExpected} payouts succeeded (${Math.round(successRate * 100)}%). Manual reconciliation required.`,
         })
         .eq('id', periodId);
@@ -522,7 +524,7 @@ export const SettlementService = {
       playersWithRakeback,
       totalDisbursed,
       successRate: totalExpected > 0 ? totalSucceeded / totalExpected : 1,
-      status: successRate === 1 ? 'settled' : 'partial',
+      status: successRate === 1 ? 'settled' : 'disputed',
     });
 
     return { agentsPaid, playersWithRakeback, totalDisbursed };

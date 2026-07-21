@@ -1801,8 +1801,11 @@ export class TournamentManager {
 
       try {
         // ── SYNC STACKS: table_seats → tournament_players ──
-        // The poker engine updates table_seats.stack after each hand.
-        // We must sync these back to tournament_players.chips for elimination detection.
+        // The poker engine updates table_seats.stack after each hand. Collect all
+        // seat stacks across every table, then push them to tournament_players in
+        // ONE bulk statement (fn_sync_tournament_chips) instead of one UPDATE per
+        // seat per table every 5s (the old N+1 that flooded Postgres logs).
+        const chipUpdates: { user_id: string; chips: number }[] = [];
         for (const [tableId] of this.tableEngines) {
           const { data: seats } = await supabase
             .from('table_seats')
@@ -1812,23 +1815,24 @@ export class TournamentManager {
 
           if (seats) {
             for (const seat of seats) {
-              // Guard against corrupted stack values (NaN, negative, undefined)
+              // Guard against corrupted stack values (NaN, negative, undefined).
               const stackValue =
                 typeof seat.stack === 'number' && !isNaN(seat.stack) && seat.stack >= 0
                   ? seat.stack
                   : 0;
-              // Math.floor — tournament_players.chips is INTEGER. table_seats.stack
-              // is numeric(15,2) so a fractional stack from cash-style math would
-              // otherwise reach PostgREST as a decimal and fail the integer cast,
-              // contributing to the postgres log flood. Floor at the boundary.
-              await supabase
-                .from('tournament_players')
-                .update({ chips: Math.floor(stackValue) })
-                .eq('tournament_id', this.tournamentId)
-                .eq('user_id', seat.user_id)
-                .eq('status', 'playing');
+              // Floor here too — tournament_players.chips is INTEGER (the RPC also
+              // floors, but keep the payload clean).
+              chipUpdates.push({ user_id: seat.user_id, chips: Math.floor(stackValue) });
             }
           }
+        }
+
+        if (chipUpdates.length > 0) {
+          const { error: syncErr } = await supabase.rpc('fn_sync_tournament_chips', {
+            p_tournament_id: this.tournamentId,
+            p_updates: chipUpdates,
+          });
+          if (syncErr) reportError(syncErr, 'GameServer.syncTournamentChips');
         }
 
         // Find ALL busted players (0 chips) in a single query

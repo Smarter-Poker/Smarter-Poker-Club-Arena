@@ -1340,17 +1340,21 @@ class HorseOrchestrator {
 
         const buyIn = config.bigBlind * 100; // 100 BB
 
-        // Insert seat
-        const { error: seatError } = await supabase.from('table_seats').insert({
-          table_id: tableId,
-          user_id: horse.id,
-          seat_number: seated + 1,
-          stack: buyIn,
-          is_sitting_out: false,
+        // Seat + fund the horse from the club TREASURY atomically (insert seat +
+        // debit chip_treasury in one transaction). Horses no longer mint their
+        // starting stack from nothing; if the treasury is short the horse is not
+        // seated (correct conservation behavior).
+        const { data: seatRes, error: seatError } = await supabase.rpc('fn_horse_seat_from_treasury', {
+          p_table_id: tableId,
+          p_user_id: horse.id,
+          p_seat_number: seated + 1,
+          p_amount: buyIn,
         });
 
-        if (seatError) {
-          console.error(`[Orchestrator] Failed to seat horse ${horse.name}: ${seatError.message}`);
+        if (seatError || !seatRes?.success) {
+          console.error(
+            `[Orchestrator] Failed to seat+fund horse ${horse.name}: ${seatError?.message || seatRes?.error}`
+          );
           continue;
         }
 
@@ -2163,14 +2167,17 @@ class HorseOrchestrator {
               if (seatNumber > availableTable.max_players) continue;
 
               const buyIn = (availableTable.big_blind || 1) * 100;
-              const { error: seatError } = await supabase.from('table_seats').insert({
-                table_id: availableTable.id,
-                user_id: horse.id,
-                seat_number: seatNumber,
-                stack: buyIn,
-                is_sitting_out: false,
-              });
-              if (!seatError) {
+              // Seat + fund from the club treasury atomically (no minting).
+              const { data: seatRes, error: seatError } = await supabase.rpc(
+                'fn_horse_seat_from_treasury',
+                {
+                  p_table_id: availableTable.id,
+                  p_user_id: horse.id,
+                  p_seat_number: seatNumber,
+                  p_amount: buyIn,
+                }
+              );
+              if (!seatError && seatRes?.success) {
                 // Authoritative recount (prevents race if multiple horses seat concurrently)
                 const { count: cashCount, error: cashCountErr } = await supabase
                   .from('table_seats')

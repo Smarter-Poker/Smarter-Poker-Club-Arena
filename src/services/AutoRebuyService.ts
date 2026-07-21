@@ -314,42 +314,27 @@ class AutoRebuyServiceCore {
 
     this.rebuyInProgress.add(rebuyKey);
     try {
-      // Direct stack UPDATE — atomic_table_rebuy RPC has UUID type mismatch bug.
-      // This achieves the same result: add chips to horse's current stack.
-      const { data: currentSeat, error: fetchErr } = await supabase
-        .from('table_seats')
-        .select('stack')
-        .eq('table_id', tableId)
-        .eq('user_id', horseId)
-        .is('left_at', null)
-        .maybeSingle();
-
-      if (fetchErr || !currentSeat) {
-        console.debug(
-          '[AutoRebuy] Could not find seat for rebuy — horse ' +
-            horseId +
-            ': ' +
-            (fetchErr?.message || 'seat not found')
-        );
-        return false;
-      }
-
-      const newStack = (currentSeat.stack || 0) + amount;
-      const { error: updateErr } = await retryAsync(
+      // Fund the rebuy from the club TREASURY atomically (debit chip_treasury +
+      // credit the horse's seat stack + audit row, one transaction). Horses must
+      // not mint chips from nothing — the chips they put in play are real players'
+      // potential winnings, so they come from the club bankroll and the rebuy
+      // fails cleanly if the treasury is short (the horse then just busts, which
+      // is the correct conservation behavior). Replaces the old direct
+      // table_seats.stack += amount, which created chips with no offsetting debit.
+      const { data: fundResult, error: fundErr } = await retryAsync(
         () =>
-          supabase
-            .from('table_seats')
-            .update({ stack: newStack })
-            .eq('table_id', tableId)
-            .eq('user_id', horseId)
-            .is('left_at', null),
+          supabase.rpc('fn_horse_fund_from_treasury', {
+            p_table_id: tableId,
+            p_user_id: horseId,
+            p_amount: amount,
+          }),
         3
       );
 
-      if (updateErr) {
+      if (fundErr || !fundResult?.success) {
+        const reason = fundErr?.message || fundResult?.error || 'unknown error';
         console.debug(
-          '[AutoRebuy] Stack update failed for horse ' + horseId + ':',
-          updateErr.message
+          '[AutoRebuy] Treasury-funded rebuy failed for horse ' + horseId + ': ' + reason
         );
         horseBugReporter.report({
           horseName: 'AutoRebuy',
@@ -361,10 +346,7 @@ class AutoRebuyServiceCore {
           severity: 'high',
           title: 'Auto-rebuy failed',
           description:
-            'Could not complete stack update of ' +
-            amount +
-            ' chips: ' +
-            (updateErr.message || 'unknown error'),
+            'Could not fund rebuy of ' + amount + ' chips from club treasury: ' + reason,
           context: { horseId, tableId, amount },
         });
         return false;

@@ -698,52 +698,11 @@ class UnionServiceClass {
     };
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // UNION SETTINGS (for UnionSettingsPanel)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Get union settings for settings panel
-   */
-  async getUnionSettings(unionId: string): Promise<any> {
-    const union = await this.getUnion(unionId);
-    if (!union) throw new Error('Union not found');
-
-    return {
-      id: union.id,
-      name: union.name,
-      revenueSplit: union.settings?.revenueSharePercent || 10,
-      settlementFrequency: 'weekly',
-      autoSettlement: true,
-      minimumSettlement: 1000,
-      rakeCap: null,
-      allowMemberWithdrawal: true,
-      requireApprovalForJoin: true,
-    };
-  }
-
-  /**
-   * Update union settings from settings panel
-   */
-  async updateUnionSettings(unionId: string, settings: any): Promise<boolean> {
-    const { error } = await supabase
-      .from('unions')
-      .update({
-        settings: {
-          revenue_share_percent: settings.revenueSplit,
-          shared_player_pool: true,
-          cross_club_tournaments: true,
-        },
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', unionId);
-
-    if (!error) {
-      masterBus.emit('UNION_UPDATED', { unionId });
-    }
-
-    return !error;
-  }
+  // IMPROVE 2026-07-21: getUnionSettings/updateUnionSettings removed — they
+  // served only the deleted UnionSettingsPanel (never mounted), returned
+  // hardcoded values, and updateUnionSettings both bypassed the API (RLS
+  // no-op for browsers) and would have WIPED other settings keys by
+  // overwriting the whole settings object. updateUnion is the live path.
 
   /**
    * Update individual club revenue splits

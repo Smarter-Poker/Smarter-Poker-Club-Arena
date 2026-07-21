@@ -155,6 +155,11 @@ export default function UnionDashboardPage() {
   const [appsFilter, setAppsFilter] = useState('pending');
   const [appsLoaded, setAppsLoaded] = useState(false);
 
+  // Leave requests (IMPROVE 2026-07-21)
+  const [leaveReqs, setLeaveReqs] = useState<
+    Array<{ id: string; club_name?: string; reason?: string | null; requested_at: string }>
+  >([]);
+
   // Activity
 
   // Wallet transfer form (Send Chips to Club)
@@ -452,11 +457,27 @@ export default function UnionDashboardPage() {
     }
   }, [unionId, appsFilter]);
 
+  // ── Load leave requests (IMPROVE 2026-07-21) ───────────────
+  const loadLeaveReqs = useCallback(async () => {
+    if (!unionId) return;
+    try {
+      const result = await unionApi.listLeaveRequests(unionId);
+      if (mountedRef.current) {
+        setLeaveReqs((result.leaveRequests as any[]) || []);
+      }
+    } catch (_e) {
+      /* silent — non-leads may not have access */
+    }
+  }, [unionId]);
+
   // ── Tab-based lazy loading ─────────────────────────────────
   useEffect(() => {
     if (!unionId) return;
-    if (tab === 'applications' && !appsLoaded) loadApps();
-  }, [tab, unionId, appsLoaded, loadApps]);
+    if (tab === 'applications' && !appsLoaded) {
+      loadApps();
+      loadLeaveReqs();
+    }
+  }, [tab, unionId, appsLoaded, loadApps, loadLeaveReqs]);
 
   // ── Bus Listeners ──────────────────────────────────────────
   useEffect(() => {
@@ -515,6 +536,17 @@ export default function UnionDashboardPage() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'unions', filter: `id=eq.${unionId}` },
         () => loadDashboard(unionId)
+      )
+      // IMPROVE 2026-07-21: live jackpot — the BBJ tiles tick as engine
+      // contributions land in the shared pool (every raked hand at union clubs).
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'bbj_pools', filter: `union_id=eq.${unionId}` },
+        (payload: { new?: Record<string, unknown> }) => {
+          if (mountedRef.current && payload.new) {
+            setBbjPool((prev) => ({ ...(prev || {}), ...(payload.new as any) }));
+          }
+        }
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
@@ -1766,6 +1798,83 @@ export default function UnionDashboardPage() {
               <div className="admin-empty-state">
                 <span className="admin-empty-icon">📝</span>
                 <span>No {appsFilter} applications</span>
+              </div>
+            )}
+
+            {/* LEAVE REQUESTS — clubs asking to exit the union (IMPROVE 2026-07-21) */}
+            <h3 className="admin-section-title" style={{ marginTop: '24px' }}>
+              Leave Requests
+            </h3>
+            {leaveReqs.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {leaveReqs.map((lr) => (
+                  <div key={lr.id} className="admin-card" style={{ padding: '14px' }}>
+                    <div style={{ fontWeight: 600 }}>{lr.club_name || 'Club'}</div>
+                    {lr.reason && (
+                      <div
+                        style={{
+                          fontSize: '13px',
+                          color: 'var(--text-secondary)',
+                          fontStyle: 'italic',
+                          margin: '4px 0',
+                        }}
+                      >
+                        "{lr.reason}"
+                      </div>
+                    )}
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      Requested {timeAgo(lr.requested_at)}
+                    </div>
+                    {isLead && (
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+                        <button
+                          className="admin-btn admin-btn-success admin-btn-sm"
+                          disabled={processing}
+                          onClick={async () => {
+                            if (!confirm(`Approve ${lr.club_name}'s exit from the union?`)) return;
+                            setProcessing(true);
+                            setError(null);
+                            try {
+                              await unionApi.approveLeave(unionId!, lr.id);
+                              setSuccess(`${lr.club_name} has left the union`);
+                              loadLeaveReqs();
+                              loadDashboard(unionId);
+                            } catch (err: any) {
+                              setError(err.message);
+                            } finally {
+                              setProcessing(false);
+                            }
+                          }}
+                        >
+                          Approve Exit
+                        </button>
+                        <button
+                          className="admin-btn admin-btn-danger admin-btn-sm"
+                          disabled={processing}
+                          onClick={async () => {
+                            setProcessing(true);
+                            setError(null);
+                            try {
+                              await unionApi.denyLeave(unionId!, lr.id);
+                              setSuccess(`${lr.club_name}'s leave request denied`);
+                              loadLeaveReqs();
+                            } catch (err: any) {
+                              setError(err.message);
+                            } finally {
+                              setProcessing(false);
+                            }
+                          }}
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="admin-empty-state">
+                <span>No pending leave requests</span>
               </div>
             )}
           </div>

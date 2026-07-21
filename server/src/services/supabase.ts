@@ -618,6 +618,14 @@ export async function logRakeCollection(
  *   STANDARD (<100k main pool): 50% Main, 25% Backup, 25% Promo
  *   PIVOT (≥100k main pool): 30% Main, 40% Backup, 30% Promo
  */
+// IMPROVE 2026-07-21: per-hand BBJ collection used to run TWO extra queries
+// per raked hand (clubs.union_id + the pool lookup). Cache the resolved pool
+// id per club with a 5-minute TTL — pool membership changes are rare (a club
+// joining/leaving a union), and the TTL bounds the staleness window. The
+// pivot check still reads the LIVE main_balance via the cached pool id.
+const bbjPoolCache = new Map<string, { poolId: string; expiresAt: number }>();
+const BBJ_POOL_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export async function logBBJCollection(
   tableId: string,
   clubId: string,
@@ -638,26 +646,49 @@ export async function logBBJCollection(
   };
 
   try {
-    // Find the BBJ pool for this club (or its union)
-    const { data: club } = await supabase
-      .from('clubs')
-      .select('union_id')
-      .eq('id', clubId)
-      .maybeSingle();
+    let pool: { id: string; main_balance: number | null } | null = null;
 
-    if (!club) {
-      console.warn(`[logBBJCollection] Club ${clubId} not found — skipping BBJ logging`);
-      return;
+    const cached = bbjPoolCache.get(clubId);
+    if (cached && cached.expiresAt > Date.now()) {
+      // Cached pool id — one query for the live balance (pivot check).
+      const { data: cachedPool } = await supabase
+        .from('bbj_pools')
+        .select('id, main_balance')
+        .eq('id', cached.poolId)
+        .maybeSingle();
+      pool = cachedPool;
+      if (!pool) bbjPoolCache.delete(clubId); // pool vanished — fall through
     }
 
-    // Look up pool: union-level first, then club-level — include main_balance for pivot check
-    let poolQuery = supabase.from('bbj_pools').select('id, main_balance');
-    if (club.union_id) {
-      poolQuery = poolQuery.eq('union_id', club.union_id);
-    } else {
-      poolQuery = poolQuery.eq('club_id', clubId);
+    if (!pool) {
+      // Find the BBJ pool for this club (or its union)
+      const { data: club } = await supabase
+        .from('clubs')
+        .select('union_id')
+        .eq('id', clubId)
+        .maybeSingle();
+
+      if (!club) {
+        console.warn(`[logBBJCollection] Club ${clubId} not found — skipping BBJ logging`);
+        return;
+      }
+
+      // Look up pool: union-level first, then club-level — include main_balance for pivot check
+      let poolQuery = supabase.from('bbj_pools').select('id, main_balance');
+      if (club.union_id) {
+        poolQuery = poolQuery.eq('union_id', club.union_id);
+      } else {
+        poolQuery = poolQuery.eq('club_id', clubId);
+      }
+      const { data: freshPool } = await poolQuery.maybeSingle();
+      pool = freshPool;
+      if (pool) {
+        bbjPoolCache.set(clubId, {
+          poolId: pool.id,
+          expiresAt: Date.now() + BBJ_POOL_CACHE_TTL_MS,
+        });
+      }
     }
-    const { data: pool } = await poolQuery.maybeSingle();
 
     if (!pool) {
       console.warn(`[logBBJCollection] No BBJ pool found for club ${clubId} — skipping`);

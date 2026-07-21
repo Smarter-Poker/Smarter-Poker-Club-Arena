@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './CreateUnionPage.module.css';
 import { supabase } from '../lib/supabase';
+import { unionApi } from '../services/UnionApiService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
@@ -155,24 +156,22 @@ export default function CreateUnionPage() {
     setError(null);
 
     try {
-      const { data, error: insertError } = await supabase
-        .from('unions')
-        .insert({
-          name: sanitizeInput(form.name.trim()),
-          description: form.description.trim() ? sanitizeInput(form.description.trim()) : null,
-          owner_id: user?.id,
-          settings: {
-            revenue_share_percent: form.revenueSharePercent,
-            shared_player_pool: form.sharedPlayerPool,
-            cross_club_tournaments: form.crossClubTournaments,
-            settlement_day: form.settlementDay,
-            grace_period_days: form.gracePeriodDays,
-          },
-        })
-        .select()
-        .maybeSingle();
-
-      if (insertError) throw insertError;
+      // UNION AUDIT FIX 2026-07-21: unions is service-role-write-only under RLS,
+      // so the old direct insert silently failed for browser users. Create via
+      // the World Hub manage-union API (server-side sanitization + admin/wallet/
+      // BBJ-pool provisioning; creator identity comes from the bearer token).
+      const result = await unionApi.createUnion(
+        sanitizeInput(form.name.trim()),
+        form.description.trim() ? sanitizeInput(form.description.trim()) : '',
+        {
+          revenue_share_percent: form.revenueSharePercent,
+          shared_player_pool: form.sharedPlayerPool,
+          cross_club_tournaments: form.crossClubTournaments,
+          settlement_day: form.settlementDay,
+          grace_period_days: form.gracePeriodDays,
+        }
+      );
+      const data = result.union as { id: string } | undefined;
       if (!data) throw new Error('Union creation returned no data');
 
       masterBus.emit('UNION_UPDATED', { unionId: data.id });

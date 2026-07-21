@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import './AdminDashboardPage.css';
@@ -50,7 +51,7 @@ interface UnionClubRow {
   id: string;
   club_id: string;
   clubs: Record<string, unknown>;
-  commission_rate?: number;
+  club_commission_rate?: number;
   [key: string]: unknown;
 }
 interface EnrichedClub {
@@ -268,7 +269,7 @@ export default function UnionDashboardPage() {
     const { data: unionRow } = await supabase
       .from('unions')
       .select(
-        'id, name, description, owner_id, created_at, member_count, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+        'id, name, description, owner_id, created_at, member_count, settings, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
       )
       .eq('id', uid)
       .maybeSingle();
@@ -282,7 +283,9 @@ export default function UnionDashboardPage() {
     const enrichedClubs = (unionClubs || []).map((uc: UnionClubRow) => ({
       id: uc.club_id,
       ...uc.clubs,
-      club_commission_rate: uc.commission_rate || 0.9,
+      // UNION AUDIT FIX 2026-07-21: live column is club_commission_rate
+      // (commission_rate never existed on union_clubs — reads were undefined).
+      club_commission_rate: uc.club_commission_rate || 0.9,
     }));
     if (mountedRef.current) setClubs(enrichedClubs);
 
@@ -399,18 +402,24 @@ export default function UnionDashboardPage() {
   const loadApps = useCallback(async () => {
     if (!unionId) return;
     try {
-      let query = supabase
-        .from('union_applications')
-        // union_applications schema: notes (not message)
-        .select('id, union_id, club_name, club_id, applicant_id, status, notes, created_at')
-        .eq('union_id', unionId)
-        .order('created_at', { ascending: false });
-      if (appsFilter !== 'all') {
-        query = query.eq('status', appsFilter);
-      }
-      const { data } = await query;
+      // UNION AUDIT FIX 2026-07-21: the direct select used columns that do not
+      // exist (applicant_id/notes/created_at vs live applicant_user_id/message/
+      // applied_at) AND union_applications RLS only lets the APPLICANT read —
+      // union leads always saw an empty tab. The union-application API lists
+      // with the service role after a union-lead auth check.
+      const result = await unionApi.listApplications(unionId, appsFilter);
+      const rows = ((result.applications as any[]) || []).map((a) => ({
+        id: a.id,
+        union_id: a.union_id,
+        club_name: a.club_name,
+        club_id: a.club_id,
+        applicant_id: a.applicant_user_id,
+        status: a.status,
+        notes: a.message ?? a.review_note ?? null,
+        created_at: a.applied_at,
+      }));
       if (mountedRef.current) {
-        setApps(data || []);
+        setApps(rows);
         setAppsLoaded(true);
       }
     } catch (_e) {
@@ -627,12 +636,11 @@ export default function UnionDashboardPage() {
                     setProcessing(true);
                     setError(null);
                     try {
-                      const { error: commErr } = await supabase
-                        .from('union_clubs')
-                        .update({ commission_rate: rate })
-                        .eq('union_id', unionId)
-                        .eq('club_id', editCommClub.id);
-                      if (commErr) throw commErr;
+                      // UNION AUDIT FIX 2026-07-21: direct update targeted a
+                      // non-existent column AND was RLS-blocked. Route through
+                      // manage-union update_club_commission (service-role;
+                      // syncs union_clubs + clubs).
+                      await unionApi.updateClubCommission(unionId!, editCommClub.id, rate);
                       masterBus.emit('CLUB_UPDATED', { clubId: editCommClub.id });
                       setSuccess('Commission updated');
                       setEditCommClub(null);
@@ -847,15 +855,12 @@ export default function UnionDashboardPage() {
                       setProcessing(true);
                       setError(null);
                       try {
-                        const { error: annErr } = await supabase
-                          .from('union_announcements')
-                          .insert({
-                            union_id: unionId,
-                            message: annMsg,
-                            club_id: annClub || null,
-                            created_by: user?.id,
-                          });
-                        if (annErr) throw annErr;
+                        // UNION AUDIT FIX 2026-07-21: union_announcements was a
+                        // write-only dead table (nothing reads it). The
+                        // manage-union API posts into club_announcements — the
+                        // feed members actually see — for every club in the
+                        // union (or one targeted club).
+                        await unionApi.announce(unionId!, annMsg, annClub || undefined);
                         masterBus.emit('ANNOUNCEMENT_CHANGED', {
                           clubId: annClub || unionId || '',
                           action: 'created',
@@ -1139,33 +1144,23 @@ export default function UnionDashboardPage() {
                           return;
                         }
 
-                        // 1. Deduct from owner's player wallet
-                        const { data: deductResult, error: deductErr } = await supabase.rpc(
-                          'atomic_deduct_wallet_and_log',
-                          {
-                            p_user_id: user!.id,
-                            p_amount: amt,
-                            p_category: 'deposit_to_union',
-                            p_description: `Deposit to Union Bank: ${depositForm.notes || 'Union funding'}`,
-                            p_table_id: null,
-                            p_hand_id: null,
-                            p_related_entity_id: unionId,
-                          }
-                        );
-                        if (deductErr)
-                          throw new Error(
-                            deductErr.message || 'Failed to deduct from player wallet'
-                          );
-
-                        // 2. Atomic credit to union chip_balance — single SQL UPDATE prevents TOCTOU race
-                        const { error: uwErr } = await supabase.rpc(
-                          'increment_union_chip_balance',
+                        // UNION AUDIT FIX 2026-07-21: was a two-step client-side
+                        // chain (wallet debit succeeded, union credit RLS-blocked)
+                        // that could strand the owner's chips. Now one atomic
+                        // SECURITY DEFINER RPC — debit + credit + ledger in a
+                        // single transaction, union-lead check inside.
+                        const { data: depRes, error: depErr } = await supabase.rpc(
+                          'fn_union_deposit_from_wallet',
                           {
                             p_union_id: unionId,
                             p_amount: amt,
+                            p_notes: depositForm.notes || 'Union funding',
                           }
                         );
-                        if (uwErr) throw new Error('Failed to credit union bank: ' + uwErr.message);
+                        if (depErr) throw new Error(depErr.message || 'Deposit failed');
+                        if (depRes && (depRes as any).success === false) {
+                          throw new Error((depRes as any).error || 'Deposit failed');
+                        }
 
                         setSuccess(`Deposited ${amt.toLocaleString()} chips to Union Bank`);
                         masterBus.emit('BALANCE_UPDATED', {
@@ -1258,36 +1253,36 @@ export default function UnionDashboardPage() {
                         const [targetType, targetId] = target.split(':');
 
                         if (targetType === 'club') {
-                          // Atomic clawback from club treasury — prevents negative balance + TOCTOU race
+                          // UNION AUDIT FIX 2026-07-21: was a two-step chain
+                          // (treasury debit + separate union credit) that could
+                          // strand chips if the second call failed. Now one
+                          // atomic SECURITY DEFINER RPC with the union-lead
+                          // check and both ledger rows inside.
                           const { data: clubName } = await supabase
                             .from('clubs')
                             .select('name')
                             .eq('id', targetId)
                             .maybeSingle();
-                          const { error: decrErr } = await supabase.rpc('decrement_club_treasury', {
-                            p_club_id: targetId,
-                            p_amount: amt,
-                          });
-                          if (decrErr) {
+                          const { data: cbRes, error: cbErr } = await supabase.rpc(
+                            'fn_union_clawback_from_club',
+                            {
+                              p_union_id: unionId,
+                              p_club_id: targetId,
+                              p_amount: amt,
+                              p_notes: reason,
+                            }
+                          );
+                          if (cbErr) throw new Error(cbErr.message || 'Clawback failed');
+                          if (cbRes && (cbRes as any).success === false) {
+                            const msg = (cbRes as any).error || 'Clawback failed';
                             setError(
-                              decrErr.message?.includes('insufficient')
+                              msg.includes('insufficient')
                                 ? 'Club has insufficient treasury balance'
-                                : 'Failed to deduct from club: ' + decrErr.message
+                                : msg
                             );
                             setProcessing(false);
                             return;
                           }
-
-                          // Atomic credit to union bank
-                          const { error: uwErr2 } = await supabase.rpc(
-                            'increment_union_chip_balance',
-                            {
-                              p_union_id: unionId,
-                              p_amount: amt,
-                            }
-                          );
-                          if (uwErr2)
-                            throw new Error('Failed to credit union bank: ' + uwErr2.message);
 
                           setSuccess(
                             `Clawed back ${amt.toLocaleString()} chips from ${clubName?.name || 'club'}`
@@ -1357,17 +1352,17 @@ export default function UnionDashboardPage() {
                           setProcessing(false);
                           return;
                         }
-                        // Atomic RPC: debits union_wallets, credits club wallet, logs to union_transactions
-                        const { data: result, error: rpcErr } = await supabase.rpc(
-                          'fn_union_send_chips_to_club',
-                          {
-                            p_union_id: unionId,
-                            p_club_id: transferForm.clubId,
-                            p_amount: chipAmount,
-                            p_notes: transferForm.notes || null,
-                          }
+                        // UNION AUDIT FIX 2026-07-21: fn_union_send_chips_to_club
+                        // is not SECURITY DEFINER, so calling it as a browser
+                        // user was RLS-blocked (silent no-op). Route through the
+                        // hardened union-wallet API (service role, idempotency
+                        // key, debit->credit with rollback).
+                        await unionApi.sendToClub(
+                          unionId!,
+                          transferForm.clubId,
+                          chipAmount,
+                          transferForm.notes || undefined
                         );
-                        if (rpcErr) throw rpcErr;
                         setSuccess(`Sent ${chipAmount.toLocaleString()} chips to club`);
                         masterBus.emit('BALANCE_UPDATED', { source: 'union_transfer' });
                         setTransferForm({ clubId: '', amount: '', notes: '' });
@@ -1626,42 +1621,19 @@ export default function UnionDashboardPage() {
                             setProcessing(true);
                             setError(null);
                             try {
-                              // 1. Join club to union FIRST (if join fails, app stays pending → recoverable)
+                              // UNION AUDIT FIX 2026-07-21: the direct upsert
+                              // wrote a non-existent column (commission_rate)
+                              // and was RLS-blocked anyway. The union-application
+                              // API approves + integrates the club server-side
+                              // (union_clubs upsert with the correct
+                              // club_commission_rate, clubs.union_id link,
+                              // application status) after a union-lead check.
+                              const defaultCommRate =
+                                Number(union?.settings?.default_club_commission_rate) || 0.9;
+                              await unionApi.approveApplication(unionId!, app.id, defaultCommRate);
                               if (app.club_id) {
-                                const defaultCommRate =
-                                  Number(union?.settings?.default_club_commission_rate) || 0.9;
-                                const { error: joinErr } = await supabase
-                                  .from('union_clubs')
-                                  .upsert(
-                                    {
-                                      union_id: unionId,
-                                      club_id: app.club_id,
-                                      commission_rate: defaultCommRate,
-                                    },
-                                    { onConflict: 'union_id,club_id' }
-                                  );
-                                if (joinErr)
-                                  throw new Error(
-                                    'Failed to join club to union: ' + joinErr.message
-                                  );
-
-                                // 2. Update clubs.union_id so the club is associated
-                                const { error: clubErr } = await supabase
-                                  .from('clubs')
-                                  .update({ union_id: unionId })
-                                  .eq('id', app.club_id);
-                                if (clubErr)
-                                  throw new Error('Failed to associate club: ' + clubErr.message);
-
                                 masterBus.emit('CLUB_UPDATED', { clubId: app.club_id });
                               }
-
-                              // 3. Mark application as approved LAST (only after join succeeded)
-                              const { error: appErr } = await supabase
-                                .from('union_applications')
-                                .update({ status: 'approved' })
-                                .eq('id', app.id);
-                              if (appErr) throw appErr;
 
                               setSuccess(`${app.club_name} approved and joined the union`);
                               setAppsLoaded(false);
@@ -1684,11 +1656,10 @@ export default function UnionDashboardPage() {
                             setProcessing(true);
                             setError(null);
                             try {
-                              const { error: rejErr } = await supabase
-                                .from('union_applications')
-                                .update({ status: 'rejected' })
-                                .eq('id', app.id);
-                              if (rejErr) throw rejErr;
+                              // UNION AUDIT FIX 2026-07-21: routed through the
+                              // union-application API (RLS blocked the direct
+                              // update for union leads).
+                              await unionApi.rejectApplication(unionId!, app.id);
                               setSuccess(`${app.club_name} rejected`);
                               setAppsLoaded(false);
                               loadApps();
@@ -1844,11 +1815,15 @@ export default function UnionDashboardPage() {
                       }
                       if (Object.keys(settings).length > 0)
                         updates.settings = { ...(union?.settings || {}), ...settings };
-                      const { error: setErr } = await supabase
-                        .from('unions')
-                        .update(updates)
-                        .eq('id', unionId);
-                      if (setErr) throw setErr;
+                      // UNION AUDIT FIX 2026-07-21: direct unions.update was
+                      // RLS-blocked for browser users (silent no-op). Route
+                      // through manage-union update_settings, which also
+                      // validates the financial settings server-side.
+                      await unionApi.updateSettings(unionId!, {
+                        name: updates.name as string | undefined,
+                        description: updates.description as string | undefined,
+                        settings: updates.settings as Record<string, unknown> | undefined,
+                      });
                       masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
                       setSuccess('Settings saved');
                       loadDashboard(unionId);
@@ -1931,12 +1906,9 @@ export default function UnionDashboardPage() {
                                   setProcessing(true);
                                   setError(null);
                                   try {
-                                    const { error: delErr } = await supabase
-                                      .from('union_admins')
-                                      .delete()
-                                      .eq('union_id', unionId)
-                                      .eq('user_id', admin.user_id);
-                                    if (delErr) throw delErr;
+                                    // UNION AUDIT FIX 2026-07-21: RLS-blocked
+                                    // direct delete -> manage-union remove_admin.
+                                    await unionApi.removeAdmin(unionId!, admin.user_id);
                                     masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
                                     setSuccess('Admin removed');
                                     loadDashboard(unionId);
@@ -2021,14 +1993,9 @@ export default function UnionDashboardPage() {
                               setProcessing(true);
                               setError(null);
                               try {
-                                const { error: addErr } = await supabase
-                                  .from('union_admins')
-                                  .insert({
-                                    union_id: unionId,
-                                    user_id: u.id,
-                                    role: 'union_admin',
-                                  });
-                                if (addErr) throw addErr;
+                                // UNION AUDIT FIX 2026-07-21: RLS-blocked direct
+                                // insert -> manage-union add_admin.
+                                await unionApi.addAdmin(unionId!, u.id);
                                 masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
                                 setSuccess(`${u.display_name || u.username} added as admin`);
                                 setAdminResults([]);

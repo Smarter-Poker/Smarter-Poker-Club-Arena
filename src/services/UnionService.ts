@@ -8,6 +8,7 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { unionApi } from './UnionApiService';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
@@ -286,56 +287,62 @@ class UnionServiceClass {
     ownerId: string,
     settings?: Partial<UnionSettings>
   ): Promise<Union> {
-    const { data, error } = await supabase
-      .from('unions')
-      .insert({
-        name,
-        description,
-        owner_id: ownerId,
-        is_public: true,
-        settings: {
-          revenue_share_percent: 10,
-          shared_player_pool: true,
-          cross_club_tournaments: true,
-          ...settings,
-        },
-      })
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) throw new Error('Union creation returned no data');
-
-    // Add owner as union_lead
-    await this.addAdmin(data.id, ownerId, 'union_lead');
-
-    return this.mapUnion(data);
+    // UNION AUDIT FIX 2026-07-21: unions is service-role-write-only under RLS,
+    // so the old direct insert silently failed for browser users. Create via
+    // the World Hub manage-union API (which also seeds the union wallet, the
+    // shared BBJ pool, and the creator's union_lead admin row).
+    const result = await unionApi.createUnion(name, description, {
+      revenue_share_percent: 10,
+      shared_player_pool: true,
+      cross_club_tournaments: true,
+      ...settings,
+    });
+    const created = result.union as Record<string, unknown> | undefined;
+    if (!created) throw new Error('Union creation returned no data');
+    void ownerId; // creator identity comes from the API bearer token
+    return this.mapUnion(created);
   }
 
   /**
    * Update union
    */
   async updateUnion(unionId: string, updates: Partial<Union>): Promise<Union | null> {
-    const { data, error } = await supabase
-      .from('unions')
-      .update({
-        name: updates.name,
-        description: updates.description,
-        avatar_url: updates.avatarUrl,
-        is_public: updates.isPublic,
-        settings: updates.settings,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', unionId)
-      .select()
-      .maybeSingle();
+    // UNION AUDIT FIX 2026-07-21: direct updates silently failed under RLS
+    // (service-role only). Route through manage-union update_settings, and
+    // normalize settings to the canonical snake_case keys — the Detail page
+    // used to send camelCase, which mapUnion could never read back (saved
+    // settings were silently lost).
+    const rawSettings = updates.settings as unknown as Record<string, unknown> | undefined;
+    const settings: Record<string, unknown> | undefined = rawSettings
+      ? {
+          ...rawSettings,
+          ...(rawSettings.revenueSharePercent !== undefined
+            ? { revenue_share_percent: rawSettings.revenueSharePercent }
+            : {}),
+          ...(rawSettings.sharedPlayerPool !== undefined
+            ? { shared_player_pool: rawSettings.sharedPlayerPool }
+            : {}),
+          ...(rawSettings.crossClubTournaments !== undefined
+            ? { cross_club_tournaments: rawSettings.crossClubTournaments }
+            : {}),
+        }
+      : undefined;
+    if (settings) {
+      delete settings.revenueSharePercent;
+      delete settings.sharedPlayerPool;
+      delete settings.crossClubTournaments;
+    }
 
-    if (error) throw error;
-    if (!data) return null;
+    const result = await unionApi.updateSettings(unionId, {
+      name: updates.name,
+      description: updates.description,
+      settings,
+    });
+    const data = result.union as Record<string, unknown> | undefined;
 
     masterBus.emit('UNION_UPDATED', { unionId });
 
-    return this.mapUnion(data);
+    return data ? this.mapUnion(data) : this.getUnion(unionId);
   }
 
   /**
@@ -403,37 +410,35 @@ class UnionServiceClass {
   async addAdmin(
     unionId: string,
     userId: string,
-    role: 'union_lead' | 'union_admin' = 'union_admin'
+    _role: 'union_lead' | 'union_admin' = 'union_admin'
   ): Promise<boolean> {
-    const { error } = await supabase.from('union_admins').insert({
-      union_id: unionId,
-      user_id: userId,
-      role,
-      permissions: { manage_clubs: true, manage_settlements: true },
-    });
-
-    if (!error) {
+    // UNION AUDIT FIX 2026-07-21: union_admins is service-role-write-only under
+    // RLS — the direct insert silently failed for browser users. Route through
+    // manage-union (union_lead auth enforced server-side; role is always
+    // union_admin — leads are created only at union creation).
+    try {
+      await unionApi.addAdmin(unionId, userId);
       masterBus.emit('UNION_UPDATED', { unionId });
+      return true;
+    } catch (err) {
+      reportError(err, 'UnionService.addAdmin');
+      return false;
     }
-
-    return !error;
   }
 
   /**
    * Remove admin from union
    */
   async removeAdmin(unionId: string, userId: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('union_admins')
-      .delete()
-      .eq('union_id', unionId)
-      .eq('user_id', userId);
-
-    if (!error) {
+    // UNION AUDIT FIX 2026-07-21: routed through manage-union (see addAdmin).
+    try {
+      await unionApi.removeAdmin(unionId, userId);
       masterBus.emit('UNION_UPDATED', { unionId });
+      return true;
+    } catch (err) {
+      reportError(err, 'UnionService.removeAdmin');
+      return false;
     }
-
-    return !error;
   }
 
   /**
@@ -552,83 +557,40 @@ class UnionServiceClass {
    * Add club to union
    */
   async addClub(unionId: string, clubId: string): Promise<boolean> {
-    // Resolve club UUID once for consistent usage across all queries
-    const resolvedClubId = await resolveClubUUID(clubId);
-
-    const { error } = await supabase.from('union_clubs').insert({
-      union_id: unionId,
-      club_id: resolvedClubId,
-    });
-
-    if (error) return false;
-
-    // Update union club_count from actual union_clubs count (race-safe)
-    const { count: clubCount } = await supabase
-      .from('union_clubs')
-      .select('*', { count: 'exact', head: true })
-      .eq('union_id', unionId);
-
-    if (clubCount !== null) {
-      const { error: countErr } = await supabase
-        .from('unions')
-        .update({ club_count: clubCount })
-        .eq('id', unionId);
-      if (countErr) reportError(countErr, 'UnionService.addClub.updateCount');
+    // UNION AUDIT FIX 2026-07-21: this used to force-join the club into
+    // union_clubs directly — which both silently failed under RLS AND was the
+    // wrong workflow (the UI says "Application sent"; the union owner is
+    // supposed to approve). It now SUBMITS AN APPLICATION via the World Hub
+    // union-application route; the union lead approves it from the dashboard
+    // Applications tab, which performs the actual join server-side.
+    try {
+      const resolvedClubId = await resolveClubUUID(clubId);
+      await unionApi.apply(unionId, resolvedClubId);
+      masterBus.emit('UNION_UPDATED', { unionId });
+      return true;
+    } catch (err) {
+      reportError(err, 'UnionService.addClub.apply');
+      return false;
     }
-
-    // Update club's union_id
-    const { error: linkErr } = await supabase
-      .from('clubs')
-      .update({ union_id: unionId })
-      .eq('id', resolvedClubId);
-    if (linkErr) reportError(linkErr, 'UnionService.addClub.linkClub');
-
-    masterBus.emit('UNION_UPDATED', { unionId });
-    masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
-
-    return true;
   }
 
   /**
    * Remove club from union
    */
   async removeClub(unionId: string, clubId: string): Promise<boolean> {
-    // Resolve club UUID once for consistent usage across all queries
-    const resolvedClubId = await resolveClubUUID(clubId);
-
-    const { error } = await supabase
-      .from('union_clubs')
-      .delete()
-      .eq('union_id', unionId)
-      .eq('club_id', resolvedClubId);
-
-    if (error) return false;
-
-    // Update union club_count from actual union_clubs count (race-safe)
-    const { count: clubCount } = await supabase
-      .from('union_clubs')
-      .select('*', { count: 'exact', head: true })
-      .eq('union_id', unionId);
-
-    if (clubCount !== null) {
-      const { error: countErr } = await supabase
-        .from('unions')
-        .update({ club_count: clubCount })
-        .eq('id', unionId);
-      if (countErr) reportError(countErr, 'UnionService.removeClub.updateCount');
+    // UNION AUDIT FIX 2026-07-21: routed through manage-union remove_club
+    // (service-role; also unlinks clubs.union_id and keeps counts in sync
+    // server-side). The direct deletes silently failed under RLS.
+    try {
+      const resolvedClubId = await resolveClubUUID(clubId);
+      await unionApi.removeClub(unionId, resolvedClubId);
+      masterBus.emit('UNION_UPDATED', { unionId });
+      masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
+      return true;
+    } catch (err) {
+      reportError(err, 'UnionService.removeClub');
+      return false;
     }
-
-    // Update club's union_id to null
-    const { error: unlinkErr } = await supabase
-      .from('clubs')
-      .update({ union_id: null })
-      .eq('id', resolvedClubId);
-    if (unlinkErr) reportError(unlinkErr, 'UnionService.removeClub.unlinkClub');
-
-    masterBus.emit('UNION_UPDATED', { unionId });
-    masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
-
-    return true;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -727,16 +689,16 @@ class UnionServiceClass {
    * Update individual club revenue splits
    */
   async updateClubSplits(unionId: string, splits: Record<string, number>): Promise<boolean> {
-    // Update each club's commission rate in union_clubs
+    // UNION AUDIT FIX 2026-07-21: routed through manage-union
+    // update_club_commission (union_clubs is service-role-write-only under
+    // RLS; the route also keeps clubs.club_commission_rate in sync).
     let anyFailed = false;
     for (const [clubId, splitPercent] of Object.entries(splits)) {
-      const { error: splitErr } = await supabase
-        .from('union_clubs')
-        .update({ club_commission_rate: splitPercent / 100 })
-        .eq('union_id', unionId)
-        .eq('club_id', await resolveClubUUID(clubId));
-      if (splitErr) {
-        reportError(splitErr, 'UnionService.updateSplits', { clubId });
+      try {
+        const resolved = await resolveClubUUID(clubId);
+        await unionApi.updateClubCommission(unionId, resolved, splitPercent / 100);
+      } catch (err) {
+        reportError(err, 'UnionService.updateSplits', { clubId });
         anyFailed = true;
       }
     }
@@ -805,9 +767,13 @@ class UnionServiceClass {
       hierarchyThresholdCurrent: u.hierarchy_threshold_current || 0,
       hierarchyThresholdNext: u.hierarchy_threshold_next || 0,
       settings: {
-        revenueSharePercent: u.settings?.revenue_share_percent || 10,
-        sharedPlayerPool: u.settings?.shared_player_pool ?? true,
-        crossClubTournaments: u.settings?.cross_club_tournaments ?? true,
+        // UNION AUDIT FIX 2026-07-21: tolerate legacy camelCase keys written by
+        // the old (broken) Detail-page save path, preferring canonical snake_case.
+        revenueSharePercent:
+          u.settings?.revenue_share_percent ?? u.settings?.revenueSharePercent ?? 10,
+        sharedPlayerPool: u.settings?.shared_player_pool ?? u.settings?.sharedPlayerPool ?? true,
+        crossClubTournaments:
+          u.settings?.cross_club_tournaments ?? u.settings?.crossClubTournaments ?? true,
       },
       createdAt: u.created_at,
       updatedAt: u.updated_at,

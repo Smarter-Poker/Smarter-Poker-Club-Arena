@@ -605,36 +605,96 @@ class UnionServiceClass {
     periodStart?: string,
     periodEnd?: string
   ): Promise<UnionSettlement> {
-    // Get union details
+    // REAL FINANCIALS 2026-07-21 (was a client-side estimate): numbers now
+    // come from the union's actual money ledger.
+    //   - union_wallet_transactions tx_type='settlement_hold' credits = the
+    //     REAL union tax collected per club in the window (written by the
+    //     settle-period close, conserved against club treasuries).
+    //   - tx_type='rake' credits = engine-held union rake (tournament fees).
+    //   - Per-club rake is derived from its hold and the union_rake_hold rate
+    //     the hold was taken at (union settings; default 10%).
+    // union_wallet_transactions is readable by union admins under RLS.
     const union = await this.getUnion(unionId);
     if (!union) throw new Error('Union not found');
 
-    // Get clubs
     const clubs = await this.getUnionClubs(unionId);
 
-    // Calculate totals (would come from settlement_periods in production)
-    const totalRake = clubs.reduce((sum, c) => sum + c.weeklyRake, 0);
-    const revenueShareRate = union.settings?.revenueSharePercent || 10;
-    const totalUnionTax = totalRake * (revenueShareRate / 100);
+    const start = periodStart || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const end = periodEnd || new Date().toISOString();
 
-    return {
-      unionId,
-      periodStart: periodStart || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      periodEnd: periodEnd || new Date().toISOString(),
-      totalClubs: clubs.length,
-      totalRakeCollected: totalRake,
-      totalUnionTax,
-      totalAgentCommissions: totalRake * 0.2, // Estimated
-      totalPlayerRakeback: totalRake * 0.1, // Estimated
-      netUnionRevenue: totalUnionTax,
-      clubBreakdowns: clubs.map((c) => ({
+    const { data: ledger } = await supabase
+      .from('union_wallet_transactions')
+      .select('tx_type, direction, amount, club_id, created_at')
+      .eq('union_id', unionId)
+      .gte('created_at', start)
+      .lte('created_at', end)
+      .limit(2000);
+
+    const rows = ledger || [];
+    const holdsByClub = new Map<string, number>();
+    let totalHolds = 0;
+    let engineRake = 0;
+    for (const r of rows) {
+      const amt = Number(r.amount) || 0;
+      if (r.tx_type === 'settlement_hold' && r.direction === 'credit') {
+        totalHolds += amt;
+        if (r.club_id) {
+          holdsByClub.set(r.club_id, (holdsByClub.get(r.club_id) || 0) + amt);
+        }
+      } else if (r.tx_type === 'rake' && r.direction === 'credit') {
+        engineRake += amt;
+      }
+    }
+
+    // The rate the holds were taken at (fraction of club rake).
+    const rawSettings = union.settings as unknown as Record<string, unknown>;
+    const holdRate = Number(rawSettings?.union_rake_hold) || 0.1;
+
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    const clubBreakdowns = clubs.map((c) => {
+      const hold = round2(holdsByClub.get(c.clubId) || 0);
+      if (hold > 0) {
+        // Settled this period: derive the club's rake from its collected hold.
+        const rake = holdRate > 0 ? round2(hold / holdRate) : hold;
+        return {
+          clubId: c.clubId,
+          clubName: c.clubName,
+          rakeCollected: rake,
+          unionTaxPaid: hold,
+          netToClub: round2(rake - hold),
+          wireDirection: 'COLLECT_FROM_UNION' as const, // settled — renders as paid
+        };
+      }
+      // Not yet settled this period: current weekly rake with the projected hold.
+      const projectedHold = round2(c.weeklyRake * holdRate);
+      return {
         clubId: c.clubId,
         clubName: c.clubName,
         rakeCollected: c.weeklyRake,
-        unionTaxPaid: c.weeklyRake * (revenueShareRate / 100),
-        netToClub: c.weeklyRake * (1 - revenueShareRate / 100),
-        wireDirection: 'PAY_TO_UNION' as const,
-      })),
+        unionTaxPaid: projectedHold,
+        netToClub: round2(c.weeklyRake - projectedHold),
+        wireDirection: 'PAY_TO_UNION' as const, // pending settlement
+      };
+    });
+
+    const totalRakeCollected = round2(clubBreakdowns.reduce((s, c) => s + c.rakeCollected, 0));
+
+    return {
+      unionId,
+      periodStart: start,
+      periodEnd: end,
+      totalClubs: clubs.length,
+      totalRakeCollected,
+      totalUnionTax: round2(totalHolds),
+      // Agent commissions and player rakeback settle INSIDE each club
+      // (commission_records / rake_records are club-scoped and not readable
+      // across the union under RLS) — they are not union revenue and are
+      // reported as 0 here rather than fabricated.
+      totalAgentCommissions: 0,
+      totalPlayerRakeback: 0,
+      netUnionRevenue: round2(totalHolds + engineRake),
+      clubBreakdowns,
     };
   }
 

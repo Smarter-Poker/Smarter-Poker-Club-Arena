@@ -149,6 +149,7 @@ export const unionApi = {
     loserId: string;
     tableShare?: number;
     poolId?: string;
+    payoutEventId?: string;
   }) {
     const { unionId, clubId, ...rest } = params;
     return callUnionApi('union-wallet', {
@@ -156,7 +157,15 @@ export const unionApi = {
       unionId,
       clubId,
       ...rest,
+      // BBJ unification: per-event UUID gives DB-level payout dedup — a retry
+      // or double-click can never pay the same jackpot twice. (Set AFTER the
+      // spread so an undefined params.payoutEventId cannot clobber it.)
+      payoutEventId: params.payoutEventId || crypto.randomUUID(),
     });
+  },
+  /** Move chips from the union bank into the shared BBJ jackpot pool. */
+  fundBbjPool(unionId: string, amount: number, notes?: string) {
+    return callUnionApi('union-wallet', { action: 'fund_bbj_pool', unionId, amount, notes });
   },
 };
 

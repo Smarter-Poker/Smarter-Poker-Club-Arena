@@ -272,58 +272,26 @@ class AgentServiceClass {
       throw new Error('Rakeback rate must be between 0% and 50%');
     if (input.creditLimit < 0) throw new Error('Credit limit cannot be negative');
 
-    // Get membership via composite key (club_members has no id column)
-    const { data: membership } = await supabase
-      .from('club_members')
-      .select('club_id, user_id')
-      .eq('club_id', input.clubId)
-      .eq('user_id', input.userId)
-      .maybeSingle();
+    // agents is service-role-write-only under RLS — create via the SECURITY
+    // DEFINER RPC, which authorizes the caller as the club owner/admin, enforces
+    // the sub-agent parent rate caps, inserts the agent, and syncs the
+    // club_members role. The direct browser insert here silently no-op'd.
+    const { data: res, error } = await supabase.rpc('fn_create_agent', {
+      p_user_id: input.userId,
+      p_club_id: input.clubId,
+      p_role: input.role,
+      p_parent_agent_id: input.parentAgentId ?? null,
+      p_commission_rate: input.commissionRate,
+      p_player_rakeback_rate: input.playerRakebackRate,
+      p_credit_limit: input.creditLimit,
+      p_is_prepaid: input.isPrepaid ?? false,
+    });
 
-    // If sub-agent, verify parent exists and has capacity + rate limits
-    if (input.parentAgentId) {
-      const parent = await this.getAgent(input.parentAgentId);
-      if (!parent) throw new Error('Parent agent not found');
-      if (parent.role === 'sub_agent') throw new Error('Sub-agents cannot have sub-agents');
-      if (input.commissionRate > parent.commissionRate) {
-        throw new Error(
-          `Commission rate (${input.commissionRate}) cannot exceed parent rate (${parent.commissionRate})`
-        );
-      }
-      if (input.playerRakebackRate > parent.playerRakebackRate) {
-        throw new Error(`Rakeback rate cannot exceed parent rate (${parent.playerRakebackRate})`);
-      }
+    if (error || !res?.success) {
+      throw new Error(res?.error || error?.message || 'Failed to create agent');
     }
 
-    const { data, error } = await supabase
-      .from('agents')
-      .insert({
-        user_id: input.userId,
-        club_id: input.clubId,
-        membership_id: membership?.user_id || input.userId, // club_members has no id — link via user_id
-        role: input.role,
-        parent_agent_id: input.parentAgentId,
-        commission_rate: input.commissionRate,
-        player_rakeback_rate: input.playerRakebackRate,
-        credit_limit: input.creditLimit,
-        is_prepaid: input.isPrepaid || false,
-      })
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-
-    // Update membership role via composite key
-    if (membership) {
-      const { error: roleErr } = await supabase
-        .from('club_members')
-        .update({ role: input.role })
-        .eq('club_id', input.clubId)
-        .eq('user_id', input.userId);
-      if (roleErr) reportError(roleErr, 'AgentService.updateMembershipRole');
-    }
-
-    return this.getAgent(data.id) as Promise<Agent>;
+    return this.getAgent(res.agent_id) as Promise<Agent>;
   }
 
   /**

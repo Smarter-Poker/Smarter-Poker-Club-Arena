@@ -93,6 +93,24 @@ export const unionApi = {
   announce(unionId: string, message: string, clubId?: string) {
     return callUnionApi('manage-union', { action: 'union_announcement', unionId, message, clubId });
   },
+  /** Club owner asks to exit the union; the union lead approves/denies. */
+  requestLeave(unionId: string, clubId: string, reason?: string) {
+    return callUnionApi('manage-union', {
+      action: 'request_leave',
+      unionId,
+      clubId,
+      message: reason,
+    });
+  },
+  listLeaveRequests(unionId: string) {
+    return callUnionApi('manage-union', { action: 'list_leave', unionId }, { idempotent: false });
+  },
+  approveLeave(unionId: string, leaveRequestId: string) {
+    return callUnionApi('manage-union', { action: 'approve_leave', unionId, leaveRequestId });
+  },
+  denyLeave(unionId: string, leaveRequestId: string) {
+    return callUnionApi('manage-union', { action: 'deny_leave', unionId, leaveRequestId });
+  },
 
   // ── union-application ─────────────────────────────────────────────────────
   apply(unionId: string, clubId: string, message?: string) {

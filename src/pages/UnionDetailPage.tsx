@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { unionService, type Union, type UnionClub } from '../services/UnionService';
+import { unionApi } from '../services/UnionApiService';
 import { tableService } from '../services/TableService';
 import { getUserMemberships } from '../services/ClubsService';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -539,6 +540,29 @@ export default function UnionDetailPage() {
 
       if (owned.length === 0) {
         toast.error('You must own a club to join a union.');
+        return;
+      }
+
+      // IMPROVE 2026-07-21: if one of the caller's clubs is ALREADY in this
+      // union, the action is a LEAVE REQUEST, not an application.
+      const memberClub = owned.find((c: any) => c.union_id === unionId);
+      if (memberClub) {
+        if (
+          !confirm(
+            `Request to remove ${memberClub.name} from this union? The union lead must approve.`
+          )
+        ) {
+          return;
+        }
+        setApplying(true);
+        try {
+          await unionApi.requestLeave(unionId!, memberClub.id);
+          toast.success('Leave request submitted — the union lead will review it.');
+        } catch (leaveErr: any) {
+          toast.error(leaveErr.message || 'Failed to submit leave request.');
+        } finally {
+          setApplying(false);
+        }
         return;
       }
 

@@ -345,29 +345,24 @@ export const CreditService = {
     const dueDate = new Date(now.getTime() + 48 * 60 * 60 * 1000); // 48 hour grace
 
     try {
-      const { data, error } = await supabase
-        .from('credit_invoices')
-        .insert({
-          agent_id: agentId,
-          period_start: periodStart.toISOString(),
-          period_end: periodEnd.toISOString(),
-          debt_owed: debt.debtOwed,
-          amount_paid: 0,
-          amount_remaining: debt.debtOwed,
-          status: 'pending',
-          due_date: dueDate.toISOString(),
-        })
-        .select()
-        .maybeSingle();
+      // Service-role RPC — credit_invoices is service-role-write-only under RLS,
+      // and generation is idempotent per (agent, period_end).
+      const { data, error } = await supabase.rpc('fn_generate_credit_invoice', {
+        p_agent_id: agentId,
+        p_period_start: periodStart.toISOString(),
+        p_period_end: periodEnd.toISOString(),
+        p_debt_owed: debt.debtOwed,
+        p_due_date: dueDate.toISOString(),
+      });
 
-      if (error) {
-        reportError(error, 'CreditService.generateSundayInvoice', {
+      if (error || !data?.success) {
+        reportError(error || new Error(data?.error || 'invoice generation failed'), 'CreditService.generateSundayInvoice', {
           agentId,
           debtOwed: debt.debtOwed,
         });
         return null;
       }
-      return this.mapInvoice(data, account.agentName);
+      return this.mapInvoice(data.invoice, account.agentName);
     } catch (e) {
       reportError(e, 'CreditService.generateSundayInvoice.tableAccess', { agentId });
       return null;
@@ -444,7 +439,7 @@ export const CreditService = {
   ): Promise<CreditPayment> {
     // Get current invoice
     const { data: invoiceResult, error: invoiceError } = await supabase
-      .from('settlement_invoices')
+      .from('credit_invoices')
       .select(
         'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
       )
@@ -496,19 +491,29 @@ export const CreditService = {
       });
     }
 
-    // STEP 2: Atomically update invoice amounts using ALREADY-FETCHED invoice data (no re-fetch TOCTOU)
+    // STEP 2+3: Atomically update the invoice AND record the payment in one
+    // SECURITY DEFINER RPC. credit_invoices/credit_payments are service-role
+    // -write-only under RLS, and the invoice update + payment insert must not be
+    // able to diverge. Wallet money (if any) already moved in STEP 1. The RPC
+    // recomputes amount_paid/remaining/status/paid_at from the locked DB row
+    // (no TOCTOU) and sets 'partial' vs 'paid' correctly.
     let updateError: any = null;
+    let paymentRow: any = null;
     try {
-      const { error: _updateErr } = await supabase
-        .from('credit_invoices')
-        .update({
-          amount_remaining: Math.max(0, invoiceResult.amount_remaining - amount),
-          status: invoiceResult.amount_remaining - amount <= 0 ? 'paid' : 'pending',
-        })
-        .eq('id', invoiceId);
-      updateError = _updateErr;
+      const { data: applyRes, error: _applyErr } = await supabase.rpc('fn_apply_credit_payment', {
+        p_invoice_id: invoiceId,
+        p_amount: amount,
+        p_method: method,
+      });
+      if (_applyErr) {
+        updateError = _applyErr;
+      } else if (!applyRes?.success) {
+        updateError = new Error(applyRes?.error || 'payment application failed');
+      } else {
+        paymentRow = applyRes.payment;
+      }
     } catch (e) {
-      reportError(e, 'CreditService.processPayment.invoiceUpdate', { invoiceId });
+      reportError(e, 'CreditService.processPayment.applyPayment', { invoiceId });
       updateError = e;
     }
 
@@ -566,26 +571,14 @@ export const CreditService = {
       throw new Error(`Invoice update failed: ${updateError.message}`);
     }
 
-    // STEP 3: Record payment (after money has moved)
-    const { data: payment, error: payError } = await supabase
-      .from('credit_payments')
-      .insert({
-        invoice_id: invoiceId,
-        amount,
-        payment_method: method,
-      })
-      .select()
-      .maybeSingle();
-
-    if (payError) throw payError;
-
+    // Payment row was recorded atomically by fn_apply_credit_payment above.
     return {
-      id: payment.id,
+      id: paymentRow?.id,
       invoiceId,
       amount,
       paymentMethod: method,
-      transactionId: payment.transaction_id,
-      createdAt: payment.created_at,
+      transactionId: paymentRow?.transaction_id,
+      createdAt: paymentRow?.created_at,
     };
   },
 

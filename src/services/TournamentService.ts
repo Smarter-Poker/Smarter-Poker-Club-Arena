@@ -1000,14 +1000,10 @@ class TournamentService {
     // Use fresh DB count (not stale registrations.length) for accurate player tracking
     const freshPlayerCount =
       (freshTournament?.current_players ?? tournament.current_players ?? 0) + 1;
-    const entriesPrize = buyIn * freshPlayerCount;
-    const freshGuarantee = freshTournament?.guaranteed_prize ?? tournament.guaranteed_prize;
-    const newPrizePool = freshGuarantee ? Math.max(entriesPrize, freshGuarantee) : entriesPrize;
     const { error: countError } = await supabase
       .from('tournaments')
       .update({
         current_players: freshPlayerCount,
-        prize_pool: newPrizePool,
       })
       .eq('id', tournamentId);
 
@@ -1018,13 +1014,17 @@ class TournamentService {
         .from('tournaments')
         .update({
           current_players: freshPlayerCount,
-          prize_pool: newPrizePool,
         })
         .eq('id', tournamentId);
       if (retryErr) {
         reportError(retryErr, 'TournamentService.WARN');
       }
     }
+
+    // Recompute prize pool from actual entries + rebuys + add-ons. Never derive
+    // it as buyIn*count here — that would wipe any rebuy/add-on money accrued
+    // during the late-reg/rebuy overlap window.
+    await this.recalculatePrizePool(tournamentId);
 
     // ── SNG AUTO-START: if tournament is full, trigger immediate start ──
     if (
@@ -1274,20 +1274,21 @@ class TournamentService {
       0,
       (freshTourney?.current_players ?? tournament.current_players) - 1
     );
-    const entriesPrize2 = (tournament.buy_in_amount || 0) * newPlayerCount;
-    const freshGuarantee2 = freshTourney?.guaranteed_prize ?? tournament.guaranteed_prize;
-    const newPrizePool = freshGuarantee2 ? Math.max(entriesPrize2, freshGuarantee2) : entriesPrize2;
     const { error: countError } = await supabase
       .from('tournaments')
       .update({
         current_players: newPlayerCount,
-        prize_pool: newPrizePool,
       })
       .eq('id', tournamentId);
 
     if (countError) {
       reportError(countError, 'TournamentService.Failed_to_decrement_registration_count');
     }
+
+    // Recompute prize pool from actual entries + rebuys + add-ons (the row was
+    // already deleted above), rather than overwriting with buyIn*count which
+    // would discard rebuy/add-on contributions.
+    await this.recalculatePrizePool(tournamentId);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

@@ -330,45 +330,42 @@ class AgentServiceClass {
    * Update agent status
    */
   async updateAgentStatus(agentId: string, status: AgentStatus): Promise<boolean> {
-    const { error } = await supabase.from('agents').update({ status }).eq('id', agentId);
-
-    return !error;
+    // agents is service-role-write-only under RLS — a direct browser update
+    // silently no-ops and returns success. Go through the SECURITY DEFINER RPC
+    // (authorizes the caller as the agent's club owner/admin).
+    const { data, error } = await supabase.rpc('fn_admin_update_agent', {
+      p_agent_id: agentId,
+      p_status: status,
+    });
+    if (error || !data?.success) {
+      reportError(
+        error || new Error(data?.error || 'agent status update failed'),
+        'AgentService.updateAgentStatus'
+      );
+      return false;
+    }
+    return true;
   }
 
   /**
    * Update agent role (promote/demote)
    */
   async updateAgentRole(agentId: string, newRole: AgentRole): Promise<boolean> {
-    // Get current agent info
-    const { data: agent } = await supabase
-      .from('agents')
-      .select('role, membership_id')
-      .eq('id', agentId)
-      .maybeSingle();
+    // agents is service-role-write-only AND read-own-row-only under RLS, so the
+    // whole flow (existence check, agents update, club_members role sync) must
+    // run server-side. fn_admin_update_agent authorizes the caller as the club
+    // owner/admin, updates the role, and syncs club_members.role in one call.
+    const { data: roleRes, error } = await supabase.rpc('fn_admin_update_agent', {
+      p_agent_id: agentId,
+      p_role: newRole,
+    });
 
-    if (!agent) return false;
-
-    // Update agent role
-    const { error } = await supabase.from('agents').update({ role: newRole }).eq('id', agentId);
-
-    if (error) return false;
-
-    // Also update membership role if linked
-    if (agent.membership_id) {
-      // membership_id links to user_id in club_members — use composite key
-      const { data: agentFull } = await supabase
-        .from('agents')
-        .select('club_id, user_id')
-        .eq('id', agentId)
-        .maybeSingle();
-      if (agentFull) {
-        const { error: roleErr } = await supabase
-          .from('club_members')
-          .update({ role: newRole })
-          .eq('club_id', agentFull.club_id)
-          .eq('user_id', agentFull.user_id);
-        if (roleErr) reportError(roleErr, 'AgentService.syncMembershipRole');
-      }
+    if (error || !roleRes?.success) {
+      reportError(
+        error || new Error(roleRes?.error || 'agent role update failed'),
+        'AgentService.updateAgentRole'
+      );
+      return false;
     }
 
     return true;
@@ -678,50 +675,27 @@ class AgentServiceClass {
   ): Promise<boolean> {
     if (newLimit < 0) throw new Error('Credit limit cannot be negative');
 
-    // Get current limit and parent info for logging + validation
-    const { data: agent } = await supabase
-      .from('agents')
-      .select('credit_limit, parent_agent_id, club_id')
-      .eq('id', agentId)
-      .maybeSingle();
+    // agents is service-role-write-only AND read-own-row-only under RLS, so the
+    // parent-limit check, the update, and the credit_assignments audit all run
+    // server-side in fn_admin_update_agent (which authorizes the caller as the
+    // club owner/admin). Direct browser reads/writes here silently failed.
+    const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
+      p_agent_id: agentId,
+      p_credit_limit: newLimit,
+      p_assigned_by: assignedBy,
+      p_credit_reason: reason ?? null,
+    });
 
-    if (!agent) throw new Error('Agent not found');
-
-    // If sub-agent, verify limit doesn't exceed parent's
-    if (agent.parent_agent_id) {
-      const { data: parent } = await supabase
-        .from('agents')
-        .select('credit_limit')
-        .eq('id', agent.parent_agent_id)
-        .maybeSingle();
-      if (parent && newLimit > Number(parent.credit_limit)) {
-        throw new Error('Credit limit cannot exceed parent agent limit');
-      }
+    if (error || !res?.success) {
+      const msg = error?.message || res?.error || 'credit limit update failed';
+      // Preserve the parent-limit rule as a throw so callers can surface it.
+      if (msg.includes('parent')) throw new Error('Credit limit cannot exceed parent agent limit');
+      reportError(error || new Error(msg), 'AgentService.setCreditLimit');
+      return false;
     }
 
-    const oldLimit = Number(agent.credit_limit);
-
-    // Update limit
-    const { error } = await supabase
-      .from('agents')
-      .update({ credit_limit: newLimit })
-      .eq('id', agentId);
-
-    if (error) return false;
-
-    // Log the assignment
-    const { error: auditErr } = await supabase.from('credit_assignments').insert({
-      agent_id: agentId,
-      assigned_by: assignedBy,
-      old_limit: oldLimit,
-      new_limit: newLimit,
-      reason,
-    });
-    if (auditErr) reportError(auditErr, 'AgentService.logCreditAssignment');
-
-    // Notify UI of club config changes
-    if (agent.club_id) {
-      masterBus.emit('CLUB_UPDATED', { clubId: agent.club_id });
+    if (res.club_id) {
+      masterBus.emit('CLUB_UPDATED', { clubId: res.club_id });
     }
 
     return true;
@@ -749,18 +723,27 @@ class AgentServiceClass {
 
     if (Object.keys(updates).length === 0) return true;
 
-    const { data: agent, error } = await supabase
-      .from('agents')
-      .update(updates)
-      .eq('id', agentId)
-      .select('club_id')
-      .maybeSingle();
+    // agents is service-role-write-only under RLS — go through the SECURITY
+    // DEFINER RPC (authorizes the caller as the agent's club owner/admin).
+    const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
+      p_agent_id: agentId,
+      p_commission_rate: updates.commission_rate,
+      p_player_rakeback_rate: updates.player_rakeback_rate,
+    });
 
-    if (!error && agent) {
-      masterBus.emit('CLUB_UPDATED', { clubId: agent.club_id });
+    if (error || !res?.success) {
+      reportError(
+        error || new Error(res?.error || 'agent rates update failed'),
+        'AgentService.updateRates'
+      );
+      return false;
     }
 
-    return !error;
+    if (res.club_id) {
+      masterBus.emit('CLUB_UPDATED', { clubId: res.club_id });
+    }
+
+    return true;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

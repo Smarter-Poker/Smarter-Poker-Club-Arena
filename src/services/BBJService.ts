@@ -563,70 +563,34 @@ export const BBJService = {
       return true;
     }
 
-    // Phase 1: Atomically deduct from BBJ Promo Pool and record the event
-    // The RPC bbj_promo_payout handles the deduction and balance checks
-    const { error: poolError } = await retryAsync(
+    // Atomic: deduct from the BBJ promo pool AND credit every recipient
+    // (integer-cents split, remainder to the first recipient) in ONE transaction.
+    // The old flow deducted the pool first and then credited recipients in a JS
+    // loop — a partial loop failure stranded chips (deducted, never distributed).
+    // Any failure now rolls the whole payout back.
+    const { data: result, error: payoutError } = await retryAsync(
       () =>
-        supabase.rpc('bbj_promo_payout', {
+        supabase.rpc('fn_bbj_promo_payout_atomic', {
           p_pool_id: params.poolId,
           p_amount: params.amount,
           p_recipient_user_ids: params.recipientUserIds,
           p_reason: params.reason,
-          p_triggered_by: null, // Note: triggered_by param could be added later if needed
           p_event_type: 'custom',
         }),
       3
     );
 
-    if (poolError) {
-      reportError(poolError, 'BBJService.executePromoPayout.deductFailed');
-      return false; // Stop before printing any money
-    }
-
-    // Phase 2: Distribute promo payout to each recipient — integer-cents chip division
-    const recipientCount = params.recipientUserIds.length;
-    const totalCents = Math.trunc(params.amount * 100);
-    const baseCentsPerPlayer = Math.trunc(totalCents / recipientCount);
-    const remainderCents = totalCents - baseCentsPerPlayer * recipientCount;
-    const basePerPlayer = baseCentsPerPlayer / 100;
-    // Remainder chips (in cents) go to first recipients to ensure total is exactly distributed
-    const remainder = remainderCents / 100;
-    let lastError: Error | null = null;
-
-    for (let i = 0; i < recipientCount; i++) {
-      const userId = params.recipientUserIds[i];
-      // Give remainder to first player (all residual in one place, not split further)
-      const perPlayer = basePerPlayer + (i === 0 ? remainder : 0);
-      const { error: payoutError } = await retryAsync(
-        () =>
-          supabase.rpc('add_to_promo_wallet', {
-            p_user_id: userId,
-            p_amount: perPlayer,
-          }),
-        3
+    if (payoutError || !result?.success) {
+      reportError(
+        payoutError || new Error(result?.error || 'promo payout failed'),
+        'BBJService.executePromoPayout'
       );
-      if (payoutError) {
-        reportError(payoutError, 'BBJService.executePromoPayout.playerPayout', { userId });
-        lastError = payoutError;
-      } else {
-        // Log transaction for audit trail
-        await WalletService.logTransaction(
-          userId,
-          'PROMO',
-          perPlayer,
-          'credit',
-          'promotion',
-          'BBJ promo pool payout'
-        );
-        masterBus.emit('BALANCE_UPDATED', { source: 'bbj_promo_payout', userId });
-      }
+      return false;
     }
 
-    const error = lastError;
-
-    if (error) {
-      reportError(error, 'BBJService.executePromoPayout');
-      return false;
+    // Notify each recipient's UI that their PROMO balance changed.
+    for (const userId of params.recipientUserIds) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'bbj_promo_payout', userId });
     }
 
     return true;

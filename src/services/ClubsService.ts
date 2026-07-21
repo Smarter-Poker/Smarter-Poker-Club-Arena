@@ -370,32 +370,7 @@ export async function leaveClub(clubId: string): Promise<void> {
     console.warn('[ClubsService] leaveClub: cashout cancel failed (non-critical):', e);
   }
 
-  // 4. Return chip_balance to club treasury (if any) — BEFORE deleting membership
-  // If refund fails, throw error to prevent membership deletion (no chip loss)
-  const balance = member.chip_balance || 0;
-  if (balance > 0) {
-    try {
-      await retryAsync(
-        () =>
-          supabase.rpc('atomic_deduct_wallet_and_log', {
-            p_user_id: userId,
-            p_amount: balance,
-            p_category: 'transfer',
-            p_description: 'Chips returned to treasury on club departure',
-            p_table_id: null,
-            p_hand_id: null,
-            p_related_entity_id: resolvedId,
-          }),
-        2
-      );
-    } catch (err: any) {
-      // CRITICAL: Fail fast — do NOT delete membership if refund fails
-      reportError(err, 'ClubsService.Failed_to_refund_chips_on_leave');
-      throw new Error(`Cannot leave club: chip refund failed. ${err.message}`);
-    }
-  }
-
-  // 5. If agent, clear downline references
+  // 4. If agent, clear downline references (before removing membership)
   if (['agent', 'super_agent', 'sub_agent'].includes(member.role)) {
     try {
       await supabase
@@ -408,16 +383,30 @@ export async function leaveClub(clubId: string): Promise<void> {
     }
   }
 
-  // 6. Delete membership record (only after successful refund)
-  const { error } = await supabase
-    .from('club_members')
-    .delete()
-    .eq('club_id', resolvedId)
-    .eq('user_id', userId);
+  // 5. Atomically move the member's club chips into the club treasury
+  //    (clubs.chip_treasury — the balance shown as the club "bank") and remove
+  //    the membership in a single SECURITY DEFINER transaction. Club money tables
+  //    are service-role-write-only under RLS, and the two steps must not be able
+  //    to strand chips. This replaces the old flow that DEBITED the player's main
+  //    wallet (wrong account and direction) and then deleted the membership
+  //    regardless of whether the debit RPC returned false.
+  const { data: leaveResult, error: leaveErr } = await retryAsync(
+    () =>
+      supabase.rpc('fn_member_leave_to_treasury', {
+        p_club_id: resolvedId,
+        p_user_id: userId,
+      }),
+    2
+  );
 
-  if (error) {
-    reportError(error, 'ClubsService.Leave_club_failed');
-    throw new Error('Failed to leave club');
+  if (leaveErr) {
+    reportError(leaveErr, 'ClubsService.Leave_club_failed');
+    throw new Error('Failed to leave club — please try again');
+  }
+  if (!leaveResult?.success) {
+    const reason = leaveResult?.error || 'unknown error';
+    reportError(new Error(reason), 'ClubsService.Leave_club_rejected');
+    throw new Error(`Cannot leave club: ${reason}`);
   }
 
   // NOTE: clubs.member_count is auto-synced by the trg_sync_club_member_count

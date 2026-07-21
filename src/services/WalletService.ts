@@ -134,6 +134,17 @@ export const WalletService = {
     chipAmount: number,
     requestingUserId?: string
   ): Promise<ChipMintResult> {
+    // Resolve the authenticated minter. Server-side authorization is enforced by
+    // mint_club_chips (which now rejects a null minter), but we resolve it here so
+    // the union-lock check below is never silently skipped when a caller omits the
+    // id — previously callers that passed no requestingUserId bypassed the lock.
+    let minterId = requestingUserId;
+    if (!minterId) {
+      const { data: authData } = await supabase.auth.getUser();
+      minterId = authData?.user?.id;
+    }
+    if (!minterId) throw new Error('Authentication required to mint chips');
+
     // 1. Check if club belongs to a union
     const { data: club } = await supabase
       .from('clubs')
@@ -154,7 +165,7 @@ export const WalletService = {
       if (!union) throw new Error('Union not found');
 
       // Only the union owner can mint — club owners cannot mint when in a union
-      if (requestingUserId && requestingUserId !== union.owner_id) {
+      if (minterId !== union.owner_id) {
         throw new Error(
           `Minting is locked for clubs in a union. Only the Union owner (${union.name}) can mint chips. ` +
             `Contact your union owner for chip allocation.`
@@ -173,7 +184,7 @@ export const WalletService = {
       const res = await supabase.rpc('mint_club_chips', {
         p_club_id: clubId,
         p_amount: chipAmount,
-        p_minted_by: requestingUserId || null,
+        p_minted_by: minterId,
         p_diamonds_cost: diamondCost,
         p_notes: club.union_id ? 'Union mint' : 'Standalone club mint',
       });

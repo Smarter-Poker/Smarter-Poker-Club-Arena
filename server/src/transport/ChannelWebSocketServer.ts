@@ -383,7 +383,9 @@ export class ChannelWebSocketServer {
   private onClose(ws: WebSocket): void {
     const conn = this.connections.get(ws);
     if (!conn) return;
-    channelHub.removeConnection(conn.userId);
+    // Pass the closing socket so ChannelHub can ignore this teardown if the user
+    // has already reconnected on a newer socket (reconnect race).
+    channelHub.removeConnection(conn.userId, ws);
     this.connections.delete(ws);
   }
 

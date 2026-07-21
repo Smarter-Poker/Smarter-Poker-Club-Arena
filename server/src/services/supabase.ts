@@ -288,38 +288,29 @@ export async function markSeatAsLeft(
 
     const stack = seat.stack ?? 0;
 
-    // 2. Credit wallet if stack > 0
+    // 2. Credit wallet if stack > 0 — atomically (balance += stack AND the audit
+    //    log row in one transaction). The old read-then-upsert lost chips under
+    //    concurrent credits (e.g. leaving two tables at once, or a simultaneous
+    //    buy-in on the same wallet). If the credit fails we do NOT vacate the
+    //    seat below, so the player's stack is never destroyed — a retry re-runs
+    //    the leave and re-attempts the credit.
     if (stack > 0) {
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', userId)
-        .eq('wallet_type', 'PLAYER')
-        .maybeSingle();
-
-      const currentBalance = wallet?.balance ?? 0;
-      const newBalance = currentBalance + stack;
-      await supabase.from('wallets').upsert(
-        {
-          user_id: userId,
-          wallet_type: 'PLAYER',
-          balance: newBalance,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,wallet_type' }
-      );
-
-      // Log transaction (BUG 018 FIX: balance_after now populated)
-      await supabase.from('wallet_transactions').insert({
-        user_id: userId,
-        wallet_type: 'PLAYER',
-        type: 'credit',
-        amount: stack,
-        category: 'cashout',
-        description: 'Cash-out from table',
-        table_id: tableId,
-        balance_after: newBalance,
+      const { error: creditErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
+        p_user_id: userId,
+        p_amount: stack,
+        p_category: 'cashout',
+        p_description: 'Cash-out from table',
+        p_table_id: tableId,
+        p_hand_id: null,
+        p_related_entity_id: null,
       });
+      if (creditErr) {
+        console.error(
+          `[markSeatAsLeft] cash-out credit failed for ${userId} — leaving seat occupied to avoid chip loss:`,
+          creditErr.message
+        );
+        return;
+      }
     }
 
     // 3. Soft-delete the seat

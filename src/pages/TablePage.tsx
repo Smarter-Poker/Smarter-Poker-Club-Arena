@@ -3312,10 +3312,15 @@ export default function TablePage({
     }));
   });
 
-  useMasterBusSubscription('PRE_ACTION_SET', (payload: any) => {
-    if (payload.tableId !== tableId || payload.playerId !== userId) return;
-    setPreAction(payload.action);
-  });
+  // NOTE: There is intentionally no PRE_ACTION_SET subscription here. The only
+  // emitter of PRE_ACTION_SET is the effect above, and it carries the SERVER
+  // action vocabulary ('auto_call', 'auto_call_any', ...) — feeding that back
+  // into setPreAction (which holds UI vocabulary: 'call' | 'callAny' | ...)
+  // corrupted the value: 'call' -> emit 'auto_call' -> setPreAction('auto_call')
+  // -> effect else-branch -> 'auto_call_any'. A player who chose "call current
+  // bet" was silently upgraded to "call ANY bet". Pre-action state is owned by
+  // the UI control (onPreActionChange) and mirrored to the server; it must never
+  // be re-derived from the bus echo.
 
   // FIX 89: INSURANCE_OFFERED is now server-authoritative via Realtime broadcast.
   // The subscribeToHandState callback handles 'insurance_offers' events.

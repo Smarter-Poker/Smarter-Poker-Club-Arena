@@ -2086,11 +2086,27 @@ class TournamentService {
     const buyIn = tournament.buy_in_amount || 0;
     const guarantee = tournament.guaranteed_prize || 0;
 
-    // Count entries
-    const { count: entryCount } = await supabase
+    // Count only REAL (non-horse) entries. Horses register free (buy_in 0) and
+    // must not inflate the prize pool — buy_in_amount is not populated on the
+    // tournament_players row for real players (atomic_tournament_register omits
+    // it), so exclusion is by the profiles.is_horse flag rather than by amount.
+    let entryCount = 0;
+    const { data: entryRows } = await supabase
       .from('tournament_players')
-      .select('*', { count: 'exact', head: true })
+      .select('user_id')
       .eq('tournament_id', tournamentId);
+    if (entryRows && entryRows.length > 0) {
+      const entryUserIds = entryRows.map((r) => r.user_id);
+      const { data: horseRows } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('id', entryUserIds)
+        .eq('is_horse', true);
+      const horseIds = new Set((horseRows || []).map((h) => h.id));
+      // Each row is one paid entry (re-entries create additional rows); count
+      // rows whose user is not a horse.
+      entryCount = entryRows.filter((r) => !horseIds.has(r.user_id)).length;
+    }
 
     // Count rebuys and add-ons from wallet_transactions (always available)
     let rebuyTotal = 0;

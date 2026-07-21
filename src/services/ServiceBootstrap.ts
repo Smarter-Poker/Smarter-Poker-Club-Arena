@@ -10,7 +10,6 @@
 import { masterBus } from '../core/MasterBus';
 import { OfflineQueueService } from './OfflineQueueService';
 import { SettlementCronService } from './SettlementCronService';
-import { AutoRebuyService } from './AutoRebuyService';
 import { FinancialCronService } from './FinancialCronService';
 
 export interface BootResult {
@@ -69,14 +68,18 @@ export async function bootServices(options?: {
     }
   }
 
-  // 3. Auto-Rebuy Service — monitors all active tables, reseats busted horses, ensures 4 per table
-  try {
-    AutoRebuyService.start();
-    result.autoRebuy = true;
-    console.debug('[ServiceBootstrap] ✓ AutoRebuyService started');
-  } catch (err: unknown) {
-    console.debug('[ServiceBootstrap] ✗ AutoRebuyService failed:', err);
-  }
+  // 3. Horse auto-rebuy / fleet management is SERVER-AUTHORITATIVE (Hetzner engine).
+  //    The Hetzner engine fully owns horse funding and population:
+  //      - HorseFleetManager (GameServer) maintains minimum horses per table + seating
+  //        via fn_horse_seat_from_treasury.
+  //      - ServerTableEngine rebuys busted horses (100BB, treasury-funded) with a
+  //        stop-loss (leave after 2 rebuys) via fn_horse_fund_from_treasury.
+  //    The old browser-side AutoRebuyService was a redundant second authority that
+  //    double-debited the treasury / over-stacked horses (it topped up mid-session
+  //    and rebought with NO stop-loss). It has been removed so the server is the
+  //    single source of truth. Nothing to start client-side.
+  result.autoRebuy = true;
+  console.debug('[ServiceBootstrap] ✓ Horse auto-rebuy is server-authoritative (no client monitor)');
 
   // 4. Financial Cron — reconciliation, suspension checks, audit trail
   try {

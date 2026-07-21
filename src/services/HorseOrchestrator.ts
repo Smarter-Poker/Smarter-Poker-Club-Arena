@@ -2282,20 +2282,21 @@ class HorseOrchestrator {
   private allocationInterval: ReturnType<typeof setInterval> | null = null;
 
   startAllocationLoop(): void {
-    if (this.allocationInterval) return;
-    console.debug('[Orchestrator] Starting proactive allocation loop (60s interval)');
-    // Run immediately, then every 60 seconds
-    const runAllocationCycle = async () => {
-      await this.ensureHorsesAt4Tables();
-      await this.enforceMinimumPlayers();
-      await this.dynamicPersonaRotation();
-      // Enhancement #10: Track horse fleet performance
-      await this.trackHorsePerformance();
-    };
-    runAllocationCycle();
-    this.allocationInterval = setInterval(() => {
-      runAllocationCycle();
-    }, 60_000);
+    // NEUTRALIZED (2026-07-21): ongoing horse allocation/seating/funding is now
+    // SERVER-AUTHORITATIVE (HorseFleetManager on the Hetzner engine maintains the
+    // per-table minimum population + seats via fn_horse_seat_from_treasury;
+    // ServerTableEngine rebuys busted horses with a stop-loss). This browser-side
+    // 60s loop was a SECOND authority: ensureHorsesAt4Tables / enforceMinimumPlayers
+    // seated + debited the club treasury in parallel with the server (double-debit /
+    // over-seating), and dynamicPersonaRotation moved horses between seats,
+    // competing with the server's seat management. It is intentionally a no-op so the
+    // server is the single source of truth. The one-time manual launch/bootstrap
+    // (launchMidwayUnion / ensureMidwayUnionSetup) is unchanged — that is a deliberate
+    // admin action, not an autonomous loop. (Persona rotation, if still desired, should
+    // be reimplemented server-side.)
+    console.debug(
+      '[Orchestrator] Allocation loop is server-authoritative — no client-side loop started'
+    );
   }
 
   stopAllocationLoop(): void {

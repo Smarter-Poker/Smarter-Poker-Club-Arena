@@ -303,231 +303,25 @@ export const SettlementService = {
     playersWithRakeback: number;
     totalDisbursed: number;
   }> {
-    // 1. Get all approved agent settlements
-    const { data: agentSettlements } = await supabase
-      .from('agent_settlements')
-      .select('*, agents:agent_id(user_id)')
-      .eq('period_id', periodId)
-      .eq('status', 'approved')
-      .limit(QUERY_LIMITS.BULK);
-
-    let agentsPaid = 0;
-    let totalDisbursed = 0;
-
-    // 2. Process each agent payout
-    for (const settlement of agentSettlements || []) {
-      // IDEMPOTENCY GUARD: Atomically claim this settlement by transitioning approved → processing.
-      // If another instance already claimed it (0 rows affected), skip gracefully.
-      const { data: claimData, error: claimError } = await supabase
-        .from('agent_settlements')
-        .update({ status: 'processing', updated_at: new Date().toISOString() })
-        .eq('id', settlement.id)
-        .eq('status', 'approved') // Only claim if still 'approved' — prevents double-pay
-        .select('id');
-
-      if (claimError || !claimData || claimData.length === 0) {
-        reportError(
-          claimError || 'Settlement already claimed',
-          'SettlementService.executeMondayPayouts.claim',
-          { settlementId: settlement.id, agentId: settlement.agent_id }
-        );
-        continue;
-      }
-
-      // Skip agents with zero or negative settlements (e.g. excess credit extended)
-      if (settlement.net_settlement <= 0) {
-        console.warn(
-          `[Settlement] Skipping agent ${settlement.agent_id}: ` +
-            `net_settlement=${settlement.net_settlement} (non-positive)`
-        );
-        await supabase
-          .from('agent_settlements')
-          .update({
-            status: 'paid',
-            paid_at: new Date().toISOString(),
-            notes: 'Zero/negative net — no disbursement',
-          })
-          .eq('id', settlement.id);
-        agentsPaid++;
-        continue;
-      }
-
-      try {
-        const { error: payoutError } = await supabase.rpc('atomic_pay_agent_settlement', {
-          p_agent_id: settlement.agent_id,
-          p_amount: settlement.net_settlement,
-          p_period_id: periodId,
-          p_settlement_id: settlement.id,
-        });
-
-        if (payoutError) throw payoutError;
-
-        // Resolve auth.users.id from joined agents table
-        // settlement.agent_id is agents.id PK — frontend matches on auth.users.id
-        const agentUserId = (settlement as any).agents?.user_id || settlement.agent_id;
-
-        // Log settlement payout to chip_ledger
-        supabase
-          .from('chip_ledger')
-          .insert({
-            performed_by: agentUserId,
-            from_type: 'club_treasury',
-            from_label: 'Settlement Payout',
-            to_type: 'agent_wallet',
-            to_entity_id: agentUserId,
-            to_label: `Agent ${agentUserId.slice(0, 8)} settlement`,
-            amount: settlement.net_settlement,
-            category: 'settlement',
-            description: `Weekly settlement payout: ${settlement.net_settlement.toLocaleString()} chips`,
-            club_id: settlement.club_id || undefined,
-          })
-          .then(({ error: le }) => {
-            if (le) console.warn('[Settlement] chip_ledger write failed:', le.message);
-          });
-
-        // Emit bus event so agent sees their settlement in real-time
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'agent_settlement_payout',
-          userId: agentUserId,
-        });
-
-        // Send push notification to agent (push needs auth.users.id)
-        pushNotificationService
-          .notifySettlement(agentUserId, settlement.net_settlement, 'Weekly Commission')
-          .catch((err) => reportError(err, 'SettlementService.agentPushNotification'));
-
-        agentsPaid++;
-        totalDisbursed += settlement.net_settlement;
-      } catch (err: unknown) {
-        reportError(err, 'SettlementService.executeMondayPayouts.agentPay', {
-          settlementId: settlement.id,
-          agentId: settlement.agent_id,
-          amount: settlement.net_settlement,
-        });
-        // Revert status to 'failed' so ops can identify and manually retry
-        const errMsg = err instanceof Error ? err.message : String(err);
-        await supabase
-          .from('agent_settlements')
-          .update({
-            status: 'failed',
-            error_message: errMsg,
-            notes: `Payout failed or timed out: ${errMsg}`,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', settlement.id);
-
-        // Raise CRITICAL financial alert for ops dashboard visibility
-        try {
-          const { FinancialAlertService } = await import('./FinancialAlertService');
-          await FinancialAlertService.logCritical(
-            'SettlementService.executeMondayPayouts',
-            `Agent settlement payout STUCK in 'processing' — manual reconciliation required`,
-            {
-              settlementId: settlement.id,
-              agentId: settlement.agent_id,
-              netSettlement: settlement.net_settlement,
-              periodId,
-              error: errMsg,
-            }
-          );
-        } catch (err) {
-          reportError(err, 'SettlementService.financialAlertFailed');
-          /* best effort — already logged to console */
-        }
-
-        // Emit bus event so admin dashboards show the stuck payout
-        masterBus.emit('SETTLEMENT_PAYOUT_FAILED', {
-          settlementId: settlement.id,
-          agentId: settlement.agent_id,
-          amount: settlement.net_settlement,
-          periodId,
-          error: errMsg,
-        });
-      }
-    }
-
-    // 3. Process player rakeback
-    const { data: playerSnapshots } = await supabase
-      .from('player_weekly_snapshots')
-      .select('id, player_id, rakeback_earned, period_id')
-      .eq('period_id', periodId)
-      .gt('rakeback_earned', 0)
-      .limit(QUERY_LIMITS.AGGREGATE);
-
-    let playersWithRakeback = 0;
-    for (const snapshot of playerSnapshots || []) {
-      try {
-        // Atomically pay the rakeback and mark the snapshot as paid
-        const { error: payoutError } = await supabase.rpc('atomic_pay_player_rakeback', {
-          p_user_id: snapshot.player_id,
-          p_amount: snapshot.rakeback_earned,
-        });
-
-        if (payoutError) {
-          throw payoutError;
-        }
-
-        // Emit bus event so player sees their rakeback in real-time
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'player_rakeback_payout',
-          userId: snapshot.player_id,
-        });
-
-        // Send push notification to player
-        pushNotificationService
-          .notifySettlement(snapshot.player_id, snapshot.rakeback_earned, 'Weekly Rakeback')
-          .catch((err) => reportError(err, 'SettlementService.playerPushNotification'));
-
-        playersWithRakeback++;
-        totalDisbursed += snapshot.rakeback_earned;
-      } catch (err: unknown) {
-        reportError(err, 'SettlementService.executeMondayPayouts.playerRakeback', {
-          playerId: snapshot.player_id,
-          amount: snapshot.rakeback_earned,
-        });
-      }
-    }
-
-    // 4. Finalize or mark partial based on payout success
-    const totalExpected = (agentSettlements?.length || 0) + (playerSnapshots?.length || 0);
-    const totalSucceeded = agentsPaid + playersWithRakeback;
-    const successRate = totalExpected > 0 ? totalSucceeded / totalExpected : 1;
-
-    if (totalExpected === 0 || successRate === 1) {
-      // All payouts succeeded — finalize via direct update
-      await supabase
-        .from('settlement_periods')
-        .update({ status: 'settled', settled_at: new Date().toISOString() })
-        .eq('id', periodId);
-    } else {
-      // Partial success — mark for manual reconciliation (never auto-finalize partial)
-      reportError(
-        `Partial payout: ${totalSucceeded}/${totalExpected} (${Math.round(successRate * 100)}%)`,
-        'SettlementService.executeMondayPayouts.partial',
-        { periodId, totalSucceeded, totalExpected }
-      );
-      // DB CHECK allows only open|processing|settled|disputed. 'disputed' is the
-      // canonical "needs manual reconciliation" state for a partial payout run.
-      await supabase
-        .from('settlement_periods')
-        .update({
-          status: 'disputed',
-          notes: `${totalSucceeded}/${totalExpected} payouts succeeded (${Math.round(successRate * 100)}%). Manual reconciliation required.`,
-        })
-        .eq('id', periodId);
-    }
-
-    // 5. Emit settlement completion bus event for real-time dashboard updates
-    masterBus.emit('SETTLEMENT_COMPLETED', {
-      periodId,
-      agentsPaid,
-      playersWithRakeback,
-      totalDisbursed,
-      successRate: totalExpected > 0 ? totalSucceeded / totalExpected : 1,
-      status: successRate === 1 ? 'settled' : 'disputed',
-    });
-
-    return { agentsPaid, playersWithRakeback, totalDisbursed };
+    // DEPRECATED / RETIRED (2026-07-21). This Monday-payout runner read two tables
+    // that were DELIBERATELY REMOVED from the schema — `agent_settlements` and
+    // `player_weekly_snapshots` — and its `calculate_agent_settlement` RPC is a stub
+    // ("agent_settlements table removed"). It has therefore been a silent no-op
+    // (errors on the missing tables were swallowed). The LIVE payout paths are:
+    //   - Agent commissions -> the credit_invoices subsystem
+    //     (fn_generate_credit_invoice / fn_apply_credit_payment, see CreditService).
+    //   - Player rakeback   -> the engine's durable RakebackSettlerService daemon on
+    //     Hetzner (settles rakeback_periods / player_stats behind a persisted
+    //     high-water-mark watermark).
+    // Kept as a pure no-op so existing callers (SettlementCronService with
+    // autoExecutePayouts, useUnionStore) resolve cleanly; it moves no money. Do not
+    // build on it — see .agent/architecture/CLUB-MONEY-LEDGERS-CANONICAL.md.
+    console.debug(
+      `[Settlement] executeMondayPayouts is retired (no-op) for period ${periodId} — ` +
+        'agent payouts flow through credit_invoices; player rakeback through the engine ' +
+        'RakebackSettlerService.'
+    );
+    return { agentsPaid: 0, playersWithRakeback: 0, totalDisbursed: 0 };
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

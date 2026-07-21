@@ -571,10 +571,12 @@ export async function logRakeCollection(
         });
       }
     } else {
-      // Standalone club — rake goes to CLUB wallet (clubs.chip_pool).
-      // FIX-232 / BUG 016 (2026-04-15): club_wallets table doesn't exist in the schema.
-      // Removed the dead probe + dead increment_club_wallet branch; credit clubs.chip_pool
-      // directly via increment_club_chip_pool RPC. One less round trip per hand.
+      // Standalone club — the rake chips settle into the club's OPERATIONAL BANK,
+      // clubs.chip_treasury. NOTE the naming trap: increment_club_chip_pool writes
+      // chip_treasury (+ total_rake), NOT chip_pool (chip_pool is the separate
+      // mint-and-distribute ledger). The club_wallets accounting counter was already
+      // credited above (credit_club_wallet_rake) for every club regardless of where
+      // the chips settle. See .agent/architecture/CLUB-MONEY-LEDGERS-CANONICAL.md.
       const { error: cpErr } = await supabase.rpc('increment_club_chip_pool', {
         p_club_id: clubId,
         p_amount: rakeAmount,

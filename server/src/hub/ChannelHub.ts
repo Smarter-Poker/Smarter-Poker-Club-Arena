@@ -148,8 +148,18 @@ export class ChannelHub {
   /**
    * Tear down all subscriptions for a user and remove their connection entry.
    * Called from ChannelWebSocketServer on ws.close / ws.error.
+   *
+   * `closingWs` guards the reconnect race: addConnection() closes the OLD socket
+   * when a user reconnects, which fires this handler for the OLD socket AFTER the
+   * NEW socket is already registered. Without the guard we would tear down the
+   * NEW connection's subscriptions and delete its entry, blinding the just-
+   * reconnected user. Only tear down when the closing socket is still the current
+   * one (or when no socket is provided, for legacy/explicit removal).
    */
-  removeConnection(userId: string): void {
+  removeConnection(userId: string, closingWs?: WebSocket): void {
+    if (closingWs && this.connections.get(userId) !== closingWs) {
+      return;
+    }
     // Fan out leave events for every club the user was subscribed to.
     for (const [clubId, members] of this.clubSubs) {
       if (members.has(userId)) {

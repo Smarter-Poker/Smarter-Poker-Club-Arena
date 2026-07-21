@@ -2629,67 +2629,42 @@ export class TournamentManager {
         const rakeDescription = `Tournament rake: ${tournament.name || 'tournament'} (${totalEntries} entries x ${rakePerEntry})`;
 
         if (club.union_id) {
-          // Club is in a union — ALL rake held by union wallet
-          const { data: uw } = await supabase
-            .from('union_wallets')
-            .select('chip_balance')
-            .eq('union_id', club.union_id)
-            .maybeSingle();
-
-          if (uw) {
-            const { error: uwErr } = await supabase
-              .from('union_wallets')
-              .update({
-                chip_balance: (uw.chip_balance || 0) + totalRake,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('union_id', club.union_id);
-            if (uwErr) {
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet rake credit failed: ${uwErr.message}`
-                ),
-                'Tournament.Union_wallet_rake_credit_failed'
-              );
-            } else {
-              console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to union wallet ${club.union_id.slice(0, 8)}`
-              );
-            }
+          // Club is in a union — ALL rake held by union wallet.
+          // UNION AUDIT FIX 2026-07-21: was a read-then-write UPDATE (concurrent
+          // tournament completions could lose rake). Use the same atomic
+          // increment_union_wallet RPC as the cash-rake path — it upserts the
+          // union_wallets row, increments chip_balance + rake_wallet +
+          // total_rake_collected under a single UPDATE, and is SECURITY DEFINER.
+          const { data: rakeRes, error: rakeErr } = await supabase.rpc('increment_union_wallet', {
+            p_union_id: club.union_id,
+            p_amount: totalRake,
+          });
+          if (rakeErr || (rakeRes && (rakeRes as any).success === false)) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet rake credit failed: ${
+                  rakeErr?.message || JSON.stringify(rakeRes)
+                }`
+              ),
+              'Tournament.Union_wallet_rake_credit_failed'
+            );
           } else {
-            // Create union wallet if it doesn't exist
-            const { error: insertErr } = await supabase
-              .from('union_wallets')
-              .insert({ union_id: club.union_id, chip_balance: totalRake });
-            if (insertErr) {
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet creation failed: ${insertErr.message}`
-                ),
-                'Tournament.Union_wallet_creation_failed'
-              );
-            }
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to union wallet ${club.union_id.slice(0, 8)}`
+            );
           }
 
-          // Log union transaction for audit (BUG 013 FIX — was union_transactions which
-          // doesn't exist; correct table is union_wallet_transactions)
-          {
-            const { data: uw2 } = await supabase
-              .from('union_wallets')
-              .select('chip_balance')
-              .eq('union_id', club.union_id)
-              .maybeSingle();
-            await supabase.from('union_wallet_transactions').insert({
-              union_id: club.union_id,
-              club_id: tournament.club_id,
-              amount: totalRake,
-              tx_type: 'rake',
-              wallet: 'main',
-              direction: 'credit',
-              balance_after: uw2?.chip_balance ?? null,
-              notes: `${rakeDescription} — ${club.name || 'club'}`,
-            });
-          }
+          // Audit trail (BUG 013 FIX — correct table is union_wallet_transactions)
+          await supabase.from('union_wallet_transactions').insert({
+            union_id: club.union_id,
+            club_id: tournament.club_id,
+            amount: totalRake,
+            tx_type: 'rake',
+            wallet: 'main',
+            direction: 'credit',
+            balance_after: (rakeRes as any)?.new_chip_balance ?? null,
+            notes: `${rakeDescription} — ${club.name || 'club'}`,
+          });
         } else {
           // Standalone club — rake goes to CLUB wallet (not owner's personal wallet)
           // BUG 016 FIX (2026-04-15): club_wallets doesn't exist; remove dead probe

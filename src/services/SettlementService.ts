@@ -124,17 +124,19 @@ export const SettlementService = {
     );
     if (error) throw error;
 
-    // RPC returns table - use first row or create default period
+    // The RPC is a SECURITY DEFINER get-or-create: it always returns a real,
+    // persisted open period (selecting the current one or inserting a new one).
+    // We must NEVER fabricate a random-UUID period here — nothing backs it, so
+    // every settlement written against it is orphaned.
     if (data && data.length > 0) {
       const period = data[0];
-      const periodId = period.id || generateUUID();
       if (!period.id) {
-        console.warn(
-          `[Settlement] RPC returned period but with null id. Generated fallback UUID: ${periodId}`
+        throw new Error(
+          '[Settlement] get_current_settlement_period returned a row with no id — refusing to fabricate an orphaned period.'
         );
       }
       return {
-        id: periodId,
+        id: period.id,
         periodNumber: 1,
         year: new Date().getFullYear(),
         startAt: period.period_start,
@@ -148,25 +150,11 @@ export const SettlementService = {
       };
     }
 
-    // Return default empty period if none exists
-    const periodId = generateUUID();
-    console.warn(
-      `[Settlement] CRITICAL: No settlement period found. Created fallback period ${periodId}. ` +
-        `This settlement may be orphaned — verify period table.`
+    // Empty result now means a genuine backend failure (the get-or-create RPC
+    // should always return a period). Fail loudly rather than orphan a settlement.
+    throw new Error(
+      '[Settlement] get_current_settlement_period returned no rows — settlement period unavailable.'
     );
-    return {
-      id: periodId,
-      periodNumber: 1,
-      year: new Date().getFullYear(),
-      startAt: new Date().toISOString(),
-      endAt: new Date().toISOString(),
-      status: 'open',
-      totalRakeCollected: 0,
-      totalBBJContributions: 0,
-      totalPlayerWinnings: 0,
-      totalPlayerLosses: 0,
-      totalHandsDealt: 0,
-    };
   },
 
   /**

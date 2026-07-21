@@ -1033,7 +1033,10 @@ export class TournamentManager {
         if (this.handForHandActive) {
           if (this.handForHandRePauseTimer) clearTimeout(this.handForHandRePauseTimer);
           this.handForHandRePauseTimer = setTimeout(() => {
-            if (!this.running) return; // Tournament may have ended
+            // Guard: tournament ended, or the bubble already burst (hand-for-hand
+            // no longer active) — do NOT re-pause engines that were resumed for
+            // normal post-bubble play, or the tournament freezes.
+            if (!this.running || !this.handForHandActive) return;
             this.handForHandRePauseTimer = null;
             for (const engine of this.tableEngines.values()) {
               engine.pauseAfterHand();
@@ -1049,6 +1052,13 @@ export class TournamentManager {
     if (this.handForHandSyncInterval) {
       clearInterval(this.handForHandSyncInterval);
       this.handForHandSyncInterval = null;
+    }
+    // Also cancel any pending re-pause. Bubble burst calls this and then resumes
+    // engines permanently; a surviving re-pause timer would immediately freeze
+    // them again for a hand-for-hand cycle that is over.
+    if (this.handForHandRePauseTimer) {
+      clearTimeout(this.handForHandRePauseTimer);
+      this.handForHandRePauseTimer = null;
     }
   }
 

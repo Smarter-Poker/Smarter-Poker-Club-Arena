@@ -19,6 +19,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
+import AgentInvoicesPanel from '../components/agent/AgentInvoicesPanel';
 import { reportError } from '../utils/errorReporter';
 
 interface AgentWallet {
@@ -482,6 +483,9 @@ export default function AgentPortalPage() {
           </div>
         )}
       </div>
+
+      {/* Credit Invoices — view + pay weekly invoices */}
+      <AgentInvoicesPanel agentId={agentPkId} />
 
       {/* Commission Trends (inline mini-chart) */}
       <div

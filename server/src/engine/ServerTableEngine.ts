@@ -3754,6 +3754,30 @@ export class ServerTableEngine {
       boardWinners[2]
     );
 
+    // Bad Beat Jackpot on Run-It-Twice — RULE (Dan, 2026-07-21): the FIRST board
+    // only is eligible. The other boards fund the pool (the BBJ fee is collected
+    // once in computeRakeAndBBJ above) but cannot trigger the jackpot. Populate
+    // the showdown state for board 0 so the existing HAND_COMPLETE BBJ block
+    // (finalizeRunout emits HAND_COMPLETE) evaluates a bad beat on it. Previously
+    // RIT never emitted SHOWDOWN/WINNERS, so these stayed empty and the BBJ block
+    // was skipped entirely — a qualifying bad beat on a run-it-twice hand could
+    // never win the jackpot even though the fee was still taken.
+    const firstBoard = boards[0];
+    this.currentHandShowdownResults = allInPlayers
+      .filter((p) => p.cards && p.cards.length > 0)
+      .map((p) => {
+        const hand = boardEvaluator(p.cards, firstBoard);
+        return {
+          userId: p.user_id,
+          handRanking: hand.ranking ?? 0,
+          handName: hand.name ?? '',
+          kickers: hand.kickers ?? [],
+          holeCards: p.cards.map((c) => ({ rank: c.rank, suit: c.suit })),
+        };
+      });
+    this.currentHandWinnerIds = boardWinners[0] ? [boardWinners[0]] : [];
+    this.currentHandPotSize = totalPot;
+
     // FIX 117: skipDistribution=true — RIT already distributed pots per-board above.
     // Without this, completeHand() re-distributes ALL pots → double money.
     this.handController.finalizeRunout(true);

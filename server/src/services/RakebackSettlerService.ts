@@ -34,6 +34,7 @@ import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 
 const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const DAEMON_KEY = 'rakeback_settler';
 const RAKEBACK_TIERS = [
   { minRake: 0, rakebackPercent: 5, name: 'Bronze' },
   { minRake: 100, rakebackPercent: 10, name: 'Silver' },
@@ -112,6 +113,39 @@ export class RakebackSettlerService {
     console.log('[RakebackSettler] Stopped');
   }
 
+  /**
+   * Load the durable high-water-mark so a restart resumes exactly where the last
+   * run stopped instead of re-scanning the 7-day fallback window (which would
+   * re-increment player_stats for already-settled hands).
+   */
+  private async loadHighWaterMark(): Promise<Date | null> {
+    try {
+      const { data } = await supabase
+        .from('daemon_state')
+        .select('high_water_mark')
+        .eq('daemon', DAEMON_KEY)
+        .maybeSingle();
+      return data?.high_water_mark ? new Date(data.high_water_mark) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Persist the high-water-mark durably (survives engine restarts). */
+  private async saveHighWaterMark(ts: Date): Promise<void> {
+    try {
+      await supabase.from('daemon_state').upsert(
+        { daemon: DAEMON_KEY, high_water_mark: ts.toISOString(), updated_at: new Date().toISOString() },
+        { onConflict: 'daemon' }
+      );
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'RakebackSettler.saveHighWaterMark'
+      );
+    }
+  }
+
   /** Thin wrapper around supabase.rpc returning {error} for cleaner control flow. */
   private async supabaseRpc(name: string, args: Record<string, unknown>) {
     try {
@@ -127,14 +161,21 @@ export class RakebackSettlerService {
    * run) into per-player rakeback_periods rows. Idempotent.
    */
   async runSettlement(): Promise<void> {
+    // On first run after (re)start, resume from the durable high-water-mark so we
+    // do not re-scan already-settled rake_records (which double-counts
+    // player_stats). Only fall back to the 7-day window on a genuine first run.
+    if (this.lastSettledAt === null) {
+      this.lastSettledAt = await this.loadHighWaterMark();
+    }
     const sinceIso = (this.lastSettledAt ?? new Date(Date.now() - 7 * 86400 * 1000)).toISOString();
     const startedAt = Date.now();
 
-    // 1. Pull all rake_records since last run that have player_contributions
+    // 1. Pull rake_records STRICTLY AFTER the last processed record (exclusive
+    // watermark => exactly-once processing) that have player_contributions.
     const { data: rows, error: fetchErr } = await supabase
       .from('rake_records')
       .select('hand_id, club_id, rake_amount, player_contributions, created_at')
-      .gte('created_at', sinceIso)
+      .gt('created_at', sinceIso)
       .gt('rake_amount', 0)
       .not('player_contributions', 'is', null)
       .order('created_at', { ascending: true })
@@ -150,9 +191,14 @@ export class RakebackSettlerService {
 
     if (!rows || rows.length === 0) {
       console.log(`[RakebackSettler] No new rake_records since ${sinceIso}`);
-      this.lastSettledAt = new Date();
+      // Nothing processed — leave the watermark untouched so any late-arriving
+      // record with an earlier timestamp is still picked up next run.
       return;
     }
+
+    // Highest timestamp we will have fully processed this run. Persisting THIS
+    // (not now()) guarantees no record created after it is skipped.
+    const maxCreatedAt = new Date(rows[rows.length - 1].created_at);
 
     // 2. Aggregate per (user_id, club_id, week)
     type Bucket = {
@@ -196,7 +242,8 @@ export class RakebackSettlerService {
       console.log(
         `[RakebackSettler] Processed ${rows.length} rake_records — no eligible player-credits`
       );
-      this.lastSettledAt = new Date();
+      this.lastSettledAt = maxCreatedAt;
+      await this.saveHighWaterMark(maxCreatedAt);
       return;
     }
 
@@ -423,6 +470,7 @@ export class RakebackSettlerService {
     console.log(
       `[RakebackSettler] Settled ${upserts}/${buckets.size} period rows from ${rows.length} hand records in ${elapsedMs}ms (failures: ${failures})`
     );
-    this.lastSettledAt = new Date();
+    this.lastSettledAt = maxCreatedAt;
+    await this.saveHighWaterMark(maxCreatedAt);
   }
 }

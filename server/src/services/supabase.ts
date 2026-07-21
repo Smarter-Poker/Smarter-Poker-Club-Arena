@@ -215,42 +215,31 @@ export async function autoRebuyHorse(
 ): Promise<boolean> {
   void clubId;
   try {
-    // Verify the seat first so we can compute new_stack for the RPC.
-    const { data: seat } = await supabase
-      .from('table_seats')
-      .select('stack')
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .is('left_at', null)
-      .maybeSingle();
-
-    if (!seat) return false;
-
-    const newStack = (seat.stack ?? 0) + rebuyAmount;
-
-    const { error: rpcErr } = await supabase.rpc('atomic_table_rebuy', {
-      p_user_id: userId,
+    // Fund the horse rebuy from the TABLE's club treasury (fn_horse_fund_from
+    // _treasury derives the club from the table). Horses no longer draw on a
+    // globally-minted wallet — the chips come from the club's real bankroll and
+    // the rebuy fails cleanly if the treasury is short (the horse busts, correct
+    // conservation behavior). Real-player rebuys still use atomic_table_rebuy.
+    const { data, error } = await supabase.rpc('fn_horse_fund_from_treasury', {
       p_table_id: tableId,
+      p_user_id: userId,
       p_amount: rebuyAmount,
-      new_stack: newStack,
     });
 
-    if (rpcErr) {
-      const msg = rpcErr.message || '';
-      if (!msg.includes('Insufficient balance') && !msg.includes('Active seat not found')) {
-        reportError(rpcErr, 'DB.atomic_table_rebuy_failed');
+    if (error || !data?.success) {
+      const msg = error?.message || data?.error || '';
+      if (!msg.includes('insufficient') && !msg.includes('no active seat')) {
+        reportError(
+          new Error(msg || 'horse treasury rebuy failed'),
+          'DB.horse_treasury_rebuy_failed'
+        );
       }
       return false;
     }
 
     return true;
   } catch (err: any) {
-    if (
-      !err.message?.includes('Insufficient balance') &&
-      !err.message?.includes('Active seat not found')
-    ) {
-      reportError(err, 'DB.Unexpected_atomic_autorebuy_fa');
-    }
+    reportError(err, 'DB.Unexpected_horse_treasury_rebuy');
     return false;
   }
 }

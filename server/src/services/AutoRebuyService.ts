@@ -49,76 +49,13 @@ export class AutoRebuyService {
   }
 
   private async checkAndRefillWallets(): Promise<void> {
-    try {
-      // Get all horse profiles along with their wallets
-      const { data: horses, error: horseErr } = await supabase
-        .from('profiles')
-        .select('id, display_name, username, use_real_name')
-        .eq('is_horse', true);
-
-      if (horseErr || !horses || horses.length === 0) return;
-
-      const horseIds = horses.map((h) => h.id);
-
-      const { data: wallets, error: walletErr } = await supabase
-        .from('wallets')
-        .select('user_id, balance')
-        .eq('wallet_type', 'PLAYER')
-        .in('user_id', horseIds);
-
-      if (walletErr || !wallets) return;
-
-      let refilledCount = 0;
-
-      for (const wallet of wallets) {
-        if (wallet.balance < MIN_WALLET_BALANCE) {
-          const topupAmount = Math.max(0, REFILL_AMOUNT - wallet.balance);
-          if (topupAmount <= 0) continue;
-
-          const horseNameMatch = horses.find((h) => h.id === wallet.user_id);
-          const horseName = horseNameMatch
-            ? horseNameMatch.use_real_name
-              ? horseNameMatch.display_name || horseNameMatch.username
-              : horseNameMatch.username || horseNameMatch.display_name
-            : wallet.user_id;
-
-          // Execute ATOMIC wallet refill
-          const { error: creditError } = await supabase.rpc('atomic_credit_wallet_and_log', {
-            p_user_id: wallet.user_id,
-            p_amount: topupAmount,
-            p_category: 'deposit',
-            p_description: `Server Auto-rebuy: wallet deposit ${topupAmount} credits`,
-            p_table_id: null,
-            p_hand_id: null,
-            p_related_entity_id: null,
-          });
-
-          if (creditError) {
-            reportError(
-              new Error(
-                `[AutoRebuyService] Failed to refill wallet for ${horseName}: ${creditError.message}`
-              ),
-              'AutoRebuyService.Failed_to_refill_wallet_for_ho'
-            );
-          } else {
-            refilledCount++;
-            console.log(
-              `[AutoRebuyService] Refilled wallet for horse ${horseName} with ${topupAmount} chips.`
-            );
-          }
-        }
-      }
-
-      if (refilledCount > 0) {
-        console.log(
-          `[AutoRebuyService] Cycle complete: Top-ups issued for ${refilledCount} horses.`
-        );
-      }
-    } catch (err: any) {
-      reportError(
-        new Error(`[AutoRebuyService] Wallet check error: ${err.message}`),
-        'AutoRebuyService.Wallet_check_error'
-      );
-    }
+    // RETIRED (2026-07-21): this used to mint chips into every horse's global
+    // PLAYER wallet (atomic_credit_wallet_and_log with no offsetting debit) —
+    // the primary chip-conservation violation for horses. Horses are now funded
+    // directly from the treasury of the club whose table they are playing at
+    // (fn_horse_seat_from_treasury on seating, fn_horse_fund_from_treasury on
+    // rebuy — see autoRebuyHorse), so horse wallets are no longer used for cash
+    // rebuys and this global refill is intentionally a no-op.
+    return;
   }
 }

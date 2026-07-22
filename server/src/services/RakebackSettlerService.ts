@@ -200,6 +200,19 @@ export class RakebackSettlerService {
     // (not now()) guarantees no record created after it is skipped.
     const maxCreatedAt = new Date(rows[rows.length - 1].created_at);
 
+    // Horses (house AI players) never earn rakeback, agent commission, or player_stats.
+    // Crediting them would mint chips (they are funded from the club treasury, not real
+    // player deposits). Load the horse user-id set once and skip those users in every
+    // per-player accrual below. NOTE: the equal-share denominator still counts ALL
+    // dealt-in players (including horses), so a human's fair share is unchanged — the
+    // horse shares are simply not credited (the house keeps them).
+    const { data: horseProfiles } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('is_horse', true)
+      .limit(100000);
+    const horseSet = new Set<string>((horseProfiles ?? []).map((h) => h.id as string));
+
     // 2. Aggregate per (user_id, club_id, week)
     type Bucket = {
       user_id: string;
@@ -222,6 +235,7 @@ export class RakebackSettlerService {
       const we = weekEnd(created);
 
       for (const [userId] of dealtIn) {
+        if (horseSet.has(userId)) continue; // horses earn no rakeback
         const key = `${userId}:${row.club_id}:${ws}`;
         const cur = buckets.get(key);
         if (cur) {
@@ -271,6 +285,7 @@ export class RakebackSettlerService {
       if (dealtIn.length === 0) continue;
       const equalShare = Math.round((Number(row.rake_amount) / dealtIn.length) * 100) / 100;
       for (const [userId] of dealtIn) {
+        if (horseSet.has(userId)) continue; // horses have no agent / generate no commission
         agentCreditsAttempted++;
         const { error: rpcErr } = await this.supabaseRpc('credit_agent_commission_from_rake', {
           p_agent_user_id: userId,
@@ -310,6 +325,7 @@ export class RakebackSettlerService {
       if (dealtIn.length === 0) continue;
       const share = Math.round((Number(row.rake_amount) / dealtIn.length) * 100) / 100;
       for (const [userId] of dealtIn) {
+        if (horseSet.has(userId)) continue; // no player_stats for house AI players
         const key = `${userId}:${row.club_id}`;
         const b = psBuckets.get(key);
         if (b) {

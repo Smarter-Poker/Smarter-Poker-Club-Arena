@@ -85,7 +85,8 @@ interface ChipFlowEntry {
   net: number;
 }
 interface ChipTxRow {
-  user_id: string;
+  from_user_id: string | null;
+  to_user_id: string | null;
   amount: number;
   transaction_type: string;
   created_at: string;
@@ -408,7 +409,7 @@ export default function PlayerSessionsPage() {
         () =>
           supabase
             .from('chip_transactions')
-            .select('user_id, amount, transaction_type, created_at')
+            .select('from_user_id, to_user_id, amount, transaction_type, created_at')
             .eq('club_id', uuid)
             .gte('created_at', sevenDaysAgo)
             .then((r) => r),
@@ -417,20 +418,23 @@ export default function PlayerSessionsPage() {
 
       if (!mountedRef.current) return;
 
+      // chip_transactions has from_user_id (chips left) + to_user_id (chips received),
+      // not a single user_id. Attribute the recipient's "in" and the sender's "out".
       const flow: Record<string, { in: number; out: number; net: number }> = {};
+      const ensure = (uid: string) => {
+        if (!flow[uid]) flow[uid] = { in: 0, out: 0, net: 0 };
+      };
       (txns || []).forEach((t: ChipTxRow) => {
-        if (!flow[t.user_id]) flow[t.user_id] = { in: 0, out: 0, net: 0 };
         const amt = Math.abs(t.amount || 0);
-        if (
-          t.transaction_type === 'buyin' ||
-          t.transaction_type === 'distribution' ||
-          t.amount > 0
-        ) {
-          flow[t.user_id].in += amt;
-          flow[t.user_id].net += amt;
-        } else {
-          flow[t.user_id].out += amt;
-          flow[t.user_id].net -= amt;
+        if (t.to_user_id) {
+          ensure(t.to_user_id);
+          flow[t.to_user_id].in += amt;
+          flow[t.to_user_id].net += amt;
+        }
+        if (t.from_user_id) {
+          ensure(t.from_user_id);
+          flow[t.from_user_id].out += amt;
+          flow[t.from_user_id].net -= amt;
         }
       });
 

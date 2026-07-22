@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
@@ -145,11 +146,15 @@ export const WalletService = {
     }
     if (!minterId) throw new Error('Authentication required to mint chips');
 
+    // clubId from a route param may be an integer club_id; resolve to the uuid PK so
+    // the lookup and the mint_club_chips RPC (uuid arg) don't reject it.
+    const resolvedClubId = await resolveClubUUID(clubId);
+
     // 1. Check if club belongs to a union
     const { data: club } = await supabase
       .from('clubs')
       .select('id, name, owner_id, union_id')
-      .eq('id', clubId)
+      .eq('id', resolvedClubId)
       .maybeSingle();
 
     if (!club) throw new Error('Club not found');
@@ -182,7 +187,7 @@ export const WalletService = {
     // (p_club_id, p_amount, p_minted_by, p_diamonds_cost, p_notes).
     const { data, error } = await retryAsync(async () => {
       const res = await supabase.rpc('mint_club_chips', {
-        p_club_id: clubId,
+        p_club_id: resolvedClubId,
         p_amount: chipAmount,
         p_minted_by: minterId,
         p_diamonds_cost: diamondCost,

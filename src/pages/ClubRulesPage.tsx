@@ -136,9 +136,10 @@ export default function ClubRulesPage() {
         /* corrupt cache */
       }
 
+      // Rules live in the clubs.settings jsonb (there is no clubs.rules_text column).
       const { data: club } = await supabase
         .from('clubs')
-        .select('name, rules_text, owner_id')
+        .select('name, settings, owner_id')
         .eq(clubCol, clubVal)
         .maybeSingle();
 
@@ -147,7 +148,7 @@ export default function ClubRulesPage() {
       let adminFromOwner = false;
       if (club) {
         setClubName(club.name);
-        setRules(club.rules_text || '');
+        setRules(((club.settings as { rules_text?: string } | null)?.rules_text) || '');
         adminFromOwner = club.owner_id === user?.id;
         if (adminFromOwner) {
           setIsAdmin(true);
@@ -157,7 +158,10 @@ export default function ClubRulesPage() {
         try {
           sessionStorage.setItem(
             swrKey,
-            JSON.stringify({ name: club.name, rules: club.rules_text || '' })
+            JSON.stringify({
+              name: club.name,
+              rules: ((club.settings as { rules_text?: string } | null)?.rules_text) || '',
+            })
           );
         } catch {
           /* storage full */
@@ -197,9 +201,19 @@ export default function ClubRulesPage() {
     setSaving(true);
     try {
       const { column: saveCol, value: saveVal } = resolveClubIdFilter(clubId!);
+      // Merge rules_text into the clubs.settings jsonb without clobbering other keys.
+      const { data: cur } = await supabase
+        .from('clubs')
+        .select('settings')
+        .eq(saveCol, saveVal)
+        .maybeSingle();
+      const newSettings = {
+        ...((cur?.settings as Record<string, unknown> | null) || {}),
+        rules_text: sanitizeInput(editValue),
+      };
       const { error } = await supabase
         .from('clubs')
-        .update({ rules_text: sanitizeInput(editValue) })
+        .update({ settings: newSettings })
         .eq(saveCol, saveVal);
 
       if (error) throw error;

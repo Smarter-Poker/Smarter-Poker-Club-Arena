@@ -186,7 +186,7 @@ export function AgentCommissionDashboard() {
       const { data: subAgentsData } = myAgent
         ? await supabase
             .from('agents')
-            .select('id, user_id, player_count, total_commission, commission_rate, created_at')
+            .select('id, user_id, total_players, pending_commission, commission_rate, created_at')
             .eq('parent_agent_id', myAgent.id)
         : { data: null };
 
@@ -215,8 +215,8 @@ export function AgentCommissionDashboard() {
             username:
               subProfileMap[a.user_id]?.display_name || a.user_id?.substring(0, 8) || 'Unknown',
             avatarUrl: subProfileMap[a.user_id]?.avatar_url || '',
-            totalPlayers: a.player_count || 0,
-            totalCommission: a.total_commission || 0,
+            totalPlayers: a.total_players || 0,
+            totalCommission: a.pending_commission || 0,
             commissionRate: a.commission_rate || 0,
             joinedAt: new Date(a.created_at),
           }))
@@ -229,24 +229,13 @@ export function AgentCommissionDashboard() {
     if (isMounted.current) setLoading(false);
   };
 
-  const requestPayout = async () => {
-    if (!user?.id || !summary?.pendingPayout) return;
-
-    try {
-      const { error } = await retryAsync(
-        () => supabase.rpc('fn_request_agent_payout', { p_agent_id: user.id }),
-        3
-      );
-
-      if (error) {
-        console.warn('[AgentDashboard] fn_request_agent_payout RPC not available');
-        return null;
-      }
-
-      if (isMounted.current) toast.success('Payout request submitted!');
-      loadData();
-    } catch (error) {
-      console.warn('[AgentDashboard] Payout request failed (non-fatal):', error);
+  const requestPayout = () => {
+    // Agent commissions are not paid on-demand — they accrue (pending_commission /
+    // agent_commissions) and are disbursed automatically at the weekly settlement.
+    // There is no request-payout RPC; give the agent clear feedback instead of a
+    // silently-dead button.
+    if (isMounted.current) {
+      toast.info('Commissions are paid out automatically at the weekly settlement.');
     }
   };
 

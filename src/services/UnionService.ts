@@ -509,13 +509,15 @@ class UnionServiceClass {
 
         try {
           const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          // rake_transactions does not exist — the server-authoritative rake ledger is
+          // rake_history (rake_amount, collected_at).
           const { data: rakeData } = await supabase
-            .from('rake_transactions')
-            .select('amount')
+            .from('rake_history')
+            .select('rake_amount')
             .eq('club_id', uc.club_id)
-            .gte('created_at', oneWeekAgo)
+            .gte('collected_at', oneWeekAgo)
             .limit(QUERY_LIMITS.BULK);
-          weeklyRake = (rakeData || []).reduce((sum, r) => sum + Number(r.amount || 0), 0);
+          weeklyRake = (rakeData || []).reduce((sum, r) => sum + Number(r.rake_amount || 0), 0);
         } catch (err) {
           reportError(err, 'UnionService.rakeQuery');
         }

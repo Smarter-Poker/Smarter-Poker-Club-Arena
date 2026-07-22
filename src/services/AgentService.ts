@@ -724,16 +724,18 @@ class AgentServiceClass {
   async getAgentPlayers(agentId: string): Promise<AgentPlayer[]> {
     const { data: agent } = await supabase
       .from('agents')
-      .select('membership_id')
+      .select('user_id')
       .eq('id', agentId)
       .maybeSingle();
 
-    if (!agent) return [];
+    if (!agent?.user_id) return [];
 
+    // club_members.agent_id is a FK to users(id) and stores the agent's USER id
+    // (not membership_id) everywhere it is written — filter on that.
     const { data, error } = await supabase
       .from('club_members')
       .select('club_id, user_id, chip_balance, joined_at')
-      .eq('agent_id', agent.membership_id)
+      .eq('agent_id', agent.user_id)
       .limit(QUERY_LIMITS.MODERATE);
 
     if (error) throw error;

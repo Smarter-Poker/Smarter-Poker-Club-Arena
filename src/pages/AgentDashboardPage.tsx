@@ -1426,6 +1426,7 @@ export default function AgentDashboardPage() {
                       if (creditAction === 'issue_credit' || creditAction === 'add_prepaid') {
                         await CreditService.setCreditLine(
                           creditTarget,
+                          clubId || '',
                           amt,
                           creditAction === 'add_prepaid'
                         );

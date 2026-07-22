@@ -448,8 +448,8 @@ export default function ClubFinancialsPage() {
         </div>
       )}
 
-      {/* Club Financial Dashboard - Chip Minting & Commission */}
-      {clubId && (
+      {/* Club Financial Dashboard - Chip Minting & Commission (owner-only) */}
+      {clubId && userRole === 'owner' && (
         <section className="financial-dashboard-section">
           <ClubFinancialDashboard clubId={clubId} />
         </section>

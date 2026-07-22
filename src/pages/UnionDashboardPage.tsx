@@ -1007,12 +1007,10 @@ export default function UnionDashboardPage() {
                           setProcessing(true);
                           setError(null);
                           try {
-                            const { error: rmErr } = await supabase
-                              .from('union_clubs')
-                              .delete()
-                              .eq('union_id', unionId)
-                              .eq('club_id', club.id);
-                            if (rmErr) throw rmErr;
+                            // union_clubs is service-role-write-only under RLS — a direct
+                            // browser delete silently affects 0 rows. Route through the
+                            // World Hub API (SECURITY DEFINER), which throws on failure.
+                            await unionApi.removeClub(unionId || '', club.id);
                             masterBus.emit('CLUB_UPDATED', { clubId: club.id });
                             setSuccess(`${club.name} removed`);
                             loadDashboard(unionId);

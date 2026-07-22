@@ -176,11 +176,13 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       startDate.setHours(0, 0, 0, 0);
 
       const resolvedId = await resolveClubUUID(clubId);
+      // Use rake_history (the server-authoritative rake ledger) so this widget agrees
+      // with the summary cards on ClubFinancialsPage, which also read rake_history.
       const { data: records, error } = await supabase
-        .from('rake_records')
-        .select('rake_amount, created_at')
+        .from('rake_history')
+        .select('rake_amount, collected_at')
         .eq('club_id', resolvedId)
-        .gte('created_at', startDate.toISOString())
+        .gte('collected_at', startDate.toISOString())
         .limit(10000);
 
       if (error) throw error;
@@ -188,7 +190,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       const newData = getEmptyRevenueData();
 
       (records || []).forEach((record: any) => {
-        const dateKey = new Date(record.created_at).toLocaleDateString();
+        const dateKey = new Date(record.collected_at).toLocaleDateString();
         const daySlot = newData.find((d) => d.fullDate === dateKey);
 
         if (daySlot) {

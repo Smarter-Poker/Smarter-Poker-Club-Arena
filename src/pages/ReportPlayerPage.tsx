@@ -49,13 +49,17 @@ export default function ReportPlayerPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const { error: submitError } = await supabase.from('player_reports').insert({
+      // Canonical table is user_reports (reporter_id, reported_user_id, reason, details,
+      // status). hand_id + chat-log preference are folded into the details text since
+      // user_reports has no dedicated columns for them.
+      const detailParts = [sanitizeInput(form.description)];
+      if (form.hand_id) detailParts.push(`Hand: ${sanitizeInput(form.hand_id)}`);
+      if (form.include_chat_logs) detailParts.push('(reporter requested chat logs be reviewed)');
+      const { error: submitError } = await supabase.from('user_reports').insert({
         reporter_id: user.id,
-        reported_player_id: playerId,
+        reported_user_id: playerId,
         reason: form.reason,
-        description: sanitizeInput(form.description),
-        hand_id: form.hand_id ? sanitizeInput(form.hand_id) : null,
-        include_chat_logs: form.include_chat_logs,
+        details: detailParts.join('\n'),
         status: 'pending',
       });
 
@@ -71,7 +75,7 @@ export default function ReportPlayerPage() {
   const reasonOptions: { value: ReportReason; label: string; icon: string }[] = [
     { value: 'collusion', label: 'Collusion', icon: '' },
     { value: 'cheating', label: 'Cheating', icon: '' },
-    { value: 'abuse', label: 'Abusive Behavior', icon: '😤' },
+    { value: 'abuse', label: 'Abusive Behavior', icon: '' },
     { value: 'harassment', label: 'Harassment', icon: '' },
     { value: 'other', label: 'Other', icon: '' },
   ];

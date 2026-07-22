@@ -155,28 +155,38 @@ export const CreditService = {
   /**
    * Set credit line for an agent
    */
-  async setCreditLine(agentId: string, limit: number, isPrepaid: boolean): Promise<boolean> {
-    const { error } = await supabase
+  async setCreditLine(
+    userId: string,
+    clubId: string,
+    limit: number,
+    isPrepaid: boolean
+  ): Promise<boolean> {
+    // Resolve the agent row for this (user, club). Club owners/admins can read their
+    // club's agents under the consolidated agents SELECT policy.
+    const { data: agentRow } = await supabase
       .from('agents')
-      .update({
-        credit_limit: limit,
-        is_prepaid: isPrepaid,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', agentId);
-
-    if (error) throw error;
-
-    // Emit CREDIT_UPDATED
-    const { data: agent } = await supabase
-      .from('agents')
-      .select('club_id')
-      .eq('id', agentId)
+      .select('id')
+      .eq('user_id', userId)
+      .eq('club_id', clubId)
       .maybeSingle();
-    if (agent?.club_id) {
-      masterBus.emit('CREDIT_UPDATED', { clubId: agent.club_id, amount: limit });
-    }
+    if (!agentRow?.id) throw new Error('No agent found for this club');
 
+    // agents is service-role-write-only under RLS, so a direct client update silently
+    // affects 0 rows. Route through fn_admin_update_agent, which authorizes the caller
+    // as club owner/admin, enforces the parent-limit rule, sets credit_limit +
+    // is_prepaid, and writes the credit_assignments audit — all server-side.
+    const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
+      p_agent_id: agentRow.id,
+      p_credit_limit: limit,
+      p_is_prepaid: isPrepaid,
+      p_credit_reason: isPrepaid ? 'Prepaid balance set' : 'Credit line issued',
+    });
+    if (error || !res?.success) {
+      throw new Error(error?.message || res?.error || 'credit update failed');
+    }
+    if (res.club_id) {
+      masterBus.emit('CREDIT_UPDATED', { clubId: res.club_id, amount: limit });
+    }
     return true;
   },
 

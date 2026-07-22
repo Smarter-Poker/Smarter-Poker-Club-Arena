@@ -15,6 +15,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
+import { AgentService } from '../services/AgentService';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
@@ -204,31 +205,18 @@ export default function CreditAdminPanel() {
     }
     setSaving(true);
     try {
-      const agent = agents.find((a) => a.id === agentId);
-      const oldLimit = agent?.creditLimit || 0;
-
-      // Update the credit limit
-      const { error } = await supabase
-        .from('agents')
-        .update({ credit_limit: limit })
-        .eq('id', agentId);
-
-      if (error) throw error;
-
-      // Log to audit trail
-      try {
-        await supabase.from('commission_rate_audit').insert({
-          agent_id: agentId,
-          changed_by: user?.id || 'unknown',
-          old_rate: oldLimit,
-          new_rate: limit,
-          rate_type: 'credit_limit',
-          created_at: new Date().toISOString(),
-        });
-      } catch (e) {
-        reportError(e, 'CreditAdminPanel.find');
-        /* non-blocking */
-      }
+      // agents is service-role-write-only under RLS — a direct browser update here
+      // silently affects 0 rows (and the manual audit insert would then record a
+      // change that never happened). Route through fn_admin_update_agent, which
+      // authorizes the caller as club owner/admin, enforces the parent-limit rule,
+      // updates the limit, and writes the credit_assignments audit server-side.
+      const ok = await AgentService.setCreditLimit(
+        agentId,
+        limit,
+        user?.id || '',
+        'Credit limit set via admin panel'
+      );
+      if (!ok) throw new Error('Credit limit update failed');
 
       toast.success(`Credit limit updated to ${limit.toLocaleString()}`);
       setEditingAgent(null);
@@ -236,7 +224,7 @@ export default function CreditAdminPanel() {
       masterBus.emit('CREDIT_UPDATED', { clubId: '', userId: agentId, amount: limit });
       masterBus.emit('BALANCE_UPDATED', { source: 'credit_limit_change', agentId });
     } catch (err) {
-      toast.error('Failed to update credit limit');
+      toast.error(err instanceof Error ? err.message : 'Failed to update credit limit');
     }
     setSaving(false);
   };

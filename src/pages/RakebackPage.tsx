@@ -385,7 +385,7 @@ export default function RakebackPage() {
                   <span className="rake-generated">
                     Rake: {(period.rake_generated || 0).toLocaleString()}
                   </span>
-                  <span className="rakeback-rate">{(period.rakeback_rate * 100).toFixed(1)}%</span>
+                  <span className="rakeback-rate">{((period.rakeback_rate || 0) * 100).toFixed(1)}%</span>
                 </div>
                 <div className="period-earned">
                   <span className={`amount ${period.status}`}>

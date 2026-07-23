@@ -1,7 +1,7 @@
 /**
- * ════════════════════════════════════════════════════════════════════════════════
+ * ═══════════════════════════════════════════════════════════════════════════════
  * SUPABASE CLIENT — Server-Side (Service Role)
- * ════════════════════════════════════════════════════════════════════════════════
+ * ═══════════════════════════════════════════════════════════════════════════════
  * Uses SERVICE_ROLE key for full database access — bypasses RLS.
  * Handles Realtime broadcasting from the server side.
  * ZERO browser dependencies. Runs on Node.js.
@@ -10,7 +10,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { reportError } from './errorReporter.js';
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -36,9 +36,9 @@ if (!SUPABASE_SERVICE_ROLE_KEY) {
 const EFFECTIVE_SERVICE_ROLE_KEY =
   SUPABASE_SERVICE_ROLE_KEY || (process.env.VITEST ? 'test-placeholder-key' : '');
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE ROLE CLIENT — Full DB access, bypasses RLS
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
   auth: {
@@ -47,9 +47,9 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, EFFECTIVE_SER
   },
 });
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // REALTIME BROADCASTING — Push hand state to all connected clients
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 
 // Channel cache to avoid creating new channels for every broadcast
 // Phase 1.1 PR-5 (NO-GO-2): broadcastHandState + channelCache + cleanup*
@@ -57,9 +57,9 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, EFFECTIVE_SER
 // the game-state transport — engine WebSocket at /ws/table/:tableId is the
 // sole path, served by TableStateHub in server/src/transport/.
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // DATABASE HELPERS — Common queries used by the engine
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Load table info from database
@@ -855,7 +855,7 @@ export async function logHandHistory(params: {
     holeCards: { rank: string; suit: string }[];
   }[];
 }): Promise<{ handId: string | null }> {
-  // ── Tier 1: Raw Events ────────────────────────────────────────
+  // ── Tier 1: Raw Events ──────────────────────────────────────────────
   const rawEvents = params.actions.map((a, idx) => ({
     seq: idx,
     seat: a.seat,
@@ -866,7 +866,7 @@ export async function logHandHistory(params: {
     timestamp: a.timestamp ?? Date.now(),
   }));
 
-  // ── Tier 2: Audit Log ──────────────────────────────────────────
+  // ── Tier 2: Audit Log ───────────────────────────────────────────────
   const auditLog = {
     table_id: params.tableId,
     tournament_id: params.tournamentId || null,
@@ -883,7 +883,7 @@ export async function logHandHistory(params: {
     created_at: new Date().toISOString(),
   };
 
-  // ── Tier 3: Player Summaries ───────────────────────────────────
+  // ── Tier 3: Player Summaries ────────────────────────────────────────
   const playerSummaries = params.players.map((p) => {
     const winRecord = params.winners.find((w) => w.userId === p.userId);
     const showdown = params.showdownResults?.find((s) => s.userId === p.userId);
@@ -902,7 +902,7 @@ export async function logHandHistory(params: {
     };
   });
 
-  // ── Tier 4: Dispute Review Package ───────────────────────────────
+  // ── Tier 4: Dispute Review Package ──────────────────────────────────
   const disputeReview = {
     raw_events: rawEvents,
     audit_log: auditLog,
@@ -1223,9 +1223,9 @@ export async function processBBJPayout(params: {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // FIX 137: Hand State Snapshots for Crash Recovery (Bible V8 §7.17, §9.2)
-// ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Save or update the hand state snapshot after every action.
@@ -1310,12 +1310,12 @@ export async function getActiveHandSnapshot(tableId: string): Promise<{
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // Phase 1.2 PR-D: persistence of pending deadlines + disconnect FSM states.
 // The columns live on the SAME row as the active hand snapshot (keyed by
 // table_id + hand_number). They're optional — the legacy save/load path still
 // works; these helpers write and read the two new jsonb columns directly.
-// ════════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export interface PendingDeadline {
   eventId: string;

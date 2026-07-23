@@ -24,6 +24,17 @@
  *    ({"style":"tag",...}) or anything else — falls back to a deterministic
  *    per-horse hash so all 574 horses do NOT play the same style.
  *
+ * V4 (2026-07-23) STREET IQ upgrades:
+ *  - Initiative tracking: the preflop raiser (or prior-street aggressor) runs
+ *    a real continuation-bet strategy; callers probe instead of auto-checking.
+ *  - Postflop position: closing the action changes bluff frequency, call
+ *    margins, and check-raise mixes.
+ *  - Made-hand classification alongside MC equity: vulnerable made hands bet
+ *    for protection and never slowplay; pure draws semi-bluff; monsters size
+ *    geometrically to get stacks in by the river.
+ *  - Scare-card awareness: fresh flush/straight/pair completions slow value
+ *    down, tighten calls without blockers, and upgrade blocker bluffs.
+ *
  * ZERO browser dependencies. Runs on Node.js. Decisions are synchronous and
  * budgeted to stay under ~15ms even for 6-card PLO.
  */
@@ -423,6 +434,37 @@ function scoreOmahaHi(hole: Card[], board: Card[]): number {
     omahaScratch[0] = hole[a];
     omahaScratch[1] = hole[b];
     for (const [x, y, z] of BOARD_TRIPLES) {
+      omahaScratch[2] = board[x];
+      omahaScratch[3] = board[y];
+      omahaScratch[4] = board[z];
+      const s = scoreHoldem(omahaScratch, 5, false);
+      if (s > best) best = s;
+    }
+  }
+  return best;
+}
+
+// V4 (2026-07-23): board triples for PARTIAL boards (flop/turn) so the made-hand
+// classifier can score Omaha hands before the river. The hot MC path still uses
+// the precomputed 5-card BOARD_TRIPLES above.
+const TRIPLES_BY_LEN: Record<number, number[][]> = { 5: BOARD_TRIPLES };
+for (const len of [3, 4]) {
+  const t: number[][] = [];
+  for (let i = 0; i < len; i++)
+    for (let j = i + 1; j < len; j++) for (let k = j + 1; k < len; k++) t.push([i, j, k]);
+  TRIPLES_BY_LEN[len] = t;
+}
+
+/** Omaha high on a 3-5 card board (2 hole + 3 board). Bigger = better. */
+function scoreOmahaHiPartial(hole: Card[], board: Card[]): number {
+  const triples = TRIPLES_BY_LEN[board.length];
+  if (!triples) return 0;
+  const pairs = PAIR_COMBOS[hole.length] || PAIR_COMBOS[4];
+  let best = 0;
+  for (const [a, b] of pairs) {
+    omahaScratch[0] = hole[a];
+    omahaScratch[1] = hole[b];
+    for (const [x, y, z] of triples) {
       omahaScratch[2] = board[x];
       omahaScratch[3] = board[y];
       omahaScratch[4] = board[z];
@@ -925,6 +967,112 @@ function classifyPosition(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// V4 STREET IQ (2026-07-23) — initiative, position, made-hand class, scare cards
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const STAGE_ORDER: Record<string, number> = {
+  preflop: 0,
+  pineapple_discard: 1,
+  flop: 1,
+  turn: 2,
+  river: 3,
+};
+
+/**
+ * Who holds the betting initiative entering this street: the player who made
+ * the LAST aggressive action on any earlier street. The preflop raiser owns
+ * the flop; a flop check-raiser owns the turn. Drives the c-bet/probe split.
+ */
+function readInitiative(
+  history: ActionRecord[] | undefined,
+  heroUserId: string,
+  stage: HandStage
+): 'hero' | 'opp' | 'none' {
+  if (!history || history.length === 0) return 'none';
+  const cur = STAGE_ORDER[stage] ?? 1;
+  let last: ActionRecord | null = null;
+  for (const a of history) {
+    if ((STAGE_ORDER[a.stage] ?? 0) >= cur) continue; // earlier streets only
+    if (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true)) {
+      last = a;
+    }
+  }
+  if (!last) return 'none';
+  return last.userId === heroUserId ? 'hero' : 'opp';
+}
+
+/**
+ * True when hero closes the postflop action (acts last among live players).
+ * Postflop order starts left of the dealer; the dealer (or the live seat
+ * closest to the dealer clockwise) acts last.
+ */
+function actsLastPostflop(
+  heroSeat: number,
+  dealerSeat: number | undefined,
+  players: SeatPlayer[]
+): boolean {
+  if (dealerSeat === undefined) return false;
+  const live = players.filter((p) => !p.is_folded && !p.is_sitting_out).map((p) => p.seat);
+  if (live.length < 2 || !live.includes(heroSeat)) return false;
+  const WRAP = 1024; // any bound above the max seat number
+  const pos = (seat: number) => {
+    const d = seat - dealerSeat;
+    return d <= 0 ? d + WRAP : d; // dealer itself maps to WRAP = latest
+  };
+  const heroPos = pos(heroSeat);
+  for (const s of live) if (pos(s) > heroPos) return false;
+  return true;
+}
+
+/**
+ * Made-hand category RIGHT NOW (1=high card .. 10=royal), 0 preflop/unknown.
+ * Separates a vulnerable made hand (bet for protection, never slowplay wet)
+ * from a pure draw (equity comes from the runout) at the same MC equity.
+ */
+function madeCategory(hole: Card[], board: Card[], vi: VariantInfo): number {
+  if (!hole || hole.length < 2 || !board || board.length < 3) return 0;
+  try {
+    let score: number;
+    if (vi.isOmaha) {
+      score = scoreOmahaHiPartial(hole, board);
+    } else {
+      const all = hole.concat(board);
+      score = scoreHoldem(all, all.length, vi.isShortDeck);
+    }
+    return Math.floor(score / 0x100000);
+  } catch {
+    return 0;
+  }
+}
+
+interface ScareShift {
+  /** the just-dealt card completed a 3-flush */
+  flush: boolean;
+  /** the just-dealt card made the board straight-coordinated */
+  straight: boolean;
+  /** the just-dealt card paired the board */
+  pair: boolean;
+  any: boolean;
+}
+
+const NO_SCARE: ScareShift = { flush: false, straight: false, pair: false, any: false };
+
+/** Did the latest board card meaningfully change the danger level? */
+function scareShift(board: Card[]): ScareShift {
+  if (!board || board.length < 4) return NO_SCARE;
+  try {
+    const prev = HorseMind.texture(board.slice(0, board.length - 1));
+    const now = HorseMind.texture(board);
+    const flush = now.monotone && !prev.monotone;
+    const straight = now.straighty && !prev.straighty;
+    const pair = now.paired && !prev.paired;
+    return { flush, straight, pair, any: flush || straight || pair };
+  } catch {
+    return NO_SCARE;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN DECISION ENGINE
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -935,10 +1083,13 @@ export interface HorseGameStateV2 extends HorseGameState {
   actionHistory?: ActionRecord[];
 }
 
-/** V3 decision options (benchmark/test hooks — production uses defaults). */
+/** V3/V4 decision options (benchmark/test hooks — production uses defaults). */
 export interface HorseDecideOpts {
   /** disable the HorseMind opponent-intelligence layer (default: enabled) */
   mind?: boolean;
+  /** disable the V4 street-IQ layer: initiative, position, scare cards,
+   *  made-hand class, pot geometry (default: enabled) */
+  streetIQ?: boolean;
 }
 
 export class HorseLogic {
@@ -990,7 +1141,14 @@ export class HorseLogic {
     if (gs.stage === 'preflop') {
       decision = this.decidePreflop(player, gs, vi, params);
     } else {
-      decision = this.decidePostflop(player, gs, vi, params, opts.mind !== false);
+      decision = this.decidePostflop(
+        player,
+        gs,
+        vi,
+        params,
+        opts.mind !== false,
+        opts.streetIQ !== false
+      );
     }
 
     decision = this.legalize(decision, player, gs, vi);
@@ -1168,7 +1326,8 @@ export class HorseLogic {
     gs: HorseGameStateV2,
     vi: VariantInfo,
     params: StyleParams,
-    useMind: boolean = true
+    useMind: boolean = true,
+    useIQ: boolean = true
   ): HorseDecision {
     const { currentBet, pot } = gs;
     const toCall = Math.max(0, currentBet - player.bet);
@@ -1221,43 +1380,129 @@ export class HorseLogic {
     const mw = (oppCount - 1) * 0.03;
     const spr = pot > 0 ? stack / pot : 10;
 
+    // ═══ V4: street IQ — initiative, position, made class, scare, geometry ═══
+    let initiative: 'hero' | 'opp' | 'none' = 'none';
+    let ip = false;
+    let cat = 0; // made-hand category right now (0 = unknown)
+    let scare = NO_SCARE;
+    let geomFrac = 0; // geometric stacks-in-by-river sizing for monsters
+    if (useIQ) {
+      try {
+        initiative = readInitiative(gs.actionHistory, player.user_id, street);
+        ip = actsLastPostflop(player.seat, gs.dealerSeat, gs.players);
+        cat = madeCategory(player.cards, gs.communityCards, vi);
+        scare = scareShift(gs.communityCards);
+        const streetsLeft = isRiver ? 1 : street === 'turn' ? 2 : 3;
+        // Effective stack behind vs the deepest live opponent, capped by hero.
+        let effOpp = 0;
+        for (const o of opponents) {
+          const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
+          if (os > effOpp) effOpp = os;
+        }
+        const eff = Math.min(stack + player.bet, effOpp);
+        const sprEff = pot > 0 ? Math.max(0, eff / pot) : 0;
+        // Solve pot*(1+2g)^streets = pot + 2*eff  ->  even pot-growth per street.
+        geomFrac = (Math.pow(1 + 2 * sprEff, 1 / streetsLeft) - 1) / 2;
+        geomFrac = Math.max(0.35, Math.min(1.1, geomFrac));
+      } catch {
+        /* street IQ is best-effort — fall back to V3 behavior */
+      }
+    }
+    // Vulnerable made hand: real hand today, wet board, cards to come — bet for
+    // protection, never slowplay. (Strong two pair / trips / weak straight.)
+    const vulnerable = useIQ && cat >= 3 && cat <= 5 && wetness >= 0.45 && drawsLive;
+    // Fresh danger card hero does not beat: straight/flush completed, no
+    // blocker, and hero's own hand is below that class.
+    const dangered = useIQ && (scare.flush || scare.straight) && cat < 5 && !blocker;
+
     // V3 texture-driven sizing: small on dry boards, big on wet ones.
     const sizeBase = 0.3 + wetness * 0.35; // 0.30 (dry) .. 0.65 (soaked)
     // V3 bluff gating: blockers upgrade bluffs; wet boards without one demote.
     const blockerMod = blocker ? 1.35 : wetness > 0.55 ? 0.7 : 1.0;
-    const bluffScale = exploit.bluffMod * blockerMod;
+    // V4: position scales bluffing — pressure comes cheaper in position.
+    const posMod = useIQ ? (ip ? 1.15 : 0.85) : 1.0;
+    const bluffScale = exploit.bluffMod * blockerMod * posMod;
 
     // ═══ Not facing a bet ═══
     if (!facingBet) {
-      // Monster: usually bet big, sometimes trap (never trap on wet boards).
+      // Monster: usually bet big, sometimes trap (never trap on wet or
+      // freshly-dangered boards). V4: size to get stacks in by the river.
       if (equity >= 0.8 + mw) {
-        if (!isRiver && wetness < 0.5 && fastRandom() < params.slowplayFreq && oppCount <= 2) {
+        if (
+          !isRiver &&
+          wetness < 0.5 &&
+          !scare.any &&
+          !vulnerable &&
+          fastRandom() < params.slowplayFreq &&
+          oppCount <= 2
+        ) {
           return { action: 'check', thinkTime: 0 };
         }
-        return this.betSize(pot, sizeBase + 0.3 + fastRandom() * 0.2, player, gs, vi, params);
+        const monsterFrac =
+          geomFrac > 0
+            ? Math.max(sizeBase + 0.2, geomFrac) + fastRandom() * 0.1
+            : sizeBase + 0.3 + fastRandom() * 0.2;
+        return this.betSize(pot, monsterFrac, player, gs, vi, params);
       }
-      // Strong value
+      // Strong value. V4: a vulnerable made hand sizes UP and never checks
+      // back; a dangered hand slows down instead of firing into the new nuts.
       if (equity >= 0.62 + mw) {
-        return this.betSize(pot, sizeBase + 0.12 + fastRandom() * 0.15, player, gs, vi, params);
+        if (dangered && fastRandom() < 0.55) {
+          return { action: 'check', thinkTime: 0 };
+        }
+        const protection = vulnerable ? 0.1 : 0;
+        return this.betSize(
+          pot,
+          sizeBase + 0.12 + protection + fastRandom() * 0.15,
+          player,
+          gs,
+          vi,
+          params
+        );
       }
-      // Thin value / protection — thinner into stations (valueThinMod > 1)
-      if (equity >= 0.52 + mw - (exploit.valueThinMod - 1) * 0.08 && fastRandom() < 0.65) {
-        return this.betSize(pot, sizeBase + fastRandom() * 0.12, player, gs, vi, params);
+      // Thin value / protection — thinner into stations (valueThinMod > 1).
+      // V4: vulnerable made hands always bet-protect; dangered hands check.
+      if (equity >= 0.52 + mw - (exploit.valueThinMod - 1) * 0.08) {
+        if (dangered) return { action: 'check', thinkTime: 0 };
+        if (vulnerable || fastRandom() < 0.65) {
+          return this.betSize(pot, sizeBase + fastRandom() * 0.12, player, gs, vi, params);
+        }
+        return { action: 'check', thinkTime: 0 };
       }
-      // Semi-bluff with live draws (equity from draws is in the MC number)
+      // V4 CONTINUATION BET: the preflop/prior-street aggressor keeps the
+      // pressure on favorable boards even without made equity. Small sizing,
+      // dry-board + short-handed gated, position-scaled, station-aware.
+      if (
+        initiative === 'hero' &&
+        oppCount <= 2 &&
+        wetness <= 0.45 &&
+        !scare.any &&
+        equity >= 0.18 &&
+        equity < 0.52 &&
+        !isRiver &&
+        fastRandom() < (oppCount === 1 ? 0.6 : 0.35) * Math.min(1.3, bluffScale)
+      ) {
+        return this.betSize(pot, 0.3 + fastRandom() * 0.1, player, gs, vi, params);
+      }
+      // Semi-bluff with live draws (equity from draws is in the MC number).
+      // V4: made hands in this band (two pair on wet boards) prefer showdown
+      // lines over bloating — only true draws semi-bluff.
       if (
         drawsLive &&
         equity >= 0.3 &&
         equity < 0.52 &&
+        (cat <= 2 || !useIQ) &&
         fastRandom() < params.bluffFreq * params.aggression * bluffScale * (oppCount === 1 ? 1.4 : 0.7)
       ) {
         return this.betSize(pot, sizeBase + 0.2 + fastRandom() * 0.15, player, gs, vi, params);
       }
-      // Pure bluff — mostly heads-up, rarer on the river, blocker-preferred
+      // Pure bluff — mostly heads-up, rarer on the river, blocker-preferred.
+      // V4: a fresh scare card WE block is the best bluff trigger in poker.
+      const scareBluffBoost = useIQ && scare.any && blocker ? 1.5 : 1.0;
       if (
         equity < 0.3 &&
         oppCount === 1 &&
-        fastRandom() < params.bluffFreq * bluffScale * (isRiver ? 0.55 : 0.8)
+        fastRandom() < params.bluffFreq * bluffScale * scareBluffBoost * (isRiver ? 0.55 : 0.8)
       ) {
         return this.betSize(pot, sizeBase + 0.15 + fastRandom() * 0.2, player, gs, vi, params);
       }
@@ -1281,10 +1526,16 @@ export class HorseLogic {
       return { action: 'fold', thinkTime: 0 };
     }
 
-    // Raise for value
+    // Raise for value. V4: out of position lean harder on the check-raise
+    // (denies equity + realizes fold equity); on a fresh scare card we do not
+    // beat, downgrade the raise to a call.
     const valueRaiseThresh = 0.68 + mw + (isRiver ? 0.04 : 0);
     if (equity >= valueRaiseThresh) {
-      if (fastRandom() < 0.55 * params.aggression + params.checkRaiseFreq) {
+      const oopBoost = useIQ && !ip ? params.checkRaiseFreq * 0.6 : 0;
+      if (
+        !(dangered && cat < 6) &&
+        fastRandom() < 0.55 * params.aggression + params.checkRaiseFreq + oopBoost
+      ) {
         const raiseToAmt = currentBet + (pot + toCall) * (0.7 + fastRandom() * 0.4);
         return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
       }
@@ -1292,11 +1543,13 @@ export class HorseLogic {
     }
 
     // Semi-bluff raise with big draws (flop/turn only, not into a crowd,
-    // gated by the target's fold tendency + our blockers)
+    // gated by the target's fold tendency + our blockers). V4: pure draws
+    // only — made hands in the band call instead of bloating the pot.
     if (
       drawsLive &&
       equity >= 0.33 &&
       equity < 0.52 &&
+      (cat <= 2 || !useIQ) &&
       oppCount <= 2 &&
       betRatio <= 0.85 &&
       fastRandom() < params.bluffFreq * params.aggression * bluffScale * 0.5
@@ -1308,21 +1561,27 @@ export class HorseLogic {
     // Call when the price is right. Margin scales with bet size; draws get a
     // small implied-odds allowance before the river. V3: a maniac's bets need
     // less respect (callDownMod > 1); a passive player's bets need more.
+    // V4: bets fired ON a fresh scare card into a hand that does not beat the
+    // new class get extra respect; in-position calls realize equity better.
     const impliedBonus = drawsLive && equity >= 0.25 ? 0.04 : 0;
-    const respect = 2 - exploit.callDownMod; // maniac 0.8, neutral 1, passive 1.15
+    let respect = 2 - exploit.callDownMod; // maniac 0.8, neutral 1, passive 1.15
+    if (dangered) respect += 0.15;
+    const posEdge = useIQ ? (ip ? -0.012 : 0.008) : 0;
     const sizingPenalty = (Math.min(0.06, betRatio * 0.04) + mw * 0.5) * respect;
-    if (equity + impliedBonus >= potOdds + 0.03 * respect + sizingPenalty) {
+    if (equity + impliedBonus >= potOdds + 0.03 * respect + sizingPenalty + posEdge) {
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }
 
     // Disciplined bluff-catch vs small bets heads-up on the river — more
-    // often against aggressive opposition, less against passives.
+    // often against aggressive opposition, less against passives. V4: when
+    // the river completed the draws and we hold no blocker, catch less.
+    const catchScale = dangered ? 0.12 : 0.25;
     if (
       isRiver &&
       oppCount === 1 &&
       betRatio <= 0.4 &&
       equity >= potOdds - 0.04 &&
-      fastRandom() < 0.25 * exploit.callDownMod
+      fastRandom() < catchScale * exploit.callDownMod
     ) {
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }
@@ -1570,7 +1829,18 @@ export class HorseLogic {
   }
 
   /** Exposed for tests ONLY: internal fast evaluators for cross-validation. */
-  static readonly __testables = { scoreHoldem, scoreOmahaHi, scoreOmahaLow, straightTop };
+  static readonly __testables = {
+    scoreHoldem,
+    scoreOmahaHi,
+    scoreOmahaLow,
+    straightTop,
+    // V4 street IQ internals
+    readInitiative,
+    actsLastPostflop,
+    madeCategory,
+    scareShift,
+    scoreOmahaHiPartial,
+  };
 
   /** Exposed for tests: variant-aware Monte Carlo equity (0..1). */
   static estimateEquity(

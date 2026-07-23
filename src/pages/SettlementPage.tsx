@@ -442,9 +442,11 @@ export default function SettlementPage() {
       .on(
         'postgres_changes',
         {
+          // SWEEP #3 (2026-07-23): club_settlements never existed — the real
+          // club settlement record is settlement_invoices (union<->club wires).
           event: '*',
           schema: 'public',
-          table: 'club_settlements',
+          table: 'settlement_invoices',
         },
         (payload) => {
           // Update club wires state directly for faster UI updates
@@ -454,8 +456,8 @@ export default function SettlementPage() {
                 wire.clubId === (payload.new as any).club_id
                   ? {
                       ...wire,
-                      status: (payload.new as any).status === 'finalized' ? 'processed' : 'pending',
-                      finalWire: (payload.new as any).final_amount || wire.finalWire,
+                      status: (payload.new as any).status === 'paid' ? 'processed' : 'pending',
+                      finalWire: (payload.new as any).net_amount || wire.finalWire,
                     }
                   : wire
               )
@@ -466,24 +468,17 @@ export default function SettlementPage() {
       .on(
         'postgres_changes',
         {
-          event: '*',
+          // SWEEP #3 (2026-07-23): agent_settlements never existed — the live
+          // event stream is agent_commissions INSERTs (per-hand accruals).
+          // A BALANCE_UPDATED bus emit triggers the existing debounced
+          // loadSettlementData listener rather than patching state in place.
+          event: 'INSERT',
           schema: 'public',
-          table: 'agent_settlements',
+          table: 'agent_commissions',
         },
-        (payload) => {
-          // Update agent payouts state directly for faster UI updates
-          if (payload.eventType === 'UPDATE' && payload.new && isMounted.current) {
-            setAgentPayouts((prev) =>
-              prev.map((payout) =>
-                payout.agentId === (payload.new as any).agent_id
-                  ? {
-                      ...payout,
-                      status: (payload.new as any).status as 'pending' | 'approved' | 'paid',
-                      netPayout: (payload.new as any).net_settlement || payout.netPayout,
-                    }
-                  : payout
-              )
-            );
+        () => {
+          if (isMounted.current) {
+            masterBus.emit('BALANCE_UPDATED', { source: 'agent_commissions_rt' });
           }
         }
       )

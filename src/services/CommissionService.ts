@@ -93,7 +93,14 @@ export const CommissionService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Set commission rate with cap validation
+   * Set commission rate with cap validation.
+   *
+   * SWEEP #3 (2026-07-23): repointed off the phantom `commission_structures`
+   * table. Rates live on the real `agents` row (commission_rate /
+   * player_rakeback_rate) and MUST be written through the SECURITY DEFINER
+   * `fn_admin_update_agent` RPC — direct `agents` writes are RLS-locked and
+   * fail silently. Sub-agent rates live in `sub_agents.commission_pct` and are
+   * managed server-side (no client write policy).
    */
   async setRate(
     clubId: string,
@@ -110,42 +117,39 @@ export const CommissionService = {
     if (rate < 0) {
       throw new Error('Rate cannot be negative');
     }
+    if (targetRole === 'SUB_AGENT') {
+      throw new Error(
+        'Sub-agent rates are managed server-side (sub_agents.commission_pct) — no client write path.'
+      );
+    }
 
-    // P2-17/20: Read old rate for audit trail before upserting
+    // P2-17/20: Read old rate for audit trail before updating
     let oldRate = 0;
     const resolvedClubId = await resolveClubUUID(clubId);
     try {
       const { data: existing } = await supabase
-        .from('commission_structures')
-        .select('rate')
-        .eq('club_id', resolvedClubId)
-        .eq('agent_id', agentId)
-        .eq('target_role', targetRole)
+        .from('agents')
+        .select('commission_rate, player_rakeback_rate')
+        .eq('id', agentId)
         .maybeSingle();
-      oldRate = existing?.rate ?? 0;
+      oldRate =
+        (targetRole === 'AGENT' ? existing?.commission_rate : existing?.player_rakeback_rate) ?? 0;
     } catch (err) {
       reportError(err, 'CommissionService.setRate.readOldRate', { clubId, agentId, targetRole });
       /* first time set — oldRate stays 0 */
     }
 
-    const { data, error } = await supabase
-      .from('commission_structures')
-      .upsert(
-        {
-          club_id: resolvedClubId,
-          agent_id: agentId,
-          target_role: targetRole,
-          rate,
-          // commission_structures schema: set_by, updated_at (NOT created_by, effective_date)
-          updated_at: new Date().toISOString(),
-          set_by: setBy,
-        },
-        { onConflict: 'club_id,agent_id,target_role' }
-      )
-      .select()
-      .maybeSingle();
+    const { data: result, error } = await supabase.rpc('fn_admin_update_agent', {
+      p_agent_id: agentId,
+      p_commission_rate: targetRole === 'AGENT' ? rate : null,
+      p_player_rakeback_rate: targetRole === 'PLAYER' ? rate : null,
+      p_assigned_by: setBy,
+    });
 
     if (error) throw error;
+    if (result && result.success === false) {
+      throw new Error(result.error || 'Commission rate update rejected');
+    }
 
     // P2-17/20: Log the rate change for audit trail (non-blocking)
     if (oldRate !== rate) {
@@ -164,38 +168,76 @@ export const CommissionService = {
         /* non-blocking */
       }
     }
-    if (!data) throw new Error('Commission rate upsert returned no data');
     return {
-      id: data.id,
-      clubId: data.club_id,
-      agentId: data.agent_id,
-      targetRole: data.target_role,
-      rate: data.rate,
-      effectiveDate: data.updated_at,
-      createdBy: data.set_by,
+      id: agentId,
+      clubId: resolvedClubId,
+      agentId,
+      targetRole,
+      rate,
+      effectiveDate: new Date().toISOString(),
+      createdBy: setBy,
     };
   },
 
   /**
-   * Get all rates for an agent
+   * Get all rates for an agent.
+   *
+   * SWEEP #3 (2026-07-23): repointed off the phantom `commission_structures`
+   * table onto the real stores: agents.commission_rate (AGENT),
+   * agents.player_rakeback_rate (PLAYER), sub_agents.commission_pct (SUB_AGENT,
+   * one entry per sub-agent).
    */
   async getRates(agentId: string): Promise<CommissionRate[]> {
-    const { data, error } = await supabase
-      .from('commission_structures')
-      // commission_structures schema: set_by, updated_at (NOT created_by, effective_date)
-      .select('id, club_id, agent_id, target_role, rate, updated_at, set_by')
-      .eq('agent_id', agentId);
+    const { data: agent, error } = await supabase
+      .from('agents')
+      .select('id, club_id, commission_rate, player_rakeback_rate, updated_at')
+      .eq('id', agentId)
+      .maybeSingle();
 
     if (error) throw error;
-    return (data || []).map((r) => ({
-      id: r.id,
-      clubId: r.club_id,
-      agentId: r.agent_id,
-      targetRole: r.target_role,
-      rate: r.rate,
-      effectiveDate: r.updated_at,
-      createdBy: r.set_by,
-    }));
+
+    const rates: CommissionRate[] = [];
+    if (agent) {
+      rates.push(
+        {
+          id: `${agent.id}:AGENT`,
+          clubId: agent.club_id,
+          agentId: agent.id,
+          targetRole: 'AGENT',
+          rate: agent.commission_rate ?? 0,
+          effectiveDate: agent.updated_at,
+          createdBy: '',
+        },
+        {
+          id: `${agent.id}:PLAYER`,
+          clubId: agent.club_id,
+          agentId: agent.id,
+          targetRole: 'PLAYER',
+          rate: agent.player_rakeback_rate ?? 0,
+          effectiveDate: agent.updated_at,
+          createdBy: '',
+        }
+      );
+    }
+
+    const { data: subs } = await supabase
+      .from('sub_agents')
+      .select('id, club_id, commission_pct, updated_at')
+      .eq('parent_agent_id', agentId);
+
+    (subs || []).forEach((s) =>
+      rates.push({
+        id: s.id,
+        clubId: s.club_id,
+        agentId,
+        targetRole: 'SUB_AGENT',
+        rate: s.commission_pct ?? 0,
+        effectiveDate: s.updated_at,
+        createdBy: '',
+      })
+    );
+
+    return rates;
   },
 
   /**
@@ -309,24 +351,33 @@ export const CommissionService = {
     }, 2);
 
     if (error) throw error;
-    return data;
+    // RPC returns snake_case table rows over agents + agent_commissions
+    return (data || []).map((p: any) => ({
+      agentId: p.agent_id,
+      periodId: p.period_id,
+      grossRake: p.gross_rake || 0,
+      commissionEarned: p.commission_earned || 0,
+      paidToDownlines: p.paid_to_downlines || 0,
+      netPayout: p.net_payout || 0,
+      status: p.status || 'pending',
+    }));
   },
 
   /**
-   * Approve commission payout
+   * Approve commission payout.
+   *
+   * RETIRED (sweep #3, 2026-07-23). The `commission_payouts` approval table was
+   * removed from the schema and no UI calls this method. Commission amounts are
+   * accrued per-hand into `agent_commissions` by the engine RakebackSettler and
+   * settled through the credit_invoices subsystem — there is no client-side
+   * approval step. Kept as a no-op so any stale caller resolves cleanly.
    */
   async approvePayout(payoutId: string, approvedBy: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('commission_payouts')
-      .update({
-        status: 'approved',
-        approved_by: approvedBy,
-        approved_at: new Date().toISOString(),
-      })
-      .eq('id', payoutId);
-
-    if (error) throw error;
-    return true;
+    console.debug(
+      `[Commission] approvePayout is retired (no-op) for ${payoutId} by ${approvedBy} — ` +
+        'commissions accrue in agent_commissions and settle via credit_invoices.'
+    );
+    return false;
   },
 
   /**
@@ -342,17 +393,18 @@ export const CommissionService = {
 
     if (error) throw error;
 
-    // Fetch the payout record for accurate bus event data
+    // Fetch the commission record for accurate bus event data
+    // (sweep #3: execute_commission_payout operates on agent_commissions rows)
     const { data: payout } = await supabase
-      .from('commission_payouts')
-      .select('agent_id, net_payout')
+      .from('agent_commissions')
+      .select('user_id, amount')
       .eq('id', payoutId)
       .maybeSingle();
 
     // Notify listening pages (ClubFinancialsPage) that a commission was paid
     masterBus.emit('COMMISSION_PAID', {
-      agentId: payout?.agent_id || payoutId,
-      amount: payout?.net_payout || 0,
+      agentId: payout?.user_id || payoutId,
+      amount: payout?.amount || 0,
     });
     return true;
   },
@@ -362,27 +414,40 @@ export const CommissionService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Get agent's commission history
+   * Get agent's commission history.
+   *
+   * SWEEP #3 (2026-07-23): repointed off the phantom `commission_payouts`
+   * table onto `agent_commissions`, the live per-hand commission ledger
+   * (keyed by the agent's auth user_id, so the agents.id PK is resolved first).
    */
   async getCommissionHistory(agentId: string, limit: number = 10): Promise<CommissionPayout[]> {
+    // agent_commissions is keyed by user_id (auth uid), not agents.id
+    const { data: agent, error: agentError } = await supabase
+      .from('agents')
+      .select('user_id, club_id')
+      .eq('id', agentId)
+      .maybeSingle();
+
+    if (agentError) throw agentError;
+    if (!agent?.user_id) return [];
+
     const { data, error } = await supabase
-      .from('commission_payouts')
-      .select(
-        'id, agent_id, period_id, gross_rake, commission_earned, paid_to_downlines, net_payout, status, created_at'
-      )
-      .eq('agent_id', agentId)
+      .from('agent_commissions')
+      .select('id, club_id, user_id, amount, source_type, created_at')
+      .eq('user_id', agent.user_id)
+      .eq('club_id', agent.club_id)
       .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) throw error;
     return (data || []).map((p) => ({
-      agentId: p.agent_id,
-      periodId: p.period_id,
-      grossRake: p.gross_rake,
-      commissionEarned: p.commission_earned,
-      paidToDownlines: p.paid_to_downlines,
-      netPayout: p.net_payout,
-      status: p.status,
+      agentId,
+      periodId: '',
+      grossRake: 0,
+      commissionEarned: p.amount || 0,
+      paidToDownlines: 0,
+      netPayout: p.amount || 0,
+      status: 'paid' as const,
     }));
   },
 };

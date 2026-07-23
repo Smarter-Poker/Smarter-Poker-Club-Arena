@@ -62,6 +62,10 @@ const ALLOWLIST = new Set([
   // False positives (JSDoc / comment examples) — remove when the scanner
   // strips comments before matching.
   'announcements', // src/utils/sanitizeInput.ts:12 — JSDoc example
+  // VIEWS created in 20260723_sweep3_feature_backends.sql — the ddlRx above
+  // only parses CREATE TABLE, so views must be allowlisted explicitly.
+  'player_sessions', // security_invoker view over session_history + tables
+  'club_daily_stats', // security_invoker view over rake_records/rake_history
 ]);
 const WARN_ONLY = process.argv.includes('--warn');
 

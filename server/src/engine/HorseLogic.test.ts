@@ -651,3 +651,191 @@ describe('HorseMind V3 — opponent intelligence', () => {
     expect(avg).toBeLessThan(25);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. V4 — STREET IQ: initiative, position, made class, scare cards (2026-07-23)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('HorseLogic V4 — street IQ', () => {
+  const { readInitiative, actsLastPostflop, madeCategory, scareShift, scoreOmahaHiPartial } = (
+    HorseLogic as any
+  ).__testables;
+
+  it('reads initiative: preflop raiser owns the flop, check-raiser owns the turn', () => {
+    const pfHist: ActionRecord[] = [
+      { seat: 2, userId: 'pfr', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
+      { seat: 3, userId: 'clr', action: 'call', amount: 6, timestamp: 2, stage: 'preflop' },
+    ];
+    expect(readInitiative(pfHist, 'pfr', 'flop')).toBe('hero');
+    expect(readInitiative(pfHist, 'clr', 'flop')).toBe('opp');
+    const xrHist: ActionRecord[] = [
+      ...pfHist,
+      { seat: 2, userId: 'pfr', action: 'bet', amount: 8, timestamp: 3, stage: 'flop' },
+      { seat: 3, userId: 'clr', action: 'raise', amount: 24, timestamp: 4, stage: 'flop' },
+      { seat: 2, userId: 'pfr', action: 'call', amount: 24, timestamp: 5, stage: 'flop' },
+    ];
+    expect(readInitiative(xrHist, 'clr', 'turn')).toBe('hero');
+    expect(readInitiative(xrHist, 'pfr', 'turn')).toBe('opp');
+    expect(readInitiative([], 'x', 'flop')).toBe('none');
+  });
+
+  it('knows who closes the action postflop', () => {
+    const players = [mkPlayer(1), mkPlayer(3), mkPlayer(6)];
+    // Dealer seat 6: order is 1, 3, then 6 — the button closes.
+    expect(actsLastPostflop(6, 6, players)).toBe(true);
+    expect(actsLastPostflop(1, 6, players)).toBe(false);
+    expect(actsLastPostflop(3, 6, players)).toBe(false);
+    // Dealer seat 3: order is 6, 1, then 3.
+    expect(actsLastPostflop(3, 3, players)).toBe(true);
+    expect(actsLastPostflop(6, 3, players)).toBe(false);
+  });
+
+  it('classifies the made hand right now, including partial-board Omaha', () => {
+    const vi = { holeCount: 2, isOmaha: false, isHiLo: false, isShortDeck: false } as any;
+    expect(madeCategory([c('8h'), c('8d')], [c('8s'), c('Kd'), c('2c')], vi)).toBe(4); // set
+    expect(madeCategory([c('Ah'), c('Kh')], [c('Qh'), c('Jh'), c('Th')], vi)).toBe(10); // royal
+    expect(madeCategory([c('7h'), c('2c')], [c('Ah'), c('Kd'), c('Qs')], vi)).toBe(1); // air
+    const viO = { holeCount: 4, isOmaha: true, isHiLo: false, isShortDeck: false } as any;
+    const oHole = [c('8h'), c('8d'), c('Ac'), c('Kc')];
+    expect(madeCategory(oHole, [c('8s'), c('Kd'), c('2c')], viO)).toBe(4); // flopped set, 3-card board
+    expect(scoreOmahaHiPartial(oHole, [c('8s'), c('Kd'), c('2c'), c('8c')]) >= 8 * 0x100000).toBe(
+      true
+    ); // quads on the 4-card board
+  });
+
+  it('detects fresh scare cards on turn and river', () => {
+    const flushTurn = scareShift([c('9h'), c('7h'), c('2s'), c('Kh')]);
+    expect(flushTurn.flush).toBe(true);
+    const pairRiver = scareShift([c('9h'), c('7d'), c('2s'), c('Kc'), c('9c')]);
+    expect(pairRiver.pair).toBe(true);
+    expect(scareShift([c('9h'), c('7d'), c('2s')]).any).toBe(false); // flop = no shift
+  });
+
+  it('c-bets a dry flop as the aggressor far more than a caller in the same seat', () => {
+    const mkGs = (heroId: string): any => ({
+      players: [
+        mkPlayer(2, { user_id: heroId, cards: [c('Ah'), c('5d')] }),
+        mkPlayer(5, { user_id: 'villain' }),
+      ],
+      communityCards: [c('Kd'), c('7s'), c('2c')],
+      pot: 13,
+      currentBet: 0,
+      minRaise: 2,
+      stage: 'flop',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      dealerSeat: 2,
+      actionHistory: [
+        { seat: 2, userId: 'raiser', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
+        { seat: 5, userId: 'villain', action: 'call', amount: 6, timestamp: 2, stage: 'preflop' },
+      ],
+    });
+    const n = 150;
+    let pfrBets = 0;
+    let callerBets = 0;
+    for (let i = 0; i < n; i++) {
+      const gsA = mkGs('raiser');
+      if (['bet', 'raise', 'all_in'].includes(HorseLogic.decide(gsA.players[0], gsA, 'tag').action))
+        pfrBets++;
+      const gsB = mkGs('someone-else');
+      if (['bet', 'raise', 'all_in'].includes(HorseLogic.decide(gsB.players[0], gsB, 'tag').action))
+        callerBets++;
+    }
+    expect(pfrBets / n).toBeGreaterThan(callerBets / n + 0.2); // initiative gap is real
+  });
+
+  it('bets vulnerable made hands for protection instead of slowplaying', () => {
+    // Top two pair on a wet two-tone connected flop, checked to hero.
+    const freq = frequency(
+      () => {
+        const hero = mkPlayer(2, { cards: [c('Th'), c('9c')], stack: 200 });
+        const gs: any = {
+          players: [hero, mkPlayer(5)],
+          communityCards: [c('Ts'), c('9s'), c('8d')],
+          pot: 12,
+          currentBet: 0,
+          minRaise: 2,
+          stage: 'flop',
+          gameVariant: 'nlh',
+          bigBlind: 2,
+          dealerSeat: 2,
+        };
+        return HorseLogic.decide(hero, gs, 'tricky'); // trickiest style = most slowplay pressure
+      },
+      (a) => a === 'bet' || a === 'all_in',
+      100
+    );
+    expect(freq).toBeGreaterThan(0.85);
+  });
+
+  it('respects a completed flush more when holding no blocker', () => {
+    // Overpair faces a pot-sized bet the moment the third heart lands.
+    const decideOn = (streetIQ: boolean) => {
+      const hero = mkPlayer(2, { cards: [c('Kc'), c('Kd')], stack: 200, bet: 0 });
+      const gs: any = {
+        players: [hero, mkPlayer(5)],
+        communityCards: [c('9h'), c('7h'), c('2s'), c('Qh')],
+        pot: 40,
+        currentBet: 40,
+        minRaise: 20,
+        stage: 'turn',
+        gameVariant: 'nlh',
+        bigBlind: 2,
+        dealerSeat: 5,
+        lastRaise: 20,
+      };
+      return HorseLogic.decide(hero, gs, 'balanced', {}, { streetIQ });
+    };
+    const n = 120;
+    let foldsIQ = 0;
+    let foldsBase = 0;
+    for (let i = 0; i < n; i++) {
+      if (decideOn(true).action === 'fold') foldsIQ++;
+      if (decideOn(false).action === 'fold') foldsBase++;
+    }
+    expect(foldsIQ).toBeGreaterThanOrEqual(foldsBase); // scare respect never decreases discipline
+  });
+
+  it('street-IQ decisions stay legal across randomized states with histories', () => {
+    for (let trial = 0; trial < 400; trial++) {
+      const deck = shuffle(makeDeck(false));
+      const boardCount = [3, 4, 5][trial % 3];
+      const stage = boardCount === 3 ? 'flop' : boardCount === 4 ? 'turn' : 'river';
+      const hero = mkPlayer(1, {
+        cards: deck.slice(0, 2),
+        stack: 50 + Math.random() * 300,
+        bet: 0,
+      });
+      const villain = mkPlayer(2, { cards: deck.slice(2, 4) });
+      const currentBet = Math.random() < 0.5 ? 0 : Math.random() * 40;
+      const gs: any = {
+        players: [hero, villain],
+        communityCards: deck.slice(4, 4 + boardCount),
+        pot: 10 + Math.random() * 80,
+        currentBet,
+        minRaise: 2,
+        stage,
+        gameVariant: 'nlh',
+        bigBlind: 2,
+        dealerSeat: (trial % 2) + 1,
+        lastRaise: 2,
+        actionHistory: [
+          {
+            seat: (trial % 2) + 1,
+            userId: trial % 2 === 0 ? 'horse-1' : 'horse-2',
+            action: 'raise',
+            amount: 6,
+            timestamp: 1000 + trial,
+            stage: 'preflop',
+          },
+        ],
+      };
+      const d = HorseLogic.decide(hero, gs, STYLES[trial % STYLES.length]);
+      const bs = calculateBettingState(gs.pot, gs.currentBet, hero.bet, 2, 2, false);
+      const check = validateAction(d.action, d.amount, hero.stack, bs);
+      if (!check.valid) {
+        throw new Error(`V4 ILLEGAL ${stage}: ${d.action} ${d.amount} — ${check.error}`);
+      }
+    }
+  });
+});

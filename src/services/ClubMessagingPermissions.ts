@@ -76,23 +76,34 @@ class ClubMessagingPermissionsClass {
   async getUserClubRole(userId: string, clubId: string): Promise<UserClubRole | null> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
-      // Check if user is union owner/admin (highest privilege)
-      const { data: unionRole, error: uErr } = await supabase
-        .from('union_members')
-        .select(
-          `
-                  role,
-                  unions!inner(id, clubs(id))
-              `
-        )
-        .eq('user_id', userId)
-        .in('unions.clubs.id', [resolvedClubId])
+      // Check if user is union owner/admin (highest privilege). Union linkage:
+      // union_clubs maps club->union; unions.owner_id is the owner; union_admins
+      // holds union staff. (There is no union_members table.)
+      const { data: unionLink, error: ulErr } = await supabase
+        .from('union_clubs')
+        .select('union_id')
+        .eq('club_id', resolvedClubId)
         .maybeSingle();
-      if (uErr) reportError(uErr, 'ClubMessagingPermissions.getUserClubRole_union_query');
+      if (ulErr) reportError(ulErr, 'ClubMessagingPermissions.getUserClubRole_union_link');
 
-      if (unionRole) {
-        const role = unionRole.role === 'owner' ? 'union_owner' : 'union_admin';
-        return { userId, clubId, role };
+      if (unionLink?.union_id) {
+        const [{ data: unionRow }, { data: unionAdmin }] = await Promise.all([
+          supabase.from('unions').select('owner_id').eq('id', unionLink.union_id).maybeSingle(),
+          supabase
+            .from('union_admins')
+            .select('role')
+            .eq('union_id', unionLink.union_id)
+            .eq('user_id', userId)
+            .maybeSingle(),
+        ]);
+
+        if (unionRow?.owner_id === userId) {
+          return { userId, clubId, role: 'union_owner' };
+        }
+        if (unionAdmin) {
+          const role = unionAdmin.role === 'owner' ? 'union_owner' : 'union_admin';
+          return { userId, clubId, role };
+        }
       }
 
       // Check club membership

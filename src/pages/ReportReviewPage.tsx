@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -23,16 +23,16 @@ const reportCardAnimationStyle = (index: number) => ({
 interface PlayerReport {
   id: string;
   reporter_id: string;
-  reported_player_id: string;
+  reported_user_id: string;
   reason: string;
-  description: string;
-  hand_id?: string;
+  details: string;
   status: 'pending' | 'reviewed' | 'actioned' | 'dismissed';
   created_at: string;
   reviewed_at?: string;
+  reviewed_by?: string;
   admin_notes?: string;
-  reporter?: { username: string };
-  reported_player?: { username: string };
+  reporter_username?: string;
+  reported_username?: string;
 }
 
 export default function ReportReviewPage() {
@@ -67,7 +67,7 @@ export default function ReportReviewPage() {
         {
           event: '*',
           schema: 'public',
-          table: 'player_reports',
+          table: 'user_reports',
         },
         (payload) => {
           if (!isMounted) return;
@@ -98,28 +98,17 @@ export default function ReportReviewPage() {
   const loadReports = async (getIsMounted?: () => boolean) => {
     setLoading(true);
     try {
-      let query = supabase
-        .from('player_reports')
-        .select(
-          `
-                    *,
-                    reporter:profiles!reporter_id(username),
-                    reported_player:profiles!reported_player_id(username)
-                `
-        )
-        .order('created_at', { ascending: false });
-
-      if (filter === 'pending') {
-        query = query.eq('status', 'pending');
-      } else if (filter === 'reviewed') {
-        query = query.neq('status', 'pending');
-      }
-
-      const { data, error } = await query.limit(50);
+      // user_reports is platform-wide with RLS that hides other users' reports
+      // and offers no client UPDATE path. fn_list_player_reports is a
+      // SECURITY DEFINER RPC that returns only reports the caller is authorized
+      // to moderate (reported player is a member of a club they administer).
+      const { data, error } = await supabase.rpc('fn_list_player_reports', {
+        p_status: filter,
+      });
 
       if (getIsMounted && !getIsMounted()) return;
       if (error) throw error;
-      setReports(data || []);
+      setReports((data as PlayerReport[]) || []);
     } catch (error) {
       if (getIsMounted && !getIsMounted()) return;
       reportError(error, 'ReportReviewPage.Failed_to_load_reports');
@@ -155,26 +144,24 @@ export default function ReportReviewPage() {
     setAdminNotes('');
     toast.success(action === 'actioned' ? 'Player action taken' : 'Report dismissed');
 
-    // Fire-and-forget DB mutation with rollback on failure
+    // Fire-and-forget DB mutation with rollback on failure. The RPC enforces
+    // that the caller is authorized to moderate this report.
     void Promise.resolve(
-      supabase
-        .from('player_reports')
-        .update({
-          status: action,
-          reviewed_at: new Date().toISOString(),
-          reviewed_by: user?.id,
-          admin_notes: sanitizedNotes,
-        })
-        .eq('id', reportId)
+      supabase.rpc('fn_action_player_report', {
+        p_report_id: reportId,
+        p_status: action,
+        p_admin_notes: sanitizedNotes,
+      })
     )
-      .then(({ error }) => {
-        if (error) {
+      .then(({ data, error }) => {
+        const result = data as { success?: boolean; error?: string } | null;
+        if (error || (result && result.success === false)) {
           // Rollback on failure
           setReports(prevReports);
           setSelectedReport(prevSelected);
           setAdminNotes(prevNotes);
-          toast.error('Failed to update report');
-          reportError(error, 'ReportReviewPage.Failed_to_update_report');
+          toast.error(result?.error || 'Failed to update report');
+          reportError(error || result?.error, 'ReportReviewPage.Failed_to_update_report');
         }
         setProcessing(false);
       })
@@ -254,10 +241,10 @@ export default function ReportReviewPage() {
               </div>
               <div className="report-players">
                 <span className="reporter">
-                  <strong>By:</strong> {report.reporter?.username || 'Unknown'}
+                  <strong>By:</strong> {report.reporter_username || 'Unknown'}
                 </span>
                 <span className="reported">
-                  <strong>Against:</strong> {report.reported_player?.username || 'Unknown'}
+                  <strong>Against:</strong> {report.reported_username || 'Unknown'}
                 </span>
               </div>
               <div className="report-date">{new Date(report.created_at).toLocaleDateString()}</div>
@@ -279,25 +266,19 @@ export default function ReportReviewPage() {
             <div className="modal-body">
               <div className="detail-row">
                 <label>Reported Player:</label>
-                <span>{selectedReport.reported_player?.username}</span>
+                <span>{selectedReport.reported_username}</span>
               </div>
               <div className="detail-row">
                 <label>Reported By:</label>
-                <span>{selectedReport.reporter?.username}</span>
+                <span>{selectedReport.reporter_username}</span>
               </div>
               <div className="detail-row">
                 <label>Reason:</label>
                 <span>{selectedReport.reason}</span>
               </div>
-              {selectedReport.hand_id && (
-                <div className="detail-row">
-                  <label>Hand ID:</label>
-                  <Link to={`/share/hand/${selectedReport.hand_id}`}>{selectedReport.hand_id}</Link>
-                </div>
-              )}
               <div className="detail-row full">
                 <label>Description:</label>
-                <p className="description">{selectedReport.description}</p>
+                <p className="description">{selectedReport.details}</p>
               </div>
 
               {selectedReport.status === 'pending' && (

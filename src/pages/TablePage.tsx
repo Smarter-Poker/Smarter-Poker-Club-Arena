@@ -1104,19 +1104,21 @@ export default function TablePage({
           .maybeSingle();
 
         if (club?.union_id) {
-          const { data: unionMembership } = await supabase
-            .from('union_members')
-            .select('role')
-            .eq('union_id', club.union_id)
-            .eq('user_id', userId)
-            .maybeSingle();
+          // Union owner lives on unions.owner_id; union staff live in union_admins.
+          const [{ data: unionRow }, { data: unionAdmin }] = await Promise.all([
+            supabase.from('unions').select('owner_id').eq('id', club.union_id).maybeSingle(),
+            supabase
+              .from('union_admins')
+              .select('role')
+              .eq('union_id', club.union_id)
+              .eq('user_id', userId)
+              .maybeSingle(),
+          ]);
 
-          if (unionMembership) {
-            const unionRole = unionMembership.role?.toLowerCase() || '';
-            if (['owner', 'admin'].includes(unionRole)) {
-              setCanChatAsObserver(true);
-              return;
-            }
+          const unionRole = unionAdmin?.role?.toLowerCase() || '';
+          if (unionRow?.owner_id === userId || ['owner', 'admin'].includes(unionRole)) {
+            setCanChatAsObserver(true);
+            return;
           }
         }
 

@@ -167,30 +167,42 @@ class ReferralService {
   }
 
   /**
-   * Check and award milestone bonuses
+   * Check and award milestone bonuses.
+   *
+   * SWEEP #3 (2026-07-23): awards now flow through the SECURITY DEFINER
+   * `fn_claim_referral_milestone` RPC, which validates the referral count and
+   * dedupes claims in the DB (referral_milestone_claims PK). The old path
+   * called `add_chips` directly with only a localStorage dedupe — a replayable
+   * client-side credit (and add_chips is service_role-only anyway).
+   * localStorage is kept purely as a call-suppression hint; the server is the
+   * authority either way.
    */
   async checkMilestones(userId: string, totalReferrals: number): Promise<void> {
     const milestones = this.getMilestones(totalReferrals);
     for (const m of milestones) {
       if (m.unlocked) {
-        // Check if already awarded
         const storageKey = `referral_milestone_${m.count}_${userId}`;
         if (typeof window !== 'undefined' && localStorage.getItem(storageKey)) continue;
 
-        // Award bonus chips
         try {
-          // Round 19: prod sig is (p_user_id, p_amount). p_reason isn't a param;
-          // RPC doesn't audit. Caller used to silently 404 on the extra param.
-          await supabase.rpc('add_chips', {
-            p_user_id: userId,
-            p_amount: m.reward,
+          const { data, error } = await supabase.rpc('fn_claim_referral_milestone', {
+            p_milestone: m.count,
           });
 
-          if (typeof window !== 'undefined') {
+          if (error) {
+            reportError(error, 'ReferralService.milestone_claim_rpc_failed');
+            continue;
+          }
+
+          // Server says claimed (now) or already claimed (before) — either way,
+          // stop re-asking from this browser.
+          if (typeof window !== 'undefined' && (data?.success || data?.error === 'milestone already claimed')) {
             localStorage.setItem(storageKey, 'true');
           }
 
-          masterBus.emit('BALANCE_UPDATED', { source: 'referral_milestone', userId });
+          if (data?.success) {
+            masterBus.emit('BALANCE_UPDATED', { source: 'referral_milestone', userId });
+          }
         } catch (err: unknown) {
           reportError(err, 'ReferralService.milestone_mcount_award_failed');
         }

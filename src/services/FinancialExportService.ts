@@ -94,14 +94,16 @@ export const FinancialExportService = {
     }
   },
 
-  // ─── Data Fetchers ─────────────────────────────────────────────────────────
+  // ─── Data Fetchers ───────────────────────────────────────────────────────────
 
+  // SWEEP #3 (2026-07-23): club settlement exports repointed off the phantom
+  // `club_settlements` table onto `settlement_invoices` (the real weekly
+  // union<->club settlement record; breakdown jsonb carries rake/hold detail).
   async fetchClubSettlements(options: ExportOptions) {
     let query = supabase
-      .from('club_settlements')
-      // club_settlements schema: total_rake_collected, platform_fee, net_revenue
+      .from('settlement_invoices')
       .select(
-        'id, club_id, period_id, total_rake_collected, platform_fee, net_revenue, status, created_at'
+        'id, club_id, period_id, invoice_type, gross_amount, deductions, net_amount, status, created_at'
       )
       .order('created_at', { ascending: false })
       .limit(options.limit || 1000);
@@ -118,9 +120,10 @@ export const FinancialExportService = {
         'ID',
         'Club ID',
         'Period ID',
-        'Total Rake Collected',
-        'Platform Fee',
-        'Net Revenue',
+        'Invoice Type',
+        'Gross Amount',
+        'Deductions',
+        'Net Amount',
         'Status',
         'Created At',
       ],
@@ -128,17 +131,27 @@ export const FinancialExportService = {
     };
   },
 
+  // SWEEP #3 (2026-07-23): agent settlement exports repointed off the phantom
+  // `agent_settlements` table onto `agent_commissions` — the live per-hand
+  // commission ledger written by the engine RakebackSettler. Note the ledger is
+  // keyed by the agent's auth user_id; an options.agentId (agents.id PK) is
+  // resolved to user_id first.
   async fetchAgentSettlements(options: ExportOptions) {
     let query = supabase
-      .from('agent_settlements')
-      // agent_settlements schema: total_rake_generated (not gross_rake), no downline_payouts column
-      .select(
-        'id, agent_id, period_id, total_rake_generated, commission_rate, commission_earned, net_settlement, status, created_at'
-      )
+      .from('agent_commissions')
+      .select('id, club_id, user_id, amount, commission_rate, source_type, notes, created_at')
       .order('created_at', { ascending: false })
       .limit(options.limit || 1000);
 
-    if (options.agentId) query = query.eq('agent_id', options.agentId);
+    if (options.agentId) {
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('user_id')
+        .eq('id', options.agentId)
+        .maybeSingle();
+      query = query.eq('user_id', agent?.user_id || options.agentId);
+    }
+    if (options.clubId) query = query.eq('club_id', options.clubId);
     if (options.periodStart) query = query.gte('created_at', options.periodStart);
     if (options.periodEnd) query = query.lte('created_at', options.periodEnd);
 
@@ -148,48 +161,75 @@ export const FinancialExportService = {
     return {
       headers: [
         'ID',
-        'Agent ID',
-        'Period ID',
-        'Total Rake Generated',
+        'Club ID',
+        'Agent User ID',
+        'Commission Amount',
         'Commission Rate',
-        'Commission Earned',
-        'Net Settlement',
-        'Status',
+        'Source Type',
+        'Notes',
         'Created At',
       ],
       rows: data || [],
     };
   },
 
+  // SWEEP #3 (2026-07-23): commission history exports repointed off the phantom
+  // `commission_payouts` table onto `agent_commissions`, aggregated per agent
+  // per day (the ledger is per-hand; day-level rows keep the CSV readable).
   async fetchCommissionHistory(options: ExportOptions) {
     let query = supabase
-      .from('commission_payouts')
-      .select(
-        'id, agent_id, period_id, gross_rake, commission_earned, paid_to_downlines, net_payout, status, created_at'
-      )
+      .from('agent_commissions')
+      .select('club_id, user_id, amount, created_at')
       .order('created_at', { ascending: false })
-      .limit(options.limit || 1000);
+      .limit(options.limit || 5000);
 
-    if (options.agentId) query = query.eq('agent_id', options.agentId);
+    if (options.agentId) {
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('user_id')
+        .eq('id', options.agentId)
+        .maybeSingle();
+      query = query.eq('user_id', agent?.user_id || options.agentId);
+    }
+    if (options.clubId) query = query.eq('club_id', options.clubId);
     if (options.periodStart) query = query.gte('created_at', options.periodStart);
     if (options.periodEnd) query = query.lte('created_at', options.periodEnd);
 
     const { data, error } = await query;
     if (error) throw error;
 
+    // Aggregate per (user, club, day)
+    const buckets = new Map<
+      string,
+      { user_id: string; club_id: string; day: string; total: number; entries: number }
+    >();
+    (data || []).forEach((r: any) => {
+      const day = String(r.created_at || '').slice(0, 10);
+      const key = `${r.user_id}|${r.club_id}|${day}`;
+      const b = buckets.get(key) || {
+        user_id: r.user_id,
+        club_id: r.club_id,
+        day,
+        total: 0,
+        entries: 0,
+      };
+      b.total += Number(r.amount || 0);
+      b.entries += 1;
+      buckets.set(key, b);
+    });
+    const rows = Array.from(buckets.values())
+      .sort((a, b) => (a.day < b.day ? 1 : -1))
+      .map((b) => ({
+        user_id: b.user_id,
+        club_id: b.club_id,
+        day: b.day,
+        total_commission: Math.round(b.total * 100) / 100,
+        entries: b.entries,
+      }));
+
     return {
-      headers: [
-        'ID',
-        'Agent ID',
-        'Period ID',
-        'Gross Rake',
-        'Commission Earned',
-        'Paid to Downlines',
-        'Net Payout',
-        'Status',
-        'Created At',
-      ],
-      rows: data || [],
+      headers: ['Agent User ID', 'Club ID', 'Day', 'Total Commission', 'Entries'],
+      rows,
     };
   },
 
@@ -287,8 +327,12 @@ export const FinancialExportService = {
   },
 
   async fetchSettlementInvoices(options: ExportOptions) {
+    // SWEEP #3 (2026-07-23): this fetcher's column list (agent_id, debt_owed,
+    // amount_paid, due_date, ...) belongs to `credit_invoices` — it was written
+    // against the wrong table name. `settlement_invoices` is the union<->club
+    // invoice table and has none of these columns. Repointed to credit_invoices.
     let query = supabase
-      .from('settlement_invoices')
+      .from('credit_invoices')
       .select(
         'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at'
       )

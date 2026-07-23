@@ -203,35 +203,33 @@ export default function SettlementDashboardPage() {
 
       // Load agent settlements — scoped to current period via local variable
       // (cannot use state here; setCurrentPeriod is async and hasn't applied yet)
+      // SWEEP #3 (2026-07-23): the phantom `agent_settlements` table was removed
+      // from the schema; agent settlements are now computed by the real
+      // `generate_period_settlements` read-model RPC (agents + agent_commissions).
       try {
-        let query = supabase
-          .from('agent_settlements')
-          .select('id, agent_id, period_id, net_settlement, commission_earned, status, updated_at')
-          .order('net_settlement', { ascending: false })
-          .limit(100);
-
         if (loadedPeriodId) {
-          query = query.eq('period_id', loadedPeriodId);
-        }
+          const { data: summary } = await supabase.rpc('generate_period_settlements', {
+            p_period_id: loadedPeriodId,
+          });
+          const settlements = summary?.agentSettlements;
 
-        const { data: settlements } = await query;
-
-        if (isMounted.current && settlements) {
-          setAgentPayouts(
-            settlements.map((s: any) => ({
-              id: s.id,
-              agentId: s.agent_id,
-              agentName: `Agent ${s.agent_id?.slice(0, 8)}...`,
-              netSettlement: s.net_settlement || 0,
-              commissionEarned: s.commission_earned || 0,
-              status: s.status || 'pending',
-              updatedAt: s.updated_at || '',
-            }))
-          );
+          if (isMounted.current && Array.isArray(settlements)) {
+            setAgentPayouts(
+              settlements.map((s: any) => ({
+                id: s.id,
+                agentId: s.agentId,
+                agentName: s.agentName || `Agent ${String(s.agentId || '').slice(0, 8)}...`,
+                netSettlement: s.netSettlement || 0,
+                commissionEarned: s.commissionEarned || 0,
+                status: s.status || 'pending',
+                updatedAt: s.updatedAt || '',
+              }))
+            );
+          }
         }
       } catch (e) {
         reportError(e, 'SettlementDashboardPage.map');
-        /* table may not exist */
+        /* caller may not be authorized for this period */
       }
 
       // Load period history
@@ -330,12 +328,13 @@ export default function SettlementDashboardPage() {
     };
   }, [loadData]);
 
-  // Real-time subscription on agent_settlements
+  // Real-time subscription on agent_commissions (the live per-hand commission
+  // ledger — sweep #3: agent_settlements never existed in the schema)
   useEffect(() => {
     const channelKey = 'settlement-dashboard-rt';
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_settlements' }, () =>
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'agent_commissions' }, () =>
         loadData()
       )
       .subscribe((status: string, err?: Error) => {
@@ -369,7 +368,7 @@ export default function SettlementDashboardPage() {
     return () => timers.forEach(clearTimeout);
   }, [agentPayouts.length]);
 
-  // ─── Actions ────────────────────────────────────────────────────────────────
+  // ─── Actions ──────────────────────────────────────────────────────────────────
 
   const handleRunCanary = async () => {
     setRunningCanary(true);
@@ -415,7 +414,7 @@ export default function SettlementDashboardPage() {
     if (isMounted.current) setRunningSettlement(false);
   };
 
-  // ─── Helpers ────────────────────────────────────────────────────────────────
+  // ─── Helpers ──────────────────────────────────────────────────────────────────
 
   const formatDate = (iso: string): string => {
     if (!iso) return '—';
@@ -510,7 +509,7 @@ export default function SettlementDashboardPage() {
     (a) => a.status === 'failed' || a.status === 'processing'
   ).length;
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   if (loading && !currentPeriod && !loadError) {
     return (

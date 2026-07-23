@@ -97,10 +97,12 @@ export default function AgentPortalPage() {
       .on(
         'postgres_changes',
         {
+          // SWEEP #3 (2026-07-23): commission_ledger never existed — the live
+          // per-hand commission ledger is agent_commissions, keyed by auth user_id.
           event: 'INSERT',
           schema: 'public',
-          table: 'commission_ledger',
-          filter: `agent_id=eq.${agentPkId}`,
+          table: 'agent_commissions',
+          filter: `user_id=eq.${user.id}`,
         },
         () => {
           if (isMounted.current) loadCommissionHistory();
@@ -127,10 +129,9 @@ export default function AgentPortalPage() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      // loadWallet FIRST — it resolves the agents.id PK needed by loadCommissionHistory
-      const resolvedPkId = await loadWallet();
-      // Pass resolved PK directly — agentPkId state won't be updated until next render
-      await loadCommissionHistory(resolvedPkId ?? undefined);
+      // loadWallet FIRST — it resolves the agents.id PK needed by AgentInvoicesPanel
+      await loadWallet();
+      await loadCommissionHistory();
     } finally {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
@@ -177,17 +178,17 @@ export default function AgentPortalPage() {
     }
   };
 
-  const loadCommissionHistory = async (overridePkId?: string) => {
-    // commission_ledger.agent_id stores agents.id PK, not auth.uid()
-    // overridePkId lets loadData pass the PK directly before React re-renders
-    const agentId = overridePkId || agentPkId;
-    if (!agentId) return;
+  const loadCommissionHistory = async () => {
+    // SWEEP #3 (2026-07-23): repointed off the phantom commission_ledger table.
+    // agent_commissions is keyed by auth user_id (not agents.id PK), so no PK
+    // resolution is needed here; `amount` is the per-hand commission earned.
+    if (!user?.id) return;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     try {
       const { data, error } = await supabase
-        .from('commission_ledger')
-        .select('commission_earned, created_at')
-        .eq('agent_id', agentId)
+        .from('agent_commissions')
+        .select('amount, created_at')
+        .eq('user_id', user.id)
         .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
         .order('created_at', { ascending: true })
         .limit(5000);
@@ -197,7 +198,7 @@ export default function AgentPortalPage() {
         const grouped: Record<string, number> = {};
         data.forEach((d: any) => {
           const day = new Date(d.created_at).toLocaleDateString('en-US', { weekday: 'short' });
-          grouped[day] = (grouped[day] || 0) + (d.commission_earned || 0);
+          grouped[day] = (grouped[day] || 0) + (d.amount || 0);
         });
         if (isMounted.current)
           setCommissionData(days.map((d) => ({ name: d, commissions: grouped[d] || 0 })));

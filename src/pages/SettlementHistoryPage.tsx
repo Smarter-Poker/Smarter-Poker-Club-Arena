@@ -67,9 +67,11 @@ export default function SettlementHistoryPage() {
       .on(
         'postgres_changes',
         {
+          // SWEEP #3 (2026-07-23): club_settlements never existed — the real
+          // club settlement record is settlement_invoices (union<->club wires).
           event: '*',
           schema: 'public',
-          table: 'club_settlements',
+          table: 'settlement_invoices',
         },
         () => loadHistory()
       )
@@ -97,12 +99,13 @@ export default function SettlementHistoryPage() {
     loadingRef.current = true;
     setLoading(true);
     try {
+      // SWEEP #3 (2026-07-23): repointed off the phantom club_settlements table
+      // onto settlement_invoices. gross_amount = rake collected in the period;
+      // net_amount = the union's hold (union tax); breakdown.club_retained =
+      // what the club kept.
       const { data } = await supabase
-        .from('club_settlements')
-        // club_settlements schema: total_rake_collected, platform_fee, net_revenue (NOT total_rake, union_tax, net_settlement)
-        .select(
-          'id, period_id, total_rake_collected, platform_fee, net_revenue, status, created_at'
-        )
+        .from('settlement_invoices')
+        .select('id, period_id, gross_amount, net_amount, breakdown, status, created_at')
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -111,10 +114,11 @@ export default function SettlementHistoryPage() {
         const mapped: SettlementCycle[] = data.map((s: any) => ({
           id: s.id,
           periodId: s.period_id || 'N/A',
-          totalRake: s.total_rake_collected || 0,
-          unionTax: s.platform_fee || 0,
-          netSettlement: s.net_revenue || 0,
-          status: s.status || 'completed',
+          totalRake: s.gross_amount || 0,
+          unionTax: s.breakdown?.union_hold_amount ?? s.net_amount ?? 0,
+          netSettlement:
+            s.breakdown?.club_retained ?? Math.max((s.gross_amount || 0) - (s.net_amount || 0), 0),
+          status: s.status === 'paid' ? 'completed' : s.status || 'completed',
           createdAt: s.created_at,
           agentPayouts: 0,
         }));

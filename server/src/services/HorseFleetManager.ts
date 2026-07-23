@@ -41,8 +41,11 @@ const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
 const SHARK_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const JAQK_CLUB_ID = 'a0000000-0000-0000-0000-000000000001';
 
+// V3 (2026-07-23): ALL 7 approved variants now spawn cash tables. The V2/V3
+// engine is verified on every variant (legality fuzz + full-hand simulation +
+// production burn-in on NLH), so "quality before scaling" is satisfied —
+// scaling is now on.
 const DEFAULT_TABLES: TableConfig[] = [
-  // ONE TABLE ONLY: NLH 1/2 - quality before scaling
   {
     name: 'NLH 1.00/2.00',
     smallBlind: 1.0,
@@ -50,6 +53,62 @@ const DEFAULT_TABLES: TableConfig[] = [
     maxPlayers: 9,
     horsesPerTable: 6,
     gameVariant: 'nlh',
+  },
+  {
+    name: 'NLH 2.00/5.00',
+    smallBlind: 2.0,
+    bigBlind: 5.0,
+    maxPlayers: 9,
+    horsesPerTable: 5,
+    gameVariant: 'nlh',
+  },
+  {
+    name: 'PLO4 1.00/2.00',
+    smallBlind: 1.0,
+    bigBlind: 2.0,
+    maxPlayers: 8,
+    horsesPerTable: 5,
+    gameVariant: 'plo4',
+  },
+  {
+    name: 'PLO5 1.00/2.00',
+    smallBlind: 1.0,
+    bigBlind: 2.0,
+    maxPlayers: 8,
+    horsesPerTable: 5,
+    gameVariant: 'plo5',
+  },
+  {
+    name: 'PLO6 1.00/2.00',
+    smallBlind: 1.0,
+    bigBlind: 2.0,
+    maxPlayers: 7,
+    horsesPerTable: 5,
+    gameVariant: 'plo6',
+  },
+  {
+    name: 'PLO8 1.00/2.00',
+    smallBlind: 1.0,
+    bigBlind: 2.0,
+    maxPlayers: 8,
+    horsesPerTable: 5,
+    gameVariant: 'plo8',
+  },
+  {
+    name: 'Short Deck 1.00/2.00',
+    smallBlind: 1.0,
+    bigBlind: 2.0,
+    maxPlayers: 8,
+    horsesPerTable: 5,
+    gameVariant: 'short_deck',
+  },
+  {
+    name: 'Pineapple 1.00/2.00',
+    smallBlind: 1.0,
+    bigBlind: 2.0,
+    maxPlayers: 8,
+    horsesPerTable: 5,
+    gameVariant: 'pineapple',
   },
 ];
 

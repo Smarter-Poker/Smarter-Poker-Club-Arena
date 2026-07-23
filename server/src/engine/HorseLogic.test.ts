@@ -529,3 +529,125 @@ describe('HorseLogic V2 — performance budget', () => {
     expect(avgMs).toBeLessThan(25);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. V3 — HORSE MIND: opponent intelligence (2026-07-23)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { HorseMind } from './HorseMind.js';
+import type { ActionRecord } from '../types.js';
+
+describe('HorseMind V3 — opponent intelligence', () => {
+  it('reads a 3-bettor into a tight band and a limper into a wide one', () => {
+    const hist: ActionRecord[] = [
+      { seat: 1, userId: 'op', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
+      { seat: 2, userId: 'tb', action: 'raise', amount: 20, timestamp: 2, stage: 'preflop' },
+      { seat: 3, userId: 'lp', action: 'call', amount: 20, timestamp: 3, stage: 'preflop' },
+    ];
+    const tb = HorseMind.bandFor('tb', hist, 2)!;
+    const op = HorseMind.bandFor('op', hist, 2)!;
+    expect(tb[0]).toBeGreaterThanOrEqual(0.55); // 3-bettor: strong range floor
+    expect(op[0]).toBeGreaterThanOrEqual(0.3); // opener: medium floor
+    expect(op[0]).toBeLessThan(tb[0]); // 3-bet range tighter than open range
+  });
+
+  it('range-conditioned equity shifts correctly (the core V3 claim)', () => {
+    const qq = [c('Qh'), c('Qd')];
+    const board = [c('9h'), c('7d'), c('2s')];
+    let vsRandom = 0;
+    let vsThreeBet = 0;
+    for (let i = 0; i < 8; i++) {
+      vsRandom += HorseLogic.estimateEquityVsBands(qq, board, [null], 'nlh', 1200);
+      vsThreeBet += HorseLogic.estimateEquityVsBands(qq, board, [[0.62, 1]], 'nlh', 1200);
+    }
+    vsRandom /= 8;
+    vsThreeBet /= 8;
+    // An overpair is worth meaningfully LESS against a 3-bettor's range.
+    expect(vsThreeBet).toBeLessThan(vsRandom - 0.03);
+  });
+
+  it('learns exploit profiles from the action stream', () => {
+    HorseMind.reset();
+    let ts = 100000;
+    for (let hand = 0; hand < 30; hand++) {
+      HorseMind.observe(
+        [
+          { seat: 1, userId: 'r', action: 'raise', amount: 6, timestamp: ts++, stage: 'preflop' },
+          { seat: 2, userId: 'foldy', action: 'fold', amount: 0, timestamp: ts++, stage: 'preflop' },
+          { seat: 3, userId: 'sticky', action: 'call', amount: 6, timestamp: ts++, stage: 'preflop' },
+          { seat: 1, userId: 'r', action: 'bet', amount: 8, timestamp: ts++, stage: 'flop' },
+          { seat: 3, userId: 'sticky', action: 'call', amount: 8, timestamp: ts++, stage: 'flop' },
+        ],
+        []
+      );
+      ts += 50;
+    }
+    expect(HorseMind.exploit('foldy').bluffMod).toBeGreaterThan(1.2); // bluff the folder
+    expect(HorseMind.exploit('sticky').bluffMod).toBeLessThan(0.8); // stop bluffing the station
+    expect(HorseMind.exploit('sticky').valueThinMod).toBeGreaterThan(1.1); // value bet them thinner
+    HorseMind.reset();
+  });
+
+  it('scores board texture sanely', () => {
+    expect(HorseMind.texture([c('Ah'), c('7d'), c('2s')]).wetness).toBeLessThan(0.2);
+    const wet = HorseMind.texture([c('9h'), c('8h'), c('7h')]);
+    expect(wet.wetness).toBeGreaterThan(0.6);
+    expect(wet.monotone).toBe(true);
+    expect(wet.straighty).toBe(true);
+  });
+
+  it('identifies nut blockers', () => {
+    expect(HorseMind.hasBlocker([c('Ah'), c('2c')], [c('Kh'), c('9h'), c('2s')])).toBe(true);
+    expect(HorseMind.hasBlocker([c('7c'), c('2c')], [c('Kh'), c('9h'), c('2s')])).toBe(false);
+  });
+
+  it('observation is idempotent (same history replayed does not double-count)', () => {
+    HorseMind.reset();
+    const hist: ActionRecord[] = [
+      { seat: 1, userId: 'idem', action: 'raise', amount: 6, timestamp: 999999, stage: 'preflop' },
+    ];
+    HorseMind.observe(hist, []);
+    HorseMind.observe(hist, []);
+    HorseMind.observe(hist, []);
+    const s = HorseMind.getStats('idem')!;
+    expect(s.hands).toBe(1);
+    expect(s.pfr).toBe(1);
+    HorseMind.reset();
+  });
+
+  it('mind-enabled decisions stay legal and within budget with rich history', () => {
+    const players = [
+      mkPlayer(1, { cards: [c('Qh'), c('Qd')], stack: 400, bet: 6 }),
+      mkPlayer(2),
+      mkPlayer(3),
+      mkPlayer(4),
+    ];
+    const hist: ActionRecord[] = [
+      { seat: 2, userId: 'horse-2', action: 'raise', amount: 6, timestamp: 500000, stage: 'preflop' },
+      { seat: 3, userId: 'horse-3', action: 'call', amount: 6, timestamp: 500001, stage: 'preflop' },
+      { seat: 1, userId: 'horse-1', action: 'call', amount: 6, timestamp: 500002, stage: 'preflop' },
+      { seat: 2, userId: 'horse-2', action: 'bet', amount: 15, timestamp: 500003, stage: 'flop' },
+    ];
+    const gs: any = {
+      players,
+      communityCards: [c('9h'), c('7d'), c('2s')],
+      pot: 39,
+      currentBet: 15,
+      minRaise: 9,
+      stage: 'flop',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      dealerSeat: 4,
+      actionHistory: hist,
+      lastRaise: 9,
+    };
+    const start = performance.now();
+    for (let i = 0; i < 20; i++) {
+      const d = HorseLogic.decide(players[0], gs, 'balanced');
+      const bs = calculateBettingState(gs.pot, gs.currentBet, players[0].bet, 2, 9, false);
+      expect(validateAction(d.action, d.amount, players[0].stack, bs).valid).toBe(true);
+    }
+    const avg = (performance.now() - start) / 20;
+    expect(avg).toBeLessThan(25);
+  });
+});

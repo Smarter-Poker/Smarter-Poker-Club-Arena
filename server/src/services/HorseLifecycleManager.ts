@@ -342,13 +342,19 @@ export class HorseLifecycleManager {
         Date.now() - STALE_SNG_THRESHOLD_HOURS * 60 * 60 * 1000
       ).toISOString();
 
+      // SWEEP #4 P0-2 FIX (2026-07-23): this used a DENYLIST
+      // (.neq RUNNING/FINISHED/CANCELLED). The terminal status in this codebase
+      // is 'COMPLETED' (set by finishTournament), and 'FINISHED' is never
+      // written by anything — so every COMPLETED SNG older than 2h matched and
+      // got its buy-ins REFUNDED AGAIN (winner included) and the record flipped
+      // to CANCELLED. That is exactly why the live DB has 329 CANCELLED SNGs and
+      // ZERO COMPLETED ones. Replaced with an ALLOWLIST of genuine pre-start
+      // states so only SNGs that never began are cancellable here.
       const { data: staleSNGs } = await supabase
         .from('tournaments')
         .select('id, name, buy_in_amount')
         .eq('variant', 'sng')
-        .neq('status', 'RUNNING')
-        .neq('status', 'FINISHED')
-        .neq('status', 'CANCELLED')
+        .in('status', ['ANNOUNCED', 'REGISTERING'])
         .lt('created_at', thresholdTime);
 
       if (!staleSNGs || staleSNGs.length === 0) return;
@@ -425,8 +431,38 @@ export class HorseLifecycleManager {
       if (!staleSeats || staleSeats.length === 0) return;
 
       let cleaned = 0;
+      // SWEEP #4 P0-1 FIX (2026-07-23): this loop previously force-cashed-out
+      // EVERY seat older than 4h with no filter on table status, tournament, or
+      // hand activity. `joined_at` is written once at seat insert and never
+      // refreshed, so a real cash player on a long session — or every seat at an
+      // MTT that has run >4h — was force-cashed-out: for tournaments this credits
+      // tournament chips 1:1 into real PLAYER wallets, and for cash it can mint
+      // or vaporize the in-flight pot. This sweep must only reap GENUINELY
+      // ORPHANED seats (disconnect leftovers on dead tables). Guard added:
+      //   - never touch a seat on a tournament table (tournament lifecycle owns those)
+      //   - never touch a seat on a table that produced a hand in the last 30 min (active)
+      const HAND_ACTIVITY_WINDOW_MS = 30 * 60 * 1000;
+      const recentHandCutoff = new Date(Date.now() - HAND_ACTIVITY_WINDOW_MS).toISOString();
       for (const seat of staleSeats) {
         try {
+          // Skip tournament seats entirely — never cash tournament chips to wallets here.
+          const { data: tableRow } = await supabase
+            .from('tables')
+            .select('tournament_id')
+            .eq('id', seat.table_id)
+            .maybeSingle();
+          if (tableRow?.tournament_id) continue;
+
+          // Skip tables with recent hand activity — those are live sessions, not orphans.
+          const { data: recentHand } = await supabase
+            .from('hand_history')
+            .select('id')
+            .eq('table_id', seat.table_id)
+            .gte('created_at', recentHandCutoff)
+            .limit(1)
+            .maybeSingle();
+          if (recentHand) continue;
+
           // FIX 208: Use direct atomicCashout instead of RPC
           await atomicCashout(seat.user_id, seat.table_id, seat.seat_number);
           cleaned++;

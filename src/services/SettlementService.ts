@@ -214,7 +214,13 @@ export const SettlementService = {
   },
 
   /**
-   * Generate all settlements for a period
+   * Generate all settlements for a period.
+   *
+   * SWEEP #3 (2026-07-23): the `generate_period_settlements` RPC is no longer a
+   * stub — it is a real SECURITY DEFINER read model computed over the live
+   * tables (settlement_periods, rake_history, bbj_contributions,
+   * agent_commissions, rakeback_periods, settlement_invoices) and returns the
+   * full camelCase SettlementSummary shape. Read-only; it moves no money.
    */
   async generateSettlements(periodId: string): Promise<SettlementSummary> {
     const { data, error } = await retryAsync(
@@ -230,11 +236,15 @@ export const SettlementService = {
   },
 
   /**
-   * Calculate agent settlement for a specific agent
+   * Calculate agent settlement for a specific agent.
+   *
+   * SWEEP #3 (2026-07-23): `calculate_agent_settlement` is reimplemented
+   * server-side over agents + agent_commissions (the live per-hand commission
+   * ledger written by the engine RakebackSettler) and returns the camelCase
+   * AgentSettlement shape directly.
    */
   async calculateAgentSettlement(periodId: string, agentId: string): Promise<AgentSettlement> {
     try {
-      // Try calculate_agent_settlement first
       const { data, error } = await retryAsync(
         () =>
           supabase.rpc('calculate_agent_settlement', {
@@ -246,26 +256,7 @@ export const SettlementService = {
 
       if (error) {
         reportError(error, 'SettlementService.calculateAgentSettlement', { periodId, agentId });
-        // Fall back to calculate_agent_spread if available
-        const { data: spreadData, error: spreadError } = await retryAsync(
-          () =>
-            supabase.rpc('calculate_agent_spread', {
-              p_period_id: periodId,
-              p_agent_id: agentId,
-            }),
-          3
-        );
-
-        if (!spreadError && spreadData) {
-          return spreadData;
-        }
-
-        // Return default if both fail
-        reportError(
-          'Both settlement RPCs failed',
-          'SettlementService.calculateAgentSettlement.fallback',
-          { periodId, agentId }
-        );
+        // Return default if the RPC fails (e.g. caller not authorized)
         return {
           id: `${agentId}-${periodId}`,
           periodId,
@@ -573,37 +564,48 @@ export const SettlementService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Get club settlement report
+   * Get club settlement report.
+   *
+   * SWEEP #3 (2026-07-23): repointed off the phantom `club_settlements` table.
+   * The club settlement is now derived from the real `generate_period_settlements`
+   * read-model RPC (settlement_periods + rake_history + agent_commissions +
+   * settlement_invoices).
    */
   async getClubReport(clubId: string, periodId?: string): Promise<ClubSettlement | null> {
-    const { data, error } = await supabase
-      .from('club_settlements')
-      .select(
-        'id, period_id, club_id, club_name, total_rake_collected, total_jackpot_contributions, total_promo_costs, unique_players, total_hands_dealt, platform_fee, agent_commissions, gross_revenue, net_revenue, status'
-      )
-      .eq('club_id', await resolveClubUUID(clubId))
-      .eq('period_id', periodId || (await this.getCurrentPeriod()).id)
-      .maybeSingle();
-
-    if (error) return null;
-    return this.mapClubSettlement(data);
+    try {
+      const resolvedClubId = await resolveClubUUID(clubId);
+      const pid = periodId || (await this.getCurrentPeriod()).id;
+      const { data, error } = await supabase.rpc('generate_period_settlements', {
+        p_period_id: pid,
+      });
+      if (error || !data) return null;
+      const clubSettlements: ClubSettlement[] = data.clubSettlements || [];
+      return clubSettlements.find((c) => c.clubId === resolvedClubId) || null;
+    } catch (err) {
+      reportError(err, 'SettlementService.getClubReport', { clubId, periodId });
+      return null;
+    }
   },
 
   /**
-   * Get agent settlement report
+   * Get agent settlement report.
+   *
+   * SWEEP #3 (2026-07-23): repointed off the phantom `agent_settlements` table
+   * onto the real `calculate_agent_settlement` RPC (agents + agent_commissions).
    */
   async getAgentReport(agentId: string, periodId?: string): Promise<AgentSettlement | null> {
-    const { data, error } = await supabase
-      .from('agent_settlements')
-      .select(
-        'id, period_id, agent_id, agent_name, total_rake_generated, commission_rate, commission_earned, total_credit_extended, total_credit_repaid, net_settlement, active_players, status'
-      )
-      .eq('agent_id', agentId)
-      .eq('period_id', periodId || (await this.getCurrentPeriod()).id)
-      .maybeSingle();
-
-    if (error) return null;
-    return this.mapAgentSettlement(data);
+    try {
+      const pid = periodId || (await this.getCurrentPeriod()).id;
+      const { data, error } = await supabase.rpc('calculate_agent_settlement', {
+        p_period_id: pid,
+        p_agent_id: agentId,
+      });
+      if (error || !data) return null;
+      return data as AgentSettlement;
+    } catch (err) {
+      reportError(err, 'SettlementService.getAgentReport', { agentId, periodId });
+      return null;
+    }
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

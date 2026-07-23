@@ -383,8 +383,9 @@ export const PermissionService = {
 
     // Union admin can manage clubs in their unions
     if (userPerms.contexts.unionIds && userPerms.contexts.unionIds.length > 0) {
+      // Club-to-union membership lives in union_clubs (union_id, club_id).
       const { data } = await supabase
-        .from('union_members')
+        .from('union_clubs')
         .select('union_id')
         .eq('club_id', await resolveClubUUID(clubId))
         .in('union_id', userPerms.contexts.unionIds);

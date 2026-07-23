@@ -60,6 +60,28 @@ const DEFAULT_NOTE: PlayerNote = {
   lastSeen: null,
 };
 
+// DB stores a color LABEL (none/red/orange/yellow/green/blue/purple per the
+// color_label CHECK); the UI works in hex. These maps keep the two in sync.
+const HEX_TO_LABEL: Record<string, string> = {
+  '#ef4444': 'red',
+  '#f97316': 'orange',
+  '#eab308': 'yellow',
+  '#22c55e': 'green',
+  '#3b82f6': 'blue',
+  '#a855f7': 'purple',
+  '#ec4899': 'purple',
+  '#6b7280': 'none',
+};
+const LABEL_TO_HEX: Record<string, string> = {
+  red: '#ef4444',
+  orange: '#f97316',
+  yellow: '#eab308',
+  green: '#22c55e',
+  blue: '#3b82f6',
+  purple: '#a855f7',
+  none: '#6b7280',
+};
+
 class PlayerNotesServiceClass {
   private cache: Map<string, PlayerNote> = new Map();
 
@@ -73,22 +95,25 @@ class PlayerNotesServiceClass {
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
-    const { data, error } = await supabase.rpc('fn_get_player_note', {
-      p_user_id: userId,
-      p_target_id: targetId,
-    });
+    // player_notes is a self-owned table (RLS: user_id = auth.uid()); read it
+    // directly. There is no fn_get_player_note RPC.
+    const { data: row, error } = await supabase
+      .from('player_notes')
+      .select('notes, color_label, tags')
+      .eq('user_id', userId)
+      .eq('target_user_id', targetId)
+      .maybeSingle();
 
-    if (error || !data || data.length === 0) {
+    if (error || !row) {
       return DEFAULT_NOTE;
     }
 
-    const row = data[0];
     const note: PlayerNote = {
-      note: row.note || '',
-      color: row.color || '#3b82f6',
+      note: row.notes || '',
+      color: LABEL_TO_HEX[row.color_label as string] || '#3b82f6',
       tags: row.tags || [],
-      handsPlayed: row.hands_played || 0,
-      lastSeen: row.last_seen ? new Date(row.last_seen) : null,
+      handsPlayed: 0,
+      lastSeen: null,
     };
 
     this.cache.set(cacheKey, note);
@@ -106,29 +131,30 @@ class PlayerNotesServiceClass {
     tags: string[] = []
   ): Promise<void> {
     // Map hex color to label (DB constraint: none, red, orange, yellow, green, blue, purple)
-    const hexToLabel: Record<string, string> = {
-      '#ef4444': 'red',
-      '#f97316': 'orange',
-      '#eab308': 'yellow',
-      '#22c55e': 'green',
-      '#3b82f6': 'blue',
-      '#a855f7': 'purple',
-      '#ec4899': 'purple',
-      '#6b7280': 'none',
-    };
-    const colorLabel = hexToLabel[color] || NOTE_COLORS.find((c) => c.id === color)?.id || 'blue';
+    const colorLabel = HEX_TO_LABEL[color] || NOTE_COLORS.find((c) => c.id === color)?.id || 'blue';
 
-    await retryAsync(
-      () =>
-        supabase.rpc('fn_save_player_note', {
-          p_user_id: userId,
-          p_target_user_id: targetId,
-          p_note: note,
-          p_color: colorLabel,
-          p_tags: tags,
-        }),
-      3
-    );
+    // player_notes is self-owned (RLS: user_id = auth.uid()); write directly.
+    // Unique index on (user_id, target_user_id) is partial, so ON CONFLICT
+    // inference is unreliable — do an explicit find-then-update/insert instead.
+    await retryAsync(async () => {
+      const { data: existing } = await supabase
+        .from('player_notes')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('target_user_id', targetId)
+        .maybeSingle();
+
+      const payload = { notes: note, color_label: colorLabel, tags };
+
+      const { error } = existing?.id
+        ? await supabase.from('player_notes').update(payload).eq('id', existing.id)
+        : await supabase
+            .from('player_notes')
+            .insert({ user_id: userId, target_user_id: targetId, ...payload });
+
+      if (error) throw error;
+      return true;
+    }, 3);
 
     // Update cache
     const cacheKey = `${userId}:${targetId}`;
@@ -152,7 +178,7 @@ class PlayerNotesServiceClass {
       for (const row of data) {
         notes.set(row.target_user_id, {
           note: row.notes || '',
-          color: row.color_label || '#3b82f6',
+          color: LABEL_TO_HEX[row.color_label as string] || '#3b82f6',
           tags: row.tags || [],
           handsPlayed: 0,
           lastSeen: null,

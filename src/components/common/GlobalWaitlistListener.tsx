@@ -55,15 +55,15 @@ export default function GlobalWaitlistListener() {
         try {
           // Immediately query if the user is #1 on this table's waitlist
           const { data, error: waitlistErr } = await supabase
-            .from('waitlist_entries')
-            .select('id, position, poker_tables(name)')
+            .from('table_waitlist')
+            .select('id, position, tables(name)')
             .eq('user_id', user.id)
             .eq('table_id', vacatedTableId)
             .maybeSingle();
           if (waitlistErr) reportError(waitlistErr, 'GlobalWaitlistListener.Query_failed');
 
           if (data && data.position === 1) {
-            const tableName = (data.poker_tables as any)?.name || 'the table';
+            const tableName = (data.tables as any)?.name || 'the table';
             toast.success(`Seat available at ${tableName}! Joining in 3s...`);
             // Auto-navigate to the table where the seat opened
             setTimeout(() => {
@@ -76,7 +76,7 @@ export default function GlobalWaitlistListener() {
             masterBus.emit('WAITLIST_POSITION_CHANGED', {
               tableId: vacatedTableId,
               position: data.position,
-              tableName: (data.poker_tables as any)?.name || 'Unknown',
+              tableName: (data.tables as any)?.name || 'Unknown',
             });
           }
         } catch (err) {

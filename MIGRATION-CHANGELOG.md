@@ -7357,3 +7357,48 @@ Full remediation record: `docs/audit/phase4-1-2-ledger-drift-finding.md` (update
 **Caller contract:** callers should pass a stable deterministic key — e.g., `tournament:${tid}:payout:${uid}`, `hand:${hid}:rake:${cid}`, `addon:${tid}:${uid}:${seq}`. NOT a random UUID. Retention window is 7 days which is far longer than any realistic retry horizon.
 
 **Migration done; caller updates (tournament settlement, rake collection, addon purchase) are the remaining engineering work.** The infrastructure is deployed and any new caller can immediately start using `fn_idempotent_*`. Old callers continue to work unchanged against the non-wrapped RPCs.
+
+---
+
+## 2026-07-23 — HORSE AI V2: Full audit + rewrite of the horse decision system (Cowork session)
+
+**Audit report:** `HORSE-AI-V2-AUDIT-2026-07-23.md` (repo root)
+
+**Files changed (server only):**
+
+- `server/src/engine/HorseLogic.ts` — FULL REWRITE (V2): position-aware preflop
+  (169-combo classifier, Omaha/Hutchison scoring, pineapple 3-card scoring),
+  Monte Carlo equity postflop for all 7 variants incl. plo8 hi-lo and short-deck
+  rules, SPR/push-fold logic, guaranteed-legal outputs verified against
+  validateAction, fast allocation-free evaluator (0.45ms NLHE / ~10ms PLO6 per
+  decision), resolveHorseStyle() for jsonb profiles + deterministic fallback,
+  smart pineapple discard (decideDiscard).
+- `server/src/engine/HorseLogic.test.ts` — NEW vitest suite (legality fuzz,
+  poker sanity, discard, style resolution, evaluator cross-validation, perf).
+- `server/src/engine/ServerTableEngine.ts` — horse_profile jsonb fix (all 574
+  horses were playing 'balanced'), stale think-timer controller identity guard,
+  V2 game-state passing (dealerSeat/lastRaise/actionHistory), smart horse
+  pineapple discards, think time from decision engine.
+- `server/src/engine/HandController.ts` — CRITICAL: betting-round live-lock fix
+  (strict === on float bets could loop TURN_CHANGE until hand timeout; now
+  half-cent tolerance). Pineapple all-in runouts now resolve pending discards
+  (no more illegal 3-card showdowns).
+- `server/src/engine/StateMachine.ts` — added missing pineapple_discard->flop
+  and pineapple_discard->showdown FSM edges (killed per-hand FSM violations).
+- `server/src/services/HorseFleetManager.ts` — N+1 club_id query removed.
+- `server/src/services/supabase.ts` — horse_profile passed through raw.
+- `server/src/types.ts` — horse_profile typed string | object.
+
+**Database (applied):** profiles.horse_profile populated for all 574 horses
+(was {} for every row) — style distribution tag/lag/balanced/tricky/grinder
+plus per-horse aggression/tightness/bluffFreq/sizing jitter. Idempotent (only
+touches {} / NULL rows).
+
+**Verification:** 2,800-state legality fuzz (100% legal), 94k evaluator
+cross-validations vs PokerEngine (100% agree), 6,100 full simulated hands
+(0 rejected actions / 0 exceptions / 0 chip leaks / 0 stalls / 0 illegal
+showdowns), style differentiation confirmed over 3,000 hands.
+
+**Before deploy:** `cd server && npx tsc --noEmit && npm test` (sandbox could
+not run the repo's own toolchain end-to-end; all logic verified by simulation).
+Deploy = PM2 restart on Hetzner; no client rebuild needed.

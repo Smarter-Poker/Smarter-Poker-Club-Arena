@@ -152,7 +152,12 @@ export interface SeatedPlayer {
   stack: number;
   seat_number: number;
   is_horse: boolean;
-  horse_profile?: string;
+  /**
+   * AUDIT V2 (2026-07-23): profiles.horse_profile is a jsonb column — value may
+   * be a plain string ("tag") or an object ({"style":"tag","aggression":1.05}).
+   * Always resolve through resolveHorseStyle() in HorseLogic.
+   */
+  horse_profile?: string | Record<string, unknown>;
   time_bank_remaining?: number;
   time_bank_uses_remaining?: number;
   /** Bible V8 §2.3: Player avatar for broadcast */

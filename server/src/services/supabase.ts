@@ -38,7 +38,7 @@ const EFFECTIVE_SERVICE_ROLE_KEY =
 
 // ════════════════════════════════════════════════════════════════════════════════
 // SERVICE ROLE CLIENT — Full DB access, bypasses RLS
-// ═══════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
   auth: {

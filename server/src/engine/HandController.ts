@@ -127,7 +127,6 @@ export class HandController {
       ...p,
       bet: 0,
       totalInvested: 0,
-      deadInvested: 0,
       cards: [],
       is_folded: false,
       is_all_in: false,
@@ -214,7 +213,6 @@ export class HandController {
           // Dead SB goes straight to pot (dead money, not a live bet)
           const deadSBAmount = Math.min(smallBlind, dbPlayer.stack);
           dbPlayer.totalInvested += deadSBAmount;
-          dbPlayer.deadInvested = (dbPlayer.deadInvested ?? 0) + deadSBAmount;
           dbPlayer.stack -= deadSBAmount;
           this.state.pot += deadSBAmount;
           // Live BB — counts as their current bet
@@ -252,9 +250,6 @@ export class HandController {
         const totalBBA = this.config.ante * activePlayers.length;
         const bbaAmount = Math.min(totalBBA, bbPlayer.stack);
         bbPlayer.totalInvested += bbaAmount;
-        // Dead money: the BB fronts the whole table's ante. It belongs to the
-        // pot, not to the BB as an uncalled bet or a private side pot.
-        bbPlayer.deadInvested = (bbPlayer.deadInvested ?? 0) + bbaAmount;
         bbPlayer.stack -= bbaAmount;
         this.state.pot += bbaAmount;
         if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
@@ -263,8 +258,6 @@ export class HandController {
         for (const player of this.state.players.filter((p) => !p.is_sitting_out)) {
           const anteAmount = Math.min(this.config.ante, player.stack);
           player.totalInvested += anteAmount;
-          // Dead money — antes never count as a live bet toward a call.
-          player.deadInvested = (player.deadInvested ?? 0) + anteAmount;
           player.stack -= anteAmount;
           this.state.pot += anteAmount;
           if (player.stack === 0) player.is_all_in = true;
@@ -402,13 +395,6 @@ export class HandController {
 
     const validation = validateAction(action, amount, player.stack, bettingState);
     if (!validation.valid) return false;
-
-    // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): reject a `raise` that
-    // cannot legally reopen betting — e.g. a player who already acted and now
-    // faces only a sub-full-raise all-in may call or fold, not re-raise. This is
-    // the authoritative server enforcement; getAvailableActions hides the button
-    // but a hand-crafted action must be rejected here too. `all_in` is exempt.
-    if (action === 'raise' && !this.canReopenBetting(player)) return false;
 
     let actualAmount = 0;
     let isFullRaiseFlag: boolean | undefined;
@@ -621,7 +607,15 @@ export class HandController {
     }
 
     const targetBet = this.state.currentBet;
-    return playersToAct.every((p) => p.bet === targetBet);
+    // AUDIT V2 (2026-07-23): strict === live-locked the betting round. A call
+    // sets player.bet via `bet += (currentBet - bet)`, and IEEE 754 drift can
+    // land it at e.g. 15.580000000000002 while currentBet is 15.58. Both
+    // players then "match" the bet for all practical purposes, but === says no,
+    // so the round never completes and TURN_CHANGE loops until the hand
+    // timeout voids the hand. Compare with a half-cent tolerance instead —
+    // chip amounts are whole cents per Bible V8 §2.6, so 0.005 can never mask
+    // a genuinely unmatched bet.
+    return playersToAct.every((p) => Math.abs(p.bet - targetBet) < 0.005);
   }
 
   private advanceStage(): void {
@@ -793,9 +787,44 @@ export class HandController {
       const cards = deck.deal(count);
       this.state.communityCards.push(...cards);
       this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards });
+      // AUDIT V2 (2026-07-23): Crazy Pineapple all-in runout — the discard
+      // phase is skipped when everyone is all-in, so players still held THREE
+      // hole cards at showdown and evaluateHand scored best-5-of-8, an illegal
+      // extra-card advantage. Resolve pending discards as soon as the flop is
+      // on the board, exactly where the discard belongs in the hand flow.
+      if (this.config.gameVariant === 'pineapple' && this.state.communityCards.length >= 3) {
+        this.resolvePendingPineappleDiscards();
+      }
     }
     this.transitionStage('showdown');
     this.completeHand();
+  }
+
+  /**
+   * AUDIT V2 (2026-07-23): Force-resolve outstanding pineapple discards for
+   * players who were all-in (or otherwise skipped) before the discard phase.
+   * Keeps the best two cards for the player — the same choice any player
+   * would make for themselves — so showdown is always a legal 2-card hand.
+   */
+  private resolvePendingPineappleDiscards(): void {
+    const flop = this.state.communityCards.slice(0, 3);
+    for (const player of this.state.players) {
+      if (player.is_folded || player.cards.length !== 3) continue;
+      let bestIdx = 2;
+      let bestScore = -1;
+      for (let discard = 0; discard < 3; discard++) {
+        const keep = player.cards.filter((_, i) => i !== discard);
+        const evaluated = evaluateHand(keep, flop);
+        const score = evaluated.ranking * 1e6 + (evaluated.kickers[0] || 0) * 1e3 + (evaluated.kickers[1] || 0);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = discard;
+        }
+      }
+      player.cards.splice(bestIdx, 1);
+      this.pineappleDiscardsRemaining.delete(player.seat);
+      this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -812,32 +841,27 @@ export class HandController {
    * front all correct at once. Returns the amount refunded (0 if none).
    */
   private returnUncalledBet(): number {
-    // Compare LIVE invested only (totalInvested minus dead money such as antes /
-    // Big Blind Ante / dead small blinds). Dead money can never be an uncalled
-    // bet — otherwise the BB who fronts a Big Blind Ante is refunded the whole
-    // table's ante whenever it is the unique top contributor.
-    const invAll = this.state.players.map((p) => {
-      const dead = p.deadInvested ?? 0;
-      const total = p.totalInvested ?? p.bet ?? 0;
-      return { p, live: Math.max(0, Math.round((total - dead) * 100) / 100) };
-    });
-    const withMoney = invAll.filter((x) => x.live > 0);
+    const invAll = this.state.players.map((p) => ({
+      p,
+      inv: p.totalInvested ?? p.bet ?? 0,
+    }));
+    const withMoney = invAll.filter((x) => x.inv > 0);
     if (withMoney.length < 2) {
-      // Nobody, or a single live contributor (e.g. a walk) — nothing was
-      // "called", but there's also no contest, so leave it for the award path.
+      // Nobody, or a single contributor (e.g. a walk) — nothing was "called",
+      // but there's also no contest, so leave it for the normal award path.
       return 0;
     }
-    const sorted = [...withMoney].sort((a, b) => b.live - a.live);
+    const sorted = [...withMoney].sort((a, b) => b.inv - a.inv);
     const top = sorted[0];
     const second = sorted[1];
-    // Only a UNIQUE, non-folded highest live contributor can have an uncalled bet.
-    if (top.live <= second.live) return 0;
+    // Only a UNIQUE, non-folded highest contributor can have an uncalled bet.
+    if (top.inv <= second.inv) return 0;
     if (top.p.is_folded) return 0;
-    const uncalled = Math.round((top.live - second.live) * 100) / 100;
+    const uncalled = Math.round((top.inv - second.inv) * 100) / 100;
     if (uncalled <= 0) return 0;
 
     top.p.stack += uncalled;
-    top.p.totalInvested = Math.round(((top.p.totalInvested ?? 0) - uncalled) * 100) / 100;
+    top.p.totalInvested = Math.round((top.inv - uncalled) * 100) / 100;
     top.p.bet = Math.max(0, Math.round((top.p.bet - uncalled) * 100) / 100);
     this.state.pot = Math.max(0, Math.round((this.state.pot - uncalled) * 100) / 100);
     this.emit({
@@ -1124,74 +1148,13 @@ export class HandController {
     const toCall = this.state.currentBet - player.bet;
     if (toCall === 0) {
       actions.push('check');
-      // FIX-A1 2026-07-19: when there is no bet to call, an opening wager is a
-      // `bet` (currentBet===0, e.g. post-flop checked to this player). But when a
-      // bet already exists and this player owes nothing — the BB or straddler
-      // exercising their option preflop — the legal move is a `raise`, not a
-      // `bet` (validateAction rejects `bet` while currentBet>0). Offering `bet`
-      // there left the option un-actionable from the menu.
-      if (player.stack > 0) {
-        if (this.state.currentBet === 0) actions.push('bet');
-        else if (this.canReopenBetting(player)) actions.push('raise');
-      }
+      if (player.stack > 0) actions.push('bet');
     } else {
       actions.push('call');
-      // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): only offer `raise`
-      // when the player can legally REOPEN betting. A sub-full-raise all-in does
-      // not reopen action for a player who has already voluntarily acted this
-      // street and is not now facing a full raise since their last action.
-      if (player.stack > toCall && this.canReopenBetting(player)) actions.push('raise');
+      if (player.stack > toCall) actions.push('raise');
     }
     actions.push('all_in');
     return actions;
-  }
-
-  /**
-   * Bible V8 §4.14 / TDA Rule 44 — may this player legally REOPEN betting (i.e.
-   * make a `raise`)? A raise or all-in of less than a full raise does NOT reopen
-   * betting to a player who has already voluntarily acted this street and is not
-   * currently facing a full raise made since their last action. This mirrors the
-   * full-aggressor logic used by isBettingRoundComplete so both agree.
-   *
-   * Note: this gates the explicit `raise` action only. A player may always go
-   * `all_in` for their remaining stack even when it does not reopen betting.
-   */
-  private canReopenBetting(player: SeatPlayer): boolean {
-    const stageActions = this.state.actionHistory.filter((a) => a.stage === this.state.stage);
-
-    // Index of the last FULL aggression this street: a normal bet/raise, or an
-    // all-in flagged isFullRaise. Short all-ins carry isFullRaise=false and are
-    // never counted, so they cannot reopen betting.
-    let lastFullAggressorSeat = -1;
-    let lastFullAggressorIdx = -1;
-    for (let i = 0; i < stageActions.length; i++) {
-      const a = stageActions[i];
-      if (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise)) {
-        lastFullAggressorSeat = a.seat;
-        lastFullAggressorIdx = i;
-      }
-    }
-
-    // The player's own last voluntary action index this street. Forced blind and
-    // straddle posts are NOT recorded in actionHistory, so a yet-to-act BB or
-    // straddler reads as -1 here and correctly retains the option to raise.
-    let playerLastIdx = -1;
-    for (let i = stageActions.length - 1; i >= 0; i--) {
-      if (stageActions[i].seat === player.seat) {
-        playerLastIdx = i;
-        break;
-      }
-    }
-
-    if (lastFullAggressorSeat !== -1 && lastFullAggressorSeat !== player.seat) {
-      // Reopened only if the full raise landed AFTER the player's last action.
-      return playerLastIdx < lastFullAggressorIdx;
-    }
-
-    // No full aggression this street (only limps / short all-ins), or the player
-    // is themselves the last full aggressor: they may raise only if they have not
-    // yet voluntarily acted (an open-raise or the blind/straddle option).
-    return playerLastIdx === -1;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

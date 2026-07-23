@@ -204,3 +204,70 @@ CSS Modules + global CSS.
 7. Never ask permission for obvious work. Just do it.
 8. When corrected, change course immediately.
 9. Write it down. Update MIGRATION-CHANGELOG.md at session end.
+
+---
+
+## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
+
+Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never
+ask Dan for a manual handoff again:
+
+### What works from the cloud sandbox
+- Supabase MCP: full production DB access (migrations, SQL). USE IT.
+- GitHub MCP via device bridge (`mcp__remote-devices__github__*`): full repo
+  read/write with Dan's token. `push_files` works for files up to ~65KB each
+  (HorseLogic.ts at 63KB pushed clean). Branch -> PR -> merge = ONE deploy.
+- Device bridge: stage files FROM Dan's disk, commit files TO Dan's disk.
+  `device_bash` runs in a NO-NETWORK Linux VM with the folders mounted.
+  rm is forbidden — mv junk into a `_to_delete/` folder instead.
+
+### What is BLOCKED from the cloud sandbox (do not waste time retrying)
+- Direct git clone/push (proxy MITM: "repo not enabled for this session")
+- `api.github.com` from cloud Bash — same repo gate. Only the device-bridge
+  GitHub MCP has repo access (so GitHub Actions run status is NOT readable;
+  verify deploys through the DB instead, see below).
+- npm/pip/apt/cargo/go registries (403), raw curl to the engine, SSH clients
+  (none installed, none installable)
+- Terminal/IDE computer-use is click-only (no typing)
+
+### Hard-won traps (cost real hours — memorize)
+- STALE STAGING CACHE: re-staging a previously staged device path returns OK
+  but the uploads mount silently serves the ORIGINAL session-start snapshot.
+  Always copy changed files to a FRESH device path first, then stage that.
+  Or read small files with `device_bash cat` instead of staging.
+- GIT IS BROKEN INSIDE THE DEVICE VM: the mount cannot unlink files, so every
+  index-locking git command (status/add/commit) strands a fresh
+  `.git/index.lock` that then blocks git on the Mac host too. NEVER run git
+  write commands via `device_bash`. If a stale lock exists, `mv` it into
+  `_to_delete/` and leave all git to the host.
+- HEALTH ENDPOINT IS CACHE-FROZEN: WebFetch of
+  `https://engine.smarter.poker/health` is cached (CDN + 15-min fetch cache).
+  Never use it to verify a deploy or an uptime reset.
+- Husky pre-commit runs Prettier on the host: file content on main may differ
+  cosmetically from what you authored. Adopt the formatted HEAD as your base
+  before editing, or diffs will lie to you.
+
+### Pushing code (in order of preference)
+1. Files < ~65KB: GitHub MCP `push_files` to a branch, then
+   `create_pull_request` + `merge_pull_request`. One merge = one deploy.
+2. Large files (e.g. ServerTableEngine.ts, 227KB): CHUNK them. Write base64
+   chunks to Dan's disk via device_commit_files, reassemble with `device_bash`
+   (cat chunks | base64 -d > file). Commit/push must then happen on the Mac
+   HOST (VM git is broken, see traps): the Antigravity CLI on the host
+   (`agy run "cd ~/Documents/club-arena && git add -A && git commit -m msg && git push"`)
+   — agy is NOT in the VM PATH; it must be invoked through an
+   Antigravity-reachable surface, not device_bash.
+3. Last resort: write an executable `deploy.command` to Dan's Desktop with the
+   exact commands so the handoff is one double-click, never copy-paste.
+
+### Deploying + verifying the engine
+- Push to `main` touching `server/**` auto-deploys Hetzner via
+  `.github/workflows/auto-deploy-hetzner.yml`. No SSH needed. Docs-only
+  pushes (CLAUDE.md, MIGRATION-CHANGELOG.md) do NOT trigger a deploy.
+- VERIFY VIA SUPABASE, never the health endpoint: per-minute hand counts in
+  `hand_history` show a restart dip right after the workflow finishes, and
+  boot-time effects (fleet table creation/reactivation in `tables`, new
+  variant tables seating horses) prove the new code is executing. Do NOT
+  claim deployed until a DB-visible behavioral change confirms it.
+- After deploy, mirror the exact pushed content back to Dan's working tree
+  with device_commit_files so his next host-side `git pull` is clean.

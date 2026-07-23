@@ -133,3 +133,43 @@ These phantom references live in code that cannot execute (no importer/route/cal
   consider a weekly pg_cron `select public.get_current_settlement_period()`.
 - Position-stat numbers are heuristic (preflop-order positions; per-street
   max-to-match contribution model) — good for trends, not audit-grade.
+
+## E. Post-deploy verification addendum (same day, second pass)
+
+Full verify-before-claiming-success pass. Results:
+
+**Published to production (verified end-to-end).** Both CA pushes triggered the
+`build-for-world-hub.yml` workflow (on: push to main) — GitHub runners compiled
+the Vite bundle (build passing = the code compiles), rsynced dist into WH
+`public/hub/club-arena/`, and pushed (WH commits `dd436b1b`, `477d92bf`).
+hub-vanguard auto-deployed both; latest production deployment
+`dpl_9QxerxcXakvH1kqdkvLAFeQJZmEL` (18:33:29Z) is READY on the a49e9ec1 build,
+and production serves the new `index-C0JP5pqO-v6.js` bundle. No manual deploy
+needed — the pipeline was already automated.
+
+**Hetzner: nothing to sync, by design.** No server/** files changed in either
+commit, so `auto-deploy-hetzner.yml` correctly did not fire. Engine health
+verified live: running:true, 35 active tables, 28 tournaments, hands flowing
+throughout (hand inserts unaffected by the new trigger; zero trigger warnings
+in postgres logs).
+
+**Money paths tested against production logic (rolled-back transactions):**
+referral redeem 250/250 both wallets + double-redeem blocked; milestone
+validation (not-reached / unknown) correct; fn_purchase_feature server-priced
+1 diamond (300→299), purchase row recorded, unknown feature rejected;
+session_history insert + reader aliases + player_sessions view + RLS
+(stranger sees 0, club owner sees club sessions) all correct.
+
+**Defects found by verification and fixed:**
+1. First backfill runner had no concurrency lock and non-tie-safe pagination →
+   truncated player_position_stats and re-ran cleanly with an advisory lock +
+   keyset (created_at, id) pagination (migration
+   `20260723_sweep3_backfill_lock_keyset_v2.sql`).
+2. hand_history is actually 5M+ rows (the 73k figure was a stale planner
+   estimate); hands before 2026-03-14 carry an old action format with no
+   preflop userIds and can never yield position stats (backfill starts
+   2026-03-14; later eras are mixed — e.g. Mar 27 parseable, Apr 5 not — the
+   crawl handles both). Backfill runs ~10k hands/min under lock and
+   self-unschedules; expected completion within hours (check
+   `select * from _pps_backfill_state` — done=true when finished).
+3. `get_current_settlement_period` execute revoked from anon.

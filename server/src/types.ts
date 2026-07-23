@@ -49,14 +49,6 @@ export interface SeatPlayer {
   stack: number;
   bet: number;
   totalInvested: number;
-  /**
-   * Dead money portion of totalInvested — antes, a Big Blind Ante posted by the
-   * BB on behalf of the whole table, and dead small blinds. Dead money sits in
-   * the pot but must NOT count as a live bet: it is excluded from uncalled-bet
-   * detection and from side-pot level calculation (otherwise the poster gets a
-   * private side pot / an uncalled-bet refund for chips that belong to the pot).
-   */
-  deadInvested?: number;
   cards: Card[];
   is_folded: boolean;
   is_all_in: boolean;
@@ -127,6 +119,10 @@ export interface TableInfo {
   min_players?: number;
   /** Bible V8 §2.1: Table display name */
   name?: string;
+  /** FIX 104: Mixed game preset name (e.g., 'HOLDEM_OMAHA') */
+  mixed_game_preset?: string;
+  /** FIX 104: Hands per variant before rotation */
+  mixed_game_hands_per_variant?: number;
   /** Bible V8 §4.2: Wait-for-BB — new players must wait for BB to reach them */
   wait_for_big_blind?: boolean;
   /** Bible V8 §4.2: Auto-post blinds when returning from sit-out */
@@ -152,7 +148,12 @@ export interface SeatedPlayer {
   stack: number;
   seat_number: number;
   is_horse: boolean;
-  horse_profile?: string;
+  /**
+   * AUDIT V2 (2026-07-23): profiles.horse_profile is a jsonb column — value may
+   * be a plain string ("tag") or an object ({"style":"tag","aggression":1.05}).
+   * Always resolve through resolveHorseStyle() in HorseLogic.
+   */
+  horse_profile?: string | Record<string, unknown>;
   time_bank_remaining?: number;
   time_bank_uses_remaining?: number;
   /** Bible V8 §2.3: Player avatar for broadcast */

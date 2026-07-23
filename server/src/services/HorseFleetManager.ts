@@ -184,7 +184,7 @@ export class HorseFleetManager {
         // If a closed table exists, reactivate it instead of creating a duplicate.
         const { data: existing } = await supabase
           .from('tables')
-          .select('id, status, union_id')
+          .select('id, status, union_id, game_variant, small_blind, big_blind')
           .eq('name', config.name)
           .is('tournament_id', null)
           .maybeSingle();
@@ -194,6 +194,14 @@ export class HorseFleetManager {
           const updates: Record<string, any> = {};
           if (existing.status === 'closed') updates.status = 'waiting';
           if (existing.union_id !== MIDWAY_UNION_ID) updates.union_id = MIDWAY_UNION_ID;
+          // V3: legacy rows can drift from the config (e.g. an old
+          // 'ofc_pineapple' row under the crazy-pineapple table name). The
+          // config is authoritative — resync variant and blinds on reuse.
+          if (existing.game_variant !== config.gameVariant)
+            updates.game_variant = config.gameVariant;
+          if (Number(existing.small_blind) !== config.smallBlind)
+            updates.small_blind = config.smallBlind;
+          if (Number(existing.big_blind) !== config.bigBlind) updates.big_blind = config.bigBlind;
           if (Object.keys(updates).length > 0) {
             updates.current_players = 0;
             await supabase.from('tables').update(updates).eq('id', existing.id);

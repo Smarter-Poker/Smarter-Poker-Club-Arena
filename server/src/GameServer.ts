@@ -414,7 +414,14 @@ export class GameServer {
 
         // Credit each user's wallet in parallel (batch of 10)
         // FIX-232: Use atomic RPC increment — eliminates read-then-write race condition
+        // SWEEP #4 P1-1 FIX (2026-07-23): failed credits were only logged and
+        // cashedOut++ ran anyway, then EVERY seat was deleted below — so on a
+        // restart during a Supabase blip (exactly when restarts happen) the
+        // uncredited players' stacks were permanently destroyed. Track the users
+        // whose credit failed and spare their seats from the delete so their
+        // stacks survive for the next startup pass.
         let cashedOut = 0;
+        const failedUserIds = new Set<string>();
         const entries = Array.from(userTotals.entries()).filter(([_, total]) => total > 0);
         for (let i = 0; i < entries.length; i += 10) {
           const batch = entries.slice(i, i + 10);
@@ -429,11 +436,14 @@ export class GameServer {
                   console.warn(
                     `[GameServer] Cashout wallet credit failed for ${userId}: ${walletErr.message}`
                   );
+                  failedUserIds.add(userId);
+                  return;
                 }
 
                 cashedOut++;
               } catch (err: any) {
                 console.warn(`[GameServer] Cashout failed for ${userId}: ${err.message}`);
+                failedUserIds.add(userId);
               }
             })
           );
@@ -442,19 +452,42 @@ export class GameServer {
         if (cashedOut > 0) {
           console.log(`[GameServer] Safely cashed out ${cashedOut} seated players before cleanup`);
         }
-      }
+        if (failedUserIds.size > 0) {
+          console.warn(
+            `[GameServer] ${failedUserIds.size} player(s) had failed cashout credits — sparing their seats from deletion to preserve stacks`
+          );
+        }
 
-      // Now delete all table_seats (they should all have left_at set now).
-      // Test table seats are spared so bots stay seated for E2E hands.
-      let deleteQuery = supabase
-        .from('table_seats')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-      if (protectedTableId) {
-        deleteQuery = deleteQuery.neq('table_id', protectedTableId);
+        // Now delete table_seats, EXCEPT for users whose credit failed (their
+        // stack is still owed). Test table seats are spared so bots stay seated.
+        let deleteQuery = supabase
+          .from('table_seats')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (protectedTableId) {
+          deleteQuery = deleteQuery.neq('table_id', protectedTableId);
+        }
+        if (failedUserIds.size > 0) {
+          deleteQuery = deleteQuery.not(
+            'user_id',
+            'in',
+            `(${Array.from(failedUserIds).join(',')})`
+          );
+        }
+        await deleteQuery;
+        console.log('[GameServer] Deleted all table seats (after safe cashout)');
+      } else {
+        // No active seats to cash out — clear any leftover seat rows.
+        let deleteQuery = supabase
+          .from('table_seats')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (protectedTableId) {
+          deleteQuery = deleteQuery.neq('table_id', protectedTableId);
+        }
+        await deleteQuery;
+        console.log('[GameServer] Deleted all table seats (none needed cashout)');
       }
-      await deleteQuery;
-      console.log('[GameServer] Deleted all table seats (after safe cashout)');
 
       // 3. FIX 202: Reset cash tables based on horse fleet mode.
       // E2E test mode (protectedTableId) ALWAYS closes everything-but-test
@@ -493,14 +526,54 @@ export class GameServer {
         console.log('[GameServer] Reset all cash table player counts and statuses to waiting');
       }
 
-      // 4. Cancel stale REGISTERING/ANNOUNCED tournaments older than 1 hour
+      // 4. Cancel stale REGISTERING/ANNOUNCED tournaments whose start time is
+      //    well past — with REFUNDS.
+      // SWEEP #4 P1-2 FIX (2026-07-23): this previously (a) keyed on created_at,
+      //    so a tournament created in the afternoon for an evening start was
+      //    cancelled on any restart hours before it should even begin, and
+      //    (b) issued NO refunds — every registered player's buy-in was
+      //    swallowed. Now key on start_time (genuinely past-due) and refund each
+      //    registered player buy_in_amount + buy_in_fee before cancelling.
       const oneHourAgo = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
-      await supabase
+      const { data: stalePreStart } = await supabase
         .from('tournaments')
-        .update({ status: 'CANCELLED' })
+        .select('id, name, buy_in_amount, buy_in_fee')
         .in('status', ['ANNOUNCED', 'REGISTERING'])
-        .lt('created_at', oneHourAgo);
-      console.log('[GameServer] Cancelled stale REGISTERING/ANNOUNCED tournaments');
+        .lt('start_time', oneHourAgo);
+      for (const t of stalePreStart || []) {
+        try {
+          const refundEach = (t.buy_in_amount || 0) + (t.buy_in_fee || 0);
+          if (refundEach > 0) {
+            const { data: regs } = await supabase
+              .from('tournament_players')
+              .select('user_id')
+              .eq('tournament_id', t.id);
+            for (const p of regs || []) {
+              const { error: refErr } = await supabase.rpc('credit_player_wallet', {
+                p_user_id: p.user_id,
+                p_amount: refundEach,
+              });
+              if (refErr) {
+                console.warn(
+                  `[GameServer] Startup pre-start refund FAILED for ${p.user_id.slice(0, 8)} on "${t.name}": ${refErr.message}`
+                );
+              }
+            }
+          }
+          await supabase
+            .from('tournaments')
+            .update({ status: 'CANCELLED' })
+            .eq('id', t.id)
+            .in('status', ['ANNOUNCED', 'REGISTERING']);
+        } catch (err: any) {
+          console.warn(`[GameServer] Startup pre-start cancel error for ${t.id}: ${err?.message}`);
+        }
+      }
+      if ((stalePreStart?.length || 0) > 0) {
+        console.log(
+          `[GameServer] Cancelled ${stalePreStart!.length} past-due REGISTERING/ANNOUNCED tournaments (with refunds)`
+        );
+      }
 
       // 5. Cancel ALL RUNNING SNG/Spin tournaments (they can't survive a server restart —
       //    lobby IDs change, table engines are lost, players are already cleaned out)

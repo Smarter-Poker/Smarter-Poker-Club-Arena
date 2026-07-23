@@ -733,47 +733,9 @@ export const WalletService = {
     return true;
   },
 
-  /**
-   * Process insurance purchase from player's table stack
-   */
-  async processInsurance(
-    userId: string,
-    tableId: string,
-    handId: string,
-    premium: number
-  ): Promise<boolean> {
-    if (premium <= 0) throw new Error('Insurance premium must be positive');
-
-    // Atomic conditional update — deducts only if sufficient balance exists.
-    const { error } = await retryAsync(
-      () =>
-        supabase.rpc('deduct_table_chip_lock', {
-          p_user_id: userId,
-          p_table_id: tableId,
-          p_amount: premium,
-        }),
-      3
-    );
-
-    if (error) {
-      reportError(error, 'WalletService.processInsurance', { userId, tableId, handId, premium });
-      throw new Error(`Failed to deduct insurance premium: ${error.message}`);
-    }
-
-    // Record insurance transaction
-    await this.logTransaction(
-      userId,
-      'PLAYER',
-      premium,
-      'debit',
-      'INSURANCE',
-      'Insurance premium',
-      tableId,
-      handId
-    );
-
-    return true;
-  },
+  // NOTE: processInsurance was removed — insurance is settled server-side by the
+  // authoritative engine (it called the non-existent deduct_table_chip_lock RPC
+  // and had zero call sites in the client).
 
   // ─────────────────────────────────────────────────────────────────────────────
   // DIRECT WALLET READS (routed from bypassing queries)

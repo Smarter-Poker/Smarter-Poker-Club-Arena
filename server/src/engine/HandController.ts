@@ -621,7 +621,15 @@ export class HandController {
     }
 
     const targetBet = this.state.currentBet;
-    return playersToAct.every((p) => p.bet === targetBet);
+    // AUDIT V2 (2026-07-23): strict === live-locked the betting round. A call
+    // sets player.bet via `bet += (currentBet - bet)`, and IEEE 754 drift can
+    // land it at e.g. 15.580000000000002 while currentBet is 15.58. Both
+    // players then "match" the bet for all practical purposes, but === says no,
+    // so the round never completes and TURN_CHANGE loops until the hand
+    // timeout voids the hand. Compare with a half-cent tolerance instead —
+    // chip amounts are whole cents per Bible V8 §2.6, so 0.005 can never mask
+    // a genuinely unmatched bet.
+    return playersToAct.every((p) => Math.abs(p.bet - targetBet) < 0.005);
   }
 
   private advanceStage(): void {
@@ -793,9 +801,45 @@ export class HandController {
       const cards = deck.deal(count);
       this.state.communityCards.push(...cards);
       this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards });
+      // AUDIT V2 (2026-07-23): Crazy Pineapple all-in runout — the discard
+      // phase is skipped when everyone is all-in, so players still held THREE
+      // hole cards at showdown and evaluateHand scored best-5-of-8, an illegal
+      // extra-card advantage. Resolve pending discards as soon as the flop is
+      // on the board, exactly where the discard belongs in the hand flow.
+      if (this.config.gameVariant === 'pineapple' && this.state.communityCards.length >= 3) {
+        this.resolvePendingPineappleDiscards();
+      }
     }
     this.transitionStage('showdown');
     this.completeHand();
+  }
+
+  /**
+   * AUDIT V2 (2026-07-23): Force-resolve outstanding pineapple discards for
+   * players who were all-in (or otherwise skipped) before the discard phase.
+   * Keeps the best two cards for the player — the same choice any player
+   * would make for themselves — so showdown is always a legal 2-card hand.
+   */
+  private resolvePendingPineappleDiscards(): void {
+    const flop = this.state.communityCards.slice(0, 3);
+    for (const player of this.state.players) {
+      if (player.is_folded || player.cards.length !== 3) continue;
+      let bestIdx = 2;
+      let bestScore = -1;
+      for (let discard = 0; discard < 3; discard++) {
+        const keep = player.cards.filter((_, i) => i !== discard);
+        const evaluated = evaluateHand(keep, flop);
+        const score =
+          evaluated.ranking * 1e6 + (evaluated.kickers[0] || 0) * 1e3 + (evaluated.kickers[1] || 0);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = discard;
+        }
+      }
+      player.cards.splice(bestIdx, 1);
+      this.pineappleDiscardsRemaining.delete(player.seat);
+      this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

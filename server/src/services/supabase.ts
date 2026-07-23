@@ -114,7 +114,10 @@ export async function loadSeatedPlayers(tableId: string) {
         stack: seat.stack,
         seat_number: seat.seat_number || 1,
         is_horse: profile.is_horse || false,
-        horse_profile: profile.horse_profile || 'balanced',
+        // AUDIT V2 (2026-07-23): pass the raw jsonb value through — it can be a
+        // string OR an object ({"style":"tag",...}). resolveHorseStyle() in
+        // HorseLogic handles both plus a deterministic per-horse fallback.
+        horse_profile: profile.horse_profile ?? undefined,
         time_bank_remaining: seat.time_bank_remaining || 0,
         time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
         avatar_url: profile.avatar_url || '',

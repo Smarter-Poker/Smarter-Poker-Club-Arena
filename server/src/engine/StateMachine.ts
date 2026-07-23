@@ -192,6 +192,13 @@ const HAND_TRANSITIONS: StateTransition<HandFSMState>[] = [
   { from: 'flop', to: 'pineapple_discard' }, // Pineapple variant
   { from: 'flop', to: 'turn' }, // Normal variants
   { from: 'pineapple_discard', to: 'turn' },
+  // AUDIT V2 (2026-07-23): HandController enters the discard phase right after
+  // DEALING the flop and returns to 'flop' for the flop BETTING round. This
+  // edge was missing, so every pineapple hand logged an
+  // "Invalid transition: pineapple_discard -> flop" FSM violation to Sentry.
+  { from: 'pineapple_discard', to: 'flop' },
+  // Pineapple all-in runout can also complete straight from the discard phase.
+  { from: 'pineapple_discard', to: 'showdown' },
   { from: 'turn', to: 'river' },
   { from: 'river', to: 'showdown' },
   { from: 'showdown', to: 'settlement' },

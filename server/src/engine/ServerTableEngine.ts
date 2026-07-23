@@ -14,7 +14,7 @@
  */
 
 import { HandController } from './HandController.js';
-import { HorseLogic } from './HorseLogic.js';
+import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
 import { StateVerifier } from './StateVerifier.js';
@@ -3419,6 +3419,35 @@ export class ServerTableEngine {
     const seats = (event as any).seats as number[];
     const timeoutMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
 
+    // AUDIT V2 (2026-07-23): horses used to rely on the expiry auto-discard,
+    // which always throws away the LAST card — effectively a random discard.
+    // Now each horse picks the equity-maximizing discard with a humanlike delay.
+    const handControllerRef = this.handController;
+    const hcState = handControllerRef.getState();
+    for (const seat of seats) {
+      const seated = this.seatedPlayers.find((p) => p.seat_number === seat);
+      if (!seated?.is_horse) continue;
+      const enginePlayer = hcState.players.find((p) => p.seat === seat);
+      if (!enginePlayer || enginePlayer.is_folded || enginePlayer.cards.length !== 3) continue;
+      const delay = 1200 + Math.random() * Math.min(4000, Math.max(1500, timeoutMs * 0.3));
+      setTimeout(() => {
+        if (!this.handController || this.handController !== handControllerRef) return;
+        try {
+          const current = this.handController.getState();
+          const p = current.players.find((pl) => pl.seat === seat);
+          if (!p || p.is_folded || p.cards.length !== 3) return;
+          const idx = HorseLogic.decideDiscard(
+            p.cards,
+            current.communityCards,
+            (this.tableInfo?.game_variant || 'pineapple') as string
+          );
+          this.handController.performDiscard(seat, idx);
+        } catch {
+          /* expiry auto-discard remains the safety net */
+        }
+      }, delay);
+    }
+
     // Start a single discard timer — when it expires, auto-discard for anyone remaining
     this.pineappleDiscardTimer = setTimeout(() => {
       if (!this.handController) return;
@@ -4184,19 +4213,17 @@ export class ServerTableEngine {
   ): void {
     const toCall = Math.max(0, state.currentBet - enginePlayer.bet);
 
-    const styleMap: Record<string, HorseStyle> = {
-      tag: 'tag',
-      lag: 'lag',
-      balanced: 'balanced',
-      tricky: 'tricky',
-      grinder: 'grinder',
-      reg: 'tag',
-      fish: 'balanced',
-      nit: 'grinder',
-      maniac: 'lag',
-    };
-    const horseStyle: HorseStyle = styleMap[player.horse_profile || 'balanced'] || 'balanced';
+    // AUDIT V2 (2026-07-23): horse_profile is a jsonb column — in production it
+    // was {} for every horse, so the old styleMap[object] lookup ALWAYS fell
+    // back to 'balanced' and all 574 horses played the identical style.
+    // resolveHorseStyle handles strings, jsonb objects, and hashes the horse id
+    // as a deterministic fallback so the fleet stays diverse no matter what.
+    const { style: horseStyle, mods: horseMods } = resolveHorseStyle(
+      player.horse_profile,
+      player.user_id
+    );
 
+    const fullState = this.handController ? this.handController.getState() : null;
     const gameState = {
       players: state.players,
       communityCards: state.communityCards,
@@ -4206,23 +4233,36 @@ export class ServerTableEngine {
       stage: state.stage,
       gameVariant: (this.tableInfo?.game_variant || 'nlh') as string,
       bigBlind: this.tableInfo?.big_blind || 2,
+      // AUDIT V2: position + action context for the V2 decision engine
+      dealerSeat: fullState?.dealerSeat ?? this.currentHandDealerSeat,
+      lastRaise: fullState?.lastRaise,
+      actionHistory: fullState?.actionHistory,
     };
 
-    // Get decision — SYNCHRONOUS
-    const decision = HorseLogic.decide(enginePlayer as any, gameState as any, horseStyle);
+    // Get decision — SYNCHRONOUS (budgeted <15ms incl. Monte Carlo equity)
+    const decision = HorseLogic.decide(
+      enginePlayer as any,
+      gameState as any,
+      horseStyle,
+      horseMods
+    );
 
-    // Realistic think time: 2-8 seconds (simulates human decision-making)
-    // Simple decisions (check, fold) = 2-3s; complex (raise, all-in) = 4-8s
-    const baseThinkMs =
-      decision.action === 'check' || decision.action === 'fold'
-        ? 2000 + Math.random() * 1500 // 2.0 - 3.5s for simple actions
-        : 3000 + Math.random() * 5000; // 3.0 - 8.0s for complex actions
-    const thinkTimeMs = Math.round(baseThinkMs);
+    // Humanlike think time comes from the decision engine itself (style- and
+    // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
+    const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
+    const thinkTimeMs = Math.round(
+      Math.max(700, Math.min(decision.thinkTime || 2500, Math.max(2000, actionTimeMs - 3000)))
+    );
 
     const handControllerRef = this.handController;
 
     setTimeout(() => {
       if (!handControllerRef || !this.running) return;
+
+      // AUDIT V2 FIX: if a NEW hand started, this.handController was replaced.
+      // Without this identity check a stale think-timer could fire an action
+      // into the wrong hand's controller (same seat, next hand).
+      if (handControllerRef !== this.handController) return;
 
       // Verify it's still this player's turn (timer might have expired)
       const currentState = handControllerRef.getState();

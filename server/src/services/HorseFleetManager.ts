@@ -184,9 +184,11 @@ export class HorseFleetManager {
     this.seeding = true;
     try {
       // Get all active cash tables
+      // AUDIT V2 (2026-07-23): club_id selected here — the old code re-queried
+      // tables once per table inside the seeding loop (N+1) just to read it.
       const { data: tables, error: tablesError } = await supabase
         .from('tables')
-        .select('id, name, max_players, small_blind, big_blind, game_variant')
+        .select('id, name, max_players, small_blind, big_blind, game_variant, club_id')
         .is('tournament_id', null)
         .in('status', ['waiting', 'running']);
 
@@ -277,13 +279,8 @@ export class HorseFleetManager {
             continue;
           }
 
-          // Get table's club_id for rake routing
-          const { data: tableData } = await supabase
-            .from('tables')
-            .select('club_id')
-            .eq('id', table.id)
-            .maybeSingle(); // FIX 168
-          const clubId = tableData?.club_id || JAQK_CLUB_ID;
+          // Table's club_id for rake routing (fetched with the table list above)
+          const clubId = (table as any).club_id || JAQK_CLUB_ID;
 
           // Seat each horse at an ACTUAL empty seat
           let seated = 0;

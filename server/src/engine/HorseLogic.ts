@@ -38,6 +38,9 @@ import type {
   ActionRecord,
 } from '../types.js';
 import { SUITS, RANKS, RANK_VALUES, validateAction, calculateBettingState } from './PokerEngine.js';
+// V3 (2026-07-23): real-time opponent intelligence — live stats, range reading,
+// exploit adjustments, board texture, blockers. See HorseMind.ts.
+import { HorseMind } from './HorseMind.js';
 
 // BUG 020 FIX (2026-04-15) — round chip amounts to whole cents so horse decisions
 // don't pollute hand_history.actions with 15-digit floats. Bible V8 §2.6.
@@ -483,8 +486,16 @@ function simulateEquity(
   boardCards: Card[],
   numOpponents: number,
   vi: VariantInfo,
-  iterations: number
+  iterations: number,
+  // V3: optional per-opponent preflop-strength bands (from HorseMind range
+  // reads). When provided, opponent hole cards are REJECTION-SAMPLED from the
+  // band instead of dealt uniformly — equity vs their actual range, not vs
+  // random. null entries fall back to uniform sampling.
+  oppBands?: Array<[number, number] | null>
 ): number {
+  // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
+  // iteration count to stay inside the per-decision millisecond budget.
+  if (oppBands && vi.isOmaha) iterations = Math.max(60, Math.floor(iterations * 0.7));
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
   for (const c of boardCards) known.add(cardKey(c));
@@ -536,7 +547,76 @@ function simulateEquity(
     let anyLow = heroLow !== Infinity;
 
     for (let o = 0; o < numOpponents; o++) {
+      const windowStart = dealIdx;
       for (let c = 0; c < oppHole; c++) oppCards[c] = deck[dealIdx++];
+
+      // V3: range-conditioned sampling. If this opponent has a band, resample
+      // their card window until the drawn hand's preflop strength falls inside
+      // it. Tries scale with band width (narrow ranges need more attempts) and
+      // the BEST draw seen is kept when nothing lands in-band, so tight reads
+      // stay tight instead of degrading toward random.
+      const band = oppBands ? oppBands[o] : null;
+      if (band) {
+        const scoreOf = (cards: Card[]): number =>
+          vi.isOmaha
+            ? omahaPreflopScore(cards, vi.isHiLo)
+            : cards.length === 3
+              ? pineapplePreflopScore(cards, vi.isShortDeck)
+              : holdemPreflopScore(cards[0], cards[1], vi.isShortDeck);
+        const distOf = (s: number): number =>
+          s < band[0] ? band[0] - s : s > band[1] ? s - band[1] : 0;
+
+        const narrow = band[1] - band[0] < 0.45;
+        const tries = vi.isOmaha ? (narrow ? 8 : 4) : narrow ? 14 : 6;
+
+        let bestDist = distOf(scoreOf(oppCards));
+        let bestKeys: string[] | null = null; // null = current window is best
+        if (bestDist > 0) {
+          bestKeys = [];
+          for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
+          for (let t = 0; t < tries && bestDist > 0; t++) {
+            // Redraw the window uniformly from the remainder of the deck.
+            for (let i = 0; i < oppHole; i++) {
+              const slot = windowStart + i;
+              const j = slot + Math.floor(fastRandom() * (n - slot));
+              const tmp = deck[slot];
+              deck[slot] = deck[j];
+              deck[j] = tmp;
+              oppCards[i] = deck[slot];
+            }
+            const d = distOf(scoreOf(oppCards));
+            if (d < bestDist) {
+              bestDist = d;
+              if (d === 0) {
+                bestKeys = null; // current window is in-band — done
+              } else {
+                bestKeys = [];
+                for (let i = 0; i < oppHole; i++) bestKeys.push(cardKey(oppCards[i]));
+              }
+            }
+          }
+          // Restore the best-seen draw into the window if the final redraw
+          // was not it (cards were displaced into [windowStart, n) by swaps).
+          if (bestKeys) {
+            for (let i = 0; i < oppHole; i++) {
+              const slot = windowStart + i;
+              if (cardKey(deck[slot]) === bestKeys[i]) {
+                oppCards[i] = deck[slot];
+                continue;
+              }
+              for (let j = slot + 1; j < n; j++) {
+                if (cardKey(deck[j]) === bestKeys[i]) {
+                  const tmp = deck[slot];
+                  deck[slot] = deck[j];
+                  deck[j] = tmp;
+                  break;
+                }
+              }
+              oppCards[i] = deck[slot];
+            }
+          }
+        }
+      }
 
       let oppHi: number;
       if (vi.isOmaha) {
@@ -855,15 +935,29 @@ export interface HorseGameStateV2 extends HorseGameState {
   actionHistory?: ActionRecord[];
 }
 
+/** V3 decision options (benchmark/test hooks — production uses defaults). */
+export interface HorseDecideOpts {
+  /** disable the HorseMind opponent-intelligence layer (default: enabled) */
+  mind?: boolean;
+}
+
 export class HorseLogic {
   static decide(
     player: SeatPlayer,
     gameState: HorseGameStateV2,
     style: HorseStyle = 'balanced',
-    mods: HorseProfileMods = {}
+    mods: HorseProfileMods = {},
+    opts: HorseDecideOpts = {}
   ): HorseDecision {
     try {
-      return this.decideInternal(player, gameState, style, mods);
+      // V3: ingest the action stream into the opponent-intelligence layer.
+      // Wrapped so observation can never take down a decision.
+      try {
+        HorseMind.observe(gameState.actionHistory, gameState.players);
+      } catch {
+        /* observation is best-effort */
+      }
+      return this.decideInternal(player, gameState, style, mods, opts);
     } catch {
       // Absolute safety net: never let a horse hang the table.
       const toCall = Math.max(0, (gameState.currentBet || 0) - (player.bet || 0));
@@ -877,7 +971,8 @@ export class HorseLogic {
     player: SeatPlayer,
     gs: HorseGameStateV2,
     styleName: HorseStyle,
-    mods: HorseProfileMods
+    mods: HorseProfileMods,
+    opts: HorseDecideOpts = {}
   ): HorseDecision {
     const base = STYLE_PARAMS[styleName] || STYLE_PARAMS.balanced;
     const params: StyleParams = {
@@ -895,7 +990,7 @@ export class HorseLogic {
     if (gs.stage === 'preflop') {
       decision = this.decidePreflop(player, gs, vi, params);
     } else {
-      decision = this.decidePostflop(player, gs, vi, params);
+      decision = this.decidePostflop(player, gs, vi, params, opts.mind !== false);
     }
 
     decision = this.legalize(decision, player, gs, vi);
@@ -1072,7 +1167,8 @@ export class HorseLogic {
     player: SeatPlayer,
     gs: HorseGameStateV2,
     vi: VariantInfo,
-    params: StyleParams
+    params: StyleParams,
+    useMind: boolean = true
   ): HorseDecision {
     const { currentBet, pot } = gs;
     const toCall = Math.max(0, currentBet - player.bet);
@@ -1087,52 +1183,83 @@ export class HorseLogic {
     );
     const oppCount = Math.max(1, opponents.length);
 
-    // Real equity vs opponent count — draws priced by the runout.
+    // ═══ V3: opponent intelligence ═══
+    // Range reads from each live opponent's preflop line this hand, exploit
+    // profile from their accumulated tendencies, board texture, blockers.
+    let bands: Array<[number, number] | null> | undefined;
+    let exploit = { bluffMod: 1, callDownMod: 1, valueThinMod: 1 };
+    let wetness = 0.35;
+    let blocker = false;
+    if (useMind) {
+      try {
+        bands = HorseMind.bandsForOpponents(
+          player.seat,
+          gs.players,
+          gs.actionHistory,
+          gs.bigBlind
+        );
+        exploit = HorseMind.tableExploit(player.seat, gs.players);
+        const tex = HorseMind.texture(gs.communityCards);
+        wetness = tex.wetness;
+        blocker = HorseMind.hasBlocker(player.cards, gs.communityCards);
+      } catch {
+        /* intelligence layer is best-effort — fall back to V2 behavior */
+      }
+    }
+
+    // Real equity vs the opponents' READ RANGES (V3) — draws priced by runout.
     const equity = simulateEquity(
       player.cards,
       gs.communityCards,
       Math.min(oppCount, 4),
       vi,
-      vi.iterations
+      vi.iterations,
+      bands
     );
 
     // Multiway tightening: each extra opponent raises the bar.
     const mw = (oppCount - 1) * 0.03;
     const spr = pot > 0 ? stack / pot : 10;
 
+    // V3 texture-driven sizing: small on dry boards, big on wet ones.
+    const sizeBase = 0.3 + wetness * 0.35; // 0.30 (dry) .. 0.65 (soaked)
+    // V3 bluff gating: blockers upgrade bluffs; wet boards without one demote.
+    const blockerMod = blocker ? 1.35 : wetness > 0.55 ? 0.7 : 1.0;
+    const bluffScale = exploit.bluffMod * blockerMod;
+
     // ═══ Not facing a bet ═══
     if (!facingBet) {
-      // Monster: usually bet big, sometimes trap.
+      // Monster: usually bet big, sometimes trap (never trap on wet boards).
       if (equity >= 0.8 + mw) {
-        if (!isRiver && fastRandom() < params.slowplayFreq && oppCount <= 2) {
+        if (!isRiver && wetness < 0.5 && fastRandom() < params.slowplayFreq && oppCount <= 2) {
           return { action: 'check', thinkTime: 0 };
         }
-        return this.betSize(pot, 0.65 + fastRandom() * 0.25, player, gs, vi, params);
+        return this.betSize(pot, sizeBase + 0.3 + fastRandom() * 0.2, player, gs, vi, params);
       }
       // Strong value
       if (equity >= 0.62 + mw) {
-        return this.betSize(pot, 0.5 + fastRandom() * 0.2, player, gs, vi, params);
+        return this.betSize(pot, sizeBase + 0.12 + fastRandom() * 0.15, player, gs, vi, params);
       }
-      // Thin value / protection
-      if (equity >= 0.52 + mw && fastRandom() < 0.65) {
-        return this.betSize(pot, 0.33 + fastRandom() * 0.15, player, gs, vi, params);
+      // Thin value / protection — thinner into stations (valueThinMod > 1)
+      if (equity >= 0.52 + mw - (exploit.valueThinMod - 1) * 0.08 && fastRandom() < 0.65) {
+        return this.betSize(pot, sizeBase + fastRandom() * 0.12, player, gs, vi, params);
       }
       // Semi-bluff with live draws (equity from draws is in the MC number)
       if (
         drawsLive &&
         equity >= 0.3 &&
         equity < 0.52 &&
-        fastRandom() < params.bluffFreq * params.aggression * (oppCount === 1 ? 1.4 : 0.7)
+        fastRandom() < params.bluffFreq * params.aggression * bluffScale * (oppCount === 1 ? 1.4 : 0.7)
       ) {
-        return this.betSize(pot, 0.55 + fastRandom() * 0.2, player, gs, vi, params);
+        return this.betSize(pot, sizeBase + 0.2 + fastRandom() * 0.15, player, gs, vi, params);
       }
-      // Pure bluff — mostly heads-up, rarer on the river
+      // Pure bluff — mostly heads-up, rarer on the river, blocker-preferred
       if (
         equity < 0.3 &&
         oppCount === 1 &&
-        fastRandom() < params.bluffFreq * (isRiver ? 0.55 : 0.8)
+        fastRandom() < params.bluffFreq * bluffScale * (isRiver ? 0.55 : 0.8)
       ) {
-        return this.betSize(pot, 0.5 + fastRandom() * 0.25, player, gs, vi, params);
+        return this.betSize(pot, sizeBase + 0.15 + fastRandom() * 0.2, player, gs, vi, params);
       }
       return { action: 'check', thinkTime: 0 };
     }
@@ -1164,34 +1291,38 @@ export class HorseLogic {
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }
 
-    // Semi-bluff raise with big draws (flop/turn only, not into a crowd)
+    // Semi-bluff raise with big draws (flop/turn only, not into a crowd,
+    // gated by the target's fold tendency + our blockers)
     if (
       drawsLive &&
       equity >= 0.33 &&
       equity < 0.52 &&
       oppCount <= 2 &&
       betRatio <= 0.85 &&
-      fastRandom() < params.bluffFreq * params.aggression * 0.5
+      fastRandom() < params.bluffFreq * params.aggression * bluffScale * 0.5
     ) {
       const raiseToAmt = currentBet + (pot + toCall) * (0.8 + fastRandom() * 0.3);
       return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
     }
 
     // Call when the price is right. Margin scales with bet size; draws get a
-    // small implied-odds allowance before the river.
+    // small implied-odds allowance before the river. V3: a maniac's bets need
+    // less respect (callDownMod > 1); a passive player's bets need more.
     const impliedBonus = drawsLive && equity >= 0.25 ? 0.04 : 0;
-    const sizingPenalty = Math.min(0.06, betRatio * 0.04) + mw * 0.5;
-    if (equity + impliedBonus >= potOdds + 0.03 + sizingPenalty) {
+    const respect = 2 - exploit.callDownMod; // maniac 0.8, neutral 1, passive 1.15
+    const sizingPenalty = (Math.min(0.06, betRatio * 0.04) + mw * 0.5) * respect;
+    if (equity + impliedBonus >= potOdds + 0.03 * respect + sizingPenalty) {
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }
 
-    // Occasional disciplined bluff-catch vs small bets heads-up on the river
+    // Disciplined bluff-catch vs small bets heads-up on the river — more
+    // often against aggressive opposition, less against passives.
     if (
       isRiver &&
       oppCount === 1 &&
       betRatio <= 0.4 &&
       equity >= potOdds - 0.04 &&
-      fastRandom() < 0.25
+      fastRandom() < 0.25 * exploit.callDownMod
     ) {
       return { action: 'call', amount: toCall, thinkTime: 0 };
     }
@@ -1454,5 +1585,27 @@ export class HorseLogic {
       return preflopEquity(holeCards, numOpponents, vi, (gameVariant || 'nlh').toLowerCase());
     }
     return simulateEquity(holeCards, communityCards, numOpponents, vi, iterations ?? vi.iterations);
+  }
+
+  /**
+   * V3, exposed for tests: equity vs specific opponent range bands.
+   * One [lo,hi] band (or null for uniform sampling) per opponent.
+   */
+  static estimateEquityVsBands(
+    holeCards: Card[],
+    communityCards: Card[],
+    bands: Array<[number, number] | null>,
+    gameVariant: string = 'nlh',
+    iterations?: number
+  ): number {
+    const vi = variantInfo(gameVariant);
+    return simulateEquity(
+      holeCards,
+      communityCards,
+      bands.length,
+      vi,
+      iterations ?? vi.iterations,
+      bands
+    );
   }
 }

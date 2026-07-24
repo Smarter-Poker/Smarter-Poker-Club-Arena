@@ -24,6 +24,10 @@ const MONITORING_INTERVAL = 60000; // 60 seconds between checks
 const STUCK_HORSE_THRESHOLD_HOURS = 2; // Consider horse stuck after 2 hours
 const STALE_SNG_THRESHOLD_HOURS = 2; // Cancel SNGs older than 2 hours that never started
 const STALE_SEAT_THRESHOLD_HOURS = 4; // Cleanup table_seats older than 4 hours
+// SWEEP #4: a table that has not produced a hand in this many minutes is treated as
+// dead/abandoned; only then may a >4h seat be force-cashed. Guards against reaping
+// active cash players and against converting live tournament chips to wallet chips.
+const STALE_SEAT_TABLE_IDLE_MINUTES = 30;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HORSE LIFECYCLE MANAGER CLASS

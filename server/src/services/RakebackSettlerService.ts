@@ -77,6 +77,14 @@ interface RakeRecordRow {
 
 export class RakebackSettlerService {
   private isRunning = false;
+  // SWEEP #4 FIX (2026-07-23): re-entrancy guard. runSettlement() fires every 30 min
+  // and once on startup with no "still running" check. A backlog run (up to 10,000
+  // rake_records × sequential per-dealt-in-player credit RPCs — easily >30 min after
+  // downtime or on a first HWM-less deploy scanning 7 days) overlapped the next tick,
+  // which re-read from the same not-yet-advanced watermark and RE-CREDITED every
+  // agent_commissions row (the live commission ledger) and re-incremented player_stats.
+  // isSettling makes overlapping runs no-op.
+  private isSettling = false;
   private intervalHandle: NodeJS.Timeout | null = null;
   private lastSettledAt: Date | null = null;
 
@@ -134,10 +142,16 @@ export class RakebackSettlerService {
   /** Persist the high-water-mark durably (survives engine restarts). */
   private async saveHighWaterMark(ts: Date): Promise<void> {
     try {
-      await supabase.from('daemon_state').upsert(
-        { daemon: DAEMON_KEY, high_water_mark: ts.toISOString(), updated_at: new Date().toISOString() },
-        { onConflict: 'daemon' }
-      );
+      await supabase
+        .from('daemon_state')
+        .upsert(
+          {
+            daemon: DAEMON_KEY,
+            high_water_mark: ts.toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'daemon' }
+        );
     } catch (e) {
       reportError(
         new Error((e as { message?: string })?.message || String(e)),
@@ -161,6 +175,22 @@ export class RakebackSettlerService {
    * run) into per-player rakeback_periods rows. Idempotent.
    */
   async runSettlement(): Promise<void> {
+    // SWEEP #4: skip if a previous run is still in flight (prevents the double-credit
+    // described on the isSettling field). The guard wraps the whole run in try/finally
+    // so the flag always clears even on a thrown error.
+    if (this.isSettling) {
+      console.warn('[RakebackSettler] settlement already in progress — skipping overlapping run');
+      return;
+    }
+    this.isSettling = true;
+    try {
+      await this._runSettlementInner();
+    } finally {
+      this.isSettling = false;
+    }
+  }
+
+  private async _runSettlementInner(): Promise<void> {
     // On first run after (re)start, resume from the durable high-water-mark so we
     // do not re-scan already-settled rake_records (which double-counts
     // player_stats). Only fall back to the 7-day window on a genuine first run.

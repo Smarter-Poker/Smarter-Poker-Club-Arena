@@ -1960,7 +1960,26 @@ export class ServerTableEngine {
       if (this.timeBankActivatedThisTurn) {
         this.timeBankEngine.playerActed(this.tableId, userId);
       }
-      this.handController.performAction(seat, normalizedAction as any, amount);
+      const actionApplied = this.handController.performAction(
+        seat,
+        normalizedAction as any,
+        amount
+      );
+      // SWEEP #4 FIX (2026-07-23): performAction returns false (it does NOT throw)
+      // when the engine rejects an action the validator let through — most reachably
+      // a `raise` that cannot legally reopen betting against a sub-full-raise all-in
+      // (HandController §4.14 canReopenBetting). The old code ignored the false return,
+      // transitioned the FSM to 'complete', and returned success — but the turn/precise
+      // timers were already cancelled above and no TURN_CHANGE fired, so the table froze
+      // with no clock until the 10-minute HAND_SAFETY_TIMEOUT void (and the acting client
+      // was told the action succeeded). Re-arm this player's turn and surface the rejection.
+      if (!actionApplied) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Engine REJECTED action ${normalizedAction} from ${userId} — re-arming turn timer`
+        );
+        this.rearmTurnTimerIfCurrent(userId);
+        return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
+      }
       console.log(
         `[ServerTableEngine:${this.tableId}] Player ${userId} → ${normalizedAction}${amount ? ` ${amount}` : ''}`
       );
@@ -2747,9 +2766,9 @@ export class ServerTableEngine {
 
           // 2026-04-14 USER FEEDBACK FIX: emit a discrete player_action event so
           // the client can fire Bible V8 §5.1/§5.2 visual sequence
-          // (action label \u2192 chip-to-pot animation \u2192 sound \u2192 turn indicator).
+          // (action label → chip-to-pot animation → sound → turn indicator).
           // Previously the only signal was the full state snapshot, which the
-          // client used to update pot only \u2014 chip animations + action labels
+          // client used to update pot only — chip animations + action labels
           // never fired because their handler was on the deleted Supabase
           // Realtime channel. The full state broadcast still follows below.
           this.hub?.emitEvent(this.tableId, {
@@ -2790,8 +2809,8 @@ export class ServerTableEngine {
         }
         // Bible V8 §1.16 (Real-Time Law): emit discrete community_cards_dealt
         // so the client slides the flop/turn/river cards onto the board with
-        // the spec animation (\u00a76 community cards dealing) the millisecond the
-        // engine flips them \u2014 not whenever the next snapshot arrives.
+        // the spec animation (§6 community cards dealing) the millisecond the
+        // engine flips them — not whenever the next snapshot arrives.
         this.hub?.emitEvent(this.tableId, {
           type: 'community_cards_dealt',
           table_id: this.tableId,
@@ -2857,20 +2876,34 @@ export class ServerTableEngine {
         // auto-muck and leaked every showdown hand to the whole table.
         break;
 
-      case 'WINNERS':
-        this.currentHandWinnerIds = (event.winners || []).map(
-          (w: any) => w.userId || w.user_id || ''
-        );
-        // Bible V8 §2.7: Winner Object — userId, amount, potIndex, hand (evaluated hand description)
-        this.currentHandWinners = (event.winners || []).map((w: any) => ({
-          userId: w.userId || w.user_id || '',
-          amount: w.amount || 0,
-          potIndex: w.potIndex ?? 0,
-          hand: w.hand ? { name: w.hand.name || '', ranking: w.hand.ranking ?? 0 } : undefined,
-        }));
+      case 'WINNERS': {
+        // SWEEP #4 FIX (2026-07-23): Run-It-Twice hands call dealAndResolveRIT(),
+        // which pre-sets currentHandWinnerIds / currentHandShowdownResults /
+        // currentHandPotSize for board-0 BBJ + 7-2 evaluation, then calls
+        // finalizeRunout(true) which emits WINNERS [] synchronously right before
+        // HAND_COMPLETE. The old handler unconditionally overwrote the winner state
+        // to empty, so the BBJ payout, the 7-2 bounty, and the pot_win/pot_distributed
+        // ship animations were silently skipped on EVERY run-it-twice hand — even
+        // though the BBJ fee was still collected (funded-but-unwinnable jackpot). An
+        // empty WINNERS event ONLY originates from that skip-distribution path, so
+        // preserve the pre-set winner state when winners is empty; the contribution
+        // capture + stack sync below still run unconditionally.
+        const hasWinners = (event.winners || []).length > 0;
+        if (hasWinners) {
+          this.currentHandWinnerIds = (event.winners || []).map(
+            (w: any) => w.userId || w.user_id || ''
+          );
+          // Bible V8 §2.7: Winner Object — userId, amount, potIndex, hand (evaluated hand description)
+          this.currentHandWinners = (event.winners || []).map((w: any) => ({
+            userId: w.userId || w.user_id || '',
+            amount: w.amount || 0,
+            potIndex: w.potIndex ?? 0,
+            hand: w.hand ? { name: w.hand.name || '', ranking: w.hand.ranking ?? 0 } : undefined,
+          }));
+        }
         if (this.handController) {
           const state = this.handController.getState();
-          this.currentHandPotSize = state.pot;
+          if (hasWinners) this.currentHandPotSize = state.pot;
           // Note: rake + bbjFee are captured from HAND_COMPLETE event, not from state
           // Bible V8 §1.9: Capture totalInvested for equal-share rakeback tracking (FIX 144)
           this.currentHandContributions.clear();
@@ -2971,6 +3004,7 @@ export class ServerTableEngine {
           });
         }
         break;
+      }
 
       case 'HAND_COMPLETE': {
         // ═══════════════════════════════════════════════════════════════════

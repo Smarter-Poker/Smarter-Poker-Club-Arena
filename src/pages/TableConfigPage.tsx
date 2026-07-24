@@ -289,6 +289,86 @@ const DEFAULT_CONFIG: TableConfig = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// RENDER HELPERS (hoisted to module scope — they only use props, so defining them
+// inside the component would create new component types every render and remount
+// every <Toggle>/<Slider>, breaking slider drags mid-gesture)
+// ═══════════════════════════════════════════════════════════════════════════════
+const Toggle = ({
+  label,
+  value,
+  onChange,
+  tooltip,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  tooltip?: string;
+}) => (
+  <div className="config-toggle">
+    <span className="toggle-label">
+      {label}
+      {tooltip && (
+        <span className="tooltip-icon" title={tooltip}>
+          ?
+        </span>
+      )}
+    </span>
+    <label className="toggle-switch">
+      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
+      <span className="toggle-track">
+        <span className="toggle-thumb"></span>
+      </span>
+      <span className={`toggle-status ${value ? 'on' : 'off'}`}>{value ? 'ON' : 'OFF'}</span>
+    </label>
+  </div>
+);
+
+const Slider = ({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  suffix = '',
+  tooltip,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  suffix?: string;
+  tooltip?: string;
+}) => (
+  <div className="config-slider">
+    <div className="slider-header">
+      <span className="slider-label">
+        {label}: {value}
+        {suffix}
+        {tooltip && (
+          <span className="tooltip-icon" title={tooltip}>
+            ?
+          </span>
+        )}
+      </span>
+    </div>
+    <div className="slider-track-container">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="slider-input"
+      />
+    </div>
+  </div>
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function TableConfigPage() {
@@ -303,8 +383,6 @@ export default function TableConfigPage() {
   const [templates, setTemplates] = useState<TableTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [savingTemplate, setSavingTemplate] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   // UNION GUARD: Clubs inside a union CANNOT create standalone tables/tournaments.
   const [isInUnion, setIsInUnion] = useState(false);
@@ -316,8 +394,6 @@ export default function TableConfigPage() {
     setStarting(false);
     setSelectedTemplateId('');
     setSavingTemplate(false);
-    setShowDeleteConfirm(false);
-    setDeleting(false);
     setIsInUnion(false);
     setCheckingUnion(true);
   }, [clubId]);
@@ -331,14 +407,16 @@ export default function TableConfigPage() {
     (async () => {
       try {
         const resolvedId = await resolveClubUUID(clubId);
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('union_clubs')
           .select('union_id')
           .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
         if (!isMounted) return;
-        if (data) {
+        // Fail-closed: a transient query error must NOT allow a union club to
+        // slip through and create a standalone table — treat it as blocking.
+        if (error || data) {
           setIsInUnion(true);
           toast.error('Union clubs cannot create standalone tables.');
           navigate(`/clubs/${clubId}`);
@@ -374,7 +452,7 @@ export default function TableConfigPage() {
         if (error) throw error;
         setTemplates(data || []);
       } catch (err) {
-        if (isMounted) reportError(isMounted, 'TableConfigPage.Failed_to_fetch_templates');
+        if (isMounted) reportError(err, 'TableConfigPage.Failed_to_fetch_templates');
       }
     };
     fetchTemplates();
@@ -515,27 +593,6 @@ export default function TableConfigPage() {
       sngPlayerCount: playerCount,
       isSpins: option?.isSpins || false,
     }));
-  };
-
-  // Delete a table (soft delete)
-  const handleDeleteTable = async (tableId: string) => {
-    setDeleting(true);
-    try {
-      const { error } = await supabase
-        .from('tables')
-        .update({ status: 'deleted', is_active: false })
-        .eq('id', tableId);
-      if (error) throw error;
-
-      toast.success('Table deleted');
-      setShowDeleteConfirm(false);
-      navigate(`/clubs/${clubId}`);
-    } catch (err) {
-      reportError(err, 'TableConfigPage.Failed_to_delete_table');
-      toast.error('Failed to delete table');
-    } finally {
-      setDeleting(false);
-    }
   };
 
   const handleBlindsChange = (index: number) => {
@@ -696,13 +753,15 @@ export default function TableConfigPage() {
 
       // Runtime union check — prevents race if navigation guard was bypassed
       const resolvedId = await resolveClubUUID(clubId || '');
-      const { data: unionCheck } = await supabase
+      const { data: unionCheck, error: unionError } = await supabase
         .from('union_clubs')
         .select('union_id')
         .eq('club_id', resolvedId)
         .limit(1)
         .maybeSingle();
-      if (unionCheck) {
+      // Fail-closed: block on a query error too, otherwise a transient failure
+      // would let a union club create a standalone table.
+      if (unionError || unionCheck) {
         toast.error('Union clubs cannot create standalone tables.');
         setSaving(false);
         return;
@@ -747,13 +806,15 @@ export default function TableConfigPage() {
 
       // Runtime union check — prevents race if navigation guard was bypassed
       const resolvedId = await resolveClubUUID(clubId || '');
-      const { data: unionCheck } = await supabase
+      const { data: unionCheck, error: unionError } = await supabase
         .from('union_clubs')
         .select('union_id')
         .eq('club_id', resolvedId)
         .limit(1)
         .maybeSingle();
-      if (unionCheck) {
+      // Fail-closed: block on a query error too, otherwise a transient failure
+      // would let a union club create a standalone table.
+      if (unionError || unionCheck) {
         toast.error('Union clubs cannot create standalone tables.');
         setStarting(false);
         return;
@@ -788,84 +849,6 @@ export default function TableConfigPage() {
       setStarting(false);
     }
   };
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // RENDER HELPERS
-  // ═══════════════════════════════════════════════════════════════════════════
-  const Toggle = ({
-    label,
-    value,
-    onChange,
-    tooltip,
-  }: {
-    label: string;
-    value: boolean;
-    onChange: (v: boolean) => void;
-    tooltip?: string;
-  }) => (
-    <div className="config-toggle">
-      <span className="toggle-label">
-        {label}
-        {tooltip && (
-          <span className="tooltip-icon" title={tooltip}>
-            ?
-          </span>
-        )}
-      </span>
-      <label className="toggle-switch">
-        <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
-        <span className="toggle-track">
-          <span className="toggle-thumb"></span>
-        </span>
-        <span className={`toggle-status ${value ? 'on' : 'off'}`}>{value ? 'ON' : 'OFF'}</span>
-      </label>
-    </div>
-  );
-
-  const Slider = ({
-    label,
-    value,
-    onChange,
-    min,
-    max,
-    step = 1,
-    suffix = '',
-    tooltip,
-  }: {
-    label: string;
-    value: number;
-    onChange: (v: number) => void;
-    min: number;
-    max: number;
-    step?: number;
-    suffix?: string;
-    tooltip?: string;
-  }) => (
-    <div className="config-slider">
-      <div className="slider-header">
-        <span className="slider-label">
-          {label}: {value}
-          {suffix}
-          {tooltip && (
-            <span className="tooltip-icon" title={tooltip}>
-              ?
-            </span>
-          )}
-        </span>
-      </div>
-      <div className="slider-track-container">
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="slider-input"
-        />
-      </div>
-    </div>
-  );
 
   return (
     <div className="table-config-page">

@@ -365,6 +365,36 @@ export async function addChips(tableId: string, amount: number): Promise<ActionR
 }
 
 /**
+ * Withdraw chips from the table stack back to the player's wallet (partial
+ * cash-out). Server-authoritative: the engine credits the PLAYER wallet and
+ * reduces the seat stack atomically, only between hands (rejected mid-hand).
+ * Mirror of `addChips`.
+ * @param tableId Table ID
+ * @param amount Amount of chips to withdraw
+ */
+export async function removeChips(tableId: string, amount: number): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${GAME_SERVER_URL}/withdrawchips`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, amount }),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to withdraw chips via GameServerAPI');
+    }
+
+    const data = await res.json();
+    return { success: data.success, error: data.error };
+  } catch (err: any) {
+    console.error(`[GameServerAPI] removeChips error:`, err);
+    return { success: false, error: err.message || 'Network error' };
+  }
+}
+
+/**
  * Bible V8 §7.12: Player sit out or sit back in.
  * @param sitOut - true = sit out, false = sit back in
  */
@@ -618,6 +648,7 @@ export default {
   setSitOut,
   toggleStraddle,
   addChips,
+  removeChips,
   getTableState,
   respondToRIT,
   respondToInsurance,

@@ -38,7 +38,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import { reportError } from '../utils/errorReporter';
-import { SHARK_CLUB_ID } from '../lib/constants';
+import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 
 // Shark Club fallback logo — used when DB logo_url is null
 const SHARK_CLUB_FALLBACK_LOGO = `${import.meta.env.BASE_URL || '/'}images/shark-club-card-v25.jpg`;
@@ -232,9 +232,22 @@ export default function ClubHomePage() {
       const handleTableChange = (payload: any) => {
         if (!isMounted) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
-          setTables((prev) =>
-            prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-          );
+          const updated = payload.new as any;
+          // P2-2: closeTable/deleteTable flip status='closed'/'deleted' or
+          // is_deleted=true and arrive here as UPDATE events. Merging kept the
+          // row as a clickable card (filteredTables doesn't exclude by status),
+          // so drop it from the list instead of merging when it goes dead.
+          if (
+            updated.is_deleted === true ||
+            updated.status === 'closed' ||
+            updated.status === 'deleted'
+          ) {
+            setTables((prev) => prev.filter((t) => t.id !== updated.id));
+          } else {
+            setTables((prev) =>
+              prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
+            );
+          }
         } else if (payload.eventType === 'INSERT' && payload.new) {
           setTables((prev) => {
             if (prev.some((t) => t.id === payload.new.id)) return prev;
@@ -575,7 +588,16 @@ export default function ClubHomePage() {
       } else {
         tableQuery.in('club_id', unionClubIds);
       }
-      tableQuery.eq('is_deleted', false).order('created_at', { ascending: false });
+      // P1-1: mirror TableService cash-lobby filters on BOTH branches (chained
+      // on the shared builder). Without status/tournament filters and a limit,
+      // this pulled tens of thousands of closed/tournament rows and buried the
+      // real cash tables. Exclude closed + tournament tables and cap the result.
+      tableQuery
+        .eq('is_deleted', false)
+        .neq('status', 'closed')
+        .is('tournament_id', null)
+        .order('created_at', { ascending: false })
+        .limit(QUERY_LIMITS.LIST);
 
       const [tableResult, clubTournamentResult, bbjResult, ...xmttResults] = await Promise.all([
         tableQuery,

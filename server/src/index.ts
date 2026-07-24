@@ -30,6 +30,7 @@ import { channelHub } from './hub/ChannelHub.js';
 import { GameServer } from './GameServer.js';
 import { createRouter } from './router.js';
 import { hydrateHorseMind } from './services/HorseMindHydrator.js';
+import { HorseSessionRotator } from './services/HorseSessionRotator.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -69,6 +70,10 @@ httpServer.listen(PORT, () => {
   // the last 24h of real hand history. Fire-and-forget — never blocks boot,
   // never throws (fail-safe inside).
   void hydrateHorseMind();
+  // V7 (2026-07-24): humanlike session rhythms — horses stand up after real
+  // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
+  // the fleet manager reseeds fresh horses within its 30s cycle.
+  new HorseSessionRotator((tableId) => gameServer.getTableEngine(tableId)).start();
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -156,7 +156,10 @@ export class InsuranceEngine {
     board: Card[],
     pot: number,
     variant: string,
-    shortDeck: boolean = false
+    shortDeck: boolean = false,
+    // PERF FIX (2026-07-24): the heavy remaining-board enumeration is computed
+    // OFF the event loop by the caller (EquityWorkerPool) and passed in here.
+    precomputedEquity?: number
   ): InsuranceOffer[] {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     if (!config.enabled || pot < config.minPotForInsurance) return [];
@@ -185,7 +188,12 @@ export class InsuranceEngine {
 
     // FIX-A12: price from the TRUE all-in equity against the KNOWN opponent
     // hands (exact enumeration of the remaining board), not vs random cards.
-    const { equity } = insuranceEquity(leader.holeCards, opponentHands, board, variant, shortDeck);
+    // PERF FIX (2026-07-24): use the equity precomputed off the event loop when
+    // supplied; only fall back to the synchronous exact enumeration (which blocks
+    // the loop) when the worker pool was unavailable.
+    const equity =
+      precomputedEquity ??
+      insuranceEquity(leader.holeCards, opponentHands, board, variant, shortDeck).equity;
     const lossProbability = Math.max(0, Math.min(1, 1 - equity / 100));
 
     // Insured amount = what the leader can actually LOSE (their own committed

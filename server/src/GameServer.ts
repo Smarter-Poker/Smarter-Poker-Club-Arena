@@ -10,6 +10,7 @@
  * Behavior preserved byte-identically. No logic changed, only file location.
  */
 
+import nodeCrypto from 'node:crypto';
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { supabase, atomicCashout } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
@@ -37,6 +38,148 @@ import { tableStateHub } from './transport/TableStateHub.js';
 
 const TABLE_DISCOVERY_INTERVAL = 5000; // Check for new tables every 5 seconds
 const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 seconds
+
+/**
+ * TOURNEY-AUDIT 2026-07-24: Recover tournaments stuck in COMPLETING by PAYING
+ * everything still owed, then completing. The previous recovery blind-flipped
+ * COMPLETING → COMPLETED, permanently losing the winner's prize (and any
+ * unpaid ITM places) whenever the process died between the COMPLETING claim
+ * and the winner credit. Verified live: a COMPLETED bounty MTT with 8 players
+ * stranded in 'playing' and only $40 of a $100 guaranteed pool ever paid.
+ *
+ * Recovery, per stuck tournament (idempotent — safe to re-run):
+ *   1. Load tournament + players. Normalize the payout structure to 100%.
+ *   2. Any still-'playing'/'registered' players are ranked by chip count and
+ *      assigned the top remaining positions (1..N). Position 1 becomes the
+ *      winner. Each gets their payout-structure prize credited + logged.
+ *   3. Any already-eliminated ITM player whose recorded prize is 0 but whose
+ *      position pays is topped up (covers busts recorded before the pool
+ *      reached its final/guaranteed size).
+ *   4. Tournament flips COMPLETING → COMPLETED (CAS-guarded).
+ */
+async function recoverStuckCompletingTournaments(
+  reason: string,
+  onlyTournamentId?: string
+): Promise<void> {
+  try {
+    let q = supabase
+      .from('tournaments')
+      .select('id, name, prize_pool, payout_structure')
+      .eq('status', 'COMPLETING');
+    if (onlyTournamentId) q = q.eq('id', onlyTournamentId);
+    const { data: stuck } = await q;
+    for (const t of stuck ?? []) {
+      try {
+        // Parse + normalize payout structure
+        let payouts: Array<{ place: number; percentage: number }> = [];
+        try {
+          const raw =
+            typeof t.payout_structure === 'string'
+              ? JSON.parse(t.payout_structure)
+              : t.payout_structure;
+          if (Array.isArray(raw)) payouts = raw;
+        } catch {
+          payouts = [];
+        }
+        const pctSum = payouts.reduce((s, p) => s + Number(p.percentage || 0), 0);
+        const norm = pctSum > 0 ? 100 / pctSum : 0;
+        const prizeFor = (place: number): number => {
+          const entry = payouts.find((p) => p.place === place);
+          if (!entry || norm === 0) return 0;
+          return (
+            Math.round(
+              ((Number(t.prize_pool || 0) * Number(entry.percentage) * norm) / 100) * 100
+            ) / 100
+          );
+        };
+
+        const { data: players } = await supabase
+          .from('tournament_players')
+          .select('id, user_id, status, position, prize, chips')
+          .eq('tournament_id', t.id);
+        const rows = players ?? [];
+
+        const credit = async (userId: string, amount: number, desc: string) => {
+          if (amount <= 0) return;
+          const { error } = await supabase.rpc('credit_player_wallet', {
+            p_user_id: userId,
+            p_amount: amount,
+          });
+          if (error) throw new Error(`credit failed for ${userId}: ${error.message}`);
+          await supabase.rpc('log_wallet_transaction', {
+            p_user_id: userId,
+            p_wallet_type: 'PLAYER',
+            p_amount: amount,
+            p_type: 'credit',
+            p_category: 'prize',
+            p_description: desc,
+            p_table_id: null,
+            p_hand_id: null,
+            p_related_entity_id: t.id,
+          });
+        };
+
+        // 2. Rank the still-alive players by chips and pay their places
+        const alive = rows
+          .filter((r) => r.status === 'playing' || r.status === 'registered')
+          .sort((a, b) => Number(b.chips || 0) - Number(a.chips || 0));
+        for (let i = 0; i < alive.length; i++) {
+          const place = i + 1;
+          const prize = prizeFor(place);
+          await credit(
+            alive[i].user_id,
+            prize,
+            `Tournament prize (recovery): position ${place} — ${t.name || 'tournament'}`
+          );
+          await supabase
+            .from('tournament_players')
+            .update({
+              status: place === 1 ? 'winner' : 'eliminated',
+              position: place,
+              prize,
+              eliminated_at: place === 1 ? null : new Date().toISOString(),
+            })
+            .eq('id', alive[i].id);
+        }
+
+        // 3. Top up already-eliminated ITM players recorded with a zero prize
+        for (const r of rows) {
+          if (r.status !== 'eliminated' || !r.position) continue;
+          const owed = prizeFor(r.position);
+          const recorded = Number(r.prize || 0);
+          if (owed > recorded) {
+            const diff = Math.round((owed - recorded) * 100) / 100;
+            await credit(
+              r.user_id,
+              diff,
+              `Tournament prize top-up (recovery): position ${r.position} — ${t.name || 'tournament'}`
+            );
+            await supabase.from('tournament_players').update({ prize: owed }).eq('id', r.id);
+          }
+        }
+
+        // 4. Complete (CAS-guarded)
+        await supabase
+          .from('tournaments')
+          .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
+          .eq('id', t.id)
+          .eq('status', 'COMPLETING');
+        await supabase
+          .from('tables')
+          .update({ status: 'closed' })
+          .eq('tournament_id', t.id)
+          .neq('status', 'closed');
+        console.log(
+          `[GameServer] Recovered stuck COMPLETING tournament ${t.id.slice(0, 8)} "${t.name}" (${reason}): paid ${alive.length} remaining player(s)`
+        );
+      } catch (err) {
+        reportError(err, 'GameServer.recoverStuckCompleting_per_tournament');
+      }
+    }
+  } catch (err) {
+    reportError(err, 'GameServer.recoverStuckCompleting');
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GAME SERVER — Main Orchestrator
@@ -390,15 +533,25 @@ export class GameServer {
         .neq('horse_status', 'available');
       console.log('[GameServer] Reset stuck horses to available');
 
-      // 2. SAFE CLEANUP: Cash out ALL active seats before deleting.
+      // 2. SAFE CLEANUP: Cash out active CASH-GAME seats before deleting.
       //    Test table (protectedTableId) is excluded — its seated players /
       //    bots stay put so the tester can join an already-warmed table.
       //    This prevents chip loss when the server restarts while players are seated
       //    FIX 208b: Batch approach — aggregate per user, single wallet update per user
+      //
+      //    TOURNEY-AUDIT 2026-07-24 [CRITICAL]: this query had NO tournament
+      //    filter — on EVERY restart it credited each seated tournament
+      //    player's TOURNAMENT CHIP STACK (e.g. 10,000 tournament chips) to
+      //    their REAL-MONEY wallet via credit_player_wallet, then deleted the
+      //    seats — minting money on every boot AND destroying the seats a
+      //    resumed tournament needs. Now only seats at CASH tables
+      //    (tables.tournament_id IS NULL) are cashed out, and the delete below
+      //    targets exactly the processed seat rows instead of wiping the table.
       let seatsQuery = supabase
         .from('table_seats')
-        .select('user_id, table_id, seat_number, stack')
-        .is('left_at', null);
+        .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
+        .is('left_at', null)
+        .is('tables.tournament_id', null);
       if (protectedTableId) {
         seatsQuery = seatsQuery.neq('table_id', protectedTableId);
       }
@@ -458,35 +611,26 @@ export class GameServer {
           );
         }
 
-        // Now delete table_seats, EXCEPT for users whose credit failed (their
-        // stack is still owed). Test table seats are spared so bots stay seated.
-        let deleteQuery = supabase
-          .from('table_seats')
-          .delete()
-          .neq('id', '00000000-0000-0000-0000-000000000000');
-        if (protectedTableId) {
-          deleteQuery = deleteQuery.neq('table_id', protectedTableId);
+        // TOURNEY-AUDIT 2026-07-24: delete EXACTLY the cash seats we just
+        // processed (minus failed credits, whose stacks are still owed) —
+        // never a blanket wipe. Tournament seats are untouched so a resumed
+        // tournament finds its players; historical (left_at set) rows are
+        // preserved as the seat audit trail.
+        const seatIdsToDelete = activeSeats
+          .filter((s) => !failedUserIds.has(s.user_id))
+          .map((s) => s.id);
+        for (let i = 0; i < seatIdsToDelete.length; i += 100) {
+          const chunk = seatIdsToDelete.slice(i, i + 100);
+          await supabase.from('table_seats').delete().in('id', chunk);
         }
-        if (failedUserIds.size > 0) {
-          deleteQuery = deleteQuery.not(
-            'user_id',
-            'in',
-            `(${Array.from(failedUserIds).join(',')})`
-          );
-        }
-        await deleteQuery;
-        console.log('[GameServer] Deleted all table seats (after safe cashout)');
+        console.log(
+          `[GameServer] Deleted ${seatIdsToDelete.length} cash-table seats (after safe cashout; tournament seats preserved)`
+        );
       } else {
-        // No active seats to cash out — clear any leftover seat rows.
-        let deleteQuery = supabase
-          .from('table_seats')
-          .delete()
-          .neq('id', '00000000-0000-0000-0000-000000000000');
-        if (protectedTableId) {
-          deleteQuery = deleteQuery.neq('table_id', protectedTableId);
-        }
-        await deleteQuery;
-        console.log('[GameServer] Deleted all table seats (none needed cashout)');
+        // TOURNEY-AUDIT 2026-07-24: nothing to cash out — do NOT blanket-delete.
+        // The old path here deleted EVERY table_seats row (including tournament
+        // seats and historical left_at rows) on every restart.
+        console.log('[GameServer] No active cash-table seats needed cashout');
       }
 
       // 3. FIX 202: Reset cash tables based on horse fleet mode.
@@ -590,12 +734,89 @@ export class GameServer {
           t.tournament_type === 'SNG' ||
           t.tournament_type === 'SPIN';
         if (isSngOrSpin) {
-          await supabase
+          const { count: cancelUpdated } = await supabase
             .from('tournaments')
-            .update({ status: 'CANCELLED' })
+            .update({ status: 'CANCELLED', ended_at: new Date().toISOString() }, { count: 'exact' })
             .eq('id', t.id)
             .eq('status', 'RUNNING');
+          if (!cancelUpdated) continue;
           cancelledCount++;
+
+          // TOURNEY-AUDIT 2026-07-24 [money]: the old path cancelled with NO
+          // refund — real players in a restart-orphaned SNG/Spin simply lost
+          // their buy-in + fee. Refund every non-horse entrant in full and
+          // reverse the collected fee in the rake ledger.
+          try {
+            const { data: fullT } = await supabase
+              .from('tournaments')
+              .select('buy_in_amount, buy_in_fee, club_id, name')
+              .eq('id', t.id)
+              .maybeSingle();
+            const refundAmount = Number(fullT?.buy_in_amount || 0) + Number(fullT?.buy_in_fee || 0);
+            if (refundAmount > 0) {
+              // Two-step horse filter (no FK-embed dependency): fetch entrants,
+              // then their is_horse flags, refund only real players.
+              const { data: allEntrants } = await supabase
+                .from('tournament_players')
+                .select('user_id')
+                .eq('tournament_id', t.id);
+              const entrantIds = (allEntrants ?? []).map((e) => e.user_id);
+              let horseSet = new Set<string>();
+              if (entrantIds.length > 0) {
+                const { data: horseRows } = await supabase
+                  .from('profiles')
+                  .select('id')
+                  .in('id', entrantIds)
+                  .eq('is_horse', true);
+                horseSet = new Set((horseRows ?? []).map((h) => h.id));
+              }
+              const entrants = (allEntrants ?? []).filter((e) => !horseSet.has(e.user_id));
+              for (const e of entrants) {
+                const { error: refErr } = await supabase.rpc('credit_player_wallet', {
+                  p_user_id: e.user_id,
+                  p_amount: refundAmount,
+                });
+                if (refErr) {
+                  reportError(
+                    new Error(
+                      `[GameServer] SNG/Spin restart-cancel refund FAILED for ${e.user_id}: ${refErr.message}`
+                    ),
+                    'GameServer.sng_restart_refund_failed'
+                  );
+                  continue;
+                }
+                await supabase.rpc('log_wallet_transaction', {
+                  p_user_id: e.user_id,
+                  p_wallet_type: 'PLAYER',
+                  p_amount: refundAmount,
+                  p_type: 'credit',
+                  p_category: 'refund',
+                  p_description: `SNG/Spin cancelled on server restart: ${fullT?.name || t.name || 'tournament'}`,
+                  p_table_id: null,
+                  p_hand_id: null,
+                  p_related_entity_id: t.id,
+                });
+                const fee = Number(fullT?.buy_in_fee || 0);
+                if (fee > 0 && fullT?.club_id) {
+                  await supabase.from('rake_records').insert({
+                    hand_id: null,
+                    table_id: t.id,
+                    club_id: fullT.club_id,
+                    rake_amount: -fee,
+                    pot_size: fee,
+                    num_players: 1,
+                    bbj_contribution: 0,
+                    is_tournament: true,
+                    tournament_id: t.id,
+                    source: 'GameServer.restart_cancel_refund',
+                    metadata: { kind: 'tournament_fee_refund', user_id: e.user_id },
+                  });
+                }
+              }
+            }
+          } catch (refundErr) {
+            reportError(refundErr, 'GameServer.sng_restart_refund_exception');
+          }
         }
       }
       if (cancelledCount > 0) {
@@ -648,12 +869,16 @@ export class GameServer {
         `[GameServer] Stale-tournament sweep complete (${staleTourneys?.length || 0} reviewed)`
       );
 
-      // 7. Cancel stuck COMPLETING tournaments (crashed during finishTournament flow)
-      await supabase
-        .from('tournaments')
-        .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
-        .eq('status', 'COMPLETING');
-      console.log('[GameServer] Finalized stuck COMPLETING tournaments');
+      // 7. Recover stuck COMPLETING tournaments (crashed during finishTournament flow)
+      // TOURNEY-AUDIT 2026-07-24 [CRITICAL]: the old path blind-flipped
+      // COMPLETING → COMPLETED. A crash between the COMPLETING claim and the
+      // winner credit meant the winner (and any unpaid ITM places) were NEVER
+      // paid — the tournament just "completed" with stranded 'playing' rows
+      // (verified live: a COMPLETED bounty MTT with 8 players still 'playing'
+      // and $60 of a $100 guaranteed pool never paid). Recovery now PAYS what
+      // is owed (positions by chip count, prizes per normalized payout
+      // structure) before completing.
+      await recoverStuckCompletingTournaments('startup-cleanup');
 
       console.log('[GameServer] Stale data cleanup complete');
     } catch (err) {
@@ -880,15 +1105,14 @@ export class GameServer {
 
         for (const stuck of stuckTournaments || []) {
           if (!this.tournamentEngines.has(stuck.id)) {
-            // No active engine managing this tournament — it's truly stuck
+            // No active engine managing this tournament — it's truly stuck.
+            // TOURNEY-AUDIT 2026-07-24: recovery now PAYS remaining players
+            // (winner + unpaid ITM places) before completing — the old path
+            // flipped straight to COMPLETED and the winner's prize vanished.
             console.warn(
               `[GameServer] Recovering stuck COMPLETING tournament: ${stuck.name} (${stuck.id.slice(0, 8)})`
             );
-            await supabase
-              .from('tournaments')
-              .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
-              .eq('id', stuck.id)
-              .eq('status', 'COMPLETING');
+            await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);
           }
         }
       } catch (err) {
@@ -1341,6 +1565,12 @@ export class TournamentManager {
               .from('tournaments')
               .update({ payout_structure: payouts })
               .eq('id', this.tournamentId);
+            // TOURNEY-AUDIT 2026-07-24: refresh the in-memory cache too —
+            // recalculateEliminatedPrizes reads tournamentCache.payout_structure,
+            // and before this line it kept the UN-normalized version, so
+            // late-reg prize top-ups were computed off inflated percentages
+            // (overpayment) whenever the configured structure didn't sum to 100.
+            if (this.tournamentCache) this.tournamentCache.payout_structure = payouts;
           }
         }
       }
@@ -1417,10 +1647,30 @@ export class TournamentManager {
       // Reset hand-for-hand state on resume so it can be triggered again
       this.handForHandActive = false;
       this.handForHandAnnounced = false;
+      // TOURNEY-AUDIT 2026-07-24: restore add-on/finalization flags so a
+      // restart mid-add-on doesn't re-broadcast ADDON_PERIOD_START or skip
+      // finalizeAfterAddOn forever (they previously reset to defaults).
+      this.addOnPeriodTriggered = !!tournament.addon_period_triggered;
       // Initialize broadcast channel on resume
       this.broadcastChannel = null;
       this.broadcastReady = false;
-      this.startBlindTimer(tournament.blind_structure || []);
+      // TOURNEY-AUDIT 2026-07-24: resume the level clock MID-LEVEL using the
+      // persisted level_started_at instead of granting a fresh full level on
+      // every restart (which nearly froze blind escalation across restarts).
+      {
+        const levelData =
+          (tournament.blind_structure || [])[this.currentLevel] ||
+          (tournament.blind_structure || [])[0];
+        const durationMs = (levelData?.durationMinutes || 10) * 60 * 1000;
+        let remainingMs: number | undefined;
+        if (tournament.level_started_at) {
+          const elapsed = Date.now() - new Date(tournament.level_started_at).getTime();
+          if (elapsed >= 0 && elapsed < durationMs * 4) {
+            remainingMs = Math.max(1000, durationMs - elapsed);
+          }
+        }
+        this.startBlindTimer(tournament.blind_structure || [], remainingMs);
+      }
       this.startEliminationChecker();
 
       console.log(
@@ -1556,14 +1806,40 @@ export class TournamentManager {
     }
   }
 
-  private startBlindTimer(blindStructure: any[]): void {
+  /**
+   * TOURNEY-AUDIT 2026-07-24: `remainingOverrideMs` lets resume() arm the timer
+   * with the level's REMAINING time (derived from the persisted
+   * tournaments.level_started_at) instead of a fresh full duration. Previously
+   * every crash/restart granted a brand-new full level at the current blinds —
+   * restart-heavy windows nearly froze blind escalation.
+   */
+  private startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (blindStructure.length === 0) return;
     const currentLevelData = blindStructure[this.currentLevel] || blindStructure[0];
     const durationMs = (currentLevelData?.durationMinutes || 10) * 60 * 1000;
-    this.blindTimerStartedAt = Date.now();
+    const armMs =
+      remainingOverrideMs !== undefined
+        ? Math.min(Math.max(1000, remainingOverrideMs), durationMs)
+        : durationMs;
+    // Back-date the in-memory start so break pause/resume math stays correct
+    this.blindTimerStartedAt = Date.now() - (durationMs - armMs);
     this.blindTimer = setTimeout(() => {
       void this.advanceBlindLevel(blindStructure);
-    }, durationMs);
+    }, armMs);
+    // Persist the level clock (wall-clock start of THIS level's remaining
+    // window) so a restart resumes the level mid-flight. Fire-and-forget; the
+    // column is added by migration 20260724c (graceful if absent).
+    void supabase
+      .from('tournaments')
+      .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
+      .eq('id', this.tournamentId)
+      .then(({ error }: { error: { message?: string } | null }) => {
+        if (error && !/column|schema/i.test(error.message || '')) {
+          console.warn(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist failed: ${error.message}`
+          );
+        }
+      });
   }
 
   /**
@@ -1813,6 +2089,21 @@ export class TournamentManager {
     if (this.addOnPeriodTriggered) return;
     this.addOnPeriodTriggered = true;
 
+    // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
+    // restores it (resume() reads addon_period_triggered) instead of
+    // re-broadcasting ADDON_PERIOD_START and losing finalizeAfterAddOn.
+    void supabase
+      .from('tournaments')
+      .update({ addon_period_triggered: true })
+      .eq('id', this.tournamentId)
+      .then(({ error }: { error: { message?: string } | null }) => {
+        if (error && !/column|schema/i.test(error.message || '')) {
+          console.warn(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] addon_period_triggered persist failed: ${error.message}`
+          );
+        }
+      });
+
     const addonCost = this.tournamentCache?.addon_cost || this.tournamentCache?.buy_in_amount || 0;
     const addonChips =
       this.tournamentCache?.addon_chips || this.tournamentCache?.starting_chips || 0;
@@ -1937,10 +2228,20 @@ export class TournamentManager {
           // (Exact-tie ordering by hand-start stack for a genuine same-hand double
           // bust is a documented follow-up; distinct places is money-correct now.)
           const basePosition = playingCount || busted.length;
-          const bustedOrdered = [...busted].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
+          let bustedOrdered = [...busted].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
+
+          // TOURNEY-AUDIT 2026-07-24 [double-pay guard]: if EVERY remaining
+          // player busted in the same sweep, the old loop handed position 1 to
+          // the largest stack via eliminatePlayer (paying the 1st-place prize)
+          // and then the remainingCount===0 branch ALSO paid the winner via
+          // finishTournament — 1st place paid twice. Spare the top stack from
+          // elimination; the winner path below then pays them exactly once.
+          if ((playingCount || busted.length) === busted.length && bustedOrdered.length > 0) {
+            bustedOrdered = bustedOrdered.slice(0, -1);
+          }
 
           for (let i = 0; i < bustedOrdered.length; i++) {
-            const position = Math.max(1, basePosition - i);
+            const position = Math.max(2, basePosition - i);
             await this.eliminatePlayer(bustedOrdered[i].user_id, position);
           }
         }
@@ -2191,23 +2492,36 @@ export class TournamentManager {
           .limit(1)
           .maybeSingle();
 
-        // Find the most recent hand at that table to determine the knocker
+        // Find the busted player's LAST HAND at that table to determine the knocker.
+        // TOURNEY-AUDIT 2026-07-24: two fixes. (a) The old query took the most
+        // recent hand at the table regardless of whether the eliminated player
+        // was even IN it — the 5s elimination sweep can lag several hands, so
+        // bounties routed to the winner of some later, unrelated pot. Now the
+        // recent hands are scanned for the last one the busted player played.
+        // (b) With multiple winners (side pots), the knocker is the winner who
+        // took the LARGEST amount (the main pot containing the busted player's
+        // chips), not whichever entry happened to be first in the array.
         let knockerId: string | null = null;
         if (seat?.table_id) {
-          const { data: lastHand } = await supabase
+          const { data: recentHands } = await supabase
             .from('hand_history')
-            .select('winners')
+            .select('winners, players')
             .eq('table_id', seat.table_id)
             .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .limit(10);
 
-          if (lastHand?.winners && Array.isArray(lastHand.winners)) {
-            // The knocker is the hand winner (first winner — the one who took the pot)
-            const winnerEntry = lastHand.winners.find(
-              (w: any) => (w.userId || w.user_id) !== userId
-            );
-            knockerId = winnerEntry ? winnerEntry.userId || winnerEntry.user_id : null;
+          for (const hand of recentHands ?? []) {
+            const inHand =
+              Array.isArray(hand.players) &&
+              hand.players.some((p: any) => (p.userId || p.user_id) === userId);
+            if (!inHand) continue;
+            if (hand.winners && Array.isArray(hand.winners)) {
+              const candidates = hand.winners
+                .filter((w: any) => (w.userId || w.user_id) !== userId)
+                .sort((a: any, b: any) => Number(b.amount || 0) - Number(a.amount || 0));
+              knockerId = candidates.length ? candidates[0].userId || candidates[0].user_id : null;
+            }
+            break; // only the busted player's most recent hand counts
           }
         }
 
@@ -2262,9 +2576,12 @@ export class TournamentManager {
     const baseBounty = tournament.bounty_amount || 0;
 
     // Get eliminated player's current bounty (may be higher than base for PKO)
+    // TOURNEY-AUDIT 2026-07-24: also fetch the stored mystery_bounty_value —
+    // the value assigned to this player's head at registration is what the
+    // mystery branch must pay (see below).
     const { data: eliminatedPlayer } = await supabase
       .from('tournament_players')
-      .select('current_bounty')
+      .select('current_bounty, mystery_bounty_value')
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', eliminatedUserId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -2322,36 +2639,25 @@ export class TournamentManager {
       );
     } else if (tournament.is_mystery_bounty) {
       // ── MYSTERY BOUNTY ──
-      // Roll a random mystery value from configured tiers
-      const mysteryTiers = [
-        { min: 1, max: 1, probability: 60 },
-        { min: 2, max: 2, probability: 25 },
-        { min: 5, max: 5, probability: 10 },
-        { min: 10, max: 10, probability: 4 },
-        {
-          min: tournament.mystery_bounty_max || 50,
-          max: tournament.mystery_bounty_max || 50,
-          probability: 1,
-        },
-      ];
-
-      let mysteryMultiplier = 1;
-      const roll = Math.random() * 100;
-      let cumulative = 0;
-      for (const tier of mysteryTiers) {
-        cumulative += tier.probability;
-        if (roll <= cumulative) {
-          mysteryMultiplier =
-            tier.min === tier.max
-              ? tier.min
-              : Math.floor(Math.random() * (tier.max - tier.min + 1)) + tier.min;
-          break;
-        }
+      // TOURNEY-AUDIT 2026-07-24 [money]: the payout is now the value that was
+      // ASSIGNED TO THIS PLAYER'S HEAD at registration
+      // (tournament_players.mystery_bounty_value) — the sum of assigned values
+      // is bounded by what registration collected, so total mystery payouts
+      // can no longer exceed the bounty pool. The old code IGNORED the stored
+      // value and re-rolled hardcoded multiplier tiers with Math.random() at
+      // collection time — unbounded minting on a real-money outcome (and a
+      // different number than the one revealed on the player's head).
+      // Fallback (legacy rows with no stored value): uniform draw between the
+      // tournament's configured mystery_bounty_min and mystery_bounty_max
+      // using crypto-grade randomness, clamped so it can never exceed max.
+      let mysteryValue = Number(eliminatedPlayer?.mystery_bounty_value || 0);
+      if (!(mysteryValue > 0)) {
+        const mMin = Number(tournament.mystery_bounty_min || baseBounty || 1);
+        const mMax = Math.max(mMin, Number(tournament.mystery_bounty_max || baseBounty || 1));
+        const r = nodeCrypto.randomInt(0, 10001) / 10000; // crypto-grade uniform [0,1]
+        mysteryValue = Math.round((mMin + r * (mMax - mMin)) * 100) / 100;
       }
-
-      // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety
-      // on mystery bounty payout — same family as the rest of this round's fixes.
-      const mysteryValue = Math.round(baseBounty * mysteryMultiplier * 100) / 100;
+      mysteryValue = Math.round(mysteryValue * 100) / 100;
 
       // Update knocker stats
       const { data: knocker } = await supabase
@@ -2383,7 +2689,7 @@ export class TournamentManager {
       });
 
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY: ${knockerUserId.slice(0, 8)} revealed ${mysteryValue} (${mysteryMultiplier}x) from ${eliminatedUserId.slice(0, 8)}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY: ${knockerUserId.slice(0, 8)} revealed ${mysteryValue} from ${eliminatedUserId.slice(0, 8)}`
       );
     } else {
       // ── FIXED BOUNTY (KO) ──
@@ -2585,7 +2891,11 @@ export class TournamentManager {
 
     const { data: tournament, error: tourneyLoadErr } = await supabase
       .from('tournaments')
-      .select('payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status')
+      // TOURNEY-AUDIT 2026-07-24: bounty flags added so the champion's own
+      // bounty head can be paid below.
+      .select(
+        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty'
+      )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
@@ -2693,6 +3003,66 @@ export class TournamentManager {
       .update({ status: 'winner', position: 1, prize: winnerPrize })
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', winnerId);
+
+    // TOURNEY-AUDIT 2026-07-24 [money]: in bounty/PKO formats the champion
+    // collects their OWN remaining bounty head (base bounty + everything
+    // accumulated via PKO 50%-to-head splits). This was never paid — the
+    // winner path skipped bounty collection entirely, silently forfeiting
+    // real money the winner is owed. Credit it here, idempotently (head is
+    // zeroed after payment).
+    if (tournament?.is_bounty || tournament?.is_pko || tournament?.is_mystery_bounty) {
+      try {
+        const { data: winnerRow } = await supabase
+          .from('tournament_players')
+          .select('current_bounty, mystery_bounty_value, bounty_winnings')
+          .eq('tournament_id', this.tournamentId)
+          .eq('user_id', winnerId)
+          .maybeSingle();
+        const ownBounty = tournament?.is_mystery_bounty
+          ? Number(winnerRow?.mystery_bounty_value || winnerRow?.current_bounty || 0)
+          : Number(winnerRow?.current_bounty || 0);
+        if (ownBounty > 0) {
+          const { error: obErr } = await supabase.rpc('credit_player_wallet', {
+            p_user_id: winnerId,
+            p_amount: ownBounty,
+          });
+          if (obErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Winner own-bounty credit FAILED: ${obErr.message}`
+              ),
+              'Tournament.winner_own_bounty_credit_failed'
+            );
+          } else {
+            await supabase.rpc('log_wallet_transaction', {
+              p_user_id: winnerId,
+              p_wallet_type: 'PLAYER',
+              p_amount: ownBounty,
+              p_type: 'credit',
+              p_category: 'bounty',
+              p_description: `Tournament champion: own bounty head collected`,
+              p_table_id: null,
+              p_hand_id: null,
+              p_related_entity_id: this.tournamentId,
+            });
+            await supabase
+              .from('tournament_players')
+              .update({
+                current_bounty: 0,
+                bounty_winnings:
+                  Math.round((Number(winnerRow?.bounty_winnings || 0) + ownBounty) * 100) / 100,
+              })
+              .eq('tournament_id', this.tournamentId)
+              .eq('user_id', winnerId);
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Champion ${winnerId.slice(0, 8)} collected own bounty head: ${ownBounty}`
+            );
+          }
+        }
+      } catch (obEx) {
+        reportError(obEx, 'Tournament.winner_own_bounty_exception');
+      }
+    }
 
     // ── TOURNAMENT RAKE SETTLEMENT ──
     // Rake is held by union (if club is in a union) or by standalone club owner.

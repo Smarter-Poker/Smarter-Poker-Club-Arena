@@ -1798,3 +1798,15 @@ export function getMasterBusStatus(): MasterBusStatus | null {
 export function isMasterBusOnline(): boolean {
   return masterBus.isOnline();
 }
+
+/**
+ * Convenience helper: show a toast via the MasterBus → BusToastBridge pipeline.
+ * Services can call this without importing the React toast hook.
+ */
+export function busToast(
+  message: string,
+  severity: 'critical' | 'warning' | 'info' = 'info',
+  durationMs?: number
+): void {
+  masterBus.emit('SHOW_TOAST', { message, severity, source: 'busToast', durationMs });
+}

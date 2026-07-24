@@ -596,6 +596,15 @@ export default function TournamentPage() {
             })();
             break;
 
+          case 'mystery_bounty_revealed':
+            // TOURNEY-AUDIT 2026-07-24 (sweep 4): relay the server reveal to
+            // the MysteryBountyReveal overlay (it subscribes to this bus event
+            // and requires playerName + amount — previously nothing emitted it).
+            if (data?.playerName && data?.amount) {
+              masterBus.emit('MYSTERY_BOUNTY_REVEALED', data);
+            }
+            break;
+
           case 'ADDON_PERIOD_START':
             setCanAddOnNow(true);
             toast.success('Add-on period now available');

@@ -903,12 +903,12 @@ export default function TournamentDetails() {
                 </span>
               </div>
               {(() => {
-                const entryPrizePool =
-                  tournament.buy_in_amount * (entries.length || tournament.current_players || 0);
+                // TOURNEY-AUDIT 2026-07-24 (sweep 4): DB pool is authoritative
+                // (fee-stripped, horse-free); buy_in × entries over-advertised.
                 const hasGuarantee = (tournament.guaranteed_prize || 0) > 0;
                 const effectivePrizePool = hasGuarantee
-                  ? Math.max(entryPrizePool, tournament.guaranteed_prize || 0)
-                  : entryPrizePool;
+                  ? Math.max(tournament.prize_pool || 0, tournament.guaranteed_prize || 0)
+                  : tournament.prize_pool || 0;
                 return (
                   <div className="info-row">
                     <span className="info-label">Prize Pool:</span>
@@ -1264,12 +1264,15 @@ export default function TournamentDetails() {
           (() => {
             const entryCount = entries.length || tournament.current_players || 0;
             const dbPrizePool = tournament.prize_pool || 0; // Live from DB (updated on reg, rebuy, addon)
-            const entryPrizePool = tournament.buy_in_amount * entryCount;
             const hasGuarantee = (tournament.guaranteed_prize || 0) > 0;
-            // Use whichever is higher: DB prize pool (includes rebuys/addons), entry-based calc, or guarantee
+            // TOURNEY-AUDIT 2026-07-24 (sweep 4): the DB pool is authoritative
+            // (server recalculates it on every registration/rebuy/add-on, fee
+            // stripped, horses excluded). The old `buy_in × entries` overlay
+            // counted FREE horse entries and ignored the fee split, so the
+            // rewards tab advertised prizes larger than what would be paid.
             const effectivePrizePool = hasGuarantee
-              ? Math.max(dbPrizePool, entryPrizePool, tournament.guaranteed_prize || 0)
-              : Math.max(dbPrizePool, entryPrizePool);
+              ? Math.max(dbPrizePool, tournament.guaranteed_prize || 0)
+              : dbPrizePool;
 
             // Resolve payout structure — use DB if available, otherwise auto-select by entry count
             const resolvePayouts = (): { place: number; percentage: number }[] => {

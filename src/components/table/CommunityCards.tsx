@@ -188,6 +188,11 @@ function CommunityCardsComponent({
   // Bible V8 §5.1: Stage label + haptic feedback on stage transitions
   useEffect(() => {
     if (stage !== prevStageRef.current) {
+      // UI-AUDIT #5: showdownMode was only ever set true and never reset, so the
+      // board kept the showdown styling for the rest of the session (all later
+      // hands). Clear it on any transition to a pre-showdown street (a new hand
+      // returns the board to preflop/flop).
+      if (stage !== 'showdown') setShowdownMode(false);
       // Show stage label briefly when new community cards are dealt
       let labelTimer: ReturnType<typeof setTimeout> | undefined;
       if (stage === 'flop' || stage === 'turn' || stage === 'river') {

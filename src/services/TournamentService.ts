@@ -712,7 +712,12 @@ class TournamentService {
         variant: variantMap[config.type] || 'freezeout',
         tournament_type: config.type === 'sng' ? 'SNG' : config.type === 'spin' ? 'SPIN' : 'MTT',
         buy_in_amount: config.buyIn,
-        buy_in_fee: config.rake || 0,
+        // RAKE-AUDIT 2026-07-24: HOUSE RULE ENFORCED — the fee is 10% of the
+        // buy-in on ANY AND ALL tournaments and SNGs. The fee was previously
+        // whatever free-form value the creator typed (including 0), so the 10%
+        // rule was only a coincidence of defaults. Any configured value is
+        // overridden with exactly 10%, rounded to the cent.
+        buy_in_fee: Math.round((config.buyIn || 0) * 0.1 * 100) / 100,
         starting_chips: config.startingStack,
         max_players: config.maxPlayers,
         min_players: config.minPlayers || 3,
@@ -925,16 +930,32 @@ class TournamentService {
       );
 
       // ── Credit tournament rake to club + track at union level ──
+      // RAKE-AUDIT 2026-07-24: hand_id was a synthetic TEXT string
+      // ("tournament-reg-<id>-<id>") but rake_records.hand_id is UUID — the
+      // insert failed on EVERY registration since launch (verified live: zero
+      // tournament rows in rake_records, all-time) and the error was swallowed.
+      // hand_id is now null (nullable), is_tournament/tournament_id/source are
+      // stamped, and the fee is attributed to the paying player via
+      // player_contributions so per-player fee reports and settlement rollups
+      // include tournament/SNG fees.
       try {
-        await supabase.from('rake_records').insert({
-          hand_id: `tournament-reg-${tournamentId}-${userId}`,
+        const { error: rrError } = await supabase.from('rake_records').insert({
+          hand_id: null,
           table_id: tournamentId,
           club_id: clubId,
           rake_amount: rake,
           pot_size: totalCost,
           num_players: 1,
           bbj_contribution: 0,
+          is_tournament: true,
+          tournament_id: tournamentId,
+          source: 'TournamentService.register',
+          player_contributions: { [userId]: rake },
+          metadata: { kind: 'tournament_entry_fee', user_id: userId },
         });
+        if (rrError) {
+          reportError(rrError, 'TournamentService.Failed_to_insert_tournament_rake_record');
+        }
       } catch (e: unknown) {
         reportError(e, 'TournamentService.Failed_to_insert_tournament_rake_record');
       }
@@ -1264,6 +1285,22 @@ class TournamentService {
     );
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
 
+    // RAKE-AUDIT 2026-07-24: the refund above includes the entry fee, but the
+    // fee recorded at registration (rake_records + total_rake counters) was
+    // never reversed — clubs were billed in settlement for fees that had been
+    // returned to the player. Record a negative fee-reversal row so the ledger
+    // nets to zero for a register→unregister cycle.
+    const refundedFee = tournament.buy_in_fee || 0;
+    if (refundedFee > 0) {
+      await this.recordTournamentFee(
+        tournament,
+        tournamentId,
+        userId,
+        -refundedFee,
+        'tournament_fee_refund'
+      );
+    }
+
     // Re-read fresh tournament data to avoid stale read-then-write race condition
     const { data: freshTourney } = await supabase
       .from('tournaments')
@@ -1316,7 +1353,17 @@ class TournamentService {
       throw new Error('Cannot cancel — tournament has 3 or more players registered');
     }
 
+    // RAKE-AUDIT 2026-07-24: fetch the players BEFORE the atomic cancel — the
+    // RPC deletes tournament_players rows, so the old post-RPC query always
+    // returned empty and no BALANCE_UPDATED events ever fired for refunds.
+    const { data: players } = await supabase
+      .from('tournament_players')
+      .select('user_id')
+      .eq('tournament_id', tournamentId);
+
     // Execute atomic cancellation and refund (prevents partial refunds on server crash)
+    // RAKE-AUDIT 2026-07-24: the RPC now refunds ONLY real (non-horse) players
+    // and reverses the collected entry fees in the rake ledger.
     const { data: cancelResult, error: cancelError } = await retryAsync(
       () =>
         supabase.rpc('atomic_cancel_tournament', {
@@ -1334,12 +1381,6 @@ class TournamentService {
     // Process result
     const refunded = cancelResult?.total_refunded || 0;
     const playersRefunded = cancelResult?.refunded_count || 0;
-
-    // Fetch the players to emit balance updates (RPC already refunded DB)
-    const { data: players } = await supabase
-      .from('tournament_players')
-      .select('user_id')
-      .eq('tournament_id', tournamentId);
 
     if (players && players.length > 0) {
       players.forEach((p) => {
@@ -1778,6 +1819,108 @@ class TournamentService {
   }
 
   /**
+   * RAKE-AUDIT 2026-07-24: House fee ratio for tournament/SNG chip purchases.
+   * Dan's rule: 10% on ANY AND ALL tournament and SNG buy-ins — including
+   * rebuys, add-ons, and re-entries (all previously fee-free). Uses the
+   * tournament's configured entry-fee ratio when present (buy_in_fee /
+   * buy_in_amount), falling back to the platform-standard 10%.
+   */
+  private getTournamentFeeRatio(tournament: {
+    buy_in_amount?: number | null;
+    buy_in_fee?: number | null;
+  }): number {
+    const buyIn = Number(tournament.buy_in_amount || 0);
+    const fee = Number(tournament.buy_in_fee || 0);
+    if (buyIn > 0 && fee > 0) return fee / buyIn;
+    return 0.1;
+  }
+
+  /** Fee for a given base cost, rounded to the cent. */
+  private calcTournamentFee(
+    tournament: { buy_in_amount?: number | null; buy_in_fee?: number | null },
+    baseCost: number
+  ): number {
+    return Math.round(baseCost * this.getTournamentFeeRatio(tournament) * 100) / 100;
+  }
+
+  /**
+   * RAKE-AUDIT 2026-07-24: Record a collected tournament/SNG fee in the rake
+   * ledger (rake_records, attributed to the paying player) and the
+   * tournament/union total_rake counters. Pass a NEGATIVE fee to record a
+   * reversal (e.g. unregister refund) — the ledger stays append-only.
+   */
+  private async recordTournamentFee(
+    tournament: { club_id?: string | null; union_id?: string | null },
+    tournamentId: string,
+    userId: string,
+    fee: number,
+    kind: string
+  ): Promise<void> {
+    if (!fee || fee === 0) return;
+    const clubId = tournament.club_id || null;
+    try {
+      const { error: rrError } = await supabase.from('rake_records').insert({
+        hand_id: null,
+        table_id: tournamentId,
+        club_id: clubId,
+        rake_amount: fee,
+        pot_size: Math.abs(fee),
+        num_players: 1,
+        bbj_contribution: 0,
+        is_tournament: true,
+        tournament_id: tournamentId,
+        source: `TournamentService.${kind}`,
+        player_contributions: { [userId]: fee },
+        metadata: { kind, user_id: userId },
+      });
+      if (rrError) reportError(rrError, 'TournamentService.recordTournamentFee_rake_records');
+    } catch (e: unknown) {
+      reportError(e, 'TournamentService.recordTournamentFee_rake_records');
+    }
+    // Tournament total_rake counter (atomic RPC, read-modify-write fallback)
+    try {
+      const { error: incErr } = await supabase.rpc('increment_tournament_rake', {
+        p_tournament_id: tournamentId,
+        p_amount: fee,
+      });
+      if (incErr) {
+        const { data: tData } = await supabase
+          .from('tournaments')
+          .select('total_rake')
+          .eq('id', tournamentId)
+          .maybeSingle();
+        if (tData) {
+          await supabase
+            .from('tournaments')
+            .update({ total_rake: (tData.total_rake || 0) + fee })
+            .eq('id', tournamentId);
+        }
+      }
+    } catch (e: unknown) {
+      reportError(e, 'TournamentService.recordTournamentFee_total_rake');
+    }
+    // Union-level counter
+    const unionId = tournament.union_id || undefined;
+    if (unionId) {
+      try {
+        const { data: unionData } = await supabase
+          .from('unions')
+          .select('total_rake')
+          .eq('id', unionId)
+          .maybeSingle();
+        if (unionData) {
+          await supabase
+            .from('unions')
+            .update({ total_rake: (unionData.total_rake || 0) + fee })
+            .eq('id', unionId);
+        }
+      } catch (e: unknown) {
+        reportError(e, 'TournamentService.recordTournamentFee_union_total_rake');
+      }
+    }
+  }
+
+  /**
    * Process a rebuy for a player
    */
   async processRebuy(
@@ -1794,6 +1937,12 @@ class TournamentService {
 
     const rebuyChips = tournament.rebuy_chips || tournament.starting_chips;
     const rebuyCost = tournament.rebuy_cost || tournament.buy_in_amount;
+    // RAKE-AUDIT 2026-07-24: rebuys were fee-free — 100% of rebuy money went to
+    // the prize pool and 0% to the house, breaking Dan's "10% on any and all
+    // tournament/SNG buy-ins" rule. Fee is now charged on top of the rebuy cost
+    // (base cost still feeds the prize pool; recalculatePrizePool strips the fee).
+    const rebuyFee = this.calcTournamentFee(tournament, rebuyCost);
+    const rebuyTotalCost = Math.round((rebuyCost + rebuyFee) * 100) / 100;
 
     // Pre-validate wallet balance (better error messages)
     const { data: walletData } = await supabase
@@ -1803,9 +1952,9 @@ class TournamentService {
       .eq('wallet_type', 'PLAYER')
       .maybeSingle();
 
-    if (!walletData || (walletData.balance || 0) < rebuyCost) {
+    if (!walletData || (walletData.balance || 0) < rebuyTotalCost) {
       throw new Error(
-        `Insufficient chips for rebuy. Need ${rebuyCost}, have ${walletData?.balance || 0}`
+        `Insufficient chips for rebuy. Need ${rebuyTotalCost} (incl. ${rebuyFee} fee), have ${walletData?.balance || 0}`
       );
     }
 
@@ -1817,7 +1966,7 @@ class TournamentService {
           p_tournament_id: tournamentId,
           p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
           p_rebuy_type: tournament.is_reentry && !tournament.is_rebuy ? 'reentry' : 'rebuy',
-          p_cost: rebuyCost,
+          p_cost: rebuyTotalCost,
           p_chips: rebuyChips,
           p_current_level: this.getCurrentLevelState(tournament).levelIndex,
         }),
@@ -1828,6 +1977,15 @@ class TournamentService {
       reportError(error, 'TournamentService.Rebuy_RPC_failed_No_chips_were_deducted');
       throw error;
     }
+
+    // RAKE-AUDIT 2026-07-24: record the collected rebuy fee in the rake ledger
+    await this.recordTournamentFee(
+      tournament,
+      tournamentId,
+      userId,
+      rebuyFee,
+      'tournament_rebuy_fee'
+    );
 
     // Emit AFTER confirmed success — never optimistically before RPC
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy', userId });
@@ -1895,6 +2053,9 @@ class TournamentService {
 
     const addonChips = tournament.addon_chips || tournament.starting_chips;
     const addonCost = tournament.addon_cost || tournament.buy_in_amount;
+    // RAKE-AUDIT 2026-07-24: 10% house fee on add-ons (previously fee-free)
+    const addonFee = this.calcTournamentFee(tournament, addonCost);
+    const addonTotalCost = Math.round((addonCost + addonFee) * 100) / 100;
 
     // Check if player already used their add-on (each player gets max 1 add-on)
     const { data: existingAddon } = await supabase
@@ -1916,9 +2077,9 @@ class TournamentService {
       .eq('wallet_type', 'PLAYER')
       .maybeSingle();
 
-    if (!addonWallet || (addonWallet.balance || 0) < addonCost) {
+    if (!addonWallet || (addonWallet.balance || 0) < addonTotalCost) {
       throw new Error(
-        `Insufficient chips for add-on. Need ${addonCost}, have ${addonWallet?.balance || 0}`
+        `Insufficient chips for add-on. Need ${addonTotalCost} (incl. ${addonFee} fee), have ${addonWallet?.balance || 0}`
       );
     }
 
@@ -1930,7 +2091,7 @@ class TournamentService {
           p_tournament_id: tournamentId,
           p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
           p_rebuy_type: 'addon',
-          p_cost: addonCost,
+          p_cost: addonTotalCost,
           p_chips: addonChips,
           p_current_level: this.getCurrentLevelState(tournament).levelIndex,
         }),
@@ -1941,6 +2102,15 @@ class TournamentService {
       reportError(error, 'TournamentService.Addon_process_failed_No_chips_were_deduc');
       throw error;
     }
+
+    // RAKE-AUDIT 2026-07-24: record the collected add-on fee in the rake ledger
+    await this.recordTournamentFee(
+      tournament,
+      tournamentId,
+      userId,
+      addonFee,
+      'tournament_addon_fee'
+    );
 
     // Emit AFTER confirmed success — never optimistically before RPC
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_addon', userId });
@@ -2016,6 +2186,10 @@ class TournamentService {
     // Check wallet balance for buy-in
     const reentryChips = tournament.starting_chips;
     const reentryCost = tournament.buy_in_amount;
+    // RAKE-AUDIT 2026-07-24: 10% house fee on re-entries (previously fee-free —
+    // a re-entry is a full fresh buy-in and must carry the same fee as entry #1)
+    const reentryFee = this.calcTournamentFee(tournament, reentryCost);
+    const reentryTotalCost = Math.round((reentryCost + reentryFee) * 100) / 100;
 
     const { data: walletData } = await supabase
       .from('wallets')
@@ -2024,9 +2198,9 @@ class TournamentService {
       .eq('wallet_type', 'PLAYER')
       .maybeSingle();
 
-    if (!walletData || (walletData.balance || 0) < reentryCost) {
+    if (!walletData || (walletData.balance || 0) < reentryTotalCost) {
       throw new Error(
-        `Insufficient chips for re-entry. Need ${reentryCost}, have ${walletData?.balance || 0}`
+        `Insufficient chips for re-entry. Need ${reentryTotalCost} (incl. ${reentryFee} fee), have ${walletData?.balance || 0}`
       );
     }
 
@@ -2037,7 +2211,7 @@ class TournamentService {
           p_tournament_id: tournamentId,
           p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
           p_rebuy_type: 'reentry',
-          p_cost: reentryCost,
+          p_cost: reentryTotalCost,
           p_chips: reentryChips,
           p_current_level: levelState.levelIndex,
         }),
@@ -2048,6 +2222,15 @@ class TournamentService {
       reportError(error, 'TournamentService.Reentry_RPC_failed_No_chips_were_deducte');
       throw error;
     }
+
+    // RAKE-AUDIT 2026-07-24: record the collected re-entry fee in the rake ledger
+    await this.recordTournamentFee(
+      tournament,
+      tournamentId,
+      userId,
+      reentryFee,
+      'tournament_reentry_fee'
+    );
 
     // Emit AFTER confirmed success
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_reentry', userId });
@@ -2109,8 +2292,13 @@ class TournamentService {
     }
 
     // Count rebuys and add-ons from wallet_transactions (always available)
+    // RAKE-AUDIT 2026-07-24: rebuy/add-on debits now INCLUDE the 10% house fee
+    // (charged as of this fix). Only the base cost feeds the prize pool, so the
+    // fee portion is stripped here — previously 100% of rebuy/add-on money
+    // (fee-free) inflated the pool and the house collected nothing.
     let rebuyTotal = 0;
     let addonTotal = 0;
+    const feeRatio = this.getTournamentFeeRatio(tournament);
     try {
       const { data: rebuyTxns } = await supabase
         .from('wallet_transactions')
@@ -2120,7 +2308,8 @@ class TournamentService {
 
       if (rebuyTxns) {
         for (const tx of rebuyTxns) {
-          const cost = Math.abs(tx.amount || 0);
+          const gross = Math.abs(tx.amount || 0);
+          const cost = Math.round((gross / (1 + feeRatio)) * 100) / 100;
           if (tx.category === 'addon') addonTotal += cost;
           else rebuyTotal += cost;
         }
@@ -2430,23 +2619,15 @@ class TournamentService {
       return { success: false };
     }
 
-    // Distribute prize money to winners via atomic RPC
-    try {
-      const { data: prizeResult, error: prizeError } = await supabase.rpc(
-        'distribute_tournament_prizes',
-        {
-          p_tournament_id: tournamentId,
-        }
-      );
-      if (prizeError) {
-        reportError(prizeError, 'TournamentService.Prize_distribution_failed');
-      } else {
-        console.debug('[TournamentService] Prizes distributed:', prizeResult);
-        masterBus.emit('BALANCE_UPDATED', { source: 'tournament_prizes', tournamentId });
-      }
-    } catch (prizeErr) {
-      reportError(prizeErr, 'TournamentService.Prize_distribution_exception');
-    }
+    // RAKE-AUDIT 2026-07-24: distribute_tournament_prizes call REMOVED.
+    // (a) The RPC does not exist in the live database — this call errored on
+    //     every finalize and the error was swallowed.
+    // (b) Prizes are SERVER-AUTHORITATIVE: the game server credits each
+    //     player's prize at elimination and the winner's prize when the
+    //     tournament completes (GameServer.eliminatePlayer / finish path).
+    //     If the RPC were ever created, this call would DOUBLE-PAY every
+    //     placement — so it must stay removed, not fixed.
+    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_prizes', tournamentId });
 
     // Submit all placements to POY leaderboard system
     try {

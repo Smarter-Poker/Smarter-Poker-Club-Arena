@@ -2697,12 +2697,36 @@ export class TournamentManager {
     // ── TOURNAMENT RAKE SETTLEMENT ──
     // Rake is held by union (if club is in a union) or by standalone club owner.
     // Union distributes 90% rake back to clubs weekly. Union holds all BBJ & promo.
-    const rakePerEntry = tournament?.buy_in_fee || 0;
+    //
+    // RAKE-AUDIT 2026-07-24: totalRake is now the SUM of fees ACTUALLY COLLECTED
+    // (rake_records fee ledger: entry + rebuy + add-on + re-entry fees, minus
+    // unregister reversals). The old formula `buy_in_fee × current_players`
+    // credited the union/club wallet a fee for EVERY entrant INCLUDING HORSES —
+    // who register free — minting phantom revenue backed by no collected chips
+    // (all 974 registrations in the 7 days before this fix were horses), and it
+    // ignored rebuy/add-on/re-entry fees entirely.
     const totalEntries = tournament?.current_players || 0;
-    // Round 40 RE-RUN: Math.round for IEEE 754 drift safety (totalRake was
-    // Math.trunc which could under-collect 1¢ on tournaments where
-    // rakePerEntry has float drift).
-    const totalRake = Math.round(rakePerEntry * totalEntries * 100) / 100;
+    let totalRake = 0;
+    {
+      const { data: feeRows, error: feeErr } = await supabase
+        .from('rake_records')
+        .select('rake_amount')
+        .eq('tournament_id', this.tournamentId)
+        .eq('is_tournament', true);
+      if (feeErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] fee-ledger read failed: ${feeErr.message} — settling 0 rake`
+          ),
+          'Tournament.fee_ledger_read_failed'
+        );
+      } else {
+        totalRake =
+          Math.round(
+            (feeRows ?? []).reduce((sum, r) => sum + Number(r.rake_amount || 0), 0) * 100
+          ) / 100;
+      }
+    }
 
     if (totalRake > 0 && tournament?.club_id) {
       // Get club + union info
@@ -2713,7 +2737,7 @@ export class TournamentManager {
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (club) {
-        const rakeDescription = `Tournament rake: ${tournament.name || 'tournament'} (${totalEntries} entries x ${rakePerEntry})`;
+        const rakeDescription = `Tournament rake: ${tournament.name || 'tournament'} (${totalEntries} entries, collected fees)`;
 
         if (club.union_id) {
           // Club is in a union — ALL rake held by union wallet.
@@ -2742,16 +2766,29 @@ export class TournamentManager {
           }
 
           // Audit trail (BUG 013 FIX — correct table is union_wallet_transactions)
-          await supabase.from('union_wallet_transactions').insert({
+          // RAKE-AUDIT 2026-07-24: wallet was 'main', which violates the
+          // union_wallet_transactions_wallet_check CHECK constraint
+          // ({chip_balance, rake_wallet, bbj_wallet, promo_wallet}) — the same
+          // ROUND 16 bug fixed in the cash path but not here. EVERY tournament
+          // rake audit row was silently rejected (verified live: zero rows).
+          const { error: uwtErr } = await supabase.from('union_wallet_transactions').insert({
             union_id: club.union_id,
             club_id: tournament.club_id,
             amount: totalRake,
             tx_type: 'rake',
-            wallet: 'main',
+            wallet: 'rake_wallet',
             direction: 'credit',
             balance_after: (rakeRes as any)?.new_chip_balance ?? null,
             notes: `${rakeDescription} — ${club.name || 'club'}`,
           });
+          if (uwtErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] union rake audit row failed: ${uwtErr.message}`
+              ),
+              'Tournament.union_rake_audit_row_failed'
+            );
+          }
         } else {
           // Standalone club — rake goes to CLUB wallet (not owner's personal wallet)
           // BUG 016 FIX (2026-04-15): club_wallets doesn't exist; remove dead probe
@@ -2777,13 +2814,16 @@ export class TournamentManager {
       }
     }
 
-    // Update tournament with total_rake and mark completed
+    // Mark completed. RAKE-AUDIT 2026-07-24: total_rake is NO LONGER overwritten
+    // here — it is maintained incrementally by increment_tournament_rake as fees
+    // are actually collected (entry/rebuy/add-on/re-entry, minus reversals). The
+    // old overwrite (`buy_in_fee × current_players`) replaced the accurate
+    // collected total with a phantom number that counted free horse entries.
     await supabase
       .from('tournaments')
       .update({
         status: 'COMPLETED',
         ended_at: new Date().toISOString(),
-        total_rake: totalRake,
       })
       .eq('id', this.tournamentId)
       .eq('status', 'COMPLETING'); // Guard: only COMPLETING → COMPLETED

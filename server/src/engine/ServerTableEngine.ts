@@ -453,10 +453,16 @@ export class ServerTableEngine {
         });
       }
 
-      // FIX 104: Configure RakebackEngine for this table's club
+      // FIX 104 → RAKE-AUDIT 2026-07-24: RakebackEngine is DISABLED. Its
+      // in-memory accumulator was never flushed anywhere (settleRakeback has
+      // zero callers), its tier table conflicts with the authoritative
+      // RakebackSettlerService tiers, and with enabled:true it grew an
+      // unbounded per-player Map on every raked hand — a slow memory leak that
+      // paid out nothing. Durable rakeback runs exclusively through
+      // rake_records → RakebackSettlerService (30-min daemon + weekly close).
       if (this.tableInfo.club_id) {
         this.rakebackEngine.configure(this.tableInfo.club_id, {
-          enabled: true, // Rakeback is always tracked when club exists
+          enabled: false,
         });
       }
 
@@ -2474,20 +2480,36 @@ export class ServerTableEngine {
               .filter((p) => this.postingBBToEnter.has(p.user_id))
               .map((p) => ({ seat: p.seat_number }))
           : undefined,
-      rakeConfig: {
-        percent: fullRakeConfig.rakePercent,
-        cap: fullRakeConfig.rakeCap,
-        noFlopNoDrop: true,
-        // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
-        playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
-      },
+      // RAKE-AUDIT 2026-07-24: tournament pots are NEVER raked and never pay a
+      // BBJ fee — the house take for tournaments/SNGs is the 10% entry fee at
+      // buy-in. Pre-fix the cash schedule (10% + cap) was deducted from every
+      // tournament pot and credited NOWHERE (postHandTasks skips all tournament
+      // rake logging), silently destroying tournament chips on every raked hand
+      // (verified live: 62,422 tournament chips deducted across 4,735 tournament
+      // hands in the 7 days before this fix).
+      rakeConfig: this.isTournamentTable()
+        ? { percent: 0, cap: 0, noFlopNoDrop: true }
+        : {
+            percent: fullRakeConfig.rakePercent,
+            cap: fullRakeConfig.rakeCap,
+            noFlopNoDrop: true,
+            // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
+            playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
+          },
       bbjConfig: {
-        // FIX-A2 2026-07-19: gate the BBJ fee-drop on the table's bbj_percent,
-        // not just variant eligibility. The payout path is already gated on
-        // bbj_percent > 0 (see runout handler), so with bbj_percent == 0 the fee
-        // was dropped from every qualifying pot but could NEVER be won — players
-        // charged for an unwinnable jackpot (and banked nowhere if no pool row).
-        enabled: fullRakeConfig.bbjEnabled && ((this.tableInfo as any)?.bbj_percent ?? 0) > 0,
+        // FIX-A2 2026-07-19 gated the BBJ fee-drop on bbj_percent > 0.
+        // RAKE-AUDIT 2026-07-24: that gate killed BBJ platform-wide — every live
+        // table had bbj_percent at its 0.00 column default AND loadTable never
+        // selected the column, so `?? 0` disabled the fee on all 878 active
+        // tables (verified live: zero BBJ collected after 2026-07-19 16:29 UTC).
+        // BBJ is now ON by default for eligible cash games per Dan's rake
+        // schedule; an EXPLICIT bbj_percent = 0 on the table row still disables
+        // it per-table (loadTable now selects bbj_percent; DB backfilled to 100).
+        // Tournaments never collect the BBJ fee.
+        enabled:
+          !this.isTournamentTable() &&
+          fullRakeConfig.bbjEnabled &&
+          ((this.tableInfo as any)?.bbj_percent ?? 100) > 0,
         feeBB: fullRakeConfig.bbjFeeBB,
         minPotBB: fullRakeConfig.rules.minPotBB,
         minPlayersDealt: fullRakeConfig.rules.minPlayersDealt,
@@ -3317,9 +3339,15 @@ export class ServerTableEngine {
 
         // ═══════════════════════════════════════════════════════════════════════
         // BBJ HIT DETECTION — Check if showdown qualifies as a Bad Beat Jackpot
-        // FIX: Respect table-level bbj_percent — if 0, BBJ is disabled for this table
+        // FIX: Respect table-level bbj_percent — explicit 0 disables per-table.
+        // RAKE-AUDIT 2026-07-24: default is now ENABLED (?? 100) to match the
+        // fee-drop gate — `?? 0` made jackpots undetectable on every table
+        // because bbj_percent was never selected by loadTable. Tournaments are
+        // excluded (no fee is collected there).
         // ═══════════════════════════════════════════════════════════════════════
-        const tableBbjPercent = (this.tableInfo as any)?.bbj_percent ?? 0;
+        const tableBbjPercent = this.isTournamentTable()
+          ? 0
+          : ((this.tableInfo as any)?.bbj_percent ?? 100);
         if (
           tableBbjPercent > 0 &&
           this.currentHandShowdownResults.length >= 2 &&
@@ -4567,12 +4595,9 @@ export class ServerTableEngine {
       // Pass contributions map (used to identify dealt-in players, NOT for weighting)
       const dealtInCount = this.currentHandContributions.size;
       if (dealtInCount > 0) {
-        this.rakebackEngine.recordHandRake(
-          this.tableInfo.club_id,
-          this.currentHandRake,
-          this.currentHandContributions,
-          0 // totalPotContributions no longer used for weighting (FIX 144)
-        );
+        // RAKE-AUDIT 2026-07-24: rakebackEngine.recordHandRake call REMOVED —
+        // it fed an in-memory Map that nothing ever flushed (unbounded growth,
+        // zero payout). rake_records below is the sole, durable rakeback input.
 
         // 2b-DURABILITY: Also persist per-hand contributions to rake_records so
         // RakebackSettlerService can derive equal-share credit even after engine
@@ -5068,20 +5093,22 @@ export class ServerTableEngine {
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       ante: this.tableInfo.ante,
-      rakeConfig: {
-        percent: fullRakeConfig.rakePercent,
-        cap: fullRakeConfig.rakeCap,
-        noFlopNoDrop: true,
-        // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
-        playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
-      },
+      // RAKE-AUDIT 2026-07-24: same tournament guard + BBJ default-enabled as
+      // the primary hand-config site — see buildHandConfig comments there.
+      rakeConfig: this.isTournamentTable()
+        ? { percent: 0, cap: 0, noFlopNoDrop: true }
+        : {
+            percent: fullRakeConfig.rakePercent,
+            cap: fullRakeConfig.rakeCap,
+            noFlopNoDrop: true,
+            // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
+            playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
+          },
       bbjConfig: {
-        // FIX-A2 2026-07-19: gate the BBJ fee-drop on the table's bbj_percent,
-        // not just variant eligibility. The payout path is already gated on
-        // bbj_percent > 0 (see runout handler), so with bbj_percent == 0 the fee
-        // was dropped from every qualifying pot but could NEVER be won — players
-        // charged for an unwinnable jackpot (and banked nowhere if no pool row).
-        enabled: fullRakeConfig.bbjEnabled && ((this.tableInfo as any)?.bbj_percent ?? 0) > 0,
+        enabled:
+          !this.isTournamentTable() &&
+          fullRakeConfig.bbjEnabled &&
+          ((this.tableInfo as any)?.bbj_percent ?? 100) > 0,
         feeBB: fullRakeConfig.bbjFeeBB,
         minPotBB: fullRakeConfig.rules.minPotBB,
         minPlayersDealt: fullRakeConfig.rules.minPlayersDealt,

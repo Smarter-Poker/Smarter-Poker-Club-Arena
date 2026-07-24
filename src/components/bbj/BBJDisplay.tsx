@@ -647,32 +647,52 @@ function QualifyingTab({ hands }: { hands: Record<string, QualifyingHandInfo> })
 export function useBBJ(clubId: string | null) {
   const [bbjData, setBbjData] = useState<BBJData | null>(null);
   const [loading, setLoading] = useState(true);
+  // RAKE-AUDIT 2026-07-24: realtime must follow the RESOLVED pool id (which may
+  // be a UNION pool), not `club_id=eq.<clubId>` — union clubs' contributions
+  // are banked in the union-level pool, so the old filter never fired for them.
+  const [resolvedPoolId, setResolvedPoolId] = useState<string | null>(null);
   const isMounted = useIsMounted();
 
   const fetchBBJ = useCallback(async () => {
     if (!clubId) return;
     try {
-      // Direct Supabase query instead of API route
-      const { data: pool } = await supabase
-        .from('bbj_pools')
-        .select(
-          'id, club_id, main_balance, total_contributed, hourly_rate, tiers, qualifying_hands, rules'
-        )
-        .eq('club_id', clubId)
+      // RAKE-AUDIT 2026-07-24: two fixes.
+      // 1. The old select asked for hourly_rate/tiers/qualifying_hands/rules —
+      //    columns that DO NOT EXIST on bbj_pools — so the whole select errored
+      //    and the jackpot ticker rendered nothing for every club.
+      // 2. The pool is resolved the same way the server banks the money:
+      //    union-level pool first (clubs.union_id), then club-level. Union
+      //    clubs previously showed a stale/empty club pool while the real
+      //    jackpot accumulated in the union pool.
+      const { data: clubRow } = await supabase
+        .from('clubs')
+        .select('union_id')
+        .eq('id', clubId)
         .maybeSingle();
 
+      let poolQuery = supabase
+        .from('bbj_pools')
+        .select('id, club_id, union_id, main_balance, total_contributed, hands_contributed');
+      if (clubRow?.union_id) {
+        poolQuery = poolQuery.eq('union_id', clubRow.union_id);
+      } else {
+        poolQuery = poolQuery.eq('club_id', clubId);
+      }
+      const { data: pool } = await poolQuery.maybeSingle();
+
       if (pool) {
+        if (isMounted.current) setResolvedPoolId(pool.id as string);
         const { data: winners } = await supabase
           .from('bbj_winners')
           .select('id, loser_name, loser_hand, winner_hand, total_payout, awarded_at')
-          .eq('club_id', clubId)
+          .eq('pool_id', pool.id)
           .order('awarded_at', { ascending: false })
           .limit(5);
 
         setBbjData({
           pool: {
             amount: Number(pool.main_balance) || 0,
-            handsContributed: Number(pool.total_contributed) || 0,
+            handsContributed: Number(pool.hands_contributed) || 0,
           },
           winners: (winners || []).map((w: Record<string, unknown>) => ({
             id: w.id as string,
@@ -682,10 +702,10 @@ export function useBBJ(clubId: string | null) {
             totalPayout: Number(w.total_payout) || 0,
             awardedAt: w.awarded_at as string,
           })),
-          hourlyRate: Number(pool.hourly_rate) || 0,
-          tiers: (pool.tiers as Record<string, BBJTier>) || {},
-          qualifyingHands: (pool.qualifying_hands as Record<string, QualifyingHandInfo>) || {},
-          rules: (pool.rules as string[]) || [],
+          hourlyRate: 0,
+          tiers: {} as Record<string, BBJTier>,
+          qualifyingHands: {} as Record<string, QualifyingHandInfo>,
+          rules: [],
         });
       }
     } catch (err) {
@@ -699,11 +719,12 @@ export function useBBJ(clubId: string | null) {
     fetchBBJ();
   }, [fetchBBJ]);
 
-  // Realtime subscription for pool updates
+  // Realtime subscription for pool updates (keyed on the RESOLVED pool id so
+  // union-level pools stream correctly)
   useEffect(() => {
-    if (!clubId) return;
+    if (!resolvedPoolId) return;
 
-    const channelKey = `bbj:${clubId}`;
+    const channelKey = `bbj:${resolvedPoolId}`;
     const channel = masterBus
       .getOrCreateChannel(channelKey)
       .on(
@@ -712,7 +733,7 @@ export function useBBJ(clubId: string | null) {
           event: 'UPDATE',
           schema: 'public',
           table: 'bbj_pools',
-          filter: `club_id=eq.${clubId}`,
+          filter: `id=eq.${resolvedPoolId}`,
         },
         (payload) => {
           if (!payload.new) return;
@@ -723,7 +744,7 @@ export function useBBJ(clubId: string | null) {
                   pool: {
                     ...prev.pool,
                     amount: Number(payload.new.main_balance),
-                    handsContributed: Number(payload.new.total_contributed),
+                    handsContributed: Number(payload.new.hands_contributed),
                   },
                 }
               : prev
@@ -742,7 +763,7 @@ export function useBBJ(clubId: string | null) {
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [clubId]);
+  }, [resolvedPoolId]);
 
   return { bbjData, loading, refetch: fetchBBJ };
 }

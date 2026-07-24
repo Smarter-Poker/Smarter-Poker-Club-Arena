@@ -65,6 +65,23 @@ export default function BadBeatJackpotPage() {
         const resolvedId = await resolveClubUUID(clubId);
         if (!isMounted) return;
 
+        // RAKE-AUDIT 2026-07-24: resolve the ACTUAL pool (union-level when the
+        // club is in a union — that is where the server banks contributions).
+        // The old `club_id=eq.` filter never fired for union clubs.
+        const { data: clubRow } = await supabase
+          .from('clubs')
+          .select('union_id')
+          .eq('id', resolvedId)
+          .maybeSingle();
+        let poolIdQuery = supabase.from('bbj_pools').select('id');
+        poolIdQuery = clubRow?.union_id
+          ? poolIdQuery.eq('union_id', clubRow.union_id)
+          : poolIdQuery.eq('club_id', resolvedId);
+        const { data: poolRow } = await poolIdQuery.maybeSingle();
+        if (!isMounted) return;
+        const poolFilter = poolRow?.id ? `id=eq.${poolRow.id}` : `club_id=eq.${resolvedId}`;
+        const winnersFilter = poolRow?.id ? `pool_id=eq.${poolRow.id}` : `club_id=eq.${resolvedId}`;
+
         const channel = masterBus.getOrCreateChannel(channelKey);
         channel
           .on(
@@ -73,7 +90,7 @@ export default function BadBeatJackpotPage() {
               event: '*',
               schema: 'public',
               table: 'bbj_pools',
-              filter: `club_id=eq.${resolvedId}`,
+              filter: poolFilter,
             },
             (payload) => {
               if (!isMounted) return;
@@ -96,7 +113,7 @@ export default function BadBeatJackpotPage() {
               event: 'INSERT',
               schema: 'public',
               table: 'bbj_winners',
-              filter: `club_id=eq.${resolvedId}`,
+              filter: winnersFilter,
             },
             (payload) => {
               if (!isMounted) return;
@@ -147,13 +164,24 @@ export default function BadBeatJackpotPage() {
       try {
         const resolvedId = await resolveClubUUID(clubId);
 
-        const { data: jackpotData } = await supabase
+        // RAKE-AUDIT 2026-07-24: read the pool where the server actually banks
+        // the money — union-level pool when the club belongs to a union, else
+        // the club-level pool. Union clubs previously showed a stale/empty
+        // club pool while the real jackpot accumulated in the union pool.
+        const { data: clubUnionRow } = await supabase
+          .from('clubs')
+          .select('union_id')
+          .eq('id', resolvedId)
+          .maybeSingle();
+        let jackpotQuery = supabase
           .from('bbj_pools')
           .select(
             'id, club_id, main_balance, backup_balance, promo_balance, total_contributed, last_hit_at, last_hit_amount'
-          )
-          .eq('club_id', resolvedId)
-          .maybeSingle();
+          );
+        jackpotQuery = clubUnionRow?.union_id
+          ? jackpotQuery.eq('union_id', clubUnionRow.union_id)
+          : jackpotQuery.eq('club_id', resolvedId);
+        const { data: jackpotData } = await jackpotQuery.maybeSingle();
 
         if (getIsMounted && !getIsMounted()) return;
         if (jackpotData) {
@@ -161,12 +189,17 @@ export default function BadBeatJackpotPage() {
           prevAmountRef.current = jackpotData.main_balance || 0;
         }
 
-        const { data: historyData } = await supabase
+        // RAKE-AUDIT 2026-07-24: winners history keyed to the resolved pool so
+        // union-club players see union-pool hits.
+        let historyQuery = supabase
           .from('bbj_winners')
           .select(
             'id, awarded_at, total_payout, winner_hand, loser_hand, winner_display_name, loser_display_name'
-          )
-          .eq('club_id', resolvedId)
+          );
+        historyQuery = jackpotData?.id
+          ? historyQuery.eq('pool_id', jackpotData.id)
+          : historyQuery.eq('club_id', resolvedId);
+        const { data: historyData } = await historyQuery
           .order('awarded_at', { ascending: false })
           .limit(10);
 
@@ -241,7 +274,10 @@ export default function BadBeatJackpotPage() {
       </div>
 
       {/* 100K Pivot Law Threshold Alert */}
-      {(jackpot?.main_balance || 0) > 50000 && (
+      {/* RAKE-AUDIT 2026-07-24: alert fired at 50k (50% of pivot) while the
+          progress math used 100k — aligned to the actual 100k pivot approach
+          zone (>=80%) so the banner matches the allocation switchover. */}
+      {(jackpot?.main_balance || 0) >= 80000 && (
         <div
           style={{
             margin: '0 1rem 0.75rem',

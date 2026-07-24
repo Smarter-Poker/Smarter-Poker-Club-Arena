@@ -367,6 +367,11 @@ export default function ClubDetailPage() {
   const [club, setClub] = useState<ClubData | null>(null);
   const [members, setMembers] = useState<ClubMember[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<ClubMember[]>([]);
+  const [pendingMembers, setPendingMembers] = useState<
+    { userId: string; username: string; role: string; joinedAt: string }[]
+  >([]);
+  // Bumped after an approve/deny to re-fetch the pending-members list.
+  const [pendingRefresh, setPendingRefresh] = useState(0);
   const [memberSearch, setMemberSearch] = useState('');
   const [tables, setTables] = useState<ClubTable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -550,6 +555,42 @@ export default function ClubDetailPage() {
       isMounted = false;
     };
   }, [activeTab, clubId]);
+
+  // Load pending join requests when the members tab is open (owner/admin only).
+  // SELECT RLS on club_members restricts non-service callers to their own row,
+  // so pending members of a club can only be listed via the SECURITY DEFINER
+  // fn_list_pending_members RPC (itself gated on is_club_admin).
+  useEffect(() => {
+    let isMounted = true;
+    const canManage = userRole === 'owner' || userRole === 'admin';
+    if (activeTab === 'members' && clubId && canManage) {
+      (async () => {
+        try {
+          const resolvedId = await resolveClubUUID(clubId);
+          const { data, error } = await supabase.rpc('fn_list_pending_members', {
+            p_club_id: resolvedId,
+          });
+          if (error) throw error;
+          if (!isMounted) return;
+          setPendingMembers(
+            (data || []).map((m: any) => ({
+              userId: m.user_id,
+              username: m.display_name || m.username || 'Unknown',
+              role: m.role || 'member',
+              joinedAt: m.created_at,
+            }))
+          );
+        } catch (e) {
+          reportError(e, 'ClubDetailPage.Failed_to_load_pending_members');
+        }
+      })();
+    } else if (isMounted) {
+      setPendingMembers([]);
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [activeTab, clubId, userRole, pendingRefresh]);
 
   // Real-time presence tracking
   useEffect(() => {
@@ -913,13 +954,30 @@ export default function ClubDetailPage() {
   // Member action handlers
   const handleMemberAction = async (
     memberUserId: string,
-    action: 'promote' | 'demote' | 'suspend' | 'remove'
+    action: 'promote' | 'demote' | 'suspend' | 'remove' | 'approve' | 'deny'
   ) => {
     if (!clubId || memberActionLoading) return;
     setShowMemberMenu(null);
     setMemberActionLoading(memberUserId);
     try {
       switch (action) {
+        case 'approve':
+        case 'deny': {
+          const resolvedId = await resolveClubUUID(clubId);
+          const { data: res, error } = await supabase.rpc('fn_review_join_request', {
+            p_club_id: resolvedId,
+            p_user_id: memberUserId,
+            p_approve: action === 'approve',
+          });
+          if (error || !res?.success) {
+            throw new Error(res?.error || `Failed to ${action} request`);
+          }
+          // Drop from the pending list; approved members show up as active on reload.
+          setPendingMembers((prev) => prev.filter((m) => m.userId !== memberUserId));
+          setPendingRefresh((n) => n + 1);
+          toast.success(action === 'approve' ? 'Member approved' : 'Request denied');
+          break;
+        }
         case 'promote': {
           const ok = await MembershipService.updateRole(clubId, memberUserId, 'admin' as any);
           if (!ok) throw new Error('Failed to promote member');
@@ -1433,6 +1491,75 @@ export default function ClubDetailPage() {
                 onChange={(e) => setMemberSearch(e.target.value)}
               />
             </div>
+
+            {/* Pending join requests — owner/admin approval queue */}
+            {(userRole === 'owner' || userRole === 'admin') && pendingMembers.length > 0 && (
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding: 12,
+                  border: '1px solid rgba(245,158,11,0.4)',
+                  borderRadius: 10,
+                  background: 'rgba(245,158,11,0.06)',
+                }}
+              >
+                <h4 style={{ margin: '0 0 10px', color: '#f59e0b', fontSize: '0.9rem' }}>
+                  Pending Requests ({pendingMembers.length})
+                </h4>
+                {pendingMembers.map((pm) => (
+                  <div
+                    key={pm.userId}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                      padding: '6px 0',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className={styles.memberAvatarSmall}>{pm.username.charAt(0)}</div>
+                      <span>{pm.username}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        onClick={() => handleMemberAction(pm.userId, 'approve')}
+                        disabled={memberActionLoading === pm.userId}
+                        aria-label={`Approve ${pm.username}`}
+                        style={{
+                          padding: '4px 12px',
+                          borderRadius: 6,
+                          border: 'none',
+                          background: '#22c55e',
+                          color: '#fff',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {memberActionLoading === pm.userId ? '…' : 'Approve'}
+                      </button>
+                      <button
+                        onClick={() => handleMemberAction(pm.userId, 'deny')}
+                        disabled={memberActionLoading === pm.userId}
+                        aria-label={`Deny ${pm.username}`}
+                        style={{
+                          padding: '4px 12px',
+                          borderRadius: 6,
+                          border: '1px solid rgba(239,68,68,0.5)',
+                          background: 'transparent',
+                          color: '#ef4444',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Deny
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {filteredMembers.length === 0 && memberSearch ? (
               <div className={styles.emptyState}>
                 <p>No members found for "{memberSearch}"</p>

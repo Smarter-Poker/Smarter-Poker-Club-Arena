@@ -621,25 +621,23 @@ export const CreditService = {
    * Suspend agent for overdue debt
    */
   async suspendAgent(agentId: string, reason: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('agents')
-      .update({
-        status: 'suspended',
-        suspension_reason: reason,
-        suspended_at: new Date().toISOString(),
-      })
-      .eq('id', agentId);
+    // agents is service-role-write-only under RLS — a direct client .update() matches
+    // 0 rows and returns { error: null }, so the old code reported success while the
+    // row stayed active (credit-enforcement gap). Route through the SECURITY DEFINER
+    // RPC (authorizes the caller as the agent's club owner/admin) and verify res.success.
+    const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
+      p_agent_id: agentId,
+      p_status: 'suspended',
+      p_credit_reason: reason,
+    });
 
-    if (error) throw new Error(`Failed to suspend agent: ${error.message}`);
+    if (error || !res?.success) {
+      throw new Error(`Failed to suspend agent: ${error?.message || res?.error || 'update failed'}`);
+    }
 
     // Emit CREDIT_UPDATED
-    const { data: agent } = await supabase
-      .from('agents')
-      .select('club_id')
-      .eq('id', agentId)
-      .maybeSingle();
-    if (agent?.club_id) {
-      masterBus.emit('CREDIT_UPDATED', { clubId: agent.club_id });
+    if (res.club_id) {
+      masterBus.emit('CREDIT_UPDATED', { clubId: res.club_id });
     }
 
     return true;
@@ -659,25 +657,20 @@ export const CreditService = {
       throw new Error('Cannot reinstate: overdue invoices exist');
     }
 
-    const { error } = await supabase
-      .from('agents')
-      .update({
-        status: 'active',
-        suspension_reason: null,
-        suspended_at: null,
-      })
-      .eq('id', agentId);
+    // agents is service-role-write-only under RLS — a direct client .update() silently
+    // no-ops. Route through the SECURITY DEFINER RPC and verify res.success.
+    const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
+      p_agent_id: agentId,
+      p_status: 'active',
+    });
 
-    if (error) throw new Error(`Failed to reinstate agent: ${error.message}`);
+    if (error || !res?.success) {
+      throw new Error(`Failed to reinstate agent: ${error?.message || res?.error || 'update failed'}`);
+    }
 
     // Emit CREDIT_UPDATED
-    const { data: agent } = await supabase
-      .from('agents')
-      .select('club_id')
-      .eq('id', agentId)
-      .maybeSingle();
-    if (agent?.club_id) {
-      masterBus.emit('CREDIT_UPDATED', { clubId: agent.club_id });
+    if (res.club_id) {
+      masterBus.emit('CREDIT_UPDATED', { clubId: res.club_id });
     }
 
     return true;

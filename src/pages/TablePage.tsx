@@ -1539,48 +1539,21 @@ export default function TablePage({
       );
       return;
     }
-    try {
-      await WalletService.unlockFromTable(userId, tableId, amount);
-      setAccountBalance((prev) => prev + amount); // BUG-08 FIX: Withdrawing FROM table adds TO wallet
-      // Update hero's table stack in local state AND sync to DB
-      setTableState((prev) => {
-        const updatedPlayers = [...prev.players];
-        const heroIdx = prev.heroSeat - 1;
-        if (heroIdx >= 0 && updatedPlayers[heroIdx]) {
-          updatedPlayers[heroIdx] = {
-            ...updatedPlayers[heroIdx]!,
-            stack: Math.max(0, updatedPlayers[heroIdx]!.stack - amount),
-          };
-        }
-        return { ...prev, players: updatedPlayers };
-      });
-      // Sync stack to Supabase table_seats (with retry for resilience)
-      // Compute the NEW stack directly — tableState hasn't updated yet (setState is async)
-      const currentStack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
-      const newStack = Math.max(0, currentStack - amount);
-      retryAsync(
-        async () =>
-          await supabase
-            .from('table_seats')
-            .update({ stack: newStack })
-            .eq('table_id', tableId)
-            .eq('seat_number', tableState.heroSeat)
-            .is('left_at', null),
-        2,
-        500
-      )
-        .then((result: { error: { message: string } | null } | void) => {
-          if (result?.error)
-            console.warn('[Cashier] Withdraw chips stack sync failed:', result.error.message);
-        })
-        .catch((err: unknown) => {
-          console.warn('[Cashier] Withdraw chips sync exhausted all retries:', err);
-        });
-      // Emit bus event so other pages know about the chip change
-      masterBus.emit('CHIPS_WITHDRAWN', { tableId, userId, amount, newStack: newStack });
-    } catch (error) {
-      reportError(error, 'TablePage.Failed_to_withdraw_chips');
+    // SAFETY (sweep #6): mid-session partial withdraw is DISABLED. It credited the
+    // wallet (unlockFromTable) AND wrote table_seats.stack directly from the client,
+    // but the engine owns the authoritative in-memory stack and re-persists it after
+    // every hand \u2014 overwriting the reduction while the wallet kept the credit,
+    // duplicating chips. Re-enable only once the server-authoritative path ships
+    // (atomic_table_withdraw RPC + engine POST /withdrawchips + GameServerAPI.removeChips,
+    // mirroring addChips/atomic_table_addon). Players cash out by leaving the table,
+    // which runs the engine's atomicCashout correctly.
+    void amount;
+    if (typeof window !== 'undefined') {
+      toast.error(
+        'To cash out, use "Leave Table" \u2014 mid-session chip withdrawal is temporarily unavailable.'
+      );
     }
+    return;
   };
 
   // Load BBJ pool data

@@ -63,7 +63,6 @@ class CreditRequestServiceClass {
       .from('credit_requests')
       .insert({
         requester_id: requesterId,
-        requester_name: profile?.username || 'Unknown',
         approver_id: request.approverId,
         club_id: request.clubId,
         requested_amount: request.requestedAmount,
@@ -98,7 +97,7 @@ class CreditRequestServiceClass {
     const { data, error } = await supabase
       .from('credit_requests')
       .select(
-        'id, requester_id, requester_name, approver_id, approver_name, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
+        'id, requester_id, approver_id, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
       )
       .eq('approver_id', approverId)
       .order('created_at', { ascending: false })
@@ -115,7 +114,7 @@ class CreditRequestServiceClass {
     const { data, error } = await supabase
       .from('credit_requests')
       .select(
-        'id, requester_id, requester_name, approver_id, approver_name, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
+        'id, requester_id, approver_id, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
       )
       .eq('requester_id', requesterId)
       .order('created_at', { ascending: false })
@@ -152,7 +151,7 @@ class CreditRequestServiceClass {
     const { data: request } = await supabase
       .from('credit_requests')
       .select(
-        'id, requester_id, requester_name, approver_id, approver_name, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
+        'id, requester_id, approver_id, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
       )
       .eq('id', requestId)
       .maybeSingle();
@@ -218,7 +217,7 @@ class CreditRequestServiceClass {
     const { data: request } = await supabase
       .from('credit_requests')
       .select(
-        'id, requester_id, requester_name, approver_id, approver_name, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
+        'id, requester_id, approver_id, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
       )
       .eq('id', requestId)
       .maybeSingle();

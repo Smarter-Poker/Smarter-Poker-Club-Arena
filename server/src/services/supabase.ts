@@ -68,7 +68,10 @@ export async function loadTable(tableId: string) {
   const { data, error } = await supabase
     .from('tables')
     .select(
-      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, time_bank_seconds, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in'
+      // RAKE-AUDIT 2026-07-24: bbj_percent added — the FIX-A2 BBJ gate reads
+      // tableInfo.bbj_percent, but this select never fetched it, so the gate
+      // saw `undefined ?? 0` and disabled the BBJ fee on every table.
+      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, time_bank_seconds, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent'
     )
     .eq('id', tableId)
     .maybeSingle();
@@ -702,8 +705,41 @@ export async function logBBJCollection(
     }
 
     if (!pool) {
-      console.warn(`[logBBJCollection] No BBJ pool found for club ${clubId} — skipping`);
-      return;
+      // RAKE-AUDIT 2026-07-24: AUTO-CREATE the pool instead of skipping. The
+      // old "no pool → skip" path meant the BBJ fee had already been deducted
+      // from the pot but was banked NOWHERE — silent money destruction for any
+      // club (or union) whose bbj_pools row was never seeded. Service-role
+      // client bypasses RLS, so this insert is safe server-side only.
+      const { data: clubRow } = await supabase
+        .from('clubs')
+        .select('union_id')
+        .eq('id', clubId)
+        .maybeSingle();
+      const insertPayload = clubRow?.union_id
+        ? { union_id: clubRow.union_id, main_balance: 0, backup_balance: 0, promo_balance: 0 }
+        : { club_id: clubId, main_balance: 0, backup_balance: 0, promo_balance: 0 };
+      const { data: newPool, error: createErr } = await supabase
+        .from('bbj_pools')
+        .insert(insertPayload)
+        .select('id, main_balance')
+        .maybeSingle();
+      if (createErr || !newPool) {
+        reportError(
+          new Error(
+            `[logBBJCollection] BBJ pool auto-create FAILED for club ${clubId} — fee of ${bbjAmount} collected but not banked: ${createErr?.message}`
+          ),
+          'logBBJCollection.pool_autocreate_failed'
+        );
+        return;
+      }
+      console.log(
+        `[logBBJCollection] Auto-created BBJ pool ${newPool.id} for ${clubRow?.union_id ? `union ${clubRow.union_id}` : `club ${clubId}`}`
+      );
+      pool = newPool;
+      bbjPoolCache.set(clubId, {
+        poolId: newPool.id,
+        expiresAt: Date.now() + BBJ_POOL_CACHE_TTL_MS,
+      });
     }
 
     // FIX 140: Determine allocation ratios based on current pool size

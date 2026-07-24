@@ -43,6 +43,34 @@ const RAKEBACK_TIERS = [
   { minRake: 10000, rakebackPercent: 30, name: 'Diamond' },
 ];
 
+/**
+ * RAKE-AUDIT 2026-07-24: exact integer-cents equal split of a hand's rake.
+ * Returns a per-user share map whose values sum EXACTLY to totalRake.
+ * The previous per-site `Math.round(rake / N * 100) / 100` rounded each
+ * player's share independently, so the credited sum drifted from the actual
+ * rake by up to N × $0.005 per hand — a systematic leak across thousands of
+ * hands that also trips the equal-share verification harness
+ * (scripts/verification-harness/02-equal-share-rake.sql). Remainder cents go
+ * to the earliest users in iteration order (deterministic per hand).
+ */
+function equalShareCents(totalRake: number, userIds: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  const n = userIds.length;
+  if (n === 0) return map;
+  const totalCents = Math.round(totalRake * 100);
+  const base = Math.floor(totalCents / n);
+  let remainder = totalCents - base * n;
+  for (const uid of userIds) {
+    let cents = base;
+    if (remainder > 0) {
+      cents += 1;
+      remainder -= 1;
+    }
+    map.set(uid, cents / 100);
+  }
+  return map;
+}
+
 function tierFor(rakeContributed: number): { rate: number; name: string } {
   let chosen = RAKEBACK_TIERS[0];
   for (const tier of RAKEBACK_TIERS) {
@@ -68,6 +96,8 @@ function weekEnd(d: Date): string {
 }
 
 interface RakeRecordRow {
+  id?: string;
+  is_tournament?: boolean | null;
   hand_id: string;
   club_id: string;
   rake_amount: number;
@@ -126,16 +156,24 @@ export class RakebackSettlerService {
    * run stopped instead of re-scanning the 7-day fallback window (which would
    * re-increment player_stats for already-settled hands).
    */
-  private async loadHighWaterMark(): Promise<Date | null> {
+  private async loadHighWaterMark(): Promise<{ ok: boolean; value: Date | null }> {
+    // RAKE-AUDIT 2026-07-24: distinguish "no watermark row yet" (genuine first
+    // run → 7-day fallback is correct) from "read FAILED" (transient DB error).
+    // The old signature collapsed both to null, so a transient failure at
+    // startup silently re-scanned 7 days and re-incremented the NON-idempotent
+    // player_stats accumulators (agent_commissions are safe — the RPC dedupes
+    // on (user_id, source_id, source_type)). On a failed read the caller now
+    // ABORTS the cycle and retries next interval instead of double-crediting.
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('daemon_state')
         .select('high_water_mark')
         .eq('daemon', DAEMON_KEY)
         .maybeSingle();
-      return data?.high_water_mark ? new Date(data.high_water_mark) : null;
+      if (error) return { ok: false, value: null };
+      return { ok: true, value: data?.high_water_mark ? new Date(data.high_water_mark) : null };
     } catch {
-      return null;
+      return { ok: false, value: null };
     }
   }
 
@@ -185,8 +223,109 @@ export class RakebackSettlerService {
     this.isSettling = true;
     try {
       await this._runSettlementInner();
+      // RAKE-AUDIT 2026-07-24: weekly financial close now runs SERVER-SIDE.
+      // Previously the weekly rakeback settlement + credit-invoice generation
+      // lived only in the browser (FinancialCronService/SettlementCronService
+      // setInterval), so they fired ONLY while an admin had a tab open.
+      await this.runWeeklyFinancialClose();
     } finally {
       this.isSettling = false;
+    }
+  }
+
+  /**
+   * RAKE-AUDIT 2026-07-24: Server-authoritative weekly financial close.
+   * Once per ISO week (first settler cycle on/after Monday 00:00 UTC):
+   *   1. settle_club_rakeback for every club with pending LAPSED rakeback
+   *      periods (the RPC pays each player's rakeback into their wallet and
+   *      marks the period paid; a guard in the RPC skips still-open weeks).
+   *   2. fn_generate_all_credit_invoices — weekly agent credit invoices.
+   *   3. Reset agents.weekly_rake_generated for the new week (the commission
+   *      RPC accumulates it; nothing ever reset it, so "weekly" grew forever).
+   * Idempotent via a daemon_state watermark keyed to the week's Monday date —
+   * every step is also individually idempotent (paid periods are skipped,
+   * invoices dedupe), so a crash mid-close is safe to re-run.
+   */
+  private async runWeeklyFinancialClose(): Promise<void> {
+    const WEEKLY_KEY = 'weekly_financial_close';
+    try {
+      const currentWeekStart = weekStart(new Date()); // Monday YYYY-MM-DD (UTC)
+      const { data: state, error: stateErr } = await supabase
+        .from('daemon_state')
+        .select('high_water_mark')
+        .eq('daemon', WEEKLY_KEY)
+        .maybeSingle();
+      if (stateErr) {
+        console.warn('[RakebackSettler] weekly-close state read failed — will retry next cycle');
+        return;
+      }
+      const lastClosedWeek = state?.high_water_mark
+        ? new Date(state.high_water_mark).toISOString().slice(0, 10)
+        : null;
+      if (lastClosedWeek && lastClosedWeek >= currentWeekStart) return; // already closed this week
+
+      console.log(`[RakebackSettler] Weekly financial close starting (week of ${currentWeekStart})`);
+
+      // 1. Pay out lapsed rakeback periods per club
+      const { data: pendingClubs } = await supabase
+        .from('rakeback_periods')
+        .select('club_id')
+        .eq('status', 'pending')
+        .lt('period_end', currentWeekStart)
+        .limit(5000);
+      const clubIds = [...new Set((pendingClubs ?? []).map((r) => r.club_id).filter(Boolean))];
+      for (const clubId of clubIds) {
+        const { error } = await this.supabaseRpc('settle_club_rakeback', { p_club_id: clubId });
+        if (error) {
+          reportError(
+            new Error(`settle_club_rakeback failed for club ${clubId}: ${JSON.stringify(error)}`),
+            'RakebackSettler.weekly_settle_club'
+          );
+        }
+      }
+
+      // 2. Weekly agent credit invoices
+      {
+        const { error } = await this.supabaseRpc('fn_generate_all_credit_invoices', {});
+        if (error) {
+          reportError(
+            new Error(`fn_generate_all_credit_invoices failed: ${JSON.stringify(error)}`),
+            'RakebackSettler.weekly_invoices'
+          );
+        }
+      }
+
+      // 3. Reset weekly agent rake counters for the new week
+      {
+        const { error } = await supabase
+          .from('agents')
+          .update({ weekly_rake_generated: 0 })
+          .gt('weekly_rake_generated', 0);
+        if (error) {
+          reportError(
+            new Error(`weekly_rake_generated reset failed: ${error.message}`),
+            'RakebackSettler.weekly_rake_reset'
+          );
+        }
+      }
+
+      // 4. Mark this week closed
+      await supabase.from('daemon_state').upsert(
+        {
+          daemon: WEEKLY_KEY,
+          high_water_mark: new Date(`${currentWeekStart}T00:00:00Z`).toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'daemon' }
+      );
+      console.log(
+        `[RakebackSettler] Weekly financial close done: ${clubIds.length} clubs settled, invoices generated, weekly counters reset`
+      );
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'RakebackSettler.weekly_close'
+      );
     }
   }
 
@@ -195,16 +334,26 @@ export class RakebackSettlerService {
     // do not re-scan already-settled rake_records (which double-counts
     // player_stats). Only fall back to the 7-day window on a genuine first run.
     if (this.lastSettledAt === null) {
-      this.lastSettledAt = await this.loadHighWaterMark();
+      const hwm = await this.loadHighWaterMark();
+      if (!hwm.ok) {
+        // RAKE-AUDIT 2026-07-24: watermark read failed — do NOT fall back to a
+        // 7-day rescan (double-credits player_stats). Retry next interval.
+        console.warn('[RakebackSettler] high-water-mark read failed — skipping cycle');
+        return;
+      }
+      this.lastSettledAt = hwm.value;
     }
     const sinceIso = (this.lastSettledAt ?? new Date(Date.now() - 7 * 86400 * 1000)).toISOString();
     const startedAt = Date.now();
 
     // 1. Pull rake_records STRICTLY AFTER the last processed record (exclusive
     // watermark => exactly-once processing) that have player_contributions.
+    // RAKE-AUDIT 2026-07-24: id + is_tournament added — tournament/SNG fee rows
+    // have no hand_id (they are not hands), so agent-commission crediting keys
+    // idempotency on rake_records.id for those rows instead of skipping them.
     const { data: rows, error: fetchErr } = await supabase
       .from('rake_records')
-      .select('hand_id, club_id, rake_amount, player_contributions, created_at')
+      .select('id, is_tournament, hand_id, club_id, rake_amount, player_contributions, created_at')
       .gt('created_at', sinceIso)
       .gt('rake_amount', 0)
       .not('player_contributions', 'is', null)
@@ -246,12 +395,17 @@ export class RakebackSettlerService {
       if (dealtIn.length === 0) continue;
 
       // FIX 144 EQUAL SHARE — each dealt-in player gets totalRake / N
-      const equalShare = Math.round((Number(row.rake_amount) / dealtIn.length) * 100) / 100;
+      // RAKE-AUDIT 2026-07-24: exact integer-cents split (shares sum to rake)
+      const shares = equalShareCents(
+        Number(row.rake_amount),
+        dealtIn.map(([uid]) => uid)
+      );
       const created = new Date(row.created_at);
       const ws = weekStart(created);
       const we = weekEnd(created);
 
       for (const [userId] of dealtIn) {
+        const equalShare = shares.get(userId) ?? 0;
         const key = `${userId}:${row.club_id}:${ws}`;
         const cur = buckets.get(key);
         if (cur) {
@@ -293,26 +447,37 @@ export class RakebackSettlerService {
       // is correct: any commission for these legacy rows was already created
       // before the bug surfaced; reprocessing only creates duplicates.
       const handId = (row as { hand_id?: string | null }).hand_id;
-      if (!handId) {
+      // RAKE-AUDIT 2026-07-24: tournament/SNG fee rows legitimately have no
+      // hand_id (they are fees, not hands). They now generate agent commission
+      // too — idempotency keys on the rake_records row id instead. Only legacy
+      // NULL-hand CASH rows (pre-R38) are still skipped, as before.
+      const isTournamentFee = (row as { is_tournament?: boolean | null }).is_tournament === true;
+      const sourceId = handId ?? (isTournamentFee ? ((row as { id?: string }).id ?? null) : null);
+      const sourceType = handId ? 'rake_settlement' : 'tournament_fee';
+      if (!sourceId) {
         agentCreditsSkippedNoHand++;
         continue;
       }
       const dealtIn = Object.entries(row.player_contributions).filter(([, amt]) => Number(amt) > 0);
       if (dealtIn.length === 0) continue;
-      const equalShare = Math.round((Number(row.rake_amount) / dealtIn.length) * 100) / 100;
+      // RAKE-AUDIT 2026-07-24: exact integer-cents split (shares sum to rake)
+      const shares = equalShareCents(
+        Number(row.rake_amount),
+        dealtIn.map(([uid]) => uid)
+      );
       for (const [userId] of dealtIn) {
         agentCreditsAttempted++;
         const { error: rpcErr } = await this.supabaseRpc('credit_agent_commission_from_rake', {
           p_agent_user_id: userId,
           p_club_id: row.club_id,
-          p_rake_credit: equalShare,
-          p_source_type: 'rake_settlement',
+          p_rake_credit: shares.get(userId) ?? 0,
+          p_source_type: sourceType,
           // Round 43: link the commission audit row + club_wallet_transactions
           // commission_out audit row back to the originating hand for
-          // ledger reconciliation. row.hand_id is the FK populated in
-          // Round 38 (rake_records.hand_id → hand_history.id).
-          p_source_id: handId,
-          p_notes: `RakebackSettler hand at ${row.created_at}`,
+          // ledger reconciliation. For hands, sourceId is hand_history.id
+          // (Round 38 FK); for tournament fees it is the rake_records.id.
+          p_source_id: sourceId,
+          p_notes: `RakebackSettler ${sourceType} at ${row.created_at}`,
         });
         if (rpcErr) {
           agentCreditsFailed++;
@@ -338,8 +503,13 @@ export class RakebackSettlerService {
       if (!row.player_contributions) continue;
       const dealtIn = Object.entries(row.player_contributions).filter(([, a]) => Number(a) > 0);
       if (dealtIn.length === 0) continue;
-      const share = Math.round((Number(row.rake_amount) / dealtIn.length) * 100) / 100;
+      // RAKE-AUDIT 2026-07-24: exact integer-cents split (shares sum to rake)
+      const psShares = equalShareCents(
+        Number(row.rake_amount),
+        dealtIn.map(([uid]) => uid)
+      );
       for (const [userId] of dealtIn) {
+        const share = psShares.get(userId) ?? 0;
         const key = `${userId}:${row.club_id}`;
         const b = psBuckets.get(key);
         if (b) {
@@ -443,7 +613,12 @@ export class RakebackSettlerService {
         const dealt = Object.entries(r.player_contributions).filter(([, a]) => Number(a) > 0);
         if (dealt.length === 0) continue;
         if (dealt.some(([uid]) => uid === bucket.user_id)) {
-          totalRake += Math.round((Number(r.rake_amount) / dealt.length) * 100) / 100;
+          // RAKE-AUDIT 2026-07-24: exact integer-cents split (shares sum to rake)
+          const rcShares = equalShareCents(
+            Number(r.rake_amount),
+            dealt.map(([uid]) => uid)
+          );
+          totalRake += rcShares.get(bucket.user_id) ?? 0;
         }
       }
       totalRake = Math.round(totalRake * 100) / 100;

@@ -13,10 +13,16 @@
  * - Stable callback via useRef (prevents re-subscription on render)
  * - Support for multiple event types ('INSERT', 'UPDATE', 'DELETE', '*')
  * - Configurable enabled/disabled pattern
+ * - Auto-recovery: registers a channel factory so the MasterBus health monitor
+ *   re-subscribes the channel if it dies, instead of reaping it permanently.
+ * - Subscribe-failure surfacing: CHANNEL_ERROR / TIMED_OUT are reported (not
+ *   silently swallowed) and forwarded to an optional onSubscriptionError
+ *   callback so the consumer can trigger a recovery fetch.
  */
 
 import { useEffect, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 export type PostgresChangeEvent = 'INSERT' | 'UPDATE' | 'DELETE' | '*';
 
@@ -33,6 +39,14 @@ export interface UseMasterBusChannelOptions {
   onPayload: (payload: any) => void;
   /** Enable/disable the hook (default: true) */
   enabled?: boolean;
+  /**
+   * Optional callback invoked when the realtime subscription fails
+   * (CHANNEL_ERROR / TIMED_OUT). Lets the consumer surface a degraded-connection
+   * state and/or trigger a recovery fetch so it isn't left blind while the
+   * MasterBus health monitor works to re-subscribe. `status` is the raw
+   * Supabase subscription status.
+   */
+  onSubscriptionError?: (status: string, err?: Error) => void;
 }
 
 /**
@@ -60,14 +74,19 @@ export function useMasterBusChannel({
   event,
   onPayload,
   enabled = true,
+  onSubscriptionError,
 }: UseMasterBusChannelOptions) {
-  // Store callback in ref to avoid re-subscribing on every render
+  // Store callbacks in refs to avoid re-subscribing on every render
   const callbackRef = useRef(onPayload);
+  const errorCallbackRef = useRef(onSubscriptionError);
 
-  // Update ref when callback changes (but doesn't trigger re-subscription)
+  // Update refs when callbacks change (but doesn't trigger re-subscription)
   useEffect(() => {
     callbackRef.current = onPayload;
   }, [onPayload]);
+  useEffect(() => {
+    errorCallbackRef.current = onSubscriptionError;
+  }, [onSubscriptionError]);
 
   useEffect(() => {
     // Null-safety: skip if no channel name or filter (common during data loading)
@@ -75,41 +94,61 @@ export function useMasterBusChannel({
       return;
     }
 
-    // Get or create the channel from the master bus
-    const channel = masterBus.getOrCreateChannel(channelName);
+    // Factory that (re)creates and subscribes the channel. Registered with the
+    // MasterBus health monitor so a channel that dies (auth expiry, RLS blip,
+    // socket down) is RE-SUBSCRIBED on the next 30s tick instead of being
+    // removed and left dead for the rest of the session (P2-4). This matters
+    // for hole-card channels (`table-cards-secure-*`) where a permanently dead
+    // channel silently blinds the hero.
+    const subscribeChannel = () => {
+      // getOrCreateChannel returns a fresh channel after the monitor removed
+      // the dead one, or the existing one on the initial call.
+      const channel = masterBus.getOrCreateChannel(channelName);
 
-    // Subscribe to postgres_changes for the specified table
+      (channel as any)
+        .on(
+          'postgres_changes',
+          {
+            event,
+            schema: 'public',
+            table,
+            filter,
+          },
+          (payload: any) => {
+            // Call the stable callback ref
+            callbackRef.current(payload);
+          }
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            // P2-3: do NOT silently swallow. Surface via the error reporter so
+            // there is a metric/log, and forward to the consumer so it can flip
+            // a degraded-connection state and/or force a recovery fetch. The
+            // registered factory + health monitor will also attempt re-subscribe.
+            reportError(
+              err ?? new Error(`Realtime ${status} on ${channelName}`),
+              `useMasterBusChannel.${status}.${table}`
+            );
+            try {
+              errorCallbackRef.current?.(status, err);
+            } catch (cbErr) {
+              reportError(cbErr, 'useMasterBusChannel.onSubscriptionError_threw');
+            }
+          }
+        });
+    };
 
-    (channel as any)
-      .on(
-        'postgres_changes',
-        {
-          event,
-          schema: 'public',
-          table,
-          filter,
-        },
-        (payload: any) => {
-          // Call the stable callback ref
-          callbackRef.current(payload);
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.debug(
-            `[useMasterBusChannel] ❌ Channel error on ${channelName}:`,
-            err?.message || err
-          );
-        }
-        if (status === 'TIMED_OUT') {
-          console.debug(
-            `[useMasterBusChannel] ⏱️ Channel ${channelName} timed out — auto-reconnecting`
-          );
-        }
-      });
+    // Register the factory FIRST so that if the very first subscribe attempt
+    // dies, the health monitor can recover it.
+    masterBus.registerChannelFactory(channelName, subscribeChannel);
 
-    // Cleanup: remove the registered channel on unmount or when deps change
+    // Initial subscription
+    subscribeChannel();
+
+    // Cleanup: unregister the factory (so the monitor won't resurrect a channel
+    // this component intentionally tore down) and remove the channel.
     return () => {
+      masterBus.removeChannelFactory(channelName);
       masterBus.removeRegisteredChannel(channelName);
     };
   }, [channelName, table, filter, event, enabled]);

@@ -1664,8 +1664,8 @@ class MasterBusCore {
       deadChannels.forEach((key) => {
         // #4b: Auto-recovery — try to re-create via factory if registered
         const factory = this.channelFactoryRegistry.get(key);
-        this.removeRegisteredChannel(key);
         if (factory) {
+          this.removeRegisteredChannel(key);
           console.debug(`[BUS HEALTH] Auto-recovering channel: "${key}"`);
           try {
             factory();
@@ -1674,7 +1674,22 @@ class MasterBusCore {
           } catch (e) {
             reportError(e, 'MasterBus.Recovery_failed_for_key');
           }
+        } else if (this.isCriticalChannelKey(key)) {
+          // P2-4: A critical channel (e.g. per-user hole cards
+          // `table-cards-secure-*`) with no re-subscribe factory must NOT be
+          // silently removed — removeChannel would destroy the underlying
+          // Supabase channel and abort its own auto-rejoin, leaving the hero
+          // permanently blind for the session. Leave it in place so Supabase's
+          // realtime client keeps attempting to rejoin, and surface it loudly.
+          reportError(
+            new Error(`Critical realtime channel dead with no recovery factory: ${key}`),
+            'MasterBus.Critical_channel_no_factory'
+          );
+          console.warn(
+            `[BUS HEALTH] Critical channel "${key}" dead but has no factory -- leaving in place for Supabase auto-rejoin (NOT reaping)`
+          );
         } else {
+          this.removeRegisteredChannel(key);
           console.warn(`[BUS HEALTH] No factory for "${key}" -- removed only`);
         }
       });
@@ -1751,6 +1766,17 @@ class MasterBusCore {
   removeChannelFactory(key: string): void {
     this.channelFactoryRegistry.delete(key);
   }
+
+  /**
+   * Whether a channel key carries data that must never be silently reaped by
+   * the health monitor without a recovery path. Currently the per-user secure
+   * hole-card channel (`table-cards-secure-*`) — losing it blinds the hero for
+   * the rest of the session (see P2-4). Kept as a method so the set of critical
+   * prefixes can grow in one place.
+   */
+  private isCriticalChannelKey(key: string): boolean {
+    return key.startsWith('table-cards-secure-');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1771,16 +1797,4 @@ export function getMasterBusStatus(): MasterBusStatus | null {
 
 export function isMasterBusOnline(): boolean {
   return masterBus.isOnline();
-}
-
-/**
- * Convenience helper: show a toast via the MasterBus → BusToastBridge pipeline.
- * Services can call this without importing the React toast hook.
- */
-export function busToast(
-  message: string,
-  severity: 'critical' | 'warning' | 'info' = 'info',
-  durationMs?: number
-): void {
-  masterBus.emit('SHOW_TOAST', { message, severity, source: 'busToast', durationMs });
 }

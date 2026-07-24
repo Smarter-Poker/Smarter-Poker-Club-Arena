@@ -536,6 +536,8 @@ describe('HorseLogic V2 — performance budget', () => {
 
 import { HorseMind } from './HorseMind.js';
 import { decidePreflopV7 } from './HorsePreflop.js';
+import { simulateEquity, omahaDrawQuality, variantInfo, type HiLoSplit } from './HorseEval.js';
+import { buyInBBFor, isActiveNow } from '../services/HorseBehavior.js';
 import type { ActionRecord } from '../types.js';
 
 describe('HorseMind V3 — opponent intelligence', () => {
@@ -1281,6 +1283,214 @@ describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () =>
       if (!check.valid) {
         throw new Error(`V7 ILLEGAL ${stage} bb=${bigBlind}: ${d.action} ${d.amount} — ${check.error}`);
       }
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. V8 — O8 SCOOP/QUARTER + OMAHA DRAW QUALITY + NLH RAISES + BEHAVIOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('HorseEval V8 — hi-lo decomposition + Omaha draw quality', () => {
+  const vi8 = variantInfo('plo8');
+
+  it('decomposes a scoop monster vs a bare nut low correctly', () => {
+    // Nut flush + nut low on a monotone low board = scoop city.
+    const scoop: HiLoSplit = { hi: 0, lo: 0, scoop: 0, quarter: 0 };
+    simulateEquity(
+      [c('As'), c('2s'), c('Kd'), c('Qc')],
+      [c('3s'), c('4s'), c('8s')],
+      2,
+      vi8,
+      800,
+      undefined,
+      false,
+      scoop
+    );
+    expect(scoop.scoop).toBeGreaterThan(0.5);
+    expect(scoop.quarter).toBeLessThan(0.05);
+    // Bare nut low with no high: value lives in HALF the pot, tie-exposed.
+    const lowOnly: HiLoSplit = { hi: 0, lo: 0, scoop: 0, quarter: 0 };
+    simulateEquity(
+      [c('Ah'), c('2h'), c('Kd'), c('Qc')],
+      [c('3s'), c('4s'), c('8s')],
+      2,
+      vi8,
+      800,
+      undefined,
+      false,
+      lowOnly
+    );
+    expect(lowOnly.lo).toBeGreaterThan(0.6);
+    expect(lowOnly.hi).toBeLessThan(0.25);
+    expect(lowOnly.scoop).toBeLessThan(0.25);
+  });
+
+  it('classifies nut flush draws, dominated flush draws, and wraps', () => {
+    const nut = omahaDrawQuality([c('Ah'), c('9h'), c('Ks'), c('Qd')], [c('2h'), c('7h'), c('Kd')]);
+    expect(nut.nutFlushDraw).toBe(true);
+    expect(nut.nutty).toBe(true);
+    const dom = omahaDrawQuality([c('9h'), c('8h'), c('Ks'), c('Qd')], [c('2h'), c('7h'), c('Kd')]);
+    expect(dom.dominatedFlushDraw).toBe(true);
+    expect(dom.nutty).toBe(false);
+    const wrap = omahaDrawQuality([c('9c'), c('Td'), c('Jh'), c('Qs')], [c('8s'), c('7d'), c('2c')]);
+    expect(wrap.straightOuts).toBeGreaterThanOrEqual(9);
+    expect(wrap.bigWrap).toBe(true);
+    // A made straight has no straight outs to count.
+    const made = omahaDrawQuality([c('9c'), c('Td'), c('Jh'), c('Qs')], [c('8s'), c('7d'), c('6c')]);
+    expect(made.straightOuts).toBe(0);
+  });
+});
+
+describe('HorseLogic V8 — O8 quarter brake + NLH raise bluffs', () => {
+  it('a bare nut low stops betting into a multiway pot (quarter awareness)', () => {
+    const mkGs = (): any => ({
+      players: [
+        mkPlayer(2, { cards: [c('Ah'), c('2h'), c('Kd'), c('Qc')] }),
+        mkPlayer(4),
+        mkPlayer(6),
+      ],
+      communityCards: [c('3s'), c('4s'), c('8s'), c('Jd')],
+      pot: 30,
+      currentBet: 0,
+      minRaise: 2,
+      stage: 'turn',
+      gameVariant: 'plo8',
+      bigBlind: 2,
+      dealerSeat: 2,
+    });
+    const n = 150;
+    let betsV8 = 0;
+    let betsBase = 0;
+    for (let i = 0; i < n; i++) {
+      const a = mkGs();
+      if (['bet', 'all_in'].includes(HorseLogic.decide(a.players[0], a, 'balanced').action))
+        betsV8++;
+      const b = mkGs();
+      if (
+        ['bet', 'all_in'].includes(
+          HorseLogic.decide(b.players[0], b, 'balanced', {}, { v8: false }).action
+        )
+      )
+        betsBase++;
+    }
+    expect(betsV8).toBeLessThanOrEqual(betsBase); // the brake never ADDS bets
+  });
+
+  it('V8 adds OOP raise-bluffs on blocker scare cards that V8-off does not have', () => {
+    // Flush completes on the turn; hero holds the ACE of the suit (nut
+    // blocker + nut draw) out of position facing a small bet heads-up.
+    const mk = (): any => {
+      const hero = mkPlayer(2, { cards: [c('Ah'), c('5s')], bet: 0, stack: 200 });
+      return {
+        hero,
+        gs: {
+          players: [hero, mkPlayer(5)],
+          communityCards: [c('9h'), c('7h'), c('2s'), c('Qh')],
+          pot: 30,
+          currentBet: 10,
+          minRaise: 10,
+          stage: 'turn',
+          gameVariant: 'nlh',
+          bigBlind: 2,
+          dealerSeat: 5,
+          lastRaise: 10,
+        },
+      };
+    };
+    const n = 600;
+    let v8Raises = 0;
+    let offRaises = 0;
+    for (let i = 0; i < n; i++) {
+      const a = mk();
+      if (['raise', 'all_in'].includes(HorseLogic.decide(a.hero, a.gs, 'balanced').action))
+        v8Raises++;
+      const b = mk();
+      if (
+        ['raise', 'all_in'].includes(
+          HorseLogic.decide(b.hero, b.gs, 'balanced', {}, { v8Nlh: false }).action
+        )
+      )
+        offRaises++;
+    }
+    expect(v8Raises).toBeGreaterThan(0); // the check-raise bluff region exists
+    expect(v8Raises).toBeGreaterThanOrEqual(offRaises); // and only ADDS pressure
+  });
+
+  it('V8 decisions stay legal across randomized states in every variant', () => {
+    for (const { variant, hole, short } of VARIANTS) {
+      for (let trial = 0; trial < 120; trial++) {
+        const deck = shuffle(makeDeck(short));
+        const boardCount = [0, 3, 4, 5][trial % 4];
+        const stage: HandStage =
+          boardCount === 0 ? 'preflop' : boardCount === 3 ? 'flop' : boardCount === 4 ? 'turn' : 'river';
+        const numPlayers = 2 + (trial % 4);
+        const players: SeatPlayer[] = [];
+        let cardIdx = 0;
+        for (let p = 1; p <= numPlayers; p++) {
+          players.push(
+            mkPlayer(p, {
+              cards: deck.slice(cardIdx, (cardIdx += hole)),
+              stack: 40 + Math.random() * 360,
+            })
+          );
+        }
+        const hero = players[0];
+        const currentBet = Math.random() < 0.4 ? 0 : Math.random() * 30;
+        const gs: any = {
+          players,
+          communityCards: deck.slice(cardIdx, cardIdx + boardCount),
+          pot: 6 + Math.random() * 60,
+          currentBet,
+          minRaise: 2,
+          stage,
+          gameVariant: variant,
+          bigBlind: 2,
+          dealerSeat: (trial % numPlayers) + 1,
+          lastRaise: 2,
+        };
+        const d = HorseLogic.decide(hero, gs, STYLES[trial % STYLES.length]);
+        const bs = calculateBettingState(
+          gs.pot,
+          gs.currentBet,
+          hero.bet,
+          2,
+          2,
+          variant.startsWith('plo')
+        );
+        const check = validateAction(d.action, d.amount, hero.stack, bs);
+        if (!check.valid) {
+          throw new Error(`V8 ILLEGAL ${variant}/${stage}: ${d.action} ${d.amount} — ${check.error}`);
+        }
+      }
+    }
+  });
+});
+
+describe('HorseBehavior V8 — join/leave personality helpers', () => {
+  it('buy-in profiles stay inside 40-200bb with real spread', () => {
+    const bbs = Array.from({ length: 400 }, (_, i) => buyInBBFor(`h-${i}-uuid`));
+    expect(Math.min(...bbs)).toBeGreaterThanOrEqual(40);
+    expect(Math.max(...bbs)).toBeLessThanOrEqual(200);
+    const short = bbs.filter((b) => b <= 60).length;
+    const deep = bbs.filter((b) => b >= 140).length;
+    expect(short).toBeGreaterThan(20); // short-stackers exist
+    expect(deep).toBeGreaterThan(40); // deep buyers exist
+  });
+
+  it('activity windows are deterministic and cover every hour', () => {
+    for (const id of ['a', 'b', 'longer-uuid-string']) {
+      for (let hr = 0; hr < 24; hr++) {
+        expect(isActiveNow(id, hr)).toBe(isActiveNow(id, hr));
+      }
+    }
+    // At any hour, a healthy fraction of a 400-horse stable is active.
+    for (const hr of [0, 6, 12, 18]) {
+      const active = Array.from({ length: 400 }, (_, i) => isActiveNow(`h-${i}-uuid`, hr)).filter(
+        Boolean
+      ).length;
+      expect(active).toBeGreaterThan(120);
+      expect(active).toBeLessThan(340);
     }
   });
 });

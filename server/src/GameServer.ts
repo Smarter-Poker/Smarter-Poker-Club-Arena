@@ -2959,7 +2959,32 @@ export class TournamentManager {
   private async executePlayerMoves(moves: MoveInstruction[]): Promise<void> {
     for (const move of moves) {
       try {
-        // Mark old seat as left FIRST to prevent duplicate active seats
+        // SWEEP #4 P1-4 FIX (2026-07-23): read the source stack BEFORE marking the
+        // old seat left. The old order marked left first, then read the (now-left)
+        // seat with .order('left_at' desc).maybeSingle(); on a transient read error
+        // or empty result oldSeat was null → the player was re-seated with `stack: 0`
+        // → eliminated on the next checker pass. MoveInstruction carries no stack, so
+        // if we cannot read a real source stack we ABORT this move (leave the player
+        // at the source table) and let the next rebalance pass retry — never seat at 0.
+        const { data: oldSeat, error: readErr } = await supabase
+          .from('table_seats')
+          .select('stack')
+          .eq('table_id', move.fromTableId)
+          .eq('user_id', move.playerId)
+          .is('left_at', null)
+          .maybeSingle();
+
+        if (readErr || oldSeat == null || oldSeat.stack == null) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Aborting move for ${move.playerId.slice(0, 8)} — could not read source stack (readErr=${readErr?.message ?? 'none'}, seat=${oldSeat ? 'found' : 'null'}). Leaving player at source table to avoid 0-stack elimination; will retry next rebalance.`
+            ),
+            'Tournament.Move_aborted_no_source_stack'
+          );
+          continue;
+        }
+
+        // Mark old seat as left (now that we have the real stack) to prevent duplicate active seats
         await supabase
           .from('table_seats')
           .update({ left_at: new Date().toISOString() })
@@ -2967,23 +2992,12 @@ export class TournamentManager {
           .eq('user_id', move.playerId)
           .is('left_at', null);
 
-        // Get the player's current stack from the old seat
-        // (the move instruction has stack info from the snapshot, but DB is truth)
-        const { data: oldSeat } = await supabase
-          .from('table_seats')
-          .select('stack')
-          .eq('table_id', move.fromTableId)
-          .eq('user_id', move.playerId)
-          .order('left_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        // Insert new seat at target table
+        // Insert new seat at target table with the real stack read above
         await supabase.from('table_seats').insert({
           table_id: move.toTableId,
           user_id: move.playerId,
           seat_number: move.toSeat,
-          stack: oldSeat?.stack || 0,
+          stack: oldSeat.stack,
           joined_at: new Date().toISOString(),
         });
 

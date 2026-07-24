@@ -1,0 +1,290 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * HORSE PREFLOP V7 — Position-Pair Preflop Mastery (2026-07-24)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * The V7 replacement for the V2 preflop layer. Everything downstream (V3 range
+ * reads, V4 street IQ, V5 hand reading) inherits its edge from preflop range
+ * quality, so this is the highest-leverage layer in the engine.
+ *
+ * What V2 did not have, V7 does:
+ *  - POSITION-PAIR 3-BETTING: a button open is 3-bet far wider than an
+ *    under-the-gun open; the blinds re-steal against late position.
+ *  - 3-BET BLUFFS from the blinds and in position with the right mid hands.
+ *  - 4-BET BLUFFS: V2's 4-bets were pure value and therefore exploitable.
+ *  - BLIND-VS-BLIND play: SB opens wide vs a lone BB; BB defends wide and
+ *    re-raises both for value and as a bluff.
+ *  - SQUEEZE logic: raiser + caller(s) get squeezed for value AND as a bluff,
+ *    with proper multi-caller sizing.
+ *  - STACK-DEPTH awareness: deep stacks widen speculative suited/connected
+ *    opens and cold calls; shallow stacks tighten them and open-jam more.
+ *  - RESHOVE STACKS: 13-20bb jam over late opens instead of flatting.
+ *  - TOURNAMENT RISK PREMIUM (ICM-lite): survival pressure raises every
+ *    calling threshold and trims bluffs when chips lost hurt more than chips
+ *    won help.
+ *
+ * PURE decision logic: no imports from HorseLogic (the caller computes hand
+ * strength, position, and context and passes them in), so there are no
+ * circular module dependencies. Returns an INTENT that HorseLogic legalizes
+ * against the engine's own validateAction rules.
+ *
+ * NEVER refer to the horses as "bots" — they are HORSES only.
+ */
+
+export type PreflopPosition = 'early' | 'middle' | 'late' | 'sb' | 'bb';
+
+export interface PreflopIntent {
+  a: 'fold' | 'check' | 'call' | 'jam' | 'raiseTo';
+  /** raise-TO target for a === 'raiseTo' (pre-legalization) */
+  to?: number;
+}
+
+export interface PreflopCtx {
+  /** percentile hand strength 0..1 (variant-aware, jittered by caller) */
+  strength: number;
+  position: PreflopPosition;
+  /** position of the LAST preflop raiser, if any */
+  raiserPosition: PreflopPosition | null;
+  /** number of raises so far this street */
+  raises: number;
+  /** callers before any raise */
+  limpers: number;
+  /** callers of the current raise */
+  callers: number;
+  /** live opponents not yet folded */
+  oppsLeft: number;
+  toCall: number;
+  currentBet: number;
+  pot: number;
+  bigBlind: number;
+  stack: number;
+  stackBB: number;
+  /** style parameters (already modifier-scaled by the caller) */
+  tightness: number;
+  bluffFreq: number;
+  aggression: number;
+  slowplayFreq: number;
+  sizingMultiplier: number;
+  isOmaha: boolean;
+  isPotLimit: boolean;
+  /** tournament survival premium, 0 for cash (see HorseLogic.icmRisk) */
+  riskAdd: number;
+  /** PRNG supplied by the caller (fast xorshift) */
+  rand: () => number;
+}
+
+const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
+
+/** Open-raise strength floors by position (percentile space). */
+const OPEN_THRESH: Record<PreflopPosition, number> = {
+  early: 0.62,
+  middle: 0.54,
+  late: 0.42,
+  sb: 0.44, // V7: SB opens wider than V2's 0.50 — folds win the BB outright
+  bb: 0.42,
+};
+
+/**
+ * How wide the 3-bet gets against an open from each position. Late opens are
+ * wide, so the re-raise gets wide; early opens are strong, so it stays tight.
+ */
+const THREEBET_VS: Record<PreflopPosition, number> = {
+  early: 0.86,
+  middle: 0.8,
+  late: 0.74,
+  sb: 0.72, // BB re-stealing vs a wide SB open
+  bb: 0.8,
+};
+
+/** Cold-call floors vs an open from each position. */
+const CALL_VS: Record<PreflopPosition, number> = {
+  early: 0.58,
+  middle: 0.54,
+  late: 0.5,
+  sb: 0.46,
+  bb: 0.54,
+};
+
+export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
+  const {
+    strength: raw,
+    position,
+    raiserPosition,
+    raises,
+    limpers,
+    callers,
+    toCall,
+    currentBet,
+    pot,
+    bigBlind: bb,
+    stack,
+    stackBB,
+    rand,
+  } = ctx;
+
+  // Tournament survival premium tightens everything a notch.
+  const t = (x: number) => clamp01(x * ctx.tightness + ctx.riskAdd);
+  const strength = raw;
+  const bluffBudget = ctx.bluffFreq * ctx.aggression * Math.max(0.4, 1 - 4 * ctx.riskAdd);
+
+  // Stack-depth texture: deep stacks reward speculative suited/connected
+  // hands (implied odds); shallow stacks punish them.
+  const depthLoosen = stackBB > 150 ? 0.02 : 0;
+  const depthTighten = stackBB < 50 ? 0.03 : 0;
+
+  const unopened = raises === 0 && currentBet <= bb * 1.05;
+
+  // ── Short stacks: push/fold (<=12bb) and reshove stacks (13-20bb) ──
+  if (stackBB <= 12 && !ctx.isOmaha) {
+    if (unopened) {
+      const jamThresh = position === 'late' || position === 'sb' ? 0.5 : 0.6;
+      if (strength >= t(jamThresh)) return { a: 'jam' };
+      if (toCall === 0) return { a: 'check' };
+      return { a: 'fold' };
+    }
+    if (strength >= t(raises >= 2 ? 0.85 : 0.72)) return { a: 'jam' };
+    if (toCall === 0) return { a: 'check' };
+    if (toCall <= bb && strength >= 0.3) return { a: 'call' };
+    return { a: 'fold' };
+  }
+  if (
+    stackBB <= 20 &&
+    !ctx.isOmaha &&
+    raises === 1 &&
+    callers === 0 &&
+    raiserPosition === 'late' &&
+    strength >= t(0.62)
+  ) {
+    // V7 RESHOVE: 13-20bb over a late-position open — jam, don't flat.
+    return { a: 'jam' };
+  }
+
+  // ── Unopened pot (or limpers only) ──
+  if (unopened) {
+    let openThresh = t(OPEN_THRESH[position]) + Math.min(limpers, 3) * 0.03;
+    openThresh += depthTighten - depthLoosen;
+
+    // Blind-vs-blind: heads-up SB vs BB plays much wider.
+    const bvb = position === 'sb' && ctx.oppsLeft === 1;
+    if (bvb) openThresh = t(0.36) + depthTighten;
+
+    if (strength >= openThresh) {
+      // Trap mix with true premiums (cheap to see a flop disguised).
+      if (strength > 0.93 && rand() < ctx.slowplayFreq * 0.4 && toCall <= bb) {
+        if (toCall === 0) return { a: 'check' };
+        return { a: 'call' };
+      }
+      const sizeBB = (2.2 + rand() * 0.8 + limpers * 1.0) * ctx.sizingMultiplier;
+      return { a: 'raiseTo', to: sizeBB * bb };
+    }
+    // BvB limp mix from the SB with playable-but-not-open hands.
+    if (bvb && toCall > 0 && toCall <= bb && strength >= 0.22 && rand() < 0.75) {
+      return { a: 'call' };
+    }
+    if (toCall === 0) return { a: 'check' };
+    const limpable = strength >= openThresh - 0.12;
+    if (toCall <= bb && (limpable || position === 'sb') && rand() < 0.7) {
+      return { a: 'call' };
+    }
+    if (toCall <= bb * 1.5 && strength >= 0.3) return { a: 'call' };
+    return { a: 'fold' };
+  }
+
+  // ── Facing a single raise ──
+  if (raises === 1) {
+    const vs = raiserPosition ?? 'middle';
+    let threeBetThresh = t(THREEBET_VS[vs] - (ctx.aggression - 1) * 0.08);
+    let callThresh = t(CALL_VS[vs]) + callers * 0.025 + depthTighten - depthLoosen;
+
+    // Blinds facing a LATE steal prefer 3-bet-or-fold over cold-calling
+    // out of position: shift part of the call band into the 3-bet.
+    const blindVsSteal = (position === 'sb' || position === 'bb') && vs === 'late';
+    if (blindVsSteal) {
+      threeBetThresh = t(0.7 - (ctx.aggression - 1) * 0.08);
+      callThresh += position === 'sb' ? 0.05 : 0;
+    }
+    const bbDiscount = position === 'bb' ? 0.06 : 0;
+    const priceOK = toCall <= Math.max(bb * 12, stack * 0.12);
+
+    if (strength >= threeBetThresh) {
+      if (strength > 0.95 && rand() < ctx.slowplayFreq * 0.5 && callers === 0) {
+        return { a: 'call' }; // trap
+      }
+      const ip = position === 'late' || (vs === 'sb' && position === 'bb');
+      const mult = (ip ? 3.0 : 3.8) + callers * 1.0 + rand() * 0.4;
+      return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
+    }
+
+    // V7 SQUEEZE BLUFF: raiser + caller(s) — attack the capped caller range.
+    if (
+      callers >= 1 &&
+      strength >= t(0.55) &&
+      strength < threeBetThresh &&
+      !ctx.isOmaha &&
+      rand() < bluffBudget * 0.3
+    ) {
+      const mult = 4.0 + callers * 1.0 + rand() * 0.5;
+      return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
+    }
+
+    // V7 3-BET BLUFF: no callers, right position, mid-strength hands.
+    // Wider vs late opens and from the blinds (re-steal).
+    const bluffFloor = blindVsSteal ? 0.48 : 0.55;
+    const bluffFreqHere = (blindVsSteal ? 0.5 : vs === 'late' ? 0.45 : 0.3) * bluffBudget;
+    if (
+      callers === 0 &&
+      strength >= t(bluffFloor) &&
+      strength < threeBetThresh &&
+      rand() < bluffFreqHere
+    ) {
+      const ip = position === 'late';
+      const mult = (ip ? 3.0 : 3.8) + rand() * 0.4;
+      return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
+    }
+
+    if (strength >= callThresh - bbDiscount && priceOK) return { a: 'call' };
+    if (position === 'bb' && toCall <= bb * 2.5 && strength >= 0.3) return { a: 'call' };
+    return { a: 'fold' };
+  }
+
+  // ── Facing a 3-bet or bigger ──
+  {
+    const ip = position === 'late';
+    const fourBetThresh = t(0.93 - (ctx.aggression - 1) * 0.04);
+    const callThresh = t(ip ? 0.74 : 0.78);
+
+    if (strength >= fourBetThresh) {
+      if (raises >= 3 || currentBet * 2.3 >= stack * 0.4) return { a: 'jam' };
+      const mult = 2.2 + rand() * 0.4;
+      return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
+    }
+
+    // V7 4-BET BLUFF: NLHE only, facing exactly a 3-bet, no callers behind,
+    // blocker-heavy band just below the value region. Small sizing, folds to
+    // a 5-bet. Makes the value 4-bets unexploitable.
+    if (
+      !ctx.isOmaha &&
+      raises === 2 &&
+      callers === 0 &&
+      strength >= t(0.72) &&
+      strength < fourBetThresh &&
+      currentBet * 2.3 < stack * 0.35 &&
+      rand() < bluffBudget * 0.22
+    ) {
+      const mult = 2.2 + rand() * 0.2;
+      return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
+    }
+
+    // 5-bet pots: jam-or-fold on true premiums only.
+    if (raises >= 3) {
+      if (strength >= t(0.95)) return { a: 'jam' };
+      if (strength >= t(0.88) && toCall <= stack * 0.3) return { a: 'call' };
+      if (toCall === 0) return { a: 'check' };
+      return { a: 'fold' };
+    }
+
+    if (strength >= callThresh && toCall <= stack * 0.35) return { a: 'call' };
+    if (toCall > 0 && toCall <= pot * 0.15 && strength >= 0.45) return { a: 'call' };
+    if (toCall === 0) return { a: 'check' };
+    return { a: 'fold' };
+  }
+}

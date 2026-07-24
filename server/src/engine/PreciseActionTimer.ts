@@ -92,7 +92,7 @@ export class PreciseActionTimer {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PUBLIC API — unchanged surface; internals delegate to DeadlineScheduler.
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   /**
    * Start a new action timer for a player.
@@ -258,16 +258,25 @@ export class PreciseActionTimer {
   }
 
   /**
-   * Cancel all timers for a table.
+   * Cancel all of THIS TABLE'S turn timers.
+   *
+   * SWEEP #4 FIX (2026-07-23): this used to call `scheduler.cancelAll(tableId)`,
+   * which removes EVERY entry for the table on the shared DeadlineScheduler —
+   * including ServerTableEngine's `heartbeat_check` deadline, which re-arms only
+   * from inside its own callback. Because clearTable() runs at every HAND_COMPLETE,
+   * cancelAll() permanently killed the heartbeat after the first completed hand,
+   * regressing mid-hand disconnect detection (FIX 147) to the pre-fix "only between
+   * hands" behaviour. Cancel only the `turn:<playerId>` eventIds this class owns.
    */
   clearTable(tableId: string): void {
+    const prefix = `${tableId}:`;
     for (const key of [...this.deadlines.keys()]) {
-      if (key.startsWith(`${tableId}:`)) {
+      if (key.startsWith(prefix)) {
+        const playerId = key.slice(prefix.length);
+        this.scheduler.cancel(tableId, this.eventId(playerId));
         this.deadlines.delete(key);
       }
     }
-    // One sweep in the scheduler to match.
-    this.scheduler.cancelAll(tableId);
   }
 
   /**
@@ -277,9 +286,9 @@ export class PreciseActionTimer {
     return this.deadlines.has(this.key(tableId, playerId));
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
   // PRIVATE
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   /** Called by the scheduler when a deadline fires. */
   private onExpired(tableId: string, playerId: string): void {
@@ -325,10 +334,10 @@ export class PreciseActionTimer {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
   // CLEANUP — called when the engine for a table shuts down.
   // Kept for backward compat; now a cancel-all wrapper.
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   dispose(): void {
     // Cancel every entry. We don't stop the shared scheduler because other

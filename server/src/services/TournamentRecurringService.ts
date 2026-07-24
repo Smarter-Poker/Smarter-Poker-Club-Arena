@@ -713,7 +713,9 @@ export class TournamentRecurringService {
   private async checkAndLaunchTournaments(): Promise<void> {
     try {
       const now = new Date();
-      const hour = now.getHours();
+      // TOURNEY-AUDIT 2026-07-24: schedule hours are UTC (was server-local time,
+      // which shifts every named event when the host timezone differs).
+      const hour = now.getUTCHours();
 
       const block = HOURLY_SCHEDULE.find((b) => b.hours.includes(hour));
       if (!block) return;
@@ -812,7 +814,9 @@ export class TournamentRecurringService {
       if (!unions || unions.length === 0) return;
 
       const now = new Date();
-      const hour = now.getHours();
+      // TOURNEY-AUDIT 2026-07-24: schedule hours are UTC (was server-local time,
+      // which shifts every named event when the host timezone differs).
+      const hour = now.getUTCHours();
 
       const block = XMTT_SCHEDULE.find((b) => b.hours.includes(hour));
       if (!block) return;
@@ -948,7 +952,10 @@ export class TournamentRecurringService {
       }
 
       const registered = await this.registerHorses(tournament.id, config.horsesToRegister);
-      const entriesPool = config.buyIn * registered;
+      // TOURNEY-AUDIT 2026-07-24 [money]: exclude the bounty portion from the
+      // prize pool for bounty formats (same fix as the club-level MTT path).
+      const xmttPerEntry = Math.max(0, config.buyIn - (bountyAmount || 0));
+      const entriesPool = Math.round(xmttPerEntry * registered * 100) / 100;
       const prizePool = config.guarantee ? Math.max(entriesPool, config.guarantee) : entriesPool;
 
       const { error: updateErr } = await supabase
@@ -1006,7 +1013,11 @@ export class TournamentRecurringService {
       const { count } = await query;
       return count || 0;
     } catch {
-      return 0;
+      // TOURNEY-AUDIT 2026-07-24: fail CLOSED. Returning 0 on a transient DB
+      // error made the scheduler believe no tournaments existed and recreate
+      // every scheduled event on the next tick (duplicate storm). Treating an
+      // error as "already exists" skips one creation cycle instead.
+      return Number.MAX_SAFE_INTEGER;
     }
   }
 
@@ -1096,8 +1107,13 @@ export class TournamentRecurringService {
       }
 
       const registered = await this.registerHorses(tournament.id, config.horsesToRegister);
-      const entriesPool = config.buyIn * registered;
-      // Honor guaranteed prize: prize pool = max(entries * buy-in, guarantee)
+      // TOURNEY-AUDIT 2026-07-24 [money]: for bounty formats the bounty
+      // portion of each entry funds the bounty pool, NOT the prize pool —
+      // the old math left the full buy-in in the pool AND paid bounties on
+      // top (double-counting the bounty component).
+      const perEntryToPool = Math.max(0, config.buyIn - (bountyAmount || 0));
+      const entriesPool = Math.round(perEntryToPool * registered * 100) / 100;
+      // Honor guaranteed prize: prize pool = max(entries contribution, guarantee)
       const prizePool = config.guarantee ? Math.max(entriesPool, config.guarantee) : entriesPool;
 
       const { error: updateErr } = await supabase
@@ -1246,8 +1262,13 @@ export class TournamentRecurringService {
       }
 
       const registered = await this.registerHorses(spin.id, config.horsesToRegister);
-      // Calculate actual prize pool based on actual registrations (not target count)
-      const prizePool = config.buyIn * registered * multiplier;
+      // TOURNEY-AUDIT 2026-07-24 [money]: standard Spin&Go economics — the
+      // prize is buyIn x multiplier (ONE unit), not buyIn x players x
+      // multiplier. The old formula set a 3-seat 2x spin's pool to 6 units
+      // (a ~2.75x average payout on every dollar collected — guaranteed
+      // house loss). The GameServer re-rolls the multiplier at start and
+      // overwrites this, but the creation-time value must not be inflated.
+      const prizePool = Math.round(config.buyIn * multiplier * 100) / 100;
 
       const { error: spinUpdateErr } = await supabase
         .from('tournaments')
@@ -1278,12 +1299,26 @@ export class TournamentRecurringService {
 
   private async registerHorses(tournamentId: string, count: number): Promise<number> {
     try {
-      const { data: horses } = await supabase
+      // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
+      // another active tournament. The old query only checked horse_status
+      // (never flipped by tournament play), so the overlapping MTT/SNG/Spin
+      // scheduler intervals double-booked the same horses into several
+      // simultaneous events.
+      const { data: busyRows } = await supabase
+        .from('tournament_players')
+        .select('user_id, tournaments!inner(status)')
+        .in('status', ['registered', 'playing'])
+        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+        .limit(2000);
+      const busyIds = new Set((busyRows ?? []).map((r: any) => r.user_id));
+
+      const { data: horsePool } = await supabase
         .from('profiles')
         .select('id, display_name, username, use_real_name')
         .eq('is_horse', true)
         .eq('horse_status', 'available')
-        .limit(count);
+        .limit(count + busyIds.size);
+      const horses = (horsePool ?? []).filter((h) => !busyIds.has(h.id)).slice(0, count);
 
       if (!horses || horses.length === 0) return 0;
 

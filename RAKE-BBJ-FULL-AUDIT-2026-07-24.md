@@ -198,3 +198,47 @@ Plus (also on disk, deploy with the frontend build): `CreateTournamentModal` fee
 3. ~156 rake_records/week have `hand_id` NULL from hand_history insert failures — money is credited, only the FK link is missing; worth a retry wrapper someday.
 4. `FinancialCronService`'s remaining browser-side jobs (reconciliation alerts, dispute escalation) still benefit from an admin tab; the money-moving jobs are now server-side.
 5. Per-player BBJ contribution display ("Your Contribution") reads a `player_id` column no writer populates — shows 0; needs per-player attribution design (contribution is per-pot, not per-player).
+
+---
+
+# SWEEP 3 — TOURNAMENT / SNG / SPIN FULL AUDIT (launch → registration → play → payout)
+
+Line-by-line audit of the entire tournament stack: GameServer tournament runtime (lifecycle, blinds, breaks, eliminations, payouts, bounties, balancing), the recurring scheduler, the client service/UI, all live RPCs, and live-data conservation checks. Deploy: run `bash ~/Documents/club-arena/DEPLOY-TOURNEY-AUDIT.sh` (explicit file staging — no `git add -A`).
+
+## Verified WORKING (live data)
+
+- **Sweep-2 deploy confirmed**: tournament hands show rake = 0 from 04:44 UTC (chip destruction over); BBJ still collecting.
+- **Spin payouts conserve money**: every completed spin paid exactly prize_pool = buyIn × multiplier to one winner.
+- **Blind levels do advance and persist** (current_level written per level, all tables updated together); synchronized hourly 5-min breaks exist for MTT/XMTT; hand-for-hand bubble sync exists and works across tables.
+- All preset payout structures sum to exactly 100%; recurring-scheduler fees are all exactly 10%.
+
+## CRITICAL bugs found & FIXED (live evidence in parentheses)
+
+1. **Engine restart MINTED money and destroyed tournaments.** Startup cleanup credited every seated player's stack to their real wallet with **no tournament filter** — tournament chips (e.g. 10,000) became spendable currency on every reboot, and the seats a resumed tournament needs were deleted. Fixed: only cash-table seats cash out; deletes target exactly the processed rows.
+2. **Force-completed tournaments never paid out.** Stuck COMPLETING tournaments were blind-flipped to COMPLETED (verified live: a COMPLETED bounty MTT with **8 players still 'playing'** and $60 of a $100 guaranteed pool never paid; 755 stranded rows platform-wide, all horses). Fixed: recovery now assigns remaining positions by chip count, pays winner + unpaid ITM places (idempotent), then completes. Historical stranded rows healed by migration.
+3. **Spin&Go economics were a guaranteed house loss at creation** (pool = buyIn × players × multiplier ≈ 2.75× every dollar collected). Fixed to standard buyIn × multiplier.
+4. **Mystery bounty payouts were minted, not funded**: collection ignored the value assigned to the player's head at registration and re-rolled hardcoded multipliers with `Math.random()` — unbounded, and the revealed number ≠ the paid number. Fixed: pays the stored head value (bounded by what was collected); crypto-RNG clamped fallback.
+5. **Bounties routed to the wrong player**: knocker = first winner of the table's most recent hand — even if the busted player wasn't in that hand (5s sweep lag) and regardless of side pots. Fixed: last hand the busted player actually played, largest-pot winner.
+6. **PKO/bounty champions forfeited their own bounty head** (never paid at the win). Fixed: champion collects it at finish, logged, idempotent.
+7. **Simultaneous full-table bust double-paid 1st place** (eliminatePlayer paid position 1, then finishTournament paid the winner again). Fixed: top stack is spared from the elimination sweep; eliminations can never pay position 1.
+8. **Restart-orphaned SNG/Spins were cancelled with NO refund** — real players simply lost buy-in + fee. Fixed: full refund + fee reversal in the rake ledger for non-horse entrants.
+9. **Blind clock reset to a full level on every restart** (level_started_at never persisted) — restart-heavy windows nearly froze escalation. Fixed: level clock persists; resume arms the REMAINING time. Add-on window flag also persists now.
+10. **Every tournament created with a standard blind structure FAILED validation** — turbo/regular/deepStack presets contain break levels (0/0 blinds) and the monotonicity check rejected them. Fixed: breaks skip the check.
+11. **Late-registering players were never seated** — the open-seat lookup filtered `status in ('active','running')` but started tables are `'RUNNING'` (case-sensitive). Everyone went to the alternates list. Fixed.
+12. **Owner "Start" raced the server's discovery loop** → double tables + double seating; client-seated players also had **no stacks** (seat insert omitted `stack`) and `tables.current_players` stayed 0. Fixed: atomic start claim (CAS), stacks seeded, counts recorded. Start button now requires 3 players (2 triggered insta-cancel).
+13. **Scheduler defects**: bounty portion double-counted into prize pools (MTT + XMTT); horses double-booked into simultaneous events; DB-error → duplicate-creation storms (now fails closed); schedule hours now UTC.
+
+## Remaining decisions / follow-ups (documented, not changed)
+
+- Recurring SNGs/Spins fill to capacity with horses — humans can never join them. Decide desired mix (e.g. horsesToRegister = maxPlayers − 1) — changing it affects the always-running bot ecosystem.
+- Horse prize credits are real wallet credits against pools funded by phantom (free) horse entries — the horse economy mints; consider funding horse buy-ins from club treasury like cash-table rebuys.
+- `TableBreakEngine` (warning countdown flow) and `ChipRaceEngine` are dead code (chip race hard-disabled; its single-chip branch would mint a denomination if re-enabled).
+- Elimination position during open late reg is relative to the current field (early busts get flattering places); same-hand tie ordering is arbitrary among equal busts.
+- Mystery bounty reveal overlay guards on a `playerName` field the event never carries (dead overlay); satellite seat awards unimplemented; client waitlist tables unwired.
+- `waitForHandComplete` gives up after 30s — table moves can still catch a marathon hand mid-flight.
+
+## Deploy & verify
+
+1. `bash ~/Documents/club-arena/DEPLOY-TOURNEY-AUDIT.sh` (explicit adds; your Horse V3 WIP stays unstaged — the script prints the staged set and the untouched WIP for eyeball confirmation).
+2. DB migration 20260724c already applied (columns + hygiene).
+3. Post-deploy checks (expect zero): stranded 'playing' rows in tournaments completed after deploy; tournament hands with rake > 0; spins with prize_pool ≠ buyIn × multiplier.

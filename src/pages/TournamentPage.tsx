@@ -1117,7 +1117,11 @@ export default function TournamentPage() {
                       className="btn btn-warning btn-block"
                       style={{ marginTop: '1rem' }}
                       onClick={handleStart}
-                      disabled={selectedTournament.current_players < 2}
+                      /* TOURNEY-AUDIT 2026-07-24: minimum is 3 — the service
+                         AUTO-CANCELS at start with < 3 registered, so enabling
+                         this button at 2 players cancelled the tournament the
+                         moment the owner clicked Start. */
+                      disabled={selectedTournament.current_players < 3}
                     >
                       Start Tournament
                     </button>

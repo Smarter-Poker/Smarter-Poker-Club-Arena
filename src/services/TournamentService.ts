@@ -661,7 +661,15 @@ class TournamentService {
     }
 
     // VALIDATION: Blind structure must have increasing blinds and positive durations
+    // TOURNEY-AUDIT 2026-07-24: BREAK levels (isBreak / 0-0 blinds) are now
+    // SKIPPED in the monotonicity check. The standard turbo/regular/deepStack
+    // presets all contain break entries encoded as smallBlind:0/bigBlind:0, so
+    // the old check threw "must not decrease" on EVERY tournament created with
+    // a break-containing structure — a hard creation blocker.
     if (config.blindStructure && Array.isArray(config.blindStructure)) {
+      const isBreakLevel = (l: any): boolean =>
+        !!l?.isBreak || (Number(l?.smallBlind) === 0 && Number(l?.bigBlind) === 0);
+      let prevPlaying: any = null;
       for (let i = 0; i < config.blindStructure.length; i++) {
         const level = config.blindStructure[i] as any;
         if (level.durationMinutes !== undefined && level.durationMinutes <= 0) {
@@ -669,18 +677,19 @@ class TournamentService {
             `Blind level ${i + 1} has invalid duration (${level.durationMinutes}). Must be > 0.`
           );
         }
-        if (i > 0) {
-          const prev = config.blindStructure[i - 1] as any;
+        if (isBreakLevel(level)) continue; // breaks don't participate in blind monotonicity
+        if (prevPlaying) {
           // FIX: Use OR — either blind decreasing is invalid (was AND, which allowed partial decreases)
           if (
-            Number(level.smallBlind) < Number(prev.smallBlind) ||
-            Number(level.bigBlind) < Number(prev.bigBlind)
+            Number(level.smallBlind) < Number(prevPlaying.smallBlind) ||
+            Number(level.bigBlind) < Number(prevPlaying.bigBlind)
           ) {
             throw new Error(
-              `Blind structure must not decrease: level ${i + 1} (${level.smallBlind}/${level.bigBlind}) is lower than level ${i} (${prev.smallBlind}/${prev.bigBlind})`
+              `Blind structure must not decrease: level ${i + 1} (${level.smallBlind}/${level.bigBlind}) is lower than the previous playing level (${prevPlaying.smallBlind}/${prevPlaying.bigBlind})`
             );
           }
         }
+        prevPlaying = level;
       }
     }
 
@@ -1081,7 +1090,11 @@ class TournamentService {
           .from('tables')
           .select('id, max_players, current_players')
           .eq('tournament_id', tournamentId)
-          .in('status', ['active', 'running']);
+          // TOURNEY-AUDIT 2026-07-24: 'RUNNING' added — startTournament and
+          // createFinalTable write UPPERCASE status, so this case-sensitive
+          // filter never matched a started table and every late-registering
+          // player was dumped to the alternate list instead of being seated.
+          .in('status', ['active', 'running', 'RUNNING', 'waiting']);
 
         const openTable = (tables || []).find((t) => t.current_players < t.max_players);
         if (openTable) {
@@ -1464,6 +1477,23 @@ class TournamentService {
       );
     }
 
+    // TOURNEY-AUDIT 2026-07-24 [race guard]: CLAIM the start atomically BEFORE
+    // creating any tables. The server's tournament discovery loop starts
+    // tournaments too — without this compare-and-swap, an owner clicking
+    // "Start" while the server loop fired created DOUBLE tables and DOUBLE
+    // seating for the same tournament. Whoever loses the CAS backs off.
+    {
+      const { data: claimed } = await supabase
+        .from('tournaments')
+        .update({ status: 'RUNNING', started_at: new Date().toISOString() })
+        .eq('id', tournamentId)
+        .in('status', ['ANNOUNCED', 'REGISTERING'])
+        .select('id');
+      if (!claimed || claimed.length === 0) {
+        throw new Error('Tournament is already starting (server or another admin claimed it)');
+      }
+    }
+
     // 2. Create Tables
     const playersPerTable = 9;
     const numTables = Math.ceil(players.length / playersPerTable);
@@ -1509,20 +1539,30 @@ class TournamentService {
         table_id: tableAssign.tableId,
         seat_number: tableAssign.nextSeat,
         user_id: player.user_id,
+        // TOURNEY-AUDIT 2026-07-24: seats were inserted with NO stack — the
+        // engine reads table_seats.stack, so client-started tournaments seated
+        // everyone with a null stack.
+        stack: tournament.starting_chips,
       });
       if (seatErr) reportError(seatErr, 'TournamentService.Failed_to_seat_player_playeruser_id');
       tableAssign.nextSeat++;
     }
 
-    // 4. Update Tournament
+    // TOURNEY-AUDIT 2026-07-24: record each table's seated count — the seat
+    // loop never bumped tables.current_players, so every tournament table
+    // reported 0 players (breaking balance/merge checks and the Tables tab).
+    for (const ts of tableSeats) {
+      await supabase
+        .from('tables')
+        .update({ current_players: ts.nextSeat - 1 })
+        .eq('id', ts.tableId);
+    }
+
+    // 4. Refresh tournament row (status/started_at were already CAS-claimed above)
     const { data, error } = await supabase
       .from('tournaments')
-      .update({
-        status: 'RUNNING',
-        started_at: new Date().toISOString(),
-      })
-      .eq('id', tournamentId)
       .select()
+      .eq('id', tournamentId)
       .maybeSingle();
 
     if (error) throw error;

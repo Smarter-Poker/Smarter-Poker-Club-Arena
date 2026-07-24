@@ -111,6 +111,21 @@ export function PlayerCard({
     }
   }, [isFlipping, isVisible, isFlipped]);
 
+  // UI-AUDIT #7: HoleCards keys children by array index, so these PlayerCard
+  // instances are reused across hands. The deal/flip flags above only ever
+  // move toward `true`, so a reused card would skip its deal animation and could
+  // stay revealed into the next hand. Reset them when the card stops dealing /
+  // goes hidden so the next hand re-animates from scratch. (When isDealing is
+  // false the deal classNames are inert, so clearing hasDealt is visually safe
+  // and simply re-arms the animation for the next deal.)
+  useEffect(() => {
+    if (!isDealing) setHasDealt(false);
+  }, [isDealing]);
+
+  useEffect(() => {
+    if (!isVisible) setIsFlipped(false);
+  }, [isVisible]);
+
   // Get size config
   const sizeConfig = SIZE_CONFIG[size];
 

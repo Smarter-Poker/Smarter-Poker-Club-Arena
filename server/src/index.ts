@@ -29,6 +29,7 @@ import { ChannelWebSocketServer } from './transport/ChannelWebSocketServer.js';
 import { channelHub } from './hub/ChannelHub.js';
 import { GameServer } from './GameServer.js';
 import { createRouter } from './router.js';
+import { hydrateHorseMind } from './services/HorseMindHydrator.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -64,6 +65,10 @@ httpServer.listen(PORT, () => {
     reportError(err, 'GameServer.Fatal_error');
     process.exit(1);
   });
+  // AUDIT V6 (2026-07-24): restore the horses' learned opponent memory from
+  // the last 24h of real hand history. Fire-and-forget — never blocks boot,
+  // never throws (fail-safe inside).
+  void hydrateHorseMind();
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

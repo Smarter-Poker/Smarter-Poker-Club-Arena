@@ -72,15 +72,16 @@ export class ChipRaceEngine {
       throw new Error('Cannot execute chip race with no players');
     }
 
-    // FIX 161: Single player — no race needed, round UP to nearest denomination.
-    // A single player's fractional chips have no opponents to race against,
-    // and no player can be eliminated by a chip race (minimum 1 chip guarantee).
+    // FIX 161 → TOURNEY-AUDIT 2026-07-24 (sweep 4): Single player — no race
+    // needed. Round DOWN (floor) to the denomination: the old round-UP awarded
+    // a free denomination whenever fractional chips existed, MINTING chips and
+    // violating tournament chip conservation (flagged while the engine is
+    // disabled so it is safe whenever chip race is re-enabled). The minimum
+    // 1-denomination guarantee still protects a sub-denomination stack.
     if (playerStacks.size === 1) {
       const [playerId, stack] = playerStacks.entries().next().value!;
       const fractionalChips = stack % newDenomination;
-      // Round up: if they have any fractional chips, award one new denomination
-      const chipsAwarded = fractionalChips > 0 ? newDenomination : 0;
-      const newStack = Math.max(newDenomination, stack - fractionalChips + chipsAwarded);
+      const newStack = Math.max(newDenomination, stack - fractionalChips);
       playerStacks.set(playerId, newStack);
 
       return {
@@ -93,11 +94,11 @@ export class ChipRaceEngine {
             stack: newStack,
             fractionalChips,
             lotteryValue: 0,
-            chipsAwarded,
+            chipsAwarded: 0,
           },
         ],
         totalFractionalCollected: fractionalChips,
-        totalNewChipsDistributed: chipsAwarded > 0 ? 1 : 0,
+        totalNewChipsDistributed: 0,
       };
     }
 

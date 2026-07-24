@@ -57,6 +57,111 @@ const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 sec
  *      reached its final/guaranteed size).
  *   4. Tournament flips COMPLETING → COMPLETED (CAS-guarded).
  */
+/**
+ * TOURNEY-AUDIT 2026-07-24 (sweep 4): shared cleanup for every server-side
+ * tournament CANCELLATION path (restart-orphaned SNG/Spins, >12h stale MTTs).
+ * Verified live after sweep 3: cancels left tournament_players rows stranded
+ * in 'playing'/'registered' forever (64 new stranded rows within an hour) and
+ * left tournament tables open. This helper:
+ *   1. Refunds every REAL (non-horse) entrant who hasn't already been paid a
+ *      prize: full buy-in + fee, with a fee-reversal row in the rake ledger.
+ *   2. Closes all tournament_players rows (playing/registered → eliminated).
+ *   3. Closes the tournament's tables.
+ * Idempotent: refunds key off rows still open at call time; re-running after
+ * step 2 finds nothing left to refund.
+ */
+async function refundAndCloseCancelledTournament(
+  tournamentId: string,
+  tournamentName: string | null,
+  refundReason: string
+): Promise<void> {
+  try {
+    const { data: fullT } = await supabase
+      .from('tournaments')
+      .select('buy_in_amount, buy_in_fee, club_id, name')
+      .eq('id', tournamentId)
+      .maybeSingle();
+    const refundAmount = Number(fullT?.buy_in_amount || 0) + Number(fullT?.buy_in_fee || 0);
+    const fee = Number(fullT?.buy_in_fee || 0);
+
+    // Open rows = not yet eliminated/paid. Only these are refund candidates.
+    const { data: openRows } = await supabase
+      .from('tournament_players')
+      .select('id, user_id, prize')
+      .eq('tournament_id', tournamentId)
+      .in('status', ['playing', 'registered']);
+
+    if (refundAmount > 0 && (openRows?.length ?? 0) > 0) {
+      const ids = (openRows ?? []).map((r) => r.user_id);
+      const { data: horseRows } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('id', ids)
+        .eq('is_horse', true);
+      const horseSet = new Set((horseRows ?? []).map((h) => h.id));
+      for (const row of openRows ?? []) {
+        if (horseSet.has(row.user_id)) continue; // horses paid nothing
+        if (Number(row.prize || 0) > 0) continue; // already paid a prize — no refund on top
+        const { error: refErr } = await supabase.rpc('credit_player_wallet', {
+          p_user_id: row.user_id,
+          p_amount: refundAmount,
+        });
+        if (refErr) {
+          reportError(
+            new Error(
+              `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refErr.message}`
+            ),
+            'GameServer.cancel_refund_failed'
+          );
+          continue;
+        }
+        await supabase.rpc('log_wallet_transaction', {
+          p_user_id: row.user_id,
+          p_wallet_type: 'PLAYER',
+          p_amount: refundAmount,
+          p_type: 'credit',
+          p_category: 'refund',
+          p_description: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
+          p_table_id: null,
+          p_hand_id: null,
+          p_related_entity_id: tournamentId,
+        });
+        if (fee > 0 && fullT?.club_id) {
+          await supabase.from('rake_records').insert({
+            hand_id: null,
+            table_id: tournamentId,
+            club_id: fullT.club_id,
+            rake_amount: -fee,
+            pot_size: fee,
+            num_players: 1,
+            bbj_contribution: 0,
+            is_tournament: true,
+            tournament_id: tournamentId,
+            source: 'GameServer.cancel_refund',
+            metadata: { kind: 'tournament_fee_refund', user_id: row.user_id },
+          });
+        }
+      }
+    }
+
+    // Close the player rows so nothing is stranded in 'playing'/'registered'
+    await supabase
+      .from('tournament_players')
+      .update({ status: 'eliminated', eliminated_at: new Date().toISOString() })
+      .eq('tournament_id', tournamentId)
+      .in('status', ['playing', 'registered']);
+
+    // Close the tournament's tables
+    await supabase
+      .from('tables')
+      .update({ status: 'closed', current_players: 0 })
+      .eq('tournament_id', tournamentId)
+      .neq('status', 'closed');
+  } catch (err) {
+    reportError(err, 'GameServer.refundAndCloseCancelledTournament');
+  }
+}
+
 async function recoverStuckCompletingTournaments(
   reason: string,
   onlyTournamentId?: string
@@ -742,81 +847,14 @@ export class GameServer {
           if (!cancelUpdated) continue;
           cancelledCount++;
 
-          // TOURNEY-AUDIT 2026-07-24 [money]: the old path cancelled with NO
-          // refund — real players in a restart-orphaned SNG/Spin simply lost
-          // their buy-in + fee. Refund every non-horse entrant in full and
-          // reverse the collected fee in the rake ledger.
-          try {
-            const { data: fullT } = await supabase
-              .from('tournaments')
-              .select('buy_in_amount, buy_in_fee, club_id, name')
-              .eq('id', t.id)
-              .maybeSingle();
-            const refundAmount = Number(fullT?.buy_in_amount || 0) + Number(fullT?.buy_in_fee || 0);
-            if (refundAmount > 0) {
-              // Two-step horse filter (no FK-embed dependency): fetch entrants,
-              // then their is_horse flags, refund only real players.
-              const { data: allEntrants } = await supabase
-                .from('tournament_players')
-                .select('user_id')
-                .eq('tournament_id', t.id);
-              const entrantIds = (allEntrants ?? []).map((e) => e.user_id);
-              let horseSet = new Set<string>();
-              if (entrantIds.length > 0) {
-                const { data: horseRows } = await supabase
-                  .from('profiles')
-                  .select('id')
-                  .in('id', entrantIds)
-                  .eq('is_horse', true);
-                horseSet = new Set((horseRows ?? []).map((h) => h.id));
-              }
-              const entrants = (allEntrants ?? []).filter((e) => !horseSet.has(e.user_id));
-              for (const e of entrants) {
-                const { error: refErr } = await supabase.rpc('credit_player_wallet', {
-                  p_user_id: e.user_id,
-                  p_amount: refundAmount,
-                });
-                if (refErr) {
-                  reportError(
-                    new Error(
-                      `[GameServer] SNG/Spin restart-cancel refund FAILED for ${e.user_id}: ${refErr.message}`
-                    ),
-                    'GameServer.sng_restart_refund_failed'
-                  );
-                  continue;
-                }
-                await supabase.rpc('log_wallet_transaction', {
-                  p_user_id: e.user_id,
-                  p_wallet_type: 'PLAYER',
-                  p_amount: refundAmount,
-                  p_type: 'credit',
-                  p_category: 'refund',
-                  p_description: `SNG/Spin cancelled on server restart: ${fullT?.name || t.name || 'tournament'}`,
-                  p_table_id: null,
-                  p_hand_id: null,
-                  p_related_entity_id: t.id,
-                });
-                const fee = Number(fullT?.buy_in_fee || 0);
-                if (fee > 0 && fullT?.club_id) {
-                  await supabase.from('rake_records').insert({
-                    hand_id: null,
-                    table_id: t.id,
-                    club_id: fullT.club_id,
-                    rake_amount: -fee,
-                    pot_size: fee,
-                    num_players: 1,
-                    bbj_contribution: 0,
-                    is_tournament: true,
-                    tournament_id: t.id,
-                    source: 'GameServer.restart_cancel_refund',
-                    metadata: { kind: 'tournament_fee_refund', user_id: e.user_id },
-                  });
-                }
-              }
-            }
-          } catch (refundErr) {
-            reportError(refundErr, 'GameServer.sng_restart_refund_exception');
-          }
+          // TOURNEY-AUDIT 2026-07-24 (sweep 4): full cancel cleanup — refunds
+          // real players (buy-in + fee, with fee reversal), closes stranded
+          // tournament_players rows, and closes the tournament's tables.
+          await refundAndCloseCancelledTournament(
+            t.id,
+            t.name ?? null,
+            'SNG/Spin cancelled on server restart'
+          );
         }
       }
       if (cancelledCount > 0) {
@@ -861,6 +899,15 @@ export class GameServer {
           .from('tournaments')
           .update({ status: 'CANCELLED', ended_at: new Date().toISOString() })
           .eq('id', t.id);
+        // TOURNEY-AUDIT 2026-07-24 (sweep 4): the "separate scheduled cleanup
+        // should refund affected players" promised in the comment above NEVER
+        // EXISTED — real players in a crashed >12h MTT simply lost their money,
+        // and their tournament_players rows + tables stayed open forever.
+        await refundAndCloseCancelledTournament(
+          t.id,
+          t.name ?? null,
+          'Tournament cancelled (stalled >12h)'
+        );
         console.log(
           `[GameServer] Cancelled genuinely stale RUNNING tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no recent hands)`
         );
@@ -879,6 +926,42 @@ export class GameServer {
       // is owed (positions by chip count, prizes per normalized payout
       // structure) before completing.
       await recoverStuckCompletingTournaments('startup-cleanup');
+
+      // 8. TOURNEY-AUDIT 2026-07-24 (sweep 4): close ORPHANED tournament tables.
+      // A crashed/abandoned tournament left its tables status='running' forever
+      // (finishTournament only closes tables in the in-memory engine map). Any
+      // open table whose tournament is COMPLETED/CANCELLED gets closed here.
+      try {
+        const { data: openTourneyTables } = await supabase
+          .from('tables')
+          .select('id, tournament_id')
+          .not('tournament_id', 'is', null)
+          .in('status', ['waiting', 'running', 'RUNNING'])
+          .limit(500);
+        if (openTourneyTables && openTourneyTables.length > 0) {
+          const tourneyIds = [...new Set(openTourneyTables.map((t) => t.tournament_id))];
+          const { data: finished } = await supabase
+            .from('tournaments')
+            .select('id')
+            .in('id', tourneyIds)
+            .in('status', ['COMPLETED', 'CANCELLED']);
+          const finishedSet = new Set((finished ?? []).map((t) => t.id));
+          const orphanIds = openTourneyTables
+            .filter((t) => finishedSet.has(t.tournament_id))
+            .map((t) => t.id);
+          for (let i = 0; i < orphanIds.length; i += 100) {
+            await supabase
+              .from('tables')
+              .update({ status: 'closed', current_players: 0 })
+              .in('id', orphanIds.slice(i, i + 100));
+          }
+          if (orphanIds.length > 0) {
+            console.log(`[GameServer] Closed ${orphanIds.length} orphaned tournament tables`);
+          }
+        }
+      } catch (orphanErr) {
+        reportError(orphanErr, 'GameServer.orphan_table_sweep');
+      }
 
       console.log('[GameServer] Stale data cleanup complete');
     } catch (err) {
@@ -1234,16 +1317,23 @@ export class TournamentManager {
     this.onBreak = true;
 
     // Save remaining blind timer time
+    // TOURNEY-AUDIT 2026-07-24 (sweep 4): the empty-structure guard used to
+    // `return` AFTER setting onBreak=true but BEFORE clearing the timer —
+    // leaving the level clock running through the "break" with onBreak stuck
+    // true. The timer is now always cleared once the break begins.
     if (this.blindTimer) {
       const elapsed = Date.now() - this.blindTimerStartedAt;
-      const blindStructure = this.tournamentCache?.blind_structure || [];
-      if (!blindStructure || blindStructure.length === 0) return;
-      const currentLevelData =
-        blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)];
-      const totalMs = (currentLevelData?.durationMinutes || 10) * 60 * 1000;
-      this.savedBlindTimerRemaining = Math.max(totalMs - elapsed, 1000);
       clearTimeout(this.blindTimer);
       this.blindTimer = null;
+      const blindStructure = this.tournamentCache?.blind_structure || [];
+      if (blindStructure && blindStructure.length > 0) {
+        const currentLevelData =
+          blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)];
+        const totalMs = (currentLevelData?.durationMinutes || 10) * 60 * 1000;
+        this.savedBlindTimerRemaining = Math.max(totalMs - elapsed, 1000);
+      } else {
+        this.savedBlindTimerRemaining = 0;
+      }
     }
 
     console.log(
@@ -1585,6 +1675,27 @@ export class TournamentManager {
 
       // Start blind timer
       this.startBlindTimer(tournament.blind_structure || []);
+
+      // TOURNEY-AUDIT 2026-07-24 (sweep 4): with NO late-reg/rebuy window
+      // configured (cap <= 0), the prize pool is final from the first hand —
+      // but the finalization gate only fired when cap > 0, so prizePoolFinalized
+      // stayed false forever and eliminated-prize top-ups never ran for these
+      // tournaments (under-payment when the pool later moved, e.g. guarantees).
+      {
+        const lateRegCap = tournament.late_reg_levels ?? tournament.rebuy_levels ?? 8;
+        if (!lateRegCap || lateRegCap <= 0) {
+          this.prizePoolFinalized = true;
+          const { error: fpErr } = await supabase
+            .from('tournaments')
+            .update({ prize_pool_finalized: true })
+            .eq('id', this.tournamentId);
+          if (fpErr && !/column|schema/i.test(fpErr.message || '')) {
+            console.warn(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] prize_pool_finalized persist failed: ${fpErr.message}`
+            );
+          }
+        }
+      }
 
       // Start elimination checker
       this.startEliminationChecker();
@@ -2436,6 +2547,10 @@ export class TournamentManager {
         const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
           p_user_id: userId,
           p_amount: prize,
+          // P0-1 FIX: idempotency key neutralises the committed-but-timed-out
+          // retry double-credit in this 3x loop. Deterministic per (tournament,
+          // player, finishing position) — a retry of the same prize is a no-op.
+          p_idempotency_key: `tourney:${this.tournamentId}:prize:${userId}:${position}`,
         });
         if (!creditErr) {
           creditSuccess = true;
@@ -2688,6 +2803,25 @@ export class TournamentManager {
         is_mystery_revealed: true,
       });
 
+      // TOURNEY-AUDIT 2026-07-24 (sweep 4): broadcast the reveal so the client
+      // MysteryBountyReveal overlay actually fires. It was previously dead —
+      // no server event carried the playerName/amount payload it requires.
+      try {
+        const { data: knockerRow } = await supabase
+          .from('tournament_players')
+          .select('username')
+          .eq('tournament_id', this.tournamentId)
+          .eq('user_id', knockerUserId)
+          .maybeSingle();
+        await this.broadcast('mystery_bounty_revealed', {
+          playerName: knockerRow?.username || 'Player',
+          amount: mysteryValue,
+          avgBounty: baseBounty > 0 ? baseBounty : undefined,
+        });
+      } catch {
+        /* reveal broadcast is cosmetic — never block the payout path */
+      }
+
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY: ${knockerUserId.slice(0, 8)} revealed ${mysteryValue} from ${eliminatedUserId.slice(0, 8)}`
       );
@@ -2740,6 +2874,11 @@ export class TournamentManager {
       const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
         p_user_id: knockerUserId,
         p_amount: amount,
+        // P0-1 FIX: idempotency key neutralises the committed-but-timed-out
+        // retry double-credit in this 3x loop. Deterministic per (tournament,
+        // knocker, eliminated player) — one bounty per elimination, so a retry
+        // of the same bounty is a no-op.
+        p_idempotency_key: `tourney:${this.tournamentId}:bounty:${knockerUserId}:${eliminatedUserId}`,
       });
       if (!creditErr) {
         creditSuccess = true;
@@ -3276,7 +3415,16 @@ export class TournamentManager {
           // pre-hand stack, so a player who won/lost the in-flight hand arrived
           // at the new table with the wrong stack (chips created/destroyed).
           const engine = this.tableEngines.get(bt.tableId);
-          if (engine) await this.waitForHandComplete(bt.tableId);
+          if (engine) {
+            const safe = await this.waitForHandComplete(bt.tableId);
+            if (!safe) {
+              // TOURNEY-AUDIT 2026-07-24 (sweep 4): never move players mid-hand.
+              console.warn(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${bt.tableId.slice(0, 8)} still in-hand after 60s — deferring break to next balance cycle`
+              );
+              continue;
+            }
+          }
 
           await this.executePlayerMoves(breakMoves);
 
@@ -3346,17 +3494,28 @@ export class TournamentManager {
           // AUDIT FIX 2026-07-19: gap rebalance previously moved players with no
           // regard for in-flight hands. Wait for each source table's current
           // hand to complete (final stacks persisted) before moving.
-          const sourceTables = [...new Set(moves.map((m) => m.fromTableId))];
+          const sourceTables = [...new Set(moves.map((m) => m.fromTableId))] as string[];
+          const unsafeTables = new Set<string>();
           for (const t of sourceTables) {
-            await this.waitForHandComplete(t);
+            const safe = await this.waitForHandComplete(t);
+            if (!safe) unsafeTables.add(t);
           }
+          // TOURNEY-AUDIT 2026-07-24 (sweep 4): drop moves from tables still
+          // in-hand instead of moving players with stale mid-hand stacks.
+          const safeMoves = moves.filter((m) => !unsafeTables.has(m.fromTableId));
+          if (unsafeTables.size > 0) {
+            console.warn(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring ${moves.length - safeMoves.length} rebalance move(s) — source table(s) still in-hand`
+            );
+          }
+          if (safeMoves.length > 0) {
+            await this.executePlayerMoves(safeMoves);
 
-          await this.executePlayerMoves(moves);
-
-          await this.broadcast('table_rebalance', {
-            moveCount: moves.length,
-            reason: 'gap_balance',
-          });
+            await this.broadcast('table_rebalance', {
+              moveCount: safeMoves.length,
+              reason: 'gap_balance',
+            });
+          }
         }
       }
     }
@@ -3431,28 +3590,38 @@ export class TournamentManager {
    * Wait for any active hand on a table to complete before stopping engine.
    * Polls every 2s, up to 30s timeout.
    */
-  private async waitForHandComplete(tableId: string): Promise<void> {
-    const { data: activeHand } = await supabase
-      .from('hand_history')
-      .select('id')
-      .eq('table_id', tableId)
-      .is('ended_at', null)
-      .maybeSingle();
+  /**
+   * TOURNEY-AUDIT 2026-07-24 (sweep 4): two fixes.
+   * (a) WIRING: the old check queried hand_history with ended_at IS NULL —
+   *     but hand_history rows are only INSERTED at hand COMPLETION (always
+   *     with ended_at stamped), so the query never matched and the "wait"
+   *     was a no-op: every table break / rebalance proceeded immediately,
+   *     including mid-hand. The live in-flight-hand tracker is
+   *     hand_state_snapshots (is_complete = false) — used now.
+   * (b) Returns whether the table is actually SAFE to move players from.
+   *     After the 60s budget, callers now SKIP the move for this cycle
+   *     instead of proceeding mid-hand (chips created/destroyed).
+   */
+  private async waitForHandComplete(tableId: string): Promise<boolean> {
+    const isIdle = async (): Promise<boolean> => {
+      const { data: snap } = await supabase
+        .from('hand_state_snapshots')
+        .select('id')
+        .eq('table_id', tableId)
+        .eq('is_complete', false)
+        .limit(1)
+        .maybeSingle();
+      return !snap;
+    };
 
-    if (activeHand) {
-      let waited = 0;
-      while (waited < 30000 && this.running) {
-        await new Promise((r) => setTimeout(r, 2000));
-        waited += 2000;
-        const { data: still } = await supabase
-          .from('hand_history')
-          .select('id')
-          .eq('id', activeHand.id)
-          .is('ended_at', null)
-          .maybeSingle();
-        if (!still) break;
-      }
+    if (await isIdle()) return true;
+    let waited = 0;
+    while (waited < 60000 && this.running) {
+      await new Promise((r) => setTimeout(r, 2000));
+      waited += 2000;
+      if (await isIdle()) return true;
     }
+    return false;
   }
 
   /**

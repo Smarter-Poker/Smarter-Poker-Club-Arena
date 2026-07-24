@@ -506,7 +506,7 @@ class TournamentService {
     const { data: clubTournaments, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level'
       )
       .eq('club_id', resolvedId)
       .order('created_at', { ascending: false });
@@ -551,7 +551,7 @@ class TournamentService {
           const { data: xmttData } = await supabase
             .from('tournaments')
             .select(
-              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at'
+              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level'
             )
             .eq('union_id', unionClub.union_id)
             .eq('is_xmtt', true)
@@ -588,7 +588,7 @@ class TournamentService {
     const { data, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level'
       )
       .eq('id', tournamentId)
       .maybeSingle();
@@ -1218,6 +1218,20 @@ class TournamentService {
       throw new Error('Cannot unregister after tournament started');
     }
 
+    // TOURNEY-AUDIT 2026-07-24 (sweep 4): enforce the 1-minute-before-start
+    // cutoff the sign-up modal has always PROMISED ("Cannot unregister within
+    // 1 minute of the start time") but nothing enforced — players could yank
+    // their entry at the exact start instant and race the seating flow.
+    if (
+      (tournament.status === 'REGISTERING' || tournament.status === 'ANNOUNCED') &&
+      tournament.start_time
+    ) {
+      const msToStart = new Date(tournament.start_time).getTime() - Date.now();
+      if (msToStart <= 60 * 1000 && msToStart > -5 * 60 * 1000) {
+        throw new Error('Cannot unregister within 1 minute of the start time');
+      }
+    }
+
     // CRITICAL: Verify player is actually registered BEFORE issuing any refund
     const { data: existingReg } = await supabase
       .from('tournament_players')
@@ -1783,6 +1797,26 @@ class TournamentService {
         nextLevel: blinds[1] || null,
         timeRemainingSeconds: blinds[0].durationMinutes * 60,
         levelIndex: 0,
+      };
+    }
+
+    // TOURNEY-AUDIT 2026-07-24 (sweep 4): the SERVER-persisted current_level is
+    // authoritative when present. The wall-clock derivation below ignores
+    // synchronized breaks, hand-for-hand pauses, and restarts, so it drifts
+    // AHEAD of the real level and mis-gated late-reg/rebuy/add-on windows
+    // (which are additionally enforced server-side in process_tournament_rebuy
+    // now). Wall-clock remains the fallback for level TIMING display only.
+    const serverLevel = (tournament as unknown as { current_level?: number | null }).current_level;
+    if (typeof serverLevel === 'number' && serverLevel >= 0 && serverLevel < blinds.length) {
+      const level = blinds[serverLevel];
+      return {
+        currentLevel: level,
+        nextLevel: blinds[serverLevel + 1] || null,
+        // Exact within-level remaining time isn't derivable client-side
+        // (server owns the clock); show the full level duration as an upper
+        // bound — the table UI gets precise timing from engine broadcasts.
+        timeRemainingSeconds: (level?.durationMinutes || 10) * 60,
+        levelIndex: serverLevel,
       };
     }
 

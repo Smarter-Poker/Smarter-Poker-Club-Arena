@@ -242,3 +242,35 @@ Line-by-line audit of the entire tournament stack: GameServer tournament runtime
 1. `bash ~/Documents/club-arena/DEPLOY-TOURNEY-AUDIT.sh` (explicit adds; your Horse V3 WIP stays unstaged — the script prints the staged set and the untouched WIP for eyeball confirmation).
 2. DB migration 20260724c already applied (columns + hygiene).
 3. Post-deploy checks (expect zero): stranded 'playing' rows in tournaments completed after deploy; tournament hands with rake > 0; spins with prize_pool ≠ buyIn × multiplier.
+
+---
+
+# SWEEP 4 — Tournament re-pass: remaining defects closed + hardening
+
+Deploy: `bash ~/Documents/club-arena/DEPLOY-TOURNEY-SWEEP4.sh` (explicit staging). DB migration 20260724d already applied.
+
+## Sweep-3 deploy verified live
+
+Spins now created at exactly buyIn × multiplier; tournament rake still zero; recovery/migration healed all 755 historical stranded rows.
+
+## New defects found in the re-pass (all FIXED)
+
+1. **Cancel paths still stranded players — including my own sweep-3 fix.** Live data showed 64 NEW stranded 'playing'/'registered' rows within an hour: every server-side cancel (restart-orphaned SNG/Spins, >12h stale MTTs) cancelled the tournament without closing tournament_players rows or tables — and the >12h stale-MTT cancel **never refunded anyone** (its comment promised a "separate scheduled cleanup" that does not exist). All cancel paths now share one cleanup: refund real players in full (buy-in + fee, fee reversed in the rake ledger, skipping anyone already paid a prize), close player rows, close tables. Idempotent.
+2. **The in-hand guard for table moves was a NO-OP** — `waitForHandComplete` queried `hand_history … ended_at IS NULL`, but hand_history rows are only inserted _at hand completion_ (always with ended_at set), so the query never matched: every table break and rebalance since the guard was written has proceeded immediately, including mid-hand (the exact chips-created/destroyed bug the guard was supposed to prevent). Now checks the real in-flight tracker (hand_state_snapshots.is_complete = false) and **skips** unsafe moves for the cycle instead of forcing them after a timeout.
+3. **Rebuy/add-on/re-entry windows were client-only** — the `process_tournament_rebuy` RPC enforced nothing but wallet balance: no RUNNING check, no level windows, no stack limit, no one-add-on rule. Direct RPC calls (or a drifted client clock) could buy chips at any moment of any tournament. All rules now enforced atomically server-side using the server's own `current_level` (migration applied).
+4. **Client level clock drifted past the server's** — `getCurrentLevelState` derived the level purely from wall-clock since started_at, ignoring synchronized breaks, hand-for-hand pauses, and restarts, so the client opened/closed late-reg/rebuy/add-on windows out of sync. Now uses the server-persisted `current_level` when available (added to the tournament selects).
+5. **pauseForBreak early-return leak**: with an empty blind structure the break set `onBreak=true` and returned with the level timer still running. Timer now always cleared when a break begins.
+6. **Cap=0 tournaments never finalized their prize pool** (the finalize gate required cap > 0), so eliminated-prize top-ups never ran for them. Now finalized at start.
+7. **Orphaned tournament tables** (from crashed engines) stayed 'running' forever; startup now closes tables of COMPLETED/CANCELLED tournaments.
+8. **Mystery bounty reveal overlay was dead** — no server event ever carried the payload it required. The engine now broadcasts `mystery_bounty_revealed` (knocker name, amount, avg for tier math) and TournamentPage relays it to the overlay.
+9. **Prize pool displays over-advertised** — TournamentDetails showed max(DB pool, buy_in × entries), counting FREE horse entries and ignoring the fee split. Displays now use the authoritative DB pool (guarantee-floored).
+10. **Unregister cutoff enforced** — the promised "no unregister within 1 minute of start" now actually blocks (was UI text only).
+11. **ChipRaceEngine single-player branch minted a free denomination** on round-up — fixed to round down (engine currently disabled; safe whenever re-enabled).
+
+## Still open by design / needs Dan's decision
+
+- Recurring SNGs/Spins fill 100% with horses (humans can't join) — awaiting your call on holding a seat open.
+- Horse tournament prizes are minted wallet credits (phantom-entry pools) — horse economy design decision.
+- Elimination position during open late reg is relative to the current field; same-hand tie order among equal stacks is arbitrary (money-safe since sweep 3; standings cosmetics).
+- TableBreakEngine (fancy break-warning countdown) remains dead code — superseded by TableBalancer.breakTable; safe to delete in a cleanup PR.
+- Satellite seat awards and the tournament_waitlists tables remain unimplemented/unwired.

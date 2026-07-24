@@ -446,6 +446,21 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
 // SNG / SPIN CONFIGS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// TOURNEY-AUDIT 2026-07-24 (sweep 6): Dan's rule — SNGs and Spins hold ONE
+// seat open for a human by default (horses fill maxPlayers - 1; the game
+// starts when a human takes the last seat). Every Nth created game is a
+// FULL-HORSE VERIFICATION GAME that fills and runs immediately, keeping a
+// continuous live self-test of rake collection, payouts, blind levels and
+// completion flowing through production (asserted by the tournament invariant
+// sentinel + scripts/verify-tournaments.mjs).
+const FULL_HORSE_SIM_EVERY_N = 10;
+let sngSpinCreationCounter = 0;
+function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boolean } {
+  sngSpinCreationCounter++;
+  const isSim = sngSpinCreationCounter % FULL_HORSE_SIM_EVERY_N === 0;
+  return { horses: isSim ? maxPlayers : Math.max(1, maxPlayers - 1), isSim };
+}
+
 const SNG_CONFIGS: SNGConfig[] = [
   {
     name: '5 Chip Turbo SNG 6-Max NLH',
@@ -1186,7 +1201,10 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      const registered = await this.registerHorses(sng.id, config.horsesToRegister);
+      // TOURNEY-AUDIT 2026-07-24 (sweep 6): hold one seat for a human (full
+      // fill only on periodic verification games).
+      const seatPlan = horsesForSeatHeldGame(config.maxPlayers);
+      const registered = await this.registerHorses(sng.id, seatPlan.horses);
       const prizePool = config.buyIn * registered;
 
       const { error: sngUpdateErr } = await supabase
@@ -1261,7 +1279,10 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      const registered = await this.registerHorses(spin.id, config.horsesToRegister);
+      // TOURNEY-AUDIT 2026-07-24 (sweep 6): hold one seat for a human (full
+      // fill only on periodic verification games).
+      const spinSeatPlan = horsesForSeatHeldGame(config.maxPlayers);
+      const registered = await this.registerHorses(spin.id, spinSeatPlan.horses);
       // TOURNEY-AUDIT 2026-07-24 [money]: standard Spin&Go economics — the
       // prize is buyIn x multiplier (ONE unit), not buyIn x players x
       // multiplier. The old formula set a 3-seat 2x spin's pool to 6 units

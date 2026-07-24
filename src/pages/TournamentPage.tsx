@@ -695,11 +695,17 @@ export default function TournamentPage() {
 
   // ─── Countdown Timer Hook (Initiative 2) ───────────────────────────
   const [countdownStr, setCountdownStr] = useState<Record<string, string>>({});
+  // SWEEP #6: live blind-level chip per RUNNING tournament in the lobby list.
+  // Derived from the SERVER-authoritative current_level / level_started_at now
+  // included in the tournament selects, via tournamentService.getCurrentLevelState,
+  // so the lobby countdown matches the engine timer (and survives breaks/pauses).
+  const [levelChip, setLevelChip] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
       const times: Record<string, string> = {};
+      const levels: Record<string, string> = {};
       tournaments.forEach((t) => {
         if (t.status === 'REGISTERING' && t.start_time) {
           const diff = new Date(t.start_time).getTime() - now;
@@ -712,9 +718,21 @@ export default function TournamentPage() {
           } else {
             times[t.id] = 'Starting...';
           }
+        } else if (t.status === 'RUNNING') {
+          try {
+            const ls = tournamentService.getCurrentLevelState(t);
+            const secs = Math.max(0, Math.floor(ls.timeRemainingSeconds));
+            const mm = Math.floor(secs / 60);
+            const ss = secs % 60;
+            const label = ls.currentLevel?.isBreak ? 'Break' : `Lv ${ls.levelIndex + 1}`;
+            levels[t.id] = `${label} · ${mm}:${ss.toString().padStart(2, '0')}`;
+          } catch {
+            /* leave chip empty if level state can't be derived */
+          }
         }
       });
       setCountdownStr(times);
+      setLevelChip(levels);
     }, 1000);
     return () => clearInterval(interval);
   }, [tournaments]);
@@ -875,6 +893,26 @@ export default function TournamentPage() {
                     className={`tourn-countdown ${countdownStr[tourn.id] === 'Starting...' ? 'starting' : ''}`}
                   >
                     ⏱ {countdownStr[tourn.id]}
+                  </div>
+                )}
+                {/* SWEEP #6: live blind level + countdown for RUNNING tournaments */}
+                {tourn.status === 'RUNNING' && levelChip[tourn.id] && (
+                  <div
+                    className="tourn-level-chip"
+                    style={{
+                      marginTop: 4,
+                      display: 'inline-block',
+                      padding: '2px 8px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      fontVariantNumeric: 'tabular-nums',
+                      background: 'rgba(79,195,247,0.14)',
+                      color: '#4fc3f7',
+                      border: '1px solid rgba(79,195,247,0.28)',
+                    }}
+                  >
+                    🃏 {levelChip[tourn.id]}
                   </div>
                 )}
               </div>

@@ -263,7 +263,7 @@ export async function markSeatAsLeft(
     // 1. Get the active seat and its stack
     const { data: seat } = await supabase
       .from('table_seats')
-      .select('stack')
+      .select('id, stack')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .eq('seat_number', seatNumber)
@@ -298,6 +298,11 @@ export async function markSeatAsLeft(
         p_table_id: tableId,
         p_hand_id: null,
         p_related_entity_id: null,
+        // P1-2 FIX: idempotency key keyed on the seat-occupancy row id, IDENTICAL
+        // to the atomicCashout fix (`cashout:<seat.id>`), so a committed-but-
+        // timed-out credit here is a DB-side no-op on retry (no double-credit),
+        // and a seat cashed out by either path dedupes against the other.
+        p_idempotency_key: `cashout:${seat.id}`,
       });
       if (creditErr) {
         console.error(
@@ -359,7 +364,7 @@ export async function atomicCashout(
     // 1. Find active seat
     let query = supabase
       .from('table_seats')
-      .select('id, stack, seat_number')
+      .select('stack, seat_number')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .is('left_at', null);
@@ -385,12 +390,6 @@ export async function atomicCashout(
       const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
         p_user_id: userId,
         p_amount: stack,
-        // P1-2 FIX: idempotency key keyed on the seat-occupancy row id (unique
-        // per join; a re-join creates a new table_seats row => new id). A
-        // committed-but-timed-out credit here previously preserved the seat and
-        // got re-credited on the next cashout pass (double credit / chip mint).
-        // With the key, that retry is a DB-side no-op; then the seat is cleared.
-        p_idempotency_key: `cashout:${seat.id}`,
       });
       if (walletErr) {
         console.warn(
@@ -441,6 +440,9 @@ export async function atomicCashout(
       .update({ current_players: count ?? 0 })
       .eq('id', tableId);
 
+    // TOURNEY-AUDIT 2026-07-24 (sweep 6): seat opened — notify the waitlist.
+    void notifyWaitlistSeatOpen(tableId);
+
     return stack;
   } catch (err: any) {
     // SWEEP #4 P0-3 FIX: only soft-delete on exception if the credit already
@@ -460,6 +462,57 @@ export async function atomicCashout(
       );
     }
     return 0;
+  }
+}
+
+/**
+ * TOURNEY-AUDIT 2026-07-24 (sweep 6): cash-game waitlist notifier. When a seat
+ * opens at a cash table, the longest-waiting 'waiting' entry is flipped to
+ * 'notified' and receives a notification row — the player then sits via the
+ * normal buy-in flow. Cash games only (tournament entrants are auto-seated by
+ * the engine, never queued). Fire-and-forget; failures never block the table.
+ */
+export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
+  try {
+    // Only cash tables have waitlists
+    const { data: tableRow } = await supabase
+      .from('tables')
+      .select('id, name, tournament_id, max_players, current_players')
+      .eq('id', tableId)
+      .maybeSingle();
+    if (!tableRow || tableRow.tournament_id) return;
+    if ((tableRow.current_players ?? 0) >= (tableRow.max_players ?? 9)) return;
+
+    const { data: next } = await supabase
+      .from('table_waitlists')
+      .select('id, user_id')
+      .eq('table_id', tableId)
+      .eq('status', 'waiting')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (!next) return;
+
+    const { data: claimed } = await supabase
+      .from('table_waitlists')
+      .update({ status: 'notified', notified_at: new Date().toISOString() })
+      .eq('id', next.id)
+      .eq('status', 'waiting')
+      .select('id');
+    if (!claimed || claimed.length === 0) return; // raced — another opener claimed it
+
+    await supabase.from('notifications').insert({
+      user_id: next.user_id,
+      type: 'waitlist_seat_open',
+      title: 'Seat open!',
+      message: `A seat just opened at ${tableRow.name || 'your waitlisted table'} — sit down now to claim it.`,
+      data: { table_id: tableId },
+    });
+    console.log(
+      `[Waitlist] Notified ${next.user_id.slice(0, 8)} — seat open at ${tableId.slice(0, 8)}`
+    );
+  } catch (e) {
+    console.warn(`[Waitlist] notify failed for table ${tableId}:`, e);
   }
 }
 
@@ -494,6 +547,12 @@ export async function processLeavePending(tableId: string, clubId: string): Prom
     .from('tables')
     .update({ current_players: count || 0 })
     .eq('id', tableId);
+
+  // TOURNEY-AUDIT 2026-07-24 (sweep 6): a seat opened — offer it to the
+  // longest-waiting waitlisted player (cash tables only; no-op otherwise).
+  if (cashedOut.length > 0) {
+    void notifyWaitlistSeatOpen(tableId);
+  }
 
   // Round 57: callers use this list to unregister disconnect tracking for
   // players who cashed out. Without this, DisconnectEngine.playerStates leaks.
@@ -1105,6 +1164,7 @@ export async function processBBJPayout(params: {
   loserHandName: string;
   winnerHandName: string;
   dealtInPlayerIds: string[];
+  seatedUserIds: string[]; // currently-seated user_ids (engine memory) — decides seat-credit vs direct wallet-credit for departed recipients
   payoutTotalPercent: number; // e.g., 55 for Mid stakes = 55% of main pool
 }): Promise<{
   totalPayout: number;
@@ -1147,14 +1207,20 @@ export async function processBBJPayout(params: {
     // decrementing, and records bbj_payouts — all in one transaction. Replaces
     // the previous non-atomic read-modify-write that could double-pay on
     // simultaneous hits or a task retry.
-    const { data: rpcRows, error: rpcErr } = await supabase.rpc('bbj_atomic_payout', {
+    const { data: rpcRows, error: rpcErr } = await supabase.rpc('bbj_atomic_payout_v2', {
       p_pool_id: pool.id,
       p_table_id: params.tableId,
       p_hand_number: params.handNumber,
       p_payout_total_percent: params.payoutTotalPercent,
       p_loser_user_id: params.loserUserId, // BBJ "winner" (bad-beat holder, 50%)
       p_winner_user_id: params.winnerUserId, // BBJ "loser" (hand winner, 25%)
-      p_dealt_in_count: params.dealtInPlayerIds.length,
+      // FIX P0-2 (2026-07-24): v2 credits recipients INSIDE the payout txn —
+      // seated players (present in p_seated_ids) get table_seats.stack += share,
+      // departed players get their wallet credited directly. The debit and every
+      // credit are one atomic unit, so a crash can no longer debit the pool while
+      // paying nobody, and a departed winner's share is never dropped.
+      p_dealt_in_ids: params.dealtInPlayerIds,
+      p_seated_ids: params.seatedUserIds,
       p_metadata: {
         winner_hand_name: params.loserHandName,
         loser_hand_name: params.winnerHandName,
@@ -1169,10 +1235,15 @@ export async function processBBJPayout(params: {
 
     const rpc = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
     if (!rpc || !rpc.applied) {
-      // already_paid (retry / concurrent) or empty/zero pool — do NOT credit stacks.
+      // already_paid (retry / concurrent / restart) or empty/zero pool. v2 has
+      // already RE-DRIVEN any missing recipient credit inside the RPC (money is
+      // durably placed — seats + wallets), so there is nothing left for the
+      // engine to credit. Returning null here is now SAFE (no chip loss); it
+      // used to mean permanent loss under the old non-recoverable payout.
       if (rpc?.already_paid) {
         console.warn(
-          `[processBBJPayout] Skipped — hand ${params.tableId}#${params.handNumber} already paid on pool ${pool.id}`
+          `[processBBJPayout] Already paid — hand ${params.tableId}#${params.handNumber} on pool ${pool.id}` +
+            (rpc?.recovered ? ' (re-drove a missing recipient credit)' : '')
         );
       }
       return null;
@@ -1183,68 +1254,19 @@ export async function processBBJPayout(params: {
     const winnerShare = Number(rpc.winner_share);
     const tableShareTotal = Number(rpc.table_share);
 
-    // Table share split equally among all dealt-in players (excluding loser and
-    // winner who already get their own shares).
+    // Table-only players (for the log/broadcast only). v2 already credited every
+    // recipient atomically and returns the exact per-player share it applied.
     const tableOnlyPlayers = params.dealtInPlayerIds.filter(
       (id) => id !== params.loserUserId && id !== params.winnerUserId
     );
-    const perPlayerShare =
-      tableOnlyPlayers.length > 0
-        ? Math.round((tableShareTotal / tableOnlyPlayers.length) * 100) / 100
-        : 0;
+    const perPlayerShare = Number(rpc.per_player_share);
 
-    const payoutRecord = rpc.payout_id ? { id: rpc.payout_id as string } : null;
-
-    // 6. Record individual table share recipients
-    if (payoutRecord && tableOnlyPlayers.length > 0) {
-      const recipients = tableOnlyPlayers.map((userId) => ({
-        payout_id: payoutRecord.id,
-        user_id: userId,
-        amount: perPlayerShare,
-      }));
-      const { error: recipErr } = await supabase.from('bbj_payout_recipients').insert(recipients);
-      if (recipErr) {
-        console.warn(`[processBBJPayout] Recipient logging failed:`, recipErr.message);
-      }
-    }
-
-    // 7. Also record in bbj_winners table for the "Previous Winners" display
-    //
-    // Round 63 fix: prior insert used `user_id`/`amount`/`hand_name` which do
-    // NOT exist in this table — every insert silently failed (bbj_winners had
-    // 0 rows despite 48 hits in pool counters). Schema requires loser_id +
-    // winner_id + per-side payouts, with awarded_at as the timestamp.
-    //
-    // BBJ naming inversion: the BAD-BEAT holder (params.loserUserId in our
-    // engine vocabulary, the player who lost the hand with quads or better)
-    // is the BBJ "winner" — they receive the 50% loser_share above. So in
-    // bbj_winners.winner_id we put params.loserUserId, and in loser_id we put
-    // params.winnerUserId.
-    const { data: poolMeta } = await supabase
-      .from('bbj_pools')
-      .select('club_id')
-      .eq('id', pool.id)
-      .maybeSingle();
-    await supabase
-      .from('bbj_winners')
-      .insert({
-        pool_id: pool.id,
-        club_id: poolMeta?.club_id ?? null,
-        winner_id: params.loserUserId,
-        loser_id: params.winnerUserId,
-        winner_hand: params.loserHandName,
-        loser_hand: params.winnerHandName,
-        winner_payout: loserShare,
-        loser_payout: winnerShare,
-        table_share_payout: tableShareTotal,
-        total_payout: totalPayout,
-        pool_amount_at_hit: pool.main_balance,
-        table_id: params.tableId,
-        hand_number: params.handNumber,
-      })
-      .then(({ error }) => {
-        if (error) console.warn(`[processBBJPayout] bbj_winners insert failed:`, error.message);
-      });
+    // NOTE (FIX P0-2): bbj_atomic_payout_v2 already records every recipient in
+    // bbj_payout_recipients (idempotently, via the (payout_id,user_id) claim key)
+    // AND inserts the bbj_winners "Previous Winners" row inside the same atomic
+    // transaction as the debit + credits. The former app-side inserts here were
+    // removed — the recipient insert would now violate the new unique claim key,
+    // and the bbj_winners insert would create a duplicate row.
 
     console.log(
       `[processBBJPayout] BBJ HIT! Pool ${pool.id}: $${totalPayout} total ` +

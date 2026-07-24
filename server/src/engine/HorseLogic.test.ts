@@ -839,3 +839,176 @@ describe('HorseLogic V4 — street IQ', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. V5 — DYNAMIC HAND READING: street narrowing, probes, river discipline
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('HorseMind V5 — dynamic hand reading', () => {
+  it('narrows a barreller street by street', () => {
+    const openOnly: ActionRecord[] = [
+      { seat: 1, userId: 'v', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
+      { seat: 2, userId: 'h', action: 'call', amount: 6, timestamp: 2, stage: 'preflop' },
+    ];
+    const barrel1: ActionRecord[] = [
+      ...openOnly,
+      { seat: 1, userId: 'v', action: 'bet', amount: 8, timestamp: 3, stage: 'flop' },
+      { seat: 2, userId: 'h', action: 'call', amount: 8, timestamp: 4, stage: 'flop' },
+    ];
+    const barrel2: ActionRecord[] = [
+      ...barrel1,
+      { seat: 1, userId: 'v', action: 'bet', amount: 20, timestamp: 5, stage: 'turn' },
+    ];
+    const b0 = HorseMind.bandFor('v', openOnly, 2)!;
+    const b1 = HorseMind.bandFor('v', barrel1, 2)!;
+    const b2 = HorseMind.bandFor('v', barrel2, 2)!;
+    expect(b1[0]).toBeGreaterThan(b0[0]); // one barrel tightens the floor
+    expect(b2[0]).toBeGreaterThan(b1[0]); // two barrels tighten it further
+    expect(b2[0]).toBeLessThanOrEqual(0.9); // but bluffs stay in the range
+  });
+
+  it('detects a street that checked through', () => {
+    const checked: ActionRecord[] = [
+      { seat: 1, userId: 'a', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
+      { seat: 2, userId: 'b', action: 'call', amount: 6, timestamp: 2, stage: 'preflop' },
+      { seat: 2, userId: 'b', action: 'check', amount: 0, timestamp: 3, stage: 'flop' },
+      { seat: 1, userId: 'a', action: 'check', amount: 0, timestamp: 4, stage: 'flop' },
+    ];
+    expect(HorseMind.streetCheckedThrough(checked, 'flop')).toBe(true);
+    const bet: ActionRecord[] = [
+      ...checked.slice(0, 3),
+      { seat: 1, userId: 'a', action: 'bet', amount: 8, timestamp: 4, stage: 'flop' },
+    ];
+    expect(HorseMind.streetCheckedThrough(bet, 'flop')).toBe(false);
+    expect(HorseMind.streetCheckedThrough([], 'flop')).toBe(false);
+  });
+
+  it('probes the turn after a checked-through flop more than without the read', () => {
+    const mkGs = (): any => ({
+      players: [
+        mkPlayer(2, { user_id: 'hero-probe', cards: [c('9c'), c('8c')] }),
+        mkPlayer(5, { user_id: 'villain' }),
+      ],
+      communityCards: [c('Kd'), c('7s'), c('2c'), c('5h')],
+      pot: 13,
+      currentBet: 0,
+      minRaise: 2,
+      stage: 'turn',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      dealerSeat: 2,
+      actionHistory: [
+        { seat: 5, userId: 'villain', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
+        { seat: 2, userId: 'hero-probe', action: 'call', amount: 6, timestamp: 2, stage: 'preflop' },
+        { seat: 5, userId: 'villain', action: 'check', amount: 0, timestamp: 3, stage: 'flop' },
+        { seat: 2, userId: 'hero-probe', action: 'check', amount: 0, timestamp: 4, stage: 'flop' },
+      ],
+    });
+    const n = 150;
+    let withHR = 0;
+    let withoutHR = 0;
+    for (let i = 0; i < n; i++) {
+      const a = mkGs();
+      if (['bet', 'all_in'].includes(HorseLogic.decide(a.players[0], a, 'tag', {}, {}).action))
+        withHR++;
+      const b = mkGs();
+      if (
+        ['bet', 'all_in'].includes(
+          HorseLogic.decide(b.players[0], b, 'tag', {}, { handReading: false }).action
+        )
+      )
+        withoutHR++;
+    }
+    expect(withHR).toBeGreaterThan(withoutHR); // the capped-range probe exists
+  });
+
+  it('checks back medium hands on the river instead of thin bet-folding', () => {
+    // Pick a hand whose measured river equity vs a random hand lands in the
+    // THIN-VALUE band (0.52..0.62) — that is where V5 polarization applies.
+    const board = [c('Ad'), c('Kc'), c('8s'), c('4h'), c('2c')];
+    const candidates: Card[][] = [
+      [c('Qs'), c('8h')], // third pair
+      [c('9h'), c('9d')], // underpair
+      [c('Th'), c('8d')], // third pair weak kicker
+      [c('Qh'), c('4d')], // fourth pair
+    ];
+    let hole: Card[] | null = null;
+    for (const cand of candidates) {
+      const eq = HorseLogic.estimateEquity(cand, board, 1, 'nlh', 4000);
+      if (eq >= 0.53 && eq <= 0.61) {
+        hole = cand;
+        break;
+      }
+    }
+    expect(hole).not.toBe(null); // at least one medium hand must exist here
+    const mkGs = (): any => ({
+      players: [mkPlayer(2, { cards: hole! }), mkPlayer(5)],
+      communityCards: board,
+      pot: 30,
+      currentBet: 0,
+      minRaise: 2,
+      stage: 'river',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      dealerSeat: 2,
+    });
+    const n = 200;
+    let betsHR = 0;
+    let betsBase = 0;
+    for (let i = 0; i < n; i++) {
+      const a = mkGs();
+      if (['bet', 'all_in'].includes(HorseLogic.decide(a.players[0], a, 'balanced').action))
+        betsHR++;
+      const b = mkGs();
+      if (
+        ['bet', 'all_in'].includes(
+          HorseLogic.decide(b.players[0], b, 'balanced', {}, { handReading: false }).action
+        )
+      )
+        betsBase++;
+    }
+    // V5 thin-bets the river at ~25% vs the base ~65% — demand a real gap.
+    expect(betsHR).toBeLessThan(betsBase - 20);
+  });
+
+  it('hand-reading decisions stay legal across randomized multi-street histories', () => {
+    for (let trial = 0; trial < 400; trial++) {
+      const deck = shuffle(makeDeck(false));
+      const boardCount = [4, 5][trial % 2];
+      const stage = boardCount === 4 ? 'turn' : 'river';
+      const hero = mkPlayer(1, { cards: deck.slice(0, 2), stack: 60 + Math.random() * 240 });
+      const villain = mkPlayer(2, { cards: deck.slice(2, 4) });
+      const currentBet = Math.random() < 0.5 ? 0 : Math.random() * 30;
+      const hist: any[] = [
+        { seat: 2, userId: 'horse-2', action: 'raise', amount: 6, timestamp: 9000 + trial * 10, stage: 'preflop' },
+        { seat: 1, userId: 'horse-1', action: 'call', amount: 6, timestamp: 9001 + trial * 10, stage: 'preflop' },
+      ];
+      if (trial % 3 === 0) {
+        hist.push({ seat: 2, userId: 'horse-2', action: 'bet', amount: 8, timestamp: 9002 + trial * 10, stage: 'flop' });
+        hist.push({ seat: 1, userId: 'horse-1', action: 'call', amount: 8, timestamp: 9003 + trial * 10, stage: 'flop' });
+      } else if (trial % 3 === 1) {
+        hist.push({ seat: 2, userId: 'horse-2', action: 'check', amount: 0, timestamp: 9002 + trial * 10, stage: 'flop' });
+        hist.push({ seat: 1, userId: 'horse-1', action: 'check', amount: 0, timestamp: 9003 + trial * 10, stage: 'flop' });
+      }
+      const gs: any = {
+        players: [hero, villain],
+        communityCards: deck.slice(4, 4 + boardCount),
+        pot: 10 + Math.random() * 60,
+        currentBet,
+        minRaise: 2,
+        stage,
+        gameVariant: 'nlh',
+        bigBlind: 2,
+        dealerSeat: (trial % 2) + 1,
+        lastRaise: 2,
+        actionHistory: hist,
+      };
+      const d = HorseLogic.decide(hero, gs, STYLES[trial % STYLES.length]);
+      const bs = calculateBettingState(gs.pot, gs.currentBet, hero.bet, 2, 2, false);
+      const check = validateAction(d.action, d.amount, hero.stack, bs);
+      if (!check.valid) {
+        throw new Error(`V5 ILLEGAL ${stage}: ${d.action} ${d.amount} — ${check.error}`);
+      }
+    }
+  });
+});

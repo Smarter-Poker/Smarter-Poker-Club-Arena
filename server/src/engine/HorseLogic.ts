@@ -35,6 +35,15 @@
  *  - Scare-card awareness: fresh flush/straight/pair completions slow value
  *    down, tighten calls without blockers, and upgrade blocker bluffs.
  *
+ * V5 (2026-07-24) DYNAMIC HAND READING upgrades:
+ *  - Street-by-street range narrowing: every postflop street an opponent bets
+ *    or raises tightens their sampled range — a turn barrel is priced as a
+ *    barrel, not as the preflop range.
+ *  - Missed-c-bet probes: when a street checks through, the capped field gets
+ *    attacked with turn probes and delayed c-bets.
+ *  - River polarization: medium made hands stop thin bet-folding into
+ *    non-stations and take check-back/bluff-catch lines instead.
+ *
  * ZERO browser dependencies. Runs on Node.js. Decisions are synchronous and
  * budgeted to stay under ~15ms even for 6-card PLO.
  */
@@ -537,7 +546,11 @@ function simulateEquity(
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
-  if (oppBands && vi.isOmaha) iterations = Math.max(60, Math.floor(iterations * 0.7));
+  if (oppBands && vi.isOmaha) {
+    // Multiway banded pots multiply the rejection-sampling cost per iteration;
+    // scale the iteration count down harder to hold the latency budget.
+    iterations = Math.max(60, Math.floor(iterations * (numOpponents >= 3 ? 0.5 : 0.65)));
+  }
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
   for (const c of boardCards) known.add(cardKey(c));
@@ -609,7 +622,7 @@ function simulateEquity(
           s < band[0] ? band[0] - s : s > band[1] ? s - band[1] : 0;
 
         const narrow = band[1] - band[0] < 0.45;
-        const tries = vi.isOmaha ? (narrow ? 8 : 4) : narrow ? 14 : 6;
+        const tries = vi.isOmaha ? (narrow ? 6 : 4) : narrow ? 14 : 6;
 
         let bestDist = distOf(scoreOf(oppCards));
         let bestKeys: string[] | null = null; // null = current window is best
@@ -1083,13 +1096,16 @@ export interface HorseGameStateV2 extends HorseGameState {
   actionHistory?: ActionRecord[];
 }
 
-/** V3/V4 decision options (benchmark/test hooks — production uses defaults). */
+/** V3/V4/V5 decision options (benchmark/test hooks — production uses defaults). */
 export interface HorseDecideOpts {
   /** disable the HorseMind opponent-intelligence layer (default: enabled) */
   mind?: boolean;
   /** disable the V4 street-IQ layer: initiative, position, scare cards,
    *  made-hand class, pot geometry (default: enabled) */
   streetIQ?: boolean;
+  /** disable the V5 dynamic hand-reading layer: street-by-street range
+   *  narrowing, missed-c-bet probes, river polarization (default: enabled) */
+  handReading?: boolean;
 }
 
 export class HorseLogic {
@@ -1147,7 +1163,8 @@ export class HorseLogic {
         vi,
         params,
         opts.mind !== false,
-        opts.streetIQ !== false
+        opts.streetIQ !== false,
+        opts.handReading !== false
       );
     }
 
@@ -1327,7 +1344,8 @@ export class HorseLogic {
     vi: VariantInfo,
     params: StyleParams,
     useMind: boolean = true,
-    useIQ: boolean = true
+    useIQ: boolean = true,
+    useHR: boolean = true
   ): HorseDecision {
     const { currentBet, pot } = gs;
     const toCall = Math.max(0, currentBet - player.bet);
@@ -1351,12 +1369,12 @@ export class HorseLogic {
     let blocker = false;
     if (useMind) {
       try {
-        bands = HorseMind.bandsForOpponents(
-          player.seat,
-          gs.players,
-          gs.actionHistory,
-          gs.bigBlind
-        );
+        // V5: full history feeds street-by-street range narrowing. The
+        // hand-reading OFF branch (A/B harnesses) sees preflop lines only.
+        const bandHistory = useHR
+          ? gs.actionHistory
+          : (gs.actionHistory || []).filter((a) => a.stage === 'preflop');
+        bands = HorseMind.bandsForOpponents(player.seat, gs.players, bandHistory, gs.bigBlind);
         exploit = HorseMind.tableExploit(player.seat, gs.players);
         const tex = HorseMind.texture(gs.communityCards);
         wetness = tex.wetness;
@@ -1408,6 +1426,11 @@ export class HorseLogic {
         /* street IQ is best-effort — fall back to V3 behavior */
       }
     }
+    // V5: the previous street checked through — the field's ranges are capped
+    // and a probe/delayed c-bet prints. Turn only (river probes are thinner).
+    const prevChecked =
+      useHR && street === 'turn' && HorseMind.streetCheckedThrough(gs.actionHistory, 'flop');
+
     // Vulnerable made hand: real hand today, wet board, cards to come — bet for
     // protection, never slowplay. (Strong two pair / trips / weak straight.)
     const vulnerable = useIQ && cat >= 3 && cat <= 5 && wetness >= 0.45 && drawsLive;
@@ -1462,9 +1485,14 @@ export class HorseLogic {
       }
       // Thin value / protection — thinner into stations (valueThinMod > 1).
       // V4: vulnerable made hands always bet-protect; dangered hands check.
+      // V5 river polarization: medium made hands stop thin-betting into
+      // non-stations on the river — they get called by better and fold out
+      // worse. Check back and win at showdown instead.
       if (equity >= 0.52 + mw - (exploit.valueThinMod - 1) * 0.08) {
         if (dangered) return { action: 'check', thinkTime: 0 };
-        if (vulnerable || fastRandom() < 0.65) {
+        const thinFreq =
+          isRiver && useHR && exploit.valueThinMod <= 1.05 && equity < 0.62 + mw ? 0.25 : 0.65;
+        if (vulnerable || fastRandom() < thinFreq) {
           return this.betSize(pot, sizeBase + fastRandom() * 0.12, player, gs, vi, params);
         }
         return { action: 'check', thinkTime: 0 };
@@ -1472,15 +1500,19 @@ export class HorseLogic {
       // V4 CONTINUATION BET: the preflop/prior-street aggressor keeps the
       // pressure on favorable boards even without made equity. Small sizing,
       // dry-board + short-handed gated, position-scaled, station-aware.
+      // V5 PROBE: when the previous street checked through, everyone's range
+      // is capped — attack it even without the betting lead (delayed c-bet /
+      // missed-c-bet stab).
       if (
-        initiative === 'hero' &&
+        (initiative === 'hero' || prevChecked) &&
         oppCount <= 2 &&
         wetness <= 0.45 &&
         !scare.any &&
         equity >= 0.18 &&
         equity < 0.52 &&
         !isRiver &&
-        fastRandom() < (oppCount === 1 ? 0.6 : 0.35) * Math.min(1.3, bluffScale)
+        fastRandom() <
+          (oppCount === 1 ? 0.6 : 0.35) * (prevChecked ? 1.15 : 1.0) * Math.min(1.3, bluffScale)
       ) {
         return this.betSize(pot, 0.3 + fastRandom() * 0.1, player, gs, vi, params);
       }

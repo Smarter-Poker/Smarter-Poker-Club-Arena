@@ -14,6 +14,8 @@
  *     open / call / 3-bet / blind-check) maps to a hand-strength band,
  *     tightened or loosened by that specific player's observed PFR & 3-bet
  *     tendencies. A nit's open means a different range than a maniac's.
+ *     V5 (2026-07-24): the band keeps narrowing street by street — every
+ *     postflop bet or raise raises the floor of the read.
  *  3. RANGE-CONDITIONED SAMPLING — the Monte Carlo equity loop deals opponent
  *     hole cards FROM their read range instead of uniformly at random. Top
  *     pair vs a 3-bettor is finally priced like top pair vs a 3-bettor.
@@ -214,9 +216,18 @@ export class HorseMind {
 
     let raisesBefore = 0;
     let line: 'none' | 'limp' | 'call' | 'open' | 'threebet' | 'check' = 'none';
+    // V5 (2026-07-24): dynamic hand reading — postflop actions keep narrowing
+    // the band. Track the streets on which this player bet/raised.
+    const aggrStreets = new Set<string>();
     for (const a of history) {
-      if (a.stage !== 'preflop') break;
       const isAggr = a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true);
+      if (a.stage !== 'preflop') {
+        if (a.userId === userId) {
+          if (a.action === 'fold') return null;
+          if (isAggr) aggrStreets.add(a.stage);
+        }
+        continue;
+      }
       if (a.userId === userId) {
         if (isAggr) {
           line = raisesBefore >= 1 ? 'threebet' : 'open';
@@ -274,9 +285,36 @@ export class HorseMind {
       }
     }
 
+    // V5: every postflop street they bet or raised narrows the read upward.
+    // A flop-and-turn barreller is priced as strong, not as their preflop
+    // range. Capped so even a triple barrel leaves bluffs in the range.
+    if (aggrStreets.size > 0) {
+      lo += Math.min(0.2, aggrStreets.size * 0.07);
+      hi = Math.min(1, hi + 0.05); // aggression uncaps the top of the range
+    }
+
     lo = Math.max(0, Math.min(0.9, lo));
     hi = Math.max(lo + 0.1, Math.min(1, hi));
     return [lo, hi];
+  }
+
+  /**
+   * V5: true when the previous street checked through — nobody bet or raised
+   * on it. A missed c-bet / checked-through street caps the field's ranges
+   * and invites a probe.
+   */
+  static streetCheckedThrough(
+    history: ActionRecord[] | undefined,
+    prevStage: 'flop' | 'turn'
+  ): boolean {
+    if (!history || history.length === 0) return false;
+    let sawStreet = false;
+    for (const a of history) {
+      if (a.stage !== prevStage) continue;
+      sawStreet = true;
+      if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in') return false;
+    }
+    return sawStreet;
   }
 
   // ───────────────────────────────────────────────────────────────────────────

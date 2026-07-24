@@ -27,6 +27,13 @@ import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
 import { monteCarloEquity } from './MonteCarloEquity.js';
 import { getEquityPool } from './equity/EquityWorkerPool.js';
+// ── ADDITIVE (flag-gated, default OFF): event-sourcing shadow (#1), observability (#5), integrity (#5) ──
+import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
+import type { BlindKind, Street as ShadowStreet } from './eventlog/events.js';
+import * as EngineMetrics from '../observability/engineInstruments.js';
+import { startHandSpan, type Span as EngineSpan } from '../observability/Tracing.js';
+import { integrityFeed } from '../integrity/IntegrityFeed.js';
+import type { HandHistoryRow } from '../integrity/HandEventAdapter.js';
 import { insuranceEquity } from './InsuranceEquity.js';
 import { evaluateHand, evaluateOmahaHand, compareHands, determineWinners } from './PokerEngine.js';
 import { RakebackEngine } from './RakebackEngine.js';
@@ -101,6 +108,22 @@ export class ServerTableEngine {
   private turnFSM: StateMachine<TurnFSMState> = createTurnStateMachine('waiting');
   private handCount: number = 0;
   private handController: HandController | null = null;
+
+  // ── ADDITIVE (flag-gated, default OFF) — event-sourcing shadow / observability / integrity ──
+  /** Cached once at construction: emit shadow events + replay-verify at hand end. Default OFF. */
+  private readonly eventShadowEnabled: boolean = process.env.EVENT_SHADOW === 'on';
+  /** Cached once at construction: start/export tracing spans (endpoint gated in health.ts). Default OFF. */
+  private readonly engineMetricsEnabled: boolean = process.env.ENGINE_METRICS === 'on';
+  /** Cached once at construction: feed completed hands to the anti-cheat detectors. Default OFF. */
+  private readonly integrityFeedEnabled: boolean = process.env.INTEGRITY_FEED === 'on';
+  /** Per-hand shadow recorder (only constructed when eventShadowEnabled). */
+  private shadowRecorder: ShadowRecorder | null = null;
+  /** Guard so HoleCardsDealt is recorded once per hand despite per-seat CARDS_DEALT events. */
+  private shadowHoleCardsRecorded: boolean = false;
+  /** Per-hand tracing span (only started when engineMetricsEnabled). */
+  private handSpan: EngineSpan | null = null;
+  /** Epoch ms an action was accepted — used for the act→broadcast latency histogram. */
+  private lastActionAcceptedAtMs: number = 0;
   /**
    * Phase 1.1 PR-2: Authoritative state hub for native-WS delivery to clients.
    * When set, every broadcastCurrentState() publishes to the hub in parallel
@@ -317,6 +340,12 @@ export class ServerTableEngine {
       // hand then stalls until the 10-minute void — a griefing / stack-reclaim
       // exploit. Re-arm the normal turn timer for the reconnecting player.
       if (event.type === 'PLAYER_RECONNECTED') {
+        // ── ADDITIVE observability (#5): WS reconnect counter ──
+        try {
+          EngineMetrics.wsReconnectsTotal.inc(1);
+        } catch {
+          /* metrics must never affect gameplay */
+        }
         this.rearmTurnTimerIfCurrent(event.playerId);
         // FIX 2 (2026-07-24): re-deliver hole cards for the current hand. The
         // public snapshot is re-sent by the hub on reconnect, but hole cards
@@ -387,6 +416,14 @@ export class ServerTableEngine {
    */
   public getCurrentButtonSeat(): number {
     return this.currentHandDealerSeat;
+  }
+
+  /** ADDITIVE (#1): map an engine blind-posting `type` string to a typed BlindKind. */
+  private shadowBlindKind(t: string): BlindKind {
+    if (t === 'small_blind' || t === 'big_blind' || t === 'ante' || t === 'straddle') return t;
+    if (t === 'sb') return 'small_blind';
+    if (t === 'bb') return 'big_blind';
+    return 'small_blind';
   }
 
   /**
@@ -2066,6 +2103,14 @@ export class ServerTableEngine {
       // FIX 149: Wire telemetry — record that player acted within timer
       this.engineTelemetry.recordTimerActed(this.tableId);
 
+      // ── ADDITIVE observability (#5): actions-processed counter + act→broadcast timer start ──
+      try {
+        EngineMetrics.actionsTotal.inc(1, { table_id: this.tableId });
+        this.lastActionAcceptedAtMs = Date.now();
+      } catch {
+        /* metrics must never affect gameplay */
+      }
+
       // FIX 137: Bible V8 §7.17 — Snapshot hand state after every successful action (fire-and-forget)
       this.saveSnapshot().catch(() => {});
 
@@ -2073,6 +2118,12 @@ export class ServerTableEngine {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Action failed';
       console.warn(`[ServerTableEngine:${this.tableId}] Player action failed:`, errMsg);
+      // ── ADDITIVE observability (#5): RPC/action error counter ──
+      try {
+        EngineMetrics.rpcErrorsTotal.inc(1, { method: 'action' });
+      } catch {
+        /* metrics must never affect gameplay */
+      }
       // Return error to client — do NOT auto-fold. The player should see the error
       // and choose their next action. Auto-folding on invalid actions silently
       // destroys hands (e.g., a raise with wrong amount shouldn't fold the player).
@@ -2588,6 +2639,67 @@ export class ServerTableEngine {
 
     this.handController = new HandController(config, hcPlayers, dealerSeat);
 
+    // ── ADDITIVE observability (#5): hands-dealt counter (always) + hand span (flag-gated) ──
+    try {
+      EngineMetrics.handsTotal.inc(1, {
+        table_id: this.tableId,
+        variant: String(this.tableInfo?.game_variant ?? ''),
+      });
+    } catch {
+      /* metrics must never affect gameplay */
+    }
+    if (this.engineMetricsEnabled) {
+      try {
+        this.handSpan = startHandSpan(EngineMetrics.engineTracer, {
+          tableId: this.tableId,
+          handNumber,
+          variant: String(this.tableInfo?.game_variant ?? ''),
+        });
+      } catch {
+        this.handSpan = null;
+      }
+    }
+
+    // ── ADDITIVE event-sourcing shadow (#1): construct recorder + record HandStarted (observe-only) ──
+    this.shadowHoleCardsRecorded = false;
+    if (this.eventShadowEnabled) {
+      try {
+        this.shadowRecorder = new ShadowRecorder(`${this.tableId}#${handNumber}`, {
+          onDivergence: (report) => {
+            if (report.ok) return;
+            reportError(
+              new Error(
+                `[EVENT_SHADOW ${this.tableId}] hand #${handNumber} divergence: ` +
+                  `${report.seatDivergences.length} seat(s); conservation ` +
+                  `${report.conservation.ok ? 'ok' : report.conservation.violations.length + ' violation(s)'}`
+              ),
+              'ServerTableEngine.EVENT_SHADOW_DIVERGENCE'
+            );
+            try {
+              EngineMetrics.metricsRegistry
+                .counter('poker_event_shadow_divergences_total', 'Event-shadow replay divergences')
+                .inc(1, { table_id: this.tableId });
+            } catch {
+              /* ignore */
+            }
+          },
+        });
+        this.shadowRecorder.recordHandStarted({
+          seed: handNumber,
+          handNumber,
+          buttonSeat: dealerSeat,
+          players: hcPlayers.map((p) => ({ seat: p.seat, userId: p.user_id, stack: p.stack })),
+          stakes: {
+            smallBlind: config.smallBlind,
+            bigBlind: config.bigBlind,
+            ante: config.ante,
+          },
+        });
+      } catch {
+        this.shadowRecorder = null;
+      }
+    }
+
     // Bible V8 §4.2: Clear returning-from-sitout after dead blinds are passed to config
     if (this.returningFromSitout.size > 0) {
       this.returningFromSitout.clear();
@@ -2810,6 +2922,16 @@ export class ServerTableEngine {
             timestamp: Date.now(),
           });
         }
+        // ── ADDITIVE event-sourcing shadow (#1): record BlindsPosted ──
+        if (this.shadowRecorder && postings && postings.length > 0) {
+          this.shadowRecorder.recordBlindsPosted(
+            postings.map((bp) => ({
+              seat: bp.seat,
+              kind: this.shadowBlindKind(bp.type),
+              amount: bp.amount,
+            }))
+          );
+        }
         // No broadcast here — TURN_CHANGE will follow shortly with full snapshot.
         break;
       }
@@ -2831,6 +2953,12 @@ export class ServerTableEngine {
             });
             await this.persistHoleCardsWithRetry(player.user_id, player.seat, event.cards);
           }
+        }
+        // ── ADDITIVE event-sourcing shadow (#1): record HoleCardsDealt once per hand ──
+        if (this.shadowRecorder && !this.shadowHoleCardsRecorded) {
+          const perPlayer = Array.isArray(event.cards) ? event.cards.length : 2;
+          this.shadowRecorder.recordHoleCardsDealt(perPlayer);
+          this.shadowHoleCardsRecorded = true;
         }
         // Do NOT broadcast state here — cards are delivered securely via table_hole_cards
         break;
@@ -2907,6 +3035,15 @@ export class ServerTableEngine {
             stage,
           });
 
+          // ── ADDITIVE event-sourcing shadow (#1): record PlayerActed ──
+          if (this.shadowRecorder) {
+            this.shadowRecorder.recordPlayerActed(
+              event.seat,
+              event.action as never,
+              event.amount ?? 0
+            );
+          }
+
           // Bible V8 §4.15: When a bet or raise occurs, invalidate all auto_check pre-actions
           // (they're no longer valid because there's now a bet to face)
           if (event.action === 'bet' || event.action === 'raise' || event.action === 'all_in') {
@@ -2974,6 +3111,10 @@ export class ServerTableEngine {
           board: this.currentHandCommunityCards,
           timestamp: Date.now(),
         });
+        // ── ADDITIVE event-sourcing shadow (#1): record StreetAdvanced ──
+        if (this.shadowRecorder && event.stage) {
+          this.shadowRecorder.recordStreetAdvanced(event.stage as ShadowStreet);
+        }
         this.broadcastCurrentState();
         break;
       }
@@ -3006,6 +3147,16 @@ export class ServerTableEngine {
           ),
         }));
         this.broadcastCurrentState();
+        // ── ADDITIVE event-sourcing shadow (#1): record ShowdownRevealed ──
+        if (this.shadowRecorder && this.handController) {
+          const sdState = this.handController.getState();
+          const sdReveals = ((event as any).results || []).map((r: any) => ({
+            seat: sdState.players.find((pp) => pp.user_id === r.userId)?.seat ?? -1,
+            userId: r.userId,
+            cards: [] as import('../types.js').Card[],
+          }));
+          this.shadowRecorder.recordShowdownRevealed(sdReveals);
+        }
         // 2026-04-16 fix: Emit discrete showdown event so the client can
         // trigger showdown sound + card reveal animations (Bible V8 §4.6).
         // Previously only broadcastCurrentState was called, which sends a
@@ -3066,6 +3217,17 @@ export class ServerTableEngine {
               enginePlayer.totalInvested ?? 0
             );
           }
+        }
+        // ── ADDITIVE event-sourcing shadow (#1): record PotAwarded ──
+        if (this.shadowRecorder && this.handController && this.currentHandWinners.length > 0) {
+          const awState = this.handController.getState();
+          const awPayouts = this.currentHandWinners.map((w) => ({
+            seat: awState.players.find((pp) => pp.user_id === w.userId)?.seat ?? -1,
+            userId: w.userId,
+            amount: w.amount,
+            potIndex: w.potIndex,
+          }));
+          this.shadowRecorder.recordPotAwarded(awPayouts);
         }
         this.broadcastCurrentState();
         // AUDIT FIX 2026-07-19: emit the hole-card reveal HERE (winners now
@@ -3584,6 +3746,31 @@ export class ServerTableEngine {
             current_board_length: board.length,
           });
         }
+
+        // ── ADDITIVE event-sourcing shadow (#1): replay + chip-conservation verify at hand end ──
+        if (this.shadowRecorder) {
+          try {
+            this.shadowRecorder.recordHandEnded(this.handCount);
+            const finalSeats = players.map((pp) => ({
+              seat: pp.seat_number,
+              userId: pp.user_id,
+              stack: pp.stack,
+            }));
+            this.shadowRecorder.finalize({ seats: finalSeats });
+          } catch (e) {
+            reportError(e, 'ServerTableEngine.EVENT_SHADOW_finalize_error');
+          }
+          this.shadowRecorder = null;
+        }
+        // ── ADDITIVE observability (#5): close the hand span (feeds hand-duration histogram) ──
+        if (this.handSpan) {
+          try {
+            this.handSpan.end();
+          } catch {
+            /* tracing must never affect gameplay */
+          }
+          this.handSpan = null;
+        }
         break;
       }
     }
@@ -4064,6 +4251,8 @@ export class ServerTableEngine {
     const isOmaha = (this.tableInfo?.game_variant || '').startsWith('plo');
     const valid = allInPlayers.filter((p) => (p.cards || []).length >= 2);
     const equities: Array<{ userId: string; username: string; equity: number; seat: number }> = [];
+    // ── ADDITIVE observability (#5): time the all-in equity computation ──
+    const equityComputeStartMs = Date.now();
 
     try {
       const hands = valid.map((p) => p.cards || []);
@@ -4093,6 +4282,14 @@ export class ServerTableEngine {
       }
     }
 
+    // ── ADDITIVE observability (#5): observe all-in equity compute duration ──
+    try {
+      EngineMetrics.allInEquityDuration.observe(Date.now() - equityComputeStartMs, {
+        table_id: this.tableId,
+      });
+    } catch {
+      /* metrics must never affect gameplay */
+    }
     // Broadcast to all clients — this is public information during all-in
     this.hub?.emitEvent(this.tableId, {
       type: 'all_in_equity',
@@ -4591,6 +4788,18 @@ export class ServerTableEngine {
   private broadcastCurrentState(): Promise<void> {
     if (!this.handController || !this.tableInfo) return Promise.resolve();
 
+    // ── ADDITIVE observability (#5): observe action→broadcast latency (cheap, always) ──
+    if (this.lastActionAcceptedAtMs > 0) {
+      try {
+        EngineMetrics.actToBroadcastLatency.observe(Date.now() - this.lastActionAcceptedAtMs, {
+          table_id: this.tableId,
+        });
+      } catch {
+        /* metrics must never affect gameplay */
+      }
+      this.lastActionAcceptedAtMs = 0;
+    }
+
     const state = this.handController.getState();
     const currentSeatPlayer = state.players.find((p) => p.seat === state.currentPlayerSeat);
 
@@ -4762,6 +4971,35 @@ export class ServerTableEngine {
         actions: this.currentHandActions,
       });
       v_handHistoryId = result.handId;
+
+      // ── ADDITIVE anti-cheat feed (#5): observe-only, fire-and-forget, flag-gated (default OFF) ──
+      if (this.integrityFeedEnabled) {
+        try {
+          const feedRow: HandHistoryRow = {
+            id: v_handHistoryId,
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            game_variant: this.tableInfo.game_variant || 'nlh',
+            small_blind: this.tableInfo.small_blind,
+            big_blind: this.tableInfo.big_blind,
+            pot_size: this.currentHandPotSize,
+            rake_amount: this.currentHandRake,
+            community_cards: this.currentHandCommunityCards,
+            started_at: this.currentHandStartedAt || Date.now(),
+            ended_at: Date.now(),
+            winners: this.currentHandWinners.map((w) => ({ userId: w.userId, amount: w.amount })),
+            players: players.map((pp) => ({
+              userId: pp.user_id,
+              seat: pp.seat_number,
+              stack: pp.stack,
+            })),
+            actions: this.currentHandActions,
+          };
+          integrityFeed.ingestRow(feedRow);
+        } catch {
+          /* observe-only: never affect settlement */
+        }
+      }
     }
 
     // SETTLEMENT STEP 8b: Distribute rake — ATOMIC + IDEMPOTENT + RECOVERABLE.

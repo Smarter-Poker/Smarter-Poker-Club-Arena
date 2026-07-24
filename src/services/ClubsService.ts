@@ -277,34 +277,30 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
   }
 
   const resolvedId = await resolveClubUUID(clubId);
-  const { data, error } = await supabase
-    .from('club_members')
-    .insert({
-      club_id: resolvedId,
-      user_id: user.user.id,
-      role,
-      status: 'active',
-      tier: 'bronze',
 
-      diamonds: 0,
-      reputation_xp: 0,
-      trust_score: 50, // Starting trust score
-      rank_level: 0,
-      sessions_played: 0,
-      orange_ball_status: 'cold',
-    })
-    .select()
-    .maybeSingle();
+  // Join via the SECURITY DEFINER RPC fn_join_club. The RPC resolves the caller
+  // from auth.uid() and decides the effective role/status itself:
+  //   • caller owns the club  → role='owner',  status='active'
+  //   • otherwise             → role='member', status = requires_approval
+  //                             ? 'pending' : 'active'
+  // It also re-enforces the 4-club limit and is idempotent (an existing
+  // membership row is returned unchanged). Because it is SECURITY DEFINER it
+  // bypasses the club_members RLS INSERT policy that (correctly) forbids
+  // privileged self-inserts. The `role` argument is retained for API
+  // compatibility but is no longer authoritative — the RPC owns that decision.
+  const { data, error } = await supabase.rpc('fn_join_club', {
+    p_club_id: resolvedId,
+  });
 
-  if (error) {
+  if (error || !data) {
     reportError(error, 'ClubsService.Join_club_failed');
-    throw new Error('Failed to join club');
+    throw new Error(error?.message || 'Failed to join club');
   }
 
-  // NOTE: clubs.member_count is auto-synced by the trg_sync_club_member_count
-  // trigger on INSERT to club_members. No manual increment needed.
+  const membership = data as ClubMember;
 
-  // Emit CLUB_JOINED for cross-page reactivity (lobby, carousel, detail pages)
+  // Emit CLUB_JOINED for cross-page reactivity (lobby, carousel, detail pages).
+  // Harmless for pending joins — listeners simply re-fetch memberships.
   try {
     const { masterBus } = await import('../core/MasterBus');
     masterBus.emit('CLUB_JOINED', { clubId, action: 'member_joined' });
@@ -312,7 +308,7 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     console.warn('[ClubsService] joinClub: bus emit failed (non-critical):', e);
   }
 
-  return data;
+  return membership;
 }
 
 /**

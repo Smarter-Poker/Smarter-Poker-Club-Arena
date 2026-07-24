@@ -219,9 +219,44 @@ export default function MultiTablePage() {
   }, [tables.length, navigate]);
 
   // ─── Update table info (called by child TablePage instances) ─────────
+  // P1-2 FIX: bail out when nothing actually changed so setTables returns the
+  // SAME array reference — React then skips the re-render, which breaks the
+  // parent-render → new-callback-prop → child-effect → setTables feedback loop
+  // that was pegging a CPU core for as long as any table was open.
   const updateTableInfo = useCallback((tableId: string, updates: Partial<TableInstance>) => {
-    setTables((prev) => prev.map((t) => (t.id === tableId ? { ...t, ...updates } : t)));
+    setTables((prev) => {
+      const idx = prev.findIndex((t) => t.id === tableId);
+      if (idx === -1) return prev;
+      const current = prev[idx];
+      let changed = false;
+      for (const key of Object.keys(updates) as (keyof TableInstance)[]) {
+        if (current[key] !== updates[key]) {
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) return prev; // no-op → same reference → no re-render
+      const next = prev.slice();
+      next[idx] = { ...current, ...updates };
+      return next;
+    });
   }, []);
+
+  // P1-2 FIX: hand each child a STABLE callback (cached per table id) rather than
+  // a fresh arrow on every render. A new prop identity was re-triggering the
+  // child's reporting effect on every parent render — the other half of the loop.
+  const tableInfoCbRef = useRef<Map<string, (info: Partial<TableInstance>) => void>>(new Map());
+  const getTableInfoCb = useCallback(
+    (tableId: string) => {
+      let cb = tableInfoCbRef.current.get(tableId);
+      if (!cb) {
+        cb = (info: Partial<TableInstance>) => updateTableInfo(tableId, info);
+        tableInfoCbRef.current.set(tableId, cb);
+      }
+      return cb;
+    },
+    [updateTableInfo]
+  );
 
   // ─── Auto-switch on urgent timer ─────────────────────────────────────
   useEffect(() => {
@@ -242,6 +277,21 @@ export default function MultiTablePage() {
   // ─── Keyboard shortcuts for table switching ───────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // P1-5 FIX: never hijack keystrokes while the user is typing in an input,
+      // textarea, select, or contenteditable (table chat, raise amount, modals),
+      // and ignore shortcuts pressed with Ctrl/Meta/Alt. Shift stays allowed for
+      // Shift+Tab table cycling.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       // Number keys 1-4 to switch tables
       if (e.key >= '1' && e.key <= '4') {
         const idx = parseInt(e.key) - 1;
@@ -476,9 +526,7 @@ export default function MultiTablePage() {
                 <TablePage
                   key={table.id}
                   embeddedTableId={table.id}
-                  onTableInfoUpdate={(info: Partial<TableInstance>) =>
-                    updateTableInfo(table.id, info)
-                  }
+                  onTableInfoUpdate={getTableInfoCb(table.id)}
                   isMultiTable={true}
                   isActive={idx === activeIndex}
                 />
@@ -535,9 +583,7 @@ export default function MultiTablePage() {
                   <TablePage
                     key={table.id}
                     embeddedTableId={table.id}
-                    onTableInfoUpdate={(info: Partial<TableInstance>) =>
-                      updateTableInfo(table.id, info)
-                    }
+                    onTableInfoUpdate={getTableInfoCb(table.id)}
                     isMultiTable={tables.length > 1}
                     isActive={idx === activeIndex}
                   />

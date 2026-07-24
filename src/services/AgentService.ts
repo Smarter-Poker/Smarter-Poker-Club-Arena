@@ -809,46 +809,34 @@ class AgentServiceClass {
     if (amount <= 0) throw new Error('Transfer amount must be positive');
     if (fromWallet === toWallet) throw new Error('Cannot transfer to the same wallet');
 
-    // DB wallet_internal_transfer has user-to-user signature, not wallet-to-wallet.
-    // Use atomic_deduct + atomic_credit pair instead for wallet-to-wallet transfers.
     const desc = `Agent self-transfer ${fromWallet} → ${toWallet}`;
 
-    const { data: deducted, error: deductErr } = await retryAsync(
+    // Atomic wallet-TYPE transfer for a single user via SECURITY DEFINER RPC.
+    // fn_wallet_type_transfer moves chips between wallet types (BUSINESS/PLAYER/PROMO)
+    // in ONE transaction, honoring the real from/to wallets — this replaces the old
+    // atomic_deduct + atomic_credit pair which was hardcoded to PLAYER (cross-wallet
+    // no-op, plus a deduct-then-credit chip-loss edge if the credit leg failed).
+    // Wallet types are stored uppercase; the method's args are lowercase.
+    const { data: transferRes, error } = await retryAsync(
       () =>
-        supabase.rpc('atomic_deduct_wallet_and_log', {
+        supabase.rpc('fn_wallet_type_transfer', {
           p_user_id: agentId,
+          p_from_wallet: fromWallet.toUpperCase(),
+          p_to_wallet: toWallet.toUpperCase(),
           p_amount: amount,
-          p_category: 'transfer',
-          p_description: desc,
-          p_table_id: null,
-          p_hand_id: null,
-          p_related_entity_id: null,
+          p_note: desc,
         }),
       3
     );
 
-    if (deductErr || deducted === false) {
-      reportError(deductErr, 'AgentService.selfTransfer.deduct');
-      throw new Error(deductErr?.message || 'Insufficient balance for self-transfer');
-    }
-
-    const { error: creditErr } = await retryAsync(
-      () =>
-        supabase.rpc('atomic_credit_wallet_and_log', {
-          p_user_id: agentId,
-          p_amount: amount,
-          p_category: 'transfer',
-          p_description: desc,
-          p_table_id: null,
-          p_hand_id: null,
-          p_related_entity_id: null,
-        }),
-      3
-    );
-
-    if (creditErr) {
-      reportError(creditErr, 'AgentService.selfTransfer.credit');
-      throw new Error(creditErr.message || 'Self-transfer credit failed');
+    if (error || !transferRes?.success) {
+      reportError(
+        error || new Error(transferRes?.error || 'self-transfer failed'),
+        'AgentService.selfTransfer'
+      );
+      throw new Error(
+        error?.message || transferRes?.error || 'Insufficient balance for self-transfer'
+      );
     }
 
     return true;

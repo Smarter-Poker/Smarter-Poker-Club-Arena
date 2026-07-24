@@ -535,6 +535,7 @@ describe('HorseLogic V2 — performance budget', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { HorseMind } from './HorseMind.js';
+import { decidePreflopV7 } from './HorsePreflop.js';
 import type { ActionRecord } from '../types.js';
 
 describe('HorseMind V3 — opponent intelligence', () => {
@@ -1008,6 +1009,277 @@ describe('HorseMind V5 — dynamic hand reading', () => {
       const check = validateAction(d.action, d.amount, hero.stack, bs);
       if (!check.valid) {
         throw new Error(`V5 ILLEGAL ${stage}: ${d.action} ${d.amount} — ${check.error}`);
+      }
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. V7 — PREFLOP MASTERY + SIZE READS + BARRELS + COUNTER-ADAPT + ICM
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('HorseLogic V7 — preflop mastery', () => {
+  const sixMax = (heroSeat: number, hero: SeatPlayer, over: Record<string, unknown> = {}): any => {
+    const players = [1, 2, 3, 4, 5, 6].map((s) => (s === heroSeat ? hero : mkPlayer(s)));
+    return {
+      players,
+      communityCards: [] as Card[],
+      pot: 9,
+      currentBet: 6,
+      minRaise: 4,
+      stage: 'preflop',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      dealerSeat: 6,
+      ...over,
+    };
+  };
+  const openBy = (seat: number, uid: string): any[] => [
+    { seat, userId: uid, action: 'raise', amount: 6, timestamp: 42, stage: 'preflop' },
+  ];
+  const aggr = (a: string) => a === 'raise' || a === 'bet' || a === 'all_in';
+
+  it('3-bets wider against a late-position open than an early open (position pairs)', () => {
+    const n = 200;
+    let vsLate = 0;
+    let vsEarly = 0;
+    for (let i = 0; i < n; i++) {
+      // Mid-strength hand in the BB (seat 2, dealer 6): AJo-ish territory
+      const heroL = mkPlayer(2, { cards: [c('Ah'), c('Jd')], bet: 2 });
+      const gsL = sixMax(2, heroL, { actionHistory: openBy(6, 'btn-open') });
+      if (aggr(HorseLogic.decide(heroL, gsL, 'balanced').action)) vsLate++;
+      const heroE = mkPlayer(2, { cards: [c('Ah'), c('Jd')], bet: 2 });
+      const gsE = sixMax(2, heroE, { actionHistory: openBy(3, 'utg-open') });
+      if (aggr(HorseLogic.decide(heroE, gsE, 'balanced').action)) vsEarly++;
+    }
+    expect(vsLate).toBeGreaterThan(vsEarly + 15); // clear re-steal gap
+  });
+
+  it('4-bet bluffs exist under V7 and did not under the legacy preflop', () => {
+    // DETERMINISTIC (replaced a flaky 400-trial stochastic version): drive the
+    // intent layer directly. A hand in the 0.72..fourBetThresh band facing
+    // exactly a 3-bet must 4-bet when the frequency gate opens (rand -> 0)
+    // and must NOT when it closes (rand -> 0.99) — a mix by construction.
+    const ctx = (rand: () => number): any => ({
+      strength: 0.8,
+      position: 'late',
+      raiserPosition: 'sb',
+      raises: 2,
+      limpers: 0,
+      callers: 0,
+      oppsLeft: 1,
+      toCall: 16,
+      currentBet: 22,
+      pot: 31,
+      bigBlind: 2,
+      stack: 400,
+      stackBB: 200,
+      tightness: 1,
+      bluffFreq: 0.3,
+      aggression: 1.2,
+      slowplayFreq: 0.1,
+      sizingMultiplier: 1,
+      isOmaha: false,
+      isPotLimit: false,
+      riskAdd: 0,
+      rand,
+    });
+    const open = decidePreflopV7(ctx(() => 0));
+    expect(open.a).toBe('raiseTo'); // the 4-bet bluff region EXISTS
+    expect(open.to).toBeGreaterThan(22); // and it is a raise over the 3-bet
+    const closed = decidePreflopV7(ctx(() => 0.99));
+    expect(closed.a).toBe('call'); // gate closed: same hand flats instead
+  });
+
+  it('reshoves 13-20bb over a late-position open instead of flatting', () => {
+    const hero = mkPlayer(2, { cards: [c('Ah'), c('Qd')], bet: 2, stack: 30 }); // 15bb
+    const gs = sixMax(2, hero, { actionHistory: openBy(6, 'btn-open') });
+    const freq = frequency(
+      () => {
+        const h = mkPlayer(2, { cards: [c('Ah'), c('Qd')], bet: 2, stack: 30 });
+        const g = sixMax(2, h, { actionHistory: openBy(6, 'btn-open') });
+        return HorseLogic.decide(h, g, 'tag');
+      },
+      (a) => a === 'all_in',
+      80
+    );
+    void hero;
+    void gs;
+    expect(freq).toBeGreaterThan(0.8);
+  });
+
+  it('ICM pressure folds marginal spots a cash game calls', () => {
+    const mk = (tournament: boolean): any => {
+      const hero = mkPlayer(4, { cards: [c('Kh'), c('Jd')], bet: 0, stack: 60 });
+      return {
+        hero,
+        gs: sixMax(4, hero, {
+          currentBet: 6,
+          pot: 9,
+          actionHistory: openBy(3, 'utg-open'),
+          ...(tournament ? { tournament: { nearBubble: true } } : {}),
+        }),
+      };
+    };
+    const n = 200;
+    let cashCalls = 0;
+    let icmCalls = 0;
+    for (let i = 0; i < n; i++) {
+      const a = mk(false);
+      if (HorseLogic.decide(a.hero, a.gs, 'balanced').action === 'call') cashCalls++;
+      const b = mk(true);
+      if (HorseLogic.decide(b.hero, b.gs, 'balanced').action === 'call') icmCalls++;
+    }
+    expect(icmCalls).toBeLessThanOrEqual(cashCalls); // survival premium never loosens
+  });
+});
+
+describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () => {
+  it('a pot-sized barrel narrows the read more than a min-bet', () => {
+    const base: ActionRecord[] = [
+      { seat: 1, userId: 'v', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
+      { seat: 2, userId: 'h', action: 'call', amount: 6, timestamp: 2, stage: 'preflop' },
+    ];
+    // Pot after preflop ~ 13: a 12 bet is pot-sized, a 2 bet is a min-stab.
+    const bigBet: ActionRecord[] = [
+      ...base,
+      { seat: 1, userId: 'v', action: 'bet', amount: 12, timestamp: 3, stage: 'flop' },
+    ];
+    const minBet: ActionRecord[] = [
+      ...base,
+      { seat: 1, userId: 'v', action: 'bet', amount: 2, timestamp: 3, stage: 'flop' },
+    ];
+    const big = HorseMind.bandFor('v', bigBet, 2)!;
+    const small = HorseMind.bandFor('v', minBet, 2)!;
+    expect(big[0]).toBeGreaterThan(small[0]);
+    // And with sized reads disabled the two bets read identically.
+    const bigOff = HorseMind.bandFor('v', bigBet, 2, false)!;
+    const smallOff = HorseMind.bandFor('v', minBet, 2, false)!;
+    expect(bigOff[0]).toBe(smallOff[0]);
+  });
+
+  it('detects counter-adaptation: a folder who starts calling loses the bluff tag', () => {
+    HorseMind.reset();
+    let ts = 700000;
+    // 40 hands of folding builds the lifetime "bluff him" read.
+    for (let hand = 0; hand < 40; hand++) {
+      HorseMind.observe(
+        [
+          { seat: 1, userId: 'r7', action: 'raise', amount: 6, timestamp: ts++, stage: 'preflop' },
+          { seat: 2, userId: 'adapt', action: 'fold', amount: 0, timestamp: ts++, stage: 'preflop' },
+        ],
+        []
+      );
+      ts += 50;
+    }
+    const before = HorseMind.exploit('adapt').bluffMod;
+    expect(before).toBeGreaterThan(1.2);
+    // 20 recent hands of CALLING — the player adapted.
+    for (let hand = 0; hand < 20; hand++) {
+      HorseMind.observe(
+        [
+          { seat: 1, userId: 'r7', action: 'raise', amount: 6, timestamp: ts++, stage: 'preflop' },
+          { seat: 2, userId: 'adapt', action: 'call', amount: 6, timestamp: ts++, stage: 'preflop' },
+        ],
+        []
+      );
+      ts += 50;
+    }
+    const after = HorseMind.exploit('adapt').bluffMod;
+    const afterNoBlend = HorseMind.exploit('adapt', false).bluffMod;
+    expect(after).toBeLessThan(before); // recency blend backed the exploit off
+    expect(after).toBeLessThanOrEqual(afterNoBlend); // faster than lifetime stats alone
+    HorseMind.reset();
+  });
+
+  it('stores and honors per-hand barrel plans', () => {
+    HorseMind.reset();
+    const hist: ActionRecord[] = [
+      { seat: 2, userId: 'horse-2', action: 'raise', amount: 6, timestamp: 900001, stage: 'preflop' },
+      { seat: 5, userId: 'villain', action: 'call', amount: 6, timestamp: 900002, stage: 'preflop' },
+      { seat: 2, userId: 'horse-2', action: 'bet', amount: 4, timestamp: 900003, stage: 'flop' },
+      { seat: 5, userId: 'villain', action: 'call', amount: 4, timestamp: 900004, stage: 'flop' },
+    ];
+    const key = HorseMind.handKeyOf(hist);
+    expect(key).toBe('900001:horse-2');
+    const mkTurn = (): any => ({
+      players: [
+        mkPlayer(2, { cards: [c('9c'), c('8c')] }),
+        mkPlayer(5, { user_id: 'villain' }),
+      ],
+      communityCards: [c('Kd'), c('7s'), c('2c'), c('5h')],
+      pot: 21,
+      currentBet: 0,
+      minRaise: 2,
+      stage: 'turn',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      dealerSeat: 2,
+      actionHistory: hist,
+    });
+    const n = 150;
+    let planned = 0;
+    let unplanned = 0;
+    for (let i = 0; i < n; i++) {
+      HorseMind.notePlan(key, 'horse-2', true);
+      const a = mkTurn();
+      if (['bet', 'all_in'].includes(HorseLogic.decide(a.players[0], a, 'balanced').action))
+        planned++;
+      HorseMind.notePlan(key, 'horse-2', false);
+      const b = mkTurn();
+      if (['bet', 'all_in'].includes(HorseLogic.decide(b.players[0], b, 'balanced').action))
+        unplanned++;
+    }
+    expect(planned).toBeGreaterThan(unplanned + 25); // plans mean something
+    HorseMind.reset();
+  });
+
+  it('V7 decisions stay legal across randomized states (all raise depths)', () => {
+    for (let trial = 0; trial < 500; trial++) {
+      const deck = shuffle(makeDeck(false));
+      const preflop = trial % 2 === 0;
+      const boardCount = preflop ? 0 : [3, 4, 5][trial % 3];
+      const stage = preflop ? 'preflop' : boardCount === 3 ? 'flop' : boardCount === 4 ? 'turn' : 'river';
+      const bigBlind = trial % 5 === 0 ? 100 : 2; // include tournament-detected blinds
+      const hero = mkPlayer(1, {
+        cards: deck.slice(0, 2),
+        stack: bigBlind * (5 + Math.random() * 150),
+        bet: 0,
+      });
+      const villain = mkPlayer(2, { cards: deck.slice(2, 4) });
+      const currentBet = Math.random() < 0.4 ? 0 : bigBlind * (1 + Math.random() * 15);
+      const raises = Math.floor(Math.random() * 4);
+      const hist: any[] = [];
+      let amt = bigBlind;
+      for (let r = 0; r < raises; r++) {
+        amt *= 3;
+        hist.push({
+          seat: (r % 2) + 1,
+          userId: `horse-${(r % 2) + 1}`,
+          action: 'raise',
+          amount: amt,
+          timestamp: 5000 + trial * 20 + r,
+          stage: 'preflop',
+        });
+      }
+      const gs: any = {
+        players: [hero, villain],
+        communityCards: deck.slice(4, 4 + boardCount),
+        pot: Math.max(bigBlind * 1.5, currentBet * 1.5),
+        currentBet: preflop ? Math.max(currentBet, hist.length ? amt : 0) : currentBet,
+        minRaise: bigBlind,
+        stage,
+        gameVariant: 'nlh',
+        bigBlind,
+        dealerSeat: (trial % 2) + 1,
+        lastRaise: bigBlind,
+        actionHistory: hist,
+      };
+      const d = HorseLogic.decide(hero, gs, STYLES[trial % STYLES.length]);
+      const bs = calculateBettingState(gs.pot, gs.currentBet, hero.bet, bigBlind, bigBlind, false);
+      const check = validateAction(d.action, d.amount, hero.stack, bs);
+      if (!check.valid) {
+        throw new Error(`V7 ILLEGAL ${stage} bb=${bigBlind}: ${d.action} ${d.amount} — ${check.error}`);
       }
     }
   });

@@ -57,6 +57,12 @@ export interface OpponentStats {
   folds: number;
   /** times they faced aggression (called, raised over, or folded to a bet) */
   facedAggr: number;
+  /** V7 recency window (exponentially decayed) — detects counter-adaptation */
+  rHands: number;
+  rFolds: number;
+  rFacedAggr: number;
+  rAggr: number;
+  rPassive: number;
 }
 
 const freshStats = (): OpponentStats => ({
@@ -68,6 +74,11 @@ const freshStats = (): OpponentStats => ({
   passive: 0,
   folds: 0,
   facedAggr: 0,
+  rHands: 0,
+  rFolds: 0,
+  rFacedAggr: 0,
+  rAggr: 0,
+  rPassive: 0,
 });
 
 /** Exploit multipliers derived from a specific opponent's tendencies. */
@@ -113,9 +124,9 @@ export class HorseMind {
   /** per (handKey|userId) preflop-participation flags already counted */
   private static handFlags = new Set<string>();
 
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
   // OBSERVATION — ingest the action stream (idempotent, bounded)
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
 
   /**
    * Ingest the current hand's action history. Called at the top of every
@@ -153,6 +164,18 @@ export class HorseMind {
         if (!this.handFlags.has(seenKey)) {
           this.handFlags.add(seenKey);
           s.hands++;
+          // V7 counter-adaptation: exponentially-decayed recency window
+          // (half-life ~24 hands). Recent behavior shifts — an opponent who
+          // STOPPED folding to our bluffs — show up here within ~20 hands
+          // while the lifetime stats would take hundreds to move.
+          s.rHands++;
+          if (s.rHands >= 24) {
+            s.rHands /= 2;
+            s.rFolds /= 2;
+            s.rFacedAggr /= 2;
+            s.rAggr /= 2;
+            s.rPassive /= 2;
+          }
         }
 
         // Preflop VPIP / PFR / 3-bet (first voluntary action only)
@@ -172,18 +195,30 @@ export class HorseMind {
         }
 
         // Aggression factor + fold-vs-aggression, all streets
-        if (isAggr) s.aggr++;
-        else if (a.action === 'call') {
+        if (isAggr) {
+          s.aggr++;
+          s.rAggr++;
+        } else if (a.action === 'call') {
           s.passive++;
           s.facedAggr++;
+          s.rPassive++;
+          s.rFacedAggr++;
         } else if (a.action === 'fold') {
           s.folds++;
           s.facedAggr++;
+          s.rFolds++;
+          s.rFacedAggr++;
         }
       }
 
       if (preflop && isAggr) preflopRaises++;
     }
+  }
+
+  /** Stable per-hand key shared by observe(), plans, and callers. */
+  static handKeyOf(history: ActionRecord[] | undefined): string | null {
+    if (!history || history.length === 0) return null;
+    return `${history[0].timestamp}:${history[0].userId}`;
   }
 
   /** Read-only access for diagnostics/tests. */
@@ -196,11 +231,12 @@ export class HorseMind {
     this.stats.clear();
     this.seenActions.clear();
     this.handFlags.clear();
+    this.plans.clear();
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
   // RANGE READING — preflop line THIS hand -> strength band, stat-adjusted
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
 
   /**
    * Returns the [lo, hi] preflop-strength band this opponent's current-hand
@@ -210,23 +246,78 @@ export class HorseMind {
   static bandFor(
     userId: string,
     history: ActionRecord[] | undefined,
-    bigBlind: number
+    bigBlind: number,
+    sizedReads: boolean = true,
+    board: Card[] | null = null
   ): [number, number] | null {
     if (!history || history.length === 0) return null;
 
     let raisesBefore = 0;
     let line: 'none' | 'limp' | 'call' | 'open' | 'threebet' | 'check' = 'none';
     // V5 (2026-07-24): dynamic hand reading — postflop actions keep narrowing
-    // the band. Track the streets on which this player bet/raised.
-    const aggrStreets = new Set<string>();
+    // the band. V7: the narrowing is BET-SIZE AWARE via an exact pot replay —
+    // a pot-sized turn barrel narrows far more than a min-bet. Per-street the
+    // strongest sizing signal wins.
+    const streetWeight = new Map<string, number>();
+    // Pot replay state: recorded call amounts are increments; bet/raise/all_in
+    // amounts are street totals, so increment = amount - actor's street bet.
+    let pot = bigBlind > 0 ? bigBlind * 1.5 : 3; // SB+BB approximation
+    let curStreet: string = 'preflop';
+    let streetBets = new Map<string, number>();
     for (const a of history) {
       const isAggr = a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true);
+      const anyChips = isAggr || a.action === 'call' || a.action === 'all_in';
+      if (a.stage !== curStreet) {
+        curStreet = a.stage;
+        streetBets = new Map();
+      }
+      const prevBet = streetBets.get(a.userId) || 0;
+      let increment = 0;
+      if (a.action === 'call') increment = a.amount;
+      else if (anyChips) increment = Math.max(0, a.amount - prevBet);
+
       if (a.stage !== 'preflop') {
         if (a.userId === userId) {
           if (a.action === 'fold') return null;
-          if (isAggr) aggrStreets.add(a.stage);
+          if (isAggr) {
+            const potBefore = Math.max(bigBlind || 1, pot);
+            const frac = increment / potBefore;
+            // Size class -> narrowing weight. RETUNED (duplicate-deal
+            // ablation): absolute size is a FALSE signal against texture-led
+            // sizers — good players (and this engine) size UP on wet boards
+            // with their whole range, so "big = strong" misreads a wet-board
+            // semi-bluff as value and a dry-board value bet as weak. The real
+            // signal is the DEVIATION from the texture-expected size: bigger
+            // than the board warrants leans value; smaller leans weak.
+            // Overbets stay polarized (nuts + bluffs) and narrow least.
+            let w = 0.07;
+            if (sizedReads) {
+              const prefix =
+                board && board.length >= 3
+                  ? a.stage === 'flop'
+                    ? board.slice(0, 3)
+                    : a.stage === 'turn'
+                      ? board.slice(0, 4)
+                      : board.slice(0, 5)
+                  : null;
+              const expected = prefix ? 0.34 + 0.38 * this.texture(prefix).wetness : 0.55;
+              const dev = frac - expected;
+              if (frac > 1.3) w = 0.065;
+              else if (dev > 0.35) w = 0.085;
+              else if (dev < -0.2) w = 0.055;
+            }
+            streetWeight.set(a.stage, Math.max(streetWeight.get(a.stage) || 0, w));
+          }
+        }
+        if (anyChips) {
+          pot += increment;
+          streetBets.set(a.userId, prevBet + increment);
         }
         continue;
+      }
+      if (anyChips) {
+        pot += increment;
+        streetBets.set(a.userId, prevBet + increment);
       }
       if (a.userId === userId) {
         if (isAggr) {
@@ -285,11 +376,14 @@ export class HorseMind {
       }
     }
 
-    // V5: every postflop street they bet or raised narrows the read upward.
-    // A flop-and-turn barreller is priced as strong, not as their preflop
-    // range. Capped so even a triple barrel leaves bluffs in the range.
-    if (aggrStreets.size > 0) {
-      lo += Math.min(0.2, aggrStreets.size * 0.07);
+    // V5/V7: every postflop street they bet or raised narrows the read
+    // upward, weighted by bet size. A flop-and-turn pot-barreller is priced
+    // as strong; a pair of min-bets barely moves the read. Capped so even a
+    // triple barrel leaves bluffs in the range.
+    if (streetWeight.size > 0) {
+      let total = 0;
+      for (const w of streetWeight.values()) total += w;
+      lo += Math.min(0.22, total);
       hi = Math.min(1, hi + 0.05); // aggression uncaps the top of the range
     }
 
@@ -317,11 +411,11 @@ export class HorseMind {
     return sawStreet;
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
   // EXPLOIT PROFILE — how to deviate vs this specific player
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
 
-  static exploit(userId: string): ExploitProfile {
+  static exploit(userId: string, recencyBlend: boolean = true): ExploitProfile {
     const s = this.stats.get(userId);
     if (!s || s.hands < 10) return NEUTRAL_EXPLOIT;
 
@@ -333,8 +427,29 @@ export class HorseMind {
     let valueThinMod = 1;
 
     // Fold-vs-aggression: bluff the folders, hammer value into the stations.
+    // V7 COUNTER-ADAPTATION: blend the lifetime rate with the exponentially
+    // decayed recent window. An opponent who ADAPTS — starts calling down the
+    // horse that was bluffing them — shifts the blended rate within ~20 hands
+    // instead of hundreds, so the exploit backs off before it becomes a leak.
+    // RETUNED (duplicate-deal ablation): the recent window only enters the
+    // blend when it is STATISTICALLY INCOMPATIBLE with the lifetime rate
+    // (change-point gate, ~2 standard errors). Against a stable opponent the
+    // gate almost never opens, so the exploit keeps the low-variance lifetime
+    // estimate; when an opponent genuinely changes gears the discrepancy is
+    // large and persistent, the gate opens, and the blend adapts within ~20
+    // hands. Unconditional blending paid a measurable noise tax for a benefit
+    // that only exists when opponents actually adapt.
     if (s.facedAggr >= 8) {
-      const foldRate = s.folds / s.facedAggr;
+      const lifetime = s.folds / s.facedAggr;
+      let foldRate = lifetime;
+      if (recencyBlend && s.rFacedAggr >= 6) {
+        const recent = s.rFolds / s.rFacedAggr;
+        const se = Math.sqrt(Math.max(0.04, lifetime * (1 - lifetime)) / s.rFacedAggr);
+        if (Math.abs(recent - lifetime) > 2 * se) {
+          const wr = Math.min(0.5, s.rFacedAggr / 32);
+          foldRate = (1 - wr) * lifetime + wr * recent;
+        }
+      }
       if (foldRate > 0.62) bluffMod = blend(1.45);
       else if (foldRate < 0.35) {
         bluffMod = blend(0.55);
@@ -343,7 +458,17 @@ export class HorseMind {
     }
 
     // Aggression factor: maniacs get called down lighter; passives get respect.
-    const af = s.aggr / Math.max(1, s.passive);
+    // Same change-point gate as the fold-rate blend.
+    const afLifetime = s.aggr / Math.max(1, s.passive);
+    let af = afLifetime;
+    const rN = s.rAggr + s.rPassive;
+    if (recencyBlend && rN >= 8) {
+      const recentAf = s.rAggr / Math.max(1, s.rPassive);
+      if (Math.abs(recentAf - afLifetime) > Math.max(0.6, 0.5 * afLifetime)) {
+        const wa = Math.min(0.5, rN / 40);
+        af = (1 - wa) * afLifetime + wa * recentAf;
+      }
+    }
     if (s.aggr + s.passive >= 12) {
       if (af > 2.5) callDownMod = blend(1.2);
       else if (af < 0.7) callDownMod = blend(0.85);
@@ -352,9 +477,33 @@ export class HorseMind {
     return { bluffMod, callDownMod, valueThinMod };
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
+  // V7 BARREL PLANS — per-hand multi-street bluff intent
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * When a horse fires a bluff/semi-bluff bet, it decides THEN whether this is
+   * a one-and-done stab or a planned multi-street line. The plan is stored per
+   * (hand, player) so the next street's decision tells a coherent story
+   * instead of re-rolling the dice.
+   */
+  private static plans = new Map<string, boolean>();
+  private static readonly MAX_PLANS = 8000;
+
+  static notePlan(handKey: string | null, userId: string, barrelIntent: boolean): void {
+    if (!handKey) return;
+    if (this.plans.size > this.MAX_PLANS) this.plans.clear();
+    this.plans.set(`${handKey}|${userId}`, barrelIntent);
+  }
+
+  static getPlan(handKey: string | null, userId: string): boolean | undefined {
+    if (!handKey) return undefined;
+    return this.plans.get(`${handKey}|${userId}`);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
   // BOARD TEXTURE
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
 
   static texture(board: Card[]): BoardTexture {
     if (!board || board.length < 3) {
@@ -407,9 +556,9 @@ export class HorseMind {
     return { wetness, monotone, twoTone, paired, straighty };
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
   // BLOCKERS — is this hand a GOOD bluff candidate on this board?
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
 
   /**
    * True when hero holds a card that meaningfully blocks the nuts:
@@ -445,9 +594,9 @@ export class HorseMind {
     return false;
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
   // RANGE-BAND SAMPLING SUPPORT
-  // ───────────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────
 
   /**
    * Build the per-opponent band list for an equity simulation: live (unfolded,
@@ -457,12 +606,14 @@ export class HorseMind {
     heroSeat: number,
     players: SeatPlayer[],
     history: ActionRecord[] | undefined,
-    bigBlind: number
+    bigBlind: number,
+    sizedReads: boolean = true,
+    board: Card[] | null = null
   ): Array<[number, number] | null> {
     const bands: Array<[number, number] | null> = [];
     for (const p of players) {
       if (p.seat === heroSeat || p.is_folded || p.is_sitting_out) continue;
-      bands.push(this.bandFor(p.user_id, history, bigBlind));
+      bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board));
     }
     return bands;
   }
@@ -472,16 +623,20 @@ export class HorseMind {
    * simply that player's profile; multiway it is the confidence-weighted blend
    * (bluffs must get through EVERYONE, so the blend leans conservative).
    */
-  static tableExploit(heroSeat: number, players: SeatPlayer[]): ExploitProfile {
+  static tableExploit(
+    heroSeat: number,
+    players: SeatPlayer[],
+    recencyBlend: boolean = true
+  ): ExploitProfile {
     const opps = players.filter((p) => p.seat !== heroSeat && !p.is_folded && !p.is_sitting_out);
     if (opps.length === 0) return NEUTRAL_EXPLOIT;
-    if (opps.length === 1) return this.exploit(opps[0].user_id);
+    if (opps.length === 1) return this.exploit(opps[0].user_id, recencyBlend);
 
     let bluffMod = 1;
     let callDownMod = 0;
     let valueThinMod = 0;
     for (const o of opps) {
-      const e = this.exploit(o.user_id);
+      const e = this.exploit(o.user_id, recencyBlend);
       bluffMod = Math.min(bluffMod, e.bluffMod); // weakest link gates bluffs
       callDownMod += e.callDownMod;
       valueThinMod += e.valueThinMod;

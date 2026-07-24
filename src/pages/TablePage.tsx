@@ -1488,21 +1488,32 @@ export default function TablePage({
       return;
     }
     try {
-      await WalletService.lockForBuyIn(userId, tableId, amount);
+      // P0 FIX (sweep #5): GameServerAPI.addChips -> engine -> atomic_table_addon
+      // debits the PLAYER wallet exactly ONCE and credits the stack. The old
+      // WalletService.lockForBuyIn call here was a SECOND debit of the same amount
+      // (introduced when /addchips gained its own server-side debit on 2026-07-19),
+      // so every top-up charged the player twice for a single stack increase.
+      // The engine is now the sole authoritative debit; UI/session trackers update
+      // only after it acks.
+      const res = await GameServerAPI.addChips(tableId, amount);
+      if (!res.success) {
+        reportError(
+          new Error(res.error || 'addChips rejected by engine'),
+          'TablePage.addChips_engine_rejected'
+        );
+        // atomic_table_addon is atomic: on failure the wallet was NOT charged.
+        if (typeof window !== 'undefined') {
+          toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
+        }
+        return;
+      }
+      // Engine ack'd the single debit -- reflect it locally + in session trackers.
       setAccountBalance((prev) => Math.max(0, prev - amount));
       totalBuyInRef.current += amount; // Track for session P/L
       totalRebuysRef.current += 1; // Track rebuy count for session summary
       // Update peak stack if rebuy pushes hero above previous peak
       const newPeakCandidate = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
       if (newPeakCandidate > peakStackRef.current) peakStackRef.current = newPeakCandidate;
-      // Send to authoritative engine memory (which also syncs back to DB safely)
-      const res = await GameServerAPI.addChips(tableId, amount);
-      if (!res.success) {
-        console.error('[Cashier] GameServerAPI.addChips failed:', res.error);
-        // We do not revert Wallet lock here since RPC deduct is locked.
-        // This is a rare edge case: money left wallet but table engine failed to ingest.
-        // Needs a manual intervention/audit log.
-      }
 
       // We do NOT optimistic update tableState anymore. The next WebSocket broadcast
       // from the engine (either immediately or at start of next hand) will give

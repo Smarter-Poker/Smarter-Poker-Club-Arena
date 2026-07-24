@@ -68,6 +68,9 @@ export interface PreflopCtx {
   isPotLimit: boolean;
   /** tournament survival premium, 0 for cash (see HorseLogic.icmRisk) */
   riskAdd: number;
+  /** V10: widen the isolation-raise range vs limpers in position (percentile
+   *  points to loosen the open floor). 0 = off / legacy behavior. */
+  isoWiden?: number;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
 }
@@ -162,6 +165,15 @@ export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
   if (unopened) {
     let openThresh = t(OPEN_THRESH[position]) + Math.min(limpers, 3) * 0.03;
     openThresh += depthTighten - depthLoosen;
+    // V10 LIMP ISOLATION: weak limpers are the softest spot in cash poker.
+    // Rather than only tightening (and sizing up) against them, ATTACK in
+    // position — widen the raise floor so more hands isolate the limp(s). The
+    // per-limper size bump below already punishes them. In position only, so
+    // we are not bloating pots out of position.
+    const isoW = ctx.isoWiden ?? 0;
+    if (isoW > 0 && limpers >= 1 && (position === 'late' || position === 'middle')) {
+      openThresh -= isoW + Math.min(limpers - 1, 2) * 0.01;
+    }
 
     // Blind-vs-blind: heads-up SB vs BB plays much wider.
     const bvb = position === 'sb' && ctx.oppsLeft === 1;

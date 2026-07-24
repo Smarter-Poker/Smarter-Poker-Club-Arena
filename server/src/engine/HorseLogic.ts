@@ -445,6 +445,16 @@ export interface HorseDecideOpts {
   v9Sizing?: boolean;
   v9Timing?: boolean;
   v9Mood?: boolean;
+  /** disable the V10 strategy layer: range-advantage c-bets, SPR-scaled
+   *  commitment / pot control, river blocker bluff-catching, rake-aware pot
+   *  odds, capped-range thin value, and limp isolation (default: enabled) */
+  v10?: boolean;
+  /** ablation hooks (benchmarks only) — each defaults to the v10 master flag */
+  v10Cbet?: boolean;
+  v10Spr?: boolean;
+  v10Rake?: boolean;
+  v10ThinValue?: boolean;
+  v10Iso?: boolean;
 }
 
 /**
@@ -482,6 +492,21 @@ function snapFraction(frac: number): number {
   let best = SIZE_FAMILIES[0];
   for (const f of SIZE_FAMILIES) if (Math.abs(frac - f) < Math.abs(frac - best)) best = f;
   return best + (fastRandom() - 0.5) * 0.08;
+}
+
+/**
+ * V10 RAKE — the room's cash schedule is ~10% with a per-stakes dollar cap and
+ * no-flop-no-drop. Only the MARGINAL rake matters to a decision: while the pot
+ * is BELOW the cap every chip that ends up in it is taxed ~10%, so marginal
+ * calls in small pots need a touch more equity than raw pot odds imply. Once
+ * the cap is reached the marginal rake is zero and pot odds are honest again.
+ * Returns the marginal rake fraction (0.10 or 0). The cap is approximated at
+ * 2.5bb (schedule: $5 cap at 1/2, $7.5 at 2/5) — deliberately conservative.
+ */
+const RAKE_PCT = 0.1;
+function rakeDrag(pot: number, bigBlind: number): number {
+  const capChips = Math.max((bigBlind > 0 ? bigBlind : 2) * 2.5, 3);
+  return pot > 0 && pot * RAKE_PCT < capChips ? RAKE_PCT : 0;
 }
 
 export class HorseLogic {
@@ -561,7 +586,7 @@ export class HorseLogic {
     if (gs.stage === 'preflop') {
       decision =
         (opts.v7Preflop ?? v7)
-          ? this.decidePreflopV7Glue(player, gs, vi, params)
+          ? this.decidePreflopV7Glue(player, gs, vi, params, opts)
           : this.decidePreflop(player, gs, vi, params);
     } else {
       decision = this.decidePostflop(
@@ -601,7 +626,8 @@ export class HorseLogic {
     player: SeatPlayer,
     gs: HorseGameStateV2,
     vi: VariantInfo,
-    params: StyleParams
+    params: StyleParams,
+    opts: HorseDecideOpts = {}
   ): HorseDecision {
     const bb = gs.bigBlind > 0 ? gs.bigBlind : 2;
     const toCall = Math.max(0, gs.currentBet - player.bet);
@@ -664,6 +690,9 @@ export class HorseLogic {
       isOmaha: vi.isOmaha,
       isPotLimit: vi.isPotLimit,
       riskAdd: icmRisk(gs, stackBB),
+      // NLH only: widening the iso range vs limpers is an NLH edge; PLO limped
+      // pots play multiway/postflop where a wide iso bloats pots out of line.
+      isoWiden: (opts.v10Iso ?? opts.v10) !== false && !vi.isOmaha ? 0.06 : 0,
       rand: fastRandom,
     });
 
@@ -864,6 +893,11 @@ export class HorseLogic {
     const useNlhX = (opts.v8Nlh ?? useV8) && !vi.isOmaha;
     const useSizing = (opts.v9Sizing ?? opts.v9) !== false;
     const useTiming = (opts.v9Timing ?? opts.v9) !== false;
+    // V10 strategy layer — each ablation flag defaults to the v10 master.
+    const useCbet10 = (opts.v10Cbet ?? opts.v10) !== false;
+    const useSpr10 = (opts.v10Spr ?? opts.v10) !== false;
+    const useRake10 = (opts.v10Rake ?? opts.v10) !== false;
+    const useThin10 = (opts.v10ThinValue ?? opts.v10) !== false;
     const { currentBet, pot } = gs;
     const toCall = Math.max(0, currentBet - player.bet);
     const stack = player.stack;
@@ -1005,6 +1039,23 @@ export class HorseLogic {
 
     // V3 texture-driven sizing: small on dry boards, big on wet ones.
     const sizeBase = 0.3 + wetness * 0.35; // 0.30 (dry) .. 0.65 (soaked)
+
+    // V10 RANGE-ADVANTAGE c-bet read: a high-card, dry, unpaired board smashes
+    // the preflop/betting aggressor's range (AK, AQ, big pairs) far harder than
+    // a caller's, so the aggressor c-bets its WHOLE range at high frequency and
+    // small size. Low/connected/paired boards are closer to even and the branch
+    // that uses this is already dry-gated, so V10 only adds the range-c-bet
+    // upgrade — never c-bets a board it would not have.
+    const boardRanks = gs.communityCards.map((cc) => cc.rank);
+    const boardHasHigh = boardRanks.some((r) => r === 'A' || r === 'K' || r === 'Q');
+    const rankCounts: Record<string, number> = {};
+    for (const r of boardRanks) rankCounts[r] = (rankCounts[r] || 0) + 1;
+    const pairedBoard = Object.values(rankCounts).some((n) => n >= 2);
+    // NLH only: in Omaha equities run close and everyone flops draws, so a
+    // high-card dry board does not hand the aggressor a range edge — the A/B
+    // showed the range-c-bet upgrade does not translate, so it is gated off.
+    const boardFavorsAggressor =
+      useCbet10 && useIQ && !vi.isOmaha && boardHasHigh && wetness < 0.4 && !pairedBoard;
     // V3 bluff gating: blockers upgrade bluffs; wet boards without one demote.
     const blockerMod = blocker ? 1.35 : wetness > 0.55 ? 0.7 : 1.0;
     // V4: position scales bluffing — pressure comes cheaper in position.
@@ -1092,8 +1143,20 @@ export class HorseLogic {
       // worse. Check back and win at showdown instead.
       if (equity >= 0.52 + mw - (exploit.valueThinMod - 1) * 0.08) {
         if (dangered) return { action: 'check', thinkTime: 0 };
-        const thinFreq =
-          isRiver && useHR && exploit.valueThinMod <= 1.05 && equity < 0.62 + mw ? 0.25 : 0.65;
+        // V10: when hero HELD THE INITIATIVE and the river checks to us, the
+        // opponent's range is capped (they would have raised their value along
+        // the way), so a medium made hand should thin-value MORE, not fold out
+        // worse by checking back. Requires positive evidence of a capped line —
+        // an unknown/no-history river is NOT treated as capped (that is the V5
+        // polarization spot, left intact).
+        // NLH only: Omaha river value is already governed by V8 nut-
+        // consciousness, and thin-value there over-bets non-nut hands.
+        const cappedRiver = useThin10 && isRiver && useHR && initiative === 'hero' && !vi.isOmaha;
+        const thinFreq = cappedRiver
+          ? 0.72 // capped range checked to us — thin-value harder than the default
+          : isRiver && useHR && exploit.valueThinMod <= 1.05 && equity < 0.62 + mw
+            ? 0.25
+            : 0.65;
         if (vulnerable || fastRandom() < thinFreq) {
           return this.betSize(pot, sizeBase + fastRandom() * 0.12, player, gs, vi, params, useSizing);
         }
@@ -1126,6 +1189,11 @@ export class HorseLogic {
       // V5 PROBE: when the previous street checked through, everyone's range
       // is capped — attack it even without the betting lead (delayed c-bet /
       // missed-c-bet stab).
+      // V10: on a range-advantage board fire the whole range more often at a
+      // smaller size (the classic high-freq small c-bet); otherwise keep the
+      // V4 dry-board stab.
+      const cbetFreqMult = boardFavorsAggressor ? 1.35 : 1.0;
+      const cbetSize = boardFavorsAggressor ? 0.28 + fastRandom() * 0.06 : 0.3 + fastRandom() * 0.1;
       if (
         (initiative === 'hero' || prevChecked) &&
         oppCount <= 2 &&
@@ -1135,10 +1203,13 @@ export class HorseLogic {
         equity < 0.52 &&
         !isRiver &&
         fastRandom() <
-          (oppCount === 1 ? 0.6 : 0.35) * (prevChecked ? 1.15 : 1.0) * Math.min(1.3, bluffScale)
+          (oppCount === 1 ? 0.6 : 0.35) *
+            (prevChecked ? 1.15 : 1.0) *
+            cbetFreqMult *
+            Math.min(1.3, bluffScale)
       ) {
         planBarrel(equity);
-        return this.betSize(pot, 0.3 + fastRandom() * 0.1, player, gs, vi, params, useSizing);
+        return this.betSize(pot, cbetSize, player, gs, vi, params, useSizing);
       }
       // Semi-bluff with live draws (equity from draws is in the MC number).
       // V4: made hands in this band (two pair on wet boards) prefer showdown
@@ -1175,7 +1246,11 @@ export class HorseLogic {
     }
 
     // ═══ Facing a bet ═══
-    const potOdds = toCall / (pot + toCall);
+    // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
+    // marginal calls against the raked pot, not the raw one. Above the cap
+    // (large pots) the drag is zero and this reduces to honest pot odds.
+    const rakeMarg = useRake10 ? rakeDrag(pot, gs.bigBlind) : 0;
+    const potOdds = toCall / (pot * (1 - rakeMarg) + toCall);
     const betRatio = pot > 0 ? toCall / pot : 1;
 
     // Low-SPR commitment: with the money effectively in, play equity directly.
@@ -1194,7 +1269,12 @@ export class HorseLogic {
     // Raise for value. V4: out of position lean harder on the check-raise
     // (denies equity + realizes fold equity); on a fresh scare card we do not
     // beat, downgrade the raise to a call.
-    const valueRaiseThresh = 0.68 + mw + (isRiver ? 0.04 : 0);
+    // V10 SPR / pot control: at an awkward mid SPR (2-4) medium made hands
+    // stack off into trouble, so raise the bar and flat instead; at a low SPR
+    // (<1.5) strong-not-nut hands should commit, so lower it. Nut hands clear
+    // every bar regardless.
+    const sprAdj = useSpr10 ? (spr >= 2 && spr <= 4 ? 0.03 : spr < 1.5 ? -0.03 : 0) : 0;
+    const valueRaiseThresh = 0.68 + mw + (isRiver ? 0.04 : 0) + sprAdj;
     if (equity >= valueRaiseThresh) {
       // V8 O8: never raise into a likely quarter — flat and see the split.
       if (quartered) return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -1274,6 +1354,9 @@ export class HorseLogic {
     // V7 overbet polarity: an overbet is nuts-or-bluffs. Medium hands without
     // a nut blocker fold more; holding the blocker shifts toward the catch.
     if (useSizeReads && betRatio > 1.2) respect += blocker ? -0.05 : 0.08;
+    // (V10 explored a river blocker-aware bluff-catch adjustment here; the
+    // duplicate-deal A/B showed it LEAKED in both directions — the V4/V7 river
+    // logic is already well-calibrated — so it was dropped, not shipped.)
     // V8: OOP calls tighten further multiway — equity realization out of
     // position degrades with every extra live opponent.
     const posEdge = useIQ
@@ -1571,6 +1654,8 @@ export class HorseLogic {
     // V9 humanization internals
     moodOf,
     snapFraction,
+    // V10 strategy internals
+    rakeDrag,
   };
 
   /** Exposed for tests: variant-aware Monte Carlo equity (0..1). */

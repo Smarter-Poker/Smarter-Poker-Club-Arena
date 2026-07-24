@@ -506,7 +506,7 @@ class TournamentService {
     const { data: clubTournaments, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at'
       )
       .eq('club_id', resolvedId)
       .order('created_at', { ascending: false });
@@ -551,7 +551,7 @@ class TournamentService {
           const { data: xmttData } = await supabase
             .from('tournaments')
             .select(
-              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level'
+              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at'
             )
             .eq('union_id', unionClub.union_id)
             .eq('is_xmtt', true)
@@ -588,7 +588,7 @@ class TournamentService {
     const { data, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at'
       )
       .eq('id', tournamentId)
       .maybeSingle();
@@ -738,6 +738,12 @@ class TournamentService {
         // Late reg + rebuy cutoff (level-based, per-tournament)
         late_reg_levels: config.lateRegistrationLevels || 0,
         late_reg_mins: config.lateRegistrationLevels || 0, // Legacy fallback
+        // TOURNEY-AUDIT 2026-07-24 (sweep 6): satellite target finally wired —
+        // the engine awards seats in this tournament at satellite finish.
+        satellite_target_id:
+          config.type === 'satellite' && config.satelliteTarget?.tournamentId
+            ? config.satelliteTarget.tournamentId
+            : null,
         start_time: config.startTime?.toISOString() || new Date(Date.now() + 60000).toISOString(),
         // Rebuy / Re-Entry / Add-on
         is_rebuy: config.isRebuy || false,
@@ -1079,118 +1085,19 @@ class TournamentService {
       }
     }
 
-    // ── LATE REGISTRATION: seat player at active table immediately ──
+    // ── LATE REGISTRATION ──
+    // TOURNEY-AUDIT 2026-07-24 (sweep 6): seating is now SERVER-AUTHORITATIVE.
+    // Dan's rule: an MTT late registrant is never waiting — the tournament
+    // engine's ensureLateRegSeated() cycle (every 5s) seats them at a table
+    // with an open seat, or spawns a new table and lets the TableBalancer
+    // redraw seats across all tables. The old client-side seating raced the
+    // engine (double-seat risk), inserted seats WITHOUT stacks in one path,
+    // and dumped players onto a dead "alternate list" when its case-sensitive
+    // status filter missed. The client now only registers; the engine seats.
     if (isLateRegOpen) {
       console.debug(
-        `[TournamentService] Late reg: seating ${userId.slice(0, 8)} in running tournament ${tournamentId.slice(0, 8)}`
+        `[TournamentService] Late reg: ${userId.slice(0, 8)} registered — engine will seat within ~5s`
       );
-      try {
-        // Find tournament table with an open seat
-        const { data: tables } = await supabase
-          .from('tables')
-          .select('id, max_players, current_players')
-          .eq('tournament_id', tournamentId)
-          // TOURNEY-AUDIT 2026-07-24: 'RUNNING' added — startTournament and
-          // createFinalTable write UPPERCASE status, so this case-sensitive
-          // filter never matched a started table and every late-registering
-          // player was dumped to the alternate list instead of being seated.
-          .in('status', ['active', 'running', 'RUNNING', 'waiting']);
-
-        const openTable = (tables || []).find((t) => t.current_players < t.max_players);
-        if (openTable) {
-          // Find an empty seat number
-          const { data: existingSeats } = await supabase
-            .from('table_seats')
-            .select('seat_number')
-            .eq('table_id', openTable.id)
-            .is('left_at', null);
-
-          const takenSeats = new Set((existingSeats || []).map((s) => s.seat_number));
-          let seatNumber = 1;
-          while (takenSeats.has(seatNumber) && seatNumber <= openTable.max_players) seatNumber++;
-          // Guard: no valid seat found (all seats taken despite current_players check)
-          if (seatNumber > openTable.max_players) {
-            reportError(
-              new Error(
-                `[TournamentService] Late reg: no valid seat at table ${openTable.id} (race condition)`
-              ),
-              'TournamentService.Late_reg'
-            );
-            throw new Error('Late registration failed: table is full. Please try again.');
-          }
-
-          // Seat the player — check for errors
-          const { error: seatErr } = await supabase.from('table_seats').insert({
-            table_id: openTable.id,
-            user_id: userId,
-            seat_number: seatNumber,
-          });
-
-          if (seatErr) {
-            reportError(
-              new Error(`[TournamentService] Late reg seat insert failed: ${seatErr.message}`),
-              'TournamentService.Late_reg_seat_insert_failed'
-            );
-            console.debug(
-              `[TournamentService] Player ${userId.slice(0, 8)} added to alternate list due to seat insert failure.`
-            );
-            // No refund — player remains as 'registered' on the alternate list
-            // and will be seated by the TournamentEngine when a seat opens.
-          } else {
-            // Update tournament_players to playing status with starting chips
-            const { error: tpErr } = await supabase
-              .from('tournament_players')
-              .update({
-                status: 'playing',
-                chips: tournament.starting_chips,
-                table_id: openTable.id,
-              })
-              .eq('tournament_id', tournamentId)
-              .eq('user_id', userId);
-
-            if (tpErr) {
-              reportError(
-                new Error(`[TournamentService] Late reg player update failed: ${tpErr.message}`),
-                'TournamentService.Late_reg_player_update_failed'
-              );
-              // Attempt to clean up the seat we just inserted
-              await supabase
-                .from('table_seats')
-                .delete()
-                .eq('table_id', openTable.id)
-                .eq('user_id', userId);
-              throw new Error(
-                'Late registration failed: could not update player status. Please try again.'
-              );
-            }
-
-            // Increment table player count
-            const { error: tableErr } = await supabase
-              .from('tables')
-              .update({
-                current_players: openTable.current_players + 1,
-              })
-              .eq('id', openTable.id);
-
-            if (tableErr)
-              reportError(
-                new Error(`[TournamentService] Late reg table count failed: ${tableErr.message}`),
-                'TournamentService.Late_reg_table_count_failed'
-              );
-          }
-        } else {
-          reportError(
-            new Error(
-              `[TournamentService] Late reg: no open table found for ${tournamentId.slice(0, 8)} — adding to alternate list`
-            ),
-            'TournamentService.Late_reg'
-          );
-          // No table available — DO NOT refund. Player enters the alternate waitlist.
-          // They remain 'registered' in tournament_players and TournamentEngine will seat them.
-        }
-      } catch (lateRegErr) {
-        reportError(lateRegErr, 'TournamentService.Late_reg_seating_failed');
-      }
     }
 
     return data;
@@ -1806,16 +1713,29 @@ class TournamentService {
     // AHEAD of the real level and mis-gated late-reg/rebuy/add-on windows
     // (which are additionally enforced server-side in process_tournament_rebuy
     // now). Wall-clock remains the fallback for level TIMING display only.
-    const serverLevel = (tournament as unknown as { current_level?: number | null }).current_level;
+    const serverT = tournament as unknown as {
+      current_level?: number | null;
+      level_started_at?: string | null;
+    };
+    const serverLevel = serverT.current_level;
     if (typeof serverLevel === 'number' && serverLevel >= 0 && serverLevel < blinds.length) {
       const level = blinds[serverLevel];
+      const durationSec = (level?.durationMinutes || 10) * 60;
+      // TOURNEY-AUDIT 2026-07-24 (sweep 5): precise remaining time from the
+      // server-persisted level clock (tournaments.level_started_at) — the
+      // countdown now matches the engine's actual timer instead of showing
+      // the full level duration as an upper bound.
+      let remaining = durationSec;
+      if (serverT.level_started_at) {
+        const elapsedSec = (Date.now() - new Date(serverT.level_started_at).getTime()) / 1000;
+        if (elapsedSec >= 0 && elapsedSec < durationSec * 4) {
+          remaining = Math.max(0, Math.floor(durationSec - elapsedSec));
+        }
+      }
       return {
         currentLevel: level,
         nextLevel: blinds[serverLevel + 1] || null,
-        // Exact within-level remaining time isn't derivable client-side
-        // (server owns the clock); show the full level duration as an upper
-        // bound — the table UI gets precise timing from engine broadcasts.
-        timeRemainingSeconds: (level?.durationMinutes || 10) * 60,
+        timeRemainingSeconds: remaining,
         levelIndex: serverLevel,
       };
     }

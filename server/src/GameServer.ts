@@ -204,11 +204,21 @@ async function recoverStuckCompletingTournaments(
           .eq('tournament_id', t.id);
         const rows = players ?? [];
 
-        const credit = async (userId: string, amount: number, desc: string) => {
+        const credit = async (
+          userId: string,
+          amount: number,
+          desc: string,
+          idempotencyKey: string
+        ) => {
           if (amount <= 0) return;
+          // P1 FIX (2026-07-24): idempotency key in the SAME format the main
+          // elimination-prize path uses (`tourney:{id}:prize:{user}:{position}`)
+          // so this recovery path and the main path dedupe against each other and
+          // repeated recovery scans of a COMPLETING tournament cannot double-pay.
           const { error } = await supabase.rpc('credit_player_wallet', {
             p_user_id: userId,
             p_amount: amount,
+            p_idempotency_key: idempotencyKey,
           });
           if (error) throw new Error(`credit failed for ${userId}: ${error.message}`);
           await supabase.rpc('log_wallet_transaction', {
@@ -234,7 +244,8 @@ async function recoverStuckCompletingTournaments(
           await credit(
             alive[i].user_id,
             prize,
-            `Tournament prize (recovery): position ${place} — ${t.name || 'tournament'}`
+            `Tournament prize (recovery): position ${place} — ${t.name || 'tournament'}`,
+            `tourney:${t.id}:prize:${alive[i].user_id}:${place}`
           );
           await supabase
             .from('tournament_players')
@@ -257,7 +268,8 @@ async function recoverStuckCompletingTournaments(
             await credit(
               r.user_id,
               diff,
-              `Tournament prize top-up (recovery): position ${r.position} — ${t.name || 'tournament'}`
+              `Tournament prize top-up (recovery): position ${r.position} — ${t.name || 'tournament'}`,
+              `tourney:${t.id}:prize:${r.user_id}:${r.position}`
             );
             await supabase.from('tournament_players').update({ prize: owed }).eq('id', r.id);
           }
@@ -1075,56 +1087,26 @@ export class GameServer {
             console.log(
               `[GameServer] Cancelling tournament: ${tournament.name} — only ${tournament.current_players}/${minPlayers} players after 30min`
             );
-            // Refund all registered players
-            const { data: players } = await supabase
-              .from('tournament_players')
-              .select('user_id')
-              .eq('tournament_id', tournament.id)
-              .eq('status', 'registered');
-
-            const refundAmount = (tournament.buy_in_amount || 0) + (tournament.buy_in_fee || 0);
-            for (const p of players || []) {
-              try {
-                const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
-                  p_user_id: p.user_id,
-                  p_amount: refundAmount,
-                });
-                if (creditErr) {
-                  reportError(
-                    new Error(
-                      `[GameServer] Refund FAILED for ${p.user_id.slice(0, 8)} in ${tournament.name}: ${creditErr.message}`
-                    ),
-                    'GameServer.Refund_FAILED_for_puser_idslic'
-                  );
-                  continue; // Skip log for this player but keep refunding others
-                }
-                const { error: logErr } = await supabase.rpc('log_wallet_transaction', {
-                  p_user_id: p.user_id,
-                  p_wallet_type: 'PLAYER',
-                  p_amount: refundAmount,
-                  p_type: 'credit',
-                  p_category: 'refund',
-                  p_description: `Tournament cancelled (insufficient players): ${tournament.name}`,
-                  p_table_id: null,
-                  p_hand_id: null,
-                  p_related_entity_id: tournament.id,
-                });
-                if (logErr)
-                  reportError(
-                    new Error(
-                      `[GameServer] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`
-                    ),
-                    'GameServer.Refund_log_FAILED_for_puser_id'
-                  );
-              } catch (refundErr) {
-                reportError(refundErr, 'GameServer.Refund_exception_for_puser_ids');
-              }
-            }
-            await supabase.from('tournament_players').delete().eq('tournament_id', tournament.id);
-            await supabase
+            // TOURNEY-AUDIT 2026-07-24 (sweep 5) [CRITICAL — money mint]: the
+            // old inline refund loop credited buy-in + fee to EVERY registered
+            // row INCLUDING HORSES, who register free — every under-filled
+            // auto-cancel (the platform runs hundreds per week) minted
+            // horses' entry money out of thin air. The shared cleanup refunds
+            // ONLY real players (with fee reversal in the rake ledger) and
+            // closes the player rows instead of deleting the audit trail.
+            const { data: cancelClaim } = await supabase
               .from('tournaments')
-              .update({ status: 'CANCELLED' })
-              .eq('id', tournament.id);
+              .update({ status: 'CANCELLED', ended_at: new Date().toISOString() })
+              .eq('id', tournament.id)
+              .in('status', ['ANNOUNCED', 'REGISTERING'])
+              .select('id');
+            if (cancelClaim && cancelClaim.length > 0) {
+              await refundAndCloseCancelledTournament(
+                tournament.id,
+                tournament.name ?? null,
+                'Tournament cancelled (insufficient players)'
+              );
+            }
             continue;
           }
 
@@ -1487,55 +1469,24 @@ export class TournamentManager {
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} player(s) — cancelling (minimum 3)`
         );
-        // Refund all registered players
-        const { data: regPlayers } = await supabase
-          .from('tournament_players')
-          .select('user_id')
-          .eq('tournament_id', this.tournamentId)
-          .eq('status', 'registered');
-        const refundAmt = (tournament.buy_in_amount || 0) + (tournament.buy_in_fee || 0);
-        for (const p of regPlayers || []) {
-          try {
-            const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
-              p_user_id: p.user_id,
-              p_amount: refundAmt,
-            });
-            if (creditErr) {
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Refund FAILED for ${p.user_id.slice(0, 8)}: ${creditErr.message}`
-                ),
-                'TournamentthistournamentIdslic.Refund_FAILED_for_puser_idslic'
-              );
-              continue;
-            }
-            const { error: logErr } = await supabase.rpc('log_wallet_transaction', {
-              p_user_id: p.user_id,
-              p_wallet_type: 'PLAYER',
-              p_amount: refundAmt,
-              p_type: 'credit',
-              p_category: 'refund',
-              p_description: `Tournament cancelled (insufficient players): ${tournament.name}`,
-              p_table_id: null,
-              p_hand_id: null,
-              p_related_entity_id: this.tournamentId,
-            });
-            if (logErr)
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`
-                ),
-                'TournamentthistournamentIdslic.Refund_log_FAILED_for_puser_id'
-              );
-          } catch (refundErr) {
-            reportError(refundErr, 'TournamentthistournamentIdslic.Refund_exception_for_puser_ids');
-          }
-        }
-        await supabase.from('tournament_players').delete().eq('tournament_id', this.tournamentId);
-        await supabase
+        // TOURNEY-AUDIT 2026-07-24 (sweep 5) [CRITICAL — money mint]: same fix
+        // as the discovery-loop auto-cancel — the old inline loop refunded
+        // buy-in + fee to HORSES too (who paid nothing), minting chips on
+        // every under-filled start. Shared cleanup refunds only real players
+        // (with fee reversal) and closes rows instead of deleting them.
+        const { data: cancelClaim } = await supabase
           .from('tournaments')
-          .update({ status: 'CANCELLED' })
-          .eq('id', this.tournamentId);
+          .update({ status: 'CANCELLED', ended_at: new Date().toISOString() })
+          .eq('id', this.tournamentId)
+          .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+          .select('id');
+        if (cancelClaim && cancelClaim.length > 0) {
+          await refundAndCloseCancelledTournament(
+            this.tournamentId,
+            tournament.name ?? null,
+            'Tournament cancelled (insufficient players)'
+          );
+        }
         this.running = false;
         return;
       }
@@ -2399,6 +2350,12 @@ export class TournamentManager {
           }
         }
 
+        // TOURNEY-AUDIT 2026-07-24 (sweep 6): server-authoritative seating —
+        // late registrants / re-entries are seated within one cycle; if every
+        // table is full they're marked 'playing' so checkDynamicTableExpansion
+        // spawns a table and the balancer redraws. No player ever waits.
+        await this.ensureLateRegSeated();
+
         await this.checkTableBalance();
 
         // FIX 155: Check if new tables need to be created during rebuy/late-reg period
@@ -2497,13 +2454,17 @@ export class TournamentManager {
     const { data: tournament } = await supabase
       .from('tournaments')
       .select(
-        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max'
+        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     let prize = 0;
-    if (tournament?.payout_structure) {
+    // TOURNEY-AUDIT 2026-07-24 (sweep 6): SATELLITES pay SEATS, not cash — the
+    // award happens once at finishTournament (top finishers are registered
+    // into the target tournament). Per-elimination cash would double-dip.
+    const isSatellite = (tournament as any)?.variant === 'satellite';
+    if (!isSatellite && tournament?.payout_structure) {
       let payouts = tournament.payout_structure;
       if (typeof payouts === 'string') {
         try {
@@ -2547,9 +2508,10 @@ export class TournamentManager {
         const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
           p_user_id: userId,
           p_amount: prize,
-          // P0-1 FIX: idempotency key neutralises the committed-but-timed-out
-          // retry double-credit in this 3x loop. Deterministic per (tournament,
-          // player, finishing position) — a retry of the same prize is a no-op.
+          // P1 FIX (2026-07-24): idempotency key so a committed-but-timed-out
+          // credit is a no-op on the next retry attempt (no double prize mint),
+          // and so the recovery path dedupes against this main path — SAME format
+          // (`tourney:{id}:prize:{user}:{position}`).
           p_idempotency_key: `tourney:${this.tournamentId}:prize:${userId}:${position}`,
         });
         if (!creditErr) {
@@ -2874,11 +2836,6 @@ export class TournamentManager {
       const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
         p_user_id: knockerUserId,
         p_amount: amount,
-        // P0-1 FIX: idempotency key neutralises the committed-but-timed-out
-        // retry double-credit in this 3x loop. Deterministic per (tournament,
-        // knocker, eliminated player) — one bounty per elimination, so a retry
-        // of the same bounty is a no-op.
-        p_idempotency_key: `tourney:${this.tournamentId}:bounty:${knockerUserId}:${eliminatedUserId}`,
       });
       if (!creditErr) {
         creditSuccess = true;
@@ -3033,7 +2990,7 @@ export class TournamentManager {
       // TOURNEY-AUDIT 2026-07-24: bounty flags added so the champion's own
       // bounty head can be paid below.
       .select(
-        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty'
+        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, satellite_target_id'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -3054,8 +3011,13 @@ export class TournamentManager {
     }
 
     // Calculate winner prize — with fallback if payout_structure missing or no place 1
+    // TOURNEY-AUDIT 2026-07-24 (sweep 6): satellites award SEATS at the end
+    // (processSatelliteAwards below), never per-place cash here.
+    const isSatelliteFinish =
+      (tournament as any)?.variant === 'satellite' ||
+      ((tournament as any)?.tournament_type || '').toUpperCase() === 'SATELLITE';
     let winnerPrize = 0;
-    if (tournament?.payout_structure) {
+    if (!isSatelliteFinish && tournament?.payout_structure) {
       let payouts = tournament.payout_structure;
       if (typeof payouts === 'string') {
         try {
@@ -3078,7 +3040,7 @@ export class TournamentManager {
         );
         winnerPrize = Math.round((tournament.prize_pool || 0) * 100) / 100;
       }
-    } else {
+    } else if (!isSatelliteFinish) {
       // No payout_structure at all — award full prize pool
       // Round 53: Math.round, not trunc — same IEEE-drift family as the rest of Round 40.
       console.warn(
@@ -3143,6 +3105,22 @@ export class TournamentManager {
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', winnerId);
 
+    // ── SATELLITE SEAT AWARDS ──
+    // TOURNEY-AUDIT 2026-07-24 (sweep 6): satellites finally award what they
+    // promise — SEATS in the target tournament. seats = floor(pool / target
+    // entry cost); the top `seats` finishers are auto-registered into the
+    // target (no wallet movement — the seat IS the prize; their tp.prize
+    // records the ticket value for history). Any remainder is paid as cash to
+    // the next finisher. If the target is missing or no longer open, each
+    // would-be seat winner receives the ticket value in cash instead.
+    if (isSatelliteFinish) {
+      try {
+        await this.processSatelliteAwards(tournament);
+      } catch (satErr) {
+        reportError(satErr, 'Tournament.satellite_awards_failed');
+      }
+    }
+
     // TOURNEY-AUDIT 2026-07-24 [money]: in bounty/PKO formats the champion
     // collects their OWN remaining bounty head (base bounty + everything
     // accumulated via PKO 50%-to-head splits). This was never paid — the
@@ -3201,6 +3179,51 @@ export class TournamentManager {
       } catch (obEx) {
         reportError(obEx, 'Tournament.winner_own_bounty_exception');
       }
+    }
+
+    // TOURNEY-AUDIT 2026-07-24 (sweep 5): normalize FINAL standings.
+    // Eliminations during open late registration were stamped with positions
+    // relative to the field size AT BUST TIME, so an early bust carries a
+    // flattering place once more players enter; same-sweep ties were ordered
+    // arbitrarily. Money was already paid correctly at bust (paying places
+    // only exist after late reg closes), so this renumbers POSITIONS ONLY —
+    // rows that were paid a prize (and the winner) keep their positions; all
+    // zero-prize finishers are re-ranked by bust time (earliest bust = worst
+    // place) over the FINAL entrant count.
+    try {
+      const { data: allRows } = await supabase
+        .from('tournament_players')
+        .select('id, status, position, prize, eliminated_at')
+        .eq('tournament_id', this.tournamentId);
+      if (allRows && allRows.length > 0) {
+        const totalEntrants = allRows.length;
+        const protectedRows = allRows.filter(
+          (r) => r.status === 'winner' || Number(r.prize || 0) > 0
+        );
+        const protectedPositions = new Set(
+          protectedRows.map((r) => r.position).filter((p) => p != null)
+        );
+        const unpaid = allRows
+          .filter((r) => r.status === 'eliminated' && Number(r.prize || 0) === 0)
+          .sort(
+            (a, b) =>
+              new Date(a.eliminated_at || 0).getTime() - new Date(b.eliminated_at || 0).getTime()
+          );
+        let nextPos = totalEntrants;
+        for (const row of unpaid) {
+          while (protectedPositions.has(nextPos) && nextPos > 1) nextPos--;
+          if (nextPos <= 1) break;
+          if (row.position !== nextPos) {
+            await supabase
+              .from('tournament_players')
+              .update({ position: nextPos })
+              .eq('id', row.id);
+          }
+          nextPos--;
+        }
+      }
+    } catch (standErr) {
+      reportError(standErr, 'Tournament.final_standings_renumber');
     }
 
     // ── TOURNAMENT RAKE SETTLEMENT ──
@@ -3622,6 +3645,267 @@ export class TournamentManager {
       if (await isIdle()) return true;
     }
     return false;
+  }
+
+  /**
+   * TOURNEY-AUDIT 2026-07-24 (sweep 6): server-authoritative seating for late
+   * registrants and re-entries. Dan's rule: an MTT entrant is NEVER waiting.
+   * Every 5s cycle:
+   *   1. Find tournament_players rows (registered/playing) with NO active seat
+   *      at any of this tournament's tables.
+   *   2. Seat each at the table with the most open seats (stack = their chips,
+   *      or starting_chips for fresh 'registered' rows, which are promoted to
+   *      'playing').
+   *   3. If no table has an open seat, promote them to 'playing' anyway so
+   *      checkDynamicTableExpansion (next call in the same cycle) counts them,
+   *      spawns a new table, and the TableBalancer redraws seats.
+   * Idempotent per cycle; the unique (table_id, user_id) WHERE left_at IS NULL
+   * index makes double-seating impossible even under races.
+   */
+  /** TOURNEY-AUDIT 2026-07-24 (sweep 6): satellite seat distribution. */
+  private async processSatelliteAwards(tournament: any): Promise<void> {
+    const pool = Math.round(Number(tournament?.prize_pool || 0) * 100) / 100;
+    if (pool <= 0) return;
+
+    const targetId = tournament?.satellite_target_id as string | null;
+    interface SatelliteTarget {
+      id: string;
+      name: string | null;
+      buy_in_amount: number;
+      buy_in_fee: number;
+      status: string;
+      max_players: number | null;
+      current_players: number | null;
+    }
+    let target: SatelliteTarget | null = null;
+    if (targetId) {
+      const { data } = await supabase
+        .from('tournaments')
+        .select('id, name, buy_in_amount, buy_in_fee, status, max_players, current_players')
+        .eq('id', targetId)
+        .maybeSingle();
+      target = (data as SatelliteTarget | null) ?? null;
+    }
+    const targetOpen =
+      !!target && ['ANNOUNCED', 'REGISTERING'].includes((target.status || '').toUpperCase());
+    const ticketCost = target
+      ? Math.round((Number(target.buy_in_amount || 0) + Number(target.buy_in_fee || 0)) * 100) / 100
+      : 0;
+
+    // Finishers ordered best-first
+    const { data: finishers } = await supabase
+      .from('tournament_players')
+      .select('user_id, username, position, status')
+      .eq('tournament_id', this.tournamentId)
+      .not('position', 'is', null)
+      .order('position', { ascending: true });
+    const ranked = finishers ?? [];
+    if (ranked.length === 0) return;
+
+    const seats = ticketCost > 0 ? Math.floor(pool / ticketCost) : 0;
+    const awardCount = Math.min(seats, ranked.length);
+    const remainder = Math.round((pool - awardCount * ticketCost) * 100) / 100;
+
+    const payCash = async (userId: string, amount: number, desc: string) => {
+      if (amount <= 0) return;
+      const { error } = await supabase.rpc('credit_player_wallet', {
+        p_user_id: userId,
+        p_amount: amount,
+      });
+      if (error) {
+        reportError(
+          new Error(
+            `[Satellite:${this.tournamentId.slice(0, 8)}] cash credit failed: ${error.message}`
+          ),
+          'Tournament.satellite_cash_failed'
+        );
+        return;
+      }
+      await supabase.rpc('log_wallet_transaction', {
+        p_user_id: userId,
+        p_wallet_type: 'PLAYER',
+        p_amount: amount,
+        p_type: 'credit',
+        p_category: 'prize',
+        p_description: desc,
+        p_table_id: null,
+        p_hand_id: null,
+        p_related_entity_id: this.tournamentId,
+      });
+    };
+
+    if (awardCount === 0) {
+      // No target / pool below one ticket — whole pool is cash to 1st place
+      await payCash(
+        ranked[0].user_id,
+        pool,
+        `Satellite payout (no target seats available): ${tournament?.name || 'satellite'}`
+      );
+      await supabase
+        .from('tournament_players')
+        .update({ prize: pool })
+        .eq('tournament_id', this.tournamentId)
+        .eq('user_id', ranked[0].user_id);
+      return;
+    }
+
+    for (let i = 0; i < awardCount; i++) {
+      const w = ranked[i];
+      if (targetOpen && target) {
+        // Register the seat winner into the target (idempotent on unique key)
+        const { error: regErr } = await supabase.from('tournament_players').insert({
+          tournament_id: target.id,
+          user_id: w.user_id,
+          username: w.username || 'Player',
+          status: 'registered',
+          chips: 0,
+        });
+        if (regErr && !/duplicate|unique/i.test(regErr.message || '')) {
+          // Registration failed for a real reason — pay ticket value in cash
+          await payCash(
+            w.user_id,
+            ticketCost,
+            `Satellite seat fallback (registration failed): ${target.name || 'target'}`
+          );
+        } else {
+          console.log(
+            `[Satellite:${this.tournamentId.slice(0, 8)}] Seat awarded: ${w.user_id.slice(0, 8)} → ${target.name || target.id.slice(0, 8)}`
+          );
+        }
+      } else {
+        // Target closed/missing — ticket value in cash
+        await payCash(
+          w.user_id,
+          ticketCost,
+          `Satellite ticket cashed (target unavailable): ${tournament?.name || 'satellite'}`
+        );
+      }
+      await supabase
+        .from('tournament_players')
+        .update({ prize: ticketCost })
+        .eq('tournament_id', this.tournamentId)
+        .eq('user_id', w.user_id);
+    }
+
+    // Remainder → next finisher as cash (or last seat winner if field exhausted)
+    if (remainder > 0) {
+      const nextFinisher = ranked[awardCount] || ranked[awardCount - 1];
+      await payCash(
+        nextFinisher.user_id,
+        remainder,
+        `Satellite remainder payout: ${tournament?.name || 'satellite'}`
+      );
+    }
+    if (targetOpen && target && awardCount > 0) {
+      await supabase
+        .from('tournaments')
+        .update({ current_players: Number(target.current_players || 0) + awardCount })
+        .eq('id', target.id);
+    }
+  }
+
+  private async ensureLateRegSeated(): Promise<void> {
+    try {
+      if (this.tournamentCache?.status && this.tournamentCache.status !== 'RUNNING') return;
+      const { data: entrants } = await supabase
+        .from('tournament_players')
+        .select('user_id, username, status, chips')
+        .eq('tournament_id', this.tournamentId)
+        .in('status', ['registered', 'playing']);
+      if (!entrants || entrants.length === 0) return;
+
+      // Active tables of THIS tournament (DB-grounded, not the in-memory map)
+      const { data: tourneyTables } = await supabase
+        .from('tables')
+        .select('id, max_players')
+        .eq('tournament_id', this.tournamentId)
+        .in('status', ['waiting', 'running', 'RUNNING', 'active']);
+      if (!tourneyTables || tourneyTables.length === 0) return;
+      const tableIds = tourneyTables.map((t) => t.id);
+
+      const { data: seatRows } = await supabase
+        .from('table_seats')
+        .select('user_id, table_id, seat_number')
+        .in('table_id', tableIds)
+        .is('left_at', null);
+      const seatedUsers = new Set((seatRows ?? []).map((s) => s.user_id));
+      const unseated = entrants.filter((e) => !seatedUsers.has(e.user_id));
+      if (unseated.length === 0) return;
+
+      const startingChips = Number(this.tournamentCache?.starting_chips || 0);
+
+      // Build per-table occupancy
+      const occupancy = new Map<string, { max: number; taken: Set<number> }>();
+      for (const t of tourneyTables) {
+        occupancy.set(t.id, { max: t.max_players || 9, taken: new Set() });
+      }
+      for (const s of seatRows ?? []) {
+        occupancy.get(s.table_id)?.taken.add(s.seat_number);
+      }
+
+      for (const player of unseated) {
+        // Choose the active table with the most open seats
+        let best: { tableId: string; openSeats: number } | null = null;
+        for (const [tid, occ] of occupancy) {
+          const open = occ.max - occ.taken.size;
+          if (open > 0 && (!best || open > best.openSeats)) {
+            best = { tableId: tid, openSeats: open };
+          }
+        }
+
+        const playerChips =
+          player.status === 'registered' || Number(player.chips || 0) <= 0
+            ? startingChips
+            : Number(player.chips);
+
+        if (!best) {
+          // All tables full — promote to 'playing' so expansion counts them;
+          // a new table spawns this same cycle and we seat next cycle.
+          if (player.status === 'registered') {
+            await supabase
+              .from('tournament_players')
+              .update({ status: 'playing', chips: playerChips })
+              .eq('tournament_id', this.tournamentId)
+              .eq('user_id', player.user_id)
+              .eq('status', 'registered');
+          }
+          continue;
+        }
+
+        const occ = occupancy.get(best.tableId)!;
+        let seatNumber = 1;
+        while (occ.taken.has(seatNumber) && seatNumber <= occ.max) seatNumber++;
+        if (seatNumber > occ.max) continue;
+
+        const { error: seatErr } = await supabase.from('table_seats').insert({
+          table_id: best.tableId,
+          user_id: player.user_id,
+          seat_number: seatNumber,
+          stack: playerChips,
+        });
+        if (seatErr) {
+          // Unique-index race (already seated elsewhere this instant) — skip
+          continue;
+        }
+        occ.taken.add(seatNumber);
+
+        await supabase
+          .from('tournament_players')
+          .update({ status: 'playing', chips: playerChips, table_id: best.tableId })
+          .eq('tournament_id', this.tournamentId)
+          .eq('user_id', player.user_id);
+        await supabase
+          .from('tables')
+          .update({ current_players: occ.taken.size })
+          .eq('id', best.tableId);
+
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Late-reg seated ${player.user_id.slice(0, 8)} at table ${best.tableId.slice(0, 8)} seat ${seatNumber} (${playerChips} chips)`
+        );
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.ensureLateRegSeated');
+    }
   }
 
   /**

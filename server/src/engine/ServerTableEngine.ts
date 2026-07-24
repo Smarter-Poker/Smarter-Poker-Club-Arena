@@ -26,6 +26,8 @@ import { StraddleEngine } from './StraddleEngine.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
 import { monteCarloEquity } from './MonteCarloEquity.js';
+import { getEquityPool } from './equity/EquityWorkerPool.js';
+import { insuranceEquity } from './InsuranceEquity.js';
 import { evaluateHand, evaluateOmahaHand, compareHands, determineWinners } from './PokerEngine.js';
 import { RakebackEngine } from './RakebackEngine.js';
 import { ChipRaceEngine } from './ChipRaceEngine.js';
@@ -3706,7 +3708,7 @@ export class ServerTableEngine {
     // This is shown on every table (insurance or not) for all players/observers.
     // ═══════════════════════════════════════════════════════════════════════
     if (allInPlayers.length >= 2) {
-      this.broadcastAllInEquity(allInPlayers, board, pot);
+      void this.broadcastAllInEquity(allInPlayers, board, pot);
     }
 
     const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId);
@@ -3722,7 +3724,7 @@ export class ServerTableEngine {
         holeCards: p.cards || [],
       }));
 
-      this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot);
+      void this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot);
     } else {
       // ═══════════════════════════════════════════════════════════════════════
       // FIX 94: RIT (Run It Twice) offer — N-player support.
@@ -4006,27 +4008,90 @@ export class ServerTableEngine {
    * Shown to ALL players and observers at the table — not just insurance tables.
    * Updates each street as new board cards are dealt.
    */
-  private broadcastAllInEquity(
+  /**
+   * Compute the insurance leader's pot-win equity (percent) against the KNOWN
+   * opponent hands. Offloaded to the EquityWorkerPool when workers are available;
+   * otherwise falls back to the synchronous EXACT enumeration (insuranceEquity),
+   * keeping money-pricing accuracy in the degraded mode.
+   */
+  private async computeInsuranceLeaderEquity(
+    leaderId: string,
+    allInForOffer: Array<{
+      playerId: string;
+      holeCards: import('../types.js').Card[];
+      atRisk: number;
+    }>,
+    board: import('../types.js').Card[],
+    variant: string,
+    shortDeck: boolean
+  ): Promise<number> {
+    const leader = allInForOffer.find((p) => p.playerId === leaderId);
+    if (!leader) return 0;
+    const opponents = allInForOffer.filter((p) => p.playerId !== leaderId).map((p) => p.holeCards);
+    if (opponents.length === 0) return 0;
+
+    const isOmaha = variant.startsWith('plo');
+    const pool = getEquityPool();
+    if (pool.isAvailable()) {
+      try {
+        const fractions = await pool.estimateEquity(
+          [leader.holeCards, ...opponents],
+          board,
+          [],
+          2000,
+          { shortDeck, omaha: isOmaha }
+        );
+        return Math.round(fractions[0] * 1000) / 10; // fraction -> % (1 dp)
+      } catch {
+        /* fall through to exact synchronous pricing */
+      }
+    }
+    return insuranceEquity(leader.holeCards, opponents, board, variant, shortDeck).equity;
+  }
+
+  private async broadcastAllInEquity(
     allInPlayers: import('../types.js').SeatPlayer[],
     board: import('../types.js').Card[],
     pot: number
-  ): void {
-    const numOpponents = allInPlayers.length - 1;
+  ): Promise<void> {
+    // PERF FIX (2026-07-24): equity now runs on the EquityWorkerPool (worker
+    // threads) instead of a synchronous monteCarloEquity(...,5000) with a crypto
+    // syscall per shuffle swap — which froze EVERY table for hundreds of ms on
+    // each all-in. In an all-in every player's cards are known, so we price each
+    // hand against the KNOWN others in ONE simulation (the true all-in equity),
+    // off the main event loop. Degrades to a synchronous compute only if the pool
+    // is unavailable.
+    const isShortDeck = this.tableInfo?.game_variant === 'short_deck';
+    const isOmaha = (this.tableInfo?.game_variant || '').startsWith('plo');
+    const valid = allInPlayers.filter((p) => (p.cards || []).length >= 2);
     const equities: Array<{ userId: string; username: string; equity: number; seat: number }> = [];
 
-    for (const player of allInPlayers) {
-      const holeCards = player.cards || [];
-      if (holeCards.length < 2) continue;
-
-      // FIX 139: Pass shortDeck flag for correct Short Deck hand rankings
-      const isShortDeck = this.tableInfo?.game_variant === 'short_deck';
-      const equity = monteCarloEquity(holeCards, board, numOpponents, 5000, isShortDeck);
-      equities.push({
-        userId: player.user_id,
-        username: player.username || 'Unknown',
-        equity: Math.round(equity * 10) / 10, // 1 decimal place
-        seat: player.seat,
+    try {
+      const hands = valid.map((p) => p.cards || []);
+      const fractions = await getEquityPool().estimateEquity(hands, board, [], 1000, {
+        shortDeck: isShortDeck,
+        omaha: isOmaha,
       });
+      for (let i = 0; i < valid.length; i++) {
+        equities.push({
+          userId: valid[i].user_id,
+          username: valid[i].username || 'Unknown',
+          equity: Math.round(fractions[i] * 1000) / 10, // fraction -> % (1 dp)
+          seat: valid[i].seat,
+        });
+      }
+    } catch {
+      // Degraded fallback: synchronous Monte-Carlo (fewer iters, no offload).
+      const numOpponents = valid.length - 1;
+      for (const player of valid) {
+        const equity = monteCarloEquity(player.cards || [], board, numOpponents, 1000, isShortDeck);
+        equities.push({
+          userId: player.user_id,
+          username: player.username || 'Unknown',
+          equity: Math.round(equity * 10) / 10,
+          seat: player.seat,
+        });
+      }
     }
 
     // Broadcast to all clients — this is public information during all-in
@@ -4056,11 +4121,11 @@ export class ServerTableEngine {
    * INSURANCE WILL BE OFFERED TO THE PLAYER THAT IS 'AHEAD' IF ANY STREETS
    * ARE STILL PENDING."
    */
-  private runInsurancePerStreetFlow(
+  private async runInsurancePerStreetFlow(
     offerPlayers: Array<{ playerId: string; holeCards: import('../types.js').Card[] }>,
     allInPlayers: import('../types.js').SeatPlayer[],
     pot: number
-  ): void {
+  ): Promise<void> {
     if (!this.handController) return;
 
     // Deal the next street
@@ -4072,7 +4137,7 @@ export class ServerTableEngine {
     // All players and observers see updated equity as each card is dealt.
     // Uses the original allInPlayers (SeatPlayer[]) for proper username/seat data.
     // ═══════════════════════════════════════════════════════════════════════
-    this.broadcastAllInEquity(allInPlayers, result.board, pot);
+    await this.broadcastAllInEquity(allInPlayers, result.board, pot);
 
     const offerTimeout = 15; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
 
@@ -4115,6 +4180,20 @@ export class ServerTableEngine {
       atRisk: p.totalInvested ?? 0,
     }));
 
+    // PERF FIX (2026-07-24): precompute the leader's insurance equity OFF the
+    // event loop (EquityWorkerPool), once per street, then hand it to
+    // createOffers so the heavy board enumeration never blocks the main loop.
+    let leaderEquityPct: number | undefined;
+    if (bestHandPlayer) {
+      leaderEquityPct = await this.computeInsuranceLeaderEquity(
+        bestHandPlayer.playerId,
+        allInForOffer,
+        result.board,
+        variant,
+        isShortDeckInsurance
+      );
+    }
+
     // Check if this is the first street of offers or a recalculation
     const existingOffers = this.insuranceEngine.getOffers(this.tableId);
 
@@ -4129,7 +4208,8 @@ export class ServerTableEngine {
           result.board,
           pot,
           variant,
-          isShortDeckInsurance
+          isShortDeckInsurance,
+          leaderEquityPct
         );
 
         if (offers.length > 0) {
@@ -4162,7 +4242,8 @@ export class ServerTableEngine {
             result.board,
             pot,
             variant,
-            isShortDeckInsurance
+            isShortDeckInsurance,
+            leaderEquityPct
           );
 
           if (offers.length > 0) {
@@ -4209,7 +4290,7 @@ export class ServerTableEngine {
           }
         } else {
           // At least one player eligible — continue per-street pause
-          this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot);
+          void this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot);
         }
       });
     }
@@ -4830,6 +4911,11 @@ export class ServerTableEngine {
         loserHandName: bbjHit.loserHand?.name || 'Unknown',
         winnerHandName: bbjHit.winnerHand?.name || 'Unknown',
         dealtInPlayerIds: bbjHit.dealtInPlayerIds || [],
+        // FIX P0-2: pass the currently-seated user_ids (engine memory = seat
+        // authority) so the payout RPC credits seats for these and credits the
+        // wallet directly for any dealt-in recipient who has since left the
+        // table (their share is no longer silently dropped).
+        seatedUserIds: players.map((p) => p.user_id),
         payoutTotalPercent: payoutConfig.bbjPayoutTotalPercent,
       });
 

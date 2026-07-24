@@ -129,6 +129,11 @@ export class EngineStateClient {
 
   /** Open the connection. Call once from the owning hook. */
   async connect(): Promise<void> {
+    // P2-1: guard against concurrent connects (React StrictMode double-invoke,
+    // rapid re-mounts / tableId switches). If a socket is already OPEN or
+    // CONNECTING, do nothing — otherwise we'd leak a second zombie socket.
+    // Mirrors EngineChannelClient.connect().
+    if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
     this.intentionalClose = false;
     this.retryCount = 0;
     await this.openOnce();
@@ -166,6 +171,12 @@ export class EngineStateClient {
   private async openOnce(): Promise<void> {
     this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
     const token = await this.opts.getToken();
+    // P2-1: disconnect() may have fired while getToken() was in flight
+    // (tableId switch / unmount / StrictMode double-invoke). If so, abort before
+    // creating the socket — opening one now would spawn a zombie WS the owning
+    // hook's cleanup can never reach (clientRef already points at a new client),
+    // leaking a server table-slot and flip-flopping cross-table snapshots.
+    if (this.intentionalClose) return;
     if (!token) {
       // No token available. Retry on backoff — the auth layer may be warming up.
       this.scheduleReconnect();
@@ -623,6 +634,9 @@ export class EngineChannelClient {
   private async openOnce(): Promise<void> {
     this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
     const token = await this.opts.getToken();
+    // P2-1: disconnect() may have fired while getToken() was in flight. Abort
+    // before creating the socket to avoid leaking a zombie channel connection.
+    if (this.intentionalClose) return;
     if (!token) {
       this.scheduleReconnect();
       return;

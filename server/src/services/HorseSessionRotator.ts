@@ -17,6 +17,20 @@
  *    within its 30s cycle, which is exactly the player-turnover a real room
  *    shows.
  *
+ * V8 (2026-07-24) SESSION BEHAVIOR upgrades:
+ *  - TOP-UPS: short-stacked horses reload toward a fresh buy-in through the
+ *    engine's hand-boundary-safe addChips() (wallet-debited, queued if
+ *    mid-hand). Wallet-empty horses silently keep playing the short stack —
+ *    itself a human pattern.
+ *  - SHORT BREAKS: occasionally one horse steps away for 2-5 minutes via the
+ *    engine's deferred sit-out, then sits back in. Only at well-populated
+ *    tables.
+ *  - HUMAN-TABLE PROTECTION: tables with a human present are never thinned
+ *    below 5 and absorb half the usual rotation pressure — horse-only tables
+ *    do most of the rotating.
+ *  - ACTIVITY WINDOWS: outside a horse's daily window (HorseBehavior) its
+ *    session-end hazard rises, so the floor population follows daily rhythms.
+ *
  * SAFETY: departures go through the SAME path a human uses —
  * ServerTableEngine.leaveTable() — which auto-folds if mid-hand and cashes
  * out at the end of the hand (leave_pending). No direct DB seat surgery, no
@@ -27,20 +41,37 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { isActiveNow } from './HorseBehavior.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
 const MIN_SESSION_MINUTES = 20; // nobody hit-and-runs a 5-minute session
 const MEAN_SESSION_MINUTES = 75;
+// V8: session-behavior knobs
+const TOPUP_MIN_MINUTES = 8; // no instant top-ups after sitting down
+const TOPUP_STACK_FRAC = 0.45; // top up when below 45% of a standard buy-in
+const TOPUP_PROB = 0.25; // per eligible horse per cycle
+const BREAK_PROB = 0.35; // chance ONE horse somewhere takes a short break per cycle
+const BREAK_MIN_MS = 2 * 60_000;
+const BREAK_MAX_MS = 5 * 60_000;
 
 /** Minimal engine surface the rotator needs (matches ServerTableEngine). */
 export interface RotatorEngine {
   leaveTable(userId: string): { success: boolean; error?: string; immediate?: boolean };
+  /** V8: hand-boundary-safe top-up (queued mid-hand; wallet-debited). */
+  addChips?(
+    userId: string,
+    amount: number
+  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }>;
+  /** V8: hand-boundary-safe sit-out/sit-back (folds deferred to hand end). */
+  sitOut?(userId: string, sitOut: boolean): { success: boolean; error?: string };
 }
 
 export class HorseSessionRotator {
   private isRunning = false;
   private handle: ReturnType<typeof setInterval> | null = null;
+  /** V8: horses currently on a short break -> when to sit back in */
+  private breaks = new Map<string, { tableId: string; sitBackAt: number }>();
 
   constructor(private getEngine: (tableId: string) => RotatorEngine | undefined) {}
 
@@ -89,11 +120,28 @@ export class HorseSessionRotator {
       .in('id', userIds)
       .eq('is_horse', true);
     const horseIds = new Set((horses || []).map((h) => h.id));
+    const hourUTC = new Date().getUTCHours();
+
+    // V8: end any due short breaks FIRST — sitting a horse back in is never
+    // rate-limited.
+    for (const [userId, info] of [...this.breaks]) {
+      if (Date.now() < info.sitBackAt) continue;
+      this.breaks.delete(userId);
+      try {
+        this.getEngine(info.tableId)?.sitOut?.(userId, false);
+      } catch (err) {
+        reportError(err, 'HorseSessionRotator.sitBack');
+      }
+    }
 
     let departures = 0;
+    let breakTaken = false;
     for (const [tableId, tableSeats] of byTable) {
       if (departures >= GLOBAL_DEPARTURES_PER_CYCLE) break;
-      if (tableSeats.length < 4) continue; // never thin a short-handed game
+      // V8: tables with a HUMAN present are protected harder — never thin a
+      // human's game below 5, and horse-only tables absorb most rotation.
+      const humanPresent = tableSeats.some((x) => !horseIds.has(x.user_id));
+      if (tableSeats.length < (humanPresent ? 5 : 4)) continue;
 
       const engine = this.getEngine(tableId);
       if (!engine) continue; // no live engine — not our business
@@ -106,16 +154,43 @@ export class HorseSessionRotator {
         const bb = Number(t?.big_blind) || 2;
         const buyIn = bb * 100;
         const minutes = (Date.now() - new Date(seat.joined_at).getTime()) / 60000;
+
+        // V8 TOP-UPS: humans reload when short — so do (some) horses. Only
+        // between-hands-safe engine path; wallet-empty horses silently skip,
+        // which is itself a human pattern (the broke guy plays the short
+        // stack). Never while on a break.
+        const stackNow = Number(seat.stack) || 0;
+        if (
+          engine.addChips &&
+          !this.breaks.has(seat.user_id) &&
+          minutes >= TOPUP_MIN_MINUTES &&
+          stackNow > 0 &&
+          stackNow < buyIn * TOPUP_STACK_FRAC &&
+          Math.random() < TOPUP_PROB
+        ) {
+          const target = buyIn * (0.85 + Math.random() * 0.3);
+          const amount = Math.round((target - stackNow) * 100) / 100;
+          if (amount >= bb) {
+            engine
+              .addChips(seat.user_id, amount)
+              .catch((err) => reportError(err, 'HorseSessionRotator.topUp'));
+          }
+        }
+
         if (minutes < MIN_SESSION_MINUTES) continue;
 
         // Base hazard: exponential session with ~MEAN_SESSION_MINUTES mean,
         // expressed per 90s cycle.
         let p = (CYCLE_MS / 60000) / MEAN_SESSION_MINUTES;
-        const stack = Number(seat.stack) || 0;
+        const stack = stackNow;
         const swing = stack / buyIn;
         if (swing >= 2) p *= 2.2; // doubled up — racking up is human
         else if (swing <= 0.35) p *= 1.8; // felted-ish — calling it a night
         if (minutes > 150) p *= 1.6; // long sessions wind down
+        // V8: outside the horse's daily activity window, sessions end sooner.
+        if (!isActiveNow(seat.user_id, hourUTC)) p *= 1.6;
+        // V8: rotation prefers horse-only tables — humans keep a stable game.
+        if (humanPresent) p *= 0.5;
 
         if (!best || p > best.p) best = { seat, p };
       }
@@ -125,6 +200,7 @@ export class HorseSessionRotator {
           const result = engine.leaveTable(best.seat.user_id);
           if (result.success) {
             departures++;
+            this.breaks.delete(best.seat.user_id);
             console.log(
               `[SessionRotator] horse=${best.seat.user_id.slice(0, 8)} leaving table=${tableId.slice(0, 8)} ` +
                 `after session (stack=${best.seat.stack})`
@@ -132,6 +208,33 @@ export class HorseSessionRotator {
           }
         } catch (err) {
           reportError(err, 'HorseSessionRotator.leave');
+        }
+      } else if (
+        // V8 SHORT BREAKS: at most ONE horse anywhere per cycle steps away
+        // for 2-5 minutes (dealt out via the engine's deferred sit-out, then
+        // sits back in). Only at well-populated tables so the game never
+        // suffers, and never the table's only action.
+        !breakTaken &&
+        engine.sitOut &&
+        best &&
+        tableSeats.length >= (humanPresent ? 6 : 5) &&
+        this.breaks.size < 2 &&
+        Math.random() < BREAK_PROB / Math.max(1, byTable.size)
+      ) {
+        try {
+          const res = engine.sitOut(best.seat.user_id, true);
+          if (res.success) {
+            breakTaken = true;
+            this.breaks.set(best.seat.user_id, {
+              tableId,
+              sitBackAt: Date.now() + BREAK_MIN_MS + Math.random() * (BREAK_MAX_MS - BREAK_MIN_MS),
+            });
+            console.log(
+              `[SessionRotator] horse=${best.seat.user_id.slice(0, 8)} short break at table=${tableId.slice(0, 8)}`
+            );
+          }
+        } catch (err) {
+          reportError(err, 'HorseSessionRotator.break');
         }
       }
     }

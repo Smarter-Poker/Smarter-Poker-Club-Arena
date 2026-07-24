@@ -71,6 +71,9 @@ import {
   variantInfo,
   type VariantInfo,
   simulateEquity,
+  type HiLoSplit,
+  omahaDrawQuality,
+  type OmahaDrawInfo,
   preflopEquity,
   holdemPreflopScore,
   omahaPreflopScore,
@@ -427,6 +430,14 @@ export interface HorseDecideOpts {
   v7Barrels?: boolean;
   v7CounterAdapt?: boolean;
   v7AdaptiveMC?: boolean;
+  /** disable the V8 layer: plo8 scoop/quarter awareness, Omaha nut-draw and
+   *  wrap gating, NLH check-raise/river-raise bluffs, per-variant style
+   *  overlays (default: enabled) */
+  v8?: boolean;
+  /** ablation hooks (benchmarks only) — each defaults to the v8 master flag */
+  v8HiLo?: boolean;
+  v8Draws?: boolean;
+  v8Nlh?: boolean;
 }
 
 export class HorseLogic {
@@ -473,6 +484,25 @@ export class HorseLogic {
 
     const vi = variantInfo(gs.gameVariant);
     const toCall = Math.max(0, gs.currentBet - player.bet);
+
+    // V8: per-variant style overlays. The five styles were tuned on NLH;
+    // Omaha punishes slowplay (equities swing too hard street to street) and
+    // rewards preflop discipline, so PLO variants trim bluff/slowplay volume
+    // and tighten a notch. Short deck trims bluffs slightly (equities run
+    // closer). The 'balanced' style also caps its slowplay — live telemetry
+    // showed it giving away free cards at the worst rate in the fleet.
+    if (opts.v8 !== false) {
+      if (vi.isOmaha) {
+        params.bluffFreq *= 0.8;
+        params.slowplayFreq *= 0.8;
+        params.tightness *= 1.03;
+      } else if (vi.isShortDeck) {
+        params.bluffFreq *= 0.9;
+      }
+      if (styleName === 'balanced') {
+        params.slowplayFreq = Math.min(params.slowplayFreq, 0.14);
+      }
+    }
 
     const v7 = opts.v7 !== false;
     let decision: HorseDecision;
@@ -770,6 +800,10 @@ export class HorseLogic {
     const useBarrels = opts.v7Barrels ?? useV7;
     const useCounterAdapt = opts.v7CounterAdapt ?? useV7;
     const useAdaptiveMC = opts.v7AdaptiveMC ?? useV7;
+    const useV8 = opts.v8 !== false;
+    const useHiLo = (opts.v8HiLo ?? useV8) && vi.isHiLo;
+    const useDraws = (opts.v8Draws ?? useV8) && vi.isOmaha;
+    const useNlhX = (opts.v8Nlh ?? useV8) && !vi.isOmaha;
     const { currentBet, pot } = gs;
     const toCall = Math.max(0, currentBet - player.bet);
     const stack = player.stack;
@@ -818,6 +852,10 @@ export class HorseLogic {
     // Real equity vs the opponents' READ RANGES (V3) — draws priced by runout.
     // V7: ADAPTIVE early exit — when the estimate is already far from every
     // decision threshold, stop sampling and bank the time.
+    // V8 plo8: hi-lo decomposition rides along in the same MC loop.
+    const hiLoSplit: HiLoSplit | undefined = useHiLo
+      ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
+      : undefined;
     const equity = simulateEquity(
       player.cards,
       gs.communityCards,
@@ -825,13 +863,32 @@ export class HorseLogic {
       vi,
       vi.iterations,
       bands,
-      useAdaptiveMC
+      useAdaptiveMC,
+      hiLoSplit
     );
 
     // Multiway tightening: each extra opponent raises the bar.
     // V7 ICM: tournament survival premium tightens calls and trims bluffs.
+    // V8: Omaha equities cluster much closer than NLH equities, so each extra
+    // opponent tightens HARDER in PLO — thresholds tuned on NLH gaps overplay
+    // Omaha hands multiway.
     const risk = useV7 ? icmRisk(gs, gs.bigBlind > 0 ? stack / gs.bigBlind : 100) : 0;
-    const mw = (oppCount - 1) * 0.03 + risk;
+    let mw = (oppCount - 1) * (useV8 && vi.isOmaha ? 0.045 : 0.03) + risk;
+
+    // V8 O8 SCOOP/QUARTER AWARENESS — the defining skill of hi-lo poker.
+    // A hand that frequently SCOOPS both halves bets and raises harder; a
+    // nut-low-only hand headed for a QUARTER in a multiway pot stops putting
+    // in chips — every bet it makes comes back 25 cents on the dollar.
+    const scoopy = !!hiLoSplit && hiLoSplit.scoop >= 0.3;
+    // Quarter danger: either the MC directly observes quarter outcomes, or
+    // the hand is ONE-WAY LOW multiway (its whole value is half the pot with
+    // tie risk) — the raising hand it is not.
+    const quartered =
+      !!hiLoSplit &&
+      oppCount >= 2 &&
+      (hiLoSplit.quarter >= 0.2 || (hiLoSplit.lo > 0.4 && hiLoSplit.hi < 0.18));
+    if (scoopy) mw -= 0.04;
+    if (quartered) mw += 0.08;
     const spr = pot > 0 ? stack / pot : 10;
 
     // ═══ V4: street IQ — initiative, position, made class, scare, geometry ═══
@@ -881,7 +938,25 @@ export class HorseLogic {
     // V4: position scales bluffing — pressure comes cheaper in position.
     // V7: ICM survival pressure trims bluff volume in tournaments.
     const posMod = useIQ ? (ip ? 1.15 : 0.85) : 1.0;
-    const bluffScale = exploit.bluffMod * blockerMod * posMod * Math.max(0.5, 1 - 2 * risk);
+    const bluffScale =
+      exploit.bluffMod *
+      blockerMod *
+      posMod *
+      Math.max(0.5, 1 - 2 * risk) *
+      (quartered ? 0.6 : 1);
+
+    // V8 Omaha draw quality — computed LAZILY (enumeration cost) and only
+    // inside the semi-bluff bands. Nut draws fight; dominated flush draws
+    // without wrap backup stop stacking off.
+    let drawInfoCache: OmahaDrawInfo | null = null;
+    const omahaDrawMod = (): number => {
+      if (!useDraws || !drawsLive) return 1;
+      if (!drawInfoCache) drawInfoCache = omahaDrawQuality(player.cards, gs.communityCards);
+      const d = drawInfoCache;
+      if (d.nutty) return 1.15;
+      if (d.dominatedFlushDraw && d.straightOuts < 6) return 0.35;
+      return 0.7;
+    };
 
     // ═══ V7: barrel planning — multi-street bluffs tell a coherent story ═══
     // When a bluff/semi-bluff bet fires, the horse decides THEN whether it is
@@ -995,12 +1070,19 @@ export class HorseLogic {
       // Semi-bluff with live draws (equity from draws is in the MC number).
       // V4: made hands in this band (two pair on wet boards) prefer showdown
       // lines over bloating — only true draws semi-bluff.
+      // V8: Omaha draws are QUALITY-gated — nut draws and wraps fight,
+      // dominated flush draws without backup mostly give up.
       if (
         drawsLive &&
         equity >= 0.3 &&
         equity < 0.52 &&
         (cat <= 2 || !useIQ) &&
-        fastRandom() < params.bluffFreq * params.aggression * bluffScale * (oppCount === 1 ? 1.4 : 0.7)
+        fastRandom() <
+          params.bluffFreq *
+            params.aggression *
+            bluffScale *
+            (oppCount === 1 ? 1.4 : 0.7) *
+            omahaDrawMod()
       ) {
         planBarrel(equity);
         return this.betSize(pot, sizeBase + 0.2 + fastRandom() * 0.15, player, gs, vi, params);
@@ -1041,6 +1123,14 @@ export class HorseLogic {
     // beat, downgrade the raise to a call.
     const valueRaiseThresh = 0.68 + mw + (isRiver ? 0.04 : 0);
     if (equity >= valueRaiseThresh) {
+      // V8 O8: never raise into a likely quarter — flat and see the split.
+      if (quartered) return { action: 'call', amount: toCall, thinkTime: 0 };
+      // V8 PLO: raising the river without a nut-class hand is the classic
+      // Omaha punt — big made hands below flush strength flat unless the MC
+      // says they are near-locks.
+      if (useDraws && isRiver && cat < 6 && equity < 0.85) {
+        return { action: 'call', amount: toCall, thinkTime: 0 };
+      }
       const oopBoost = useIQ && !ip ? params.checkRaiseFreq * 0.6 : 0;
       if (
         !(dangered && cat < 6) &&
@@ -1055,6 +1145,7 @@ export class HorseLogic {
     // Semi-bluff raise with big draws (flop/turn only, not into a crowd,
     // gated by the target's fold tendency + our blockers). V4: pure draws
     // only — made hands in the band call instead of bloating the pot.
+    // V8: Omaha raise semi-bluffs demand draw QUALITY too.
     if (
       drawsLive &&
       equity >= 0.33 &&
@@ -1062,9 +1153,40 @@ export class HorseLogic {
       (cat <= 2 || !useIQ) &&
       oppCount <= 2 &&
       betRatio <= 0.85 &&
-      fastRandom() < params.bluffFreq * params.aggression * bluffScale * 0.5
+      fastRandom() < params.bluffFreq * params.aggression * bluffScale * 0.5 * omahaDrawMod()
     ) {
       const raiseToAmt = currentBet + (pot + toCall) * (0.8 + fastRandom() * 0.3);
+      return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
+    }
+
+    // V8 NLH: OOP check-raise bluff on a fresh scare card WE block — the
+    // strongest bluff-raise trigger in holdem. Heads-up, modest bet only.
+    if (
+      useNlhX &&
+      !ip &&
+      scare.any &&
+      blocker &&
+      equity >= 0.2 &&
+      equity < 0.42 &&
+      oppCount === 1 &&
+      betRatio <= 0.6 &&
+      fastRandom() < params.bluffFreq * params.aggression * 0.25 * Math.min(1.2, bluffScale)
+    ) {
+      const raiseToAmt = currentBet + (pot + toCall) * (0.85 + fastRandom() * 0.25);
+      return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
+    }
+    // V8 NLH: river blocker raise-bluff — polarizing raise with air that
+    // blocks the nuts. Low frequency; makes the value raises unexploitable.
+    if (
+      useNlhX &&
+      isRiver &&
+      oppCount === 1 &&
+      blocker &&
+      equity < 0.3 &&
+      betRatio <= 0.75 &&
+      fastRandom() < params.bluffFreq * 0.35 * Math.min(1.2, bluffScale)
+    ) {
+      const raiseToAmt = currentBet + (pot + toCall) * (1.0 + fastRandom() * 0.3);
       return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
     }
 
@@ -1079,7 +1201,13 @@ export class HorseLogic {
     // V7 overbet polarity: an overbet is nuts-or-bluffs. Medium hands without
     // a nut blocker fold more; holding the blocker shifts toward the catch.
     if (useSizeReads && betRatio > 1.2) respect += blocker ? -0.05 : 0.08;
-    const posEdge = useIQ ? (ip ? -0.012 : 0.008) : 0;
+    // V8: OOP calls tighten further multiway — equity realization out of
+    // position degrades with every extra live opponent.
+    const posEdge = useIQ
+      ? ip
+        ? -0.012
+        : 0.008 * (useNlhX ? 1 + 0.3 * (oppCount - 1) : 1)
+      : 0;
     const sizingPenalty = (Math.min(0.06, betRatio * 0.04) + mw * 0.5) * respect;
     if (equity + impliedBonus >= potOdds + 0.03 * respect + sizingPenalty + posEdge) {
       return { action: 'call', amount: toCall, thinkTime: 0 };

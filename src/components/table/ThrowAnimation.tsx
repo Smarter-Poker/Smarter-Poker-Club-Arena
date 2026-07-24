@@ -12,7 +12,7 @@
  * - Custom SVG graphics (no emojis!)
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { ThrowEvent } from '../../services/ThrowableService';
 import { THROWABLE_ICONS } from './ThrowableIcons';
 import './ThrowAnimation.css';
@@ -63,6 +63,14 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   const isHeavy = HEAVY_IMPACT_TYPES.has(throwableType);
   const hasLinger = LINGER_TYPES.has(throwableType);
 
+  // UI-AUDIT #1: the container passes a new `() => handleComplete(event.id)`
+  // arrow on every render. Keeping onComplete in the deps below cleared and
+  // restarted the phase timers on each table re-render — projectiles could fly
+  // forever and never be removed from activeThrows. Store it in a ref (like
+  // ConfettiCanvas) and drive the timers once per event.
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
   useEffect(() => {
     // Flight phase
     const flightTimer = setTimeout(() => {
@@ -84,7 +92,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
         setPhase('linger');
       } else {
         setPhase('done');
-        onComplete();
+        onCompleteRef.current();
       }
     }, FLIGHT_DURATION + IMPACT_DURATION);
 
@@ -93,7 +101,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       ? setTimeout(
           () => {
             setPhase('done');
-            onComplete();
+            onCompleteRef.current();
           },
           FLIGHT_DURATION + IMPACT_DURATION + LINGER_DURATION
         )
@@ -104,7 +112,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       clearTimeout(impactTimer);
       if (lingerTimer) clearTimeout(lingerTimer);
     };
-  }, [onComplete, isHeavy, hasLinger]);
+  }, [isHeavy, hasLinger]);
 
   // Generate particle elements
   const particles = useMemo(() => {

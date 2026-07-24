@@ -324,6 +324,9 @@ export class HandController {
     if (blindsPostings.length > 0) {
       this.emit({ type: 'BLINDS_POSTED', postings: blindsPostings } as any);
     }
+
+    // AUDIT V6: snap chips after all posting (blinds/dead blinds/straddles)
+    this.snapChips();
   }
 
   private postBombPotAntes(): void {
@@ -340,6 +343,8 @@ export class HandController {
     }
 
     this.state.currentBet = 0;
+    // AUDIT V6: snap chips after ante collection
+    this.snapChips();
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: this.state.pots });
   }
 
@@ -384,6 +389,27 @@ export class HandController {
   // ─────────────────────────────────────────────────────────────────────────
   // Player Actions
   // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * AUDIT V6 (2026-07-24, Bible V8 §2.6): snap every chip value to exact
+   * cents. Individual amounts are always whole cents by rule, but repeated
+   * float += / -= accumulates IEEE 754 representation error (live example:
+   * an all-in recorded as 171.64999999999998). Drift is ~1e-13 per op —
+   * nine orders of magnitude below the half-cent snap threshold — so this
+   * is lossless and preserves chip conservation by construction. Called at
+   * every mutation choke point so stacks, bets, the pot, and every recorded
+   * action amount stay clean for the DB, the clients, and the horse logic.
+   */
+  private snapChips(): void {
+    const r = (n: number) => Math.round(n * 100) / 100;
+    for (const p of this.state.players) {
+      p.stack = r(p.stack);
+      p.bet = r(p.bet);
+      p.totalInvested = r(p.totalInvested ?? 0);
+    }
+    this.state.pot = r(this.state.pot);
+    this.state.currentBet = r(this.state.currentBet);
+  }
 
   performAction(seat: number, action: ActionType, amount?: number): boolean {
     const player = this.state.players.find((p) => p.seat === seat);
@@ -473,6 +499,10 @@ export class HandController {
         }
         break;
     }
+
+    // AUDIT V6: snap chips + the recorded amount to exact cents (Bible V8 §2.6)
+    this.snapChips();
+    actualAmount = Math.round(actualAmount * 100) / 100;
 
     this.state.actionHistory.push({
       seat,
@@ -1045,6 +1075,9 @@ export class HandController {
       const player = this.state.players.find((p) => p.user_id === winner.userId);
       if (player) player.stack += winner.amount;
     }
+    // AUDIT V6: snap stacks after settlement — the payout cents are exact,
+    // but += on binary floats is where cross-hand drift was born.
+    this.snapChips();
 
     this.emit({ type: 'WINNERS', winners: adjustedWinners });
     this.handFSM.transition('settlement');

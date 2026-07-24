@@ -7,6 +7,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { MembershipService } from '../services/MembershipService';
+import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import './InvitePage.css';
@@ -45,6 +46,7 @@ export default function InvitePage() {
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [alreadyMember, setAlreadyMember] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -116,13 +118,21 @@ export default function InvitePage() {
       if (user?.id) {
         const { data: membership } = await supabase
           .from('club_members')
-          .select('user_id')
+          .select('user_id, status')
           .eq('club_id', clubData.id)
           .eq('user_id', user.id)
           .maybeSingle();
 
         if (getIsMounted && !getIsMounted()) return;
-        setAlreadyMember(!!membership);
+        // A 'pending' row is a queued approval request, NOT full membership —
+        // show the "awaiting approval" state instead of "you're a member".
+        if (membership?.status === 'pending') {
+          setPendingApproval(true);
+          setAlreadyMember(false);
+        } else {
+          setPendingApproval(false);
+          setAlreadyMember(!!membership);
+        }
       }
     } catch (err) {
       reportError(err, 'InvitePage.Failed_to_load_club');
@@ -192,20 +202,24 @@ export default function InvitePage() {
     setJoining(true);
     setError(null);
     try {
-      const { error: joinError } = await supabase.from('club_members').insert({
-        club_id: club.id,
-        user_id: user.id,
-        role: 'member',
-        status: club.is_public ? 'active' : 'pending',
-      });
+      // Route the join through fn_join_club (via ClubsService). The RPC decides
+      // status from clubs.requires_approval: an approval-gated club yields a
+      // 'pending' request, a public club yields an active membership. It also
+      // emits CLUB_JOINED. We must NOT fake "Welcome!"/navigate-in/count-bump
+      // for a pending request — the user is not a member until approved.
+      const membership = await ClubsService.join(club.id);
 
-      if (joinError) throw joinError;
+      if (membership?.status === 'pending') {
+        setPendingApproval(true);
+        toast.success('Request submitted — pending owner approval.');
+        setJoining(false);
+        return;
+      }
 
-      // Update member count
+      // Active membership — bump the denormalized member count and enter.
       const { error: countErr } = await retryAsync(
         () =>
-          // Round 19: prod sig (p_club_id, p_delta). Caller used to pass
-          // unprefixed `club_id` and was missing required p_delta — silent 404.
+          // Round 19: prod sig (p_club_id, p_delta).
           supabase.rpc('increment_member_count', {
             p_club_id: club.id,
             p_delta: 1,
@@ -216,8 +230,6 @@ export default function InvitePage() {
         reportError(countErr, 'InvitePage.increment_member_count_failed');
         toast.error('Joined successfully, but member count may be temporarily off.');
       }
-
-      masterBus.emit('CLUB_JOINED', { clubId: club.id });
 
       toast.success(`Welcome to ${club.name}!`);
       navigate(`/clubs/${club.id}`);
@@ -278,7 +290,17 @@ export default function InvitePage() {
 
         <p className="invite-message">You've been invited to join this poker club!</p>
 
-        {alreadyMember ? (
+        {pendingApproval ? (
+          <div className="already-member">
+            <span>Request submitted — pending approval.</span>
+            <p style={{ color: '#aaa', fontSize: '0.85rem', margin: '8px 0 12px' }}>
+              This club requires owner approval. You'll gain access once your request is reviewed.
+            </p>
+            <button className="btn btn-primary" onClick={() => navigate('/clubs')}>
+              Browse Clubs
+            </button>
+          </div>
+        ) : alreadyMember ? (
           <>
             <div className="already-member">
               <span>You're already a member!</span>

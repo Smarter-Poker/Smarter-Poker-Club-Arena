@@ -438,6 +438,50 @@ export interface HorseDecideOpts {
   v8HiLo?: boolean;
   v8Draws?: boolean;
   v8Nlh?: boolean;
+  /** disable the V9 humanization layer: bet-size families, difficulty-aware
+   *  think time, hourly mood gear-shifts (default: enabled) */
+  v9?: boolean;
+  /** ablation hooks (benchmarks only) — each defaults to the v9 master flag */
+  v9Sizing?: boolean;
+  v9Timing?: boolean;
+  v9Mood?: boolean;
+}
+
+/**
+ * V9 MOOD — hourly gear-shifts. Real players run hot and cold across a
+ * session: an hour where a guy is visibly opening more, an hour where he
+ * tightens up. A hash of (horse, current hour) gives every horse a stable
+ * within-the-hour mood that observers can actually pick up on — exactly the
+ * kind of exploitable-looking texture humans produce — while staying zero-mean
+ * across the fleet and across time.
+ */
+function moodOf(userId: string): number {
+  const key = userId + '|' + Math.floor(Date.now() / 3_600_000);
+  let h = 17;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return (h % 1000) / 1000; // 0..1, stable for the hour
+}
+
+/**
+ * V9 TIMING — decision-difficulty hint. decidePostflop records how close the
+ * MC equity landed to the nearest strategy threshold; computeThinkTime turns
+ * closeness into a TANK (humans agonize over close spots and snap the easy
+ * ones). Module-level stash is safe: decisions are synchronous and
+ * single-threaded, and the consumer resets it every read.
+ */
+let difficultyHint = 0;
+
+/** V9 SIZING — human bet-size families. Continuous uniform sizing is a subtle
+ *  tell: real players think in pot fractions (third, half, two-thirds,
+ *  three-quarters, pot, overbet). Snap the computed fraction to the nearest
+ *  family with a little jitter; extreme fractions (geometric jams) pass
+ *  through untouched. */
+const SIZE_FAMILIES = [0.33, 0.5, 0.66, 0.8, 1.0, 1.3];
+function snapFraction(frac: number): number {
+  if (frac < 0.25 || frac > 1.4) return frac;
+  let best = SIZE_FAMILIES[0];
+  for (const f of SIZE_FAMILIES) if (Math.abs(frac - f) < Math.abs(frac - best)) best = f;
+  return best + (fastRandom() - 0.5) * 0.08;
 }
 
 export class HorseLogic {
@@ -504,6 +548,14 @@ export class HorseLogic {
       }
     }
 
+    // V9: hourly mood gear-shift — a horse's bluff/aggression volume drifts
+    // hour to hour the way a human's does. Zero-mean across the fleet.
+    if ((opts.v9Mood ?? opts.v9) !== false) {
+      const m01 = moodOf(player.user_id);
+      params.bluffFreq *= 0.88 + 0.24 * m01;
+      params.aggression *= 0.96 + 0.08 * m01;
+    }
+
     const v7 = opts.v7 !== false;
     let decision: HorseDecision;
     if (gs.stage === 'preflop') {
@@ -526,7 +578,13 @@ export class HorseLogic {
     }
 
     decision = this.legalize(decision, player, gs, vi);
-    decision.thinkTime = this.computeThinkTime(decision, gs, params, toCall);
+    decision.thinkTime = this.computeThinkTime(
+      decision,
+      gs,
+      params,
+      toCall,
+      (opts.v9Timing ?? opts.v9) !== false
+    );
     return decision;
   }
 
@@ -804,6 +862,8 @@ export class HorseLogic {
     const useHiLo = (opts.v8HiLo ?? useV8) && vi.isHiLo;
     const useDraws = (opts.v8Draws ?? useV8) && vi.isOmaha;
     const useNlhX = (opts.v8Nlh ?? useV8) && !vi.isOmaha;
+    const useSizing = (opts.v9Sizing ?? opts.v9) !== false;
+    const useTiming = (opts.v9Timing ?? opts.v9) !== false;
     const { currentBet, pot } = gs;
     const toCall = Math.max(0, currentBet - player.bet);
     const stack = player.stack;
@@ -866,6 +926,18 @@ export class HorseLogic {
       useAdaptiveMC,
       hiLoSplit
     );
+
+    // V9 TIMING: how CLOSE is this decision? Distance of the MC equity from
+    // the nearest strategy threshold. Razor-thin spots read as difficulty ~1
+    // (the horse will tank); clear spots read ~0 (it acts in tempo).
+    if (useTiming) {
+      let dNear = Infinity;
+      for (const t of [0.3, 0.42, 0.52, 0.62, 0.8]) {
+        const d = Math.abs(equity - t);
+        if (d < dNear) dNear = d;
+      }
+      difficultyHint = Math.max(0, Math.min(1, 1 - dNear / 0.1));
+    }
 
     // Multiway tightening: each extra opponent raises the bar.
     // V7 ICM: tournament survival premium tightens calls and trims bluffs.
@@ -994,7 +1066,7 @@ export class HorseLogic {
           geomFrac > 0
             ? Math.max(sizeBase + 0.2, geomFrac) + fastRandom() * 0.1
             : sizeBase + 0.3 + fastRandom() * 0.2;
-        return this.betSize(pot, monsterFrac, player, gs, vi, params);
+        return this.betSize(pot, monsterFrac, player, gs, vi, params, useSizing);
       }
       // Strong value. V4: a vulnerable made hand sizes UP and never checks
       // back; a dangered hand slows down instead of firing into the new nuts.
@@ -1009,7 +1081,8 @@ export class HorseLogic {
           player,
           gs,
           vi,
-          params
+          params,
+          useSizing
         );
       }
       // Thin value / protection — thinner into stations (valueThinMod > 1).
@@ -1022,7 +1095,7 @@ export class HorseLogic {
         const thinFreq =
           isRiver && useHR && exploit.valueThinMod <= 1.05 && equity < 0.62 + mw ? 0.25 : 0.65;
         if (vulnerable || fastRandom() < thinFreq) {
-          return this.betSize(pot, sizeBase + fastRandom() * 0.12, player, gs, vi, params);
+          return this.betSize(pot, sizeBase + fastRandom() * 0.12, player, gs, vi, params, useSizing);
         }
         return { action: 'check', thinkTime: 0 };
       }
@@ -1041,7 +1114,7 @@ export class HorseLogic {
           // (turn 0.75->0.60, river 0.55->0.42) and total-air no-blocker
           // barrels abandoned — the original volume measurably lost.
           if (fastRandom() < (isRiver ? 0.35 : 0.52) * Math.min(1.25, bluffScale)) {
-            return this.betSize(pot, sizeBase + 0.15 + fastRandom() * 0.1, player, gs, vi, params);
+            return this.betSize(pot, sizeBase + 0.15 + fastRandom() * 0.1, player, gs, vi, params, useSizing);
           }
         } else if (!barrelPlan && equity < 0.52 && fastRandom() < 0.8) {
           return { action: 'check', thinkTime: 0 }; // one-and-done — give up
@@ -1065,7 +1138,7 @@ export class HorseLogic {
           (oppCount === 1 ? 0.6 : 0.35) * (prevChecked ? 1.15 : 1.0) * Math.min(1.3, bluffScale)
       ) {
         planBarrel(equity);
-        return this.betSize(pot, 0.3 + fastRandom() * 0.1, player, gs, vi, params);
+        return this.betSize(pot, 0.3 + fastRandom() * 0.1, player, gs, vi, params, useSizing);
       }
       // Semi-bluff with live draws (equity from draws is in the MC number).
       // V4: made hands in this band (two pair on wet boards) prefer showdown
@@ -1085,7 +1158,7 @@ export class HorseLogic {
             omahaDrawMod()
       ) {
         planBarrel(equity);
-        return this.betSize(pot, sizeBase + 0.2 + fastRandom() * 0.15, player, gs, vi, params);
+        return this.betSize(pot, sizeBase + 0.2 + fastRandom() * 0.15, player, gs, vi, params, useSizing);
       }
       // Pure bluff — mostly heads-up, rarer on the river, blocker-preferred.
       // V4: a fresh scare card WE block is the best bluff trigger in poker.
@@ -1096,7 +1169,7 @@ export class HorseLogic {
         fastRandom() < params.bluffFreq * bluffScale * scareBluffBoost * (isRiver ? 0.55 : 0.8)
       ) {
         planBarrel(equity);
-        return this.betSize(pot, sizeBase + 0.15 + fastRandom() * 0.2, player, gs, vi, params);
+        return this.betSize(pot, sizeBase + 0.15 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
       }
       return { action: 'check', thinkTime: 0 };
     }
@@ -1237,6 +1310,8 @@ export class HorseLogic {
   /**
    * Choose which of the 3 hole cards to discard (returns the card INDEX).
    * Evaluates the equity of each 2-card keep against the current board.
+   * V9: 400 iterations per keep (was 160) — the discard happens once per hand,
+   * so the extra precision is effectively free and tightens marginal keeps.
    */
   static decideDiscard(cards: Card[], communityCards: Card[], gameVariant: string): number {
     if (!cards || cards.length !== 3) return 2;
@@ -1247,7 +1322,7 @@ export class HorseLogic {
       const keep = cards.filter((_, i) => i !== discard);
       const eq =
         communityCards.length >= 3
-          ? simulateEquity(keep, communityCards, 1, vi, 160)
+          ? simulateEquity(keep, communityCards, 1, vi, 400)
           : holdemPreflopScore(keep[0], keep[1], gameVariant === 'short_deck');
       if (eq > bestEq) {
         bestEq = eq;
@@ -1261,17 +1336,22 @@ export class HorseLogic {
   // SIZING + LEGALIZATION HELPERS
   // ─────────────────────────────────────────────────────────────────────
 
-  /** Build a bet decision sized as a fraction of pot, clamped to legal bounds. */
+  /** Build a bet decision sized as a fraction of pot, clamped to legal bounds.
+   *  V9: fractions snap to human size FAMILIES (third/half/two-thirds/
+   *  three-quarters/pot/overbet) unless the caller disables it — continuous
+   *  uniform sizing was the last mechanical tell in the bet line. */
   private static betSize(
     pot: number,
     fraction: number,
     player: SeatPlayer,
     gs: HorseGameStateV2,
     vi: VariantInfo,
-    params: StyleParams
+    params: StyleParams,
+    snap: boolean = true
   ): HorseDecision {
+    const frac = snap ? snapFraction(fraction) : fraction;
     return this.legalize(
-      { action: 'bet', amount: pot * fraction * params.sizingMultiplier, thinkTime: 0 },
+      { action: 'bet', amount: pot * frac * params.sizingMultiplier, thinkTime: 0 },
       player,
       gs,
       vi
@@ -1430,10 +1510,17 @@ export class HorseLogic {
     d: HorseDecision,
     gs: HorseGameStateV2,
     params: StyleParams,
-    toCall: number
+    toCall: number,
+    useTiming: boolean = true
   ): number {
     const [minT, maxT] = params.thinkRange;
     let think = minT + fastRandom() * (maxT - minT);
+    // V9: humans TANK on close decisions and act in tempo on clear ones. The
+    // postflop path records how close the equity landed to the nearest
+    // strategy threshold; razor-thin spots take up to ~70% longer.
+    const difficulty = difficultyHint;
+    difficultyHint = 0;
+    if (useTiming && difficulty > 0) think *= 1 + difficulty * 0.7;
     const simple = d.action === 'check' || d.action === 'fold';
     if (simple) think *= 0.55;
     if (d.action === 'raise' || d.action === 'all_in') think *= 1.25;
@@ -1481,6 +1568,9 @@ export class HorseLogic {
     madeCategory,
     scareShift,
     scoreOmahaHiPartial,
+    // V9 humanization internals
+    moodOf,
+    snapFraction,
   };
 
   /** Exposed for tests: variant-aware Monte Carlo equity (0..1). */

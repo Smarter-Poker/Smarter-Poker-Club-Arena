@@ -68,7 +68,12 @@ interface ConnectionState {
 type InboundMessage =
   | { type: 'JOIN_CLUB'; clubId: string }
   | { type: 'LEAVE_CLUB'; clubId: string }
-  | { type: 'UPDATE_PRESENCE'; clubId: string; status: 'online' | 'at_table' | 'away'; currentTableId?: string }
+  | {
+      type: 'UPDATE_PRESENCE';
+      clubId: string;
+      status: 'online' | 'at_table' | 'away';
+      currentTableId?: string;
+    }
   | { type: 'JOIN_TOURNAMENT'; tournamentId: string }
   | { type: 'LEAVE_TOURNAMENT'; tournamentId: string }
   | { type: 'JOIN_LOBBY' }
@@ -307,7 +312,9 @@ export class ChannelWebSocketServer {
     try {
       const { data: rows, error } = await supabase
         .from('hand_history')
-        .select('id, hand_number, actions, players, community_cards, winners, game_variant, small_blind, big_blind, started_at, ended_at, raw_events')
+        .select(
+          'id, hand_number, actions, players, community_cards, winners, game_variant, small_blind, big_blind, started_at, ended_at, raw_events'
+        )
         .eq('id', handId)
         .limit(1)
         .maybeSingle();
@@ -317,6 +324,30 @@ export class ChannelWebSocketServer {
           type: 'CHANNEL_ERROR',
           code: 'HAND_NOT_FOUND',
           message: `Hand ${handId} not found`,
+        });
+        return;
+      }
+
+      // FIX 3 (2026-07-24): AUTHORIZATION — this endpoint streamed any hand's
+      // `players`/`raw_events` (which include every player's hole cards) to ANY
+      // authenticated user, so a client could iterate/guess hand ids and pull
+      // opponents' hole cards. Restrict full replay to a PARTICIPANT of a
+      // COMPLETED hand. We deny non-participants outright rather than trying to
+      // scrub cards: hole cards live in both `players[].cards` AND `raw_events`,
+      // and any missed field would re-leak — deny is the safe, verifiable rule
+      // and it fully preserves the legit use case (reviewing a hand you played).
+      const participantIds: string[] = Array.isArray(rows.players)
+        ? (rows.players as Array<{ userId?: unknown }>)
+            .map((pl) => (typeof pl?.userId === 'string' ? pl.userId : null))
+            .filter((id): id is string => id !== null)
+        : [];
+      const isParticipant = participantIds.includes(userId);
+      const isCompleted = rows.ended_at != null;
+      if (!isCompleted || !isParticipant) {
+        channelHub.sendToUser(userId, {
+          type: 'CHANNEL_ERROR',
+          code: 'NOT_AUTHORIZED',
+          message: 'You can only replay completed hands you played in.',
         });
         return;
       }

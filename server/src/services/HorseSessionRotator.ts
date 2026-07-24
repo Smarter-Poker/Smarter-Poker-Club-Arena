@@ -168,7 +168,11 @@ export class HorseSessionRotator {
           stackNow < buyIn * TOPUP_STACK_FRAC &&
           Math.random() < TOPUP_PROB
         ) {
-          const target = buyIn * (0.85 + Math.random() * 0.3);
+          // V9: humans reload to ROUND figures (a fresh $200, "make it 150"),
+          // so the top-up TARGET snaps to a 10bb step before the delta is
+          // computed. The engine caps at the table max buy-in on its side.
+          const step = bb * 10;
+          const target = Math.round((buyIn * (0.85 + Math.random() * 0.3)) / step) * step;
           const amount = Math.round((target - stackNow) * 100) / 100;
           if (amount >= bb) {
             engine

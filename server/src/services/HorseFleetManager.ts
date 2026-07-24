@@ -410,10 +410,14 @@ export class HorseFleetManager {
             // with per-sitting jitter, clamped to the table's real min/max.
             const minB = Number((table as any).min_buy_in) || table.big_blind * 40;
             const maxB = Number((table as any).max_buy_in) || table.big_blind * 200;
+            // V9: humans buy in for ROUND numbers ($100, $150, $240 — never
+            // $227.40). Snap the profiled amount to the nearest 5bb step,
+            // then clamp to the table's real limits.
+            const step = table.big_blind * 5;
+            const raw = table.big_blind * buyInBBFor(horse.id);
             const buyIn =
-              Math.round(
-                Math.max(minB, Math.min(maxB, table.big_blind * buyInBBFor(horse.id))) * 100
-              ) / 100;
+              Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) /
+              100;
 
             const success = await this.seatHorse(
               table.id,

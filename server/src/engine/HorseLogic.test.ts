@@ -29,9 +29,9 @@ import {
 } from './PokerEngine.js';
 import type { Card, SeatPlayer, HorseStyle, HandStage } from '../types.js';
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 function makeDeck(shortDeck = false): Card[] {
   const deck: Card[] = [];
@@ -93,9 +93,9 @@ const VARIANTS: { variant: string; hole: number; short: boolean }[] = [
 
 const STYLES: HorseStyle[] = ['tag', 'lag', 'balanced', 'tricky', 'grinder'];
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 1. LEGALITY FUZZ
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
   it('never produces an illegal action across randomized states', () => {
@@ -207,9 +207,9 @@ describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 2. POKER SANITY
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 function frequency(
   fn: () => { action: string },
@@ -362,9 +362,9 @@ describe('HorseLogic V2 — poker sanity', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 3. DISCARD INTELLIGENCE (Crazy Pineapple)
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 describe('HorseLogic V2 — pineapple discard', () => {
   it('keeps the flopped set, discards the offsuit rag', () => {
@@ -394,9 +394,9 @@ describe('HorseLogic V2 — pineapple discard', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 4. STYLE RESOLUTION
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 describe('resolveHorseStyle', () => {
   it('resolves plain strings and legacy names', () => {
@@ -424,9 +424,9 @@ describe('resolveHorseStyle', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────────────
 // 5. FAST EVALUATOR CROSS-VALIDATION vs the authoritative PokerEngine
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 describe('HorseLogic V2 — fast evaluator agrees with PokerEngine', () => {
   const { scoreHoldem, scoreOmahaHi, scoreOmahaLow } = (HorseLogic as any).__testables;
@@ -492,9 +492,9 @@ describe('HorseLogic V2 — fast evaluator agrees with PokerEngine', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 6. PERFORMANCE
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 describe('HorseLogic V2 — performance budget', () => {
   it('averages well under the synchronous turn-handler budget', () => {
@@ -530,9 +530,9 @@ describe('HorseLogic V2 — performance budget', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 7. V3 — HORSE MIND: opponent intelligence (2026-07-23)
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 import { HorseMind } from './HorseMind.js';
 import { decidePreflopV7 } from './HorsePreflop.js';
@@ -655,9 +655,9 @@ describe('HorseMind V3 — opponent intelligence', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 8. V4 — STREET IQ: initiative, position, made class, scare cards (2026-07-23)
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 describe('HorseLogic V4 — street IQ', () => {
   const { readInitiative, actsLastPostflop, madeCategory, scareShift, scoreOmahaHiPartial } = (
@@ -843,9 +843,9 @@ describe('HorseLogic V4 — street IQ', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 9. V5 — DYNAMIC HAND READING: street narrowing, probes, river discipline
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 describe('HorseMind V5 — dynamic hand reading', () => {
   it('narrows a barreller street by street', () => {
@@ -1016,9 +1016,9 @@ describe('HorseMind V5 — dynamic hand reading', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 10. V7 — PREFLOP MASTERY + SIZE READS + BARRELS + COUNTER-ADAPT + ICM
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 describe('HorseLogic V7 — preflop mastery', () => {
   const sixMax = (heroSeat: number, hero: SeatPlayer, over: Record<string, unknown> = {}): any => {
@@ -1287,9 +1287,9 @@ describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () =>
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 // 11. V8 — O8 SCOOP/QUARTER + OMAHA DRAW QUALITY + NLH RAISES + BEHAVIOR
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────────
 
 describe('HorseEval V8 — hi-lo decomposition + Omaha draw quality', () => {
   const vi8 = variantInfo('plo8');
@@ -1377,44 +1377,50 @@ describe('HorseLogic V8 — O8 quarter brake + NLH raise bluffs', () => {
     expect(betsV8).toBeLessThanOrEqual(betsBase); // the brake never ADDS bets
   });
 
-  it('V8 adds OOP raise-bluffs on blocker scare cards that V8-off does not have', () => {
-    // Flush completes on the turn; hero holds the ACE of the suit (nut
-    // blocker + nut draw) out of position facing a small bet heads-up.
+  it('V8 adds river blocker raise-bluffs that V8-off structurally cannot make', () => {
+    // RIVER spot: no draws are live, so the legacy semi-bluff raise path is
+    // OFF by construction — any raise with this air hand can only come from
+    // the V8 blocker raise-bluff. Hero holds the ace of the 3-heart board
+    // (nut blocker, no made flush) facing a half-pot bet heads-up.
     const mk = (): any => {
-      const hero = mkPlayer(2, { cards: [c('Ah'), c('5s')], bet: 0, stack: 200 });
+      const hero = mkPlayer(2, { cards: [c('Ah'), c('4c')], bet: 0, stack: 200 });
       return {
         hero,
         gs: {
           players: [hero, mkPlayer(5)],
-          communityCards: [c('9h'), c('7h'), c('2s'), c('Qh')],
+          communityCards: [c('9h'), c('7h'), c('2s'), c('Qh'), c('Ks')],
           pot: 30,
-          currentBet: 10,
-          minRaise: 10,
-          stage: 'turn',
+          currentBet: 15,
+          minRaise: 15,
+          stage: 'river',
           gameVariant: 'nlh',
           bigBlind: 2,
           dealerSeat: 5,
-          lastRaise: 10,
+          lastRaise: 15,
         },
       };
     };
-    const n = 600;
+    const n = 400;
     let v8Raises = 0;
     let offRaises = 0;
     for (let i = 0; i < n; i++) {
       const a = mk();
-      if (['raise', 'all_in'].includes(HorseLogic.decide(a.hero, a.gs, 'balanced').action))
+      if (
+        ['raise', 'all_in'].includes(
+          HorseLogic.decide(a.hero, a.gs, 'balanced', {}, { v9Mood: false }).action
+        )
+      )
         v8Raises++;
       const b = mk();
       if (
         ['raise', 'all_in'].includes(
-          HorseLogic.decide(b.hero, b.gs, 'balanced', {}, { v8Nlh: false }).action
+          HorseLogic.decide(b.hero, b.gs, 'balanced', {}, { v8Nlh: false, v9Mood: false }).action
         )
       )
         offRaises++;
     }
-    expect(v8Raises).toBeGreaterThan(0); // the check-raise bluff region exists
-    expect(v8Raises).toBeGreaterThanOrEqual(offRaises); // and only ADDS pressure
+    expect(v8Raises).toBeGreaterThan(offRaises + 5); // the bluff region exists
+    expect(v8Raises / n).toBeLessThan(0.35); // and it is a low-frequency MIX
   });
 
   it('V8 decisions stay legal across randomized states in every variant', () => {
@@ -1492,5 +1498,99 @@ describe('HorseBehavior V8 — join/leave personality helpers', () => {
       expect(active).toBeGreaterThan(120);
       expect(active).toBeLessThan(340);
     }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────────────
+// 12. V9 — HUMANIZATION: size families, difficulty tanks, hourly mood
+// ───────────────────────────────────────────────────────────────────────────────────
+
+describe('HorseLogic V9 — humanization polish', () => {
+  const { snapFraction, moodOf } = (HorseLogic as any).__testables;
+
+  it('snaps bet fractions to human size families with jitter', () => {
+    const FAMILIES = [0.33, 0.5, 0.66, 0.8, 1.0, 1.3];
+    for (let i = 0; i < 300; i++) {
+      const raw = 0.28 + Math.random() * 1.05;
+      const snapped = snapFraction(raw);
+      const nearest = Math.min(...FAMILIES.map((f) => Math.abs(snapped - f)));
+      expect(nearest).toBeLessThanOrEqual(0.05); // family +/- jitter
+    }
+    // Extreme fractions (geometric jams) pass through untouched.
+    expect(snapFraction(1.8)).toBe(1.8);
+    expect(snapFraction(0.1)).toBe(0.1);
+  });
+
+  it('actual bet amounts cluster on size families when V9 is on', () => {
+    const mkGs = (): any => ({
+      players: [mkPlayer(2, { cards: [c('8h'), c('8d')], stack: 500 }), mkPlayer(5)],
+      communityCards: [c('8s'), c('Kd'), c('2c')],
+      pot: 40,
+      currentBet: 0,
+      minRaise: 2,
+      stage: 'flop',
+      gameVariant: 'nlh',
+      bigBlind: 2,
+      dealerSeat: 2,
+    });
+    const FAMILIES = [0.33, 0.5, 0.66, 0.8, 1.0, 1.3];
+    let bets = 0;
+    let onFamily = 0;
+    for (let i = 0; i < 200; i++) {
+      const gs = mkGs();
+      const d = HorseLogic.decide(gs.players[0], gs, 'tag');
+      if (d.action === 'bet' && d.amount) {
+        bets++;
+        const frac = d.amount / (40 * 1.0); // tag sizingMultiplier = 1.0
+        if (Math.min(...FAMILIES.map((f) => Math.abs(frac - f))) <= 0.06) onFamily++;
+      }
+    }
+    expect(bets).toBeGreaterThan(50); // the set bets often
+    expect(onFamily / Math.max(1, bets)).toBeGreaterThan(0.8); // and on-family
+  });
+
+  it('tanks longer on razor-thin decisions than with timing disabled', () => {
+    // A middling made hand facing a half-pot river bet — equity lands close
+    // to the call threshold, so V9 timing should stretch the think.
+    const mk = (): any => {
+      const hero = mkPlayer(2, { cards: [c('9h'), c('9d')], bet: 0, stack: 200 });
+      return {
+        hero,
+        gs: {
+          players: [hero, mkPlayer(5)],
+          communityCards: [c('Ad'), c('Kc'), c('8s'), c('4h'), c('2c')],
+          pot: 30,
+          currentBet: 15,
+          minRaise: 15,
+          stage: 'river',
+          gameVariant: 'nlh',
+          bigBlind: 2,
+          dealerSeat: 5,
+          lastRaise: 15,
+        },
+      };
+    };
+    const n = 100;
+    let withTiming = 0;
+    let withoutTiming = 0;
+    for (let i = 0; i < n; i++) {
+      const a = mk();
+      withTiming += HorseLogic.decide(a.hero, a.gs, 'balanced').thinkTime;
+      const b = mk();
+      withoutTiming += HorseLogic.decide(b.hero, b.gs, 'balanced', {}, { v9Timing: false })
+        .thinkTime;
+    }
+    expect(withTiming / n).toBeGreaterThan((withoutTiming / n) * 1.1);
+  });
+
+  it('mood is stable within the hour, bounded, and varies across horses', () => {
+    for (const id of ['m1', 'm2', 'a-long-horse-uuid']) {
+      const first = moodOf(id);
+      expect(moodOf(id)).toBe(first); // stable within the hour
+      expect(first).toBeGreaterThanOrEqual(0);
+      expect(first).toBeLessThanOrEqual(1);
+    }
+    const moods = Array.from({ length: 100 }, (_, i) => moodOf(`horse-${i}`));
+    expect(new Set(moods.map((m) => Math.round(m * 100))).size).toBeGreaterThan(20);
   });
 });

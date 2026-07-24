@@ -134,6 +134,14 @@ function ChipStack({ color, count, offsetX }: ChipStackProps) {
   const visibleCount = Math.min(count, 8);
   // Stack height per chip — tighter stacking for that satisfying pile look
   const chipGap = 2;
+  // UI-AUDIT #6: seed each chip's random tilt ONCE (keyed on how many chips are
+  // shown). Previously computed inline with Math.random() on every render, so
+  // ChipStack (keyed by index and reused across pot increments) re-randomized
+  // the tilt each pot tick and the pile visibly jittered/reshuffled.
+  const chipSpins = useMemo(
+    () => Array.from({ length: visibleCount }, () => (Math.random() - 0.5) * 8),
+    [visibleCount]
+  );
   return (
     <div
       className="pot-display__chip-stack"
@@ -150,7 +158,7 @@ function ChipStack({ color, count, offsetX }: ChipStackProps) {
             {
               '--chip-color': color,
               '--chip-offset': `${-i * chipGap}px`,
-              '--chip-spin': `${(Math.random() - 0.5) * 8}`,
+              '--chip-spin': `${chipSpins[i]}`,
               zIndex: count - i,
               animationDelay: `${i * 50}ms`,
             } as React.CSSProperties

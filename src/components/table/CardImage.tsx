@@ -8,7 +8,7 @@
  * - 2-Color: Hearts/Diamonds (Red), Clubs/Spades (Black)
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import './CardImage.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -103,6 +103,29 @@ const SIZE_CLASSES: Record<string, string> = {
   xl: 'card-image--xl', // 80x120
 };
 
+// Broken-image fallback glyphs/colors per suit (accepts short + full formats)
+const SUIT_CHAR: Record<string, string> = {
+  h: '♥',
+  d: '♦',
+  c: '♣',
+  s: '♠',
+  hearts: '♥',
+  diamonds: '♦',
+  clubs: '♣',
+  spades: '♠',
+};
+
+const SUIT_COLOR: Record<string, string> = {
+  h: '#ef4444',
+  d: '#3b82f6',
+  c: '#22c55e',
+  s: '#1e293b',
+  hearts: '#ef4444',
+  diamonds: '#3b82f6',
+  clubs: '#22c55e',
+  spades: '#1e293b',
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -117,6 +140,15 @@ export function CardImage({
 }: CardImageProps) {
   const imagePath = getCardImagePath(card, deckStyle);
   const sizeClass = SIZE_CLASSES[size];
+
+  // UI-AUDIT #8: track the broken-image state in React (not via manual DOM
+  // mutation) and reset it whenever the image path changes, so a slot that once
+  // 404'd correctly shows the new valid card instead of staying hidden with a
+  // stale fallback captured in the old error-time closure.
+  const [imgError, setImgError] = useState(false);
+  useEffect(() => {
+    setImgError(false);
+  }, [imagePath]);
 
   const classes = [
     'card-image',
@@ -137,40 +169,30 @@ export function CardImage({
         alt={`${card.rank} of ${SUIT_MAP[card.suit] || card.suit}`}
         className="card-image__img"
         draggable={false}
-        onError={(e) => {
-          // Fallback: hide broken image, show colored text indicator
-          const target = e.currentTarget;
-          target.style.display = 'none';
-          const parent = target.parentElement;
-          if (parent && !parent.querySelector('.card-image__fallback')) {
-            const fb = document.createElement('div');
-            fb.className = 'card-image__fallback';
-            const suitChar: Record<string, string> = {
-              h: '♥',
-              d: '♦',
-              c: '♣',
-              s: '♠',
-              hearts: '♥',
-              diamonds: '♦',
-              clubs: '♣',
-              spades: '♠',
-            };
-            const suitColor: Record<string, string> = {
-              h: '#ef4444',
-              d: '#3b82f6',
-              c: '#22c55e',
-              s: '#1e293b',
-              hearts: '#ef4444',
-              diamonds: '#3b82f6',
-              clubs: '#22c55e',
-              spades: '#1e293b',
-            };
-            fb.style.cssText = `width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;border-radius:inherit;font-weight:800;color:${suitColor[card.suit] || '#000'}`;
-            fb.innerHTML = `<span style="font-size:0.7em;line-height:1">${card.rank}</span><span style="font-size:0.6em;line-height:1">${suitChar[card.suit] || '?'}</span>`;
-            parent.appendChild(fb);
-          }
-        }}
+        style={imgError ? { display: 'none' } : undefined}
+        onError={() => setImgError(true)}
       />
+      {/* Fallback: hide broken image, show colored text indicator */}
+      {imgError && (
+        <div
+          className="card-image__fallback"
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#fff',
+            borderRadius: 'inherit',
+            fontWeight: 800,
+            color: SUIT_COLOR[card.suit] || '#000',
+          }}
+        >
+          <span style={{ fontSize: '0.7em', lineHeight: 1 }}>{card.rank}</span>
+          <span style={{ fontSize: '0.6em', lineHeight: 1 }}>{SUIT_CHAR[card.suit] || '?'}</span>
+        </div>
+      )}
     </div>
   );
 }

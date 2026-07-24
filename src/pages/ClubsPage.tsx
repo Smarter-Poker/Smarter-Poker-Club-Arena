@@ -254,7 +254,7 @@ export default function ClubsPage() {
 
   // Join club by ID
   const handleJoinClub = async () => {
-    if (joinClubId.length < 5) return;
+    if (joinClubId.length !== 6) return;
 
     setIsJoining(true);
     setJoinError(null);
@@ -264,7 +264,7 @@ export default function ClubsPage() {
       const { data: club, error } = await supabase
         .from('clubs')
         .select('id')
-        .eq('club_id', parseInt(joinClubId))
+        .eq('club_id', parseInt(joinClubId, 10))
         .maybeSingle();
 
       if (error || !club) {
@@ -272,12 +272,18 @@ export default function ClubsPage() {
         return;
       }
 
-      await ClubsService.join(club.id);
+      const membership = await ClubsService.join(club.id);
 
       // Refresh both clubs AND unions (joined club might belong to a union)
       await loadMyClubs();
       setJoinClubId('');
-      setActiveTab('my-clubs');
+      if (membership?.status === 'pending') {
+        // Approval-gated club — the request is queued, the user is not yet a member.
+        toast.success('Request submitted — pending owner approval.');
+      } else {
+        toast.success('Successfully joined club!');
+        setActiveTab('my-clubs');
+      }
     } catch (err: any) {
       reportError(err, 'ClubsPage.Join_failed');
       toast.error(err.message || 'Failed to join club');
@@ -380,7 +386,7 @@ export default function ClubsPage() {
             <div className={styles.discoverTab}>
               <section className={styles.joinSection}>
                 <h3>JOIN A CLUB</h3>
-                <p>Enter a 5-digit Club Code to join an existing club.</p>
+                <p>Enter a 6-digit Club Code to join an existing club.</p>
 
                 {joinError && <div className={styles.errorText}>{joinError}</div>}
 
@@ -388,19 +394,19 @@ export default function ClubsPage() {
                   <label className={styles.label}>ENTER CLUB CODE:</label>
                   <input
                     className={styles.joinInput}
-                    placeholder="25450"
+                    placeholder="482913"
                     value={joinClubId}
                     onChange={(e) => {
                       setJoinClubId(e.target.value.replace(/\D/g, ''));
                       setJoinError(null);
                     }}
-                    maxLength={5}
+                    maxLength={6}
                   />
                 </div>
 
                 <button
                   className={styles.btnPrimary}
-                  disabled={joinClubId.length < 5 || isJoining}
+                  disabled={joinClubId.length !== 6 || isJoining}
                   onClick={() => {
                     haptic.medium();
                     handleJoinClub();
@@ -414,10 +420,15 @@ export default function ClubsPage() {
               <ClubDiscovery
                 onJoinRequest={async (clubId) => {
                   try {
-                    await ClubsService.join(clubId);
+                    const membership = await ClubsService.join(clubId);
                     await loadMyClubs();
-                    setActiveTab('my-clubs');
-                    toast.success('Successfully joined club!');
+                    if (membership?.status === 'pending') {
+                      // Approval-gated club — not a member until approved.
+                      toast.success('Request submitted — pending owner approval.');
+                    } else {
+                      setActiveTab('my-clubs');
+                      toast.success('Successfully joined club!');
+                    }
                   } catch (err: any) {
                     toast.error(err.message || 'Failed to join club');
                   }

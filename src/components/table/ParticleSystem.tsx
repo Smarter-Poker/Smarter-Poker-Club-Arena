@@ -101,6 +101,12 @@ export function ParticleSystem({
   const animFrameRef = useRef<number>(0);
   const particlesRef = useRef<Spark[]>([]);
   const startTimeRef = useRef<number>(0);
+  const lastTimeRef = useRef<number>(0);
+  // UI-AUDIT #3: keep onComplete in a ref (like ConfettiCanvas) so an inline
+  // arrow from the parent doesn't land in the effect deps and restart the burst
+  // on every parent re-render.
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete; // Always point to latest callback
 
   const createParticles = useCallback(
     (width: number, height: number): Spark[] => {
@@ -165,24 +171,30 @@ export function ParticleSystem({
 
     particlesRef.current = createParticles(window.innerWidth, window.innerHeight);
     startTimeRef.current = performance.now();
+    lastTimeRef.current = startTimeRef.current;
 
     const animate = (now: number) => {
       const elapsed = now - startTimeRef.current;
+      // UI-AUDIT #12: delta-time the loop so motion is refresh-rate independent.
+      // Clamp the delta so a hidden/janky tab doesn't teleport particles.
+      const dt = Math.min(now - lastTimeRef.current, 50);
+      lastTimeRef.current = now;
+      const frameScale = dt / (1000 / 60); // 1.0 at 60fps
 
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
       let aliveCount = 0;
 
       particlesRef.current.forEach((p) => {
-        p.life += 16; // ~60fps
+        p.life += dt; // life measured in ms
         if (p.life >= p.maxLife) return;
         aliveCount++;
 
-        // Physics
-        p.vy += p.gravity;
-        p.x += p.vx;
-        p.y += p.vy;
-        p.vx *= 0.98; // Air drag
+        // Physics (scaled by real frame delta)
+        p.vy += p.gravity * frameScale;
+        p.x += p.vx * frameScale;
+        p.y += p.vy * frameScale;
+        p.vx *= Math.pow(0.98, frameScale); // Air drag
 
         // Fade out in last 40% of life
         const lifeProgress = p.life / p.maxLife;
@@ -232,7 +244,7 @@ export function ParticleSystem({
       } else {
         ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
         particlesRef.current = [];
-        onComplete?.();
+        onCompleteRef.current?.();
       }
     };
 
@@ -243,7 +255,9 @@ export function ParticleSystem({
         cancelAnimationFrame(animFrameRef.current);
       }
     };
-  }, [active, duration, createParticles, onComplete, mode]);
+    // onComplete/mode intentionally omitted — onComplete lives in a ref and mode
+    // is captured through createParticles, so neither should restart the burst.
+  }, [active, duration, createParticles]);
 
   if (!active) return null;
 

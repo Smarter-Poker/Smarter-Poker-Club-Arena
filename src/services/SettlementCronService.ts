@@ -201,17 +201,20 @@ export const SettlementCronService = {
       console.debug(`[SettlementCron] Period ${period.id} closed`);
 
       // Step 3: Execute payouts (if auto-execute is enabled)
+      // RAKE-AUDIT 2026-07-24: executeMondayPayouts is a RETIRED NO-OP (returns
+      // zeros) — calling it here reported "Payouts complete: 0 agents, 0
+      // players, $0" as success while paying nobody. The real weekly payout now
+      // runs SERVER-SIDE in the engine daemon (RakebackSettlerService
+      // .runWeeklyFinancialClose → settle_club_rakeback +
+      // fn_generate_all_credit_invoices), which does not depend on an admin
+      // browser tab being open. This client cron only closes the period.
       if (this.config.autoExecutePayouts) {
-        const result = await SettlementService.executeMondayPayouts(period.id);
         console.debug(
-          `[SettlementCron] Payouts complete: ${result.agentsPaid} agents, ` +
-            `${result.playersWithRakeback} players, $${result.totalDisbursed} total`
+          '[SettlementCron] Payout execution is server-authoritative (engine daemon weekly close) — nothing to do client-side'
         );
-
         masterBus.emit('SETTLEMENT_CYCLE_COMPLETED', {
           periodId: period.id,
           status: 'completed',
-          ...result,
         });
       } else {
         console.debug('[SettlementCron] Period closed — manual payout execution required');

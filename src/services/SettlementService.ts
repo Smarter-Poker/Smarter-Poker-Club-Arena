@@ -197,9 +197,15 @@ export const SettlementService = {
     clubId: string,
     clubName: string,
     netPlayerPL: number,
-    grossRake: number
+    grossRake: number,
+    // RAKE-AUDIT 2026-07-24: union revenue share is now configurable — the
+    // union.settings.revenueSharePercent value was stored but IGNORED (the tax
+    // was hardcoded 10%). Callers may pass the union's configured percent;
+    // default stays 10 for backwards compatibility.
+    unionTaxPercent: number = 10
   ): UnionWireCalculation {
-    const unionTax = grossRake * 0.1; // 10% Union Tax
+    const pct = Number.isFinite(unionTaxPercent) && unionTaxPercent >= 0 ? unionTaxPercent : 10;
+    const unionTax = Math.round(grossRake * (pct / 100) * 100) / 100;
     const finalWire = netPlayerPL + grossRake - unionTax;
 
     return {
@@ -324,7 +330,7 @@ export const SettlementService = {
    * Union keeps 10% and holds ALL BBJ and Promotional chips.
    *
    * FLOW:
-   * 1. Query all rake_history for this period, grouped by club
+   * 1. Query all rake_records for this period, grouped by club
    * 2. For each club in a union: compute 90% rake back
    * 3. Credit 90% to club owner's wallet from union owner's wallet
    * 4. Log all transactions with full audit trail
@@ -339,13 +345,25 @@ export const SettlementService = {
     unionRetained: number;
   }> {
     // Get union info
+    // RAKE-AUDIT 2026-07-24: settings included — revenueSharePercent (the
+    // union's retained cut) was stored in union settings but IGNORED; the 90%
+    // rake-back ratio was hardcoded. Now: rakeBack = rake × (1 − share/100),
+    // defaulting to the historical 10% share when unconfigured.
     const { data: union } = await supabase
       .from('unions')
-      .select('owner_id, name')
+      .select('owner_id, name, settings')
       .eq('id', unionId)
       .maybeSingle();
 
     if (!union?.owner_id) throw new Error('Union not found');
+
+    const revenueSharePercent = (() => {
+      const raw = (union as { settings?: { revenueSharePercent?: unknown } | null })?.settings
+        ?.revenueSharePercent;
+      const n = Number(raw);
+      return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 10;
+    })();
+    const rakeBackRatio = (100 - revenueSharePercent) / 100;
 
     // Idempotency: Verify we haven't already paid out this union for this period
     // (This uses verify_and_log_union_rakeback to guarantee exactly-once execution)
@@ -361,7 +379,7 @@ export const SettlementService = {
     const estimatedTotalRake = Array.isArray(earlyRakeData)
       ? earlyRakeData.reduce((sum: number, r: any) => sum + Number(r.rake_amount || 0), 0)
       : Number(earlyRakeData?.total_rake || 0);
-    const estimatedRakeBack = Math.trunc(estimatedTotalRake * 0.9 * 100) / 100;
+    const estimatedRakeBack = Math.trunc(estimatedTotalRake * rakeBackRatio * 100) / 100;
 
     const { data: canExecute, error: execErr } = await supabase.rpc(
       'verify_and_log_union_rakeback',
@@ -410,15 +428,20 @@ export const SettlementService = {
     const clubRakeMap = new Map<string, number>();
 
     for (const club of clubs) {
+      // RAKE-AUDIT 2026-07-24: read the LIVE per-hand rake ledger rake_records
+      // (created_at). The previous source, rake_history, stopped receiving
+      // writes on 2026-05-01 (Phase J removed the insert), so every club's
+      // rake summed to 0 and the union 90% rake-back silently paid clubs
+      // NOTHING while reporting success.
       const { data: rakeData } = await supabase
-        .from('rake_history')
+        .from('rake_records')
         .select('rake_amount')
         .eq('club_id', club.id)
-        .gte('collected_at', periodStart)
-        .lt('collected_at', periodEnd);
+        .gte('created_at', periodStart)
+        .lt('created_at', periodEnd);
 
       const clubRake = (rakeData || []).reduce((sum, r) => sum + Number(r.rake_amount), 0);
-      const rakeBack = Math.trunc(clubRake * 0.9 * 100) / 100;
+      const rakeBack = Math.trunc(clubRake * rakeBackRatio * 100) / 100;
       clubRakeMap.set(club.id, rakeBack);
       totalEstimatedRakeBack += rakeBack;
     }
@@ -471,10 +494,11 @@ export const SettlementService = {
       const rakeBack = clubRakeMap.get(club.id) || 0;
       if (rakeBack <= 0) continue;
 
-      // Estimate original rake from rakeback (reverse: rakeBack = rake * 0.9)
-      // Use integer-cents to avoid float division by 0.9 precision loss
+      // Estimate original rake from rakeback (reverse: rakeBack = rake * ratio)
+      // RAKE-AUDIT 2026-07-24: uses the union's configured ratio, not fixed 90%.
       const rakeBackCents = Math.trunc(rakeBack * 100);
-      const clubRake = Math.trunc((rakeBackCents * 10) / 9) / 100;
+      const clubRake =
+        rakeBackRatio > 0 ? Math.trunc(rakeBackCents / rakeBackRatio) / 100 : rakeBack;
       totalCollected += clubRake;
 
       if (rakeBack > 0 && club.owner_id) {

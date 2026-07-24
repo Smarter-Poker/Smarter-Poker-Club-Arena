@@ -48,6 +48,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
     'NLH'
   );
   const [buyIn, setBuyIn] = useState('10');
+  // RAKE-AUDIT 2026-07-24: fee auto-tracks 10% of buy-in (house rule)
   const [rake, setRake] = useState('1');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('50');
@@ -189,7 +190,10 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
       }
 
       const parsedBuyIn = parseFloat(buyIn);
-      const parsedRake = parseFloat(rake);
+      // RAKE-AUDIT 2026-07-24: fee is ALWAYS 10% of buy-in (house rule) —
+      // computed at submit so a stale field value can never leak through.
+      const parsedRake = Math.round((parsedBuyIn || 0) * 0.1 * 100) / 100;
+      void rake;
 
       // Build start time
       let startTime: Date | undefined;
@@ -508,7 +512,16 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                   type="number"
                   className={styles.input}
                   value={buyIn}
-                  onChange={(e) => setBuyIn(e.target.value)}
+                  onChange={(e) => {
+                    setBuyIn(e.target.value);
+                    // RAKE-AUDIT 2026-07-24: fee auto-tracks 10% of buy-in
+                    const b = parseFloat(e.target.value);
+                    setRake(
+                      Number.isFinite(b) && b > 0
+                        ? (Math.round(b * 0.1 * 100) / 100).toString()
+                        : '0'
+                    );
+                  }}
                   min="0"
                   step="0.01"
                 />
@@ -516,12 +529,18 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
             </div>
             <div className={styles.col}>
               <div className={styles.formGroup}>
-                <label>Fee</label>
+                {/* RAKE-AUDIT 2026-07-24: fee is the HOUSE RULE 10% of buy-in,
+                    auto-computed and read-only. It was a free-form field (any
+                    value incl. 0), so the platform-wide 10% rule was only a
+                    coincidence of defaults. TournamentService.createTournament
+                    also enforces 10% server-of-record side. */}
+                <label>Fee (10% of buy-in)</label>
                 <input
                   type="number"
                   className={styles.input}
                   value={rake}
-                  onChange={(e) => setRake(e.target.value)}
+                  readOnly
+                  disabled
                   min="0"
                   step="0.01"
                 />

@@ -7402,3 +7402,154 @@ showdowns), style differentiation confirmed over 3,000 hands.
 **Before deploy:** `cd server && npx tsc --noEmit && npm test` (sandbox could
 not run the repo's own toolchain end-to-end; all logic verified by simulation).
 Deploy = PM2 restart on Hetzner; no client rebuild needed.
+
+## 2026-07-23 — Horse AI V3: Real-Time Opponent Intelligence (PR #20)
+
+Session: Claude cloud session (continuation of the V2 audit). Merged to main as 1b01b354 + follow-up a44659c1; deployed to Hetzner via auto-deploy workflow.
+
+### New: server/src/engine/HorseMind.ts
+
+- Live per-player stats from the action stream every decision already receives: VPIP, PFR, 3-bet, aggression factor, fold-vs-aggression. Idempotent ingestion (timestamp+player+action dedup), bounded memory (4000 players / 60k actions / 20k hand flags), zero DB reads, fully synchronous.
+- Range reading: opponent's preflop line this hand (limp / call-of-raise / open / 3-bet / blind-check) maps to a [lo,hi] strength band, tightened/loosened by that player's observed PFR and VPIP with confidence weighting.
+- Exploit profiles: foldRate > 0.62 -> bluff 1.45x; foldRate < 0.35 -> bluff 0.55x + thin value 1.25x; AF > 2.5 -> call down lighter; AF < 0.7 -> respect raises. Neutral under 10 hands.
+- Board texture wetness (monotone/two-tone/straighty/paired/mid-card) and nut-blocker detection (A/K of flush suit without the flush; top-straight blockers).
+
+### Changed: server/src/engine/HorseLogic.ts
+
+- simulateEquity now accepts per-opponent range bands: opponent hole cards are rejection-sampled from the band (width-scaled tries, best-draw-kept restore) instead of dealt uniformly. QQ on 972r: 0.819 vs random -> 0.743 vs 3-bet band.
+- decidePostflop consumes the mind layer: texture-driven bet sizing (0.30 pot dry to 0.65 wet), blocker-gated bluffing, exploit-scaled bluff/call/value thresholds, callDownMod-based respect on calls.
+- decide() observes the action stream (try/catch isolated); new estimateEquityVsBands test hook; HorseDecideOpts {mind} for A/B harnesses.
+
+### Changed: server/src/services/HorseFleetManager.ts
+
+- DEFAULT_TABLES expanded 1 -> 8: NLH 1/2 + 2/5, PLO4/PLO5/PLO6/PLO8 1/2, Short Deck 1/2, Pineapple 1/2.
+- Reactivation of legacy same-name tables now resyncs game_variant and blinds from the config (found live: old "Pineapple 1.00/2.00" row carried game_variant ofc_pineapple; also fixed directly in prod DB).
+
+### Changed: server/src/engine/HorseLogic.test.ts
+
+- +7 V3 tests (band reading, range-conditioned equity shift, exploit learning, texture, blockers, idempotent observation, mind-enabled legality+perf). 26/26 green.
+
+### Verification (pre-push, cloud sim harness)
+
+- 6000-hand mind-ON vs mind-OFF match, otherwise identical horses: +29.0 bb/100 for the mind group; chip conservation exact.
+- 2100-hand regression across all 7 variants: 0 rejected actions, 0 exceptions, 0 chip errors, 0 stalls.
+- Perf worst case (PLO6 banded): 13.2 ms/decision, inside the 15 ms budget. tsc --noEmit clean.
+
+## 2026-07-23 — Horse AI V4: Street IQ (PR #21)
+
+Same session as V3. Merged to main as ba53b63b; deployed to Hetzner via auto-deploy workflow. All changes in server/src/engine/HorseLogic.ts (+ tests); O(1) per decision, no new Monte Carlo calls; gated by HorseDecideOpts.streetIQ (default on) for A/B.
+
+### Initiative / continuation betting
+
+- readInitiative(): last aggressor on any earlier street owns the betting lead (preflop raiser owns the flop, a flop check-raiser owns the turn).
+- The initiative holder c-bets favorable boards (dry, short-handed, no fresh scare) at 60% heads-up / 35% 3-way, small sizing (0.30-0.40 pot), position- and station-scaled. Callers without initiative no longer autopilot-check every non-made hand.
+
+### Postflop position
+
+- actsLastPostflop(): true when hero closes the action among live players. In position: bluff frequency x1.15, call margins -1.2pts. Out of position: bluffs x0.85, calls +0.8pts, check-raise mix boosted (+60% of checkRaiseFreq) with value hands.
+
+### Made-hand class + protection
+
+- madeCategory(): current made-hand class (works on 3-5 card boards incl. partial-board Omaha via scoreOmahaHiPartial with per-length board triples).
+- Vulnerable made hands (two pair/trips/weak straight, wet board, cards to come) always bet for protection, size up +0.10 pot, never slowplay.
+- Semi-bluff (bet or raise) lines restricted to true draws (cat <= pair); made hands in the 0.30-0.52 equity band take showdown lines instead of bloating pots.
+
+### Scare cards
+
+- scareShift(): texture delta of the just-dealt turn/river card (flush completed / straight arrived / board paired).
+- Dangered (scare + no blocker + hand below the new class): value bets slow down 55%, calls need +0.15 respect, river bluff-catching halves, value raises downgrade to calls.
+- Holding the blocker on a scare card boosts bluff frequency x1.5 — the classic blocker bluff.
+
+### Pot geometry
+
+- Monsters (equity >= 0.80) size bets so even geometric pot growth gets effective stacks in by the river: g = ((1+2\*SPR_eff)^(1/streetsLeft)-1)/2, clamped 0.35-1.10 pot.
+
+### Verification (pre-push, cloud sim harness)
+
+- 34/34 tests (26 prior + 8 new: initiative reading, position closure, made class incl. Omaha partial boards, scare detection, c-bet gap > 20pts vs non-initiative, protection-bet freq > 85% under the trickiest style, scare-respect monotonicity, 400-state legality fuzz with histories).
+- 6000-hand A/B (street IQ on vs off, V3 mind on both sides): +10.4 bb/100 per seat; chip conservation exact (0.00).
+- 2100-hand regression, all 7 variants: 0 rejected actions, 0 exceptions, 0 chip errors, 0 stalls, 0 illegal pineapple showdowns.
+- Perf: nlh 2.5ms avg; worst case plo6 13.3ms — inside the 15ms budget. tsc --noEmit clean.
+
+## 2026-07-24 — Horse AI V5: Dynamic Hand Reading (PR #22)
+
+Merged to main as b53b8ac3; deployed to Hetzner via auto-deploy workflow. Gated by HorseDecideOpts.handReading (default on).
+
+### Street-by-street range narrowing (HorseMind.bandFor)
+
+- Every postflop street an opponent bets/raises lifts the floor of their sampled range (+0.07 per street, capped +0.2; top of range uncapped +0.05). A flop+turn barreller is priced as a barreller, not as their preflop line. Postflop folders drop out of sampling.
+- Feeds the V3 range-conditioned Monte Carlo automatically — every equity number now reflects the full betting story of the hand.
+
+### Missed-c-bet probes (HorseMind.streetCheckedThrough + HorseLogic)
+
+- When the flop checks through, everyone's range is capped. On the turn, horses probe/delayed-c-bet the capped field even without the betting lead (probe frequency 1.15x the c-bet baseline).
+
+### River polarization
+
+- Medium made hands in the thin-value band (0.52-0.62 equity) stop bet-folding rivers into non-stations: thin-bet frequency 65% -> 25%, replaced by check-back / bluff-catch. Stations (valueThinMod > 1.05) still get thin-bet.
+
+### Perf guard
+
+- Banded Omaha equity now scales iterations by opponent count (x0.65 heads-up/2-way, x0.5 for 3+); narrow-band Omaha rejection tries 8 -> 6. Interleaved same-process benchmark (machine-noise-cancelling): V5 adds <0.4ms vs V4 on every variant; worst case (PLO6, 3 banded barrellers, turn) p95 12.9ms.
+
+### Verification
+
+- 39/39 tests (5 new: barrel narrowing monotonicity, checked-through detection, probe frequency gap, river thin-bet gap >20pts on a measured-equity medium hand, 400-state multi-street legality fuzz).
+- 6000-hand A/B (handReading on vs off; mind + street IQ on both sides): +8 to +14 bb/100 per seat across runs; chip conservation exact.
+- 2100-hand regression, all 7 variants: 0 rejected actions, 0 exceptions, 0 chip errors, 0 stalls.
+- NEW SHIP PROTOCOL: pre-merge blob-SHA verification — local git hash-object of every file compared against the branch listing before merging, so what deploys is byte-identical to what was tested.
+
+## 2026-07-24 — Horse AI V6: Decision-Data Audit + Data Integrity (PR #23)
+
+Merged to main as 9a709665; deployed to Hetzner via auto-deploy workflow.
+
+### Decision-data audit (requested: verify where every horse decision's logic and data comes from)
+
+- Traced the full path: ServerTableEngine.scheduleHorseAction -> handController.getState() (authoritative in-memory hand state, deep-copied) -> HorseLogic.decide. Every field verified real: players/stacks/bets/pot/currentBet/minRaise from live hand state; dealerSeat/lastRaise/actionHistory from the same fresh getState(); gameVariant/bigBlind from the DB tables row; style from profiles.horse_profile.
+- Style data validated in production: 574/574 horses carry valid jsonb style objects (5 styles, modifiers 0.85-1.15, zero empty/unknown). resolveHorseStyle consumes them directly.
+- FAIR PLAY PROVEN: grep-verified that HorseLogic/HorseMind never read opponents' hole cards — decisions use own cards + public board + public action stream only. Opponent hands in the equity sim are sampled, never peeked.
+- Live action-stream validation (recent production hands): 0 missing userIds/timestamps, 0 invalid stages, 0 invalid actions (pineapple 'discard' records are legitimate and correctly ignored by the stats layer), 0 negative amounts.
+- Pineapple discard path verified: fresh state at fire time, real cards, real board.
+
+### Defect 1 found + fixed: IEEE 754 chip drift (HandController)
+
+- Production data showed sub-cent amounts (e.g. all_in 171.64999999999998, call 80.16000000000003): float += / -= on stacks accumulates representation error across hands, then leaks into recorded action amounts.
+- Fix: snapChips() re-snaps every stack/bet/totalInvested/pot/currentBet to exact cents at all mutation choke points (postBlinds, bomb-pot antes, every performAction, settlement) and snaps the recorded actualAmount. Lossless (drift ~1e-13 vs half-cent threshold); conservation preserved by construction.
+- Proven with a new drifthunt harness: 3000 hands with PERSISTENT stacks and 5% rake — 0 sub-cent violations, 0 conservation violations. (Existing per-hand-reset harnesses could never catch this class.)
+
+### Defect 2 found + fixed: restart amnesia (new HorseMindHydrator.ts + index.ts)
+
+- HorseMind opponent stats were process-memory only — every deploy wiped them.
+- On boot the engine now replays the last 24h / up to 4000 hands of real hand_history.actions through HorseMind.observe(), rebuilding identical statistics (validated offline: exact stat reconstruction from persisted-shape data). Fire-and-forget, bounded, fail-safe.
+
+### Verification
+
+- 66/66 tests (HandController audit/basicplay/reopening/bigblindante + HorseLogic 39); tsc clean; 2100-hand all-variant regression clean; pre-merge blob-SHA parity on all 3 files.
+
+## 2026-07-24 — Horse AI V7: Preflop Mastery + Reads + Plans + Realism (PR #24, merge 4f3fd6fe)
+
+Ninth phase of the horse intelligence program. Everything below shipped in one squash merge and deployed to Hetzner via auto-deploy.
+
+**New files**
+
+- `server/src/engine/HorsePreflop.ts` — pure preflop intent engine: position-pair 3-betting, 3-bet/4-bet/squeeze bluffs, blind-vs-blind, stack-depth awareness, 13-20bb reshoves, push/fold <=12bb, ICM risk premium. No HorseLogic imports (no cycles); intents legalized by the caller.
+- `server/src/engine/HorseEval.ts` — evaluators + Monte Carlo equity + preflop scores split VERBATIM out of HorseLogic.ts (module size only; zero behavior change). Includes the V7 adaptive-MC early exit.
+- `server/src/services/HorseSessionRotator.ts` — humanlike session rhythms: horses stand up after real sessions (mean ~75min; likelier after doubling or busting), via the hand-boundary-safe leaveTable() path; max 4 departures/90s cycle; never thins tables below 4.
+
+**Changed files**
+
+- `HorseLogic.ts` — V7 preflop glue, barrel planning + continuation, ICM-lite (explicit gs.tournament or bb>=10 self-detect), overbet-polarity respect, per-feature ablation flags (v7Preflop/v7SizeReads/v7Barrels/v7CounterAdapt/v7AdaptiveMC), HorseEval import.
+- `HorseMind.ts` — texture-normalized size-aware band reads (deviation from texture-expected size, not absolute size), change-point-gated counter-adaptation (recency blend only when recent vs lifetime differ by >2 SE), barrel-plan store.
+- `HorseLogic.test.ts` — V7 suite: 47 tests incl. 500-state legality fuzz and a deterministic 4-bet-bluff intent test.
+- `index.ts` — SessionRotator wiring at boot.
+
+**Tuning discipline (duplicate-deal ablation)**
+First A/B runs were noise (±10 bb/100); built a duplicate-poker harness (each deal played twice with groups swapped, seeded shuffle interception in the harness only) cutting variance ~3x. First honest read: composite -9.4 — size reads, counter-adapt, and barrels were all NEGATIVE as first built. Redesigned (not damped): size reads became texture-normalized; counter-adapt got the change-point gate; barrel volume cut. Final proof at 240,000 mirrored hands: composite +0.39 bb/100 ± 2.3 vs V5 (EV-neutral, losses excluded), all five features individually neutral-or-positive, plus ~30-45% MC latency cut (plo4 med 9.5→7.3ms, plo6 ~15→8.7ms).
+
+**Verification**
+47/47 tests; tsc clean; 2100-hand 7-variant regression 0 errors; blob-SHA parity on all 7 files pre-merge; live verify: engine restart + V7 fingerprint + sentry 0 (see below).
+
+**Telemetry (Supabase)**
+
+- `horse_hand_results` view REWRITTEN with window functions (row_number/lead) after the correlated-subquery version went quadratic and started timing out; identical uncalled-bet-cap semantics, sub-second again. Migration: horse_hand_results_window_fn_rewrite.
+- `horse_style_performance` (style x variant bb/100, 24h) consumed by the telemetry snapshot report delivered in-session.

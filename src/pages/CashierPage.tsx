@@ -1050,51 +1050,24 @@ export default function CashierPage() {
         notifyWalletChange(user.id, value);
       } else if (action === 'buyin') {
         // ─── TABLE BUY-IN ───
-        if (balances.PLAYER.available < value) {
-          if (isMounted.current)
-            setMessage({ type: 'error', text: 'Insufficient chip balance for buy-in' });
-          if (isMounted.current) setIsProcessing(false);
-          return;
-        }
+        // AUDIT P1-2 FIX: This Cashier action previously called lockForBuyIn
+        // (WalletService → atomic_deduct_wallet_and_log, a REAL wallet debit)
+        // and then merely navigated to the table — it never called
+        // atomic_table_buyin, never inserted a table_seats row, and never
+        // notified the engine. That debited the wallet with no corresponding
+        // stack anywhere (orphaned debit) and forced the player to buy in a
+        // SECOND time via the in-table BuyInModal. The premature debit and its
+        // (misleading) chip_ledger write are removed: NO money moves in the
+        // Cashier. The player is routed to the table, where the authoritative
+        // in-table buy-in RPC (atomic_table_buyin) is the single point at which
+        // funds move and a seat is atomically created.
         if (!tableId) {
           if (isMounted.current)
             setMessage({ type: 'error', text: 'No table selected for buy-in.' });
           if (isMounted.current) setIsProcessing(false);
           return;
         }
-        const { lockForBuyIn } = useWalletStore.getState();
-        const success = await lockForBuyIn(user.id, value, tableId);
-        if (success) {
-          // Log buyin to chip_ledger (pre-resolve club UUID to avoid await inside fire-and-forget)
-          const resolvedBuyinClub = clubId ? await resolveClubUUID(clubId) : undefined;
-          supabase
-            .from('chip_ledger')
-            .insert({
-              performed_by: user.id,
-              from_type: 'player_wallet',
-              from_entity_id: user.id,
-              from_label: user.username || 'Player',
-              to_type: 'player_wallet',
-              to_entity_id: user.id,
-              to_label: 'Table Buy-In (locked)',
-              amount: value,
-              category: 'buyin',
-              description: `Table buy-in: ${value.toLocaleString()} chips`,
-              table_id: tableId,
-              club_id: resolvedBuyinClub,
-            })
-            .then(({ error: le }) => {
-              if (le) console.warn('[Cashier] Ledger write failed:', le.message);
-            });
-
-          if (isMounted.current)
-            setMessage({ type: 'success', text: `Bought in for ${value.toLocaleString()} chips` });
-          notifyWalletChange(user.id, value);
-          navigate(`/table/${tableId}`);
-        } else {
-          if (isMounted.current)
-            setMessage({ type: 'error', text: 'Buy-in failed. Please try again.' });
-        }
+        navigate(`/table/${tableId}`);
       } else if (action === 'cashout') {
         // ─── CASH OUT ───
         // BUG-02 FIX: Two distinct flows:

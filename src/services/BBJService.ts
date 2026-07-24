@@ -58,8 +58,11 @@ export interface BBJPayout {
   winner_user_id: string;
   loser_user_id: string;
   table_players_share: number;
-  winner_share: number; // Typically 50%
-  loser_share: number; // Typically 25%
+  // RAKE-AUDIT 2026-07-24: comments corrected — they were INVERTED vs the
+  // actual PAYOUT_SHARES constants (LOSER 50% / WINNER 25% / TABLE 25%).
+  // The BAD-BEAT HOLDER (the "loser" of the hand) gets the biggest share.
+  winner_share: number; // Hand winner: typically 25%
+  loser_share: number; // Bad-beat holder (hand loser): typically 50%
   table_share: number; // Typically 25% split among dealt-in players
   total_amount: number;
   created_at: string;
@@ -447,83 +450,21 @@ export const BBJService = {
    * - 25% split among all dealt-in players at the table
    */
   async executePayout(params: BBJPayoutParams): Promise<BBJPayout | null> {
-    // Get current pool by ID (NOT by clubId — params.poolId is the pool's primary key)
-    const { data: pool, error: poolError } = await supabase
-      .from('bbj_pools')
-      .select(
-        'id, union_id, club_id, main_balance, backup_balance, promo_balance, total_contributed, last_hit_at, last_hit_amount, status, created_at, updated_at'
-      )
-      .eq('id', params.poolId)
-      .maybeSingle();
-
-    if (poolError || !pool) {
-      reportError(poolError, 'BBJService.executePayout.poolNotFound');
-      return null;
-    }
-
-    if (params.dealtInPlayerIds.length === 0) {
-      reportError('No dealt-in players for table share', 'BBJService.executePayout.noPlayers');
-      return null;
-    }
-
-    const totalAmount = Number(pool.main_balance) || 0;
-    if (totalAmount <= 0) {
-      reportError(
-        `Pool main_balance is zero or invalid: ${pool.main_balance}`,
-        'BBJService.executePayout.zeroBalance'
-      );
-      return null;
-    }
-    // Share calculations are documented here for reference; the award_bbj RPC
-    // performs the actual split atomically to prevent partial payouts.
-    const _tableShare = totalAmount * PAYOUT_SHARES.TABLE;
-    void _tableShare; // used for logging below if needed
-
-    // Call RPC to atomically execute the BBJ payout with real parameters
-    // Using the existing award_bbj function
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('award_bbj', {
-          p_club_id: params.clubId,
-          p_table_id: params.tableId,
-          p_hand_number: params.handNumber,
-          p_big_blind: params.bigBlind,
-          p_stakes_tier: params.stakesTier,
-          p_game_variant: params.gameVariant,
-          p_winner_user_id: params.winnerUserId,
-          p_winner_hand: params.winnerHand,
-          p_winner_cards: params.winnerCards,
-          p_winner_display_name: params.winnerDisplayName,
-          p_loser_user_id: params.loserUserId,
-          p_loser_hand: params.loserHand,
-          p_loser_cards: params.loserCards,
-          p_loser_display_name: params.loserDisplayName,
-          p_payout_total_pct: 100,
-          p_payout_winner_pct: PAYOUT_SHARES.WINNER * 100,
-          p_payout_loser_pct: PAYOUT_SHARES.LOSER * 100,
-          p_payout_table_pct: PAYOUT_SHARES.TABLE * 100,
-          p_dealt_in_player_ids: params.dealtInPlayerIds,
-        }),
-      3
+    // RAKE-AUDIT 2026-07-24: DEPRECATED / DEAD PATH — BBJ payouts are
+    // SERVER-AUTHORITATIVE (ServerTableEngine → processBBJPayout →
+    // bbj_atomic_payout, which locks the pool, dedupes per hand, rolls the
+    // backup bank into main, records bbj_payouts + bbj_winners, and credits
+    // stacks). This client path could NEVER succeed anyway: it passed
+    // p_dealt_in_player_ids, which award_bbj's signature does not accept
+    // (PostgREST function-resolution error), and award_bbj is REVOKEd from
+    // authenticated/anon (service_role only). Running two independent payout
+    // paths with different idempotency keys risks paying the same hand twice,
+    // so the client path refuses immediately. The old body was removed.
+    reportError(
+      `BBJService.executePayout is deprecated (pool ${params.poolId}) — BBJ payouts are server-authoritative (bbj_atomic_payout)`,
+      'BBJService.executePayout.deprecated'
     );
-
-    if (error) {
-      reportError(error, 'BBJService.executePayout');
-      return null;
-    }
-
-    // Emit BALANCE_UPDATED for all affected players (winner, loser, and dealt-in)
-    // The award_bbj RPC atomically credits all of them
-    const allAffectedUsers = new Set([
-      params.winnerUserId,
-      params.loserUserId,
-      ...params.dealtInPlayerIds,
-    ]);
-    for (const userId of allAffectedUsers) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'bbj_payout', userId });
-    }
-
-    return data;
+    return null;
   },
 
   /**

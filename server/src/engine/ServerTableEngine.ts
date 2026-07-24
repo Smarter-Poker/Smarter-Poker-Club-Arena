@@ -54,7 +54,6 @@ import {
   markSeatAsLeft,
   atomicCashout,
   processLeavePending,
-  logRakeCollection,
   logBBJCollection,
   logInsuranceSettlement,
   logHandHistory,
@@ -4765,21 +4764,47 @@ export class ServerTableEngine {
       v_handHistoryId = result.handId;
     }
 
-    // SETTLEMENT STEP 8b: Log rake collection — every penny documented
+    // SETTLEMENT STEP 8b: Distribute rake — ATOMIC + IDEMPOTENT + RECOVERABLE.
+    // RAKE-AUDIT 2026-07-24 [money]: replaced the separate, non-atomic
+    // logRakeCollection(...) + fire-and-forget rake_records insert (old STEP 12)
+    // with ONE awaited atomic_distribute_rake(...) call, mirroring
+    // bbj_atomic_payout_v2. In a single SECURITY DEFINER transaction it gates on
+    // the hand (idempotent no-op on retry/restart), writes the durable
+    // rake_records audit, credits the club_wallets accumulator, and routes the
+    // spendable rake (union rake_wallet OR standalone chip_treasury) via a
+    // per-leg claim ledger, so a missing leg is re-driven WITHOUT double-crediting.
+    // UNION MODEL UNCHANGED: the union still holds 100% of cash rake; the weekly
+    // settlement still returns 90% to clubs (nets 10%).
     if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
-      // Round 42: pass BBJ fee through so club_wallets period_bbj_contribution
-      // is credited and chip_balance reflects (rake - bbj) net.
-      // Round 43: pass v_handHistoryId through so the club_wallet_transactions
-      // audit row can link to the originating hand.
-      await logRakeCollection(
-        this.tableId,
-        this.tableInfo.club_id,
-        this.handCount,
-        this.currentHandRake,
-        this.currentHandPotSize,
-        this.currentHandBBJFee,
-        v_handHistoryId
-      );
+      const contribsObj: Record<string, number> = {};
+      for (const [uid, amt] of this.currentHandContributions.entries()) {
+        contribsObj[uid] = amt;
+      }
+      let rakeDistributed = false;
+      for (let attempt = 0; attempt < 3 && !rakeDistributed; attempt++) {
+        const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
+          p_table_id: this.tableId,
+          p_club_id: this.tableInfo.club_id,
+          p_hand_id: v_handHistoryId,
+          p_hand_number: this.handCount,
+          p_rake: this.currentHandRake,
+          p_bbj: this.currentHandBBJFee,
+          p_pot: this.currentHandPotSize,
+          p_num_players: this.currentHandContributions.size,
+          p_contributions: contribsObj,
+          p_tournament_id: this.tableInfo.tournament_id || null,
+        });
+        if (!rdErr) {
+          rakeDistributed = true;
+        } else if (attempt === 2) {
+          reportError(
+            new Error(`[atomic_distribute_rake] failed after retries: ${rdErr.message}`),
+            'postHandTasks.atomic_distribute_rake_failed'
+          );
+        } else {
+          await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+        }
+      }
     }
 
     // SETTLEMENT STEP 8c: Log BBJ contribution
@@ -4796,47 +4821,12 @@ export class ServerTableEngine {
       );
     }
 
-    // SETTLEMENT STEP 12: Calculate rakeback (EQUAL-SHARE, FIX 144)
-    // Each dealt-in player gets credited with an EQUAL share of the total rake.
-    // This is the key metric for weekly player/agent earnings.
-    if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
-      // Pass contributions map (used to identify dealt-in players, NOT for weighting)
-      const dealtInCount = this.currentHandContributions.size;
-      if (dealtInCount > 0) {
-        // RAKE-AUDIT 2026-07-24: rakebackEngine.recordHandRake call REMOVED —
-        // it fed an in-memory Map that nothing ever flushed (unbounded growth,
-        // zero payout). rake_records below is the sole, durable rakeback input.
-
-        // 2b-DURABILITY: Also persist per-hand contributions to rake_records so
-        // RakebackSettlerService can derive equal-share credit even after engine
-        // restart. (BUG 008 — settleRakeback in-memory accumulator never flushes;
-        // rake_records is the durable per-hand audit trail the settler reads from.)
-        try {
-          const contribsObj: Record<string, number> = {};
-          for (const [uid, amt] of this.currentHandContributions.entries()) {
-            contribsObj[uid] = amt;
-          }
-          await supabase.from('rake_records').insert({
-            table_id: this.tableId,
-            club_id: this.tableInfo.club_id,
-            // Round 38 fix: link rake → hand for the FK chain
-            // (rake_attributions.hand_id, audit reconciliation, replay).
-            hand_id: v_handHistoryId,
-            rake_amount: this.currentHandRake,
-            bbj_contribution: this.currentHandBBJFee,
-            pot_size: this.currentHandPotSize,
-            num_players: dealtInCount,
-            player_contributions: contribsObj,
-            is_tournament: false,
-            tournament_id: this.tableInfo.tournament_id || null,
-            source: 'ServerTableEngine.handEnd',
-            metadata: { handCount: this.handCount },
-          });
-        } catch (rrErr) {
-          console.warn('[Engine] rake_records durable write failed (non-fatal):', rrErr);
-        }
-      }
-    }
+    // SETTLEMENT STEP 12: rakeback input (durable rake_records) is now written
+    // INSIDE atomic_distribute_rake (STEP 8b) — one atomic, idempotent,
+    // recoverable transaction. RAKE-AUDIT 2026-07-24 [money]: the former separate
+    // fire-and-forget `rake_records.insert` here was REMOVED — it could silently
+    // drop the settler's sole rakeback input on failure, and double-write on a
+    // retry. RakebackSettlerService reads rake_records exactly as before.
 
     // SETTLEMENT STEP 12b: Promo playthrough accrual (unlock-by-wagering).
     // Any player who has an outstanding promo balance accrues their per-hand

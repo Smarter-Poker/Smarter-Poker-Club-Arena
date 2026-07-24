@@ -679,13 +679,23 @@ export class RakebackSettlerService {
       );
     }
 
-    // 2c. BUG 012 FIX — Refresh player_stats.hands_played + total_rake per (user, club).
-    // Engine never writes player_stats; table was frozen 22 days. 7 client readers show
-    // stale data. Aggregate per-user hand count + rake credit from rake_records and upsert.
-    type PlayerStatsBucket = { user_id: string; club_id: string; hands: number; rake: number };
-    const psBuckets = new Map<string, PlayerStatsBucket>();
+    // 2c. player_stats refresh — IDEMPOTENT per (rake_record, user).
+    // RAKE-AUDIT 2026-07-24 [money-adjacent]: the old JS read-then-update
+    // aggregate was NON-idempotent — a crash between the player_stats increment
+    // and saveHighWaterMark() re-incremented every stat on the next cycle (the
+    // watermark had not advanced). Now each (rake_record, user) is applied
+    // exactly once via apply_rakeback_player_stats, which claims on
+    // rakeback_stats_applied in the SAME transaction as the increment, so a
+    // re-scan of already-processed rows can never double-count. (rakeback_periods
+    // is recompute-from-source and agent commission dedupes, so this was the last
+    // non-idempotent accumulator; the watermark no longer needs to be atomic
+    // with the increment for correctness.)
+    let psApplied = 0;
+    let psFailures = 0;
     for (const row of rows as RakeRecordRow[]) {
       if (!row.player_contributions) continue;
+      const rrId = (row as { id?: string }).id;
+      if (!rrId) continue; // no durable id -> cannot key idempotency; skip (safe)
       const dealtIn = Object.entries(row.player_contributions).filter(([, a]) => Number(a) > 0);
       if (dealtIn.length === 0) continue;
       // RAKE-AUDIT 2026-07-24: exact integer-cents split (shares sum to rake)
@@ -694,63 +704,23 @@ export class RakebackSettlerService {
         dealtIn.map(([uid]) => uid)
       );
       for (const [userId] of dealtIn) {
-        const share = psShares.get(userId) ?? 0;
-        const key = `${userId}:${row.club_id}`;
-        const b = psBuckets.get(key);
-        if (b) {
-          b.hands += 1;
-          b.rake = Math.round((b.rake + share) * 100) / 100;
-        } else {
-          psBuckets.set(key, { user_id: userId, club_id: row.club_id, hands: 1, rake: share });
-        }
-      }
-    }
-    let psUpserts = 0;
-    let psFailures = 0;
-    for (const pb of psBuckets.values()) {
-      const { data: existing } = await supabase
-        .from('player_stats')
-        .select('id, hands_played, total_rake')
-        .eq('user_id', pb.user_id)
-        .eq('club_id', pb.club_id)
-        .maybeSingle();
-      if (existing) {
-        const { error } = await supabase
-          .from('player_stats')
-          .update({
-            hands_played: (existing.hands_played ?? 0) + pb.hands,
-            total_rake: Math.round(((existing.total_rake ?? 0) + pb.rake) * 100) / 100,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existing.id);
-        if (error) {
-          psFailures++;
-        } else {
-          psUpserts++;
-        }
-      } else {
-        const { error } = await supabase.from('player_stats').insert({
-          user_id: pb.user_id,
-          club_id: pb.club_id,
-          hands_played: pb.hands,
-          total_rake: pb.rake,
-          total_winnings: 0,
-          total_losses: 0,
-          vpip: 0,
-          pfr: 0,
-          tournaments_played: 0,
-          tournaments_won: 0,
+        const { error } = await this.supabaseRpc('apply_rakeback_player_stats', {
+          p_rake_record_id: rrId,
+          p_user_id: userId,
+          p_club_id: row.club_id,
+          p_hands: 1,
+          p_rake: psShares.get(userId) ?? 0,
         });
         if (error) {
           psFailures++;
         } else {
-          psUpserts++;
+          psApplied++;
         }
       }
     }
-    if (psBuckets.size > 0) {
+    if (psApplied > 0 || psFailures > 0) {
       console.log(
-        `[RakebackSettler] player_stats upserts: ${psUpserts}/${psBuckets.size} OK (failures: ${psFailures})`
+        `[RakebackSettler] player_stats idempotent applies: ${psApplied} OK (failures: ${psFailures})`
       );
     }
 

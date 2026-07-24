@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { buyInBBFor, isActiveNow } from './HorseBehavior.js';
 import { reportError } from './errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -113,6 +114,24 @@ const DEFAULT_TABLES: TableConfig[] = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// V8 HUMANIZATION HELPERS (2026-07-24)
+// The old fleet was robotically uniform: every horse bought in for exactly
+// 100bb, tables filled to target instantly in one 30s cycle, and the
+// fewest-tables sort made the same horses appear in the same order forever.
+// These helpers give each horse a stable personality for HOW it shows up:
+//  - a deterministic buy-in profile (short-stacker / standard / deep) with
+//    per-sitting jitter, clamped to the table's real min/max buy-in
+//  - a daily activity window (hash-derived start hour + length) so the
+//    population on the floor rotates through the whole stable instead of
+//    the same few dozen
+//  - staggered arrivals: at most 1-2 horses join a table per cycle, so
+//    tables fill the way real tables fill (except when a HUMAN is seated
+//    short-handed — rescuing a human's game outranks realism pacing)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// (Pure helpers live in HorseBehavior.ts — dependency-free for unit tests.)
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // HORSE FLEET MANAGER CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -129,9 +148,9 @@ export class HorseFleetManager {
     return id;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
   // START / STOP
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
 
   async start(): Promise<void> {
     if (this.isRunning) {
@@ -171,9 +190,9 @@ export class HorseFleetManager {
     console.log('[HorseFleet] Stopped');
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
   // ENSURE ALL TABLES EXIST IN DATABASE
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
 
   private async ensureAllTablesExist(): Promise<void> {
     console.log(`[HorseFleet] Ensuring ${DEFAULT_TABLES.length} cash tables exist...`);
@@ -242,9 +261,9 @@ export class HorseFleetManager {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
   // SEED ALL TABLES — Fill empty seats with available horses
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
 
   private async seedAllTables(): Promise<void> {
     if (this.seeding) return; // Prevent concurrent seeding
@@ -255,7 +274,7 @@ export class HorseFleetManager {
       // tables once per table inside the seeding loop (N+1) just to read it.
       const { data: tables, error: tablesError } = await supabase
         .from('tables')
-        .select('id, name, max_players, small_blind, big_blind, game_variant, club_id')
+        .select('id, name, max_players, small_blind, big_blind, game_variant, club_id, min_buy_in, max_buy_in, current_players')
         .is('tournament_id', null)
         .in('status', ['waiting', 'running']);
 
@@ -291,12 +310,26 @@ export class HorseFleetManager {
 
       const validHorses = allHorses || [];
 
+      // V8: full horse-id set (any status) so we can tell HUMAN seats from
+      // horse seats — humans get rescue priority below.
+      const { data: allHorseIds } = await supabase.from('profiles').select('id').eq('is_horse', true);
+      const horseIdSet = new Set((allHorseIds || []).map((h) => h.id));
+      const hourUTC = new Date().getUTCHours();
+
       console.log(
         `[HorseFleet] Seeding cycle: ${tables.length} tables found, ${validHorses.length} total horses.`
       );
       let totalSeated = 0;
 
-      for (const table of tables) {
+      // V8: tables with a short-handed HUMAN seed first (never leave a human
+      // stranded); everything else keeps its natural order.
+      const humanShort = (t: any): boolean => {
+        const seats = (allActiveSeats || []).filter((x) => x.table_id === t.id);
+        return seats.some((x) => !horseIdSet.has(x.user_id)) && seats.length < 4;
+      };
+      const orderedTables = [...tables].sort((a, b) => Number(humanShort(b)) - Number(humanShort(a)));
+
+      for (const table of orderedTables) {
         try {
           // Get target horse count for this table
           const config = DEFAULT_TABLES.find((t) => t.name === table.name);
@@ -307,8 +340,17 @@ export class HorseFleetManager {
           const occupiedNumbers = new Set(tableOccupiedSeats.map((s) => s.seat_number));
 
           const currentCount = occupiedNumbers.size;
-          const seatsNeeded = targetHorses - currentCount;
+          let seatsNeeded = targetHorses - currentCount;
           if (seatsNeeded <= 0) continue;
+
+          // V8 STAGGERED ARRIVALS: humans trickle in — so do horses. At most
+          // 1-2 join a table per 30s cycle, UNLESS a human is sitting at a
+          // short-handed table (rescue outranks pacing).
+          const humanNeedsRescue =
+            tableOccupiedSeats.some((x) => !horseIdSet.has(x.user_id)) && currentCount < 4;
+          if (!humanNeedsRescue) {
+            seatsNeeded = Math.min(seatsNeeded, 1 + Math.floor(Math.random() * 2));
+          }
 
           // Find empty seat numbers
           const emptySeats: number[] = [];
@@ -329,13 +371,23 @@ export class HorseFleetManager {
             return true;
           });
 
-          // Sort candidates by fewest tables played to distribute load
-          candidateHorses.sort(
-            (a, b) => (horseTables.get(a.id)?.size || 0) - (horseTables.get(b.id)?.size || 0)
-          );
+          // V8 ACTIVITY WINDOWS: only horses inside their daily window sit
+          // down (falls back to the full pool if a human needs a game NOW and
+          // the active pool ran dry).
+          let pool = candidateHorses.filter((h) => isActiveNow(h.id, hourUTC));
+          if (pool.length < emptySeats.length && humanNeedsRescue) pool = candidateHorses;
 
-          // Take exactly the number we need
-          const selectedHorses = candidateHorses.slice(0, emptySeats.length);
+          // V8 WEIGHTED-RANDOM selection (replaces the deterministic
+          // fewest-tables sort): fewer active tables still means likelier to
+          // be picked, but the ORDER varies so the same horses stop appearing
+          // in the same rotation every time.
+          const weighted = pool
+            .map((h) => ({
+              h,
+              w: Math.random() / (1 + (horseTables.get(h.id)?.size || 0)),
+            }))
+            .sort((a, b) => b.w - a.w);
+          const selectedHorses = weighted.slice(0, emptySeats.length).map((x) => x.h);
 
           if (selectedHorses.length === 0) {
             if (emptySeats.length > 0) {
@@ -354,7 +406,14 @@ export class HorseFleetManager {
           for (let i = 0; i < selectedHorses.length; i++) {
             const horse = selectedHorses[i];
             const seatNumber = emptySeats[i];
-            const buyIn = table.big_blind * 100; // Standard 100 BB buy-in
+            // V8 BUY-IN VARIANCE: per-horse profile (short/standard/deep)
+            // with per-sitting jitter, clamped to the table's real min/max.
+            const minB = Number((table as any).min_buy_in) || table.big_blind * 40;
+            const maxB = Number((table as any).max_buy_in) || table.big_blind * 200;
+            const buyIn =
+              Math.round(
+                Math.max(minB, Math.min(maxB, table.big_blind * buyInBBFor(horse.id))) * 100
+              ) / 100;
 
             const success = await this.seatHorse(
               table.id,
@@ -393,6 +452,10 @@ export class HorseFleetManager {
       if (totalSeated > 0) {
         console.log(`[HorseFleet] Seated ${totalSeated} horses across tables`);
       }
+
+      // V8 DEMAND RESPONSE: when every table of a config is effectively full,
+      // spawn an overflow table so arriving humans always find a seat.
+      await this.spawnOverflowTables(tables, allActiveSeats || []);
     } catch (err: any) {
       reportError(err, 'HorseFleet.seedAllTables_error');
     } finally {
@@ -400,9 +463,67 @@ export class HorseFleetManager {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
+  // V8 DEMAND-BASED TABLE SPAWNING
+  // ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * If EVERY live table of a config is within one seat of full, create one
+   * overflow table ("<name> #2", "#3" — capped at 3 per config). Overflow
+   * tables are seeded by the normal cycle on the next pass; empty overflow
+   * tables simply idle (the stale-table lifecycle owns closing).
+   */
+  private async spawnOverflowTables(
+    tables: Array<{ id: string; name: string; max_players: number }>,
+    allActiveSeats: Array<{ table_id: string }>
+  ): Promise<void> {
+    const MAX_TABLES_PER_CONFIG = 3;
+    for (const config of DEFAULT_TABLES) {
+      try {
+        const family = tables.filter(
+          (t) => t.name === config.name || t.name.startsWith(`${config.name} #`)
+        );
+        if (family.length === 0 || family.length >= MAX_TABLES_PER_CONFIG) continue;
+        const allNearFull = family.every((t) => {
+          const occ = allActiveSeats.filter((s) => s.table_id === t.id).length;
+          return occ >= t.max_players - 1;
+        });
+        if (!allNearFull) continue;
+
+        const name = `${config.name} #${family.length + 1}`;
+        const clubId = this.getNextClubId();
+        const { error } = await supabase.from('tables').insert({
+          club_id: clubId,
+          union_id: MIDWAY_UNION_ID,
+          name,
+          game_type: 'cash',
+          game_variant: config.gameVariant,
+          stakes: `${config.smallBlind}/${config.bigBlind}`,
+          small_blind: config.smallBlind,
+          big_blind: config.bigBlind,
+          min_buy_in: config.bigBlind * 40,
+          max_buy_in: config.bigBlind * 200,
+          max_players: config.maxPlayers,
+          current_players: 0,
+          status: 'waiting',
+        });
+        if (error) {
+          // Unique-name races between cycles are expected and harmless.
+          if (!(error.message || '').includes('duplicate')) {
+            reportError(error, 'HorseFleet.spawnOverflowTable_failed');
+          }
+        } else {
+          console.log(`[HorseFleet] Demand overflow: created "${name}"`);
+        }
+      } catch (err: any) {
+        reportError(err, 'HorseFleet.spawnOverflowTables_error');
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
   // SEAT A SINGLE HORSE
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
 
   private async seatHorse(
     tableId: string,
@@ -457,9 +578,9 @@ export class HorseFleetManager {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
   // FLEET HEALTH
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
 
   async getFleetHealth(): Promise<{
     total: number;

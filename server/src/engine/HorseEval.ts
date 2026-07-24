@@ -12,6 +12,13 @@
  *    V7 adaptive early exit (checkpointed, threshold-distance gated)
  *  - preflop percentile scores per variant + the preflop equity cache
  *
+ * V8 (2026-07-24) additions:
+ *  - HiLoSplit: hi/lo/scoop/quarter decomposition for plo8, filled inside the
+ *    same MC loop at zero extra cost
+ *  - omahaDrawQuality: nut vs dominated flush draws + wrap detection by
+ *    direct out-enumeration (lazy, semi-bluff band only)
+ *  - A23 counterfeit backup bonus in the O8 preflop score
+ *
  * NEVER refer to the horses as "bots" — they are HORSES only.
  */
 
@@ -339,8 +346,111 @@ export function scoreOmahaLow(hole: Card[], board: Card[]): number {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// V8 OMAHA DRAW QUALITY — nut draws vs dominated draws, wraps
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface OmahaDrawInfo {
+  /** flush draw to the NUT flush (ace of suit, or king when the ace is on board) */
+  nutFlushDraw: boolean;
+  /** flush draw that is NOT to the nuts — the classic PLO trap hand */
+  dominatedFlushDraw: boolean;
+  /** deck cards that improve hero to a straight or straight flush */
+  straightOuts: number;
+  /** 9+ straight outs — a true wrap */
+  bigWrap: boolean;
+  /** the draw is worth fighting for: nut flush draw or a big wrap */
+  nutty: boolean;
+}
+
+const NO_DRAW_INFO: OmahaDrawInfo = {
+  nutFlushDraw: false,
+  dominatedFlushDraw: false,
+  straightOuts: 0,
+  bigWrap: false,
+  nutty: false,
+};
+
+/**
+ * Classify hero's Omaha draws on a 3-4 card board. The engine's biggest
+ * historical PLO leak was treating every flush draw alike — pros punish
+ * dominated flush draws relentlessly. Straight outs are counted by direct
+ * enumeration (each unseen card, does it make hero a straight or better
+ * straight-family hand). Called lazily and only in the semi-bluff decision
+ * band, so the enumeration cost never touches value-hand decisions.
+ */
+export function omahaDrawQuality(hole: Card[], board: Card[]): OmahaDrawInfo {
+  if (!hole || hole.length < 4 || !board || board.length < 3 || board.length > 4) {
+    return NO_DRAW_INFO;
+  }
+  try {
+    // Flush draws: a suit with exactly 2 on board and 2+ in hand (Omaha
+    // requires exactly two hole cards to play).
+    const suitOnBoard = new Map<string, number>();
+    for (const c of board) suitOnBoard.set(c.suit, (suitOnBoard.get(c.suit) || 0) + 1);
+    let nutFlushDraw = false;
+    let dominatedFlushDraw = false;
+    for (const [suit, n] of suitOnBoard) {
+      if (n !== 2) continue;
+      const heroSuited = hole.filter((c) => c.suit === suit);
+      if (heroSuited.length >= 2) {
+        const hasAce = heroSuited.some((c) => c.rank === 'A');
+        const aceOnBoard = board.some((c) => c.suit === suit && c.rank === 'A');
+        const hasKing = heroSuited.some((c) => c.rank === 'K');
+        if (hasAce || (aceOnBoard && hasKing)) nutFlushDraw = true;
+        else dominatedFlushDraw = true;
+      }
+    }
+
+    // Straight outs by enumeration (straight family only: 5, 9, 10 — flushes
+    // and boats are tracked separately and would double-count otherwise).
+    let straightOuts = 0;
+    const cur = scoreOmahaHiPartial(hole, board);
+    if (Math.floor(cur / 0x100000) < 5) {
+      const used = new Set<string>();
+      for (const c of hole) used.add(cardKey(c));
+      for (const c of board) used.add(cardKey(c));
+      const extended = [...board, board[0]]; // placeholder slot, replaced below
+      for (const c of FULL_DECK) {
+        if (used.has(cardKey(c))) continue;
+        extended[extended.length - 1] = c;
+        const cat = Math.floor(scoreOmahaHiPartial(hole, extended) / 0x100000);
+        if (cat === 5 || cat >= 9) straightOuts++;
+      }
+    }
+
+    const bigWrap = straightOuts >= 9;
+    return {
+      nutFlushDraw,
+      dominatedFlushDraw,
+      straightOuts,
+      bigWrap,
+      nutty: nutFlushDraw || bigWrap,
+    };
+  } catch {
+    return NO_DRAW_INFO;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MONTE CARLO EQUITY — variant-aware, opponent-count-aware, draw-aware
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * V8 hi-lo decomposition of a plo8 equity estimate. Filled by simulateEquity
+ * when passed as `splitOut` so the caller can tell a SCOOP (whole pot both
+ * ways) from a nut-low-only hand that is about to be QUARTERED — the single
+ * most important strategic distinction in O8.
+ */
+export interface HiLoSplit {
+  /** average share of the HI half (or the whole pot when no low qualifies) */
+  hi: number;
+  /** average share of the LO half */
+  lo: number;
+  /** fraction of runouts where hero took the ENTIRE pot */
+  scoop: number;
+  /** fraction of runouts where hero took a quarter or less (but not zero) */
+  quarter: number;
+}
 
 /**
  * Estimate hero's equity (0..1) vs `numOpponents` random hands. Handles all
@@ -361,7 +471,10 @@ export function simulateEquity(
   // V7: adaptive early exit — stop sampling once the estimate is far from
   // every decision threshold (3 standard errors). Cuts typical latency 2-3x
   // and banks the headroom for the decisions that are actually close.
-  adaptive?: boolean
+  adaptive?: boolean,
+  // V8: hi-lo decomposition accumulator (plo8 only) — filled in the SAME
+  // loop, so the scoop/quarter read costs nothing extra.
+  splitOut?: HiLoSplit
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
@@ -534,9 +647,20 @@ export function simulateEquity(
     const hiShare = heroBestHi ? 1 / hiTies : 0;
     if (!vi.isHiLo || !anyLow) {
       score += hiShare;
+      if (splitOut) {
+        splitOut.hi += hiShare;
+        if (hiShare >= 0.999) splitOut.scoop++;
+      }
     } else {
       const loShare = heroBestLow && bestLow !== Infinity ? 1 / lowTies : 0;
-      score += hiShare * 0.5 + loShare * 0.5;
+      const iterShare = hiShare * 0.5 + loShare * 0.5;
+      score += iterShare;
+      if (splitOut) {
+        splitOut.hi += hiShare;
+        splitOut.lo += loShare;
+        if (iterShare >= 0.999) splitOut.scoop++;
+        else if (iterShare > 0 && iterShare <= 0.26) splitOut.quarter++;
+      }
     }
     done = iter + 1;
 
@@ -548,11 +672,22 @@ export function simulateEquity(
         const d = Math.abs(eq - t);
         if (d < minDist) minDist = d;
       }
-      if (minDist > 3.5 * se) return eq; // decisively far from every threshold
+      if (minDist > 3.5 * se) return finalizeSplit(splitOut, done, eq);
     }
   }
 
-  return score / done;
+  return finalizeSplit(splitOut, done, score / done);
+}
+
+/** Normalize a HiLoSplit accumulator by the iterations actually run. */
+function finalizeSplit(splitOut: HiLoSplit | undefined, done: number, eq: number): number {
+  if (splitOut && done > 0) {
+    splitOut.hi /= done;
+    splitOut.lo /= done;
+    splitOut.scoop /= done;
+    splitOut.quarter /= done;
+  }
+  return eq;
 }
 
 // Small bounded cache for preflop equities (variant|opps|canonical-combo).
@@ -748,7 +883,7 @@ export function omahaPreflopScore(cards: Card[], isHiLo: boolean): number {
     const hasA = ranks.includes(14);
     const has2 = ranks.includes(2);
     const has3 = ranks.includes(3);
-    if (hasA && has2) pts += 6;
+    if (hasA && has2) pts += has3 ? 7.5 : 6; // A23 carries counterfeit backup
     else if (hasA && has3) pts += 4;
     else if (has2 && has3) pts += 2;
     const lowCount = ranks.filter((r) => r <= 8 || r === 14).length;

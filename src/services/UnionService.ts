@@ -509,13 +509,14 @@ class UnionServiceClass {
 
         try {
           const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-          // rake_transactions does not exist — the server-authoritative rake ledger is
-          // rake_history (rake_amount, collected_at).
+          // The live server-authoritative rake ledger is rake_records (rake_amount,
+          // created_at). rake_history is dead (last row 2026-05-01) — querying it made
+          // every club's weeklyRake read 0, so union settlement/stats under-reported.
           const { data: rakeData } = await supabase
-            .from('rake_history')
+            .from('rake_records')
             .select('rake_amount')
             .eq('club_id', uc.club_id)
-            .gte('collected_at', oneWeekAgo)
+            .gte('created_at', oneWeekAgo)
             .limit(QUERY_LIMITS.BULK);
           weeklyRake = (rakeData || []).reduce((sum, r) => sum + Number(r.rake_amount || 0), 0);
         } catch (err) {

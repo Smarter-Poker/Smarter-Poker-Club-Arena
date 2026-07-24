@@ -1539,21 +1539,37 @@ export default function TablePage({
       );
       return;
     }
-    // SAFETY (sweep #6): mid-session partial withdraw is DISABLED. It credited the
-    // wallet (unlockFromTable) AND wrote table_seats.stack directly from the client,
-    // but the engine owns the authoritative in-memory stack and re-persists it after
-    // every hand \u2014 overwriting the reduction while the wallet kept the credit,
-    // duplicating chips. Re-enable only once the server-authoritative path ships
-    // (atomic_table_withdraw RPC + engine POST /withdrawchips + GameServerAPI.removeChips,
-    // mirroring addChips/atomic_table_addon). Players cash out by leaving the table,
-    // which runs the engine's atomicCashout correctly.
-    void amount;
-    if (typeof window !== 'undefined') {
-      toast.error(
-        'To cash out, use "Leave Table" \u2014 mid-session chip withdrawal is temporarily unavailable.'
+    try {
+      // FIX 1 (2026-07-24): server-authoritative partial cash-out. The engine
+      // credits the PLAYER wallet AND reduces the seat stack atomically via
+      // atomic_table_withdraw (only between hands; rejected mid-hand). No direct
+      // table_seats write and no unlockFromTable here \u2014 the engine owns the
+      // authoritative stack, exactly mirroring the addChips path.
+      const res = await GameServerAPI.removeChips(tableId, amount);
+      if (!res.success) {
+        reportError(
+          new Error(res.error || 'removeChips rejected by engine'),
+          'TablePage.removeChips_engine_rejected'
+        );
+        if (typeof window !== 'undefined') {
+          toast.error(res.error || 'Unable to cash out chips.');
+        }
+        return;
+      }
+      // Engine ack'd \u2014 the wallet was credited; reflect it locally. We do
+      // NOT optimistic-update tableState; the next engine broadcast carries the
+      // authoritative stack.
+      setAccountBalance((prev) => prev + amount);
+      const estimatedNewStack = Math.max(
+        0,
+        (tableState.players[tableState.heroSeat - 1]?.stack || 0) - amount
       );
+      masterBus.emit('CHIPS_WITHDRAWN', { tableId, userId, amount, newStack: estimatedNewStack });
+    } catch (error) {
+      reportError(error, 'TablePage.Failed_to_withdraw_chips');
+      const msg = error instanceof Error ? error.message : 'Failed to withdraw chips';
+      if (typeof window !== 'undefined') toast.error(msg);
     }
-    return;
   };
 
   // Load BBJ pool data

@@ -359,7 +359,7 @@ export async function atomicCashout(
     // 1. Find active seat
     let query = supabase
       .from('table_seats')
-      .select('stack, seat_number')
+      .select('id, stack, seat_number')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .is('left_at', null);
@@ -385,6 +385,12 @@ export async function atomicCashout(
       const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
         p_user_id: userId,
         p_amount: stack,
+        // P1-2 FIX: idempotency key keyed on the seat-occupancy row id (unique
+        // per join; a re-join creates a new table_seats row => new id). A
+        // committed-but-timed-out credit here previously preserved the seat and
+        // got re-credited on the next cashout pass (double credit / chip mint).
+        // With the key, that retry is a DB-side no-op; then the seat is cleared.
+        p_idempotency_key: `cashout:${seat.id}`,
       });
       if (walletErr) {
         console.warn(

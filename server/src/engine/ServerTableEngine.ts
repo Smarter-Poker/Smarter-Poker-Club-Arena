@@ -155,6 +155,12 @@ export class ServerTableEngine {
   // the add-on is reduced or canceled. Map<userId, requestedAmount>.
   private pendingAddOns: Map<string, number> = new Map();
 
+  // FIX 2 (2026-07-24): per-hand hole cards kept in memory so we can (a) retry
+  // the RLS insert and (b) re-push a player's cards on reconnect/RESYNC. The
+  // public snapshot is re-sent by the hub, but hole cards ride a separate
+  // (table_hole_cards) transport that was never re-delivered. Map<userId,...>.
+  private currentHandHoleCards: Map<string, { seat: number; cards: unknown }> = new Map();
+
   // Per-hand tracking
   private currentHandWentToFlop: boolean = false;
   private currentHandPotSize: number = 0;
@@ -311,6 +317,11 @@ export class ServerTableEngine {
       // exploit. Re-arm the normal turn timer for the reconnecting player.
       if (event.type === 'PLAYER_RECONNECTED') {
         this.rearmTurnTimerIfCurrent(event.playerId);
+        // FIX 2 (2026-07-24): re-deliver hole cards for the current hand. The
+        // public snapshot is re-sent by the hub on reconnect, but hole cards
+        // are not — without this a reconnecting player sees a live action
+        // clock but a blank hand and gets auto-folded at the deadline.
+        void this.rePushHoleCards(event.playerId);
       }
     });
     this.preActionEngine = new PreActionEngine((event) => {
@@ -1197,6 +1208,64 @@ export class ServerTableEngine {
     player.stack += applied;
     this.broadcastCurrentState();
     return { success: true, applied };
+  }
+
+  /**
+   * Server-authoritative partial cash-out (withdraw) — the mirror of `addChips`.
+   *
+   *  - Between hands: `atomic_table_withdraw` CREDITS the player's PLAYER wallet
+   *    by `amount` and REDUCES `table_seats.stack` by the same amount
+   *    (apply_to_seat=true); we reduce the in-memory stack immediately and
+   *    broadcast. The RPC guards `amount > 0` and `amount <= seated stack`, so
+   *    an over-withdraw is rejected atomically and no chips are minted.
+   *  - Mid-hand: rejected outright — a player may not cash out chips that are
+   *    live in a hand. Unlike an add-on, this is NOT queued.
+   */
+  public async withdrawChips(
+    userId: string,
+    amount: number
+  ): Promise<{ success: boolean; error?: string }> {
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'Player not seated' };
+    if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
+
+    const { supabase } = require('../services/supabase.js');
+    const midHand = !!this.handController;
+
+    // Mid-hand cash-out is not allowed (do NOT queue).
+    if (midHand) {
+      return { success: false, error: 'Cannot cash out during a hand' };
+    }
+
+    // Guard client-side too so we can surface a clean message; the RPC also
+    // rejects over-withdraw atomically as the authoritative check.
+    if (amount > player.stack) {
+      return { success: false, error: 'Cannot withdraw more than your table stack' };
+    }
+
+    // Credit the wallet AND reduce table_seats.stack atomically (between hands).
+    const { error } = await supabase.rpc('atomic_table_withdraw', {
+      p_user_id: userId,
+      p_table_id: this.tableId,
+      p_amount: amount,
+      p_apply_to_seat: true,
+    });
+    if (error) {
+      const msg = String(error.message || '');
+      const clean = /exceeds seated stack/i.test(msg)
+        ? 'Cannot withdraw more than your table stack'
+        : 'Cash-out failed';
+      reportError(error, `ServerTableEngine.${this.tableId}.withdrawChips_credit_failed`, {
+        userId,
+        amount,
+      });
+      return { success: false, error: clean };
+    }
+
+    // Between hands — wallet credited AND table_seats reduced by the RPC.
+    player.stack -= amount;
+    this.broadcastCurrentState();
+    return { success: true };
   }
 
   /**
@@ -2632,9 +2701,79 @@ export class ServerTableEngine {
   // EVENT HANDLING
   // ═════════════════════════════════════════════════════════════════════════════
 
+  /**
+   * FIX 2 (2026-07-24): reliably persist a player's hole cards to the
+   * RLS-protected `table_hole_cards` table (the secure per-player delivery
+   * channel). The old path was fire-and-forget with only a console.warn, so a
+   * transient RPC failure left the player with no cards while the
+   * server-authoritative turn timer ticked toward an auto-fold. This awaits the
+   * insert and retries up to 3× with backoff; on final failure it emits a
+   * `hole_cards_unavailable` event so the client can force a re-fetch.
+   */
+  private async persistHoleCardsWithRetry(
+    userId: string,
+    seat: number,
+    cards: unknown
+  ): Promise<void> {
+    const payload = JSON.stringify([{ user_id: userId, seat_number: seat, cards }]);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const { error } = await supabase.rpc('insert_hole_cards', {
+          p_table_id: this.tableId,
+          p_hand_number: this.handCount,
+          p_cards: payload,
+        });
+        if (!error) return;
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 failed for seat ${seat}:`,
+          error.message
+        );
+      } catch (err) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] insert_hole_cards attempt ${attempt}/3 threw for seat ${seat}:`,
+          err
+        );
+      }
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 150 * attempt));
+      }
+    }
+    // All retries exhausted — tell the client its cards are missing so it can
+    // re-query table_hole_cards instead of sitting blind until the auto-fold.
+    reportError(
+      new Error('insert_hole_cards failed after 3 attempts'),
+      `ServerTableEngine.${this.tableId}.insert_hole_cards_failed`,
+      { userId, seat, handNumber: this.handCount }
+    );
+    this.hub?.emitEvent(this.tableId, {
+      type: 'hole_cards_unavailable',
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      user_id: userId,
+      seat,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * FIX 2 (2026-07-24): re-deliver a player's hole cards for the current hand
+   * on reconnect / RESYNC. Re-inserting (ON CONFLICT DO UPDATE) fires the
+   * client's table_hole_cards Realtime subscription so it re-fetches the hero's
+   * cards. No-op when there is no live hand or no cached cards for the player.
+   */
+  public async rePushHoleCards(userId: string): Promise<void> {
+    if (!this.handController) return;
+    const entry = this.currentHandHoleCards.get(userId);
+    if (!entry) return;
+    await this.persistHoleCardsWithRetry(userId, entry.seat, entry.cards);
+  }
+
   private async handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
+        // FIX 2 (2026-07-24): start a fresh per-hand hole-card cache used for
+        // reliable re-push to reconnecting players.
+        this.currentHandHoleCards.clear();
         // Round 38 fix: capture wall-clock start so logHandHistory can stamp
         // started_at correctly. Without this, the row's started_at defaulted
         // to the INSERT time (which is hand-end), making replay timestamps
@@ -2682,26 +2821,14 @@ export class ServerTableEngine {
           const state = this.handController.getState();
           const player = state.players.find((p) => p.seat === event.seat);
           if (player) {
-            supabase
-              .rpc('insert_hole_cards', {
-                p_table_id: this.tableId,
-                p_hand_number: this.handCount,
-                p_cards: JSON.stringify([
-                  {
-                    user_id: player.user_id,
-                    seat_number: player.seat,
-                    cards: event.cards,
-                  },
-                ]),
-              })
-              .then(({ error }: { error: any }) => {
-                if (error) {
-                  console.warn(
-                    `[ServerTableEngine:${this.tableId}] Failed to insert hole cards for seat ${event.seat}:`,
-                    error.message
-                  );
-                }
-              });
+            // FIX 2 (2026-07-24): cache the dealt cards in memory so we can
+            // re-push them to a reconnecting/RESYNCing player, and make the RLS
+            // insert reliable (awaited + retried) instead of fire-and-forget.
+            this.currentHandHoleCards.set(player.user_id, {
+              seat: player.seat,
+              cards: event.cards,
+            });
+            await this.persistHoleCardsWithRetry(player.user_id, player.seat, event.cards);
           }
         }
         // Do NOT broadcast state here — cards are delivered securely via table_hole_cards

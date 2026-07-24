@@ -88,6 +88,12 @@ export interface EngineWebSocketServerOptions {
   tableExists: TableExistsCheck;
   /** Optional override for auth, used by tests to inject fake tokens. */
   verifyToken?: (token: string) => Promise<{ userId: string } | null>;
+  /**
+   * FIX 2 (2026-07-24): invoked on (re)connect and on RESYNC so the engine can
+   * re-deliver the requesting player's hole cards for the current hand. Public
+   * state is re-sent by the hub, but hole cards ride a separate transport.
+   */
+  onResync?: (tableId: string, userId: string) => void;
 }
 
 interface ConnectionState {
@@ -122,11 +128,13 @@ export class EngineWebSocketServer {
   private readonly hub: TableStateHub;
   private readonly tableExists: TableExistsCheck;
   private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
+  private readonly onResync?: (tableId: string, userId: string) => void;
 
   constructor(opts: EngineWebSocketServerOptions) {
     this.hub = opts.hub;
     this.tableExists = opts.tableExists;
     this.verifyToken = opts.verifyToken ?? defaultVerifyToken;
+    this.onResync = opts.onResync;
     this.wss = new WebSocketServer({ noServer: true });
   }
 
@@ -335,6 +343,10 @@ export class EngineWebSocketServer {
     };
     (ws as unknown as { __sub: HubSubscriber }).__sub = subscriber;
     this.hub.subscribe(tableId, subscriber);
+    // FIX 2 (2026-07-24): a fresh (re)connect gets the public SNAPSHOT above;
+    // ask the engine to also re-deliver this player's hole cards for the
+    // current hand so a reconnecting player isn't left blind.
+    this.onResync?.(tableId, userId);
 
     ws.on('message', (raw) => this.onMessage(conn, raw));
     ws.on('close', () => this.onClose(ws));
@@ -388,6 +400,9 @@ export class EngineWebSocketServer {
       case 'RESYNC': {
         const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
         this.hub.resync(conn.tableId, sub);
+        // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
+        // snapshot — the RESYNC snapshot only carries scrubbed public state.
+        this.onResync?.(conn.tableId, conn.userId);
         return;
       }
       default:

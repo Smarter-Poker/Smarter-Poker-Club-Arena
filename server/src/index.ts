@@ -49,6 +49,12 @@ const gameServer = new GameServer();
 const engineWs = new EngineWebSocketServer({
   hub: tableStateHub,
   tableExists: (tableId) => gameServer.getTableEngine(tableId) !== undefined,
+  // FIX 2 (2026-07-24): on (re)connect / RESYNC, re-push the player's hole
+  // cards for the current hand (public state alone leaves reconnecting players
+  // blind and auto-folded).
+  onResync: (tableId, userId) => {
+    void gameServer.getTableEngine(tableId)?.rePushHoleCards(userId);
+  },
 });
 
 // Phase U4: Channel WebSocket server at /ws/channel (Realtime migration).

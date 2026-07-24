@@ -76,16 +76,26 @@ export function useTableAnimations(
       const radiusX = 300;
       const radiusY = 150;
 
-      for (let i = 0; i < maxPlayers; i++) {
-        const angle = (i * (360 / maxPlayers) - 90) * (Math.PI / 180);
-        positions.set(i, {
+      // UI-AUDIT #2b: seats (and ThrowEvent.fromSeat/toSeat) are 1-indexed
+      // seatNumbers. Previously this Map was keyed 0..maxPlayers-1, so every
+      // seatPositions.get(seatNumber) was one seat off and the highest seat
+      // (get(maxPlayers)) returned undefined → ThrowAnimation rendered null.
+      // Key by the 1-indexed seatNumber, and rotate the ellipse so the hero is
+      // at the bottom (matching the viewer-relative table layout).
+      const heroIndex = heroSeat > 0 ? heroSeat - 1 : 0;
+      for (let seat = 1; seat <= maxPlayers; seat++) {
+        const i = seat - 1;
+        // Rotate so the hero (heroIndex) lands at the bottom of the ellipse.
+        const rel = (i - heroIndex + maxPlayers) % maxPlayers;
+        const angle = ((rel * 360) / maxPlayers + 90) * (Math.PI / 180);
+        positions.set(seat, {
           x: centerX + radiusX * Math.cos(angle),
           y: centerY + radiusY * Math.sin(angle),
         });
       }
       return positions;
     },
-    []
+    [heroSeat]
   );
 
   return {

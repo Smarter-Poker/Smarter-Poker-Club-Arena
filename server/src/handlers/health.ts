@@ -10,6 +10,9 @@
 
 import type { ServerResponse } from 'http';
 import { sendJSON } from '../http/respond.js';
+// ── ADDITIVE (#5): shared engine metrics registry — appended to /metrics ONLY when
+// ENGINE_METRICS === 'on'. With the flag unset the response is byte-identical to before.
+import { metricsRegistry, ENGINE_METRICS_ENABLED } from '../observability/engineInstruments.js';
 
 // Minimal structural typing so handlers don't need to import the GameServer
 // class (which lives in `index.ts`) nor the transport classes. Anything that
@@ -49,7 +52,13 @@ export function handleWsMetrics(res: ServerResponse, deps: WsMetricsDeps): void 
  * NOT JSON — emits text/plain with the Prometheus exposition content-type.
  */
 export function handleMetrics(res: ServerResponse, deps: HealthDeps): void {
-  const body = deps.gameServer.getPrometheusMetrics();
+  let body = deps.gameServer.getPrometheusMetrics();
+  // ADDITIVE (#5): when ENGINE_METRICS is enabled, append the shared engine
+  // registry's exposition text. Default OFF keeps the response byte-for-byte
+  // identical to the pre-wiring behavior.
+  if (ENGINE_METRICS_ENABLED) {
+    body += '\n' + metricsRegistry.renderPrometheus();
+  }
   // Note: original index.ts does NOT attach CORS_HEADERS to /metrics — keep it
   // that way for byte-identical behavior. Prometheus scrapers don't need CORS.
   res.writeHead(200, {

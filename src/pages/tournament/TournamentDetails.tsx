@@ -81,6 +81,8 @@ export default function TournamentDetails() {
 
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [lateRegCountdown, setLateRegCountdown] = useState<string>('');
+  // SWEEP #6: 1s tick to drive the live level countdown in the quick-stats grid.
+  const [clockTick, setClockTick] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [unionName, setUnionName] = useState<string>('');
 
@@ -142,6 +144,15 @@ export default function TournamentDetails() {
     (tournament as any)?.current_level,
     (tournament as any)?.late_reg_levels,
   ]);
+
+  // SWEEP #6: drive a live 1-second countdown for the quick-stats level chip while
+  // the tournament is RUNNING. getCurrentLevelState reads the server-authoritative
+  // level clock, so this stays in sync with the engine's real timer.
+  useEffect(() => {
+    if (tournament?.status !== 'RUNNING') return;
+    const id = setInterval(() => setClockTick((n) => (n + 1) % 3600), 1000);
+    return () => clearInterval(id);
+  }, [tournament?.status]);
 
   // ── Realtime subscription: live tournament updates ──
   useEffect(() => {
@@ -846,7 +857,23 @@ export default function TournamentDetails() {
               <div className="stat">
                 <span className="stat-label">Current Level</span>
                 <span className="stat-value">
-                  {tournament.current_level || (tournament.status === 'RUNNING' ? 1 : '-')}
+                  {(() => {
+                    // Reference clockTick so this re-renders every second.
+                    void clockTick;
+                    if (tournament.status !== 'RUNNING') {
+                      return tournament.current_level || '-';
+                    }
+                    try {
+                      const ls = tournamentService.getCurrentLevelState(tournament);
+                      const secs = Math.max(0, Math.floor(ls.timeRemainingSeconds));
+                      const mm = Math.floor(secs / 60);
+                      const ss = (secs % 60).toString().padStart(2, '0');
+                      const label = ls.currentLevel?.isBreak ? 'Break' : `Lv ${ls.levelIndex + 1}`;
+                      return `${label} · ${mm}:${ss}`;
+                    } catch {
+                      return tournament.current_level || 1;
+                    }
+                  })()}
                 </span>
               </div>
               <div className="stat">

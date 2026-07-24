@@ -1,302 +1,238 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  WAITLIST SERVICE — Table Waitlist Management
- * Handles joining, leaving, and managing table waitlists
+ *  WAITLIST SERVICE — Cash-Game Table Waitlist (client)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Waitlists apply to CASH GAMES ONLY. Tournament / SNG / Spin players are seated
+ * by the game engine (late-reg seating + table spawn/redraw), never by a waitlist.
+ *
+ * Table backing this service: public.table_waitlists
+ *   id          uuid pk
+ *   table_id    uuid   (a cash table; rows for tournament tables are never created)
+ *   user_id     uuid
+ *   created_at  timestamptz  (FIFO ordering key)
+ *   notified_at timestamptz  (set when the engine offers an open seat)
+ *   status      text   'waiting' | 'notified' | 'seated' | 'cancelled' | 'expired'
+ *
+ * The engine (server/src/services/supabase.ts → notifyWaitlistSeatOpen) claims the
+ * oldest 'waiting' row on a seat-open event, flips it to 'notified', and inserts a
+ * 'waitlist_seat_open' notification. This client service handles the player side:
+ * joining, leaving, reading position, and listing a player's active waitlists.
+ *
+ * NOTE ON UI WIRING: the cash-table page (TablePage.tsx) is under active development
+ * by another workstream and is intentionally NOT modified by this sweep. This
+ * service is fully functional and ready to be imported by that page (or a lobby
+ * "Join Waitlist" button) when that work lands.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { supabase } from '../lib/supabase';
-import { notificationService } from './NotificationService';
-import { masterBus } from '../core/MasterBus';
-import { retryAsync } from '../utils/retryAsync';
-import { reportError } from '../utils/errorReporter';
+import { reportError, reportWarning } from '../utils/errorReporter';
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
+export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'cancelled' | 'expired';
 
 export interface WaitlistEntry {
   id: string;
   tableId: string;
-  tableName: string;
   userId: string;
-  position: number;
-  joinedAt: string;
-  status: 'waiting' | 'notified' | 'seated' | 'expired' | 'left';
-  notifiedAt?: string;
+  status: WaitlistStatus;
+  createdAt: string;
+  notifiedAt: string | null;
 }
 
-export interface WaitlistStats {
+export interface WaitlistPosition {
+  /** 1-based position among 'waiting' rows (1 = next up). 0 = notified/seated. */
   position: number;
-  totalWaiting: number;
-  estimatedWaitMinutes: number;
+  status: WaitlistStatus;
+  ahead: number;
+  entryId: string;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// SERVICE CLASS
-// ═══════════════════════════════════════════════════════════════════════════════
+const ACTIVE_STATES: WaitlistStatus[] = ['waiting', 'notified'];
 
-class WaitlistServiceClass {
+function mapRow(row: {
+  id: string;
+  table_id: string;
+  user_id: string;
+  status: string;
+  created_at: string;
+  notified_at: string | null;
+}): WaitlistEntry {
+  return {
+    id: row.id,
+    tableId: row.table_id,
+    userId: row.user_id,
+    status: (row.status as WaitlistStatus) ?? 'waiting',
+    createdAt: row.created_at,
+    notifiedAt: row.notified_at,
+  };
+}
+
+async function currentUserId(): Promise<string | null> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data?.user?.id) return null;
+  return data.user.id;
+}
+
+export const WaitlistService = {
   /**
-   * Join a table's waitlist
+   * Join the waitlist for a cash table. Idempotent: if the player already holds an
+   * active ('waiting'/'notified') row for this table, that row is returned instead
+   * of inserting a duplicate (also enforced by the UNIQUE(table_id,user_id) index).
+   * Refuses to enqueue for tournament tables — those are engine-seated.
    */
-  async join(tableId: string, userId: string): Promise<WaitlistEntry | null> {
-    // Check if already on waitlist
-    const existing = await this.getUserWaitlistEntry(tableId, userId);
-    if (existing) {
-      return existing;
-    }
-
-    // Call RPC to join (handles position assignment)
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('join_waitlist', {
-          p_table_id: tableId,
-          p_user_id: userId,
-        }),
-      3
-    );
-
-    if (error) {
-      reportError(error, 'WaitlistService.Failed_to_join');
+  async joinWaitlist(tableId: string): Promise<WaitlistEntry | null> {
+    const userId = await currentUserId();
+    if (!userId) {
+      reportWarning(
+        'joinWaitlist called with no authenticated user',
+        'WaitlistService.joinWaitlist',
+        { tableId }
+      );
       return null;
     }
 
-    // Fetch the created entry
-    const { data: entry } = await supabase
-      .from('table_waitlist')
-      .select('*, tables:table_id(name)')
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .eq('status', 'waiting')
+    // Guard: waitlists are cash-only. Never enqueue for a tournament table.
+    const { data: tableRow, error: tableErr } = await supabase
+      .from('tables')
+      .select('id, tournament_id')
+      .eq('id', tableId)
       .maybeSingle();
-
-    if (!entry) return null;
-
-    masterBus.emit('WAITLIST_POSITION_CHANGED', {
-      tableId,
-      position: entry.position,
-      tableName: entry.tables?.name || 'Table',
-    });
-
-    return this.mapEntry(entry);
-  }
-
-  /**
-   * Leave a table's waitlist
-   */
-  async leave(tableId: string, userId: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('table_waitlist')
-      .update({ status: 'left' })
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .eq('status', 'waiting');
-
-    if (error) {
-      reportError(error, 'WaitlistService.Failed_to_leave');
-      return false;
+    if (tableErr) {
+      reportError(tableErr, 'WaitlistService.joinWaitlist.tableLookup', { tableId });
+      return null;
     }
-
-    masterBus.emit('WAITLIST_POSITION_CHANGED', {
-      tableId,
-      position: 0,
-      tableName: 'Waitlist',
-    });
-
-    return true;
-  }
-
-  /**
-   * Get user's position on a table's waitlist
-   */
-  async getPosition(tableId: string, userId: string): Promise<WaitlistStats | null> {
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('get_waitlist_position', {
-          p_table_id: tableId,
-          p_user_id: userId,
-        }),
-      3
-    );
-
-    if (error || data === null) {
+    if (!tableRow) {
+      reportWarning('joinWaitlist for unknown table', 'WaitlistService.joinWaitlist', { tableId });
+      return null;
+    }
+    if ((tableRow as { tournament_id?: string | null }).tournament_id) {
+      reportWarning(
+        'Refusing to waitlist a tournament table (engine-seated)',
+        'WaitlistService.joinWaitlist',
+        { tableId }
+      );
       return null;
     }
 
-    // Get total waiting count
-    const { count } = await supabase
-      .from('table_waitlist')
-      .select('*', { count: 'exact', head: true })
-      .eq('table_id', tableId)
-      .eq('status', 'waiting');
-
-    return {
-      position: data,
-      totalWaiting: count || 0,
-      estimatedWaitMinutes: data * 5, // Rough estimate: 5 min per position
-    };
-  }
-
-  /**
-   * Get user's entry on a waitlist
-   */
-  async getUserWaitlistEntry(tableId: string, userId: string): Promise<WaitlistEntry | null> {
-    const { data, error } = await supabase
-      .from('table_waitlist')
-      .select('*, tables:table_id(name)')
+    // Return existing active row if present (idempotent join).
+    const { data: existing } = await supabase
+      .from('table_waitlists')
+      .select('id, table_id, user_id, status, created_at, notified_at')
       .eq('table_id', tableId)
       .eq('user_id', userId)
-      .eq('status', 'waiting')
-      .maybeSingle();
-
-    if (error || !data) return null;
-
-    return this.mapEntry(data);
-  }
-
-  /**
-   * Get all active waitlist entries for a user
-   */
-  async getUserWaitlists(userId: string): Promise<WaitlistEntry[]> {
-    const { data, error } = await supabase
-      .from('table_waitlist')
-      .select('*, tables:table_id(name)')
-      .eq('user_id', userId)
-      .eq('status', 'waiting')
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      reportError(error, 'WaitlistService.Failed_to_get_user_waitlists');
-      return [];
-    }
-
-    return (data || []).map(this.mapEntry);
-  }
-
-  /**
-   * Get all waitlist entries for a table
-   */
-  async getTableWaitlist(tableId: string): Promise<WaitlistEntry[]> {
-    const { data, error } = await supabase
-      .from('table_waitlist')
-      .select('*, profiles(username, display_name)')
-      .eq('table_id', tableId)
-      .eq('status', 'waiting')
-      .order('position', { ascending: true });
-
-    if (error) {
-      // table_waitlist may not exist yet — silently return empty
-      console.debug('[Waitlist] getTableWaitlist:', error.message);
-      return [];
-    }
-
-    return (data || []).map(this.mapEntry);
-  }
-
-  /**
-   * Notify next player when a seat opens
-   */
-  async notifyNextPlayer(tableId: string): Promise<boolean> {
-    // Get next waiting player
-    const { data: next } = await supabase
-      .from('table_waitlist')
-      .select('*, tables:table_id(name)')
-      .eq('table_id', tableId)
-      .eq('status', 'waiting')
-      .order('position', { ascending: true })
+      .in('status', ACTIVE_STATES)
+      .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
+    if (existing) return mapRow(existing as any);
 
-    if (!next) {
-      return false;
+    const { data: inserted, error: insErr } = await supabase
+      .from('table_waitlists')
+      .insert({ table_id: tableId, user_id: userId, status: 'waiting' })
+      .select('id, table_id, user_id, status, created_at, notified_at')
+      .single();
+    if (insErr) {
+      // Unique-violation → a concurrent join won the race; fetch and return it.
+      const { data: raced } = await supabase
+        .from('table_waitlists')
+        .select('id, table_id, user_id, status, created_at, notified_at')
+        .eq('table_id', tableId)
+        .eq('user_id', userId)
+        .in('status', ACTIVE_STATES)
+        .limit(1)
+        .maybeSingle();
+      if (raced) return mapRow(raced as any);
+      reportError(insErr, 'WaitlistService.joinWaitlist.insert', { tableId, userId });
+      return null;
     }
-
-    // Update status to notified
-    await supabase
-      .from('table_waitlist')
-      .update({
-        status: 'notified',
-        notified_at: new Date().toISOString(),
-      })
-      .eq('id', next.id);
-
-    // Send notification
-    const tableName = next.tables?.name || 'Table';
-    await notificationService.notifyWaitlistReady(next.user_id, tableName, tableId);
-
-    masterBus.emit('WAITLIST_POSITION_CHANGED', {
-      tableId,
-      position: next.position,
-      tableName,
-    });
-
-    return true;
-  }
+    return mapRow(inserted as any);
+  },
 
   /**
-   * Mark player as seated (removes from waitlist)
+   * Leave the waitlist for a table (cancels all active rows for this user+table).
+   * Returns the number of rows cancelled.
    */
-  async markSeated(tableId: string, userId: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('table_waitlist')
-      .update({ status: 'seated' })
+  async leaveWaitlist(tableId: string): Promise<number> {
+    const userId = await currentUserId();
+    if (!userId) return 0;
+    const { data, error } = await supabase
+      .from('table_waitlists')
+      .update({ status: 'cancelled' })
       .eq('table_id', tableId)
       .eq('user_id', userId)
-      .in('status', ['waiting', 'notified']);
-
+      .in('status', ACTIVE_STATES)
+      .select('id');
     if (error) {
-      reportError(error, 'WaitlistService.Failed_to_mark_seated');
-      return false;
-    }
-
-    masterBus.emit('WAITLIST_POSITION_CHANGED', {
-      tableId,
-      position: 0,
-      tableName: 'Table',
-    });
-
-    return true;
-  }
-
-  /**
-   * Expire old notifications (e.g., if player didn't respond in time)
-   */
-  async expireOldNotifications(minutesOld: number = 5): Promise<number> {
-    const cutoff = new Date(Date.now() - minutesOld * 60 * 1000).toISOString();
-
-    const { data, error } = await supabase
-      .from('table_waitlist')
-      .update({ status: 'expired' })
-      .eq('status', 'notified')
-      .lt('notified_at', cutoff)
-      .select();
-
-    if (error) {
-      reportError(error, 'WaitlistService.Failed_to_expire_notifications');
+      reportError(error, 'WaitlistService.leaveWaitlist', { tableId, userId });
       return 0;
     }
-
-    return data?.length || 0;
-  }
+    return data?.length ?? 0;
+  },
 
   /**
-   * Map database record to WaitlistEntry
+   * Current FIFO position of the player for a table. position=1 means next in line.
+   * A 'notified' player is being offered a seat right now (position 0). Returns null
+   * if the player holds no active row for the table.
    */
-  private mapEntry(data: Record<string, unknown>): WaitlistEntry {
-    const table = data.tables as Record<string, unknown> | undefined;
-    return {
-      id: data.id as string,
-      tableId: data.table_id as string,
-      tableName: (table?.name as string) || 'Unknown Table',
-      userId: data.user_id as string,
-      position: data.position as number,
-      joinedAt: data.created_at as string,
-      status: data.status as WaitlistEntry['status'],
-      notifiedAt: data.notified_at as string | undefined,
-    };
-  }
-}
+  async getPosition(tableId: string): Promise<WaitlistPosition | null> {
+    const userId = await currentUserId();
+    if (!userId) return null;
 
-// Export singleton instance
-export const waitlistService = new WaitlistServiceClass();
+    const { data: mine, error: mineErr } = await supabase
+      .from('table_waitlists')
+      .select('id, status, created_at')
+      .eq('table_id', tableId)
+      .eq('user_id', userId)
+      .in('status', ACTIVE_STATES)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (mineErr) {
+      reportError(mineErr, 'WaitlistService.getPosition.mine', { tableId });
+      return null;
+    }
+    if (!mine) return null;
+
+    const status = (mine as any).status as WaitlistStatus;
+    if (status === 'notified') {
+      return { position: 0, status, ahead: 0, entryId: (mine as any).id };
+    }
+
+    // Count 'waiting' rows created strictly before mine.
+    const { count, error: cntErr } = await supabase
+      .from('table_waitlists')
+      .select('id', { count: 'exact', head: true })
+      .eq('table_id', tableId)
+      .eq('status', 'waiting')
+      .lt('created_at', (mine as any).created_at);
+    if (cntErr) {
+      reportError(cntErr, 'WaitlistService.getPosition.count', { tableId });
+      return null;
+    }
+    const ahead = count ?? 0;
+    return { position: ahead + 1, status, ahead, entryId: (mine as any).id };
+  },
+
+  /**
+   * All active waitlist entries for the current player, oldest first. Useful for a
+   * lobby-level "you are waitlisted at N tables" indicator.
+   */
+  async myWaitlists(): Promise<WaitlistEntry[]> {
+    const userId = await currentUserId();
+    if (!userId) return [];
+    const { data, error } = await supabase
+      .from('table_waitlists')
+      .select('id, table_id, user_id, status, created_at, notified_at')
+      .eq('user_id', userId)
+      .in('status', ACTIVE_STATES)
+      .order('created_at', { ascending: true });
+    if (error) {
+      reportError(error, 'WaitlistService.myWaitlists', { userId });
+      return [];
+    }
+    return (data ?? []).map((r) => mapRow(r as any));
+  },
+};
+
+export default WaitlistService;

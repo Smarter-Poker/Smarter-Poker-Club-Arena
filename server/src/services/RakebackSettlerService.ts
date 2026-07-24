@@ -180,16 +180,14 @@ export class RakebackSettlerService {
   /** Persist the high-water-mark durably (survives engine restarts). */
   private async saveHighWaterMark(ts: Date): Promise<void> {
     try {
-      await supabase
-        .from('daemon_state')
-        .upsert(
-          {
-            daemon: DAEMON_KEY,
-            high_water_mark: ts.toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'daemon' }
-        );
+      await supabase.from('daemon_state').upsert(
+        {
+          daemon: DAEMON_KEY,
+          high_water_mark: ts.toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'daemon' }
+      );
     } catch (e) {
       reportError(
         new Error((e as { message?: string })?.message || String(e)),
@@ -228,8 +226,193 @@ export class RakebackSettlerService {
       // lived only in the browser (FinancialCronService/SettlementCronService
       // setInterval), so they fired ONLY while an admin had a tab open.
       await this.runWeeklyFinancialClose();
+      // SWEEP #6: post-tournament money-conservation sentinel. Scans every
+      // tournament that reached COMPLETED since the last cycle and asserts the
+      // invariants that the whole rake/payout audit is meant to guarantee, so a
+      // future regression that mints chips, strands players, or wrongly rakes a
+      // tournament hand is caught within one settler cycle instead of silently
+      // corrupting the ledger. Never mutates game state — reportError only.
+      await this.runTournamentSentinel();
     } finally {
       this.isSettling = false;
+    }
+  }
+
+  /**
+   * SWEEP #6 — Tournament invariant sentinel.
+   *
+   * For each tournament newly observed as COMPLETED (watermarked by updated_at in
+   * daemon_state under 'tournament_sentinel'), verify:
+   *
+   *   (1) PAYOUT CONSERVATION — for non-satellite events, the sum of paid
+   *       tournament_players.prize must equal tournaments.prize_pool within a small
+   *       rounding tolerance. A shortfall means chips were destroyed (players not
+   *       paid); an overage means chips were minted. Satellite events pay tickets,
+   *       not the cash pool, so they are exempt from this check.
+   *
+   *   (2) NO STRANDED PLAYERS — a COMPLETED tournament must have zero rows still in
+   *       'playing'/'registered'/'active'. A stranded row is a lost seat/refund and
+   *       the exact class of regression the sweep-4/5 cleanup helpers fixed.
+   *
+   *   (3) NO RAKED TOURNAMENT HANDS — the pot engine must take zero rake during
+   *       tournament play (the only tournament money is the 10% entry fee, which is
+   *       logged with hand_id NULL). Any rake_records row for this tournament with a
+   *       hand_id AND positive rake_amount means the tournament rake-config gate
+   *       regressed.
+   *
+   * Idempotent and cheap: bounded batch per cycle, advances the watermark to the
+   * newest processed updated_at so each tournament is checked once.
+   */
+  private async runTournamentSentinel(): Promise<void> {
+    const SENTINEL_KEY = 'tournament_sentinel';
+    const BATCH = 100;
+    try {
+      const { data: state, error: stateErr } = await supabase
+        .from('daemon_state')
+        .select('high_water_mark')
+        .eq('daemon', SENTINEL_KEY)
+        .maybeSingle();
+      if (stateErr) {
+        console.warn('[TournamentSentinel] watermark read failed — skipping cycle');
+        return;
+      }
+      // Epoch fallback on genuine first run so we don't rescan all history at once;
+      // start from 24h ago to catch anything that completed around first boot.
+      const sinceIso = state?.high_water_mark
+        ? new Date(state.high_water_mark).toISOString()
+        : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+      const { data: tourneys, error: tErr } = await supabase
+        .from('tournaments')
+        .select('id, name, prize_pool, variant, satellite_target_id, updated_at')
+        .eq('status', 'COMPLETED')
+        .gt('updated_at', sinceIso)
+        .order('updated_at', { ascending: true })
+        .limit(BATCH);
+      if (tErr) {
+        console.warn(`[TournamentSentinel] tournament read failed: ${tErr.message}`);
+        return;
+      }
+      if (!tourneys || tourneys.length === 0) return;
+
+      let newWatermark = sinceIso;
+      let violations = 0;
+
+      for (const t of tourneys as Array<{
+        id: string;
+        name: string | null;
+        prize_pool: number | null;
+        variant: string | null;
+        satellite_target_id: string | null;
+        updated_at: string;
+      }>) {
+        if (t.updated_at > newWatermark) newWatermark = t.updated_at;
+        // Pool-equality is only meaningful for events where the ENTIRE cash pool
+        // flows through tournament_players.prize. It does NOT hold for:
+        //   • satellites — they pay tickets/seats, not the cash pool;
+        //   • bounty / PKO / mystery — the bounty slice is paid to knockers through
+        //     a separate bounty ledger, so tp.prize only holds the non-bounty pool.
+        // These are exempt from check (1) but still checked for stranded players and
+        // raked hands.
+        const variant = (t.variant ?? '').toLowerCase();
+        const skipPoolCheck =
+          variant === 'satellite' ||
+          !!t.satellite_target_id ||
+          variant === 'bounty' ||
+          variant === 'pko' ||
+          variant === 'progressive_ko' ||
+          variant === 'mystery' ||
+          variant === 'mystery_bounty';
+
+        // (1) Payout conservation (full-cash-pool events only).
+        if (!skipPoolCheck) {
+          const { data: prizeRows, error: pErr } = await supabase
+            .from('tournament_players')
+            .select('prize')
+            .eq('tournament_id', t.id)
+            .gt('prize', 0);
+          if (!pErr) {
+            const paid = (prizeRows ?? []).reduce(
+              (s, r) => s + (Number((r as { prize: number | null }).prize) || 0),
+              0
+            );
+            const pool = Number(t.prize_pool) || 0;
+            // Tolerance: 1 currency unit or 1% of pool, whichever is larger, to
+            // absorb legitimate per-position rounding without masking real leaks.
+            const tolerance = Math.max(1, pool * 0.01);
+            if (pool > 0 && Math.abs(paid - pool) > tolerance) {
+              violations++;
+              reportError(
+                new Error(
+                  `Tournament payout conservation breach: tournament ${t.id} (${t.name ?? 'unnamed'}) ` +
+                    `paid ${paid.toFixed(2)} vs prize_pool ${pool.toFixed(2)} (diff ${(paid - pool).toFixed(2)}, tol ${tolerance.toFixed(2)})`
+                ),
+                'TournamentSentinel.payout_conservation',
+                { tournamentId: t.id, paid, pool }
+              );
+            }
+          }
+        }
+
+        // (2) No stranded players.
+        {
+          const { count, error: sErr } = await supabase
+            .from('tournament_players')
+            .select('id', { count: 'exact', head: true })
+            .eq('tournament_id', t.id)
+            .in('status', ['playing', 'registered', 'active']);
+          if (!sErr && (count ?? 0) > 0) {
+            violations++;
+            reportError(
+              new Error(
+                `Stranded players on COMPLETED tournament ${t.id} (${t.name ?? 'unnamed'}): ${count} row(s) still active`
+              ),
+              'TournamentSentinel.stranded_players',
+              { tournamentId: t.id, stranded: count }
+            );
+          }
+        }
+
+        // (3) No raked tournament hands.
+        {
+          const { count, error: rErr } = await supabase
+            .from('rake_records')
+            .select('id', { count: 'exact', head: true })
+            .eq('tournament_id', t.id)
+            .not('hand_id', 'is', null)
+            .gt('rake_amount', 0);
+          if (!rErr && (count ?? 0) > 0) {
+            violations++;
+            reportError(
+              new Error(
+                `Raked tournament hands detected for tournament ${t.id} (${t.name ?? 'unnamed'}): ${count} hand(s) with positive rake`
+              ),
+              'TournamentSentinel.raked_tournament_hands',
+              { tournamentId: t.id, rakedHands: count }
+            );
+          }
+        }
+      }
+
+      // Advance watermark so processed tournaments are not re-scanned. Only writes
+      // forward — a same-timestamp batch boundary is handled by the strict `>` read
+      // filter (worst case a tournament is re-checked once, which is harmless).
+      await supabase.from('daemon_state').upsert(
+        {
+          daemon: SENTINEL_KEY,
+          high_water_mark: newWatermark,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'daemon' }
+      );
+      console.log(
+        `[TournamentSentinel] checked ${tourneys.length} completed tournament(s), ${violations} violation(s), watermark → ${newWatermark}`
+      );
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'TournamentSentinel.cycle'
+      );
     }
   }
 
@@ -264,7 +447,9 @@ export class RakebackSettlerService {
         : null;
       if (lastClosedWeek && lastClosedWeek >= currentWeekStart) return; // already closed this week
 
-      console.log(`[RakebackSettler] Weekly financial close starting (week of ${currentWeekStart})`);
+      console.log(
+        `[RakebackSettler] Weekly financial close starting (week of ${currentWeekStart})`
+      );
 
       // 1. Pay out lapsed rakeback periods per club
       const { data: pendingClubs } = await supabase

@@ -295,18 +295,28 @@ export const SeatSlot = memo(
     // CA-14 BUG FIX: track the 300ms peek-dismiss timer so it cancels on unmount.
     // Previously fire-and-forget in onTouchEnd/onMouseUp inline handlers.
     const peekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // UI-AUDIT #4: track the winner-pop reset timer in a ref (not effect-scoped)
+    // and drive off an isWinner rising edge so the bounce replays every win.
+    const winnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const prevIsWinnerRef = useRef(false);
     useEffect(() => {
       return () => {
         if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+        if (winnerTimerRef.current) clearTimeout(winnerTimerRef.current);
       };
     }, []);
     useEffect(() => {
-      if (isWinner && !winnerPop) {
+      // Rising edge false→true: play the pop once per win.
+      if (isWinner && !prevIsWinnerRef.current) {
         setWinnerPop(true);
-        const timer = setTimeout(() => setWinnerPop(false), 600);
-        return () => clearTimeout(timer);
+        if (winnerTimerRef.current) clearTimeout(winnerTimerRef.current);
+        winnerTimerRef.current = setTimeout(() => setWinnerPop(false), 600);
+      } else if (!isWinner) {
+        // Win cleared — reset so the next win at this seat replays the bounce.
+        setWinnerPop(false);
       }
-    }, [isWinner, winnerPop]);
+      prevIsWinnerRef.current = isWinner;
+    }, [isWinner]);
 
     // All-in shake animation — brief shake when lastAction changes to 'all_in'
     const [allinShake, setAllinShake] = useState(false);
@@ -411,6 +421,14 @@ export const SeatSlot = memo(
         <div
           className={containerClasses}
           onClick={onSit}
+          onKeyDown={(e) => {
+            // Lobby audit P2-5: keyboard users must be able to sit via the
+            // role="button" empty seat. Mirror the onClick (onSit) handler.
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSit?.();
+            }
+          }}
           role="button"
           tabIndex={0}
           aria-label={`Seat ${seatNumber}: open - click to sit`}
@@ -549,6 +567,7 @@ export const SeatSlot = memo(
           >
             {player.avatar || !player.isHero ? (
               <img
+                key={`avatar-${avatarUrl}`}
                 src={avatarUrl}
                 alt={player.name}
                 className="seat__avatar-img"
@@ -565,7 +584,10 @@ export const SeatSlot = memo(
             {player.isHero && !player.avatar ? (
               <span className="seat__avatar-initial">{player.name.charAt(0).toUpperCase()}</span>
             ) : null}
+            {/* UI-AUDIT #9: key by avatarUrl so a src change remounts the fallback
+                back to display:none, undoing the onError DOM mutation above. */}
             <span
+              key={`avatar-fallback-${avatarUrl}`}
               className="seat__avatar-fallback seat__avatar-initial"
               style={{ display: 'none' }}
             >
@@ -746,6 +768,12 @@ export const SeatSlot = memo(
     if (prev.lastAction !== next.lastAction) return false;
     if (prev.lastBetAmount !== next.lastBetAmount) return false;
     if (prev.showHUD !== next.showHUD) return false;
+    // UI-AUDIT P1: collect-to-pot animation is driven solely by this flag on
+    // COMMUNITY_CARDS_DEALT / HAND_COMPLETE — must force a re-render or the
+    // cpCollect keyframe never fires and chips teleport into the pot.
+    if (prev.isCollectingChips !== next.isCollectingChips) return false;
+    // UI-AUDIT #13: gesture toggle must take effect on already-mounted seats.
+    if (prev.gesturesEnabled !== next.gesturesEnabled) return false;
 
     // HUD stats — only compare if visible
     if (prev.showHUD && next.showHUD) {

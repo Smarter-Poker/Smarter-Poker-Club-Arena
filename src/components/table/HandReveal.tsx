@@ -91,8 +91,15 @@ export function HandReveal({
   const [revealed, setRevealed] = useState(false);
   const [mucked, setMucked] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // UI-AUDIT #11: the interval closure below captured the FIRST handleMuck, so a
+  // later hand (new handId/tableId/winnerId) would emit HAND_MUCKED with stale
+  // ids. Keep a ref pointing at the latest handler and call through it.
+  const handleMuckRef = useRef<() => void>(() => {});
 
   // Auto-muck countdown (winner only)
+  // UI-AUDIT #10: handId + revealed/mucked are in the deps so the countdown
+  // restarts for each new hand that reuses the open modal (previously it only
+  // ran once and never re-armed for hand 2+).
   useEffect(() => {
     if (!isOpen || !isWinner || revealed || mucked) return;
 
@@ -100,8 +107,8 @@ export function HandReveal({
     timerRef.current = setInterval(() => {
       setTimer((prev) => {
         if (prev <= 1) {
-          // Auto-muck
-          handleMuck();
+          // Auto-muck (via ref → always the latest handler)
+          handleMuckRef.current();
           return 0;
         }
         return prev - 1;
@@ -111,8 +118,7 @@ export function HandReveal({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, isWinner, autoMuckTimer]);
+  }, [isOpen, isWinner, autoMuckTimer, handId, revealed, mucked]);
 
   // Reset on new hand
   useEffect(() => {
@@ -142,6 +148,9 @@ export function HandReveal({
     onMuck?.();
     masterBus.emit('HAND_MUCKED', { handId, tableId, winnerId });
   }, [handId, tableId, winnerId, onMuck]);
+
+  // Keep the auto-muck interval pointing at the latest handleMuck.
+  handleMuckRef.current = handleMuck;
 
   const handlePayReveal = useCallback(() => {
     if (userDiamonds < revealCost) return;

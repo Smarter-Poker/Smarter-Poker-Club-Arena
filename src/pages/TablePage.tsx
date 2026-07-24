@@ -775,6 +775,10 @@ export default function TablePage({
   const [actionError, setActionError] = useState<ActionErrorData | null>(null);
   /** FIX 185: Bible V8 §4.15 — Added 'call' (auto_call) distinct from 'callAny' (auto_call_any) */
   const [preAction, setPreAction] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
+  // P2-1 FIX: only send a server 'clear' if a pre-action was actually armed
+  // before — prevents a junk serverSetPreAction(clear) firing on every mount
+  // (preAction starts null).
+  const hadPreActionRef = useRef(false);
 
   // Deal Animation State — triggers card dealing visual at start of new hand
   const [dealAnimationKey, setDealAnimationKey] = useState(0);
@@ -854,6 +858,7 @@ export default function TablePage({
                 ? 'auto_call' // FIX 185: Bible V8 §4.15 — auto_call (current bet only)
                 : 'auto_call_any';
         // Tell server about pre-action so it can auto-execute on player's turn
+        hadPreActionRef.current = true;
         serverSetPreAction(tableId, serverAction).catch((e) =>
           reportError(e, 'TablePage.Failed_to_set')
         );
@@ -863,8 +868,10 @@ export default function TablePage({
           playerId: userId || '',
           action: serverAction,
         });
-      } else {
-        // Clear pre-action on server
+      } else if (hadPreActionRef.current) {
+        // Clear pre-action on server (only if one was previously armed —
+        // P2-1: avoids a junk clear request on initial mount when null).
+        hadPreActionRef.current = false;
         serverSetPreAction(tableId, 'clear').catch((e) =>
           reportError(e, 'TablePage.Failed_to_clear')
         );
@@ -1413,6 +1420,10 @@ export default function TablePage({
   // realtime insert) after clearing stale cards.
   const heroHandRef = useRef<number>(0);
   const heroCardFetchRef = useRef<(() => void) | null>(null);
+  // P1-3 FIX: true only once hole cards were ACTUALLY applied to the hero
+  // player object; gates the recovery-poll teardown so it doesn't stop while
+  // heroIdx=-1 mid-reload. Reset when the fetch is re-armed for a new hand.
+  const heroCardsRecoveredRef = useRef(false);
   // CA-21 BUG FIX: bbjTimerRef tracks the 3s BBJ celebration delay timer.
   const bbjTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // CA-22 BUG FIX: handCompleteTimerRef tracks the 3s HAND_COMPLETE table-reset timer.
@@ -1610,25 +1621,13 @@ export default function TablePage({
       return cards;
     }
 
-    // Fallback: generate random cards if server didn't provide
-    // (edge case: stale state, reconnection, etc.)
-    const suits: Array<'h' | 'd' | 'c' | 's'> = ['h', 'd', 'c', 's'];
-    const ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
-    const remainingCards: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }> = [];
-    const usedCards = new Set(currentBoard.map((c) => `${c.rank}${c.suit}`));
-    for (let i = 0; i < cardsNeeded; i++) {
-      let card: { rank: string; suit: 'h' | 'd' | 'c' | 's' };
-      do {
-        card = {
-          rank: ranks[Math.floor(Math.random() * ranks.length)],
-          suit: suits[Math.floor(Math.random() * suits.length)],
-        };
-      } while (usedCards.has(`${card.rank}${card.suit}`));
-      usedCards.add(`${card.rank}${card.suit}`);
-      remainingCards.push(card);
-    }
+    // P2-2 FIX: Do NOT fabricate random cards when the server didn't provide
+    // them (edge case: stale state, reconnection). On a real-money platform
+    // inventing a card outcome misrepresents the deck, so short-circuit the
+    // reveal instead — surface "unavailable" and return no cards.
+    toast.error('Rabbit Hunt unavailable — no card data from server.');
     setIsRabbitAvailable(false);
-    return remainingCards;
+    return [];
   };
 
   // Leaderboard state
@@ -2254,12 +2253,18 @@ export default function TablePage({
               showCards: true,
             };
             cardsApplied = true;
+            heroCardsRecoveredRef.current = true;
           }
           return cardsApplied ? { ...prev, players: updatedPlayers } : prev;
         });
 
-        // Bug #7 fix: Stop polling once cards are successfully received
-        if (cardsApplied || data.cards) {
+        // P1-3 fix: Only stop polling once cards were ACTUALLY applied to the
+        // hero player object. The old `cardsApplied || data.cards` always
+        // stopped after the first fetched row (data.cards is truthy here), and
+        // `cardsApplied` is set inside the setTableState updater which React
+        // may run after this line — so gate teardown on the ref, which the
+        // updater sets on real application and a later poll observes.
+        if (heroCardsRecoveredRef.current) {
           if (retryTimer) clearTimeout(retryTimer);
           if (pollTimer) clearInterval(pollTimer);
         }
@@ -2271,7 +2276,11 @@ export default function TablePage({
     pollTimer = setInterval(fetchExistingHand, 5000);
     // Expose so HAND_STARTED can re-arm the fetch for the new hand.
     heroCardFetchRef.current = () => {
-      if (!cancelled) fetchExistingHand();
+      if (!cancelled) {
+        // New hand: re-arm recovery so the poll runs again for the new cards.
+        heroCardsRecoveredRef.current = false;
+        fetchExistingHand();
+      }
     };
     return () => {
       cancelled = true;
@@ -3174,6 +3183,26 @@ export default function TablePage({
 
     return () => {
       isMounted = false;
+      // P1-4 FIX: tear down the tournament channels in the SAME effect that
+      // creates them (deps [tableId, userId]), so a hero-seat change no longer
+      // destroys them without recreation. (Previously this teardown lived in
+      // the room effect keyed on tableState.heroSeat.)
+      if (breakChannelRef.current) {
+        // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
+        const tournId = tableStateRef.current.tournamentId || tableId;
+        masterBus.removeRegisteredChannel(`t-break-${tournId}`);
+        breakChannelRef.current = null;
+      }
+      if (addOnChannelRef.current) {
+        // Add-on events handled via break channel — no separate channel needed
+        addOnChannelRef.current = null;
+      }
+      if (bountyChannelRef.current) {
+        // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
+        const tournId = tableStateRef.current.tournamentId || tableId;
+        masterBus.removeRegisteredChannel(`bounty-${tournId}`);
+        bountyChannelRef.current = null;
+      }
     };
   }, [tableId, userId]);
 
@@ -3224,24 +3253,11 @@ export default function TablePage({
       unsubscribe();
       roomService.leaveRoom(tableId);
       // Time bank cleanup handled server-side — no client engine to dispose
-      if (breakChannelRef.current) {
-        // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
-        const tournId = tableStateRef.current.tournamentId || tableId;
-        masterBus.removeRegisteredChannel(`t-break-${tournId}`);
-        breakChannelRef.current = null;
-      }
-      if (addOnChannelRef.current) {
-        // Add-on events handled via break channel — no separate channel needed
-        addOnChannelRef.current = null;
-      }
-      if (bountyChannelRef.current) {
-        // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
-        const tournId = tableStateRef.current.tournamentId || tableId;
-        masterBus.removeRegisteredChannel(`bounty-${tournId}`);
-        bountyChannelRef.current = null;
-      }
+      // P1-4 FIX: tournament break/bounty channel teardown moved to the
+      // loadTableInfo effect (which creates them); this effect no longer
+      // depends on tableState.heroSeat, so a seat change won't destroy them.
     };
-  }, [tableId, userId, tableState.heroSeat]);
+  }, [tableId, userId]);
 
   // ── Bus Listener: cross-tab live balance sync (Triple-Wallet sync) ──
   useMasterBusSubscription('BALANCE_UPDATED', (payload: any) => {
@@ -3881,7 +3897,10 @@ export default function TablePage({
             handNumber: syncData.hand_number,
             pot: syncData.pot || 0,
             communityCards: syncData.community_cards || [],
-            stage: syncData.stage || 'idle',
+            // P2-5 FIX: TableState uses `boardStage` (typed BoardStage), not
+            // `stage`. The old `stage` write was dead, leaving the board stuck
+            // in a stale stage after mid-hand reconnect. Map to boardStage.
+            boardStage: (syncData.stage || 'preflop') as BoardStage,
             dealerSeat: syncData.dealer_seat || 0,
             players: updatedPlayers,
           };
@@ -5324,106 +5343,14 @@ export default function TablePage({
     setShowWaitList(true);
   }, [loadWaitlist]);
 
-  // Pre-action execution — When it becomes player's turn, execute queued action
-  useEffect(() => {
-    if (
-      tableState.currentPlayerSeat === tableState.heroSeat &&
-      preAction &&
-      tableState.isHandInProgress &&
-      userId &&
-      tableId
-    ) {
-      // Small delay to ensure state is updated
-      const timer = setTimeout(async () => {
-        try {
-          if (preAction === 'fold') {
-            await handleFold();
-            masterBus.emit('PRE_ACTION_EXECUTED', {
-              tableId: tableId!,
-              playerId: userId!,
-              action: 'fold',
-              amount: 0,
-            });
-          } else if (preAction === 'check') {
-            // Only check if can check (no bet to call)
-            // Bible V8: Check legal when currentBet <= hero's current bet
-            const heroBetForCheck = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
-            const toCallForCheck = Math.max(0, (tableState.currentBet || 0) - heroBetForCheck);
-            if (toCallForCheck === 0) {
-              await handleCheck();
-              masterBus.emit('PRE_ACTION_EXECUTED', {
-                tableId: tableId!,
-                playerId: userId!,
-                action: 'check',
-                amount: 0,
-              });
-            } else {
-              masterBus.emit('PRE_ACTION_INVALIDATED', {
-                tableId: tableId!,
-                playerId: userId!,
-                reason: 'bet_placed',
-              });
-            }
-          } else if (preAction === 'call') {
-            // FIX 185: Bible V8 §4.15 auto_call — call current bet only
-            // If bet changed since pre-action was set, invalidate
-            const heroBetForAutoCall = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
-            const toCallForAutoCall = Math.max(
-              0,
-              (tableState.currentBet || 0) - heroBetForAutoCall
-            );
-            if (toCallForAutoCall > 0) {
-              await handleCall();
-              masterBus.emit('PRE_ACTION_EXECUTED', {
-                tableId: tableId!,
-                playerId: userId!,
-                action: 'call',
-                amount: toCallForAutoCall,
-              });
-            } else {
-              // No bet to call — check instead
-              await handleCheck();
-              masterBus.emit('PRE_ACTION_EXECUTED', {
-                tableId: tableId!,
-                playerId: userId!,
-                action: 'check',
-                amount: 0,
-              });
-            }
-          } else if (preAction === 'callAny') {
-            // "Call Any" = stay in hand: if nothing to call, check instead
-            // Bible V8: Derive call amount from server's currentBet vs hero's bet
-            const heroBetForCall = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
-            const toCallForCallAny = Math.max(0, (tableState.currentBet || 0) - heroBetForCall);
-            if (toCallForCallAny > 0) {
-              await handleCall();
-            } else {
-              await handleCheck();
-            }
-            masterBus.emit('PRE_ACTION_EXECUTED', {
-              tableId: tableId!,
-              playerId: userId!,
-              action: toCallForCallAny > 0 ? 'call' : 'check',
-              amount: 0,
-            });
-          }
-          // Clear the pre-action after executing
-          setPreAction(null);
-        } catch (err) {
-          reportError(err, 'TablePage.Error_executing_preaction');
-          setPreAction(null);
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [
-    tableState.currentPlayerSeat,
-    tableState.heroSeat,
-    preAction,
-    tableState.isHandInProgress,
-    userId,
-    tableId,
-  ]);
+  // P2-1 FIX: Pre-action auto-execution is server-owned (Bible V8 §4.15). The
+  // client's delayed executor was removed: it ran ~100ms after the turn
+  // arrived and re-submitted the same action the server had already
+  // auto-executed, producing an out-of-turn submitAction (success:false), a
+  // spurious "Action rejected" toast, and an optimistic-revert flicker on
+  // every pre-action hand. The server is now the sole executor; the pre-action
+  // is still mirrored to the server (effect above) and cleared at hand end
+  // (effect below).
 
   // Trigger board animation + sounds on stage transition
   const prevBoardStageRef = useRef<string>('preflop');
@@ -5602,7 +5529,7 @@ export default function TablePage({
             className="header-btn add-chips-icon"
             onClick={() => {
               soundService.playButtonClick();
-              if (tableState.players[tableState.heroSeat - 1]) setShowBuyInModal(true);
+              if (tableState.heroSeat > 0) setShowCashier(true);
             }}
             title="Add Chips"
           >
@@ -5769,7 +5696,7 @@ export default function TablePage({
               className="add-chips-icon-btn"
               onClick={() => {
                 soundService.playButtonClick();
-                if (tableState.players[tableState.heroSeat - 1]) setShowBuyInModal(true);
+                if (tableState.heroSeat > 0) setShowCashier(true);
               }}
               title="Add Chips"
             >
@@ -6399,7 +6326,7 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                setShowBuyInModal(true);
+                if (tableState.heroSeat > 0) setShowCashier(true);
                 setIsSideMenuOpen(false);
               }}
             >

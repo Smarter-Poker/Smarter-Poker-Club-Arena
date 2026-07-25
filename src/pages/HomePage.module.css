@@ -1071,11 +1071,19 @@
   filter: brightness(1.1);
 }
 
-/* Hover lift on desktop */
+/* Hover lift on desktop — bevel intensifies as card rises */
 @media (hover: hover) {
   .tileCard:hover {
     transform: translateY(-4px) scale(1.03);
     filter: brightness(1.08);
+  }
+  .tileCard:hover .tileImageWrapper {
+    box-shadow:
+      0 16px 36px rgba(0, 0, 0, 0.7),
+      1px 2px 0 1px rgba(0, 0, 0, 0.6),
+      -1px -1px 0 1px rgba(255, 255, 255, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -1120,8 +1128,20 @@
   aspect-ratio: 2 / 3;
   border-radius: 10px;
   overflow: visible;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   z-index: 2;
+  /*
+   * 3-D BEVEL BORDER — thin, sleek, no bulk
+   * Layer 1: deep drop shadow (card floats off surface)
+   * Layer 2: dark bottom-right edge  (shadow face of bevel)
+   * Layer 3: bright top-left edge    (lit face of bevel)
+   * Layer 4: razor inner highlight   (glass-edge rim)
+   */
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.65),
+    1px 2px 0 1px rgba(0, 0, 0, 0.55),
+    -1px -1px 0 1px rgba(255, 255, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
 }
 
 .tileImage {
@@ -1153,17 +1173,19 @@
   pointer-events: none;
 }
 
-/* Subtle bottom edge for 3D depth — no blue */
+/* 3D bottom edge — thickened shadow face that grounds the card */
 .tileEdge {
   position: absolute;
-  left: 3px;
-  bottom: -4px;
-  width: calc(100% - 6px);
-  height: 6px;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 0 0 6px 6px;
+  left: 2px;
+  bottom: -5px;
+  width: calc(100% - 4px);
+  height: 8px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.25));
+  border-radius: 0 0 8px 8px;
   z-index: 1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

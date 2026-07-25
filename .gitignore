@@ -53,3 +53,7 @@ dist.dead.*/
 # Round 19 — local-only artifacts that shouldn't ship
 .agent/openclaw-dispatcher-live-*.py
 playwright-report/
+
+# Scratch/quarantine dir. device_bash on the mounted volume cannot unlink,
+# so stale locks and old build dirs get parked here instead of deleted.
+_to_delete/

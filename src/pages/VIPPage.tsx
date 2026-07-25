@@ -302,7 +302,11 @@ export default function VIPPage() {
             {/* VIP Card Image */}
             <div style={{ marginBottom: 16 }}>
               <img
-                src="/vip-card.webp"
+                /* /vip-card.webp does not exist at the hub root and 404d in
+                   production. The real asset is images/vip-card.png, which is
+                   what GlobalHeader already uses; BASE_URL keeps it correct
+                   under the /hub/club-arena/ base path. */
+                src={`${import.meta.env.BASE_URL}images/vip-card.png`}
                 alt="VIP Card"
                 style={{
                   width: '100%',

@@ -538,7 +538,11 @@
      (10% flat segment along the bottom edge → wider, flatter bottom).
      Vertical radii 55% top vs 45% bottom deepens the top curve so it rolls
      inward more, matching the PokerBros reference. */
-  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
+  /* v10 mockup: exact PokerBros egg (tapered top, wider hero end). The
+     border-radius below is a fallback for engines without clip-path support;
+     the clip-path is what actually produces the asymmetric silhouette. */
+  border-radius: 48% 48% 52% 52% / 58% 58% 46% 46%;
+  clip-path: url(#ca-table-egg);
   box-shadow:
         /* Outer double ring */
     0 0 0 2px rgba(0, 0, 0, 0.8),
@@ -558,7 +562,7 @@
   position: absolute;
   inset: 0;
   /* Dan 2026-04-17 (v3): match egg teardrop rail. */
-  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
+  border-radius: 48% 48% 52% 52% / 58% 58% 46% 46%;
   background: repeating-linear-gradient(
     85deg,
     transparent 0px,
@@ -577,7 +581,7 @@
   inset: 4px;
   border: 1px dashed rgba(255, 255, 255, 0.06);
   /* Dan 2026-04-17 (v3): match egg teardrop rail. */
-  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
+  border-radius: 48% 48% 52% 52% / 58% 58% 46% 46%;
   pointer-events: none;
   z-index: 2;
 }
@@ -805,8 +809,9 @@
     repeating-conic-gradient(rgba(0, 0, 0, 0.02) 0% 25%, transparent 0% 50%) 1px 1px / 4px 4px,
     /* Main radial felt gradient — uses theme tokens */
     var(--felt-gradient, radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%));
-  /* Dan 2026-04-17 (v3): match egg teardrop rail. */
-  border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%;
+  /* v10 mockup: clipped to the same egg path as the rail (see .table-rail). */
+  border-radius: 48% 48% 52% 52% / 58% 58% 46% 46%;
+  clip-path: url(#ca-table-egg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -818,12 +823,10 @@
     inset 0 4px 12px rgba(255, 255, 255, 0.08),
     /* Bottom shadow for depth */ inset 0 -4px 12px rgba(0, 0, 0, 0.4),
     /* Ambient inner shadow */ inset 0 0 80px rgba(0, 0, 0, 0.12),
-    /* Outer glow */ 0 4px 24px rgba(0, 0, 0, 0.5),
-    0 0 0 3px rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 215, 0, 0.15);
-  /* Gold trim line between felt and rail */
-  outline: 1px solid rgba(255, 215, 0, 0.08);
-  outline-offset: 2px;
+    /* Outer glow */ 0 4px 24px rgba(0, 0, 0, 0.5);
+  /* The gold rim + glow is drawn by the .table-egg-rim SVG overlay, which
+     follows the egg path exactly. A box-shadow/outline ring cannot — it would
+     trace the rounded rectangle and get clipped away by the clip-path. */
 }
 
 /* Hand Number Display — top-center of table felt. Tightened to be legible
@@ -2166,5 +2169,98 @@
     box-shadow:
       0 0 28px rgba(255, 213, 74, 0.85),
       0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RABBIT HUNT SQUARE — mockup v3: small square button above the Fold button
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.action-secondary-row {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 8px;
+}
+
+.rabbit-hunt-square {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  background: #1b2430;
+  border: 1px solid #f2c14e;
+  box-shadow: 0 0 10px rgba(242, 193, 78, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+.rabbit-hunt-square:hover {
+  box-shadow: 0 0 16px rgba(242, 193, 78, 0.7);
+}
+
+.rabbit-hunt-square:active {
+  transform: scale(0.94);
+}
+
+.rabbit-hunt-square img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 11px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TABLE EGG — clip-path defs + gold rim overlay (Dan-approved v10 mockup)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Defs-only SVG: must stay in the layout tree for the clipPath to resolve in
+   Safari/WebKit, but must occupy no space and catch no input. */
+.table-egg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Gold rim traced over the felt. preserveAspectRatio="none" stretches the 0..1
+   viewBox to the table, and vector-effect="non-scaling-stroke" (set on the path
+   in TSX) keeps the stroke an even width despite that non-uniform scale. */
+.table-egg-rim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 3;
+  filter: drop-shadow(0 0 9px rgba(242, 193, 78, 0.55));
+}
+
+.table-egg-rim path {
+  fill: none;
+  stroke: #f2c14e;
+  stroke-width: 5;
+  stroke-linejoin: round;
+}
+
+/* Inner hairline accent, matching the second stroke in the approved mockup. */
+.table-egg-rim::after {
+  content: '';
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-egg-rim {
+    filter: drop-shadow(0 0 6px rgba(242, 193, 78, 0.4));
   }
 }

@@ -1,0 +1,218 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEON POKER-TABLE LOBBY CARD  (ngc-*)  — grows to fit; nothing clips the rail
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ngc-wrap {
+  position: relative;
+}
+
+.ngc {
+  --neon: #f4c94b;
+  position: relative;
+  display: block;
+  text-decoration: none;
+  color: #eef4f9;
+  border-radius: 34px;
+  padding: 22px 26px;
+  background: radial-gradient(120% 130% at 50% 30%, #12202b 0%, #0a121a 58%, #05090e 100%);
+  box-shadow:
+    0 20px 42px rgba(0, 0, 0, 0.62),
+    0 0 34px -10px var(--neon);
+  transition: transform 0.16s ease;
+  overflow: hidden;
+}
+.ngc:hover {
+  transform: translateY(-4px);
+}
+.ngc::before {
+  content: '';
+  position: absolute;
+  inset: 11px;
+  border-radius: 24px;
+  pointer-events: none;
+  border: 3px solid var(--neon);
+  box-shadow:
+    0 0 9px var(--neon),
+    0 0 20px -2px var(--neon),
+    inset 0 0 16px -4px var(--neon);
+}
+.ngc::after {
+  content: '';
+  position: absolute;
+  inset: 11px;
+  border-radius: 24px;
+  pointer-events: none;
+  background: radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.05), transparent 46%);
+}
+
+.ngc-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  min-height: 132px;
+}
+.ngc-emblem {
+  flex: 0 0 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ngc-emblem img {
+  max-height: 120px;
+  max-width: 100px;
+  filter: drop-shadow(0 7px 11px rgba(0, 0, 0, 0.6));
+}
+
+.ngc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ngc-head {
+  padding-right: 58px;
+}
+.ngc-lbl {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #9fb2c4;
+}
+.ngc-val {
+  font-size: 23px;
+  font-weight: 900;
+  line-height: 1.05;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+.ngc-row {
+  display: flex;
+  gap: 14px;
+  font-size: 12.5px;
+  color: #e3edf5;
+  margin-top: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ngc-players {
+  transition: color 0.3s ease;
+}
+.ngc-win {
+  color: #ffe08a;
+  font-weight: 800;
+}
+
+.ngc-seats {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  margin-top: 8px;
+  width: 100%;
+}
+.ngc-seats > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #7cffb0, #33d17a);
+  transition: width 0.5s ease;
+}
+
+.ngc-badges {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.ngc-fic {
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.65));
+}
+
+.ngc-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: #b6c4d2;
+}
+.ngc-name {
+  color: #e6eff7;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.ngc-date {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.ngc-ttime {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.ngc-cd {
+  font-variant-numeric: tabular-nums;
+  color: #ffd76a;
+  font-weight: 800;
+}
+.ngc-cd--live {
+  color: #7cffb0;
+}
+
+.ngc-corner {
+  position: absolute;
+  top: 20px;
+  right: 26px;
+  display: flex;
+  gap: 6px;
+  z-index: 5;
+  align-items: center;
+}
+.ngc-bbj {
+  font-size: 10px;
+  font-weight: 900;
+  padding: 4px 7px;
+  border-radius: 7px;
+  color: #fff;
+  background: linear-gradient(180deg, #ff5b5b, #c21f2b);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.ngc-maxpill {
+  font-size: 10px;
+  font-weight: 800;
+  color: #20160a;
+  padding: 4px 8px;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #ffe08a, #f4c94b);
+}
+
+.ngc-del {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  background: rgba(200, 30, 45, 0.9);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.ngc-del:hover {
+  background: #e23b46;
+}

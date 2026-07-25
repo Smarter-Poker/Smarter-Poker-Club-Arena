@@ -1,19 +1,23 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * DYNAMIC GAME CARD — Premium-Style Lobby Cards
+ * DYNAMIC GAME CARD — Neon Poker-Table Lobby Cards
  * ═══════════════════════════════════════════════════════════════════════════════
- * Renders color-coded cards for cash games, MTTs, SNGs, and Spins
- * with dynamic badges, feature icons, and animated elements.
+ * Each card is a neon poker-table (color per category) with the club's custom
+ * emblem art laid on the felt and the game's attributes composed into badges +
+ * a live info block. Emblems live in /public/game-card-icons/ (background-removed
+ * PNGs); the attribute→emblem map is VARIANT_DISPLAY / feature lists below. Cash
+ * cards have no clock; tournaments show their start time + a live countdown. Same
+ * exports/props as before (CashGameCard / TournamentCard / SNGCard / SpinCard).
  */
 
 import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import './DynamicGameCard.css';
+import './NeonCard.css';
 import { reportError } from '../../utils/errorReporter';
 
 // ─── Types ──────────────────────────────────────────────────────────────
-
 interface TableSettings {
-  // Snake_case keys (interface standard)
   insurance_enabled?: boolean;
   run_it_twice?: boolean;
   run_it_twice_mandatory?: boolean;
@@ -23,7 +27,6 @@ interface TableSettings {
   bomb_pot_frequency?: number;
   bomb_pot_ante_bb?: number;
   vpip_display?: boolean;
-  // CamelCase keys (DB storage format)
   straddle?: boolean;
   straddleType?: string;
   bombPot?: boolean;
@@ -68,20 +71,20 @@ interface TournamentData {
   starting_chips: number;
 }
 
-// ─── Variant Display Mappings ──────────────────────────────────────────
-
-// FIX 116: Dead variants removed — 9 approved variants only
-const VARIANT_DISPLAY: Record<string, { label: string; sub?: string; css: string }> = {
-  nlh: { label: 'NLH', css: 'nlh' },
-  plo4: { label: 'PLO', sub: '4', css: 'plo4' },
-  plo5: { label: 'PLO', sub: '5', css: 'plo5' },
-  plo6: { label: 'PLO', sub: '6', css: 'plo6' },
-  plo8: { label: 'PLO', sub: '8', css: 'plo8' },
-  pineapple: { label: 'PNPL', css: 'pineapple' },
-  short_deck: { label: '6+', sub: 'SD', css: 'short_deck' },
+// ─── Variant display + emblem/neon maps ──────────────────────────────────
+const VARIANT_DISPLAY: Record<
+  string,
+  { label: string; sub?: string; artName: string; neon: string }
+> = {
+  nlh: { label: 'NLH', artName: 'nlh', neon: 'red' },
+  plo4: { label: 'PLO', sub: '4', artName: 'plo4', neon: 'blue' },
+  plo5: { label: 'PLO', sub: '5', artName: 'plo5', neon: 'blue' },
+  plo6: { label: 'PLO', sub: '6', artName: 'plo6', neon: 'blue' },
+  plo8: { label: 'PLO', sub: '8', artName: 'plo8', neon: 'blue' },
+  pineapple: { label: 'PNPL', artName: 'pineapple', neon: 'purple' },
+  short_deck: { label: '6+', sub: 'SD', artName: 'short-deck', neon: 'amber' },
 };
 
-// FIX 116: Dead variants removed — 9 approved variants only
 const TOURNEY_VARIANT_MAP: Record<string, string> = {
   NLH: 'nlh',
   PLO4: 'plo4',
@@ -90,11 +93,21 @@ const TOURNEY_VARIANT_MAP: Record<string, string> = {
   PLO8: 'plo8',
   PINEAPPLE: 'pineapple',
   SHORT_DECK: 'short_deck',
-  PLO: 'plo4', // Legacy mapping
+  PLO: 'plo4',
 };
 
-// ─── Helper Functions ──────────────────────────────────────────────────
+const ICON_BASE = '/game-card-icons/';
+const NEON_HEX: Record<string, string> = {
+  red: '#ff2d43',
+  blue: '#22a7ff',
+  amber: '#ffb020',
+  purple: '#b06bff',
+  gold: '#f4c94b',
+  green: '#39d17a',
+};
+const art = (name: string) => `${ICON_BASE}${name}.png`;
 
+// ─── Helpers ─────────────────────────────────────────────────────────────
 function parseSettings(settings: TableSettings | string | undefined): TableSettings {
   if (!settings) return {};
   if (typeof settings === 'string') {
@@ -107,7 +120,6 @@ function parseSettings(settings: TableSettings | string | undefined): TableSetti
   }
   return settings;
 }
-
 function formatDate(dateStr?: string): string {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -127,157 +139,82 @@ function formatDate(dateStr?: string): string {
   ];
   return `${d.getDate().toString().padStart(2, '0')}-${months[d.getMonth()]}`;
 }
-
 function detectTourneyType(name: string): string {
-  const lower = name.toLowerCase();
-  if (lower.includes('freeroll') || lower.includes('free roll')) return 'freeroll';
-  if (lower.includes('mystery')) return 'mystery';
-  if (lower.includes('pko') || lower.includes('progressive')) return 'pko';
-  if (lower.includes('bounty') || lower.includes('ko ')) return 'ko';
-  if (lower.includes('turbo')) return 'turbo';
+  const l = name.toLowerCase();
+  if (l.includes('freeroll') || l.includes('free roll')) return 'freeroll';
+  if (l.includes('mystery')) return 'mystery';
+  if (l.includes('pko') || l.includes('progressive')) return 'pko';
+  if (l.includes('bounty') || l.includes('ko ')) return 'ko';
+  if (l.includes('satellite')) return 'satellite';
+  if (l.includes('turbo')) return 'turbo';
   return 'freezeout';
 }
+const seatLabel = (max: number) => (max <= 2 ? 'HU' : max <= 6 ? '6 MAX' : '9 MAX');
+const pad = (n: number) => String(n).padStart(2, '0');
 
-function getTourneyTypeLabel(type: string): string {
-  switch (type) {
-    case 'ko':
-      return 'KO';
-    case 'pko':
-      return 'PKO';
-    case 'mystery':
-      return '?KO';
-    case 'freeroll':
-      return 'FREE';
-    case 'turbo':
-      return '⚡';
-    default:
-      return 'FO';
-  }
-}
-
-// ─── Cash Game Card ────────────────────────────────────────────────────
-
-interface CashCardProps {
-  table: CashTableData;
-  isAdmin?: boolean;
-  onDelete?: (id: string) => void;
-}
-
-export function CashGameCard({ table, isAdmin, onDelete }: CashCardProps) {
-  const variant = VARIANT_DISPLAY[(table.game_variant || '').toLowerCase()] || {
-    label: (table.game_variant || 'NLH').toUpperCase(),
-    css: 'nlh',
-  };
-  const settings = parseSettings(table.settings);
-  const hasPlayers = table.current_players > 0;
-  // Support both snake_case (interface) and camelCase (DB) key names
-  const isBombPot =
-    settings.bomb_pot_enabled || settings.bombPot || table.name.toLowerCase().includes('bomb pot');
-  const isStraddle =
-    settings.straddle_enabled || settings.straddle || table.name.toLowerCase().includes('straddle');
-  const isRIT =
-    settings.run_it_twice || settings.runItTwice || table.name.toLowerCase().includes('rit');
-  const isInsurance =
-    settings.insurance_enabled ||
-    settings.allInInsurance ||
-    table.name.toLowerCase().includes('insurance');
-  const isVPIP =
-    settings.vpip_display || settings.vpipDisplay || table.name.toLowerCase().includes('vpip');
-  const isDoubleBoard =
-    settings.doubleBoard ||
-    table.name.toLowerCase().includes('double') ||
-    table.name.toLowerCase().includes('dbl');
-
+// ─── Live countdown to a scheduled start ─────────────────────────────────
+function Countdown({ startTime, live }: { startTime?: string; live?: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (live) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [live]);
+  if (live) return <span className="ngc-cd ngc-cd--live">LIVE</span>;
+  if (!startTime) return <span className="ngc-cd">⏳ when full</span>;
+  const ms = new Date(startTime).getTime() - now;
+  if (ms <= 0) return <span className="ngc-cd ngc-cd--live">LIVE NOW</span>;
+  const s = Math.floor(ms / 1000);
   return (
-    <div
-      className="table-card-wrapper"
-      style={{
-        position: 'relative',
-        opacity: 1,
-        animation: 'slideUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-      }}
-    >
-      <style>{`
-                @keyframes slideUp {
-                    from { opacity: 0; transform: translateY(12px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-            `}</style>
+    <span className="ngc-cd">
+      ⏳ {pad(Math.floor(s / 3600))}:{pad(Math.floor((s % 3600) / 60))}:{pad(s % 60)}
+    </span>
+  );
+}
+
+// ─── Neon table shell ────────────────────────────────────────────────────
+interface NeonCardProps {
+  to: string;
+  neon: string;
+  emblem: string;
+  bbj?: boolean;
+  maxLabel?: string;
+  children?: React.ReactNode;
+  onDelete?: () => void;
+}
+function NeonCard({ to, neon, emblem, bbj, maxLabel, children, onDelete }: NeonCardProps) {
+  return (
+    <div className="ngc-wrap">
       <Link
-        to={`/table/${table.id}`}
-        className={`dgc dgc--${variant.css}${hasPlayers ? ' dgc--live' : ''}`}
+        to={to}
+        className="ngc"
+        style={{ ['--neon' as string]: NEON_HEX[neon] || NEON_HEX.gold } as React.CSSProperties}
       >
-        {/* Ambient glow */}
-        <div className="dgc__glow" />
-
-        {/* Decorative card backs */}
-        <div className="dgc__card-deco dgc__card-deco--left">🂠</div>
-        <div className="dgc__card-deco dgc__card-deco--right">🂠</div>
-
-        {/* Feature badges */}
-        <div className="dgc__badges">
-          <span className="dgc__badge dgc__badge--bbj">BBJ</span>
-          {isStraddle && <span className="dgc__badge dgc__badge--straddle">STR</span>}
-          {isBombPot && <span className="dgc__badge dgc__badge--bombpot">BOMB</span>}
-          {isRIT && <span className="dgc__badge dgc__badge--rit">RIT</span>}
-          {isInsurance && <span className="dgc__badge dgc__badge--insurance">INS</span>}
-          {isVPIP && <span className="dgc__badge dgc__badge--vpip">VPIP</span>}
-          {isDoubleBoard && <span className="dgc__badge dgc__badge--db">DB</span>}
+        <div className="ngc-corner">
+          {maxLabel && <span className="ngc-maxpill">{maxLabel}</span>}
+          {bbj && <span className="ngc-bbj">BBJ</span>}
         </div>
-
-        {/* Variant Logo */}
-        <div className="dgc__variant-logo">
-          {variant.label}
-          {variant.sub && <span className="dgc__variant-sub">{variant.sub}</span>}
-        </div>
-
-        {/* Blinds */}
-        <div className="dgc__blinds-section">
-          <span className="dgc__blinds-label">Blinds</span>
-          <span className="dgc__blinds-value">
-            {table.small_blind}/{table.big_blind}
-            {isStraddle && (settings.straddle_type || settings.straddleType)
-              ? `/${(settings.straddle_type || settings.straddleType || '').substring(0, 3).toUpperCase()}`
-              : ''}
-          </span>
-          <span className="dgc__timer">00:30:00</span>
-        </div>
-
-        {/* Player indicator */}
-        <div className="dgc__players">
-          <span className={`dgc__players-dot ${!hasPlayers ? 'dgc__players-dot--empty' : ''}`} />
-          {table.current_players}/{table.max_players}
-        </div>
-
-        {/* Union badge */}
-        <div className="dgc__union-badge">U</div>
-
-        {/* Bottom bar */}
-        <div className="dgc__bottom">
-          <span className="dgc__date">{formatDate(new Date().toISOString())}</span>
-          <span className="dgc__buyin">
-            <span className="dgc__buyin-icon" />
-            <span className="dgc__buyin-range">{table.min_buy_in || table.big_blind * 20}</span>
-          </span>
-          <span className="dgc__buyin">
-            <span className="dgc__max-icon" />
-            <span className="dgc__buyin-range">{table.max_buy_in || table.big_blind * 100}</span>
-          </span>
-          <span className="dgc__seat-info">
-            {table.max_players <= 2 ? 'HU' : table.max_players <= 6 ? '6MAX' : '9MAX'}
-          </span>
+        <div className="ngc-content">
+          <div className="ngc-emblem">
+            <img
+              src={art(emblem)}
+              alt=""
+              loading="lazy"
+              onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')}
+            />
+          </div>
+          <div className="ngc-info">{children}</div>
         </div>
       </Link>
-      {/* Admin delete button */}
-      {isAdmin && onDelete && (
+      {onDelete && (
         <button
-          className="dgc__delete-btn"
+          className="ngc-del"
+          title="Delete table"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            onDelete(table.id);
+            onDelete();
           }}
-          title="Delete table"
         >
           ✕
         </button>
@@ -285,234 +222,221 @@ export function CashGameCard({ table, isAdmin, onDelete }: CashCardProps) {
     </div>
   );
 }
+const Badges = ({ names }: { names: string[] }) =>
+  names.length ? (
+    <div className="ngc-badges">
+      {names.map((n, i) => (
+        <img
+          key={i}
+          className="ngc-fic"
+          src={art(n)}
+          alt={n}
+          title={n}
+          loading="lazy"
+          onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
+        />
+      ))}
+    </div>
+  ) : null;
 
-// ─── Tournament Card (MTT) ─────────────────────────────────────────────
+// ─── Cash Game Card ──────────────────────────────────────────────────────
+interface CashCardProps {
+  table: CashTableData;
+  isAdmin?: boolean;
+  onDelete?: (id: string) => void;
+}
 
+export function CashGameCard({ table, isAdmin, onDelete }: CashCardProps) {
+  const v = VARIANT_DISPLAY[(table.game_variant || '').toLowerCase()] || VARIANT_DISPLAY.nlh;
+  const s = parseSettings(table.settings);
+  const n = table.name.toLowerCase();
+  const feats: string[] = [];
+  if (s.bomb_pot_enabled || s.bombPot || n.includes('bomb')) feats.push('bomb-pot');
+  if (s.straddle_enabled || s.straddle || n.includes('straddle')) feats.push('straddle');
+  if (s.run_it_twice || s.runItTwice || n.includes('rit')) feats.push('run-it-twice');
+  if (s.insurance_enabled || s.allInInsurance || n.includes('insurance')) feats.push('insurance');
+  if (s.vpip_display || s.vpipDisplay || n.includes('vpip')) feats.push('vpip-50');
+  if (s.callTime || n.includes('call time')) feats.push('call-time');
+  if (s.noRathole) feats.push('private-table');
+  const seatPct = table.max_players
+    ? Math.min(100, Math.round((table.current_players / table.max_players) * 100))
+    : 0;
+  const straddleSuffix =
+    (s.straddle_enabled || s.straddle) && (s.straddle_type || s.straddleType)
+      ? `/${String(s.straddle_type || s.straddleType || '')
+          .substring(0, 3)
+          .toUpperCase()}`
+      : '';
+
+  return (
+    <NeonCard
+      to={`/table/${table.id}`}
+      neon={v.neon}
+      emblem={v.artName}
+      bbj
+      onDelete={isAdmin && onDelete ? () => onDelete(table.id) : undefined}
+    >
+      <div className="ngc-head">
+        <div className="ngc-lbl">Blinds</div>
+        <div className="ngc-val">
+          {table.small_blind} / {table.big_blind}
+          {straddleSuffix}
+        </div>
+      </div>
+      <div className="ngc-row">
+        <span className="ngc-players">
+          👤 {table.current_players}/{table.max_players}
+        </span>
+      </div>
+      <div className="ngc-seats">
+        <i style={{ width: `${seatPct}%` }} />
+      </div>
+      <Badges names={feats} />
+      <div className="ngc-bottom">
+        <span className="ngc-name">
+          {table.min_buy_in || table.big_blind * 20}↓ {table.max_buy_in || table.big_blind * 100}↑ ·{' '}
+          {seatLabel(table.max_players)}
+        </span>
+        <span className="ngc-date">{formatDate(new Date().toISOString())}</span>
+      </div>
+    </NeonCard>
+  );
+}
+
+// ─── Tournament Card (MTT / XMTT) ────────────────────────────────────────
 interface TournamentCardProps {
   tournament: TournamentData;
 }
 
+function tourneyFeatures(t: TournamentData): string[] {
+  const type = detectTourneyType(t.name);
+  const l = t.name.toLowerCase();
+  const f: string[] = [];
+  if (type === 'pko') f.push('pko');
+  else if (type === 'mystery') f.push('mystery-bounty');
+  else if (type === 'ko') f.push('bounty');
+  else if (type === 'satellite') f.push('satellite');
+  if (l.includes('re-entry') || l.includes('reentry')) f.push('re-entry');
+  if (l.includes('rebuy')) f.push('add-on');
+  if (l.includes('deep')) f.push('deep-stack');
+  if (l.includes('turbo')) f.push('turbo');
+  if (t.guaranteed_prize && t.guaranteed_prize > 0) f.push('guaranteed');
+  return f.slice(0, 4);
+}
+
 export function TournamentCard({ tournament }: TournamentCardProps) {
-  const variantKey = TOURNEY_VARIANT_MAP[tournament.game_type] || 'nlh';
-  const variant = VARIANT_DISPLAY[variantKey] || { label: 'NLH', css: 'nlh' };
-  const tourneyType = detectTourneyType(tournament.name);
-  const typeLabel = getTourneyTypeLabel(tourneyType);
-  const isFreeroll = tournament.buy_in_amount === 0;
-  const isLive = tournament.status === 'running';
-  const isReg = tournament.status === 'registering';
-  const hasGTD = tournament.guaranteed_prize && tournament.guaranteed_prize > 0;
+  const vKey = TOURNEY_VARIANT_MAP[tournament.game_type] || 'nlh';
+  const v = VARIANT_DISPLAY[vKey] || VARIANT_DISPLAY.nlh;
+  const isXMTT =
+    (tournament as unknown as { is_xmtt?: boolean }).is_xmtt || tournament.max_players >= 40;
+  const emblem = isXMTT ? 'xmtt' : 'mtt';
+  const label = `${isXMTT ? 'XMTT' : 'MTT'} · ${v.label}${v.sub || ''}`;
+  const isFree = tournament.buy_in_amount === 0;
+  const isLive = tournament.status === 'running' || tournament.status === 'RUNNING';
+  const buyin = isFree ? 'FREE' : `${tournament.buy_in_amount + tournament.buy_in_fee}`;
 
   return (
-    <Link to={`/tournaments/${tournament.id}`} className={`dgc dgc--${variant.css} dgc--mtt`}>
-      {/* Ambient glow */}
-      <div className="dgc__glow" />
-
-      {/* Tournament type icon */}
-      <div className="dgc__tourney-type">
-        <div className={`dgc__tourney-type-icon dgc__tourney-type-icon--${tourneyType}`}>
-          {typeLabel}
-        </div>
+    <NeonCard
+      to={`/tournaments/${tournament.id}`}
+      neon="gold"
+      emblem={emblem}
+      maxLabel={seatLabel(tournament.max_players)}
+    >
+      <div className="ngc-head">
+        <div className="ngc-lbl">{label}</div>
+        <div className="ngc-val">Buy In {buyin}</div>
       </div>
-
-      {/* Event tier */}
-      {tournament.max_players >= 40 && (
-        <span className="dgc__event-tier dgc__event-tier--main">Main</span>
-      )}
-
-      {/* Max players badge */}
-      <div className="dgc__max-badge">
-        {tournament.max_players <= 2 ? 'HU' : tournament.max_players <= 6 ? '6 Max' : '9 Max'}
+      <div className="ngc-row">
+        {tournament.guaranteed_prize ? (
+          <span>GTD {tournament.guaranteed_prize.toLocaleString()}</span>
+        ) : null}
+        <span className="ngc-players">👤 {tournament.current_players}</span>
       </div>
-
-      {/* Variant + Buy-in */}
-      <div style={{ paddingTop: '38px' }}>
-        <div className="dgc__mtt-buyin">
-          <span className="dgc__mtt-buyin-label">Buy-in</span>
-        </div>
-        <div className="dgc__variant-logo" style={{ padding: '0 10px' }}>
-          {variant.label}
-          {variant.sub && <span className="dgc__variant-sub">{variant.sub}</span>}
-        </div>
-        <div className="dgc__mtt-buyin" style={{ marginTop: '-2px' }}>
-          <span className="dgc__mtt-buyin-value">
-            {isFreeroll ? 'FREE' : tournament.buy_in_amount + tournament.buy_in_fee}
-          </span>
-        </div>
-      </div>
-
-      {/* Timer */}
-      <div className="dgc__blinds-section" style={{ flex: 'unset', padding: '0 10px' }}>
-        <span className="dgc__timer">
-          {isLive
-            ? 'In Progress'
-            : `${Math.max(0, Math.floor((new Date(tournament.start_time).getTime() - Date.now()) / 60000))}min`}
+      <Badges names={tourneyFeatures(tournament)} />
+      <div className="ngc-bottom">
+        <span className="ngc-name">{tournament.name}</span>
+        <span className="ngc-ttime">
+          <span>🗓 {formatDate(tournament.start_time)}</span>
+          <Countdown startTime={tournament.start_time} live={isLive} />
         </span>
       </div>
-
-      {/* Status badge */}
-      {isLive && <span className="dgc__status dgc__status--live">LIVE</span>}
-      {isReg && <span className="dgc__status dgc__status--reg">REG</span>}
-
-      {/* Players */}
-      <div className="dgc__players">
-        <span
-          className={`dgc__players-dot ${tournament.current_players > 0 ? '' : 'dgc__players-dot--empty'}`}
-        />
-        {tournament.current_players}
-      </div>
-
-      {/* Tournament name + GTD */}
-      <div className="dgc__mtt-name">{tournament.name}</div>
-      {hasGTD && (
-        <div className="dgc__mtt-gtd">
-          {isFreeroll ? '🏆' : '💰'} {tournament.guaranteed_prize!.toLocaleString()} GTD
-        </div>
-      )}
-
-      {/* Union badge */}
-      <div className="dgc__union-badge">U</div>
-
-      {/* Bottom bar */}
-      <div className="dgc__bottom">
-        <span className="dgc__date">{formatDate(tournament.start_time)}</span>
-        <span className="dgc__seat-info">
-          {tournament.game_type} {tournament.current_players}/{tournament.max_players}
-        </span>
-      </div>
-    </Link>
+    </NeonCard>
   );
 }
 
-// ─── SNG Card ──────────────────────────────────────────────────────────
-
+// ─── SNG Card ─────────────────────────────────────────────────────────────
 export function SNGCard({ tournament }: TournamentCardProps) {
-  const variantKey = TOURNEY_VARIANT_MAP[tournament.game_type] || 'nlh';
-  const variant = VARIANT_DISPLAY[variantKey] || { label: 'NLH', css: 'nlh' };
-  const isHU = tournament.max_players <= 2;
-  const isTurbo = tournament.name.toLowerCase().includes('turbo');
+  const vKey = TOURNEY_VARIANT_MAP[tournament.game_type] || 'nlh';
+  const v = VARIANT_DISPLAY[vKey] || VARIANT_DISPLAY.nlh;
+  const isLive = tournament.status === 'running' || tournament.status === 'RUNNING';
+  const feats: string[] = [];
+  if (tournament.name.toLowerCase().includes('turbo')) feats.push('turbo');
+  feats.push('freezeout');
 
   return (
-    <Link to={`/tournaments/${tournament.id}`} className={`dgc dgc--sng`}>
-      {/* Ambient glow */}
-      <div className="dgc__glow" />
-
-      {/* HU badge */}
-      {isHU && <div className="dgc__hu-badge">HU</div>}
-      {!isHU && (
-        <div className="dgc__max-badge">{tournament.max_players <= 6 ? '6 Max' : '9 Max'}</div>
-      )}
-
-      {/* Variant logo */}
-      <div className="dgc__variant-logo" style={{ paddingTop: '14px' }}>
-        SNG
-        <span className="dgc__variant-sub">{variant.label}</span>
-      </div>
-
-      {/* Buy-in */}
-      <div className="dgc__blinds-section">
-        <span className="dgc__blinds-label">Buy-in</span>
-        <span className="dgc__blinds-value">
-          {tournament.buy_in_amount + tournament.buy_in_fee}
-        </span>
-        <span className="dgc__timer">3min</span>
-      </div>
-
-      {/* Turbo badge */}
-      {isTurbo && (
-        <div className="dgc__badges">
-          <span className="dgc__badge dgc__badge--straddle">⚡ TURBO</span>
+    <NeonCard
+      to={`/tournaments/${tournament.id}`}
+      neon="gold"
+      emblem="sng"
+      maxLabel={seatLabel(tournament.max_players)}
+    >
+      <div className="ngc-head">
+        <div className="ngc-lbl">
+          Sit &amp; Go · {v.label}
+          {v.sub || ''}
         </div>
-      )}
-
-      {/* Players */}
-      <div className="dgc__players">
-        <span
-          className={`dgc__players-dot ${tournament.current_players > 0 ? '' : 'dgc__players-dot--empty'}`}
-        />
-        {tournament.current_players}/{tournament.max_players}
+        <div className="ngc-val">Buy In {tournament.buy_in_amount + tournament.buy_in_fee}</div>
       </div>
-
-      {/* Union badge */}
-      <div className="dgc__union-badge">U</div>
-
-      {/* Bottom bar */}
-      <div className="dgc__bottom">
-        <span className="dgc__date">{formatDate(tournament.start_time)}</span>
-        <span className="dgc__seat-info">
-          {isHU
-            ? 'HEADS-UP'
-            : isTurbo
-              ? `HeadsUp TURBO ${tournament.buy_in_amount + tournament.buy_in_fee}`
-              : `${variant.label} ${tournament.max_players} Max`}
+      <div className="ngc-row">
+        <span className="ngc-players">
+          👤 {tournament.current_players}/{tournament.max_players}
         </span>
       </div>
-    </Link>
+      <Badges names={feats} />
+      <div className="ngc-bottom">
+        <span className="ngc-name">{tournament.name}</span>
+        <span className="ngc-ttime">
+          <span>🗓 {tournament.start_time ? formatDate(tournament.start_time) : 'when full'}</span>
+          <Countdown startTime={tournament.start_time} live={isLive} />
+        </span>
+      </div>
+    </NeonCard>
   );
 }
 
-// ─── Spin Card ─────────────────────────────────────────────────────────
-
+// ─── Spin Card ─────────────────────────────────────────────────────────────
 export function SpinCard({ tournament }: TournamentCardProps) {
-  const variantKey = TOURNEY_VARIANT_MAP[tournament.game_type] || 'nlh';
-  const variant = VARIANT_DISPLAY[variantKey] || { label: 'NLH', css: 'nlh' };
-  const maxMultiplier = 100; // Could be dynamic
+  const vKey = TOURNEY_VARIANT_MAP[tournament.game_type] || 'nlh';
+  const v = VARIANT_DISPLAY[vKey] || VARIANT_DISPLAY.nlh;
+  const mult = (tournament as unknown as { spin_multiplier?: number }).spin_multiplier || 100;
 
   return (
-    <Link to={`/tournaments/${tournament.id}`} className={`dgc dgc--spin`}>
-      {/* Ambient glow */}
-      <div className="dgc__glow" />
-
-      {/* Max badge */}
-      <div className="dgc__max-badge">3 Max</div>
-
-      {/* Spin-It label */}
-      <div className="dgc__variant-logo">
-        Spin-It
-        <span className="dgc__variant-sub">{variant.label}</span>
+    <NeonCard
+      to={`/tournaments/${tournament.id}`}
+      neon="green"
+      emblem="spin"
+      maxLabel={`${tournament.max_players || 3} MAX`}
+    >
+      <div className="ngc-head">
+        <div className="ngc-lbl">
+          Spin-It · {v.label}
+          {v.sub || ''}
+        </div>
+        <div className="ngc-val">Buy In {tournament.buy_in_amount + tournament.buy_in_fee}</div>
       </div>
-
-      {/* Buy-in */}
-      <div className="dgc__blinds-section">
-        <span className="dgc__blinds-label">Buy-in</span>
-        <span className="dgc__blinds-value">
-          {tournament.buy_in_amount + tournament.buy_in_fee}
-        </span>
-        <span className="dgc__timer">3min</span>
-      </div>
-
-      {/* Win multiplier */}
-      <div className="dgc__spin-multiplier">
-        Win up to <strong>{maxMultiplier}</strong>
-      </div>
-
-      {/* Players */}
-      <div className="dgc__players">
-        <span
-          className={`dgc__players-dot ${tournament.current_players > 0 ? '' : 'dgc__players-dot--empty'}`}
-        />
-        {tournament.current_players}/{tournament.max_players}
-      </div>
-
-      {/* Union badge */}
-      <div className="dgc__union-badge">U</div>
-
-      {/* Bottom bar */}
-      <div className="dgc__bottom">
-        <span className="dgc__date">{formatDate(tournament.start_time)}</span>
-        <span className="dgc__seat-info">
-          {variant.label} {tournament.name.includes('DEEP') ? 'DEEP' : ''}
-          {tournament.name.match(/\(\d+\)/) || ''}
+      <div className="ngc-row">
+        <span className="ngc-win">Win up to {mult}</span>
+        <span className="ngc-players">
+          👤 {tournament.current_players}/{tournament.max_players}
         </span>
       </div>
-    </Link>
+      <Badges names={['winner-takes-all']} />
+      <div className="ngc-bottom">
+        <span className="ngc-name">{tournament.name}</span>
+        <span className="ngc-date">{formatDate(tournament.start_time)}</span>
+      </div>
+    </NeonCard>
   );
 }
 
-// ─── Exports ───────────────────────────────────────────────────────────
-
-export default {
-  CashGameCard,
-  TournamentCard,
-  SNGCard,
-  SpinCard,
-};
+export default { CashGameCard, TournamentCard, SNGCard, SpinCard };

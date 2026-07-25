@@ -33,10 +33,14 @@ export function DealerButton({ dealerVisualIndex, seatPositions, isVisible }: De
   // so it doesn't overlap the player avatar
   const centerX = 50;
   const centerY = 50;
-  // Larger offset to prevent overlapping player avatars
-  const offsetFactor = 0.28;
-  const btnX = pos.x + (centerX - pos.x) * offsetFactor;
-  const btnY = pos.y + (centerY - pos.y) * offsetFactor;
+  // v10 mockup: the button tucks IN toward the felt horizontally, but stays
+  // close to its player vertically — the table is much taller than it is wide,
+  // so an equal y-factor would fling the button far up/down the felt and away
+  // from the seat it belongs to.
+  const offsetFactorX = 0.28;
+  const offsetFactorY = 0.16;
+  const btnX = pos.x + (centerX - pos.x) * offsetFactorX;
+  const btnY = pos.y + (centerY - pos.y) * offsetFactorY;
 
   // Only position is inlined — every other visual property lives on the
   // `.dealer-button` CSS class so theme tokens, drop-in animation, and the

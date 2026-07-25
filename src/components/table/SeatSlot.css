@@ -734,7 +734,8 @@
 /* ─── FOLDED ──────────────────────────────────────────────────────────── */
 
 .seat--folded {
-  opacity: 0.5;
+  /* Mockup v3: folded seat (avatar + box + cards) dimmed to ~0.4 */
+  opacity: 0.4;
   filter: grayscale(40%);
 }
 
@@ -895,14 +896,26 @@
  * handles the stacking). Community board is at 50% y so there's still a
  * ~40px gap between hero cards and the board on a 375px phone. */
 .seat__cards--hero {
+  /* v10 (Dan, verbatim): "hole cards ... displayed next to and CENTER TO THEIR
+     BOX that displays their name and chip count", in a clean LINED-UP row with
+     a small even overlap and no fan rotation.
+
+     Vertical anchor: the row is centred on the .seat__info BOX, not on the
+     whole seat. Anchoring with top:50% centres it on avatar+box together,
+     which floats the cards ~22px ABOVE the box — the thing Dan asked twice to
+     have "lowered". .seat__info is always flush with the seat's bottom edge,
+     so bottom:<half the box height> + translateY(50%) lands the row's centre
+     exactly on the box's centre, and stays correct for any number of cards
+     (the 50% is of the ROW's own height, so PLO4/5/6 self-adjust). */
   position: absolute;
-  left: 50%;
-  top: 0;
-  /* translateY(-60%) = card pops up 60% of its height above the pill */
-  transform: translate(-50%, -60%);
+  --sp-hero-box-half: 21px; /* half of .seat__info height at this breakpoint */
+  left: calc(100% + 8px);
+  top: auto;
+  bottom: var(--sp-hero-box-half);
+  transform: translateY(50%);
   display: flex;
   align-items: flex-end;
-  justify-content: center;
+  justify-content: flex-start;
   z-index: 20;
   gap: 0;
   pointer-events: none; /* don't block clicks on the avatar/seat below */
@@ -940,36 +953,80 @@
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.6);
 }
 
-/* Hero cards — PokerBros signature: large, white-bordered, slight horizontal
- * fan. Per POKERBROS_CLONE_SPEC.md §1: 50-70px wide, slightly fanned,
- * rank/suit clearly displayed. Two cards rotate in opposite directions
- * for the fan effect; first card tilts -6deg, second +6deg. */
+/* Hero cards — v10 layout (Dan-approved): large, white-bordered, and LINED UP
+ * in a single row with a small even overlap. NO fan rotation — the earlier
+ * fanned pair is what Dan rejected, and it fell apart entirely at PLO5/PLO6.
+ * The matching half of this rule lives in SeatSlot.tsx (HoleCard), which must
+ * not emit an inline transform for hero cards; an inline style would beat
+ * `transform: none` below and put the fan straight back. */
 .seat__cards--hero .seat__card {
-  width: 56px;
-  height: 78px;
-  border-radius: 7px;
+  width: 44px;
+  height: 62px;
+  border-radius: 6px;
   background: #fff;
-  margin-left: -16px;
+  margin-left: -12px; /* small consistent overlap, no fan */
+  transform: none;
   animation: heroCardPeek 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) backwards;
   transform-style: preserve-3d;
   transform-origin: bottom center;
   box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.5),
+    0 5px 12px rgba(0, 0, 0, 0.6),
     0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
-/* PokerBros wider fan + slight overlap. Tilted symmetrically so the pair
- * looks like a real fanned hand rather than two stacked cards. */
+/* Deal-in stagger. Every card is flat (transform: none) — the only thing that
+ * differs per card is when it peeks in. PLO hands run to 6, so delays are
+ * defined all the way out; without them cards 3+ would all land at once,
+ * ahead of the two that are supposed to arrive first. */
 .seat__cards--hero .seat__card:first-child {
   margin-left: 0;
-  margin-right: -10px;
-  transform: rotate(-12deg) translateY(2px);
+  transform: none;
   animation-delay: 0.1s;
 }
 
 .seat__cards--hero .seat__card:nth-child(2) {
-  transform: rotate(12deg) translateY(2px);
+  transform: none;
   animation-delay: 0.25s;
+}
+
+.seat__cards--hero .seat__card:nth-child(3) {
+  transform: none;
+  animation-delay: 0.4s;
+}
+
+.seat__cards--hero .seat__card:nth-child(4) {
+  transform: none;
+  animation-delay: 0.55s;
+}
+
+.seat__cards--hero .seat__card:nth-child(5) {
+  transform: none;
+  animation-delay: 0.7s;
+}
+
+.seat__cards--hero .seat__card:nth-child(6) {
+  transform: none;
+  animation-delay: 0.85s;
+}
+
+/* PLO5 / PLO6 — the lined-up row must not run off the right edge of the felt.
+   Hold the same neat, evenly-overlapped look but tighten step + card size as
+   the hand grows, so 4, 5 and 6 cards all occupy roughly the same width. */
+.seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card {
+  width: 40px;
+  height: 56px;
+  margin-left: -20px;
+}
+.seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card:first-child {
+  margin-left: 0;
+}
+.seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card {
+  width: 37px;
+  height: 52px;
+  margin-left: -20px;
+}
+.seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card:first-child {
+  margin-left: 0;
 }
 
 .seat__cards--hero .seat__card--face {
@@ -1746,11 +1803,34 @@
     height: 58px;
   }
   .seat__cards--hero {
-    /* tablet — right-of-avatar anchor, scaled gap (+4px per Dan) */
+    /* tablet — right of the name/chip box, centred on that box (see base rule) */
+    --sp-hero-box-half: 19px;
     left: calc(100% + 8px);
-    top: 50%;
+    top: auto;
     right: auto;
-    transform: translateY(-50%);
+    bottom: var(--sp-hero-box-half);
+    transform: translateY(50%);
+  }
+
+  /* PLO5 / PLO6 at the tablet breakpoint. The base :has() guards higher up carry
+     desktop pixel values and out-specify the plain .seat__card size rule here, so
+     without these the big-hand cards would render LARGER than the NLH ones on a
+     small screen. Same neat lined-up row, scaled to this breakpoint. */
+  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card {
+    width: 38px;
+    height: 53px;
+    margin-left: -19px;
+  }
+  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card:first-child {
+    margin-left: 0;
+  }
+  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card {
+    width: 35px;
+    height: 49px;
+    margin-left: -19px;
+  }
+  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card:first-child {
+    margin-left: 0;
   }
 
   .seat__position-chip {
@@ -1820,11 +1900,34 @@
     height: 50px;
   }
   .seat__cards--hero {
-    /* phone — right-of-avatar, scaled gap (+4px per Dan) */
+    /* phone — right of the name/chip box, centred on that box (see base rule) */
+    --sp-hero-box-half: 17px;
     left: calc(100% + 7px);
-    top: 50%;
+    top: auto;
     right: auto;
-    transform: translateY(-50%);
+    bottom: var(--sp-hero-box-half);
+    transform: translateY(50%);
+  }
+
+  /* PLO5 / PLO6 at the phone breakpoint. The base :has() guards higher up carry
+     desktop pixel values and out-specify the plain .seat__card size rule here, so
+     without these the big-hand cards would render LARGER than the NLH ones on a
+     small screen. Same neat lined-up row, scaled to this breakpoint. */
+  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card {
+    width: 33px;
+    height: 46px;
+    margin-left: -17px;
+  }
+  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card:first-child {
+    margin-left: 0;
+  }
+  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card {
+    width: 30px;
+    height: 42px;
+    margin-left: -17px;
+  }
+  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card:first-child {
+    margin-left: 0;
   }
 
   .seat__position-chip {
@@ -1890,11 +1993,34 @@
     height: 44px;
   }
   .seat__cards--hero {
-    /* small phone — right-of-avatar, scaled gap (+4px per Dan) */
+    /* small phone — right of the name/chip box, centred on it (see base rule) */
+    --sp-hero-box-half: 15px;
     left: calc(100% + 6px);
-    top: 50%;
+    top: auto;
     right: auto;
-    transform: translateY(-50%);
+    bottom: var(--sp-hero-box-half);
+    transform: translateY(50%);
+  }
+
+  /* PLO5 / PLO6 at the small phone breakpoint. The base :has() guards higher up carry
+     desktop pixel values and out-specify the plain .seat__card size rule here, so
+     without these the big-hand cards would render LARGER than the NLH ones on a
+     small screen. Same neat lined-up row, scaled to this breakpoint. */
+  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card {
+    width: 29px;
+    height: 40px;
+    margin-left: -15px;
+  }
+  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card:first-child {
+    margin-left: 0;
+  }
+  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card {
+    width: 27px;
+    height: 37px;
+    margin-left: -15px;
+  }
+  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card:first-child {
+    margin-left: 0;
   }
 
   .seat__position-chip {

@@ -197,13 +197,23 @@ function HoleCard({
   deckStyle?: '4color' | '2color';
   cardBack?: string;
 }) {
-  // premium-style: hero cards have wider fan tilt, opponents tighter
-  const rotation = isHero ? (index === 0 ? -12 : 12) : index === 0 ? -8 : 8;
+  // v10 layout (Dan-approved PokerBros clone): the HERO row is LINED UP — no
+  // fan tilt. Opponents keep the tight +/-8deg pair behind the avatar.
+  //
+  // The hero row must NOT get an inline transform. Inline styles out-specify
+  // every stylesheet rule, so an inline rotate() here would override
+  // `.seat__cards--hero .seat__card { transform: none }` and put the fan
+  // straight back — it is exactly the "fan/overlap mess" v10 removed. It also
+  // broke PLO: `index === 0 ? -12 : 12` gave card 1 -12deg and cards 2..6 all
+  // the SAME +12deg, so a 5- or 6-card hand stacked into one tilted clump.
+  // Leaving style undefined hands full control of the hero row to CSS.
+  const rotation = isHero ? 0 : index === 0 ? -8 : 8;
+  const cardStyle = isHero ? undefined : { transform: `rotate(${rotation}deg)` };
   const size = isHero ? 'md' : 'sm';
 
   if (hidden || !card) {
     return (
-      <div className="seat__card seat__card--back" style={{ transform: `rotate(${rotation}deg)` }}>
+      <div className="seat__card seat__card--back" style={cardStyle}>
         <CardBack size={size} style={cardBack} />
       </div>
     );
@@ -211,7 +221,7 @@ function HoleCard({
   return (
     <div
       className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}`}
-      style={{ transform: `rotate(${rotation}deg)` }}
+      style={cardStyle}
     >
       <CardImage card={card} deckStyle={deckStyle} size={size} isHighlighted={isWinner} />
     </div>

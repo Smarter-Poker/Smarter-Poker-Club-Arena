@@ -6,6 +6,12 @@ description: MANDATORY end-of-task protocol — push to GitHub, deploy to Vercel
 
 > **ZERO EXCEPTIONS — Every agent MUST follow this protocol at the end of every task.**
 
+> [!CAUTION]
+> **If your deploy isn't showing up on smarter.poker — READ THIS FIRST:**
+> `/deploy-troubleshooting` — the full guide covering every known failure mode.
+> The #1 silent killer: a broken build in Club Arena means NOTHING ever reaches Vercel.
+> **Always verify the build succeeds before doing anything else.**
+
 ## The Three Rules
 
 ### Rule 1: ALL Testing on smarter.poker ONLY
@@ -29,12 +35,26 @@ git add -A && git commit -m "your message" && git push origin main
 
 2. **Build and atomically deploy to World Hub & Vercel:**
 
-This script handles compiling the Vite SPA, cleaning the old hashes in World Hub, safely pushing the update as an atomic commit, AND triggering Vercel – all in one command.
+   This script handles compiling the Vite SPA, cleaning the old hashes in World Hub, safely pushing the update as an atomic commit, AND triggering Vercel – all in one command.
 
-```bash
-cd /Users/smarter.poker/Documents/Smarter-Poker-World-Hub
-bash scripts/build-club-arena.sh "chore: update Club Arena — [describe changes]"
-```
+   ```bash
+   cd /Users/smarter.poker/Documents/Smarter-Poker-World-Hub
+   bash scripts/sync-club-arena.sh "chore: update Club Arena — [describe changes]"
+   ```
+
+   > [!WARNING]
+   > `build-club-arena.sh` is a deprecated shim — it forwards to `sync-club-arena.sh`.
+   > Always use `sync-club-arena.sh` directly. Both repos need `BypassSandbox: true`
+   > for all git operations. See `/deploy-troubleshooting` for failure recovery.
+
+3. **VERIFY the deploy actually landed (mandatory — do not skip):**
+
+   ```bash
+   # Wait ~2 minutes, then check which index bundle is live:
+   curl -sL https://smarter.poker/hub/club-arena/ | grep -o 'assets/index-[^"]*\.js'
+   # Compare to your local: ls ~/Documents/club-arena/dist/assets/index-*.js
+   # They MUST match. If they don't — the deploy did NOT land. See /deploy-troubleshooting.
+   ```
 
 ````
 
@@ -56,14 +76,20 @@ open https://smarter.poker/hub/club-arena/
 
 ```
 1. WRITE CODE        — Make all changes in the Club Arena repo
-2. BUILD             — npm run build (verify it compiles)
+2. BUILD VERIFY      — npx vite build (MUST end with ✓ — fix any errors before continuing)
 3. TYPECHECK         — npx tsc --noEmit (verify no TS errors)
-4. PUSH CLUB ARENA   — git add -A && git commit && git push
-5. ATOMIC DEPLOY    — cd /Users/smarter.poker/Documents/Smarter-Poker-World-Hub && bash scripts/build-club-arena.sh "message"
-6. TEST ON PROD      — Verify on https://smarter.poker/hub/club-arena/
+4. PUSH CLUB ARENA   — git add <files> && git commit && git push (BypassSandbox: true)
+5. ATOMIC DEPLOY     — cd ~/Documents/Smarter-Poker-World-Hub && bash scripts/sync-club-arena.sh "message"
+6. VERIFY ON PROD    — curl to check index hash matches local dist (see above)
+7. TEST ON PROD      — Verify on https://smarter.poker/hub/club-arena/
 8. WRITE SQL (LAST)  — Only after everything else is confirmed working
 9. EXECUTE SQL       — npm run db:push (from World Hub)
 ```
+
+> [!IMPORTANT]
+> Step 2 is the most important step. If the Vite build fails, STOP and fix it.
+> A broken build is invisible — git push succeeds, sync script runs, but NOTHING
+> ever changes on production. This caused a 3-hour outage on 2026-07-25.
 
 ## What Happens If You Break This Order
 
@@ -76,6 +102,12 @@ open https://smarter.poker/hub/club-arena/
 
 - [ ] All code changes committed and pushed to GitHub
 - [ ] Club Arena code pushed to origin/main
-- [ ] Atomic build run via scripts/build-club-arena.sh in the World Hub
+- [ ] `npx vite build` succeeded locally before syncing
+- [ ] Atomic build run via `scripts/sync-club-arena.sh` in the World Hub
+- [ ] Production index hash verified via curl (matches local dist)
 - [ ] SQL migrations written and executed (if any schema changes)
 - [ ] MIGRATION-CHANGELOG.md updated (if migration work)
+
+> [!TIP]
+> If anything in the deploy goes wrong, read `/deploy-troubleshooting` —
+> it covers every known failure mode with exact fix commands.

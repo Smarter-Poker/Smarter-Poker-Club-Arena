@@ -391,24 +391,24 @@ interface TableState {
 //   Parametric: x = 50 + a*cos(θ), y = 50 + b*sin(θ)   (a=33, b=44 in % of scaler)
 // Narrower x radius + taller y radius pins avatars to the portrait rail.
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 94 }, // Seat 1 (Hero)          θ= 90°
-  { x: 22, y: 72 }, // Seat 2 (lower-left)    θ=150°
-  { x: 22, y: 28 }, // Seat 3 (upper-left)    θ=210°
-  { x: 50, y: 6 }, // Seat 4 (top-center)    θ=270°
-  { x: 78, y: 28 }, // Seat 5 (upper-right)   θ=330°
-  { x: 78, y: 72 }, // Seat 6 (lower-right)   θ= 30°
+  { x: 50, y: 90 }, // Seat 1 (Hero, bottom-center)
+  { x: 8, y: 58 },  // Seat 2 (lower-left)
+  { x: 15, y: 31 }, // Seat 3 (upper-left)
+  { x: 50, y: 11 }, // Seat 4 (top-center)
+  { x: 85, y: 31 }, // Seat 5 (upper-right)
+  { x: 92, y: 58 }, // Seat 6 (lower-right)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 94 }, // Seat 1 (Hero)          θ= 90°
-  { x: 29, y: 84 }, // Seat 2 (lower-left)    θ=130°
-  { x: 18, y: 58 }, // Seat 3 (left-low)      θ=170°
-  { x: 22, y: 28 }, // Seat 4 (left-high)     θ=210°
-  { x: 39, y: 9 }, // Seat 5 (top-left)      θ=250°
-  { x: 61, y: 9 }, // Seat 6 (top-right)     θ=290°
-  { x: 78, y: 28 }, // Seat 7 (right-high)    θ=330°
-  { x: 82, y: 58 }, // Seat 8 (right-low)     θ= 10°
-  { x: 71, y: 84 }, // Seat 9 (lower-right)   θ= 50°
+  { x: 50, y: 91 }, // Seat 1 (Hero, bottom-center)
+  { x: 11, y: 74 }, // Seat 2 (lower-left)
+  { x: 9, y: 47 },  // Seat 3 (left-low)
+  { x: 15, y: 24 }, // Seat 4 (left-high)
+  { x: 37, y: 10 }, // Seat 5 (top-left)
+  { x: 63, y: 10 }, // Seat 6 (top-right)
+  { x: 85, y: 24 }, // Seat 7 (right-high)
+  { x: 91, y: 47 }, // Seat 8 (right-low)
+  { x: 89, y: 74 }, // Seat 9 (lower-right)
 ];
 
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
@@ -2053,12 +2053,16 @@ export default function TablePage({
       } else {
         // Non-success leave is expected when: player is mid-hand (leave_pending is set),
         // seat already cleared, or double-tap. Not a Sentry-worthy production bug.
+        // With the user_id-based seat resolution in leaveTable, success:false now
+        // means the player genuinely holds no active seat (already left / double-tap),
+        // NOT "mid-hand" (that path returns success:true with leave_pending set). So
+        // the message no longer misleadingly blames an active hand.
         console.warn(
-          '[Leave] leaveTable returned false — may be mid-hand or seat already cleared',
+          '[Leave] leaveTable returned false — no active seat found for user',
           { tableId, userId, heroSeat: tableState.heroSeat }
         );
         setLeaveNotice(
-          'Unable to leave right now. You may be in an active hand — you will leave after it completes.'
+          "You're no longer seated at this table — nothing to leave."
         );
       }
     } catch (error) {
@@ -3864,11 +3868,19 @@ export default function TablePage({
         setTableState((prev) => {
           const updatedPlayers = [...prev.players];
           const serverPlayers = syncData.players || [];
+          // BUGFIX 2026-07-24: this recovery snapshot rebuilt `players` with isHero
+          // but never updated `heroSeat`. When heroSeat had drifted (snapshot race,
+          // reconnect), players[heroSeat-1] became null → the footer showed
+          // "Spectating — tap an open seat to join" and the leave path used the wrong
+          // seat, even though the hero was clearly seated. Reconcile heroSeat from the
+          // authoritative snapshot here so the two never disagree.
+          let syncedHeroSeat = 0;
 
           serverPlayers.forEach((sp: any) => {
             const seatIdx = sp.seat - 1;
             if (seatIdx >= 0 && seatIdx < updatedPlayers.length) {
               const existing = updatedPlayers[seatIdx];
+              if (sp.user_id === userId) syncedHeroSeat = sp.seat;
               updatedPlayers[seatIdx] = {
                 ...(existing || {}),
                 id: sp.user_id,
@@ -3892,6 +3904,9 @@ export default function TablePage({
             }
           });
 
+          // Keep heroSeatRef in sync too (used by the sit/leave guards).
+          if (syncedHeroSeat > 0) heroSeatRef.current = syncedHeroSeat;
+
           return {
             ...prev,
             handNumber: syncData.hand_number,
@@ -3903,6 +3918,9 @@ export default function TablePage({
             boardStage: (syncData.stage || 'preflop') as BoardStage,
             dealerSeat: syncData.dealer_seat || 0,
             players: updatedPlayers,
+            // Only overwrite heroSeat when the snapshot actually located the hero,
+            // so a partial/empty snapshot never falsely resets a seated player to 0.
+            heroSeat: syncedHeroSeat > 0 ? syncedHeroSeat : prev.heroSeat,
           };
         });
         break;
@@ -5946,13 +5964,14 @@ export default function TablePage({
                 }
               : null;
 
-            // Compute bet-chip offset direction toward table center (50%, 50%)
+            // Compute bet-chip offset toward table center (50%, 50%).
+            // Mockup v3 spec: bet/call/raise chip rests ~22% of the way from the
+            // seat toward center — CLOSE to the player, not near the middle.
+            // Convert the percent delta into scaler-space px (scaler ~300x462).
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            // Normalize and scale: chips appear ~70px toward center from the seat
-            const betOffsetX = Math.round((dx / dist) * 70);
-            const betOffsetY = Math.round((dy / dist) * 70);
+            const betOffsetX = Math.round(dx * 0.66); // 300px * 0.22 / 100
+            const betOffsetY = Math.round(dy * 1.02); // 462px * 0.22 / 100
             // Bible V8 §1.16 — on collect, bet chips fly from their resting
             // spot the rest of the way toward the pot (~2x current offset).
             const collectDx = betOffsetX * 2;
@@ -6100,7 +6119,7 @@ export default function TablePage({
       <div className="action-panel-wrapper">
         {/* POKERBROS-spec: persistent footer bar — NEVER empty. Dan rule
             2026-04-17: action bar fixed to footer at all times, every state. */}
-        {!tableState.players[tableState.heroSeat - 1] ? (
+        {!tableState.players.some((p) => p?.isHero) ? (
           <div className="spectator-footer-bar">
             <span className="spectator-footer-bar__label">
               Spectating — tap an open seat to join
@@ -6203,6 +6222,21 @@ export default function TablePage({
 
                   return (
                     <>
+                      {/* Rabbit Hunt square — mockup v3: small square button
+                          ABOVE the Fold button. Wired to the existing
+                          handleRabbitReveal handler (it internally gates on
+                          availability and toasts when no server cards exist). */}
+                      <div className="action-secondary-row">
+                        <button
+                          type="button"
+                          className="rabbit-hunt-square"
+                          title="Rabbit Hunt — reveal remaining cards"
+                          aria-label="Rabbit Hunt"
+                          onClick={handleRabbitReveal}
+                        >
+                          <img src="/images/rabbit-hunt.png" alt="Rabbit Hunt" />
+                        </button>
+                      </div>
                       <ActionPanel
                         canFold={true}
                         canCheck={callAmount === 0}

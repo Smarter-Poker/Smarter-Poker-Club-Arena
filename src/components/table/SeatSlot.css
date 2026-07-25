@@ -734,7 +734,8 @@
 /* ─── FOLDED ──────────────────────────────────────────────────────────── */
 
 .seat--folded {
-  opacity: 0.5;
+  /* Mockup v3: folded seat (avatar + box + cards) dimmed to ~0.4 */
+  opacity: 0.4;
   filter: grayscale(40%);
 }
 
@@ -895,14 +896,16 @@
  * handles the stacking). Community board is at 50% y so there's still a
  * ~40px gap between hero cards and the board on a 375px phone. */
 .seat__cards--hero {
+  /* Mockup v3: hero hole cards in a clean LINED-UP row (small even overlap,
+     no fan rotation), positioned to the RIGHT of the name/chip box and clear
+     of it. Hero is dead-center bottom so the row extends rightward. */
   position: absolute;
-  left: 50%;
-  top: 0;
-  /* translateY(-60%) = card pops up 60% of its height above the pill */
-  transform: translate(-50%, -60%);
+  left: 100%;
+  top: 58%;
+  transform: translate(8px, -50%);
   display: flex;
   align-items: flex-end;
-  justify-content: center;
+  justify-content: flex-start;
   z-index: 20;
   gap: 0;
   pointer-events: none; /* don't block clicks on the avatar/seat below */
@@ -945,16 +948,17 @@
  * rank/suit clearly displayed. Two cards rotate in opposite directions
  * for the fan effect; first card tilts -6deg, second +6deg. */
 .seat__cards--hero .seat__card {
-  width: 56px;
-  height: 78px;
-  border-radius: 7px;
+  width: 44px;
+  height: 62px;
+  border-radius: 6px;
   background: #fff;
-  margin-left: -16px;
+  margin-left: -12px; /* small consistent overlap, no fan */
+  transform: none;
   animation: heroCardPeek 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) backwards;
   transform-style: preserve-3d;
   transform-origin: bottom center;
   box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.5),
+    0 5px 12px rgba(0, 0, 0, 0.6),
     0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
@@ -962,13 +966,12 @@
  * looks like a real fanned hand rather than two stacked cards. */
 .seat__cards--hero .seat__card:first-child {
   margin-left: 0;
-  margin-right: -10px;
-  transform: rotate(-12deg) translateY(2px);
+  transform: none;
   animation-delay: 0.1s;
 }
 
 .seat__cards--hero .seat__card:nth-child(2) {
-  transform: rotate(12deg) translateY(2px);
+  transform: none;
   animation-delay: 0.25s;
 }
 

@@ -14,6 +14,10 @@
 #     to fit; nothing clips the rail).
 #   public/game-card-icons/*.png (50)          — the club's custom emblems,
 #     background-removed + web-optimized. Served at /game-card-icons/<name>.png.
+#   src/pages/ClubHomePage.tsx                 — ALL view orders tournaments first
+#     (open-for-reg, soonest first) → Hold'em → Omaha → Mixed; re-applies the live
+#     BBJ fix (union-pool resolution + realtime subscription so the header jackpot
+#     ticks up as rake funds it).
 #
 # NOTE: old unused *.jpg emblems + the temp zip were moved to _to_delete/ — you can
 # delete that folder. It is NOT staged here.
@@ -24,6 +28,7 @@ cd "$(dirname "$0")"
 git add \
   src/components/lobby/DynamicGameCard.tsx \
   src/components/lobby/NeonCard.css \
+  src/pages/ClubHomePage.tsx \
   public/game-card-icons/ \
   DEPLOY-LOBBY-CARDS.sh
 

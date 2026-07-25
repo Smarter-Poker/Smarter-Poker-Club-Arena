@@ -120,6 +120,32 @@ type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
 type CashSubFilter = 'all' | 'live' | 'empty' | 'full';
 type TournamentSubFilter = 'all' | 'running' | 'registering' | 'late_reg' | 'starting_soon';
 
+// ── Lobby ordering (used by the ALL view): Hold'em → Omaha → Mixed for cash ──
+function cashRank(t: { game_variant?: string }): number {
+  const v = (t.game_variant || '').toLowerCase();
+  if (v.includes('nlh') || v.includes('holdem') || v.includes('short')) return 0; // Hold'em family
+  if (v.includes('plo') || v.includes('omaha')) return 1; // Omaha
+  return 2; // Mixed / everything else
+}
+// Tournaments open for registration (or not past late-reg) come first, soonest first.
+function tournamentOpenFirst(
+  a: { status?: string; start_time: string },
+  b: { status?: string; start_time: string }
+): number {
+  const rank = (s?: string) => {
+    const u = (s || '').toUpperCase();
+    if (
+      ['REGISTERING', 'OPEN', 'PENDING', 'ANNOUNCED', 'LATE_REG', 'LATE_REGISTRATION'].includes(u)
+    )
+      return 0;
+    if (u === 'RUNNING' || u === 'IN_PROGRESS') return 1;
+    return 2;
+  };
+  const r = rank(a.status) - rank(b.status);
+  if (r !== 0) return r;
+  return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+}
+
 export default function ClubHomePage() {
   const { clubId } = useParams<{ clubId: string }>();
   useVisibilityRefresh(() => loadClubData());
@@ -244,9 +270,7 @@ export default function ClubHomePage() {
           ) {
             setTables((prev) => prev.filter((t) => t.id !== updated.id));
           } else {
-            setTables((prev) =>
-              prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
-            );
+            setTables((prev) => prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)));
           }
         } else if (payload.eventType === 'INSERT' && payload.new) {
           setTables((prev) => {
@@ -301,6 +325,27 @@ export default function ClubHomePage() {
           handleTournamentChange
         );
       }
+
+      // 4. Live BBJ — subscribe to the CORRECT bbj_pools row (union pool for union
+      // clubs, else club pool) so the header jackpot ticks up in real time as rake
+      // funds it, instead of showing a value frozen at fetch time.
+      const handleBBJChange = (payload: any) => {
+        if (!isMounted) return;
+        const row = (payload?.new ?? payload?.old) as { main_balance?: number } | undefined;
+        if (row && typeof row.main_balance === 'number') setJackpotAmount(row.main_balance);
+      };
+      channel = channel.on(
+        'postgres_changes',
+        unionId
+          ? { event: '*', schema: 'public', table: 'bbj_pools', filter: `union_id=eq.${unionId}` }
+          : {
+              event: '*',
+              schema: 'public',
+              table: 'bbj_pools',
+              filter: `club_id=eq.${resolvedId}`,
+            },
+        handleBBJChange
+      );
 
       channel.subscribe((status: string, err?: Error) => {
         setWsConnected(status === 'SUBSCRIBED');
@@ -611,12 +656,12 @@ export default function ClubHomePage() {
           .order('start_time', { ascending: true }),
         (async () => {
           try {
-            return await supabase
-              .from('bbj_pools')
-              .select('main_balance')
-              .eq('club_id', resolvedId)
-              .limit(1)
-              .maybeSingle();
+            // BUGFIX: resolve the CORRECT BBJ pool. Union clubs contribute to the
+            // UNION pool (that's the one that grows); a club-level pool row may exist
+            // but is stale. Fetch by union_id when in a union, else club_id.
+            const q = supabase.from('bbj_pools').select('main_balance');
+            const scoped = unionId ? q.eq('union_id', unionId) : q.eq('club_id', resolvedId);
+            return await scoped.limit(1).maybeSingle();
           } catch (e) {
             reportError(e, 'ClubHomePage.async');
             return { data: null, error: null };
@@ -752,73 +797,77 @@ export default function ClubHomePage() {
 
   const filteredTables = useMemo(
     () =>
-      tables.filter((table) => {
-        if (activeMainFilter === 'TOURNAMENTS') return false;
+      tables
+        .filter((table) => {
+          if (activeMainFilter === 'TOURNAMENTS') return false;
 
-        // Game variant filter
-        let passesGameFilter = true;
-        if (cashVariant === "Hold'em") {
-          passesGameFilter =
-            table.game_variant?.toLowerCase().includes('nlh') ||
-            table.game_variant?.toLowerCase().includes('holdem');
-        } else if (cashVariant === 'Omaha') {
-          passesGameFilter =
-            table.game_variant?.toLowerCase().includes('plo') ||
-            table.game_variant?.toLowerCase().includes('omaha');
-        }
-        if (!passesGameFilter) return false;
+          // Game variant filter
+          let passesGameFilter = true;
+          if (cashVariant === "Hold'em") {
+            passesGameFilter =
+              table.game_variant?.toLowerCase().includes('nlh') ||
+              table.game_variant?.toLowerCase().includes('holdem');
+          } else if (cashVariant === 'Omaha') {
+            passesGameFilter =
+              table.game_variant?.toLowerCase().includes('plo') ||
+              table.game_variant?.toLowerCase().includes('omaha');
+          }
+          if (!passesGameFilter) return false;
 
-        // Cash game status filter (skip if ALL tab is active)
-        if (activeMainFilter === 'ALL') return true;
+          // Cash game status filter (skip if ALL tab is active)
+          if (activeMainFilter === 'ALL') return true;
 
-        if (cashSubFilter === 'live') return table.current_players > 0;
-        if (cashSubFilter === 'empty') return table.current_players === 0;
-        if (cashSubFilter === 'full') return table.current_players >= table.max_players;
-        return true;
-      }),
+          if (cashSubFilter === 'live') return table.current_players > 0;
+          if (cashSubFilter === 'empty') return table.current_players === 0;
+          if (cashSubFilter === 'full') return table.current_players >= table.max_players;
+          return true;
+        })
+        .sort((a, b) => cashRank(a) - cashRank(b)),
     [tables, activeMainFilter, cashVariant, cashSubFilter]
   );
 
   // Filter tournaments
   const filteredTournaments = useMemo(
     () =>
-      tournaments.filter((t) => {
-        if (activeMainFilter === 'CASH GAMES') return false;
+      tournaments
+        .filter((t) => {
+          if (activeMainFilter === 'CASH GAMES') return false;
 
-        const isSpin = t.name.toLowerCase().includes('spin');
-        const isSNG = !isSpin && (t.name.toLowerCase().includes('sng') || t.max_players <= 10);
-        const isMTT = !isSpin && !isSNG;
+          const isSpin = t.name.toLowerCase().includes('spin');
+          const isSNG = !isSpin && (t.name.toLowerCase().includes('sng') || t.max_players <= 10);
+          const isMTT = !isSpin && !isSNG;
 
-        // Tournament variant filter
-        let passesGameFilter = true;
-        if (tournVariant === 'MTT') passesGameFilter = isMTT;
-        else if (tournVariant === 'SN') passesGameFilter = isSNG;
-        else if (tournVariant === 'Spin-It') passesGameFilter = isSpin;
+          // Tournament variant filter
+          let passesGameFilter = true;
+          if (tournVariant === 'MTT') passesGameFilter = isMTT;
+          else if (tournVariant === 'SN') passesGameFilter = isSNG;
+          else if (tournVariant === 'Spin-It') passesGameFilter = isSpin;
 
-        if (!passesGameFilter) return false;
+          if (!passesGameFilter) return false;
 
-        // Tournament status filter (skip if ALL tab is active)
-        if (activeMainFilter === 'ALL') return true;
-        if (tournamentSubFilter === 'all') return true;
-        const status = (t.status || '').toUpperCase();
-        const startTime = new Date(t.start_time).getTime();
-        const now = Date.now();
-        const minutesUntilStart = (startTime - now) / 60000;
+          // Tournament status filter (skip if ALL tab is active)
+          if (activeMainFilter === 'ALL') return true;
+          if (tournamentSubFilter === 'all') return true;
+          const status = (t.status || '').toUpperCase();
+          const startTime = new Date(t.start_time).getTime();
+          const now = Date.now();
+          const minutesUntilStart = (startTime - now) / 60000;
 
-        if (tournamentSubFilter === 'running')
-          return status === 'RUNNING' || status === 'IN_PROGRESS';
-        if (tournamentSubFilter === 'registering')
-          return status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING';
-        if (tournamentSubFilter === 'late_reg')
-          return status === 'LATE_REG' || status === 'LATE_REGISTRATION';
-        if (tournamentSubFilter === 'starting_soon')
-          return (
-            (status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING') &&
-            minutesUntilStart > 0 &&
-            minutesUntilStart <= 60
-          );
-        return true;
-      }),
+          if (tournamentSubFilter === 'running')
+            return status === 'RUNNING' || status === 'IN_PROGRESS';
+          if (tournamentSubFilter === 'registering')
+            return status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING';
+          if (tournamentSubFilter === 'late_reg')
+            return status === 'LATE_REG' || status === 'LATE_REGISTRATION';
+          if (tournamentSubFilter === 'starting_soon')
+            return (
+              (status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING') &&
+              minutesUntilStart > 0 &&
+              minutesUntilStart <= 60
+            );
+          return true;
+        })
+        .sort(tournamentOpenFirst),
     [tournaments, activeMainFilter, tournVariant, tournamentSubFilter]
   );
 
@@ -1206,41 +1255,46 @@ export default function ClubHomePage() {
           </Link>
         )}
 
-        {/* EXISTING TABLES — Dynamic premium-style cards */}
-        {filteredTables.map((table, idx) => (
-          <div
-            key={table.id}
-            style={{
-              animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${idx * 0.08}s both`,
-            }}
-          >
-            <CashGameCard
-              table={table}
-              isAdmin={isOwner || userRole === 'admin'}
-              onDelete={(id) => {
-                setDeleteTableConfirm({ show: true, tableId: id, tableName: table.name });
-              }}
-            />
-          </div>
-        ))}
-
-        {/* TOURNAMENT CARDS — Dynamic premium-style cards */}
+        {/* TOURNAMENT CARDS FIRST — ALL view shows tournaments (open-for-reg,
+            soonest first) ahead of cash. In the CASH GAMES tab this list is empty,
+            in the TOURNAMENTS tab the tables list below is empty, so the same order
+            works for every tab. */}
         {filteredTournaments.map((tournament, idx) => {
           const tName = (tournament.name || '').toLowerCase();
           const isSNG = tName.includes('sng') || tournament.max_players <= 10;
           const isSpin = tName.includes('spin');
-          const staggerIdx = filteredTables.length + idx;
 
           return (
             <div
               key={tournament.id}
               style={{
-                animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${staggerIdx * 0.08}s both`,
+                animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${idx * 0.08}s both`,
               }}
             >
               {isSpin && <SpinCard tournament={tournament} />}
               {isSNG && !isSpin && <SNGCard tournament={tournament} />}
               {!isSpin && !isSNG && <TournamentCard tournament={tournament} />}
+            </div>
+          );
+        })}
+
+        {/* CASH TABLES — Hold'em → Omaha → Mixed (sorted in filteredTables) */}
+        {filteredTables.map((table, idx) => {
+          const staggerIdx = filteredTournaments.length + idx;
+          return (
+            <div
+              key={table.id}
+              style={{
+                animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) ${staggerIdx * 0.08}s both`,
+              }}
+            >
+              <CashGameCard
+                table={table}
+                isAdmin={isOwner || userRole === 'admin'}
+                onDelete={(id) => {
+                  setDeleteTableConfirm({ show: true, tableId: id, tableName: table.name });
+                }}
+              />
             </div>
           );
         })}

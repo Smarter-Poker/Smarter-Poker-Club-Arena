@@ -87,7 +87,7 @@ class CreditRequestServiceClass {
       });
     }
 
-    return this.mapRequest(data);
+    return this.mapRequest(data, await this.nameMap([data?.requester_id, data?.approver_id]));
   }
 
   /**
@@ -104,7 +104,11 @@ class CreditRequestServiceClass {
       .limit(QUERY_LIMITS.LIST);
 
     if (error) throw error;
-    return (data || []).map(this.mapRequest);
+    {
+      const rows = data || [];
+      const names = await this.nameMap(rows.flatMap((r: any) => [r.requester_id, r.approver_id]));
+      return rows.map((r: any) => this.mapRequest(r, names));
+    }
   }
 
   /**
@@ -121,7 +125,11 @@ class CreditRequestServiceClass {
       .limit(QUERY_LIMITS.LIST);
 
     if (error) throw error;
-    return (data || []).map(this.mapRequest);
+    {
+      const rows = data || [];
+      const names = await this.nameMap(rows.flatMap((r: any) => [r.requester_id, r.approver_id]));
+      return rows.map((r: any) => this.mapRequest(r, names));
+    }
   }
 
   /**
@@ -207,7 +215,7 @@ class CreditRequestServiceClass {
       });
     }
 
-    return this.mapRequest(data);
+    return this.mapRequest(data, await this.nameMap([data?.requester_id, data?.approver_id]));
   }
 
   /**
@@ -252,7 +260,7 @@ class CreditRequestServiceClass {
       });
     }
 
-    return this.mapRequest(data);
+    return this.mapRequest(data, await this.nameMap([data?.requester_id, data?.approver_id]));
   }
 
   /**
@@ -317,13 +325,25 @@ class CreditRequestServiceClass {
     });
   }
 
-  private mapRequest(row: any): CreditRequest {
+  /** Resolve id -> username for requester/approver display (no FK to embed). */
+  private async nameMap(ids: (string | null | undefined)[]): Promise<Record<string, string>> {
+    const uniq = [...new Set(ids.filter(Boolean) as string[])];
+    if (!uniq.length) return {};
+    const { data } = await supabase.from('profiles').select('id, username').in('id', uniq);
+    const m: Record<string, string> = {};
+    (data || []).forEach((p: any) => {
+      m[p.id] = p.username || 'Unknown';
+    });
+    return m;
+  }
+
+  private mapRequest(row: any, names: Record<string, string> = {}): CreditRequest {
     return {
       id: row.id,
       requesterId: row.requester_id,
-      requesterName: row.requester_name,
+      requesterName: names[row.requester_id] || 'Unknown',
       approverId: row.approver_id,
-      approverName: row.approver_name,
+      approverName: names[row.approver_id] || 'Unknown',
       clubId: row.club_id,
       requestedAmount: row.requested_amount,
       approvedAmount: row.approved_amount,

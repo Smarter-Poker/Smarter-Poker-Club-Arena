@@ -132,7 +132,7 @@ export default function WaitlistPage() {
       const waitlists = await waitlistService.getUserWaitlists(user.id);
       if (getIsMounted && !getIsMounted()) return;
       setEntries(
-        waitlists.map((e: ServiceEntry) => ({
+        waitlists.map((e) => ({
           id: e.id,
           table_id: e.tableId,
           table_name: e.tableName,

@@ -93,10 +93,24 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
       );
     }
     try {
+      // Canonical commission data lives in agent_commissions, keyed by the
+      // agent's user_id (= auth.uid) with `amount` = commission earned. agentId
+      // here is the agents.id PK, so resolve to user_id first. (There is no
+      // commission_ledger table.)
+      const { data: agentRow } = await supabase
+        .from('agents')
+        .select('user_id')
+        .eq('id', agentId)
+        .maybeSingle();
+      if (!agentRow?.user_id) {
+        setCommissionData(days.map((d) => ({ name: d, rake: 0, commissions: 0 })));
+        return;
+      }
+
       const { data, error } = await supabase
-        .from('commission_ledger')
-        .select('commission_earned, created_at')
-        .eq('agent_id', agentId)
+        .from('agent_commissions')
+        .select('amount, created_at')
+        .eq('user_id', agentRow.user_id)
         .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
         .order('created_at', { ascending: true })
         .limit(5000);
@@ -108,7 +122,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         const grouped: Record<string, number> = {};
         data.forEach((d: any) => {
           const day = new Date(d.created_at).toLocaleDateString('en-US', { weekday: 'short' });
-          grouped[day] = (grouped[day] || 0) + (d.commission_earned || 0);
+          grouped[day] = (grouped[day] || 0) + (d.amount || 0);
         });
         setCommissionData(days.map((d) => ({ name: d, rake: 0, commissions: grouped[d] || 0 })));
       } else {

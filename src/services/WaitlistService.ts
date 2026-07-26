@@ -38,6 +38,10 @@ export interface WaitlistEntry {
   status: WaitlistStatus;
   createdAt: string;
   notifiedAt: string | null;
+  // Optional enrichment populated by getTableWaitlist / getUserWaitlists.
+  position?: number;
+  tableName?: string;
+  joinedAt?: string;
 }
 
 export interface WaitlistPosition {
@@ -233,6 +237,58 @@ export const WaitlistService = {
     }
     return (data ?? []).map((r) => mapRow(r as any));
   },
+
+  // ── Back-compat shims for existing consumers (TablePage, WaitlistPage) ──
+
+  /** Active waitlist entries for a table, oldest first, with 1-based position. */
+  async getTableWaitlist(
+    tableId: string
+  ): Promise<Array<WaitlistEntry & { position: number; joinedAt: string }>> {
+    const { data, error } = await supabase
+      .from('table_waitlists')
+      .select('id, table_id, user_id, status, created_at, notified_at')
+      .eq('table_id', tableId)
+      .in('status', ACTIVE_STATES)
+      .order('created_at', { ascending: true });
+    if (error) {
+      reportError(error, 'WaitlistService.getTableWaitlist', { tableId });
+      return [];
+    }
+    return (data ?? []).map((r, i) => {
+      const e = mapRow(r as any);
+      return { ...e, position: i + 1, joinedAt: e.createdAt };
+    });
+  },
+
+  /** Current player's active waitlists, enriched with live position + table name. */
+  async getUserWaitlists(
+    _userId?: string
+  ): Promise<Array<WaitlistEntry & { position: number; tableName: string; joinedAt: string }>> {
+    const base = await this.myWaitlists();
+    return Promise.all(
+      base.map(async (e) => {
+        const pos = await this.getPosition(e.tableId);
+        const { data: t } = await supabase
+          .from('tables')
+          .select('name')
+          .eq('id', e.tableId)
+          .maybeSingle();
+        return {
+          ...e,
+          position: pos?.position ?? 0,
+          tableName: (t as { name?: string } | null)?.name || '',
+          joinedAt: e.createdAt,
+        };
+      })
+    );
+  },
+
+  /** Leave a table waitlist; true if a row was removed. */
+  async leave(tableId: string, _userId?: string): Promise<boolean> {
+    return (await this.leaveWaitlist(tableId)) > 0;
+  },
 };
+
+export const waitlistService = WaitlistService;
 
 export default WaitlistService;

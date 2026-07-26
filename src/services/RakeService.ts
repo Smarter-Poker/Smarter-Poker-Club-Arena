@@ -732,22 +732,12 @@ export const RakeService = {
               if (le) reportError(le, 'RakeService.chipLedgerWrite');
             });
 
-          // Fallback: read-modify-write for agent lifetime_rake_generated
-          // NOTE: agents table has lifetime_rake_generated, NOT rake_generated
+          // No direct-write fallback: agents is service-role-write-only, so a
+          // client `.update` silently affects 0 rows (no error) and would drop
+          // the rake credit while looking successful. Surface the RPC failure
+          // instead so it can be retried/investigated.
           if (rpcError) {
-            const { data: agentRow } = await supabase
-              .from('agents')
-              .select('lifetime_rake_generated')
-              .eq('user_id', agentId)
-              .maybeSingle();
-            const currentRake = Number(agentRow?.lifetime_rake_generated) || 0;
-            const { error: fallbackErr } = await supabase
-              .from('agents')
-              .update({ lifetime_rake_generated: currentRake + rakeCredit })
-              .eq('user_id', agentId);
-            if (fallbackErr) {
-              reportError(fallbackErr, 'RakeService.agentRake.fallback', { agentId });
-            }
+            reportError(rpcError, 'RakeService.agentRake.rpcFailed', { agentId, rakeCredit });
           }
         } catch (e: unknown) {
           // Non-blocking: commission tracking should never break the hand pipeline

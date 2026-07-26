@@ -668,21 +668,20 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
 
       if (actionName === 'open') {
-        const { error: insErr } = await supabase.from('settlement_periods').insert({
-          club_id: uuid,
-          status: 'open',
-          start_at: new Date().toISOString(),
+        // settlement_periods is service-role-write-only; go through the RPC.
+        const { error: insErr } = await supabase.rpc('fn_open_settlement_period', {
+          p_club_id: uuid,
         });
         if (insErr) throw insErr;
       } else if (actionName === 'close' && extras.periodId) {
-        const { error: clErr } = await supabase
-          .from('settlement_periods')
-          .update({
-            status: 'closed',
-            end_at: new Date().toISOString(),
-          })
-          .eq('id', extras.periodId);
+        // 'settled' is the valid terminal status ('closed' is not in the CHECK).
+        const { data: res, error: clErr } = await supabase.rpc('fn_set_settlement_period_status', {
+          p_period_id: extras.periodId,
+          p_status: 'settled',
+        });
         if (clErr) throw clErr;
+        const r = res as { success?: boolean; error?: string } | null;
+        if (r && r.success === false) throw new Error(r.error || 'Failed to close period');
       } else if (actionName === 'pay' && extras.commissionId) {
         // agent_commissions has no 'status' column — delete to acknowledge payment
         const { error: payErr } = await supabase

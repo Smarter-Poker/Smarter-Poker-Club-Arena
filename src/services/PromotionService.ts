@@ -83,7 +83,7 @@ class PromotionServiceClass {
     let query = supabase
       .from('promotions')
       .select(
-        'id, club_id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, terms, max_claims, claim_count, min_deposit, bonus_percent, wager_requirement, created_at'
+        'id, club_id, title:name, description, type, image_url:banner_url, start_date, end_date, prize_pool, status, requirements, max_claims, min_deposit, bonus_percent, wager_requirement, created_at'
       )
       .order('start_date', { ascending: false });
 
@@ -114,7 +114,7 @@ class PromotionServiceClass {
     const { data, error } = await supabase
       .from('promotions')
       .select(
-        'id, club_id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, terms, max_claims, claim_count, min_deposit, bonus_percent, wager_requirement, created_at'
+        'id, club_id, title:name, description, type, image_url:banner_url, start_date, end_date, prize_pool, status, requirements, max_claims, min_deposit, bonus_percent, wager_requirement, created_at'
       )
       .eq('id', promotionId)
       .maybeSingle();
@@ -128,16 +128,15 @@ class PromotionServiceClass {
       .from('promotions')
       .insert({
         club_id: clubId,
-        title: config.title,
+        name: config.title,
         description: config.description,
         type: config.type || 'bonus',
-        image_url: config.imageUrl,
+        banner_url: config.imageUrl,
         start_date: config.startDate,
         end_date: config.endDate,
         prize_pool: config.prizePool,
-        is_active: true,
+        status: 'active',
         requirements: config.requirements,
-        terms: config.terms,
         max_claims: config.maxClaims,
         min_deposit: config.minDeposit,
         bonus_percent: config.bonusPercent,
@@ -155,16 +154,15 @@ class PromotionServiceClass {
     const { error } = await supabase
       .from('promotions')
       .update({
-        title: updates.title,
+        name: updates.title,
         description: updates.description,
         type: updates.type,
-        image_url: updates.imageUrl,
+        banner_url: updates.imageUrl,
         start_date: updates.startDate,
         end_date: updates.endDate,
         prize_pool: updates.prizePool,
-        is_active: updates.isActive,
+        status: updates.isActive === undefined ? undefined : updates.isActive ? 'active' : 'ended',
         requirements: updates.requirements,
-        terms: updates.terms,
       })
       .eq('id', promotionId);
 
@@ -364,7 +362,7 @@ class PromotionServiceClass {
     const { data: promotions } = await supabase
       .from('promotions')
       .select(
-        'id, club_id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, terms, max_claims, claim_count, min_deposit, bonus_percent, wager_requirement, created_at'
+        'id, club_id, title:name, description, type, image_url:banner_url, start_date, end_date, prize_pool, status, requirements, max_claims, min_deposit, bonus_percent, wager_requirement, created_at'
       )
       .eq('type', 'deposit_match')
       .eq('is_active', true)
@@ -439,7 +437,7 @@ class PromotionServiceClass {
     const { data: promotions } = await supabase
       .from('promotions')
       .select(
-        'id, club_id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, terms, max_claims, claim_count, min_deposit, bonus_percent, wager_requirement, created_at'
+        'id, club_id, title:name, description, type, image_url:banner_url, start_date, end_date, prize_pool, status, requirements, max_claims, min_deposit, bonus_percent, wager_requirement, created_at'
       )
       .eq('type', 'refer_friend')
       .eq('is_active', true)
@@ -507,11 +505,14 @@ class PromotionServiceClass {
       startDate: data.start_date,
       endDate: data.end_date,
       prizePool: data.prize_pool,
-      isActive: data.is_active,
+      // promotions has `status` (open/active/…), not a boolean is_active.
+      isActive: data.status !== 'ended' && data.status !== 'cancelled',
       requirements: data.requirements,
-      terms: data.terms,
+      // No `terms`/`claim_count` columns on promotions; surface requirements as
+      // terms and default the count (claims live in promotion_claims).
+      terms: data.requirements || '',
       maxClaims: data.max_claims,
-      claimCount: data.claim_count || 0,
+      claimCount: 0,
       minDeposit: data.min_deposit,
       bonusPercent: data.bonus_percent,
       wagerRequirement: data.wager_requirement,

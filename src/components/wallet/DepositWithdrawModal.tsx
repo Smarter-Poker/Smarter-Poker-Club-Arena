@@ -398,19 +398,12 @@ export default function DepositWithdrawModal({
 
       if (txError) throw txError;
 
-      // For withdrawals, set locked_until flag directly on wallets table.
-      // NOTE: This is a UI-level lock (not a balance mutation), so direct write is safe.
-      // It prevents concurrent withdrawals during fiat processing.
-      if (mode === 'withdraw') {
-        try {
-          await supabase
-            .from('wallets')
-            .update({ locked_until: new Date(Date.now() + 3600000).toISOString() })
-            .eq('user_id', userId);
-        } catch (err) {
-          console.warn('[DepositWithdraw] Failed to lock wallet (non-fatal):', err);
-        }
-      }
+      // NOTE: a per-wallet withdrawal lock was removed here — it wrote a
+      // non-existent `wallets.locked_until` column and `wallets` is
+      // service-role-write-only, so the update always failed silently (0 rows)
+      // and the lock never engaged. A real concurrency lock must be enforced
+      // server-side (SECURITY DEFINER RPC) if needed; the previous code was
+      // dead financial-safety theater.
 
       if (!isMounted.current) return;
       setReferenceId(data?.id ?? null);

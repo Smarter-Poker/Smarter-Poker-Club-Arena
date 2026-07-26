@@ -177,12 +177,15 @@ export const SettlementService = {
    * Close period and begin processing
    */
   async closePeriod(periodId: string): Promise<boolean> {
-    const { error } = await supabase
-      .from('settlement_periods')
-      .update({ status: 'processing' })
-      .eq('id', periodId);
-
+    // settlement_periods is service-role-write-only; a direct update silently
+    // affects 0 rows. Go through the authorized RPC.
+    const { data, error } = await supabase.rpc('fn_set_settlement_period_status', {
+      p_period_id: periodId,
+      p_status: 'processing',
+    });
     if (error) throw error;
+    const r = data as { success?: boolean; error?: string } | null;
+    if (r && r.success === false) throw new Error(r.error || 'Failed to close period');
     return true;
   },
 

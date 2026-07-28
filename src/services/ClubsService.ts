@@ -915,48 +915,60 @@ export async function canJoinMoreClubs(): Promise<{
 export async function getLiveMemberCount(clubId: string): Promise<number> {
   const resolvedId = await resolveClubUUID(clubId);
 
-  // ── Tier 1: Direct count from club_members (works if RLS permits) ──
-  try {
-    const { count, error } = await supabase
-      .from('club_members')
-      .select('*', { count: 'exact', head: true })
-      .eq('club_id', resolvedId)
-      .in('status', ['active', 'approved']);
+  // BUGFIX 2026-07-24: a direct `club_members` count is subject to RLS. For a
+  // club the viewer is NOT a member of, RLS exposes only the viewer's own row (or
+  // none), so the old "Tier 1 direct count, return if > 0" logic returned 1 (or 0)
+  // and NEVER reached the accurate SECURITY DEFINER RPC — this is why the featured
+  // Shark Club card showed "1 member" for a 578-member club. We now take the MAX
+  // across every source so an RLS-filtered undercount can never win, and the
+  // authoritative RLS-bypassing RPC / denormalized column always dominate.
+  const candidates: number[] = [];
 
-    if (!error && typeof count === 'number' && count > 0) {
-      return count;
-    }
-    // count === 0 might mean RLS filtered everything — fall through to Tier 2
-  } catch (e) {
-    console.warn('[ClubsService] getLiveMemberCount direct count failed:', e);
-  }
-
-  // ── Tier 2: SECURITY DEFINER RPC (bypasses RLS) ──
+  // ── Source A: SECURITY DEFINER RPC (bypasses RLS — authoritative) ──
   try {
     const { data, error } = await supabase.rpc('fn_get_club_member_count', {
       p_club_id: resolvedId,
     });
-
-    if (!error && typeof data === 'number') {
-      return data;
+    if (!error && typeof data === 'number' && Number.isFinite(data)) {
+      candidates.push(data);
     }
-    // RPC not deployed yet — fall through to Tier 3
   } catch (e) {
-    // Silently fall through
+    // RPC not deployed — rely on the other sources
   }
 
-  // ── Tier 3: Denormalized clubs.member_count (may be stale) ──
+  // ── Source B: Denormalized clubs.member_count (trigger-maintained) ──
   try {
     const { data: club } = await supabase
       .from('clubs')
       .select('member_count')
       .eq('id', resolvedId)
       .maybeSingle();
-    return club?.member_count || 0;
+    if (club?.member_count && Number.isFinite(club.member_count)) {
+      candidates.push(club.member_count);
+    }
   } catch (e) {
-    reportError(e, 'ClubsService');
+    /* fall through */
+  }
+
+  // ── Source C: Direct count (only correct when RLS permits full visibility) ──
+  try {
+    const { count, error } = await supabase
+      .from('club_members')
+      .select('*', { count: 'exact', head: true })
+      .eq('club_id', resolvedId)
+      .in('status', ['active', 'approved']);
+    if (!error && typeof count === 'number') {
+      candidates.push(count);
+    }
+  } catch (e) {
+    console.warn('[ClubsService] getLiveMemberCount direct count failed:', e);
+  }
+
+  if (candidates.length === 0) {
+    reportError(new Error('getLiveMemberCount: no source returned a count'), 'ClubsService');
     return 0;
   }
+  return Math.max(...candidates);
 }
 
 // Export service object for cleaner imports

@@ -344,30 +344,40 @@ class TableService {
         console.warn('[TableService] Server leave notification failed:', serverErr);
       }
 
-      // Get the player's current seat data
-      const { data: seat, error: seatError } = await supabase
+      // Get the player's current seat data.
+      // BUGFIX 2026-07-24: resolve the seat by USER_ID, not the passed seat_number.
+      // The caller passes tableState.heroSeat, which can drift out of sync with the
+      // DB (snapshot races, re-seating), and when it did the (seat_number,user_id)
+      // lookup returned nothing → leaveTable returned false → the UI showed
+      // "Unable to leave right now. You may be in an active hand" even though the
+      // player was simply seated. A player has at most one active seat per table, so
+      // user_id alone unambiguously identifies it. We prefer the passed seat_number
+      // when it matches, else fall back to whatever active seat the user actually holds.
+      const { data: seatRows, error: seatError } = await supabase
         .from('table_seats')
-        .select('stack, status')
+        .select('seat_number, stack, status')
         .eq('table_id', tableId)
-        .eq('seat_number', seatNumber)
         .eq('user_id', userId)
         .is('left_at', null)
-        .maybeSingle();
+        .order('joined_at', { ascending: true });
 
-      if (seatError || !seat) {
-        // Only report to Sentry when there's an actual DB error — not when seat simply
-        // doesn't exist (race condition: player already left, double-click, etc.)
-        if (seatError) {
-          reportError(seatError, 'TableService.seatNotFound');
-        } else {
-          console.warn('[TableService] leaveTable: seat not found (may have already left)', {
-            tableId,
-            seatNumber,
-            userId,
-          });
-        }
+      if (seatError) {
+        reportError(seatError, 'TableService.seatNotFound');
         return { success: false, chipsReturned: 0 };
       }
+      const seat =
+        (seatRows || []).find((s) => s.seat_number === seatNumber) || (seatRows || [])[0];
+      if (!seat) {
+        // Genuinely not seated (already left, double-tap, etc.)
+        console.warn('[TableService] leaveTable: no active seat for user (may have already left)', {
+          tableId,
+          seatNumber,
+          userId,
+        });
+        return { success: false, chipsReturned: 0 };
+      }
+      // Authoritative seat number from the DB — used for every downstream op.
+      const seatNo = seat.seat_number;
 
       // Check if player is in active hand (server already folded them, but seat may still be 'playing')
       if (seat.status === 'playing') {
@@ -376,7 +386,7 @@ class TableService {
           .from('table_seats')
           .update({ status: 'sitting_out', leave_pending: true })
           .eq('table_id', tableId)
-          .eq('seat_number', seatNumber)
+          .eq('seat_number', seatNo)
           .is('left_at', null);
 
         return { success: true, chipsReturned: 0 };
@@ -404,7 +414,7 @@ class TableService {
           {
             p_user_id: userId,
             p_table_id: tableId,
-            p_seat_number: seatNumber,
+            p_seat_number: seatNo,
           }
         );
 
@@ -447,7 +457,7 @@ class TableService {
           .from('table_seats')
           .update({ left_at: new Date().toISOString() })
           .eq('table_id', tableId)
-          .eq('seat_number', seatNumber)
+          .eq('seat_number', seatNo)
           .eq('user_id', userId)
           .is('left_at', null);
       }

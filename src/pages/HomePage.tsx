@@ -684,6 +684,14 @@ function HomePageInner() {
       fetchSharkClubStats(true);
     }
 
+    // BUGFIX 2026-07-24: "active players" changes on table_seats (sit/leave), whose
+    // global realtime listener was intentionally removed for write-volume reasons.
+    // Without it the active count never moved. A lightweight 20s poll gives
+    // near-real-time active counts without re-introducing the table_seats firehose.
+    const sharkStatsPoll = setInterval(() => {
+      if (isMounted) fetchSharkClubStats(false);
+    }, 20000);
+
     // Real-time clubs table updates via MasterBus channel registry
     const sharkChannelKey = 'clubs-live-stats';
     const channel = masterBus.getOrCreateChannel(sharkChannelKey);
@@ -732,6 +740,7 @@ function HomePageInner() {
 
     return () => {
       isMounted = false;
+      clearInterval(sharkStatsPoll);
       unsubJoined();
       unsubLeft();
       masterBus.removeRegisteredChannel(sharkChannelKey);
@@ -1232,8 +1241,12 @@ function HomePageInner() {
     }
 
     fetchAllClubStats();
+    // BUGFIX 2026-07-24: near-real-time active counts for every visible club card
+    // via a 20s poll (the table_seats realtime listener was removed for write volume).
+    const allStatsPoll = setInterval(fetchAllClubStats, 20000);
     return () => {
       isMounted = false;
+      clearInterval(allStatsPoll);
     };
     // Fix 5: Removed statsRefreshKey from deps — was causing N×3 RPC cascade
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)

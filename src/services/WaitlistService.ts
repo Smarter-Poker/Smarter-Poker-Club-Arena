@@ -38,10 +38,17 @@ export interface WaitlistEntry {
   status: WaitlistStatus;
   createdAt: string;
   notifiedAt: string | null;
-  // Optional enrichment populated by getTableWaitlist / getUserWaitlists.
-  position?: number;
-  tableName?: string;
-  joinedAt?: string;
+  /**
+   * 1-based FIFO position among the *active* rows of the same table (1 = next up).
+   * 0 means the player is currently being offered a seat ('notified').
+   * Only the list readers (getTableWaitlist / getUserWaitlists) rank rows, so a
+   * single-row read (joinWaitlist) leaves this at 0 — use getPosition() there.
+   */
+  position: number;
+  /** Alias of createdAt in ISO form — the UI treats this as "waiting since". */
+  joinedAt: string;
+  /** Display name of the table, resolved by getUserWaitlists. '' when unresolved. */
+  tableName: string;
 }
 
 export interface WaitlistPosition {
@@ -61,14 +68,18 @@ function mapRow(row: {
   status: string;
   created_at: string;
   notified_at: string | null;
-}): WaitlistEntry {
+}, extras?: { position?: number; tableName?: string }): WaitlistEntry {
+  const status = (row.status as WaitlistStatus) ?? 'waiting';
   return {
     id: row.id,
     tableId: row.table_id,
     userId: row.user_id,
-    status: (row.status as WaitlistStatus) ?? 'waiting',
+    status,
     createdAt: row.created_at,
     notifiedAt: row.notified_at,
+    position: extras?.position ?? (status === 'notified' ? 0 : 0),
+    joinedAt: row.created_at,
+    tableName: extras?.tableName ?? '',
   };
 }
 
@@ -238,12 +249,14 @@ export const WaitlistService = {
     return (data ?? []).map((r) => mapRow(r as any));
   },
 
-  // ── Back-compat shims for existing consumers (TablePage, WaitlistPage) ──
-
-  /** Active waitlist entries for a table, oldest first, with 1-based position. */
-  async getTableWaitlist(
-    tableId: string
-  ): Promise<Array<WaitlistEntry & { position: number; joinedAt: string }>> {
+  /**
+   * Every ACTIVE entry on a table, oldest first, each ranked with its 1-based FIFO
+   * position. A 'notified' row (being offered a seat right now) ranks 0 and does
+   * not consume a position slot. Used by the table page to show who is waiting and
+   * to decide whether a horse should yield its seat.
+   */
+  async getTableWaitlist(tableId: string): Promise<WaitlistEntry[]> {
+    if (!tableId) return [];
     const { data, error } = await supabase
       .from('table_waitlists')
       .select('id, table_id, user_id, status, created_at, notified_at')
@@ -254,41 +267,110 @@ export const WaitlistService = {
       reportError(error, 'WaitlistService.getTableWaitlist', { tableId });
       return [];
     }
-    return (data ?? []).map((r, i) => {
-      const e = mapRow(r as any);
-      return { ...e, position: i + 1, joinedAt: e.createdAt };
+    let rank = 0;
+    return (data ?? []).map((r) => {
+      const row = r as any;
+      const notified = row.status === 'notified';
+      if (!notified) rank += 1;
+      return mapRow(row, { position: notified ? 0 : rank });
     });
   },
 
-  /** Current player's active waitlists, enriched with live position + table name. */
-  async getUserWaitlists(
-    _userId?: string
-  ): Promise<Array<WaitlistEntry & { position: number; tableName: string; joinedAt: string }>> {
-    const base = await this.myWaitlists();
-    return Promise.all(
-      base.map(async (e) => {
-        const pos = await this.getPosition(e.tableId);
-        const { data: t } = await supabase
-          .from('tables')
-          .select('name')
-          .eq('id', e.tableId)
-          .maybeSingle();
-        return {
-          ...e,
-          position: pos?.position ?? 0,
-          tableName: (t as { name?: string } | null)?.name || '',
-          joinedAt: e.createdAt,
-        };
+  /**
+   * All ACTIVE waitlist entries for a player, ranked and with the table's display
+   * name resolved, for the "My Waitlists" page. `userId` defaults to the signed-in
+   * user. Ranking needs the other players' rows, so this fetches every active row
+   * on each of the player's tables in one query and ranks locally — one round-trip
+   * for the ranking regardless of how many tables the player is queued at.
+   */
+  async getUserWaitlists(userId?: string): Promise<WaitlistEntry[]> {
+    const uid = userId ?? (await currentUserId());
+    if (!uid) return [];
+
+    const { data: mine, error: mineErr } = await supabase
+      .from('table_waitlists')
+      .select('id, table_id, user_id, status, created_at, notified_at')
+      .eq('user_id', uid)
+      .in('status', ACTIVE_STATES)
+      .order('created_at', { ascending: true });
+    if (mineErr) {
+      reportError(mineErr, 'WaitlistService.getUserWaitlists', { userId: uid });
+      return [];
+    }
+    const rows = (mine ?? []) as any[];
+    if (rows.length === 0) return [];
+
+    const tableIds = Array.from(new Set(rows.map((r) => r.table_id).filter(Boolean)));
+
+    // Peers on the same tables → local FIFO ranking.
+    const { data: peers, error: peersErr } = await supabase
+      .from('table_waitlists')
+      .select('id, table_id, status, created_at')
+      .in('table_id', tableIds)
+      .in('status', ACTIVE_STATES)
+      .order('created_at', { ascending: true });
+    if (peersErr) {
+      reportError(peersErr, 'WaitlistService.getUserWaitlists.peers', { userId: uid });
+    }
+    const rankById = new Map<string, number>();
+    const nextRank = new Map<string, number>();
+    for (const p of (peers ?? []) as any[]) {
+      if (p.status === 'notified') {
+        rankById.set(p.id, 0);
+        continue;
+      }
+      const r = (nextRank.get(p.table_id) ?? 0) + 1;
+      nextRank.set(p.table_id, r);
+      rankById.set(p.id, r);
+    }
+
+    // Table display names.
+    const nameById = new Map<string, string>();
+    const { data: tables, error: tablesErr } = await supabase
+      .from('tables')
+      .select('id, name')
+      .in('id', tableIds);
+    if (tablesErr) {
+      reportError(tablesErr, 'WaitlistService.getUserWaitlists.tables', { userId: uid });
+    }
+    for (const t of (tables ?? []) as any[]) {
+      if (t?.id) nameById.set(t.id, t.name ?? '');
+    }
+
+    return rows.map((r) =>
+      mapRow(r, {
+        position: rankById.get(r.id) ?? (r.status === 'notified' ? 0 : 1),
+        tableName: nameById.get(r.table_id) || 'Table',
       })
     );
   },
 
-  /** Leave a table waitlist; true if a row was removed. */
-  async leave(tableId: string, _userId?: string): Promise<boolean> {
-    return (await this.leaveWaitlist(tableId)) > 0;
+  /**
+   * Leave a table's waitlist. Boolean-returning wrapper over leaveWaitlist for the
+   * "My Waitlists" page, which only needs to know whether the row went away.
+   * `userId` is accepted for call-site symmetry; cancellation is always scoped to
+   * the signed-in user by RLS, so a mismatched id simply cancels nothing.
+   */
+  async leave(tableId: string, userId?: string): Promise<boolean> {
+    if (!tableId) return false;
+    const uid = userId ?? (await currentUserId());
+    if (!uid) return false;
+    const { data, error } = await supabase
+      .from('table_waitlists')
+      .update({ status: 'cancelled' })
+      .eq('table_id', tableId)
+      .eq('user_id', uid)
+      .in('status', ACTIVE_STATES)
+      .select('id');
+    if (error) {
+      reportError(error, 'WaitlistService.leave', { tableId, userId: uid });
+      return false;
+    }
+    return (data?.length ?? 0) > 0;
   },
 };
 
+// Lowercase alias — TablePage imports { waitlistService }
 export const waitlistService = WaitlistService;
 
 export default WaitlistService;

@@ -1,4 +1,5 @@
-import { reportError } from '../services/errorReporter.js';
+import { randomInt as nodeRandomInt, randomFillSync } from 'node:crypto';
+
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -6,8 +7,8 @@ import { reportError } from '../services/errorReporter.js';
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Provides a secure replacement for Math.random() using crypto.getRandomValues()
- * (browser) or crypto.randomInt (Node.js). Falls back to Math.random() only
- * when no crypto API is available.
+ * where available, falling back to node:crypto. There is no Math.random() path:
+ * a runtime with neither is a runtime this engine must not deal cards on.
  *
  * Ported from client: src/engine/CryptoRandom.ts (93 lines — identical logic)
  * Server adaptation: None needed — already works in Node.js.
@@ -40,23 +41,17 @@ export function secureRandomInt(exclusiveMax: number): number {
     return value % exclusiveMax;
   }
 
-  // Node.js: use globalThis.crypto if available (Node 19+)
-  if (typeof globalThis !== 'undefined' && (globalThis as any).crypto?.randomInt) {
-    return (globalThis as any).crypto.randomInt(exclusiveMax);
-  }
-
-  // Fallback: Math.random() (non-crypto, log warning once)
-  if (!_warnedFallback) {
-    _warnedFallback = true;
-    reportError(
-      new Error('[CryptoRandom] No crypto API available — falling back to Math.random()'),
-      'CryptoRandom.No_crypto_API_available__falli'
-    );
-  }
-  return Math.floor(Math.random() * exclusiveMax);
+  // Dan 2026-07-28 (engine audit D23): this branch used to test
+  // `globalThis.crypto?.randomInt`. `globalThis.crypto` is the WebCrypto object,
+  // and WebCrypto has no `randomInt` — that method only exists on Node's own
+  // `node:crypto` module. So the condition was ALWAYS false and this was never a
+  // fallback at all: any runtime that reached here went straight to Math.random()
+  // for every shuffle in the process. It only stayed invisible because Node 19+
+  // exposes getRandomValues and satisfies the branch above.
+  //
+  // node:crypto.randomInt is itself rejection-sampled, so this path is uniform.
+  return nodeRandomInt(exclusiveMax);
 }
-
-let _warnedFallback = false;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONVENIENCE: Secure random float in [0, 1)
@@ -73,11 +68,12 @@ export function secureRandom(): number {
     return array[0] / 0x100000000;
   }
 
-  if (typeof globalThis !== 'undefined' && (globalThis as any).crypto?.randomInt) {
-    return (globalThis as any).crypto.randomInt(0x100000000) / 0x100000000;
-  }
-
-  return Math.random();
+  // Same defect as secureRandomInt: the old `globalThis.crypto.randomInt` test
+  // could never be true, so this silently degraded to Math.random(). Draw the
+  // bytes from node:crypto instead.
+  const buf = new Uint32Array(1);
+  randomFillSync(buf);
+  return buf[0] / 0x100000000;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

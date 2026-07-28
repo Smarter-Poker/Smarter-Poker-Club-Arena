@@ -1519,15 +1519,20 @@ export class TournamentManager {
           ];
 
           const SPIN_MULTIPLIERS = tournament.spin_type === 'hyper' ? SPIN_HYPER : SPIN_STANDARD;
+          // Dan 2026-07-28 (engine audit A8): crypto-grade draw, matching
+          // TournamentRecurringService.rollSpinMultiplier. Was Math.random(), on
+          // a code path that sets a real prize multiplier. `r < weight` on a
+          // descending remainder also stops a zero-weight tier from winning on
+          // an exact boundary, which `roll -= w; if (roll <= 0)` allowed.
           const totalWeight = SPIN_MULTIPLIERS.reduce((s, m) => s + m.weight, 0);
-          let roll = Math.random() * totalWeight;
-          spinMultiplier = 2;
+          let roll = nodeCrypto.randomInt(totalWeight);
+          spinMultiplier = SPIN_MULTIPLIERS[SPIN_MULTIPLIERS.length - 1].multiplier;
           for (const tier of SPIN_MULTIPLIERS) {
-            roll -= tier.weight;
-            if (roll <= 0) {
+            if (roll < tier.weight) {
               spinMultiplier = tier.multiplier;
               break;
             }
+            roll -= tier.weight;
           }
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Spin multiplier was missing — rolled ${spinMultiplier}x as fallback`

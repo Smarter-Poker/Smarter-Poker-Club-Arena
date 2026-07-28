@@ -13,6 +13,7 @@
  * ZERO browser dependency — this is the SERVER version.
  */
 
+import { secureRandomInt } from '../engine/CryptoRandom.js';
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 
@@ -1364,13 +1365,31 @@ export class TournamentRecurringService {
     }
   }
 
+  /**
+   * Dan 2026-07-28 (engine audit A8): this decided a REAL prize multiplier — the
+   * 240x tier is a 0.01% jackpot paid in actual money — with Math.random(), a
+   * predictable PRNG, while the engine already ships a CSPRNG. V8's xorshift128+
+   * state is recoverable from a modest run of observed outputs, so a player who
+   * could watch enough spins could in principle know which lobby was about to
+   * deal a jackpot before entering it.
+   *
+   * Two changes:
+   *   - the draw is now `secureRandomInt`, which is rejection-sampled and so
+   *     exactly uniform over the integer weight space (the weights are integers
+   *     summing to 1,000,000, so no float arithmetic is involved at all);
+   *   - the comparison is `r < weight` on a descending remainder rather than
+   *     `random -= weight; if (random <= 0)`. The old form let a ZERO-weight tier
+   *     win: once the remainder landed exactly on a boundary, `0 <= 0` returned
+   *     the next tier in the list even if its weight was 0.
+   */
   private rollSpinMultiplier(multipliers: Array<{ multiplier: number; weight: number }>): number {
     const totalWeight = multipliers.reduce((sum, m) => sum + m.weight, 0);
-    let random = Math.random() * totalWeight;
+    if (!(totalWeight > 0)) return multipliers[0]?.multiplier ?? 2;
 
+    let r = secureRandomInt(totalWeight);
     for (const { multiplier, weight } of multipliers) {
-      random -= weight;
-      if (random <= 0) return multiplier;
+      if (r < weight) return multiplier;
+      r -= weight;
     }
 
     return multipliers[multipliers.length - 1].multiplier;

@@ -410,7 +410,15 @@ export const SeatSlot = memo(
         if (player.status === 'active' || player.status === 'all_in') {
           cls.push('seat--in-hand');
         }
-        if (lastAction === 'fold') cls.push('seat--folded');
+        // Dan ("once a player is out of the hand, they should be dimmed").
+        // Two independent sources say "folded" and they arrive at different
+        // times: `lastAction` flips the instant the fold is dispatched, while
+        // `player.status` only becomes 'folded' once mapEngineSnapshot sees
+        // is_folded on the next server snapshot. Honour whichever lands first
+        // so there is no bright frame in between — but note status === 'folded'
+        // ALSO emits seat--folded via the seat--${status} push above, so guard
+        // against pushing the class twice.
+        if (lastAction === 'fold' && player.status !== 'folded') cls.push('seat--folded');
         if (allinShake) cls.push('seat--allin-shake');
         if (stackGlow) cls.push('seat--stack-glow');
         // Timer urgency classes for color transitions

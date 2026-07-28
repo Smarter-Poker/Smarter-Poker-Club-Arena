@@ -136,6 +136,17 @@
   border-radius: var(--radius-circle);
   overflow: hidden;
   position: relative;
+  /* Dan 2026-07-28: the acting player's avatar was rendering as a solid black
+     disc. `.seat--active .seat__avatar-wrap::after` is the inner mask that
+     punches the middle out of the conic countdown ring, and it sits at
+     z-index: 1. This element was `position: relative` with `z-index: auto`,
+     which paints it BELOW any positioned sibling that declares a z-index — so
+     the mask covered the photo entirely and the countdown ring read as a
+     filled circle instead of a ring. Lifting the avatar to z-index: 2 puts it
+     above both `::before` (the ring) and `::after` (the mask) while leaving
+     the ring visible in the 4px it extends past the avatar edge. Kept below
+     `.seat__circular-timer` (z-index: 3) so the SVG arc still draws on top. */
+  z-index: 2;
   border: 2.5px solid rgba(255, 255, 255, 0.15);
   background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1e 100%);
   box-shadow:
@@ -345,7 +356,16 @@
   border-radius: var(--radius-md);
   border: 1.5px solid var(--seat-border, rgba(255, 255, 255, 0.08));
   min-width: 72px;
-  max-width: 90px;
+  /* Dan 2026-07-28: was a fixed `max-width: 90px`, which was never reduced at
+     the three mobile breakpoints. On a phone the seat is only 58–66px wide, so
+     a longer player name grew this box up to 90px — 10px wider than the seat on
+     each side. The hero hole-card row is anchored at `left: calc(100% + gap)`
+     of the SEAT, so an over-wide box slid straight under the cards: this is the
+     "PLO cards are overlapping the hero's box" report. Capping at 100% ties the
+     box to the seat width at every breakpoint, which makes the card row's
+     anchor correct by construction instead of by hand-tuned luck. The name
+     already has overflow:hidden + text-overflow:ellipsis, so it just truncates. */
+  max-width: 100%;
   z-index: 1;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -909,7 +929,27 @@
      (the 50% is of the ROW's own height, so PLO4/5/6 self-adjust). */
   position: absolute;
   --sp-hero-box-half: 21px; /* half of .seat__info height at this breakpoint */
-  left: calc(100% + 8px);
+
+  /* Dan 2026-07-28 ("make all the PLO cards lined up and neater"): the row is
+     now driven by three tokens instead of six competing width/margin rules.
+       --sp-hero-card-w / -h  card size
+       --sp-hero-card-step    visible slice of every card after the first
+     Row width is therefore exactly  w + (n - 1) * step , so each hand size can
+     be tuned to land on the SAME total width. Only the tokens are overridden
+     per hand size and per breakpoint — never the .seat__card rule itself — so
+     the old specificity trap (desktop `:has()` pixel values out-specifying the
+     mobile plain rule and rendering PLO cards LARGER on a phone) is gone.
+
+     Previously PLO4 had no `:has()` guard at all, so a 4-card hand fell through
+     to the base 44px/-12px pair spacing and produced a 140px row — WIDER than
+     both PLO5 and PLO6, and wide enough to run off the felt. That is the other
+     half of the "messy / overlapping" report. */
+  --sp-hero-card-w: 44px;
+  --sp-hero-card-h: 62px;
+  --sp-hero-card-step: 32px;
+  --sp-hero-gap: 8px;
+
+  left: calc(100% + var(--sp-hero-gap));
   top: auto;
   bottom: var(--sp-hero-box-half);
   transform: translateY(50%);
@@ -960,11 +1000,13 @@
  * not emit an inline transform for hero cards; an inline style would beat
  * `transform: none` below and put the fan straight back. */
 .seat__cards--hero .seat__card {
-  width: 44px;
-  height: 62px;
+  width: var(--sp-hero-card-w);
+  height: var(--sp-hero-card-h);
   border-radius: 6px;
   background: #fff;
-  margin-left: -12px; /* small consistent overlap, no fan */
+  /* Even, consistent slice for every card after the first; no fan. */
+  margin-left: calc(var(--sp-hero-card-step) - var(--sp-hero-card-w));
+  flex: 0 0 auto;
   transform: none;
   animation: heroCardPeek 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) backwards;
   transform-style: preserve-3d;
@@ -1009,24 +1051,27 @@
   animation-delay: 0.85s;
 }
 
-/* PLO5 / PLO6 — the lined-up row must not run off the right edge of the felt.
-   Hold the same neat, evenly-overlapped look but tighten step + card size as
-   the hand grows, so 4, 5 and 6 cards all occupy roughly the same width. */
-.seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card {
-  width: 40px;
-  height: 56px;
-  margin-left: -20px;
+/* PLO4 / PLO5 / PLO6 — the lined-up row must not run off the right edge of the
+   felt, which on the 341:609 portrait table is much closer than it was on the
+   old landscape one. Each guard only retunes the three tokens, so all four hand
+   sizes resolve to ~the same total row width:
+     PLO4  40 + 3 x 23 = 109px
+     PLO5  38 + 4 x 18 = 110px
+     PLO6  36 + 5 x 15 = 111px */
+.seat__cards--hero:has(.seat__card:nth-child(4)) {
+  --sp-hero-card-w: 40px;
+  --sp-hero-card-h: 56px;
+  --sp-hero-card-step: 23px;
 }
-.seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card:first-child {
-  margin-left: 0;
+.seat__cards--hero:has(.seat__card:nth-child(5)) {
+  --sp-hero-card-w: 38px;
+  --sp-hero-card-h: 53px;
+  --sp-hero-card-step: 18px;
 }
-.seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card {
-  width: 37px;
-  height: 52px;
-  margin-left: -20px;
-}
-.seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card:first-child {
-  margin-left: 0;
+.seat__cards--hero:has(.seat__card:nth-child(6)) {
+  --sp-hero-card-w: 36px;
+  --sp-hero-card-h: 50px;
+  --sp-hero-card-step: 15px;
 }
 
 .seat__cards--hero .seat__card--face {
@@ -1798,39 +1843,36 @@
     width: 32px;
     height: 44px;
   }
-  .seat__cards--hero .seat__card {
-    width: 42px;
-    height: 58px;
-  }
+  /* tablet — right of the name/chip box, centred on that box (see base rule).
+     Token-only overrides: never restate width/height/margin on .seat__card, or
+     the hard-coded value would beat the tokens the :has() guards below set. */
   .seat__cards--hero {
-    /* tablet — right of the name/chip box, centred on that box (see base rule) */
     --sp-hero-box-half: 19px;
-    left: calc(100% + 8px);
+    --sp-hero-card-w: 42px;
+    --sp-hero-card-h: 58px;
+    --sp-hero-card-step: 30px;
+    --sp-hero-gap: 8px;
     top: auto;
     right: auto;
     bottom: var(--sp-hero-box-half);
     transform: translateY(50%);
   }
 
-  /* PLO5 / PLO6 at the tablet breakpoint. The base :has() guards higher up carry
-     desktop pixel values and out-specify the plain .seat__card size rule here, so
-     without these the big-hand cards would render LARGER than the NLH ones on a
-     small screen. Same neat lined-up row, scaled to this breakpoint. */
-  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card {
-    width: 38px;
-    height: 53px;
-    margin-left: -19px;
+  /* PLO4/5/6 at the tablet breakpoint — all land on a ~104px row. */
+  .seat__cards--hero:has(.seat__card:nth-child(4)) {
+    --sp-hero-card-w: 38px;
+    --sp-hero-card-h: 53px;
+    --sp-hero-card-step: 22px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card:first-child {
-    margin-left: 0;
+  .seat__cards--hero:has(.seat__card:nth-child(5)) {
+    --sp-hero-card-w: 36px;
+    --sp-hero-card-h: 50px;
+    --sp-hero-card-step: 17px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card {
-    width: 35px;
-    height: 49px;
-    margin-left: -19px;
-  }
-  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card:first-child {
-    margin-left: 0;
+  .seat__cards--hero:has(.seat__card:nth-child(6)) {
+    --sp-hero-card-w: 34px;
+    --sp-hero-card-h: 47px;
+    --sp-hero-card-step: 14px;
   }
 
   .seat__position-chip {
@@ -1895,39 +1937,37 @@
     width: 28px;
     height: 40px;
   }
-  .seat__cards--hero .seat__card {
-    width: 36px;
-    height: 50px;
-  }
+  /* phone — right of the name/chip box, centred on that box (see base rule).
+     On a 375px viewport the scaler is capped at 320px wide and the 66px hero
+     seat is centred, so the row starts ~200px in and has ~100px of felt to the
+     right of it. Every hand size below is tuned to that 100px budget. */
   .seat__cards--hero {
-    /* phone — right of the name/chip box, centred on that box (see base rule) */
     --sp-hero-box-half: 17px;
-    left: calc(100% + 7px);
+    --sp-hero-card-w: 36px;
+    --sp-hero-card-h: 50px;
+    --sp-hero-card-step: 26px;
+    --sp-hero-gap: 7px;
     top: auto;
     right: auto;
     bottom: var(--sp-hero-box-half);
     transform: translateY(50%);
   }
 
-  /* PLO5 / PLO6 at the phone breakpoint. The base :has() guards higher up carry
-     desktop pixel values and out-specify the plain .seat__card size rule here, so
-     without these the big-hand cards would render LARGER than the NLH ones on a
-     small screen. Same neat lined-up row, scaled to this breakpoint. */
-  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card {
-    width: 33px;
-    height: 46px;
-    margin-left: -17px;
+  /* PLO4/5/6 at the phone breakpoint — all land on a 100px row. */
+  .seat__cards--hero:has(.seat__card:nth-child(4)) {
+    --sp-hero-card-w: 34px;
+    --sp-hero-card-h: 47px;
+    --sp-hero-card-step: 22px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card:first-child {
-    margin-left: 0;
+  .seat__cards--hero:has(.seat__card:nth-child(5)) {
+    --sp-hero-card-w: 32px;
+    --sp-hero-card-h: 45px;
+    --sp-hero-card-step: 17px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card {
-    width: 30px;
-    height: 42px;
-    margin-left: -17px;
-  }
-  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card:first-child {
-    margin-left: 0;
+  .seat__cards--hero:has(.seat__card:nth-child(6)) {
+    --sp-hero-card-w: 30px;
+    --sp-hero-card-h: 42px;
+    --sp-hero-card-step: 14px;
   }
 
   .seat__position-chip {
@@ -1988,39 +2028,35 @@
     width: 26px;
     height: 36px;
   }
-  .seat__cards--hero .seat__card {
-    width: 32px;
-    height: 44px;
-  }
+  /* small phone — right of the name/chip box, centred on it (see base rule).
+     Tightest budget of the four breakpoints: ~90px of felt to the right. */
   .seat__cards--hero {
-    /* small phone — right of the name/chip box, centred on it (see base rule) */
     --sp-hero-box-half: 15px;
-    left: calc(100% + 6px);
+    --sp-hero-card-w: 32px;
+    --sp-hero-card-h: 44px;
+    --sp-hero-card-step: 23px;
+    --sp-hero-gap: 6px;
     top: auto;
     right: auto;
     bottom: var(--sp-hero-box-half);
     transform: translateY(50%);
   }
 
-  /* PLO5 / PLO6 at the small phone breakpoint. The base :has() guards higher up carry
-     desktop pixel values and out-specify the plain .seat__card size rule here, so
-     without these the big-hand cards would render LARGER than the NLH ones on a
-     small screen. Same neat lined-up row, scaled to this breakpoint. */
-  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card {
-    width: 29px;
-    height: 40px;
-    margin-left: -15px;
+  /* PLO4/5/6 at the small phone breakpoint — all land on a ~90px row. */
+  .seat__cards--hero:has(.seat__card:nth-child(4)) {
+    --sp-hero-card-w: 30px;
+    --sp-hero-card-h: 42px;
+    --sp-hero-card-step: 20px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(5)) .seat__card:first-child {
-    margin-left: 0;
+  .seat__cards--hero:has(.seat__card:nth-child(5)) {
+    --sp-hero-card-w: 28px;
+    --sp-hero-card-h: 39px;
+    --sp-hero-card-step: 16px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card {
-    width: 27px;
-    height: 37px;
-    margin-left: -15px;
-  }
-  .seat__cards--hero:has(.seat__card:nth-child(6)) .seat__card:first-child {
-    margin-left: 0;
+  .seat__cards--hero:has(.seat__card:nth-child(6)) {
+    --sp-hero-card-w: 26px;
+    --sp-hero-card-h: 36px;
+    --sp-hero-card-step: 13px;
   }
 
   .seat__position-chip {

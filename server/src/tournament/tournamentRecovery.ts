@@ -78,6 +78,14 @@ export async function refundAndCloseCancelledTournament(
         const { error: refErr } = await supabase.rpc('credit_player_wallet', {
           p_user_id: row.user_id,
           p_amount: refundAmount,
+          // A3 FIX (2026-07-28): `refundAndCloseCancelledTournament` is driven by
+          // `cleanupStaleData`, which runs on EVERY boot, and the status flip to
+          // CANCELLED is a single batch UPDATE that only happens after this loop
+          // finishes - so a crash mid-loop (or a failure of that final UPDATE)
+          // re-refunded every already-refunded row on the next boot. Keyed on the
+          // tournament_players row id, in the SAME format used by the startup
+          // pre-start sweep and the SNG lifecycle sweep, so all three dedupe.
+          p_idempotency_key: `tourney:${tournamentId}:cancelrefund:${row.id}`,
         });
         if (refErr) {
           reportError(

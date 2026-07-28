@@ -1,0 +1,272 @@
+/**
+ * Tournament cancellation + stuck-COMPLETING recovery helpers.
+ *
+ * Split out of the 4,096-line `src/GameServer.ts` monolith on 2026-07-28
+ * (engine audit D21 — god-class decomposition). Behavior is preserved
+ * line-for-line: the only edits are module boundaries, `private` widened to
+ * `protected` where a member is reached across the split, and `abstract`
+ * declarations for the hooks each layer calls on the layer below.
+ */
+
+import { supabase } from '../services/supabase.js';
+import { reportError } from '../services/errorReporter.js';
+
+
+/**
+ * TOURNEY-AUDIT 2026-07-24: Recover tournaments stuck in COMPLETING by PAYING
+ * everything still owed, then completing. The previous recovery blind-flipped
+ * COMPLETING → COMPLETED, permanently losing the winner's prize (and any
+ * unpaid ITM places) whenever the process died between the COMPLETING claim
+ * and the winner credit. Verified live: a COMPLETED bounty MTT with 8 players
+ * stranded in 'playing' and only $40 of a $100 guaranteed pool ever paid.
+ *
+ * Recovery, per stuck tournament (idempotent — safe to re-run):
+ *   1. Load tournament + players. Normalize the payout structure to 100%.
+ *   2. Any still-'playing'/'registered' players are ranked by chip count and
+ *      assigned the top remaining positions (1..N). Position 1 becomes the
+ *      winner. Each gets their payout-structure prize credited + logged.
+ *   3. Any already-eliminated ITM player whose recorded prize is 0 but whose
+ *      position pays is topped up (covers busts recorded before the pool
+ *      reached its final/guaranteed size).
+ *   4. Tournament flips COMPLETING → COMPLETED (CAS-guarded).
+ */
+/**
+ * TOURNEY-AUDIT 2026-07-24 (sweep 4): shared cleanup for every server-side
+ * tournament CANCELLATION path (restart-orphaned SNG/Spins, >12h stale MTTs).
+ * Verified live after sweep 3: cancels left tournament_players rows stranded
+ * in 'playing'/'registered' forever (64 new stranded rows within an hour) and
+ * left tournament tables open. This helper:
+ *   1. Refunds every REAL (non-horse) entrant who hasn't already been paid a
+ *      prize: full buy-in + fee, with a fee-reversal row in the rake ledger.
+ *   2. Closes all tournament_players rows (playing/registered → eliminated).
+ *   3. Closes the tournament's tables.
+ * Idempotent: refunds key off rows still open at call time; re-running after
+ * step 2 finds nothing left to refund.
+ */
+export async function refundAndCloseCancelledTournament(
+  tournamentId: string,
+  tournamentName: string | null,
+  refundReason: string
+): Promise<void> {
+  try {
+    const { data: fullT } = await supabase
+      .from('tournaments')
+      .select('buy_in_amount, buy_in_fee, club_id, name')
+      .eq('id', tournamentId)
+      .maybeSingle();
+    const refundAmount = Number(fullT?.buy_in_amount || 0) + Number(fullT?.buy_in_fee || 0);
+    const fee = Number(fullT?.buy_in_fee || 0);
+
+    // Open rows = not yet eliminated/paid. Only these are refund candidates.
+    const { data: openRows } = await supabase
+      .from('tournament_players')
+      .select('id, user_id, prize')
+      .eq('tournament_id', tournamentId)
+      .in('status', ['playing', 'registered']);
+
+    if (refundAmount > 0 && (openRows?.length ?? 0) > 0) {
+      const ids = (openRows ?? []).map((r) => r.user_id);
+      const { data: horseRows } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('id', ids)
+        .eq('is_horse', true);
+      const horseSet = new Set((horseRows ?? []).map((h) => h.id));
+      for (const row of openRows ?? []) {
+        if (horseSet.has(row.user_id)) continue; // horses paid nothing
+        if (Number(row.prize || 0) > 0) continue; // already paid a prize — no refund on top
+        const { error: refErr } = await supabase.rpc('credit_player_wallet', {
+          p_user_id: row.user_id,
+          p_amount: refundAmount,
+        });
+        if (refErr) {
+          reportError(
+            new Error(
+              `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refErr.message}`
+            ),
+            'GameServer.cancel_refund_failed'
+          );
+          continue;
+        }
+        await supabase.rpc('log_wallet_transaction', {
+          p_user_id: row.user_id,
+          p_wallet_type: 'PLAYER',
+          p_amount: refundAmount,
+          p_type: 'credit',
+          p_category: 'refund',
+          p_description: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
+          p_table_id: null,
+          p_hand_id: null,
+          p_related_entity_id: tournamentId,
+        });
+        if (fee > 0 && fullT?.club_id) {
+          await supabase.from('rake_records').insert({
+            hand_id: null,
+            table_id: tournamentId,
+            club_id: fullT.club_id,
+            rake_amount: -fee,
+            pot_size: fee,
+            num_players: 1,
+            bbj_contribution: 0,
+            is_tournament: true,
+            tournament_id: tournamentId,
+            source: 'GameServer.cancel_refund',
+            metadata: { kind: 'tournament_fee_refund', user_id: row.user_id },
+          });
+        }
+      }
+    }
+
+    // Close the player rows so nothing is stranded in 'playing'/'registered'
+    await supabase
+      .from('tournament_players')
+      .update({ status: 'eliminated', eliminated_at: new Date().toISOString() })
+      .eq('tournament_id', tournamentId)
+      .in('status', ['playing', 'registered']);
+
+    // Close the tournament's tables
+    await supabase
+      .from('tables')
+      .update({ status: 'closed', current_players: 0 })
+      .eq('tournament_id', tournamentId)
+      .neq('status', 'closed');
+  } catch (err) {
+    reportError(err, 'GameServer.refundAndCloseCancelledTournament');
+  }
+}
+
+export async function recoverStuckCompletingTournaments(
+  reason: string,
+  onlyTournamentId?: string
+): Promise<void> {
+  try {
+    let q = supabase
+      .from('tournaments')
+      .select('id, name, prize_pool, payout_structure')
+      .eq('status', 'COMPLETING');
+    if (onlyTournamentId) q = q.eq('id', onlyTournamentId);
+    const { data: stuck } = await q;
+    for (const t of stuck ?? []) {
+      try {
+        // Parse + normalize payout structure
+        let payouts: Array<{ place: number; percentage: number }> = [];
+        try {
+          const raw =
+            typeof t.payout_structure === 'string'
+              ? JSON.parse(t.payout_structure)
+              : t.payout_structure;
+          if (Array.isArray(raw)) payouts = raw;
+        } catch {
+          payouts = [];
+        }
+        const pctSum = payouts.reduce((s, p) => s + Number(p.percentage || 0), 0);
+        const norm = pctSum > 0 ? 100 / pctSum : 0;
+        const prizeFor = (place: number): number => {
+          const entry = payouts.find((p) => p.place === place);
+          if (!entry || norm === 0) return 0;
+          return (
+            Math.round(
+              ((Number(t.prize_pool || 0) * Number(entry.percentage) * norm) / 100) * 100
+            ) / 100
+          );
+        };
+
+        const { data: players } = await supabase
+          .from('tournament_players')
+          .select('id, user_id, status, position, prize, chips')
+          .eq('tournament_id', t.id);
+        const rows = players ?? [];
+
+        const credit = async (
+          userId: string,
+          amount: number,
+          desc: string,
+          idempotencyKey: string
+        ) => {
+          if (amount <= 0) return;
+          // P1 FIX (2026-07-24): idempotency key in the SAME format the main
+          // elimination-prize path uses (`tourney:{id}:prize:{user}:{position}`)
+          // so this recovery path and the main path dedupe against each other and
+          // repeated recovery scans of a COMPLETING tournament cannot double-pay.
+          const { error } = await supabase.rpc('credit_player_wallet', {
+            p_user_id: userId,
+            p_amount: amount,
+            p_idempotency_key: idempotencyKey,
+          });
+          if (error) throw new Error(`credit failed for ${userId}: ${error.message}`);
+          await supabase.rpc('log_wallet_transaction', {
+            p_user_id: userId,
+            p_wallet_type: 'PLAYER',
+            p_amount: amount,
+            p_type: 'credit',
+            p_category: 'prize',
+            p_description: desc,
+            p_table_id: null,
+            p_hand_id: null,
+            p_related_entity_id: t.id,
+          });
+        };
+
+        // 2. Rank the still-alive players by chips and pay their places
+        const alive = rows
+          .filter((r) => r.status === 'playing' || r.status === 'registered')
+          .sort((a, b) => Number(b.chips || 0) - Number(a.chips || 0));
+        for (let i = 0; i < alive.length; i++) {
+          const place = i + 1;
+          const prize = prizeFor(place);
+          await credit(
+            alive[i].user_id,
+            prize,
+            `Tournament prize (recovery): position ${place} — ${t.name || 'tournament'}`,
+            `tourney:${t.id}:prize:${alive[i].user_id}:${place}`
+          );
+          await supabase
+            .from('tournament_players')
+            .update({
+              status: place === 1 ? 'winner' : 'eliminated',
+              position: place,
+              prize,
+              eliminated_at: place === 1 ? null : new Date().toISOString(),
+            })
+            .eq('id', alive[i].id);
+        }
+
+        // 3. Top up already-eliminated ITM players recorded with a zero prize
+        for (const r of rows) {
+          if (r.status !== 'eliminated' || !r.position) continue;
+          const owed = prizeFor(r.position);
+          const recorded = Number(r.prize || 0);
+          if (owed > recorded) {
+            const diff = Math.round((owed - recorded) * 100) / 100;
+            await credit(
+              r.user_id,
+              diff,
+              `Tournament prize top-up (recovery): position ${r.position} — ${t.name || 'tournament'}`,
+              `tourney:${t.id}:prize:${r.user_id}:${r.position}`
+            );
+            await supabase.from('tournament_players').update({ prize: owed }).eq('id', r.id);
+          }
+        }
+
+        // 4. Complete (CAS-guarded)
+        await supabase
+          .from('tournaments')
+          .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
+          .eq('id', t.id)
+          .eq('status', 'COMPLETING');
+        await supabase
+          .from('tables')
+          .update({ status: 'closed' })
+          .eq('tournament_id', t.id)
+          .neq('status', 'closed');
+        console.log(
+          `[GameServer] Recovered stuck COMPLETING tournament ${t.id.slice(0, 8)} "${t.name}" (${reason}): paid ${alive.length} remaining player(s)`
+        );
+      } catch (err) {
+        reportError(err, 'GameServer.recoverStuckCompleting_per_tournament');
+      }
+    }
+  } catch (err) {
+    reportError(err, 'GameServer.recoverStuckCompleting');
+  }
+}

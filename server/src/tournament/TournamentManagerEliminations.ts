@@ -630,6 +630,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
         p_user_id: knockerUserId,
         p_amount: amount,
+        // A3 FIX (2026-07-28): this credit sits inside a 3x retry loop and the
+        // `tournament_bounties` dedupe INSERT only happens AFTER it succeeds, so
+        // a committed-but-timed-out credit was paid again on the next attempt
+        // (2-3x bounty mint). One bounty per (eliminated, knocker) pair per
+        // tournament, so that tuple is the natural idempotency key.
+        p_idempotency_key: `tourney:${this.tournamentId}:bounty:${eliminatedUserId}:${knockerUserId}`,
       });
       if (!creditErr) {
         creditSuccess = true;
@@ -718,6 +724,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
           p_user_id: player.user_id,
           p_amount: difference,
+          // A3 FIX (2026-07-28): the self-healing `prize` write below only runs
+          // when the credit succeeds, so a committed-but-timed-out credit leaves
+          // the old prize recorded and the next recalc pass credits the same
+          // difference again. Key on the exact adjustment being made (distinct
+          // `prizeadj` namespace so it never collides with the position prize).
+          p_idempotency_key: `tourney:${this.tournamentId}:prizeadj:${player.user_id}:${player.position}:${correctPrize}`,
         });
 
         if (!creditErr) {
@@ -850,6 +862,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
           p_user_id: winnerId,
           p_amount: winnerPrize,
+          // A3 FIX (2026-07-28): closes TWO double-pay drivers at once.
+          // (a) the 3x retry loop around this call, and (b) the stuck-COMPLETING
+          // watchdog (`recoverStuckCompletingTournaments`) which pays place 1
+          // under exactly `tourney:{id}:prize:{user}:1` - a key this path never
+          // wrote, so the winner could be paid twice across the two paths.
+          // Using the identical format makes them dedupe against each other.
+          p_idempotency_key: `tourney:${this.tournamentId}:prize:${winnerId}:1`,
         });
         if (!creditErr) {
           creditSuccess = true;
@@ -936,6 +955,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           const { error: obErr } = await supabase.rpc('credit_player_wallet', {
             p_user_id: winnerId,
             p_amount: ownBounty,
+            // A3 FIX (2026-07-28): defence in depth. This path is currently
+            // single-shot (guarded by the RUNNING -> COMPLETING CAS), but the
+            // bounty head is only zeroed after the credit, so any future retry
+            // or a concurrent finish would re-pay it. Key is one-per-tournament.
+            p_idempotency_key: `tourney:${this.tournamentId}:ownbounty:${winnerId}`,
           });
           if (obErr) {
             reportError(

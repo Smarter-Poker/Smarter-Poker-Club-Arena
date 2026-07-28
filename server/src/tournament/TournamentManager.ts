@@ -351,11 +351,23 @@ export class TournamentManager extends TournamentManagerEliminations {
     const awardCount = Math.min(seats, ranked.length);
     const remainder = Math.round((pool - awardCount * ticketCost) * 100) / 100;
 
-    const payCash = async (userId: string, amount: number, desc: string) => {
+    // A3 FIX (2026-07-28): satellite cash payouts are re-driveable. Errors are
+    // swallowed by the caller, which leaves the tournament stuck in COMPLETING;
+    // the watchdog (`recoverStuckCompletingTournaments`) then re-pays finishers
+    // under `tourney:{id}:prize:{user}:{position}` - keys this path never wrote.
+    // Every payCash call site now supplies a key, and the position-prize sites
+    // use the watchdog's exact format so the two paths dedupe against each other.
+    const payCash = async (
+      userId: string,
+      amount: number,
+      desc: string,
+      idempotencyKey: string
+    ) => {
       if (amount <= 0) return;
       const { error } = await supabase.rpc('credit_player_wallet', {
         p_user_id: userId,
         p_amount: amount,
+        p_idempotency_key: idempotencyKey,
       });
       if (error) {
         reportError(
@@ -384,7 +396,8 @@ export class TournamentManager extends TournamentManagerEliminations {
       await payCash(
         ranked[0].user_id,
         pool,
-        `Satellite payout (no target seats available): ${tournament?.name || 'satellite'}`
+        `Satellite payout (no target seats available): ${tournament?.name || 'satellite'}`,
+        `tourney:${this.tournamentId}:prize:${ranked[0].user_id}:${ranked[0].position}`
       );
       await supabase
         .from('tournament_players')
@@ -410,7 +423,8 @@ export class TournamentManager extends TournamentManagerEliminations {
           await payCash(
             w.user_id,
             ticketCost,
-            `Satellite seat fallback (registration failed): ${target.name || 'target'}`
+            `Satellite seat fallback (registration failed): ${target.name || 'target'}`,
+            `tourney:${this.tournamentId}:prize:${w.user_id}:${w.position}`
           );
         } else {
           console.log(
@@ -422,7 +436,8 @@ export class TournamentManager extends TournamentManagerEliminations {
         await payCash(
           w.user_id,
           ticketCost,
-          `Satellite ticket cashed (target unavailable): ${tournament?.name || 'satellite'}`
+          `Satellite ticket cashed (target unavailable): ${tournament?.name || 'satellite'}`,
+          `tourney:${this.tournamentId}:prize:${w.user_id}:${w.position}`
         );
       }
       await supabase
@@ -438,7 +453,12 @@ export class TournamentManager extends TournamentManagerEliminations {
       await payCash(
         nextFinisher.user_id,
         remainder,
-        `Satellite remainder payout: ${tournament?.name || 'satellite'}`
+        `Satellite remainder payout: ${tournament?.name || 'satellite'}`,
+        // Deliberately a DIFFERENT namespace from the position prize above:
+        // `nextFinisher` falls back to `ranked[awardCount - 1]`, who may already
+        // have been paid under `prize:{user}:{position}`. Reusing that key would
+        // silently swallow the remainder instead of deduping a double-pay.
+        `tourney:${this.tournamentId}:satremainder:${nextFinisher.user_id}:${nextFinisher.position}`
       );
     }
     if (targetOpen && target && awardCount > 0) {

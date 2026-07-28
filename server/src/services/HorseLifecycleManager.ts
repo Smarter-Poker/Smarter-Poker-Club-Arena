@@ -372,7 +372,7 @@ export class HorseLifecycleManager {
           // Get registered players for refund
           const { data: players } = await supabase
             .from('tournament_players')
-            .select('user_id')
+            .select('id, user_id')
             .eq('tournament_id', sng.id);
 
           if (players && players.length > 0 && buyInAmount > 0) {
@@ -380,6 +380,12 @@ export class HorseLifecycleManager {
               const { error: refundErr } = await supabase.rpc('credit_player_wallet', {
                 p_user_id: player.user_id,
                 p_amount: buyInAmount,
+                // A3 FIX (2026-07-28): `performMaintenanceCycle` is a 60s
+                // setInterval with NO overlap guard, and the CANCELLED flip only
+                // happens after this loop - so an overlapping or crashed cycle
+                // refunded the same registration repeatedly. Same key format as
+                // the two other cancel-refund paths so they all dedupe.
+                p_idempotency_key: `tourney:${sng.id}:cancelrefund:${player.id}`,
               });
               if (refundErr)
                 reportError(

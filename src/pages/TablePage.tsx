@@ -33,6 +33,11 @@ import type { BoardStage } from '../components/table/CommunityCards';
 // reach production, and git-safe-push.sh's `git clean` sweeps untracked files
 // there — assets/ is explicitly excluded from that clean.
 import rabbitHuntIcon from '../assets/rabbit-hunt.png';
+// Vertical black-and-gold table artwork — the same design used by the
+// Commander /commander/table-tablets table, rotated to portrait.
+// MUST be a Vite asset import: public/images/ is never refreshed by
+// sync-club-arena.sh, but dist/assets/ is copied wholesale.
+import tableArtVertical from '../assets/table-vertical-black-gold.png';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 // Phase 1.1 PR-3: authoritative engine WS state. Mounted always; becomes the
@@ -398,35 +403,37 @@ interface TableState {
 // around the perimeter so seat 2 lands at lower-left.
 //   Parametric: x = 50 + a*cos(θ), y = 50 + b*sin(θ)   (a=33, b=44 in % of scaler)
 // Narrower x radius + taller y radius pins avatars to the portrait rail.
-/* ── TABLE SILHOUETTE (Dan-approved v10 mockup) ────────────────────────────
-   PokerBros uses an asymmetric "egg": tapered/narrower at the top, wider and
-   rounder at the hero (bottom) end. A CSS border-radius ellipse is always
-   symmetric about its horizontal axis, so it physically cannot express this
-   shape. The exact path below (normalised to a 0..1 object bounding box, so it
-   scales with the table on every device) is used twice: as the clip-path for
-   the rail + felt, and as a non-scaling gold rim stroke drawn on top. */
-const CA_TABLE_EGG_PATH =
-  'M0.5,0.0515 C0.7246,0.0545 0.8889,0.1394 0.9179,0.3242 C0.9517,0.5091 0.9614,0.6636 0.8986,0.8 C0.8454,0.903 0.686,0.9818 0.5,0.9848 C0.314,0.9818 0.1546,0.903 0.1014,0.8 C0.0386,0.6636 0.0483,0.5091 0.0821,0.3242 C0.1111,0.1394 0.2754,0.0545 0.5,0.0515 Z';
+/* ── TABLE SILHOUETTE (Dan 2026-07-28) ─────────────────────────────────────
+   The hand-drawn CSS/SVG "egg" is gone. The table is now the SAME black-and-
+   gold artwork the Commander /commander/table-tablets page uses, rotated to
+   portrait (src/assets/table-vertical-black-gold.png, 341x609, transparent).
+   The PNG supplies the rail, bevel and gold hairline; .table-surface is sized
+   to the artwork's felt window (left 18.8%, top 10.5%, 63.3% x 79.2%) with
+   border-radius: 9999px so the themed felt gradient lands exactly inside it. */
 
+// Arc-length parameterised on the artwork's rail centreline (stadium:
+// a = 39.6% of width, b = 44.4% of height), hero at bottom-centre travelling
+// counter-clockwise. y values are nudged for .seat-wrapper's translate(-50%,-50%),
+// which centres the whole avatar+box stack (~92px) rather than the avatar.
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 90 }, // Seat 1 (Hero, bottom-center)
-  { x: 8, y: 58 },  // Seat 2 (lower-left)
-  { x: 15, y: 31 }, // Seat 3 (upper-left)
-  { x: 50, y: 11 }, // Seat 4 (top-center)
-  { x: 85, y: 31 }, // Seat 5 (upper-right)
-  { x: 92, y: 58 }, // Seat 6 (lower-right)
+  { x: 50, y: 91 },   // Seat 1 (Hero, bottom-center)
+  { x: 10.4, y: 69 }, // Seat 2 (lower-left)
+  { x: 10.4, y: 31 }, // Seat 3 (upper-left)
+  { x: 50, y: 8 },    // Seat 4 (top-center)
+  { x: 89.6, y: 31 }, // Seat 5 (upper-right)
+  { x: 89.6, y: 69 }, // Seat 6 (lower-right)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 91 }, // Seat 1 (Hero, bottom-center)
-  { x: 11, y: 74 }, // Seat 2 (lower-left)
-  { x: 9, y: 47 },  // Seat 3 (left-low)
-  { x: 15, y: 24 }, // Seat 4 (left-high)
-  { x: 37, y: 10 }, // Seat 5 (top-left)
-  { x: 63, y: 10 }, // Seat 6 (top-right)
-  { x: 85, y: 24 }, // Seat 7 (right-high)
-  { x: 91, y: 47 }, // Seat 8 (right-low)
-  { x: 89, y: 74 }, // Seat 9 (lower-right)
+  { x: 50, y: 91 },     // Seat 1 (Hero, bottom-center)
+  { x: 14, y: 80 },     // Seat 2 (lower-left)
+  { x: 10.4, y: 56.3 }, // Seat 3 (left-low)
+  { x: 10.4, y: 31 },   // Seat 4 (left-high)
+  { x: 28.6, y: 11 },   // Seat 5 (top-left)
+  { x: 71.4, y: 11 },   // Seat 6 (top-right)
+  { x: 89.6, y: 31 },   // Seat 7 (right-high)
+  { x: 89.6, y: 56.3 }, // Seat 8 (right-low)
+  { x: 86, y: 80 },     // Seat 9 (lower-right)
 ];
 
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
@@ -5786,14 +5793,15 @@ export default function TablePage({
         <div className="table-scaler">
           {/* Table Felt */}
           <div className="table-felt">
-            {/* Egg silhouette clip-path — scales with the table (objectBoundingBox). */}
-            <svg className="table-egg-defs" aria-hidden="true" focusable="false">
-              <defs>
-                <clipPath id="ca-table-egg" clipPathUnits="objectBoundingBox">
-                  <path d={CA_TABLE_EGG_PATH} />
-                </clipPath>
-              </defs>
-            </svg>
+            {/* Vertical black-and-gold table artwork (Commander table-tablets
+                design, rotated to portrait). Supplies rail + gold rim. */}
+            <img
+              className="table-art"
+              src={tableArtVertical}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+            />
             <div className="table-rail">
               <div className="table-surface">
                 {/* Hand Number Display — shown on table felt during active hands.
@@ -5894,17 +5902,6 @@ export default function TablePage({
                 )}
               </div>
             </div>
-            {/* Gold rim — same egg path, drawn above the felt with a
-                non-scaling stroke so the rim stays an even width at any size. */}
-            <svg
-              className="table-egg-rim"
-              viewBox="0 0 1 1"
-              preserveAspectRatio="none"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <path d={CA_TABLE_EGG_PATH} vectorEffect="non-scaling-stroke" />
-            </svg>
           </div>
 
           {/* Dealer Button — Animated "D" chip */}

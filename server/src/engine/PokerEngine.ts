@@ -20,6 +20,8 @@ import type {
   Winner,
 } from '../types.js';
 
+import { secureShuffle } from './CryptoRandom.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -78,13 +80,22 @@ export class Deck {
   }
 
   shuffle(): void {
-    // Fisher-Yates shuffle using crypto.getRandomValues for server-side security
-    const array = new Uint32Array(this.cards.length);
-    crypto.getRandomValues(array);
-    for (let i = this.cards.length - 1; i > 0; i--) {
-      const j = array[i] % (i + 1);
-      [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
-    }
+    // Dan 2026-07-28 (engine audit D23): this used to draw ONE Uint32 per slot up
+    // front and then take `array[i] % (i + 1)`. Two defects, one real:
+    //
+    //   1. `%` on a uniform 32-bit value is only uniform when (i + 1) divides
+    //      2^32. For a 52-card deck every i except 1, 3, 7, 15, 31 leaves a
+    //      remainder, so the low indices were very slightly over-represented.
+    //      The bias is ~1e-8 — not exploitable — but "very slightly biased" is
+    //      not a property a card room should have to argue about, and the
+    //      correct primitive was already sitting in CryptoRandom.
+    //   2. It indexed `array[i]` for i down to 1 but never used array[0], and
+    //      reused a single fill for the whole pass, so the randomness consumed
+    //      was fixed at deck size rather than per-swap.
+    //
+    // secureShuffle does the same Fisher-Yates with rejection sampling, which is
+    // exactly uniform, and is the same primitive the live deck already uses.
+    secureShuffle(this.cards);
   }
 
   deal(count: number = 1): Card[] {
@@ -123,10 +134,10 @@ export class Deck {
 
 export function cardToString(card: Card): string {
   const suitSymbols: Record<CardSuit, string> = {
-    hearts: '\u2665',
-    diamonds: '\u2666',
-    clubs: '\u2663',
-    spades: '\u2660',
+    hearts: '♥',
+    diamonds: '♦',
+    clubs: '♣',
+    spades: '♠',
   };
   return `${card.rank}${suitSymbols[card.suit]}`;
 }

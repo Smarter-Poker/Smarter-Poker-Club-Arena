@@ -1069,6 +1069,34 @@ export default function TablePage({
   // Prevents race condition where tableState.heroSeat is 0 during DB query but user tries to sit again
   const heroSeatRef = useRef(0);
 
+  // ─── MEASURED TABLE SCALER ────────────────────────────────────────────────
+  // Dan 2026-07-28: bet-chip travel used to be computed with two magic numbers
+  // (dx * 0.66, dy * 1.02) derived from the OLD landscape scaler, which was
+  // ~300x462. The table is now portrait at a 341:609 aspect, so the vertical
+  // constant was ~19% short and chips drifted off the line between the seat
+  // and the pot. Measuring the real element removes the constants entirely and
+  // keeps "chips rest close to the player who bet" true through any future
+  // reshape of the table artwork.
+  const tableScalerRef = useRef<HTMLDivElement | null>(null);
+  const [scalerSize, setScalerSize] = useState<{ w: number; h: number }>({ w: 320, h: 571 });
+
+  useEffect(() => {
+    const el = tableScalerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (!r || r.width <= 0 || r.height <= 0) return;
+      setScalerSize((prev) =>
+        // Only re-render on a real change; ResizeObserver fires on sub-pixel noise.
+        Math.abs(prev.w - r.width) < 1 && Math.abs(prev.h - r.height) < 1
+          ? prev
+          : { w: r.width, h: r.height }
+      );
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Actual club_id from the table record (NOT the tableId)
   const actualClubIdRef = useRef<string>('');
   const [actualClubIdLoaded, setActualClubIdLoaded] = useState(false); // Tracks when club_id is available
@@ -5790,7 +5818,7 @@ export default function TablePage({
           TABLE AREA
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="table-container">
-        <div className="table-scaler">
+        <div className="table-scaler" ref={tableScalerRef}>
           {/* Table Felt */}
           <div className="table-felt">
             {/* Vertical black-and-gold table artwork (Commander table-tablets
@@ -6004,8 +6032,12 @@ export default function TablePage({
             // Convert the percent delta into scaler-space px (scaler ~300x462).
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
-            const betOffsetX = Math.round(dx * 0.66); // 300px * 0.22 / 100
-            const betOffsetY = Math.round(dy * 1.02); // 462px * 0.22 / 100
+            // 22% of the way from the seat toward centre, in real scaler px.
+            // pos.x/pos.y are percentages of the scaler, so one percent equals
+            // scalerSize.w / 100 px horizontally and .h / 100 px vertically.
+            const BET_TRAVEL = 0.22;
+            const betOffsetX = Math.round((dx * scalerSize.w * BET_TRAVEL) / 100);
+            const betOffsetY = Math.round((dy * scalerSize.h * BET_TRAVEL) / 100);
             // Bible V8 §1.16 — on collect, bet chips fly from their resting
             // spot the rest of the way toward the pot (~2x current offset).
             const collectDx = betOffsetX * 2;

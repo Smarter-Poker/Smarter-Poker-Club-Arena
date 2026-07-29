@@ -948,7 +948,7 @@ function HomePageInner() {
       if (currentUser) {
         const { data: existingMembership } = await supabase
           .from('club_members')
-          .select('id')
+          .select('user_id')
           .eq('club_id', club.id)
           .eq('user_id', currentUser.id)
           .maybeSingle();

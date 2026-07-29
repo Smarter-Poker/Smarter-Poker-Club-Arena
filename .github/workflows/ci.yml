@@ -146,18 +146,25 @@ jobs:
             exit 1
           fi
 
-      # WARN-ONLY for now: a .select('col') where <col> is absent from the real
-      # table 42703-errors the WHOLE query (silent empty UI). The gate is accurate
-      # but there is a pre-existing backlog (see .agent/audits/2026-07-29-phantom-
-      # column-findings.md) — it reports the count without failing the build.
-      # Flip to blocking (drop --warn) once the backlog is drained.
-      - name: Supabase Invariants — Phantom Columns (warn)
+      # BLOCKING: a .select('col') where <col> is absent from the real table
+      # 42703-errors the WHOLE query (silent empty UI). The backlog documented in
+      # .agent/audits/2026-07-29-phantom-column-findings.md is fully drained, so the
+      # gate is now blocking. New phantom columns fail CI. Fix the column name,
+      # alias the real column (alias:real_col), add the migration + regenerate the
+      # manifest, or (for a view-projected/dynamic name) allowlist it under
+      # "phantomColumns" in scripts/ci/supabase-invariants.allowlist.json.
+      - name: Supabase Invariants — Phantom Columns
         run: |
-          echo "## Supabase Phantom-Column Check (advisory)" >> $GITHUB_STEP_SUMMARY
+          set -o pipefail
+          echo "## Supabase Phantom-Column Check" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          node scripts/ci/check-phantom-columns.mjs --warn 2>&1 | tee /tmp/phantomcol.log
-          CNT=$(grep "phantom columns:" /tmp/phantomcol.log | awk '{print $NF}')
-          echo "Phantom-column references: ${CNT} (advisory — not blocking yet)." >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-phantom-columns.mjs 2>&1 | tee /tmp/phantomcol.log; then
+            echo "OK — every resolvable .select() column exists on its table." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Phantom column(s) detected — see log. Correct the name, alias the real" >> $GITHUB_STEP_SUMMARY
+            echo "column, add the migration + regenerate the manifest, or allowlist it." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 2: Full production build + bundle metrics (depends on typecheck)

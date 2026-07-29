@@ -68,7 +68,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       const { data, error } = await supabase
         .from('club_members')
         .select(
-          'user_id, role, chip_balance, hands_played, created_at, last_active, is_banned, balance, total_rake'
+          'user_id, role, chip_balance, hands_played, created_at, last_active, status, total_rake:total_rake_paid'
         )
         .eq('club_id', resolvedId)
         .order('created_at', { ascending: true });
@@ -94,12 +94,12 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
               username: profile?.username || 'Unknown',
               avatarUrl: profile?.avatar_url || '',
               role: m.role || 'member',
-              balance: m.balance || 0,
+              balance: m.chip_balance || 0,
               totalRake: m.total_rake || 0,
               handsPlayed: m.hands_played || 0,
               joinedAt: new Date(m.created_at),
               lastActive: m.last_active ? new Date(m.last_active) : null,
-              isBanned: m.is_banned || false,
+              isBanned: m.status === 'banned',
             };
           })
         );
@@ -140,7 +140,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       const resolvedId = await resolveClubUUID(clubId);
       const { error } = await supabase
         .from('club_members')
-        .update({ is_banned: !currentlyBanned })
+        .update({ status: currentlyBanned ? 'active' : 'banned' })
         .eq('club_id', resolvedId)
         .eq('user_id', memberId);
 

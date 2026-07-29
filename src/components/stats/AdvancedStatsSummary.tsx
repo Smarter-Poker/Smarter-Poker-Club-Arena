@@ -146,9 +146,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
 
       const { data, error } = await supabase
         .from('player_stats')
-        .select(
-          'total_hands, hands_won, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, hours_played, total_profit, bb_per_100'
-        )
+        .select('total_hands:hands_played, total_winnings, total_losses, vpip, pfr')
         .eq('user_id', uid)
         .maybeSingle();
 
@@ -172,8 +170,10 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
 
     const d = data || {};
     const totalHands = d.total_hands || 0;
+    // Advanced analytics below are not tracked by the DB — default to 0 / N/A.
     const hoursPlayed = d.hours_played || 0;
-    const totalProfit = d.total_profit || 0;
+    // total_profit is derived from real columns (parent may pass it pre-computed).
+    const totalProfit = d.total_profit ?? (d.total_winnings || 0) - (d.total_losses || 0);
     const showdownsWon = d.showdowns_won || 0;
     const showdownsTotal = d.showdowns_total || 0;
 

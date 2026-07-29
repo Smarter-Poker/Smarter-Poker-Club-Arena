@@ -180,7 +180,7 @@ export default function AgentDashboardPage() {
           () =>
             supabase
               .from('club_members')
-              .select('user_id, role, chip_balance, status, created_at, referred_by')
+              .select('user_id, role, chip_balance, status, created_at, referred_by:invited_by')
               .eq('club_id', uuid)
               .then((r) => r),
           { maxRetries: 2, isMountedRef: mountedRef }
@@ -252,7 +252,7 @@ export default function AgentDashboardPage() {
             supabase
               .from('chip_transactions')
               .select(
-                'id, from_user_id, to_user_id, club_id, amount, type, transaction_type, notes, created_at'
+                'id, from_user_id, to_user_id, club_id, amount, type:transaction_type, transaction_type, notes, created_at'
               )
               .eq('club_id', uuid)
               .order('created_at', { ascending: false })

@@ -8,7 +8,7 @@
  * to automatically increment achievement progress.
  */
 
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { achievementService, ACHIEVEMENTS, type Achievement } from './AchievementService';
 import { pushNotificationService } from './PushNotificationService';
 import { dailyChallengeService } from './DailyChallengeService';
@@ -237,18 +237,21 @@ class AchievementTriggerServiceClass {
     tournamentWins: number;
     friendsCount: number;
   }> {
+    // NOTE: player_stats has no total_wins column (win count is not tracked) and
+    // friends_count lives on `profiles`, not here. tournament_wins is aliased from
+    // the real column tournaments_won. Absent stats default to 0.
     const { data } = await supabase
       .from('player_stats')
-      .select('hands_played, total_wins, tournaments_played, tournament_wins, friends_count')
+      .select('hands_played, tournaments_played, tournament_wins:tournaments_won')
       .eq('user_id', userId)
       .maybeSingle();
 
     return {
       handsPlayed: data?.hands_played || 0,
-      totalWins: data?.total_wins || 0,
+      totalWins: 0,
       tournamentsPlayed: data?.tournaments_played || 0,
       tournamentWins: data?.tournament_wins || 0,
-      friendsCount: data?.friends_count || 0,
+      friendsCount: 0,
     };
   }
 
@@ -269,14 +272,16 @@ class AchievementTriggerServiceClass {
     // and write back, losing one increment. Now uses upsert with DB-side defaults
     // and a server-side increment approach: upsert first, then UPDATE with addition.
     try {
+      // NOTE: player_stats has no total_wins column (win count is not tracked), and
+      // the real tournament-wins column is `tournaments_won`. Writing phantom columns
+      // would 42703-error the whole request, so we only touch real columns here.
       // Step 1: Ensure row exists (idempotent upsert with zero defaults)
       const { error: upsertErr } = await supabase.from('player_stats').upsert(
         {
           user_id: userId,
           hands_played: increments.handsPlayed || 0,
-          total_wins: increments.wins || 0,
           tournaments_played: increments.tournaments || 0,
-          tournament_wins: increments.tournamentWins || 0,
+          tournaments_won: increments.tournamentWins || 0,
         },
         { onConflict: 'user_id', ignoreDuplicates: true }
       );
@@ -290,7 +295,7 @@ class AchievementTriggerServiceClass {
       // but scope the update to this user's row (single-row lock in Postgres)
       const { data: existing } = await supabase
         .from('player_stats')
-        .select('hands_played, total_wins, tournaments_played, tournament_wins')
+        .select('hands_played, tournaments_played, tournaments_won')
         .eq('user_id', userId)
         .maybeSingle();
 
@@ -299,9 +304,8 @@ class AchievementTriggerServiceClass {
           .from('player_stats')
           .update({
             hands_played: (existing.hands_played || 0) + (increments.handsPlayed || 0),
-            total_wins: (existing.total_wins || 0) + (increments.wins || 0),
             tournaments_played: (existing.tournaments_played || 0) + (increments.tournaments || 0),
-            tournament_wins: (existing.tournament_wins || 0) + (increments.tournamentWins || 0),
+            tournaments_won: (existing.tournaments_won || 0) + (increments.tournamentWins || 0),
           })
           .eq('user_id', userId);
 
@@ -326,7 +330,7 @@ masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', async () => {
   try {
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getAuthUser();
     if (user?.id) {
       await achievementTriggerService.onFriendAdded(user.id);
     }

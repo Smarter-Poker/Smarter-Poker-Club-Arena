@@ -94,7 +94,7 @@ export default function XMTTPage() {
         let query = supabase
           .from('tournaments')
           .select(
-            'id, name, status, type, buy_in, max_players, registered_count, start_time, created_at, prize_pool, club_id'
+            'id, name, status, type:tournament_type, buy_in:buy_in_amount, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id'
           )
           .eq('club_id', targetClub)
           .order('start_time', { ascending: false });
@@ -119,7 +119,7 @@ export default function XMTTPage() {
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, type, buy_in, max_players, registered_count, start_time, created_at, prize_pool'
+            'id, name, status, type:tournament_type, buy_in:buy_in_amount, max_players, registered_count:current_players, start_time, created_at, prize_pool'
           )
           .eq('id', tournamentId)
           .maybeSingle(),

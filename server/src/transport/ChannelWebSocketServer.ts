@@ -313,7 +313,7 @@ export class ChannelWebSocketServer {
       const { data: rows, error } = await supabase
         .from('hand_history')
         .select(
-          'id, hand_number, actions, players, community_cards, winners, game_variant, small_blind, big_blind, started_at, ended_at, raw_events'
+          'id, hand_number, actions, players, community_cards, winners, game_variant, small_blind, big_blind, started_at, ended_at'
         )
         .eq('id', handId)
         .limit(1)

@@ -263,15 +263,18 @@ class VIPServiceClass {
 
       const { data, error } = await supabase
         .from('vip_monthly_usage')
-        .select('feature, usage_count')
+        // vip_monthly_usage tracks aggregate monthly metrics, not per-feature
+        // usage counts; there is no feature/usage_count/period_start. Until a
+        // per-feature usage table exists, degrade to no rows -> lenient defaults.
+        .select('id')
         .eq('user_id', userId)
-        .gte('period_start', startOfMonth.toISOString());
+        .limit(0);
       if (error) console.warn('[VIPService] getMonthlyUsage error:', error.message);
 
+      // No per-feature usage table yet (see select note above); `data` is always
+      // empty here, so usage stays zeroed and all features fall back to limits.
+      void data;
       const usage: Record<string, number> = {};
-      (data || []).forEach((row) => {
-        usage[row.feature] = row.usage_count;
-      });
 
       return {
         rabbitHunts: { used: usage['rabbit_hunt'] || 0, limit: VIP_GOLD_LIMITS.rabbitHunts },

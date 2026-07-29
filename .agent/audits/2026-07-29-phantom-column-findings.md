@@ -1,14 +1,22 @@
 # Phantom-Column Findings — 2026-07-29
 
-The phantom-column CI gate (`scripts/ci/check-phantom-columns.mjs`, currently
-advisory/`--warn`) found `.select()` calls that name columns absent from the real
-table. A single bad column 42703-errors the WHOLE query, so the feature silently
-shows nothing. Fix each: correct the name, alias the real column (`alias:real`),
-add a migration + regenerate the manifest, or (view-projected/dynamic) allowlist
-under `phantomColumns` in `scripts/ci/supabase-invariants.allowlist.json`.
-Flip the CI step to blocking (drop `--warn`) once drained.
+> STATUS: ✅ FULLY DRAINED (2026-07-29). All 61 findings below are fixed;
+> `node scripts/ci/check-phantom-columns.mjs` reports 0. The CI step is now
+> BLOCKING (the `--warn` flag was removed in `.github/workflows/ci.yml`), so any
+> newly-introduced phantom column fails the build. One finding required a schema
+> change — `tournaments.final_table_triggered` was added (migration
+> `20260729_tournaments_final_table_triggered_flag.sql`); the rest were resolved
+> by correcting/aliasing the column name, dropping an absent column, or degrading
+> a schema-mismatched query. This document is retained as the historical record.
 
-Total: 61 phantom columns across 22 tables.
+The phantom-column CI gate (`scripts/ci/check-phantom-columns.mjs`) found
+`.select()` calls that name columns absent from the real table. A single bad
+column 42703-errors the WHOLE query, so the feature silently shows nothing. Fix
+each: correct the name, alias the real column (`alias:real`), add a migration +
+regenerate the manifest, or (view-projected/dynamic) allowlist under
+`phantomColumns` in `scripts/ci/supabase-invariants.allowlist.json`.
+
+Total: 61 phantom columns across 22 tables — ALL DRAINED.
 
 ## audit_trail
 

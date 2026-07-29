@@ -26,7 +26,7 @@ interface VipLedgerEntry {
   user_id: string;
   amount: number;
   transaction_type: string;
-  description: string;
+  description?: string;
   created_at: string;
 }
 
@@ -155,7 +155,7 @@ export default function AnalyticsDashboard() {
     try {
       let query = supabase
         .from('diamond_ledger')
-        .select('id, user_id, amount, transaction_type, description, created_at')
+        .select('id, user_id, amount:delta, transaction_type:type, created_at')
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -178,7 +178,7 @@ export default function AnalyticsDashboard() {
   const loadAggregates = useCallback(async () => {
     try {
       let handQuery = supabase.from('player_position_stats').select('hands_played').limit(5000);
-      let vipQuery = supabase.from('diamond_ledger').select('amount').gt('amount', 0).limit(5000);
+      let vipQuery = supabase.from('diamond_ledger').select('amount:delta').gt('delta', 0).limit(5000);
       let playerQuery = supabase.from('player_position_stats').select('user_id').limit(5000);
 
       const cutoff = getTimeRangeCutoff(timeRange);

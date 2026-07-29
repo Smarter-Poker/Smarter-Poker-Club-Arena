@@ -81,7 +81,7 @@ class PlayerStatusServiceClass {
   async getPlayerStatus(userId: string): Promise<PlayerStatus | null> {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, status_text, is_online, last_seen')
+      .select('id, status_text:status, is_online, last_seen')
       .eq('id', userId)
       .maybeSingle();
 
@@ -127,7 +127,7 @@ class PlayerStatusServiceClass {
     // Step 2: Batch-fetch profiles for all friend IDs
     const { data: profiles, error } = await supabase
       .from('profiles')
-      .select('id, status_text, is_online, last_seen')
+      .select('id, status_text:status, is_online, last_seen')
       .in('id', Array.from(friendIds))
       .eq('is_online', true);
 

@@ -32,7 +32,7 @@ interface Promotion {
   start_date: string;
   end_date: string;
   prize_pool?: number;
-  is_active: boolean;
+  status?: string;
   requirements?: string;
 }
 
@@ -118,7 +118,9 @@ export default function PromotionsPage() {
       let query = supabase
         .from('promotions')
         .select(
-          'id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, club_id'
+          // promotions real columns are name/banner_url/status (not title/image_url/
+          // is_active) — alias so the UI fields keep working. See PromotionService.
+          'id, title:name, description, type, image_url:banner_url, start_date, end_date, prize_pool, status, requirements, club_id'
         )
         .order('start_date', { ascending: false });
 

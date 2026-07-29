@@ -992,6 +992,7 @@
     "fn_bbj_check_eligible",
     "fn_bbj_payout",
     "fn_bbj_promo_payout_atomic",
+    "fn_bbj_promo_rain",
     "fn_blacklists_audit",
     "fn_block_direct_home_seat_update",
     "fn_block_home_member_ban_evasion",

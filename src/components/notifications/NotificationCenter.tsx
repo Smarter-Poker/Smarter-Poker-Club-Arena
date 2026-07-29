@@ -68,7 +68,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     try {
       const { data } = await supabase
         .from('notifications')
-        .select('id, user_id, type, title, body, read, data, created_at')
+        .select('id, user_id, type, title, body:message, read, data, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(50);

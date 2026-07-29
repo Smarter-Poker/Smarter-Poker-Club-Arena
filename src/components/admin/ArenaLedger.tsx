@@ -77,7 +77,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
       // Fetch audit logs
       const { data: auditData } = await supabase
         .from('audit_trail')
-        .select('id, action, actor_id, details, created_at')
+        .select('id, action, actor_id, details:after_state, created_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })
         .limit(maxEntries);

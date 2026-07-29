@@ -87,11 +87,11 @@ export async function checkSettlementLock(clubId: string): Promise<SettlementLoc
     // 2. Check `settlement_locks` table for active time-range lock
     const { data: lockRow } = await supabase
       .from('settlement_locks')
-      .select('id, lock_start, lock_end, reason')
+      .select('id, lock_start:locked_at, lock_end:unlock_at, reason:lock_reason')
       .eq('club_id', resolvedId)
-      .gte('lock_end', new Date().toISOString())
-      .lte('lock_start', new Date().toISOString())
-      .order('lock_start', { ascending: false })
+      .gte('unlock_at', new Date().toISOString())
+      .lte('locked_at', new Date().toISOString())
+      .order('locked_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 

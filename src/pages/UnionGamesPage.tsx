@@ -130,7 +130,7 @@ export default function UnionGamesPage() {
         const [{ data: unionData }, { data: unionClubs }] = await Promise.all([
           supabase
             .from('unions')
-            .select('id, name, code, status, description, owner_id, created_at')
+            .select('id, name, code, description, owner_id, created_at')
             .eq('id', targetUnion)
             .maybeSingle(),
           supabase.from('union_clubs').select('club_id').eq('union_id', targetUnion),

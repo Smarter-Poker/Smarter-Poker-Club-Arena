@@ -220,13 +220,14 @@ export default function ClubCarouselPage() {
               if (!authUser || !isMounted.current) return;
               const { data: notifs } = await supabase
                 .from('notifications')
-                .select('club_id')
+                .select('data')
                 .eq('user_id', authUser.id)
                 .eq('read', false);
               if (!isMounted.current || !notifs) return;
               const badges: Record<string, number> = {};
               for (const n of notifs) {
-                if (n.club_id) badges[n.club_id] = (badges[n.club_id] || 0) + 1;
+                const cid = (n as any).data?.club_id;
+                if (cid) badges[cid] = (badges[cid] || 0) + 1;
               }
               setClubBadges(badges);
             } catch (e) {
@@ -351,13 +352,14 @@ export default function ClubCarouselPage() {
         if (!authUser) return;
         const { data: notifs } = await supabase
           .from('notifications')
-          .select('club_id')
+          .select('data')
           .eq('user_id', authUser.id)
           .eq('read', false);
         if (!isMounted.current || !notifs) return;
         const badges: Record<string, number> = {};
         for (const n of notifs) {
-          if (n.club_id) badges[n.club_id] = (badges[n.club_id] || 0) + 1;
+          const cid = (n as any).data?.club_id;
+          if (cid) badges[cid] = (badges[cid] || 0) + 1;
         }
         setClubBadges(badges);
       } catch (e) {

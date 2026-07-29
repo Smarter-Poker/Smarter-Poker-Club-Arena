@@ -474,7 +474,7 @@ export const BBJService = {
     const { data, error } = await supabase
       .from('bbj_payouts')
       .select(
-        'id, pool_id, hand_id, winner_user_id, loser_user_id, table_players_share, winner_share, loser_share, table_share, total_amount, created_at'
+        'id, pool_id, hand_id, winner_user_id, loser_user_id, table_players_share:table_share, winner_share, loser_share, table_share, total_amount, created_at'
       )
       .eq('pool_id', poolId)
       .order('created_at', { ascending: false })

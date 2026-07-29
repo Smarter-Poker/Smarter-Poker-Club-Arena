@@ -461,7 +461,7 @@ export default function SettingsPage() {
           .maybeSingle(),
         supabase
           .from('wallets')
-          .select('id, user_id, wallet_type, balance, currency, created_at')
+          .select('id, user_id, wallet_type, balance, created_at')
           .eq('user_id', user.id),
         supabase
           .from('training_user_achievements')

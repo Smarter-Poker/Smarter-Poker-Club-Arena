@@ -433,7 +433,7 @@ export default function TournamentDetails() {
         // Fetch tournament entries from supabase
         const { data: playersData, error } = await supabase
           .from('tournament_players')
-          .select('id, user_id, username, chips, status, position, club_id, table_id')
+          .select('id, user_id, username, chips, status, position, table_id')
           .eq('tournament_id', data.id)
           .order('registered_at', { ascending: true });
 

@@ -684,7 +684,7 @@ export function useBBJ(clubId: string | null) {
         if (isMounted.current) setResolvedPoolId(pool.id as string);
         const { data: winners } = await supabase
           .from('bbj_winners')
-          .select('id, loser_name, loser_hand, winner_hand, total_payout, awarded_at')
+          .select('id, loser_name:loser_display_name, loser_hand, winner_hand, total_payout, awarded_at')
           .eq('pool_id', pool.id)
           .order('awarded_at', { ascending: false })
           .limit(5);

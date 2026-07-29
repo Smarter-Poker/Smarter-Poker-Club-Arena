@@ -116,7 +116,7 @@ interface SessionRow {
   duration_minutes: number;
 }
 interface ClubMemberRow {
-  id: string;
+  user_id: string;
   is_active?: boolean;
   role: string;
   last_active_at?: string | null;
@@ -876,7 +876,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
 
         const { data, error, count } = await supabase
           .from('audit_trail')
-          .select('id, action, actor_id, target_type, target_id, details, ip_address, created_at', {
+          .select('id, action, actor_id, target_type, target_id, details:after_state, ip_address, created_at', {
             count: 'exact',
           })
           .eq('club_id', uuid)
@@ -1018,7 +1018,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                 const { data, error } = await supabase
                   .from('audit_trail')
                   .select(
-                    'id, action, actor_id, target_type, target_id, details, ip_address, created_at'
+                    'id, action, actor_id, target_type, target_id, details:after_state, ip_address, created_at'
                   )
                   .eq('club_id', uuid)
                   .order('created_at', { ascending: false })
@@ -1140,9 +1140,9 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
       const { data, error } = await supabase
         .from('club_announcements')
-        .select('id, title, content, pinned, is_active, created_at')
+        .select('id, title, content, pinned:is_pinned, is_active, created_at')
         .eq('club_id', uuid)
-        .order('pinned', { ascending: false })
+        .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false });
       if (error) throw error;
       if (isMounted.current) setItems(data || []);
@@ -1873,7 +1873,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         const [{ data: members }, { data: tables }, { data: annCount }] = await Promise.all([
           supabase
             .from('club_members')
-            .select('id, is_active, role, last_active_at', { count: 'exact' })
+            .select('user_id, is_active, role, last_active_at', { count: 'exact' })
             .eq('club_id', uuid),
           supabase.from('tables').select('id, current_players, status').eq('club_id', uuid),
           supabase.from('club_announcements').select('id', { count: 'exact' }).eq('club_id', uuid),
@@ -2158,11 +2158,11 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
           await Promise.all([
             supabase
               .from('club_members')
-              .select('id, created_at, role', { count: 'exact' })
+              .select('user_id, created_at, role', { count: 'exact' })
               .eq('club_id', uuid),
             supabase
               .from('tables')
-              .select('id, current_players, status, total_hands_dealt')
+              .select('id, current_players, status, total_hands_dealt:hands_dealt')
               .eq('club_id', uuid),
             supabase
               .from('player_sessions')

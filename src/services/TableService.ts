@@ -580,7 +580,7 @@ class TableService {
     // Query hand history for average pot size (last 100 hands)
     const { data, error } = await supabase
       .from('hands')
-      .select('pot_size')
+      .select('pot_size:pot')
       .eq('table_id', tableId)
       .limit(100);
 

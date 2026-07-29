@@ -286,7 +286,7 @@ export const LeaderboardService = {
     let query = supabase
       .from('player_stats')
       .select(
-        'user_id, club_id, hands_played, total_winnings, total_losses, total_rake, vpip, pfr, three_bet, wtsd, wsd, agg_factor, tournament_roi, tournaments_played, tournaments_won, updated_at'
+        'user_id, club_id, hands_played, total_winnings, total_losses, total_rake, vpip, pfr, tournaments_played, tournaments_won, updated_at'
       )
       .eq('user_id', userId);
 
@@ -303,17 +303,22 @@ export const LeaderboardService = {
 
     if (!data) return null;
 
+    // NOTE: player_stats does not track three_bet, wtsd, wsd, agg_factor, or
+    // tournament_roi — these advanced metrics have no real column and default to 0.
+    // ROI is derived from real winnings/losses as a sensible proxy.
+    const winnings = data.total_winnings || 0;
+    const losses = data.total_losses || 0;
     return {
       userId: data.user_id,
       handsPlayed: data.hands_played || 0,
-      profit: (data.total_winnings || 0) - (data.total_losses || 0),
+      profit: winnings - losses,
       vpip: data.vpip || 0,
       pfr: data.pfr || 0,
-      threeBet: data.three_bet || 0,
-      wtsd: data.wtsd || 0,
-      wsd: data.wsd || 0,
-      aggFactor: data.agg_factor || 0,
-      roi: data.tournament_roi || 0,
+      threeBet: 0,
+      wtsd: 0,
+      wsd: 0,
+      aggFactor: 0,
+      roi: losses > 0 ? ((winnings - losses) / losses) * 100 : 0,
       tournamentsPlayed: data.tournaments_played || 0,
       tournamentsWon: data.tournaments_won || 0,
       lastUpdated: data.updated_at,

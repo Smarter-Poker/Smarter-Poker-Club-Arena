@@ -305,7 +305,7 @@ class NotificationServiceClass {
     if (requestingUserId) {
       const { data: cashout, error: cashoutError } = await supabase
         .from('cashout_requests')
-        .select('user_id')
+        .select('user_id:player_id')
         .eq('id', cashoutId)
         .maybeSingle();
 

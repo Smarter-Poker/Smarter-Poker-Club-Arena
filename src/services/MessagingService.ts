@@ -783,7 +783,7 @@ class MessagingServiceClass {
     // Get original message content
     const { data: original } = await supabase
       .from('messages')
-      .select('content, image_url, audio_url')
+      .select('content, metadata')
       .eq('id', messageId)
       .maybeSingle();
 
@@ -812,8 +812,7 @@ class MessagingServiceClass {
         sender_id: senderId,
         receiver_id: receiverId,
         content: this.sanitizeMessage(`↪ ${original.content || ''}`.trim()),
-        image_url: original.image_url,
-        audio_url: original.audio_url,
+        metadata: original.metadata,
         is_forwarded: true,
       })
       .select()

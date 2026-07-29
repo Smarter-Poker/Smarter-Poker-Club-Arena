@@ -90,24 +90,28 @@ function setCachedSessions(userId: string, sessions: any) {
 }
 
 interface DetailedStats {
-  total_hands: number;
-  hands_won: number;
-  hands_lost: number;
-  showdowns_won: number;
-  showdowns_total: number;
+  // Real player_stats columns
+  total_hands: number; // aliased from hands_played
   vpip: number;
   pfr: number;
-  aggression_factor: number;
-  three_bet_percent: number;
-  fold_to_three_bet: number;
-  cbet_flop: number;
-  cbet_turn: number;
-  bb_per_100: number;
-  total_profit: number;
-  biggest_pot_won: number;
-  biggest_pot_lost: number;
-  hours_played: number;
-  avg_session_length: number;
+  total_winnings: number;
+  total_losses: number;
+  total_profit: number; // computed: total_winnings - total_losses
+  // Advanced analytics NOT tracked by the DB — always absent / 0 (guarded in UI)
+  hands_won?: number;
+  hands_lost?: number;
+  showdowns_won?: number;
+  showdowns_total?: number;
+  aggression_factor?: number;
+  three_bet_percent?: number;
+  fold_to_three_bet?: number;
+  cbet_flop?: number;
+  cbet_turn?: number;
+  bb_per_100?: number;
+  biggest_pot_won?: number;
+  biggest_pot_lost?: number;
+  hours_played?: number;
+  avg_session_length?: number;
 }
 
 interface SessionData {
@@ -123,19 +127,21 @@ const CHART_COLORS = ['#4169E1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#0
 
 const DEFAULT_STATS: DetailedStats = {
   total_hands: 0,
+  vpip: 0,
+  pfr: 0,
+  total_winnings: 0,
+  total_losses: 0,
+  total_profit: 0,
   hands_won: 0,
   hands_lost: 0,
   showdowns_won: 0,
   showdowns_total: 0,
-  vpip: 0,
-  pfr: 0,
   aggression_factor: 0,
   three_bet_percent: 0,
   fold_to_three_bet: 0,
   cbet_flop: 0,
   cbet_turn: 0,
   bb_per_100: 0,
-  total_profit: 0,
   biggest_pot_won: 0,
   biggest_pot_lost: 0,
   hours_played: 0,
@@ -303,9 +309,7 @@ export default function PlayerStatsPage() {
           () =>
             supabase
               .from('player_stats')
-              .select(
-                'total_hands, hands_won, hands_lost, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, cbet_turn, bb_per_100, total_profit, biggest_pot_won, biggest_pot_lost, hours_played, avg_session_length'
-              )
+              .select('total_hands:hands_played, total_winnings, total_losses, vpip, pfr')
               .eq('user_id', targetUserId)
               .maybeSingle()
               .then((r) => r),
@@ -341,7 +345,11 @@ export default function PlayerStatsPage() {
       if (statsResult.status === 'fulfilled') {
         const { data, error } = statsResult.value;
         if (!error && data) {
-          resolvedStats = data;
+          resolvedStats = {
+            ...DEFAULT_STATS,
+            ...data,
+            total_profit: (data.total_winnings ?? 0) - (data.total_losses ?? 0),
+          };
           hasStatsRef.current = true;
         }
       }
@@ -425,9 +433,7 @@ export default function PlayerStatsPage() {
         () =>
           supabase
             .from('player_stats')
-            .select(
-              'total_hands, hands_won, hands_lost, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, cbet_turn, bb_per_100, total_profit, biggest_pot_won, biggest_pot_lost, hours_played, avg_session_length'
-            )
+            .select('total_hands:hands_played, total_winnings, total_losses, vpip, pfr')
             .eq('user_id', targetUserId)
             .maybeSingle()
             .then((r) => r),
@@ -435,7 +441,11 @@ export default function PlayerStatsPage() {
       );
       if (!isMounted.current) return;
       if (!error && data) {
-        setStats(data);
+        setStats({
+          ...DEFAULT_STATS,
+          ...data,
+          total_profit: (data.total_winnings ?? 0) - (data.total_losses ?? 0),
+        });
         hasStatsRef.current = true;
       }
     } catch (e) {
@@ -447,15 +457,15 @@ export default function PlayerStatsPage() {
   const winRate = useMemo(
     () =>
       stats && stats.total_hands > 0
-        ? ((stats.hands_won / stats.total_hands) * 100).toFixed(1)
+        ? (((stats.hands_won ?? 0) / stats.total_hands) * 100).toFixed(1)
         : '0.0',
     [stats]
   );
 
   const showdownWinRate = useMemo(
     () =>
-      stats && stats.showdowns_total > 0
-        ? ((stats.showdowns_won / stats.showdowns_total) * 100).toFixed(1)
+      stats && (stats.showdowns_total ?? 0) > 0
+        ? (((stats.showdowns_won ?? 0) / (stats.showdowns_total ?? 0)) * 100).toFixed(1)
         : '0',
     [stats]
   );
@@ -653,22 +663,22 @@ export default function PlayerStatsPage() {
                 />
                 <StatRow
                   label="Biggest Pot Won"
-                  value={stats.biggest_pot_won.toLocaleString()}
+                  value={(stats.biggest_pot_won ?? 0).toLocaleString()}
                   color="#10b981"
                 />
                 <StatRow
                   label="Biggest Pot Lost"
-                  value={stats.biggest_pot_lost.toLocaleString()}
+                  value={(stats.biggest_pot_lost ?? 0).toLocaleString()}
                   color="#ef4444"
                 />
                 <StatRow
                   label="Hands Won"
-                  value={stats.hands_won.toLocaleString()}
+                  value={(stats.hands_won ?? 0).toLocaleString()}
                   color="#22c55e"
                 />
                 <StatRow
                   label="Hands Lost"
-                  value={stats.hands_lost.toLocaleString()}
+                  value={(stats.hands_lost ?? 0).toLocaleString()}
                   color="#ef4444"
                 />
               </div>

@@ -1320,10 +1320,10 @@ class HorseOrchestrator {
     // Determine table type for multi-table enforcement
     const { data: tableData } = await supabase
       .from('tables')
-      .select('type')
+      .select('tournament_id')
       .eq('id', tableId)
       .maybeSingle();
-    const tableType = (tableData?.type === 'tournament' ? 'tournament' : 'cash') as
+    const tableType = (tableData?.tournament_id ? 'tournament' : 'cash') as
       | 'cash'
       | 'tournament';
 
@@ -1921,7 +1921,7 @@ class HorseOrchestrator {
       // Get table info to determine type
       const { data: tables, error: tableError } = await supabase
         .from('tables')
-        .select('id, type')
+        .select('id, tournament_id')
         .in('id', tableIds);
 
       if (tableError || !tables) {
@@ -1930,7 +1930,7 @@ class HorseOrchestrator {
 
       return tables.map((t) => ({
         tableId: t.id,
-        type: (t.type === 'tournament' ? 'tournament' : 'cash') as 'cash' | 'tournament',
+        type: (t.tournament_id ? 'tournament' : 'cash') as 'cash' | 'tournament',
       }));
     } catch (err: any) {
       this.logError(`getActiveTablesForHorse error for ${horseId}: ${err.message}`);

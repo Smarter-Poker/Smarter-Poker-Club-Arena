@@ -112,7 +112,8 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
         // Get wallet balances
         const { data: wallets } = await supabase
           .from('wallets')
-          .select('user_id, play_balance')
+          .select('user_id, play_balance:balance')
+          .eq('wallet_type', 'PLAYER')
           .in('user_id', playerIds);
 
         if (wallets) {

@@ -43,21 +43,22 @@ if (!URL || !KEY) {
   process.exit(2);
 }
 
-const res = await fetch(`${URL}/rest/v1/rpc/fn_schema_manifest`, {
-  method: 'POST',
-  headers: {
-    apikey: KEY,
-    Authorization: `Bearer ${KEY}`,
-    'Content-Type': 'application/json',
-  },
-  body: '{}',
-});
-if (!res.ok) {
-  console.error(`ERROR: fn_schema_manifest RPC failed (${res.status}): ${await res.text()}`);
-  console.error('Create the helper RPC once, or regenerate via the MCP query in the header.');
-  process.exit(2);
+async function callRpc(fn) {
+  const res = await fetch(`${URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (!res.ok) {
+    console.error(`ERROR: ${fn} RPC failed (${res.status}): ${await res.text()}`);
+    console.error('Create the helper RPC once, or regenerate via the MCP query in the header.');
+    process.exit(2);
+  }
+  return res.json();
 }
-const data = await res.json();
+
+// 1) tables + functions manifest (phantom-table / phantom-rpc gate)
+const data = await callRpc('fn_schema_manifest');
 const manifest = {
   _comment:
     'Live public schema snapshot (tables/views + functions). Source of truth for the phantom-ref CI gate; regenerate with scripts/ci/gen-schema-manifest.mjs. Do NOT hand-edit.',
@@ -65,4 +66,18 @@ const manifest = {
   functions: [...new Set(data.functions || [])].sort(),
 };
 writeFileSync(OUT, JSON.stringify(manifest, null, 2) + '\n');
-console.log(`Wrote ${OUT}: ${manifest.tables.length} tables, ${manifest.functions.length} functions`);
+console.log(
+  `Wrote ${OUT}: ${manifest.tables.length} tables, ${manifest.functions.length} functions`
+);
+
+// 2) column manifest (phantom-column gate)
+const COLS_OUT = join(process.cwd(), 'scripts/ci/supabase-columns-manifest.json');
+const colsData = await callRpc('fn_columns_manifest');
+const sortedCols = Object.fromEntries(Object.keys(colsData).sort().map((k) => [k, colsData[k]]));
+const colsManifest = {
+  _comment:
+    'Live public schema COLUMN snapshot {table: [columns]}. Source of truth for the phantom-column CI gate. Do NOT hand-edit.',
+  columns: sortedCols,
+};
+writeFileSync(COLS_OUT, JSON.stringify(colsManifest, null, 0) + '\n');
+console.log(`Wrote ${COLS_OUT}: ${Object.keys(sortedCols).length} tables' columns`);

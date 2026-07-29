@@ -14,6 +14,7 @@ import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import './AdminDashboardPage.css';
+import { confirmDialog } from '../components/common/confirmDialog';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
@@ -1003,7 +1004,15 @@ export default function UnionDashboardPage() {
                         className="admin-btn admin-btn-danger admin-btn-sm"
                         disabled={processing}
                         onClick={async () => {
-                          if (!confirm(`Remove ${club.name} from the union?`)) return;
+                          if (
+                            !(await confirmDialog({
+                              title: 'Remove club',
+                              message: `Remove ${club.name} from the union?`,
+                              confirmText: 'Remove',
+                              variant: 'danger',
+                            }))
+                          )
+                            return;
                           setProcessing(true);
                           setError(null);
                           try {
@@ -1767,7 +1776,13 @@ export default function UnionDashboardPage() {
                           className="admin-btn admin-btn-danger admin-btn-sm"
                           disabled={processing}
                           onClick={async () => {
-                            if (!confirm(`Reject ${app.club_name}?`)) return;
+                            if (
+                              !(await confirmDialog({
+                                message: `Reject ${app.club_name}?`,
+                                variant: 'danger',
+                              }))
+                            )
+                              return;
                             setProcessing(true);
                             setError(null);
                             try {
@@ -1829,7 +1844,13 @@ export default function UnionDashboardPage() {
                           className="admin-btn admin-btn-success admin-btn-sm"
                           disabled={processing}
                           onClick={async () => {
-                            if (!confirm(`Approve ${lr.club_name}'s exit from the union?`)) return;
+                            if (
+                              !(await confirmDialog({
+                                message: `Approve ${lr.club_name}'s exit from the union?`,
+                                variant: 'danger',
+                              }))
+                            )
+                              return;
                             setProcessing(true);
                             setError(null);
                             try {
@@ -2094,7 +2115,15 @@ export default function UnionDashboardPage() {
                                 className="admin-btn admin-btn-danger admin-btn-sm"
                                 disabled={processing}
                                 onClick={async () => {
-                                  if (!confirm('Remove this admin?')) return;
+                                  if (
+                                    !(await confirmDialog({
+                                      title: 'Remove admin',
+                                      message: 'Remove this admin?',
+                                      confirmText: 'Remove',
+                                      variant: 'danger',
+                                    }))
+                                  )
+                                    return;
                                   setProcessing(true);
                                   setError(null);
                                   try {

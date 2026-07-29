@@ -15,6 +15,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { confirmDialog } from '../components/common/confirmDialog';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './MarketplacePage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -884,7 +885,15 @@ export default function MarketplacePage() {
                     </button>
                     <button
                       onClick={async () => {
-                        if (!confirm(`Delete "${item.name}"?`)) return;
+                        if (
+                          !(await confirmDialog({
+                            title: 'Delete item',
+                            message: `Delete "${item.name}"?`,
+                            confirmText: 'Delete',
+                            variant: 'danger',
+                          }))
+                        )
+                          return;
                         try {
                           const { error: delErr } = await supabase
                             .from('club_shop_items')

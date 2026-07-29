@@ -32,6 +32,7 @@ import NavigationProgress from './components/common/NavigationProgress';
 import ConnectionIndicator from './components/common/ConnectionIndicator';
 import ConnectionStatusBar from './components/ConnectionStatusBar';
 import BusToastBridge from './components/common/BusToastBridge';
+import { ConfirmHost } from './components/common/confirmDialog';
 import MilestoneToast from './components/common/MilestoneToast';
 import { bootServices, shutdownServices } from './services/ServiceBootstrap';
 import { preloadCriticalChunks } from './utils/ChunkPreloader';
@@ -276,6 +277,7 @@ export default function App() {
       <ToastProvider>
         <GlobalBalanceSync />
         <BusToastBridge />
+        <ConfirmHost />
         <MilestoneToast />
         <ConnectionStatusBar />
         {/* Accessibility: Skip to main content link */}

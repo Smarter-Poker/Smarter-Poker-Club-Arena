@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './AgentManagementPage.module.css';
 import ConfirmModal from '@/components/common/ConfirmModal';
+import { confirmDialog } from '../components/common/confirmDialog';
 import { AgentService, type Agent } from '@/services/AgentService';
 import { MembershipService, type ClubMembership } from '@/services/MembershipService';
 import { exportToCSV } from '../lib/export';
@@ -943,9 +944,10 @@ export default function AgentManagementPage() {
                         <button
                           onClick={async () => {
                             if (
-                              !confirm(
-                                `Clawback ${tx.amount.toLocaleString()} chips from ${recipientName}?`
-                              )
+                              !(await confirmDialog({
+                                message: `Clawback ${tx.amount.toLocaleString()} chips from ${recipientName}?`,
+                                variant: 'danger',
+                              }))
                             )
                               return;
                             setClawbackProcessing(tx.id);

@@ -12,6 +12,7 @@ import { unionService, type Union, type UnionClub } from '../services/UnionServi
 import { unionApi } from '../services/UnionApiService';
 import { tableService } from '../services/TableService';
 import { getUserMemberships } from '../services/ClubsService';
+import { confirmDialog } from '../components/common/confirmDialog';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { presenceService } from '../services/PresenceService';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -548,9 +549,10 @@ export default function UnionDetailPage() {
       const memberClub = owned.find((c: any) => c.union_id === unionId);
       if (memberClub) {
         if (
-          !confirm(
-            `Request to remove ${memberClub.name} from this union? The union lead must approve.`
-          )
+          !(await confirmDialog({
+            message: `Request to remove ${memberClub.name} from this union? The union lead must approve.`,
+            variant: 'danger',
+          }))
         ) {
           return;
         }

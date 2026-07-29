@@ -127,16 +127,23 @@ jobs:
             exit 1
           fi
 
+      # BLOCKING: a client-read table with NO writer anywhere (client
+      # .from().insert/update, server/src, or an RPC/migration body) means the UI
+      # reads a table nothing populates -> silent empty/stale values. Detection is
+      # deliberately permissive on the writer side (any mention counts), so it errs
+      # toward missing a stranded table rather than failing CI wrongly. Exceptions
+      # go in the ALLOWLIST in scripts/ci/check-stranded-writers.mjs.
       - name: Supabase Invariants — Stranded Writers
         run: |
-          echo "## ✍️ Supabase Stranded-Writer Check" >> $GITHUB_STEP_SUMMARY
+          set -o pipefail
+          echo "## Supabase Stranded-Writer Check" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          node scripts/ci/check-stranded-writers.mjs 2>&1 | tee /tmp/stranded.log
-          if grep -q "STRANDED WRITERS DETECTED" /tmp/stranded.log; then
-            COUNT=$(grep "stranded" /tmp/stranded.log | head -1 | awk -F': ' '{print $NF}')
-            echo "❌ **${COUNT} client-read table(s) with no server writer**" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-stranded-writers.mjs 2>&1 | tee /tmp/stranded.log; then
+            echo "OK — every client-read table has a writer (client, server, or RPC)." >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ every client-read table has a server-side writer" >> $GITHUB_STEP_SUMMARY
+            echo "Client-read table(s) with no writer — see log. Implement the writer," >> $GITHUB_STEP_SUMMARY
+            echo "remove the obsolete read, or allowlist it in scripts/ci/check-stranded-writers.mjs." >> $GITHUB_STEP_SUMMARY
+            exit 1
           fi
 
   # ─────────────────────────────────────────────────────────────────────────────

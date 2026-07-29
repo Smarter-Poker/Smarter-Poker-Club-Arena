@@ -546,12 +546,30 @@ export class GameServer {
           if (refundEach > 0) {
             const { data: regs } = await supabase
               .from('tournament_players')
-              .select('user_id')
+              .select('id, user_id, prize')
               .eq('tournament_id', t.id);
+            // Match the canonical cancel-refund path (tournamentRecovery):
+            // horses paid nothing (never refund them — that mints money), and a
+            // player already paid a prize must not be refunded on top.
+            const regIds = (regs || []).map((r) => r.user_id);
+            const { data: horseRows } = regIds.length
+              ? await supabase.from('profiles').select('id').in('id', regIds).eq('is_horse', true)
+              : { data: [] as { id: string }[] };
+            const horseSet = new Set((horseRows ?? []).map((h) => h.id));
             for (const p of regs || []) {
+              if (horseSet.has(p.user_id)) continue; // horses paid nothing
+              if (Number(p.prize || 0) > 0) continue; // already paid a prize — no refund on top
               const { error: refErr } = await supabase.rpc('credit_player_wallet', {
                 p_user_id: p.user_id,
                 p_amount: refundEach,
+                // A3 FIX (2026-07-29): this startup pre-start sweep runs on EVERY
+                // boot and the CANCELLED flip only happens after the loop, so a
+                // crash mid-loop re-refunded everyone next boot. Keyed on the
+                // tournament_players row id in the SAME `tourney:{id}:cancelrefund:
+                // {row.id}` format as tournamentRecovery + the SNG lifecycle sweep,
+                // so all three dedupe. (Also added the horse filter this path was
+                // missing — it was minting refunds to free horse entries.)
+                p_idempotency_key: `tourney:${t.id}:cancelrefund:${p.id}`,
               });
               if (refErr) {
                 console.warn(

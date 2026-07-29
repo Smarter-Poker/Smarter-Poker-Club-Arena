@@ -850,6 +850,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         const { error: creditErr } = await supabase.rpc('credit_player_wallet', {
           p_user_id: winnerId,
           p_amount: winnerPrize,
+          // A3 FIX (2026-07-29): the winner is position 1. recoverStuckCompleting-
+          // Tournaments re-pays every finisher (incl. the winner) under
+          // `tourney:{id}:prize:{user}:{position}` — so without this key a
+          // finish that stalls in COMPLETING and gets re-driven by the watchdog
+          // double-pays the champion. Same format as the elimination-prize path.
+          p_idempotency_key: `tourney:${this.tournamentId}:prize:${winnerId}:1`,
         });
         if (!creditErr) {
           creditSuccess = true;
@@ -936,6 +942,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           const { error: obErr } = await supabase.rpc('credit_player_wallet', {
             p_user_id: winnerId,
             p_amount: ownBounty,
+            // A3 FIX (2026-07-29): the champion collects their own bounty head
+            // exactly once at finish; key it so a re-driven finish (watchdog /
+            // double finishTournament) cannot mint it twice. Unique per
+            // tournament winner.
+            p_idempotency_key: `tourney:${this.tournamentId}:ownbounty:${winnerId}`,
           });
           if (obErr) {
             reportError(

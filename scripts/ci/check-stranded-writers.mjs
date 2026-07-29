@@ -110,6 +110,24 @@ function lineOf(src, idx) {
   return n;
 }
 
+// Tables the CLIENT itself writes with an RLS-guarded chain
+// (`.from('t').insert|update|upsert|delete(...)`). Such user-generated-content
+// tables (reports, notes, feedback, …) are legitimately client-authoritative —
+// they have a writer, just not a server-side one, so they are NOT stranded.
+function clientWriteTables(dirs) {
+  const rx = /\.from\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]\s*\)\s*\.(insert|update|upsert|delete)\b/g;
+  const written = new Set();
+  for (const dir of dirs) {
+    for (const f of listCodeFiles(join(REPO, dir))) {
+      const src = readFileSync(f, 'utf8');
+      rx.lastIndex = 0;
+      let m;
+      while ((m = rx.exec(src))) written.add(m[1]);
+    }
+  }
+  return written;
+}
+
 function tablesMentionedIn(dir, extPattern) {
   // Loose mention check — any identifier-like token surrounded by quotes,
   // whitespace, or SQL punctuation. Used to catch RPC function bodies and
@@ -145,12 +163,14 @@ function tablesMentionedIn(dir, extPattern) {
 // ─── Scan ───────────────────────────────────────────────────────────────
 
 const clientRefs = fromCallsIn(['src']);
+const clientWrites = clientWriteTables(['src']);
 const serverMentions = tablesMentionedIn('server/src');
 const sqlMentions = tablesMentionedIn('supabase/migrations');
 
 const stranded = [];
 for (const [table, sites] of clientRefs) {
   if (ALLOWLIST.has(table)) continue;
+  if (clientWrites.has(table)) continue; // client-authoritative (writes it itself)
   const foundOnServer = serverMentions(table);
   const foundInSql = sqlMentions(table); // RPC writer or migration INSERT
   if (!foundOnServer && !foundInSql) {

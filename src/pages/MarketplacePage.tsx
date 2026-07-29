@@ -80,6 +80,17 @@ export default function MarketplacePage() {
 
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [inventory, setInventory] = useState<
+    {
+      id: string;
+      item_name: string | null;
+      category: string | null;
+      price_paid: number;
+      status: string;
+      acquired_at: string;
+    }[]
+  >([]);
+  const [redeeming, setRedeeming] = useState<string | null>(null);
   const [balance, setBalance] = useState(0);
   const [buyTarget, setBuyTarget] = useState<MarketplaceItem | null>(null);
 
@@ -307,10 +318,60 @@ export default function MarketplacePage() {
       // BUG-6 FIX: reset loadingRef before calling loadMarketplace so it's not blocked
       loadingRef.current = false;
       loadMarketplace(clubId, true);
+      loadInventory();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setProcessing(false);
+    }
+  };
+
+  /* ═══ Owned inventory (delivered items) + redemption ═══ */
+  const loadInventory = useCallback(async () => {
+    if (!clubId || !user) return;
+    try {
+      const { data } = await supabase
+        .from('club_shop_inventory')
+        .select('id, item_name, category, price_paid, status, acquired_at')
+        .eq('club_id', clubId)
+        .eq('user_id', user.id)
+        .order('acquired_at', { ascending: false });
+      if (mountedRef.current) setInventory(data || []);
+    } catch (err) {
+      reportError(err, 'MarketplacePage.loadInventory');
+    }
+  }, [clubId, user, mountedRef]);
+
+  useEffect(() => {
+    if (tab === 'my_items') loadInventory();
+  }, [tab, loadInventory]);
+
+  const handleRedeem = async (inventoryId: string) => {
+    if (redeeming) return;
+    if (
+      !(await confirmDialog({
+        title: 'Redeem item',
+        message: 'Mark this item as used/redeemed? This cannot be undone.',
+        confirmText: 'Redeem',
+        variant: 'default',
+      }))
+    )
+      return;
+    setRedeeming(inventoryId);
+    try {
+      const { data, error } = await supabase.rpc('fn_redeem_shop_item', {
+        p_inventory_id: inventoryId,
+      });
+      if (error || !data?.success) {
+        throw new Error(data?.error || error?.message || 'Redeem failed');
+      }
+      toast.success('Item redeemed');
+      loadInventory();
+    } catch (err: any) {
+      toast.error(err.message || 'Redeem failed');
+      reportError(err, 'MarketplacePage.handleRedeem');
+    } finally {
+      if (mountedRef.current) setRedeeming(null);
     }
   };
 
@@ -657,7 +718,7 @@ export default function MarketplacePage() {
       {/* ═══ My Items Tab ═══ */}
       {tab === 'my_items' && (
         <div className={styles.section}>
-          {purchases.length === 0 ? (
+          {inventory.length === 0 ? (
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>📦</span>
               <span className={styles.emptyText}>You haven&apos;t purchased any items yet.</span>
@@ -673,26 +734,53 @@ export default function MarketplacePage() {
                     <th>Item</th>
                     <th>Category</th>
                     <th>Price Paid</th>
-                    <th>Date</th>
+                    <th>Acquired</th>
+                    <th>Status</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {purchases.map((p) => {
-                    // BUG-12 FIX: Use API-joined item_name first, then itemMap fallback
-                    const itemData = itemMap[p.item_id];
-                    const displayName = p.item_name || itemData?.name || 'Unknown Item';
-                    const displayCategory = p.item_category || itemData?.category || 'Time Banks';
+                  {inventory.map((it) => {
+                    const redeemed = it.status === 'redeemed';
                     return (
-                      <tr key={p.id}>
-                        <td style={{ fontWeight: 700 }}>{displayName}</td>
+                      <tr key={it.id}>
+                        <td style={{ fontWeight: 700 }}>{it.item_name || 'Unknown Item'}</td>
                         <td>
-                          <span className={styles.categorySmall}>{displayCategory}</span>
+                          <span className={styles.categorySmall}>{it.category || '—'}</span>
                         </td>
                         <td style={{ fontWeight: 800, color: '#f7c52a' }}>
-                          {fmtChips(p.price_paid)}
+                          {fmtChips(it.price_paid)}
                         </td>
                         <td style={{ fontSize: '12px', color: '#8b8d91' }}>
-                          {timeAgo(p.created_at)}
+                          {timeAgo(it.acquired_at)}
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: '8px',
+                              color: redeemed ? '#8b8d91' : '#31A24C',
+                              background: redeemed
+                                ? 'rgba(139,141,145,0.12)'
+                                : 'rgba(49,162,76,0.12)',
+                            }}
+                          >
+                            {redeemed ? 'Redeemed' : 'Owned'}
+                          </span>
+                        </td>
+                        <td>
+                          {!redeemed && (
+                            <button
+                              className={styles.emptyButton}
+                              style={{ padding: '4px 12px', fontSize: '12px' }}
+                              onClick={() => handleRedeem(it.id)}
+                              disabled={redeeming === it.id}
+                            >
+                              {redeeming === it.id ? '…' : 'Redeem'}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

@@ -1473,6 +1473,18 @@ export default function TablePage({
   // realtime insert) after clearing stale cards.
   const heroHandRef = useRef<number>(0);
   const heroCardFetchRef = useRef<(() => void) | null>(null);
+  // Achievement/challenge wiring: accumulate the hero's outcome across a hand's
+  // server events (dealt-in at card populate, showdown, per-pot win) and fire
+  // achievementTriggerService.onHandComplete ONCE at HAND_COMPLETE. Without this
+  // the entire hand-based achievement + daily-challenge loop is inert.
+  const heroHandOutcomeRef = useRef<{
+    dealtIn: boolean;
+    showdown: boolean;
+    won: boolean;
+    potWon: number;
+    handRank: string;
+  }>({ dealtIn: false, showdown: false, won: false, potWon: 0, handRank: '' });
+  const achievementFiredHandRef = useRef<number>(0);
   // P1-3 FIX: true only once hole cards were ACTUALLY applied to the hero
   // player object; gates the recovery-poll teardown so it doesn't stop while
   // heroIdx=-1 mid-reload. Reset when the fetch is re-armed for a new hand.
@@ -2229,6 +2241,8 @@ export default function TablePage({
               holeCards: formattedCards,
               showCards: true,
             };
+            // Hero was dealt into this hand → counts toward hands-played achievements.
+            if (formattedCards.length >= 2) heroHandOutcomeRef.current.dealtIn = true;
           }
           return { ...prev, players: updatedPlayers };
         });
@@ -2309,6 +2323,7 @@ export default function TablePage({
               holeCards: parsedCards,
               showCards: true,
             };
+            if (parsedCards.length >= 2) heroHandOutcomeRef.current.dealtIn = true;
             cardsApplied = true;
             heroCardsRecoveredRef.current = true;
           }
@@ -4078,6 +4093,14 @@ export default function TablePage({
           const hn = Number((evt.data as any)?.hand_number) || 0;
           if (hn > 0) heroHandRef.current = hn;
         }
+        // Fresh hand → reset the accumulated achievement outcome.
+        heroHandOutcomeRef.current = {
+          dealtIn: false,
+          showdown: false,
+          won: false,
+          potWon: 0,
+          handRank: '',
+        };
         // Reset visual state instantly so the new hand starts crisp.
         setTableState((prev) => {
           const players = prev.players.map((p) =>
@@ -4215,6 +4238,31 @@ export default function TablePage({
       }
       case 'HAND_COMPLETE_EVENT':
       case 'HAND_COMPLETE': {
+        // ── Achievement / daily-challenge progress ──────────────────────────
+        // Fire ONCE per hand for the hero if they were dealt in. Guarded by
+        // hand number so HAND_COMPLETE_EVENT + HAND_COMPLETE (or a re-emit)
+        // can't double-count. Non-blocking — never delays the table reset.
+        {
+          const hn = heroHandRef.current;
+          const outcome = heroHandOutcomeRef.current;
+          if (
+            userId &&
+            userId !== 'guest' &&
+            outcome.dealtIn &&
+            hn > 0 &&
+            achievementFiredHandRef.current !== hn
+          ) {
+            achievementFiredHandRef.current = hn;
+            achievementTriggerService
+              .onHandComplete(userId, {
+                won: outcome.won,
+                potSize: outcome.potWon,
+                handRank: outcome.handRank || undefined,
+                showdown: outcome.showdown,
+              })
+              .catch((e) => reportError(e, 'TablePage.achievementOnHandComplete'));
+          }
+        }
         // Bible V8 §1.16 — final river bets still on felt must sweep into
         // pot BEFORE the pot-to-winner animation fires (POT_WIN case).
         const finalBets = tableStateRef.current.lastBetAmounts || [];
@@ -4255,6 +4303,8 @@ export default function TablePage({
       }
 
       case 'SHOWDOWN': {
+        // This hand reached showdown → feeds the 'showdowns' daily challenge.
+        heroHandOutcomeRef.current.showdown = true;
         // Bible V8 §4.6: Showdown — play showdown sound, trigger card reveal animations
         // #175 gated for multi-table: only play on the active tab
         if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playShowdown();
@@ -4312,6 +4362,11 @@ export default function TablePage({
           // < 10 BB = gold glow only (default), 10-50 BB = confetti,
           // 50+ BB = confetti + screen shake + bigWin sound
           if (winnerIds.includes(userId)) {
+            // Accumulate the hero's win for the achievement/challenge fire at
+            // HAND_COMPLETE (POT_WIN can fire once per pot on split/side pots).
+            heroHandOutcomeRef.current.won = true;
+            heroHandOutcomeRef.current.potWon += amounts[userId] || 0;
+            if (winHandName) heroHandOutcomeRef.current.handRank = winHandName;
             const bb = safeBB(tableStateRef.current.blinds, 1);
             const winBB = (amounts[userId] || potAmount) / bb;
             if (winBB >= 10) {

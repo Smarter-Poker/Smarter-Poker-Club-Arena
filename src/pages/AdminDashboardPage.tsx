@@ -23,6 +23,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { fmt, fmtChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { confirmDialog } from '../components/common/confirmDialog';
 
 // ── Helpers ─────────────────────────────────────────────────
 const formatDate = (ts: string | null | undefined) => {
@@ -661,7 +662,13 @@ function SettlementsTab({ clubId }: { clubId: string }) {
   }, [load]);
 
   const doAction = async (actionName: string, extras: Record<string, string | undefined> = {}) => {
-    if (!confirm(`Are you sure you want to ${actionName} this settlement period?`)) return;
+    if (
+      !(await confirmDialog({
+        message: `Are you sure you want to ${actionName} this settlement period?`,
+        variant: 'danger',
+      }))
+    )
+      return;
     try {
       setProcessing(true);
       setError(null);
@@ -1188,7 +1195,15 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this announcement?')) return;
+    if (
+      !(await confirmDialog({
+        title: 'Delete announcement',
+        message: 'Delete this announcement?',
+        confirmText: 'Delete',
+        variant: 'danger',
+      }))
+    )
+      return;
     setActionError(null);
     try {
       // SECURITY: Scope to club to prevent cross-club deletion
@@ -1828,12 +1843,19 @@ function BrandingTab({ clubId }: { clubId: string }) {
                 ?.value;
               if (!target) return;
               if (
-                !confirm(
-                  `⚠️ IRREVERSIBLE: Transfer ownership to ${target.substring(0, 8)}...? You will be demoted to admin.`
-                )
+                !(await confirmDialog({
+                  message: `⚠️ IRREVERSIBLE: Transfer ownership to ${target.substring(0, 8)}...? You will be demoted to admin.`,
+                  variant: 'danger',
+                }))
               )
                 return;
-              if (!confirm('Are you absolutely sure? This cannot be undone.')) return;
+              if (
+                !(await confirmDialog({
+                  message: 'Are you absolutely sure? This cannot be undone.',
+                  variant: 'danger',
+                }))
+              )
+                return;
               try {
                 setErr(null);
                 const uuid = await resolveClubUUID(clubId);
@@ -2113,7 +2135,15 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                   </button>
                   <button
                     onClick={async () => {
-                      if (!confirm(`Delete template "${tmpl.name}"?`)) return;
+                      if (
+                        !(await confirmDialog({
+                          title: 'Delete template',
+                          message: `Delete template "${tmpl.name}"?`,
+                          confirmText: 'Delete',
+                          variant: 'danger',
+                        }))
+                      )
+                        return;
                       setActionError(null);
                       try {
                         const { error: delErr } = await supabase

@@ -15,6 +15,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import type { ChipTransaction } from '../types/database.types';
 import { cashoutService } from '../services/CashoutService';
+import { confirmDialog } from '../components/common/confirmDialog';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
 import { exportToCSV } from '../lib/export';
@@ -457,7 +458,8 @@ export default function AgentDashboardPage() {
 
   // ── Cashout Actions ────────────────────────────────────────
   const approveCashout = async (cashoutId: string) => {
-    if (!confirm('Approve this cashout request?')) return;
+    if (!(await confirmDialog({ message: 'Approve this cashout request?', variant: 'danger' })))
+      return;
     setProcessing(true);
     setError(null);
     try {
@@ -473,7 +475,10 @@ export default function AgentDashboardPage() {
   };
 
   const denyCashout = async (cashoutId: string) => {
-    if (!confirm('Deny and refund this cashout request?')) return;
+    if (
+      !(await confirmDialog({ message: 'Deny and refund this cashout request?', variant: 'danger' }))
+    )
+      return;
     setProcessing(true);
     setError(null);
     try {

@@ -14,6 +14,7 @@ import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { confirmDialog } from '../components/common/confirmDialog';
 import styles from './AntiCheatPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
@@ -545,7 +546,15 @@ export default function AntiCheatPage() {
   };
 
   const kickPlayer = async (playerId: string, tableId?: string) => {
-    if (!confirm('Remove this player from the table for anti-cheat violation?')) return;
+    if (
+      !(await confirmDialog({
+        title: 'Remove player',
+        message: 'Remove this player from the table for anti-cheat violation?',
+        confirmText: 'Remove',
+        variant: 'danger',
+      }))
+    )
+      return;
     setProcessing(true);
     try {
       if (tableId) {

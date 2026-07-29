@@ -985,6 +985,7 @@
     "fn_award_social_xp",
     "fn_backfill_position_stats",
     "fn_backfill_venue_slugs",
+    "fn_batch_active_player_counts",
     "fn_batch_club_member_counts",
     "fn_bbj_check_eligible",
     "fn_bbj_payout",

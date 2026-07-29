@@ -1048,22 +1048,25 @@ function HomePageInner() {
 
         const statsMap: Record<string, ClubStats> = {};
 
+        // Batch ALL clubs' active-player counts into ONE RPC instead of one per
+        // club (was a fan-out on the hottest page).
+        const activeCountMap = new Map<string, number>();
+        try {
+          const { data: batchCounts } = await supabase.rpc('fn_batch_active_player_counts', {
+            p_club_ids: clubRows.map((c: any) => c.id),
+          });
+          for (const r of batchCounts || [])
+            activeCountMap.set(r.club_id, Number(r.active_count) || 0);
+        } catch (e) {
+          reportError(e, 'HomePage.batchActiveCounts');
+        }
+
         // Process each club in parallel
         await Promise.allSettled(
           clubRows.map(async (club: any) => {
             const memberCount = club.member_count || 0;
 
-            // Try RPC for active player count
-            let activePlayers = 0;
-            try {
-              const { data: rpcCount } = await supabase.rpc('fn_get_active_player_count', {
-                p_club_id: club.id,
-              });
-              activePlayers = Number(rpcCount) || 0;
-            } catch (e) {
-              reportError(e, 'HomePage.map');
-              // RPC not deployed — skip
-            }
+            const activePlayers = activeCountMap.get(club.id) || 0;
 
             // Auto-recompute club level if stuck at default
             // Session dedup: only fire the RPC once per session per club
@@ -1164,25 +1167,17 @@ function HomePageInner() {
               if (unionClubRows && unionClubRows.length > 0) {
                 // Get unique member club IDs across all unions
                 const memberClubIds = [...new Set(unionClubRows.map((r: any) => r.club_id))];
-                // Batch-fetch active counts for all member clubs
-                const activeResults = await Promise.allSettled(
-                  memberClubIds.map(async (clubId: string) => {
-                    try {
-                      const { data: count } = await supabase.rpc('fn_get_active_player_count', {
-                        p_club_id: clubId,
-                      });
-                      return { clubId, count: Number(count) || 0 };
-                    } catch {
-                      return { clubId, count: 0 };
-                    }
-                  })
-                );
-                // Build club → active count map
+                // Batch-fetch active counts for ALL member clubs in one RPC.
                 const clubActiveMap: Record<string, number> = {};
-                for (const r of activeResults) {
-                  if (r.status === 'fulfilled') {
-                    clubActiveMap[r.value.clubId] = r.value.count;
-                  }
+                try {
+                  const { data: batchCounts } = await supabase.rpc(
+                    'fn_batch_active_player_counts',
+                    { p_club_ids: memberClubIds }
+                  );
+                  for (const r of batchCounts || [])
+                    clubActiveMap[r.club_id] = Number(r.active_count) || 0;
+                } catch (e) {
+                  reportError(e, 'HomePage.unionBatchActiveCounts');
                 }
                 // Sum active counts per union from its member clubs
                 for (const row of unionClubRows) {

@@ -167,11 +167,17 @@ export default function VIPPage() {
       if (getIsMounted && !getIsMounted()) return;
       setDiamonds(profData?.diamonds || 0);
 
-      const currentPts = 0;
+      // Real VIP points (accrued from rake generated). vip_points is per-user,
+      // RLS-scoped to the owner.
+      const { data: vp } = await supabase
+        .from('vip_points')
+        .select('current_points, lifetime_points')
+        .eq('user_id', user.id)
+        .maybeSingle();
       setVipPoints((prev) => ({
         ...prev,
-        current: currentPts,
-        lifetime: currentPts,
+        current: Number(vp?.current_points || 0),
+        lifetime: Number(vp?.lifetime_points || 0),
       }));
 
       if (profData?.created_at) {
@@ -274,11 +280,22 @@ export default function VIPPage() {
       {vipEntranceComplete && (
         <RewardsMarketplace
           currentPoints={vipPoints.current}
-          onRedeem={(reward: Reward) => {
-            setVipPoints((prev) => ({
-              ...prev,
-              current: prev.current - reward.pointsCost,
-            }));
+          onRedeem={async (reward: Reward) => {
+            // Real spend: deduct points server-side (validates balance, records the
+            // ledger entry). Only update the UI on success.
+            const { data, error } = await supabase.rpc('fn_redeem_vip_points', {
+              p_cost: reward.pointsCost,
+              p_reason: `Reward: ${reward.name}`,
+            });
+            if (error || !data?.success) {
+              toast.error(
+                data?.error === 'insufficient_points'
+                  ? 'Not enough VIP points for this reward.'
+                  : 'Redemption failed. Please try again.'
+              );
+              return;
+            }
+            setVipPoints((prev) => ({ ...prev, current: Number(data.balance ?? prev.current) }));
             toast.success(`Redeemed: ${reward.name}`);
           }}
         />

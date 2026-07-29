@@ -347,243 +347,74 @@ export const SettlementService = {
     totalRakeBack: number;
     unionRetained: number;
   }> {
-    // Get union info
-    // RAKE-AUDIT 2026-07-24: settings included — revenueSharePercent (the
-    // union's retained cut) was stored in union settings but IGNORED; the 90%
-    // rake-back ratio was hardcoded. Now: rakeBack = rake × (1 − share/100),
-    // defaulting to the historical 10% share when unconfigured.
-    const { data: union } = await supabase
-      .from('unions')
-      .select('owner_id, name, settings')
-      .eq('id', unionId)
-      .maybeSingle();
-
-    if (!union?.owner_id) throw new Error('Union not found');
-
-    const revenueSharePercent = (() => {
-      const raw = (union as { settings?: { revenueSharePercent?: unknown } | null })?.settings
-        ?.revenueSharePercent;
-      const n = Number(raw);
-      return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 10;
-    })();
-    const rakeBackRatio = (100 - revenueSharePercent) / 100;
-
-    // Idempotency: Verify we haven't already paid out this union for this period
-    // (This uses verify_and_log_union_rakeback to guarantee exactly-once execution)
-    // First, we need to quickly sum the rake to pass to the idempotency checker
-    const { data: earlyRakeData } = await supabase.rpc('get_union_rake_for_period', {
+    // Server-authoritative: fn_execute_union_rakeback (SECURITY DEFINER) does the
+    // rake read, per-club rakeback math (union keeps revenueSharePercent, pays back
+    // the rest), the union-owner balance check, idempotency (union_rakeback_log is
+    // unique per union+period), and every wallet transfer ALL in ONE atomic txn.
+    // So: no partial payouts, no double-pay, and no dependence on the caller's RLS
+    // to read other clubs' rake/wallets. Only the union owner is authorised
+    // (checked server-side via auth.uid()).
+    const { data, error } = await supabase.rpc('fn_execute_union_rakeback', {
       p_union_id: unionId,
-      p_start: periodStart,
-      p_end: periodEnd,
+      p_period_start: periodStart,
+      p_period_end: periodEnd,
     });
 
-    // Pre-compute total rakeback from the rake query so the idempotency guard
-    // records the real expected amount (prevents permanent lockout on crash).
-    const estimatedTotalRake = Array.isArray(earlyRakeData)
-      ? earlyRakeData.reduce((sum: number, r: any) => sum + Number(r.rake_amount || 0), 0)
-      : Number(earlyRakeData?.total_rake || 0);
-    const estimatedRakeBack = Math.trunc(estimatedTotalRake * rakeBackRatio * 100) / 100;
+    if (error) {
+      reportError(error, 'SettlementService.executeUnionRakeBack', { unionId });
+      throw new Error(`Union rakeback failed: ${error.message}`);
+    }
 
-    const { data: canExecute, error: execErr } = await supabase.rpc(
-      'verify_and_log_union_rakeback',
-      {
-        p_union_id: unionId,
-        p_period_start: periodStart,
-        p_period_end: periodEnd,
-        p_total_rakeback: estimatedRakeBack,
+    const res = (data || {}) as {
+      success?: boolean;
+      error?: string;
+      clubs_paid?: number;
+      total_rakeback?: number;
+      union_retained?: number;
+      required?: number;
+      balance?: number;
+    };
+
+    if (!res.success) {
+      // Benign idempotent re-run — already paid for this period.
+      if (res.error === 'already_executed') {
+        return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
       }
-    );
-
-    if (execErr) {
-      reportError(execErr, 'SettlementService.executeUnionRakeBack.idempotency', { unionId });
-      throw new Error(`Execution verification failed: ${execErr.message}`);
-    }
-
-    if (canExecute === false) {
-      reportError(
-        `Union ${unionId} already paid for ${periodStart} - ${periodEnd}`,
-        'SettlementService.executeUnionRakeBack.alreadyPaid',
-        { unionId }
-      );
-      return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
-    }
-
-    // Get all clubs in this union
-    const { data: clubs } = await supabase
-      .from('clubs')
-      .select('id, name, owner_id')
-      .eq('union_id', unionId);
-
-    if (!clubs || clubs.length === 0) return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
-
-    // PRE-CHECK: Verify union owner has sufficient balance for total rakeback
-    // This prevents partial payouts where some clubs get paid and others don't
-    const { data: unionOwnerWallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', union.owner_id)
-      .maybeSingle();
-
-    const unionOwnerBalance = Number(unionOwnerWallet?.balance || 0);
-
-    // Calculate total estimated payout to all clubs
-    let totalEstimatedRakeBack = 0;
-    const clubRakeMap = new Map<string, number>();
-
-    for (const club of clubs) {
-      // RAKE-AUDIT 2026-07-24: read the LIVE per-hand rake ledger rake_records
-      // (created_at). The previous source, rake_history, stopped receiving
-      // writes on 2026-05-01 (Phase J removed the insert), so every club's
-      // rake summed to 0 and the union 90% rake-back silently paid clubs
-      // NOTHING while reporting success.
-      const { data: rakeData } = await supabase
-        .from('rake_records')
-        .select('rake_amount')
-        .eq('club_id', club.id)
-        .gte('created_at', periodStart)
-        .lt('created_at', periodEnd);
-
-      const clubRake = (rakeData || []).reduce((sum, r) => sum + Number(r.rake_amount), 0);
-      const rakeBack = Math.trunc(clubRake * rakeBackRatio * 100) / 100;
-      clubRakeMap.set(club.id, rakeBack);
-      totalEstimatedRakeBack += rakeBack;
-    }
-
-    // CRITICAL ALERT: Insufficient balance — abort all payouts
-    if (unionOwnerBalance < totalEstimatedRakeBack) {
-      const shortfall = totalEstimatedRakeBack - unionOwnerBalance;
-      reportError(
-        `Union owner insufficient balance: Balance=${unionOwnerBalance}, Required=${totalEstimatedRakeBack}, Shortfall=${shortfall}`,
-        'SettlementService.executeUnionRakeBack.insufficientBalance',
-        { unionId, unionOwnerBalance, totalEstimatedRakeBack, shortfall }
-      );
-
-      try {
-        const { FinancialAlertService } = await import('./FinancialAlertService');
-        await FinancialAlertService.logCritical(
-          'SettlementService.executeUnionRakeBack',
-          `Union owner insufficient balance for rakeback distribution`,
-          {
-            unionId,
-            unionOwnerId: union.owner_id,
-            unionOwnerBalance,
-            totalEstimatedRakeBack,
-            shortfall,
-            periodStart,
-            periodEnd,
-            affectedClubs: clubs.length,
-          }
-        );
-      } catch (e) {
-        reportError(e, 'SettlementService');
-        /* best effort */
-      }
-
-      masterBus.emit('SETTLEMENT_PAYOUT_FAILED', {
-        type: 'union_rakeback_insufficient_balance',
-        unionId,
-        error: `Union owner balance insufficient. Balance: ${unionOwnerBalance}, Required: ${totalEstimatedRakeBack}, Shortfall: ${shortfall}`,
-        amount: totalEstimatedRakeBack,
-      });
-
-      return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
-    }
-
-    let clubsPaid = 0;
-    let totalRakeBack = 0;
-    let totalCollected = 0;
-
-    for (const club of clubs) {
-      const rakeBack = clubRakeMap.get(club.id) || 0;
-      if (rakeBack <= 0) continue;
-
-      // Estimate original rake from rakeback (reverse: rakeBack = rake * ratio)
-      // RAKE-AUDIT 2026-07-24: uses the union's configured ratio, not fixed 90%.
-      const rakeBackCents = Math.trunc(rakeBack * 100);
-      const clubRake =
-        rakeBackRatio > 0 ? Math.trunc(rakeBackCents / rakeBackRatio) / 100 : rakeBack;
-      totalCollected += clubRake;
-
-      if (rakeBack > 0 && club.owner_id) {
-        // Atomic Settlement Transfer
-        const { data: transferResult, error: transferError } = await retryAsync(
-          () =>
-            supabase.rpc('atomic_wallet_transfer', {
-              p_from_user_id: union.owner_id,
-              p_to_user_id: club.owner_id,
-              p_amount: rakeBack,
-              p_category: 'settlement',
-              p_debit_description: `Weekly rake back to ${club.name}: 90% of ${clubRake}`,
-              p_credit_description: `Weekly rake back from ${union.name}: 90% of ${clubRake} collected`,
-              p_related_entity_id: club.id,
-            }),
-          3
-        );
-
-        if (transferError || transferResult === false) {
-          const errMsg =
-            transferError?.message || 'transferResult === false (insufficient balance?)';
-          reportError(
-            transferError || 'transferResult === false',
-            'SettlementService.executeUnionRakeBack.transfer',
-            { unionId, clubId: club.id, clubName: club.name, rakeBack }
+      if (res.error === 'insufficient_balance') {
+        try {
+          const { FinancialAlertService } = await import('./FinancialAlertService');
+          await FinancialAlertService.logCritical(
+            'SettlementService.executeUnionRakeBack',
+            'Union owner insufficient balance for rakeback distribution',
+            { unionId, required: res.required, balance: res.balance, periodStart, periodEnd }
           );
-
-          // Log critical financial alert — silent skipping is dangerous for money movement
-          try {
-            const { FinancialAlertService } = await import('./FinancialAlertService');
-            await FinancialAlertService.logCritical(
-              'SettlementService.executeUnionRakeBack',
-              `Union rakeback transfer FAILED for club ${club.name} — ${rakeBack} chips not delivered. Manual reconciliation required.`,
-              {
-                unionId,
-                clubId: club.id,
-                clubName: club.name,
-                clubOwnerId: club.owner_id,
-                unionOwnerId: union.owner_id,
-                rakeBack,
-                clubRake: clubRake,
-                periodStart,
-                periodEnd,
-                error: errMsg,
-              }
-            );
-          } catch (e) {
-            reportError(e, 'SettlementService');
-            /* best effort — already logged to console */
-          }
-
-          // Emit bus event so admin dashboards see the failure
-          masterBus.emit('SETTLEMENT_PAYOUT_FAILED', {
-            type: 'union_rakeback',
-            unionId,
-            clubId: club.id,
-            clubName: club.name,
-            amount: rakeBack,
-            error: errMsg,
-          });
-
-          continue;
+        } catch (e) {
+          reportError(e, 'SettlementService');
         }
-
-        // Emit bus event so UI updates immediately
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'union_rakeback_deduct',
-          userId: union.owner_id,
+        masterBus.emit('SETTLEMENT_PAYOUT_FAILED', {
+          type: 'union_rakeback_insufficient_balance',
+          unionId,
+          error: `Union owner balance insufficient. Balance: ${res.balance}, Required: ${res.required}`,
+          amount: Number(res.required || 0),
         });
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'union_rakeback_credit',
-          userId: club.owner_id,
-        });
-
-        clubsPaid++;
-        totalRakeBack += rakeBack;
+        return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
       }
+      // not_authorized / union_not_found / missing_params / a failed transfer
+      // (which rolled the whole txn back — nothing was paid).
+      reportError(res.error || 'unknown', 'SettlementService.executeUnionRakeBack.failed', {
+        unionId,
+      });
+      throw new Error(`Union rakeback failed: ${res.error || 'unknown error'}`);
     }
 
-    const unionRetained = Math.trunc((totalCollected - totalRakeBack) * 100) / 100;
+    const clubsPaid = Number(res.clubs_paid || 0);
+    const totalRakeBack = Number(res.total_rakeback || 0);
 
-    return { clubsPaid, totalRakeBack, unionRetained };
+    if (clubsPaid > 0) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'union_rakeback', userId: unionId });
+    }
+
+    return { clubsPaid, totalRakeBack, unionRetained: Number(res.union_retained || 0) };
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

@@ -121,29 +121,51 @@ export const LeaderboardService = {
   async getClubLeaderboard(
     clubId: string,
     metric: LeaderboardMetric = 'profit',
-    _period: LeaderboardPeriod = 'weekly',
+    period: LeaderboardPeriod = 'weekly',
     limit: number = 10
   ): Promise<LeaderboardEntry[]> {
     try {
-      // Direct query — player_stats has: total_winnings, total_losses, hands_played, vpip, pfr, tournaments_played, tournaments_won
-      const metricToColumn: Record<string, string> = {
-        profit: 'total_winnings',
-        hands_played: 'hands_played',
-        vpip: 'vpip',
-        pfr: 'pfr',
-        tournaments_won: 'tournaments_won',
-        roi: 'total_winnings', // Sort by winnings as proxy for ROI
-      };
-      const orderCol = metricToColumn[metric] || 'total_winnings';
+      const resolvedClubId = await resolveClubUUID(clubId);
+      // Ratio metrics (vpip/pfr) have no meaningful daily/weekly delta, so they
+      // always use all-time. Everything else uses the delta-based period RPC for a
+      // real day/week/month view (falls back to all-time inside the RPC).
+      const isRatio = metric === 'vpip' || metric === 'pfr';
+      const usePeriod = !isRatio && period !== 'all_time';
 
-      const { data: statsData, error: statsError } = await supabase
-        .from('player_stats')
-        .select(
-          'user_id, hands_played, total_winnings, total_losses, total_rake, vpip, pfr, tournaments_played, tournaments_won'
-        )
-        .eq('club_id', await resolveClubUUID(clubId))
-        .order(orderCol, { ascending: false })
-        .limit(limit);
+      let statsData: any[] | null = null;
+      let statsError: any = null;
+
+      if (usePeriod) {
+        const { data, error } = await supabase.rpc('fn_club_leaderboard_period', {
+          p_club_id: resolvedClubId,
+          p_metric: metric,
+          p_period: period,
+          p_limit: limit,
+        });
+        statsData = data;
+        statsError = error;
+      } else {
+        // Direct query — player_stats has: total_winnings, total_losses, hands_played, vpip, pfr, tournaments_played, tournaments_won
+        const metricToColumn: Record<string, string> = {
+          profit: 'total_winnings',
+          hands_played: 'hands_played',
+          vpip: 'vpip',
+          pfr: 'pfr',
+          tournaments_won: 'tournaments_won',
+          roi: 'total_winnings', // Sort by winnings as proxy for ROI
+        };
+        const orderCol = metricToColumn[metric] || 'total_winnings';
+        const { data, error } = await supabase
+          .from('player_stats')
+          .select(
+            'user_id, hands_played, total_winnings, total_losses, total_rake, vpip, pfr, tournaments_played, tournaments_won'
+          )
+          .eq('club_id', resolvedClubId)
+          .order(orderCol, { ascending: false })
+          .limit(limit);
+        statsData = data;
+        statsError = error;
+      }
 
       if (statsError || !statsData) {
         reportError(statsError, 'LeaderboardService.LeaderboardServicegetClubLeaderboard_sta');

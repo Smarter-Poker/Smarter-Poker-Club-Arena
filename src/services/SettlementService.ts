@@ -324,6 +324,59 @@ export const SettlementService = {
     return { agentsPaid: 0, playersWithRakeback: 0, totalDisbursed: 0 };
   },
 
+  /**
+   * Admin-only status of the player-rakeback settlement backlog. The engine
+   * daemon settles rakeback automatically; this surfaces what's still pending so
+   * the dashboard can stop pretending and show real numbers.
+   */
+  async getRakebackSettlementStatus(): Promise<{
+    pendingPeriods: number;
+    pendingClubs: number;
+    estimatedOwed: number;
+    lastPaidAt: string | null;
+  } | null> {
+    const { data, error } = await supabase.rpc('fn_rakeback_settlement_status');
+    if (error || !data?.success) {
+      if (error) reportError(error, 'SettlementService.getRakebackSettlementStatus');
+      return null;
+    }
+    return {
+      pendingPeriods: Number(data.pending_periods || 0),
+      pendingClubs: Number(data.pending_clubs || 0),
+      estimatedOwed: Number(data.estimated_owed || 0),
+      lastPaidAt: data.last_paid_at || null,
+    };
+  },
+
+  /**
+   * Admin-only on-demand player-rakeback settlement. Drives the existing
+   * idempotent settle_club_rakeback per club (status-guard + receipt table), so
+   * it is safe to run any time and cannot double-pay. Bounded per call.
+   */
+  async runPendingRakebackSettlement(maxClubs = 100): Promise<{
+    clubsProcessed: number;
+    periodsSettled: number;
+    totalPayout: number;
+    clubsRemaining: number;
+  }> {
+    const { data, error } = await supabase.rpc('fn_run_pending_rakeback_settlement', {
+      p_max_clubs: maxClubs,
+    });
+    if (error) {
+      reportError(error, 'SettlementService.runPendingRakebackSettlement');
+      throw new Error(`Rakeback settlement failed: ${error.message}`);
+    }
+    if (!data?.success) {
+      throw new Error(`Rakeback settlement failed: ${data?.error || 'unknown error'}`);
+    }
+    return {
+      clubsProcessed: Number(data.clubs_processed || 0),
+      periodsSettled: Number(data.periods_settled || 0),
+      totalPayout: Number(data.total_payout || 0),
+      clubsRemaining: Number(data.clubs_remaining || 0),
+    };
+  },
+
   // ─────────────────────────────────────────────────────────────────────────────
   // UNION RAKE BACK — Weekly 90% Distribution
   // ─────────────────────────────────────────────────────────────────────────────

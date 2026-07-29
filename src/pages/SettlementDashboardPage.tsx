@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import { confirmDialog } from '../components/common/confirmDialog';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { SettlementService } from '../services/SettlementService';
 import { SettlementCronService, type CanaryResult } from '../services/SettlementCronService';
@@ -171,6 +172,12 @@ export default function SettlementDashboardPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [runningCanary, setRunningCanary] = useState(false);
   const [runningSettlement, setRunningSettlement] = useState(false);
+  const [rakebackStatus, setRakebackStatus] = useState<{
+    pendingPeriods: number;
+    pendingClubs: number;
+    estimatedOwed: number;
+    lastPaidAt: string | null;
+  } | null>(null);
   const [expandedPeriodId, setExpandedPeriodId] = useState<string | null>(null);
   const [visibleCards, setVisibleCards] = useState<Set<number>>(new Set());
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
@@ -393,22 +400,51 @@ export default function SettlementDashboardPage() {
     if (isMounted.current) setRunningCanary(false);
   };
 
+  const loadRakebackStatus = useCallback(async () => {
+    try {
+      const s = await SettlementService.getRakebackSettlementStatus();
+      if (isMounted.current) setRakebackStatus(s);
+    } catch (err) {
+      reportError(err, 'SettlementDashboardPage.loadRakebackStatus');
+    }
+  }, [isMounted]);
+
+  useEffect(() => {
+    loadRakebackStatus();
+  }, [loadRakebackStatus]);
+
+  // Player rakeback settles automatically via the engine daemon; this button
+  // forces the same idempotent settlement immediately (safe to re-run — it can't
+  // double-pay). Replaces the retired no-op "Monday payout" runner.
   const handleTriggerSettlement = async () => {
-    if (!currentPeriod?.id) {
-      toast.error('No active settlement period');
+    const pending = rakebackStatus?.pendingPeriods ?? 0;
+    const owed = rakebackStatus?.estimatedOwed ?? 0;
+    if (pending === 0) {
+      toast.info('No pending rakeback to settle — the engine is already up to date.');
       return;
     }
+    if (
+      !(await confirmDialog({
+        title: 'Settle pending rakeback now',
+        message: `Settle ${pending} pending rakeback period(s) across ${rakebackStatus?.pendingClubs ?? 0} club(s), paying out ~${owed.toLocaleString()} chips? This is idempotent — it can't pay the same period twice.`,
+        confirmText: 'Settle now',
+        variant: 'default',
+      }))
+    )
+      return;
     setRunningSettlement(true);
     try {
-      const result = await SettlementService.executeMondayPayouts(currentPeriod.id);
+      const result = await SettlementService.runPendingRakebackSettlement(200);
       if (!isMounted.current) return;
       toast.success(
-        `Settlement processed: ${result.agentsPaid} agents paid, ${result.totalDisbursed.toLocaleString()} chips disbursed`
+        `Settled ${result.periodsSettled} period(s) across ${result.clubsProcessed} club(s): ${result.totalPayout.toLocaleString()} chips paid.` +
+          (result.clubsRemaining > 0 ? ` ${result.clubsRemaining} club(s) still pending — run again.` : '')
       );
+      loadRakebackStatus();
       loadData();
     } catch (err) {
       if (!isMounted.current) return;
-      toast.error('Settlement execution failed');
+      toast.error(err instanceof Error ? err.message : 'Settlement execution failed');
       reportError(err, 'SettlementDashboardPage.Execution_error');
     }
     if (isMounted.current) setRunningSettlement(false);
@@ -814,7 +850,12 @@ export default function SettlementDashboardPage() {
         </button>
         <button
           onClick={handleTriggerSettlement}
-          disabled={runningSettlement || !currentPeriod}
+          disabled={runningSettlement}
+          title={
+            rakebackStatus
+              ? `${rakebackStatus.pendingPeriods} pending period(s), ~${rakebackStatus.estimatedOwed.toLocaleString()} chips owed`
+              : 'Player rakeback settles automatically; click to force it now'
+          }
           style={{
             padding: '10px 18px',
             borderRadius: '10px',
@@ -824,11 +865,15 @@ export default function SettlementDashboardPage() {
             fontWeight: 700,
             fontSize: '0.8rem',
             cursor: runningSettlement ? 'wait' : 'pointer',
-            opacity: runningSettlement || !currentPeriod ? 0.5 : 1,
+            opacity: runningSettlement ? 0.5 : 1,
             transition: 'all 0.2s',
           }}
         >
-          {runningSettlement ? '⏳ Executing...' : '⚡ Execute Settlement'}
+          {runningSettlement
+            ? '⏳ Settling...'
+            : rakebackStatus && rakebackStatus.pendingPeriods > 0
+              ? `⚡ Settle Rakeback (${rakebackStatus.pendingPeriods})`
+              : '⚡ Settle Rakeback Now'}
         </button>
         <button
           onClick={() => loadData()}
@@ -846,6 +891,43 @@ export default function SettlementDashboardPage() {
           ↻ Refresh
         </button>
       </div>
+
+      {/* Rakeback settlement status — honest state of the automatic engine daemon */}
+      {rakebackStatus && (
+        <div
+          style={{
+            padding: '10px 14px',
+            marginBottom: '20px',
+            borderRadius: '10px',
+            background:
+              rakebackStatus.pendingPeriods > 0 ? 'rgba(139,92,246,0.06)' : 'rgba(16,185,129,0.06)',
+            border: `1px solid ${rakebackStatus.pendingPeriods > 0 ? 'rgba(139,92,246,0.2)' : 'rgba(16,185,129,0.2)'}`,
+            fontSize: '0.78rem',
+            color: 'rgba(255,255,255,0.7)',
+            lineHeight: 1.5,
+          }}
+        >
+          Player rakeback settles automatically via the engine.{' '}
+          {rakebackStatus.pendingPeriods > 0 ? (
+            <>
+              <strong style={{ color: '#8b5cf6' }}>
+                {rakebackStatus.pendingPeriods} period(s)
+              </strong>{' '}
+              across {rakebackStatus.pendingClubs} club(s) pending (~
+              {rakebackStatus.estimatedOwed.toLocaleString()} chips) — use “Settle Rakeback” to
+              clear now.
+            </>
+          ) : (
+            <strong style={{ color: '#10b981' }}>All rakeback settled — up to date.</strong>
+          )}
+          {rakebackStatus.lastPaidAt && (
+            <span style={{ color: 'rgba(255,255,255,0.45)' }}>
+              {' '}
+              Last payout {formatDateTime(rakebackStatus.lastPaidAt)}.
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Canary Result Detail */}
       {canaryResult && (

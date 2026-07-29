@@ -374,32 +374,34 @@ class UnionServiceClass {
 
     if (error) throw error;
 
-    // Fetch display names separately from profiles
-    const admins = await Promise.all(
-      (data || []).map(async (a) => {
-        let displayName: string | undefined;
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('username, full_name')
-            .eq('id', a.user_id)
-            .maybeSingle();
-          displayName = profile?.full_name || profile?.username;
-        } catch (err) {
-          reportError(err, 'UnionService.getUnionProfile');
-        }
+    const rows = data || [];
 
-        return {
-          id: a.id,
-          unionId: a.union_id,
-          userId: a.user_id,
-          role: a.role as 'union_lead' | 'union_admin',
-          permissions: a.permissions || { manageClubs: true, manageSettlements: true },
-          displayName,
-          createdAt: a.created_at,
-        };
-      })
-    );
+    // Batch-fetch display names in ONE query instead of N per-admin lookups.
+    const nameMap = new Map<string, string | undefined>();
+    const adminUserIds = [...new Set(rows.map((a) => a.user_id).filter(Boolean))];
+    if (adminUserIds.length > 0) {
+      try {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, username, full_name')
+          .in('id', adminUserIds);
+        for (const p of profiles || []) {
+          nameMap.set(p.id, p.full_name || p.username || undefined);
+        }
+      } catch (err) {
+        reportError(err, 'UnionService.getUnionProfile');
+      }
+    }
+
+    const admins = rows.map((a) => ({
+      id: a.id,
+      unionId: a.union_id,
+      userId: a.user_id,
+      role: a.role as 'union_lead' | 'union_admin',
+      permissions: a.permissions || { manageClubs: true, manageSettlements: true },
+      displayName: nameMap.get(a.user_id),
+      createdAt: a.created_at,
+    }));
 
     return admins;
   }
@@ -490,70 +492,75 @@ class UnionServiceClass {
 
     if (error) throw error;
 
-    // Enrich clubs with member counts (skip rake_transactions if empty/slow)
-    const enrichedClubs = await Promise.all(
-      (data || []).map(async (uc) => {
-        let memberCount = 0;
-        let weeklyRake = 0;
+    const rows = data || [];
+    const clubIds = [...new Set(rows.map((uc) => uc.club_id).filter(Boolean))];
+    const ownerIds = [
+      ...new Set(rows.map((uc) => (uc.clubs as any)?.owner_id).filter(Boolean)),
+    ] as string[];
 
-        try {
-          const { count } = await supabase
-            .from('club_members')
-            .select('*', { count: 'exact', head: true })
-            .eq('club_id', uc.club_id)
-            .in('status', ['active', 'approved']);
-          memberCount = count || 0;
-        } catch (err) {
-          reportError(err, 'UnionService.memberCountQuery');
+    // ── Batch all enrichment into 3 queries total (was 3 PER club) ──────────
+    const memberCounts = new Map<string, number>();
+    const weeklyRakes = new Map<string, number>();
+    const ownerNames = new Map<string, string | undefined>();
+
+    if (clubIds.length > 0) {
+      // Member counts — one grouped RPC (status filter matches the old per-club query).
+      try {
+        const { data: counts } = await supabase.rpc('fn_batch_club_member_counts', {
+          p_club_ids: clubIds,
+        });
+        for (const row of counts || []) memberCounts.set(row.club_id, Number(row.member_count));
+      } catch (err) {
+        reportError(err, 'UnionService.memberCountQuery');
+      }
+
+      // Weekly rake — ONE query across all union clubs, grouped client-side.
+      // Live ledger is rake_records (rake_history is dead — last row 2026-05-01).
+      try {
+        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: rakeData } = await supabase
+          .from('rake_records')
+          .select('club_id, rake_amount')
+          .in('club_id', clubIds)
+          .gte('created_at', oneWeekAgo)
+          .limit(QUERY_LIMITS.BULK);
+        for (const r of rakeData || []) {
+          weeklyRakes.set(
+            r.club_id,
+            (weeklyRakes.get(r.club_id) || 0) + Number(r.rake_amount || 0)
+          );
         }
+      } catch (err) {
+        reportError(err, 'UnionService.rakeQuery');
+      }
+    }
 
-        try {
-          const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-          // The live server-authoritative rake ledger is rake_records (rake_amount,
-          // created_at). rake_history is dead (last row 2026-05-01) — querying it made
-          // every club's weeklyRake read 0, so union settlement/stats under-reported.
-          const { data: rakeData } = await supabase
-            .from('rake_records')
-            .select('rake_amount')
-            .eq('club_id', uc.club_id)
-            .gte('created_at', oneWeekAgo)
-            .limit(QUERY_LIMITS.BULK);
-          weeklyRake = (rakeData || []).reduce((sum, r) => sum + Number(r.rake_amount || 0), 0);
-        } catch (err) {
-          reportError(err, 'UnionService.rakeQuery');
+    // Owner display names — one batched profiles lookup.
+    if (ownerIds.length > 0) {
+      try {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, username, full_name')
+          .in('id', ownerIds);
+        for (const p of profiles || []) {
+          ownerNames.set(p.id, p.full_name || p.username || undefined);
         }
+      } catch (err) {
+        reportError(err, 'UnionService.ownerProfileLookup');
+      }
+    }
 
-        // Get owner display name from profiles table directly
-        let ownerName: string | undefined;
-        try {
-          const ownerId = (uc.clubs as any)?.owner_id;
-          if (ownerId) {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('username, full_name')
-              .eq('id', ownerId)
-              .maybeSingle();
-            ownerName = profile?.full_name || profile?.username;
-          }
-        } catch (err) {
-          reportError(err, 'UnionService.ownerProfileLookup');
-        }
-
-        return {
-          id: uc.id,
-          unionId: uc.union_id,
-          clubId: uc.club_id,
-          clubName: (uc.clubs as any)?.name || 'Unknown',
-          ownerId: (uc.clubs as any)?.owner_id,
-          ownerName,
-          memberCount,
-          weeklyRake,
-          joinedAt: uc.joined_at,
-        };
-      })
-    );
-
-    return enrichedClubs;
+    return rows.map((uc) => ({
+      id: uc.id,
+      unionId: uc.union_id,
+      clubId: uc.club_id,
+      clubName: (uc.clubs as any)?.name || 'Unknown',
+      ownerId: (uc.clubs as any)?.owner_id,
+      ownerName: ownerNames.get((uc.clubs as any)?.owner_id),
+      memberCount: memberCounts.get(uc.club_id) || 0,
+      weeklyRake: weeklyRakes.get(uc.club_id) || 0,
+      joinedAt: uc.joined_at,
+    }));
   }
 
   /**

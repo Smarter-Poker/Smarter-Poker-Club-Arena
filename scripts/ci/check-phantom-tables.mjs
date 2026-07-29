@@ -1,154 +1,77 @@
 #!/usr/bin/env node
 /**
- * CI GATE — Phantom-table detector
+ * CI GATE — Phantom-reference detector (tables + RPCs)
  *
- * Part of Phase U4 of `CLUB-ARENA-OFFICIAL-UPGRADE-INTEGRATION.md` §2.4
- * invariant 2: "For every `.from('<name>')` in server/src/ and in
- * pages/api/*, the table MUST exist in pg_tables. Missing → 42P01
- * silent failure."
+ * Phase U4 of `CLUB-ARENA-OFFICIAL-UPGRADE-INTEGRATION.md` §2.4:
+ * every `.from('<name>')` must resolve to a real table/view and every
+ * `.rpc('<name>')` to a real function — otherwise the call is a silent
+ * 42P01 / PGRST202 failure (0 rows, no error) that ships to prod.
  *
- * This script uses `supabase/migrations/*.sql` as the schema source of truth
- * (any CREATE TABLE there is a table that will exist in production). That
- * avoids needing a live Supabase connection in CI.
+ * SOURCE OF TRUTH: `scripts/ci/supabase-schema-manifest.json` — a snapshot of
+ * the LIVE public schema (all tables/views + functions). This replaces the old
+ * "parse supabase/migrations/*.sql" approach, which false-positived on every
+ * table created straight in prod via the Supabase MCP (the migrations are
+ * intentionally stale — see CLAUDE.md). Regenerate the manifest with
+ * `node scripts/ci/gen-schema-manifest.mjs` whenever the schema changes.
  *
- * Scans:
- *   - src/**\/*.ts, src/**\/*.tsx  (UI + services)
- *   - server/src/**\/*.ts          (Hetzner game server)
+ * Because all orbs share ONE Supabase project, the manifest already contains
+ * every cross-orb table — no per-orb allowlisting needed. The only allowlist
+ * entries are genuine, reasoned exceptions (see supabase-invariants.allowlist.json):
+ * non-public targets (catalogs/auth/storage) and unbuilt-feature refs that
+ * degrade gracefully.
  *
- * Fails CI if any `.from('<table>')` references a name not declared in
- * migrations.
+ * Scans src/ and server/src/ (comments stripped first, so JSDoc examples like
+ * `* .from('solver_strategies')` are not treated as references).
  *
  * Usage:
- *   node scripts/ci/check-phantom-tables.mjs             # fail on phantom
- *   node scripts/ci/check-phantom-tables.mjs --warn      # non-blocking
+ *   node scripts/ci/check-phantom-tables.mjs            # strict (exit 1 on phantom)
+ *   node scripts/ci/check-phantom-tables.mjs --warn     # non-blocking (exit 0)
  *
- * Exit codes:
- *   0 — clean, or --warn mode
- *   1 — phantoms found (strict mode)
- *   2 — script error (e.g. no migrations directory)
+ * Exit codes: 0 clean/--warn · 1 phantoms found · 2 script error
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
 const REPO = process.cwd();
-const MIGRATIONS = join(REPO, 'supabase/migrations');
+const MANIFEST = join(REPO, 'scripts/ci/supabase-schema-manifest.json');
+const ALLOWLIST = join(REPO, 'scripts/ci/supabase-invariants.allowlist.json');
 const SCAN_DIRS = ['src', 'server/src'];
-const ALLOWLIST = new Set([
-  // Known non-table .from() targets (storage, rpc wrappers, etc.). Add sparingly.
-  'pg_tables',
-  'pg_stat_activity',
-  'auth.users',
-  'users', // Supabase auth.users via `.from('users')` after schema switch
-  'members', // view or transient alias (legacy)
-  // Cross-orb tables — defined in sibling-repo migrations not mounted in CA CI.
-  // Remove each entry once CI mounts the relevant orb's migrations and passes
-  // the corresponding --extra-migrations flag (see docs/U4-INVARIANT-FINDINGS.md).
-  // Diamond Arena orb:
-  'diamond_ledger',
-  // Identity DNA Engine orb:
-  'user_avatars',
-  // Training orb:
-  'training_user_achievements',
-  // Marketplace orb:
-  'club_shop_items',
-  'club_shop_purchases',
-  // World Hub (Smarter-Poker-World-Hub/supabase/migrations):
-  'chip_ledger', // 20260319_create_chip_ledger.sql
-  'club_arena_audit_logs', // 20260311000001_orb8_phase4_audit.sql
-  'settlement_invoices', // WH Financial Export Service
-  'union_wallet_transactions', // archive/20260308_union_wallets.sql
-  // False positives (JSDoc / comment examples) — remove when the scanner
-  // strips comments before matching.
-  'announcements', // src/utils/sanitizeInput.ts:12 — JSDoc example
-  // VIEWS created in 20260723_sweep3_feature_backends.sql — the ddlRx above
-  // only parses CREATE TABLE, so views must be allowlisted explicitly.
-  'player_sessions', // security_invoker view over session_history + tables
-  'club_daily_stats', // security_invoker view over rake_records/rake_history
-]);
 const WARN_ONLY = process.argv.includes('--warn');
 
-// Extra migration directories to also read as schema truth. Use when tables
-// live in a sibling repo (cross-orb) but are referenced from this repo.
-//   --extra-migrations=../Smarter-Poker-World-Hub/supabase/migrations
-const EXTRA_MIGRATIONS = process.argv
-  .filter((a) => a.startsWith('--extra-migrations='))
-  .map((a) => a.slice('--extra-migrations='.length));
-
-// ─── 1. Build schema set from migrations ────────────────────────────────
-
-function listSqlFiles(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...listSqlFiles(full));
-    else if (entry.endsWith('.sql')) out.push(full);
-  }
-  return out;
-}
-
-function extractSchemaTables() {
-  let sqlFiles;
-  try {
-    sqlFiles = listSqlFiles(MIGRATIONS);
-  } catch (err) {
-    console.error(`ERROR: cannot read ${MIGRATIONS}:`, err.message);
+// ─── 1. Load the live-schema manifest + allowlist ───────────────────────────
+function loadJson(path, label) {
+  if (!existsSync(path)) {
+    console.error(`ERROR: ${label} not found at ${path}`);
     process.exit(2);
   }
-  // Fold in any extra migration trees (cross-orb tables).
-  for (const extra of EXTRA_MIGRATIONS) {
-    try {
-      sqlFiles.push(...listSqlFiles(extra));
-    } catch (err) {
-      console.error(`WARNING: --extra-migrations path not readable: ${extra}`);
-    }
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    console.error(`ERROR: cannot parse ${label}: ${err.message}`);
+    process.exit(2);
   }
-
-  // Sort migrations by filename so timestamp-prefixed ordering is respected.
-  sqlFiles.sort();
-
-  const tables = new Set();
-
-  // One combined regex whose alternation captures WHICH kind of DDL matched.
-  // We walk matches in file-order and mutate `tables` accordingly so that
-  // e.g. `DROP TABLE IF EXISTS agents; CREATE TABLE agents (...);` ends with
-  // `agents` in the set (the intended outcome — drop-before-create pattern).
-  const ddlRx = new RegExp(
-    [
-      // 1: CREATE TABLE
-      /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?["`]?([a-z_][a-z0-9_]*)["`]?/
-        .source,
-      // 2+3: ALTER TABLE ... RENAME TO
-      /ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?["`]?([a-z_][a-z0-9_]*)["`]?\s+RENAME\s+TO\s+(?:public\.)?["`]?([a-z_][a-z0-9_]*)["`]?/
-        .source,
-      // 4: DROP TABLE
-      /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?["`]?([a-z_][a-z0-9_]*)["`]?/
-        .source,
-    ].join('|'),
-    'gi'
-  );
-
-  for (const f of sqlFiles) {
-    const src = readFileSync(f, 'utf8');
-    ddlRx.lastIndex = 0;
-    let m;
-    while ((m = ddlRx.exec(src))) {
-      if (m[1]) {
-        tables.add(m[1]);
-      } else if (m[2] && m[3]) {
-        tables.delete(m[2]);
-        tables.add(m[3]);
-      } else if (m[4]) {
-        tables.delete(m[4]);
-      }
-    }
-  }
-  return tables;
 }
 
-// ─── 2. Scan code for .from('<table>') ──────────────────────────────────
+const manifest = loadJson(MANIFEST, 'schema manifest');
+const allow = loadJson(ALLOWLIST, 'invariants allowlist');
+const realTables = new Set(manifest.tables || []);
+const realFns = new Set(manifest.functions || []);
 
+// Flatten every string value from the allowlist's category objects into two sets.
+function allowSet(...groups) {
+  const s = new Set();
+  for (const g of groups) {
+    if (!g) continue;
+    for (const k of Object.keys(g)) if (k !== '_comment') s.add(k);
+  }
+  return s;
+}
+const allowTables = allowSet(allow.nonPublicTargets, allow.unbuiltFeatureTables);
+const allowRpcs = allowSet(allow.unbuiltFeatureRpcs);
+
+// ─── 2. Scan code (comments stripped) for .from() / .rpc() ──────────────────
 function listCodeFiles(dir) {
   const out = [];
   try {
@@ -157,77 +80,159 @@ function listCodeFiles(dir) {
       const full = join(dir, entry);
       const s = statSync(full);
       if (s.isDirectory()) out.push(...listCodeFiles(full));
-      else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry) && !/\.test\./.test(entry))
-        out.push(full);
+      else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry) && !/\.test\./.test(entry)) out.push(full);
     }
   } catch {
-    // directory may not exist (e.g. server/ in a pure-client repo); skip
+    /* dir may not exist (e.g. server/ absent) */
   }
   return out;
 }
 
-function findFromCalls() {
-  const fromRx = /\.from\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]\s*\)/g;
-  const hits = new Map(); // table → [{file, line}]
+// Strip block and line comments but PRESERVE newlines so line numbers stay
+// accurate. Not a full JS lexer (a `//` or `/*` inside a string literal would
+// be mis-stripped) but robust enough for finding .from()/.rpc() call sites and
+// it eliminates the JSDoc/comment false-positive class.
+function stripComments(src) {
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  let state = 'code'; // code | line | block | sq | dq | tpl
+  while (i < n) {
+    const c = src[i];
+    const d = src[i + 1];
+    if (state === 'code') {
+      if (c === '/' && d === '/') {
+        state = 'line';
+        i += 2;
+      } else if (c === '/' && d === '*') {
+        state = 'block';
+        i += 2;
+      } else if (c === "'") {
+        state = 'sq';
+        out += c;
+        i++;
+      } else if (c === '"') {
+        state = 'dq';
+        out += c;
+        i++;
+      } else if (c === '`') {
+        state = 'tpl';
+        out += c;
+        i++;
+      } else {
+        out += c;
+        i++;
+      }
+    } else if (state === 'line') {
+      if (c === '\n') {
+        state = 'code';
+        out += c;
+        i++;
+      } else i++;
+    } else if (state === 'block') {
+      if (c === '*' && d === '/') {
+        state = 'code';
+        i += 2;
+      } else {
+        if (c === '\n') out += c; // keep line count
+        i++;
+      }
+    } else {
+      // inside a string literal — copy verbatim, honor escapes
+      out += c;
+      if (c === '\\') {
+        out += src[i + 1] ?? '';
+        i += 2;
+        continue;
+      }
+      if (
+        (state === 'sq' && c === "'") ||
+        (state === 'dq' && c === '"') ||
+        (state === 'tpl' && c === '`')
+      ) {
+        state = 'code';
+      }
+      i++;
+    }
+  }
+  return out;
+}
+
+function collect(regex) {
+  const hits = new Map(); // name → [{file,line}]
   for (const dir of SCAN_DIRS) {
     for (const f of listCodeFiles(join(REPO, dir))) {
-      const src = readFileSync(f, 'utf8');
-      const lines = src.split('\n');
+      const src = stripComments(readFileSync(f, 'utf8'));
       let m;
-      fromRx.lastIndex = 0;
-      while ((m = fromRx.exec(src))) {
-        const table = m[1];
-        const before = src.slice(0, m.index);
-        const lineNum = before.split('\n').length;
-        if (!hits.has(table)) hits.set(table, []);
-        hits.get(table).push({ file: f.replace(REPO + '/', ''), line: lineNum });
+      regex.lastIndex = 0;
+      while ((m = regex.exec(src))) {
+        const name = m[1];
+        const line = src.slice(0, m.index).split('\n').length;
+        if (!hits.has(name)) hits.set(name, []);
+        hits.get(name).push({ file: f.replace(REPO + '/', ''), line });
       }
     }
   }
   return hits;
 }
 
-// ─── 3. Compare ─────────────────────────────────────────────────────────
+// Match the opening `.from('name'` / `.rpc('name'` only — do NOT require a
+// closing paren, since .rpc('fn', {args}) and .from('t') as a base for a
+// chained query both continue past the name.
+const fromRefs = collect(/\.from\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]/g);
+const rpcRefs = collect(/\.rpc\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]/g);
 
-const schema = extractSchemaTables();
-const refs = findFromCalls();
-
-const phantoms = [];
-for (const [table, sites] of refs) {
-  if (ALLOWLIST.has(table)) continue;
-  if (!schema.has(table)) phantoms.push({ table, sites });
+// ─── 3. Diff against the manifest ───────────────────────────────────────────
+const phantomTables = [];
+for (const [name, sites] of fromRefs) {
+  if (realTables.has(name) || allowTables.has(name)) continue;
+  phantomTables.push({ name, sites });
+}
+const phantomRpcs = [];
+for (const [name, sites] of rpcRefs) {
+  if (realFns.has(name) || allowRpcs.has(name)) continue;
+  phantomRpcs.push({ name, sites });
 }
 
-// ─── 4. Report ──────────────────────────────────────────────────────────
+// ─── 4. Report ──────────────────────────────────────────────────────────────
+console.log(
+  `[check-phantom-refs] manifest: ${realTables.size} tables/views, ${realFns.size} functions`
+);
+console.log(
+  `[check-phantom-refs] referenced: ${fromRefs.size} tables, ${rpcRefs.size} rpcs · allowlisted: ${allowTables.size} tables, ${allowRpcs.size} rpcs`
+);
+console.log(
+  `[check-phantom-refs] phantoms: ${phantomTables.length} tables, ${phantomRpcs.length} rpcs`
+);
 
-console.log(`[check-phantom-tables] schema tables: ${schema.size}`);
-console.log(`[check-phantom-tables] referenced tables: ${refs.size}`);
-console.log(`[check-phantom-tables] phantoms: ${phantoms.length}`);
-
-if (phantoms.length === 0) {
-  console.log('✓ all .from() table references resolve to a migration-declared table');
+if (phantomTables.length === 0 && phantomRpcs.length === 0) {
+  console.log('OK — every .from() and .rpc() resolves to a live table/view/function.');
   process.exit(0);
 }
 
-console.log('');
-console.log('PHANTOM TABLES DETECTED:');
-console.log('(these .from() calls reference tables that do not exist in supabase/migrations/)');
-console.log('');
-for (const { table, sites } of phantoms) {
-  console.log(`  ${table}`);
-  for (const s of sites) console.log(`    ${s.file}:${s.line}`);
-}
-console.log('');
-console.log('To fix:');
-console.log('  1. If the table SHOULD exist: add a CREATE TABLE migration in supabase/migrations/');
-console.log('  2. If the .from() call is wrong: fix the table name');
-console.log(
-  '  3. If the name is a non-table target (view, storage bucket, etc.): add it to ALLOWLIST in this script'
-);
+const printGroup = (title, arr, kind) => {
+  if (!arr.length) return;
+  console.log('');
+  console.log(title);
+  for (const { name, sites } of arr) {
+    console.log(`  ${name}`);
+    for (const s of sites) console.log(`    ${s.file}:${s.line}`);
+  }
+  console.log('');
+  console.log(`Fix a phantom ${kind}:`);
+  console.log(`  1. It SHOULD exist -> add the migration and regenerate the manifest.`);
+  console.log(`  2. The name is wrong -> correct it to the real ${kind}.`);
+  console.log(
+    `  3. It is an intentional unbuilt-feature ref -> add it (with a reason) to`
+  );
+  console.log(`     scripts/ci/supabase-invariants.allowlist.json.`);
+};
+
+printGroup('PHANTOM TABLES DETECTED (.from() → missing table/view):', phantomTables, 'table');
+printGroup('PHANTOM RPCS DETECTED (.rpc() → missing function):', phantomRpcs, 'rpc');
 
 if (WARN_ONLY) {
-  console.log('');
-  console.log('[--warn] exiting 0 despite failures');
+  console.log('[--warn] exiting 0 despite phantoms.');
   process.exit(0);
 }
 process.exit(1);

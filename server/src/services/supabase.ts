@@ -364,7 +364,7 @@ export async function atomicCashout(
     // 1. Find active seat
     let query = supabase
       .from('table_seats')
-      .select('stack, seat_number')
+      .select('id, stack, seat_number')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .is('left_at', null);
@@ -390,6 +390,13 @@ export async function atomicCashout(
       const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
         p_user_id: userId,
         p_amount: stack,
+        // A3 FIX (2026-07-29): this path is explicitly retryable (on credit
+        // failure the seat is preserved and re-cashed next pass), so a
+        // committed-but-timed-out credit would double-pay the stack on retry.
+        // Keyed on the seat-occupancy row id in the SAME `cashout:<seat.id>`
+        // format markSeatAsLeft uses — both RPCs share wallet_credit_idempotency,
+        // so a seat cashed out by either path dedupes against the other.
+        p_idempotency_key: `cashout:${seat.id}`,
       });
       if (walletErr) {
         console.warn(

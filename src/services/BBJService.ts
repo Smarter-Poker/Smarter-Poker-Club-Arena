@@ -489,6 +489,36 @@ export const BBJService = {
   },
 
   /**
+   * Rain the promo pool to currently-active players. Server-authoritative:
+   * fn_bbj_promo_rain authorises the caller as the pool's club/union owner (or a
+   * platform admin) and resolves recipients server-side (active seated players),
+   * then does the atomic payout. Returns the count paid, or throws on failure.
+   */
+  async executePromoRain(poolId: string, amount: number, reason = 'Promo rain'): Promise<number> {
+    const { data, error } = await supabase.rpc('fn_bbj_promo_rain', {
+      p_pool_id: poolId,
+      p_amount: amount,
+      p_reason: reason,
+    });
+    if (error) {
+      reportError(error, 'BBJService.executePromoRain');
+      throw new Error(error.message);
+    }
+    if (!data?.success) {
+      const map: Record<string, string> = {
+        not_authorized: 'Only the club/union owner can distribute the promo pool.',
+        no_active_players: 'No active players to rain to right now.',
+        insufficient_promo_balance: 'Not enough in the promo pool for that amount.',
+        invalid_amount: 'Enter a valid amount.',
+        pool_not_found: 'Promo pool not found.',
+      };
+      throw new Error(map[data?.error] || data?.error || 'Promo rain failed');
+    }
+    masterBus.emit('BALANCE_UPDATED', { source: 'bbj_promo_rain' });
+    return Number(data.recipient_count || 0);
+  },
+
+  /**
    * Manually trigger a promo payout (rain event, high hand, etc.)
    * Requires admin authorization
    */

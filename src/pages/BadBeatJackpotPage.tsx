@@ -15,6 +15,8 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import BBJService from '../services/BBJService';
+import { confirmDialog } from '../components/common/confirmDialog';
 
 interface JackpotInfo {
   id: string;
@@ -51,6 +53,78 @@ export default function BadBeatJackpotPage() {
   const [justUpdated, setJustUpdated] = useState(false);
   const [visibleHistoryRows, setVisibleHistoryRows] = useState(new Set<number>());
   const [playerContribution, setPlayerContribution] = useState(0);
+  const [canManagePromo, setCanManagePromo] = useState(false);
+  const [promoAmount, setPromoAmount] = useState('');
+  const [distributingPromo, setDistributingPromo] = useState(false);
+
+  // Only the pool's club/union owner sees the promo-rain control (the RPC also
+  // enforces this server-side).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!clubId || !user?.id) {
+        setCanManagePromo(false);
+        return;
+      }
+      try {
+        const resolvedId = await resolveClubUUID(clubId);
+        const { data: clubRow } = await supabase
+          .from('clubs')
+          .select('owner_id, union_id')
+          .eq('id', resolvedId)
+          .maybeSingle();
+        if (!alive) return;
+        let owner = clubRow?.owner_id === user.id;
+        if (!owner && clubRow?.union_id) {
+          const { data: unionRow } = await supabase
+            .from('unions')
+            .select('owner_id')
+            .eq('id', clubRow.union_id)
+            .maybeSingle();
+          owner = unionRow?.owner_id === user.id;
+        }
+        if (alive) setCanManagePromo(owner);
+      } catch (e) {
+        reportError(e, 'BadBeatJackpotPage.ownerCheck');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [clubId, user?.id]);
+
+  const runPromoRain = async () => {
+    if (!jackpot?.id || distributingPromo) return;
+    const amount = Number(promoAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Enter a valid amount to distribute.');
+      return;
+    }
+    if (amount > (jackpot.promo_balance || 0)) {
+      toast.error('Amount exceeds the promo pool balance.');
+      return;
+    }
+    if (
+      !(await confirmDialog({
+        title: 'Distribute promo pool',
+        message: `Rain ${amount.toLocaleString()} chips from the promo pool, split evenly among all currently-active players? This can't be undone.`,
+        confirmText: 'Rain it',
+        variant: 'default',
+      }))
+    )
+      return;
+    setDistributingPromo(true);
+    try {
+      const count = await BBJService.executePromoRain(jackpot.id, amount, 'Promo rain');
+      toast.success(`Rained ${amount.toLocaleString()} chips to ${count} active player(s)!`);
+      setPromoAmount('');
+      loadJackpotData();
+    } catch (e: any) {
+      toast.error(e?.message || 'Promo rain failed');
+    } finally {
+      setDistributingPromo(false);
+    }
+  };
   const prevAmountRef = useRef<number>(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -357,6 +431,87 @@ export default function BadBeatJackpotPage() {
           </span>
         </div>
       </div>
+
+      {/* Owner-only: distribute the promo pool to active players */}
+      {canManagePromo && (jackpot?.promo_balance || 0) > 0 && (
+        <div
+          style={{
+            margin: '4px 0 16px',
+            padding: '14px 16px',
+            borderRadius: '12px',
+            border: '1px solid rgba(175,82,222,0.3)',
+            background: 'rgba(175,82,222,0.06)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '13px',
+              fontWeight: 700,
+              color: '#af52de',
+              marginBottom: '8px',
+            }}
+          >
+            Distribute Promo Pool
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+            Rain promo chips to everyone currently seated. Split evenly.
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={jackpot?.promo_balance || 0}
+              value={promoAmount}
+              onChange={(e) => setPromoAmount(e.target.value)}
+              placeholder="Amount"
+              aria-label="Promo rain amount"
+              style={{
+                flex: '1 1 120px',
+                minWidth: 0,
+                padding: '10px 12px',
+                borderRadius: '10px',
+                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'rgba(255,255,255,0.04)',
+                color: '#fff',
+                fontSize: '14px',
+              }}
+            />
+            <button
+              onClick={() => setPromoAmount(String(jackpot?.promo_balance || 0))}
+              style={{
+                padding: '10px 12px',
+                borderRadius: '10px',
+                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'rgba(255,255,255,0.04)',
+                color: 'rgba(255,255,255,0.7)',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Max
+            </button>
+            <button
+              onClick={runPromoRain}
+              disabled={distributingPromo}
+              style={{
+                padding: '10px 18px',
+                borderRadius: '10px',
+                border: 'none',
+                background: 'linear-gradient(135deg,#af52de,#8e44ad)',
+                color: '#fff',
+                fontSize: '13px',
+                fontWeight: 800,
+                cursor: distributingPromo ? 'wait' : 'pointer',
+                opacity: distributingPromo ? 0.6 : 1,
+              }}
+            >
+              {distributingPromo ? 'Raining…' : '🎁 Rain to Active Players'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Info Cards */}
       <div className="jackpot-info">

@@ -38,7 +38,9 @@ const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/CashierPage'),
   () => import('../pages/NotificationsPage'),
   () => import('../pages/MessagesPage'),
-  () => import('../pages/PlayerStatsPage'),
+  // PlayerStatsPage intentionally NOT preloaded: it pulls the ~314KB recharts
+  // chart bundle, which most users never open. It lazy-loads on navigation
+  // instead (route intent), saving that bandwidth on mobile.
 ];
 
 /**

@@ -109,17 +109,18 @@ export default function ClubArenaBottomNav({ clubId, userRole }: ClubArenaBottom
     return 'lobby';
   })();
 
+  // Short labels prevent truncation at 375px with 6 tabs (CLAUDE.md §9).
   const navItems = [
     { key: 'lobby', label: 'Lobby', to: `/club/${clubId}`, Icon: LobbyIcon },
     {
       key: 'messages',
-      label: 'Messages',
+      label: 'Msgs',
       to: `/club/${clubId}/messages`,
       Icon: MessagesIcon,
       badge: unreadCount,
     },
     { key: 'players', label: 'Players', to: `/club/${clubId}/members`, Icon: PlayersIcon },
-    { key: 'cashier', label: 'Cashier', to: `/club/${clubId}/cashier`, Icon: CashierIcon },
+    { key: 'cashier', label: 'Cash', to: `/club/${clubId}/cashier`, Icon: CashierIcon },
     { key: 'data', label: 'Data', to: `/club/${clubId}/stats`, Icon: DataIcon },
     ...(!userRole || userRole === 'owner' || userRole === 'admin'
       ? [{ key: 'admin', label: 'Admin', to: `/club/${clubId}/admin`, Icon: AdminIcon }]
@@ -128,6 +129,7 @@ export default function ClubArenaBottomNav({ clubId, userRole }: ClubArenaBottom
 
   return (
     <nav
+      aria-label="Club navigation"
       style={{
         position: 'fixed',
         bottom: 0,
@@ -137,51 +139,63 @@ export default function ClubArenaBottomNav({ clubId, userRole }: ClubArenaBottom
         background: FB.cardBg,
         borderTop: `1px solid ${FB.border}`,
         boxShadow: '0 -2px 10px rgba(0,0,0,0.3)',
+        // Keep the last row of tabs clear of the iPhone home indicator.
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-around', padding: '6px 0' }}>
-        {navItems.map(({ key, label, to, Icon, badge }) => (
-          <Link
-            key={key}
-            to={to}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 2,
-              flex: 1,
-              padding: '8px 4px',
-              textDecoration: 'none',
-              color: activePage === key ? FB.primary : FB.textSecondary,
-              position: 'relative',
-            }}
-          >
-            <Icon />
-            {(badge ?? 0) > 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 4,
-                  right: 12,
-                  background: '#E41E3F',
-                  color: '#fff',
-                  fontSize: 10,
-                  fontWeight: 'bold',
-                  width: 16,
-                  height: 16,
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: `2px solid ${FB.cardBg}`,
-                }}
-              >
-                {badge! > 9 ? '9+' : badge}
-              </div>
-            )}
-            <span style={{ fontSize: 11, fontWeight: 600 }}>{label}</span>
-          </Link>
-        ))}
+        {navItems.map(({ key, label, to, Icon, badge }) => {
+          const isActive = activePage === key;
+          return (
+            <Link
+              key={key}
+              to={to}
+              aria-current={isActive ? 'page' : undefined}
+              aria-label={
+                (badge ?? 0) > 0 ? `${label}, ${badge} unread` : label
+              }
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 2,
+                flex: 1,
+                minHeight: 44,
+                padding: '8px 4px',
+                textDecoration: 'none',
+                color: isActive ? FB.primary : FB.textSecondary,
+                position: 'relative',
+              }}
+            >
+              <Icon />
+              {(badge ?? 0) > 0 && (
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    top: 4,
+                    right: 12,
+                    background: '#E41E3F',
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 'bold',
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: `2px solid ${FB.cardBg}`,
+                  }}
+                >
+                  {badge! > 9 ? '9+' : badge}
+                </div>
+              )}
+              <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+            </Link>
+          );
+        })}
       </div>
     </nav>
   );

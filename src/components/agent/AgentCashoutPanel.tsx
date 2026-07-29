@@ -74,10 +74,19 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     );
 
     // Supabase real-time via masterBus channel manager: instant refresh on cashout_requests changes
-    const channelKey = `agent-cashouts-${user?.id || 'anon'}`;
+    const channelKey = `agent-cashouts-${user?.id || 'anon'}-${clubId || 'all'}`;
+    // Scope the realtime subscription to THIS club so a cashout in any other club
+    // platform-wide no longer wakes every agent and forces a full refetch.
+    const changeFilter: {
+      event: '*';
+      schema: 'public';
+      table: 'cashout_requests';
+      filter?: string;
+    } = { event: '*', schema: 'public', table: 'cashout_requests' };
+    if (clubId) changeFilter.filter = `club_id=eq.${clubId}`;
     const channel = masterBus
       .getOrCreateChannel(channelKey)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cashout_requests' }, () => {
+      .on('postgres_changes', changeFilter, () => {
         loadCashouts();
       })
       .subscribe((status: string, err?: Error) => {

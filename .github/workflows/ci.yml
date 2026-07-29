@@ -108,17 +108,23 @@ jobs:
       # Cross-orb tables (defined in sibling repos) are in the ALLOWLIST of each
       # script. Remove an ALLOWLIST entry once CI mounts that orb's migrations.
       # See docs/U4-INVARIANT-FINDINGS.md for triage history.
-      - name: Supabase Invariants — Phantom Tables
+      # BLOCKING (Phase U4 end-state): now checks .from() tables AND .rpc()
+      # functions against a live-schema snapshot (scripts/ci/supabase-schema-manifest.json),
+      # not the stale migrations. Intentional exceptions live in
+      # scripts/ci/supabase-invariants.allowlist.json. Regenerate the manifest with
+      # scripts/ci/gen-schema-manifest.mjs when the schema changes.
+      - name: Supabase Invariants — Phantom References (tables + RPCs)
         run: |
-          echo "## 🗃️ Supabase Phantom-Table Check" >> $GITHUB_STEP_SUMMARY
+          set -o pipefail
+          echo "## Supabase Phantom-Reference Check" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          node scripts/ci/check-phantom-tables.mjs 2>&1 | tee /tmp/phantom.log
-          if grep -q "PHANTOM TABLES DETECTED" /tmp/phantom.log; then
-            COUNT=$(grep "phantoms:" /tmp/phantom.log | awk '{print $NF}')
-            echo "❌ **${COUNT} phantom table reference(s)** — see log for sites" >> $GITHUB_STEP_SUMMARY
-            echo "If the finding is a legitimate cross-orb table, add it to the ALLOWLIST in scripts/ci/check-phantom-tables.mjs." >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-phantom-tables.mjs 2>&1 | tee /tmp/phantom.log; then
+            echo "OK — every .from() and .rpc() resolves to a live table/view/function." >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ all \`.from()\` references resolve to a migration-declared table" >> $GITHUB_STEP_SUMMARY
+            echo "Phantom reference(s) detected — see log for file:line. Fix the name, add the" >> $GITHUB_STEP_SUMMARY
+            echo "migration (+ regenerate the manifest), or allowlist it (with a reason) in" >> $GITHUB_STEP_SUMMARY
+            echo "scripts/ci/supabase-invariants.allowlist.json." >> $GITHUB_STEP_SUMMARY
+            exit 1
           fi
 
       - name: Supabase Invariants — Stranded Writers

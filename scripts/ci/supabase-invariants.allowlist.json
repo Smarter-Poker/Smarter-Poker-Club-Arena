@@ -1,0 +1,42 @@
+{
+  "_comment": "Intentional exceptions for the phantom-ref CI gate (check-phantom-tables.mjs). Every entry is a `.from()` table or `.rpc()` function that does NOT exist in the live Supabase schema but is referenced ON PURPOSE. Keep this list SMALL and REASONED. When a backend is built for one of these, remove its entry (it will then be in the manifest and pass on its own).",
+
+  "nonPublicTargets": {
+    "_comment": "Real targets that live outside the public schema the manifest snapshots (Postgres catalogs, auth schema, storage buckets). Not phantoms.",
+    "pg_tables": "postgres catalog",
+    "pg_stat_activity": "postgres catalog",
+    "auth.users": "auth schema (not public)",
+    "users": "alias for auth.users after schema switch in some services"
+  },
+
+  "unbuiltFeatureTables": {
+    "_comment": "Product features whose UI ships but whose backend table was never built. Each read/write is wrapped in try/catch and degrades to an empty state (verified). Build the table -> the entry auto-clears. Do NOT let this list grow without a matching product decision.",
+    "arena_sessions": "GTO/arena training subsystem — unbuilt",
+    "clawback_audit_log": "agent clawback audit — unbuilt (AgentAnalyticsDashboard degrades to empty)",
+    "club_activity": "club activity feed — unbuilt (ClubActivityFeed degrades to empty)",
+    "club_challenges": "club challenges — unbuilt",
+    "favorite_tables": "favorite-tables widget — unbuilt (degrades to empty)",
+    "gto_solutions": "GTO solver storage — unbuilt (GTOQueryService)",
+    "gto_solve_queue": "GTO solve queue — unbuilt (GTOQueryService)",
+    "hand_results": "legacy hand-results read — superseded by hand_history (HorseOrchestrator)",
+    "invites": "generic invites — unbuilt (MessagingService)",
+    "members": "legacy members alias — superseded by club_members",
+    "message_read_receipts": "message read receipts — unbuilt (MessagingService)",
+    "preflop_ranges": "preflop range storage — unbuilt (GTOQueryService)",
+    "scheduled_messages": "scheduled messages — unbuilt (MessagingService)",
+    "user_presence": "presence indicator — unbuilt (degrades to empty)"
+  },
+
+  "unbuiltFeatureRpcs": {
+    "_comment": "RPCs referenced by shipped UI that were never created in the DB. Callers handle the error and degrade. Build the function -> the entry auto-clears.",
+    "bulk_add_vip_points": "VIP position-stats subsystem — unbuilt",
+    "bulk_update_position_stats": "player position-stats subsystem — unbuilt",
+    "claim_lucky_wheel_spin": "lucky wheel — unbuilt (BonusService)",
+    "get_message_reactions": "message reactions read — unbuilt (MessagingService)",
+    "increment_bonus_progress": "bonus progress — unbuilt (BonusService)",
+    "join_flash_pool": "flash pools — unbuilt (FlashPoolPage)",
+    "record_arena_session": "arena training — unbuilt (ArenaTrainingController)",
+    "verify_ledger_totals": "optional ledger-verify RPC — ChipFlowService has a working client-side paginated fallback",
+    "promote_next_waitlisted_player": "intentionally absent — the engine's notifyWaitlistSeatOpen (server/src, sweep 6) is the AUTHORITATIVE cash-table waitlist promoter on a seat-open event. TableService's client-side best-effort call no-ops when the RPC is missing (error handled); creating the RPC would double-seat/double-notify against the server path."
+  }
+}

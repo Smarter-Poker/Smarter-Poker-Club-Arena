@@ -170,11 +170,21 @@ class CreditRequestServiceClass {
 
     const amount = approvedAmount || request.requested_amount;
 
-    // STEP 1: Execute credit transfer atomically
-    await this.executeCreditTransfer(approverId, request.requester_id, amount, requestId);
+    // STEP 1: Raise the agent's credit LINE to the approved amount (server-
+    // authoritative). A credit request is a credit-limit increase, not a chip
+    // gift — fn_admin_update_agent authorizes the approver as club owner/admin,
+    // enforces the parent-limit rule, sets credit_limit, and writes the
+    // credit_assignments audit. (agents is service-role-write-only, so a direct
+    // client agents.update would silently affect 0 rows.)
+    await this.raiseAgentCreditLimit(
+      request.requester_id,
+      request.club_id,
+      amount,
+      approverId,
+      notes || 'Credit line increase approved'
+    );
 
     // STEP 2: Update request status to 'approved' with the approved amount
-    // (executeCreditTransfer no longer sets status — this is the single source of truth)
     const { data, error } = await supabase
       .from('credit_requests')
       .update({
@@ -195,17 +205,11 @@ class CreditRequestServiceClass {
       userId: request.requester_id,
       amount,
     });
-    masterBus.emit('BALANCE_UPDATED', { source: 'credit_request_approved', userId: approverId });
-    masterBus.emit('BALANCE_UPDATED', {
-      source: 'credit_request_approved',
-      userId: request.requester_id,
-    });
-
     // Notify requester
     try {
       await pushNotificationService.sendToUser(request.requester_id, {
-        title: ' Credit Approved!',
-        message: `Your credit request for ${amount.toLocaleString()} chips was approved`,
+        title: 'Credit Line Increased',
+        message: `Your credit line was raised to ${amount.toLocaleString()} chips`,
         category: 'wallet_credit',
         url: '/wallet',
       });
@@ -281,35 +285,57 @@ class CreditRequestServiceClass {
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  private async executeCreditTransfer(
-    fromUserId: string,
-    toUserId: string,
-    amount: number,
-    requestId: string
+  /**
+   * Raise an agent's credit LIMIT to `newLimit` via the server-authoritative
+   * fn_admin_update_agent RPC (agents is service-role-write-only). Resolves the
+   * agent row from (requester user, club) first. Throws on any failure so the
+   * caller does not mark the request approved when nothing changed.
+   */
+  private async raiseAgentCreditLimit(
+    requesterUserId: string,
+    clubId: string | null | undefined,
+    newLimit: number,
+    approverId: string,
+    reason: string
   ): Promise<void> {
-    // Use RPC for atomic credit transfer
-    const { error } = await retryAsync(
+    // Resolve the agent row for this user (scoped to the request's club when known).
+    let agentQuery = supabase.from('agents').select('id, club_id').eq('user_id', requesterUserId);
+    if (clubId) agentQuery = agentQuery.eq('club_id', clubId);
+    const { data: agentRows, error: agentErr } = await agentQuery.limit(2);
+    if (agentErr) {
+      reportError(agentErr, 'CreditRequestService.raiseAgentCreditLimit.resolve', {
+        requesterUserId,
+      });
+      throw new Error('Could not resolve agent for credit request');
+    }
+    if (!agentRows || agentRows.length === 0) {
+      throw new Error('No agent record found for this requester');
+    }
+    if (agentRows.length > 1) {
+      // Ambiguous (agent in multiple clubs) and the request carried no club_id —
+      // refuse rather than raise the wrong club's line.
+      throw new Error('Ambiguous agent (multiple clubs) — request is missing a club');
+    }
+    const agentId = agentRows[0].id;
+
+    const { data: res, error } = await retryAsync(
       () =>
-        supabase.rpc('wallet_user_transfer', {
-          p_from_user_id: fromUserId,
-          p_to_user_id: toUserId,
-          p_amount: amount,
-          p_reference_id: requestId,
+        supabase.rpc('fn_admin_update_agent', {
+          p_agent_id: agentId,
+          p_credit_limit: newLimit,
+          p_assigned_by: approverId,
+          p_credit_reason: reason,
         }),
       3
     );
 
-    if (error) {
-      reportError(error, 'CreditRequestService.executeCreditTransfer', {
-        fromUserId,
-        toUserId,
-        amount,
+    if (error || !res?.success) {
+      reportError(error || res?.error, 'CreditRequestService.raiseAgentCreditLimit', {
+        agentId,
+        newLimit,
       });
-      throw new Error('Credit transfer failed');
+      throw new Error(error?.message || res?.error || 'Credit line update failed');
     }
-
-    // NOTE: Status transition is handled by the caller (approveRequest/denyRequest)
-    // to prevent status overwrite conflicts. Do NOT set status here.
   }
 
   private async notifyApprover(

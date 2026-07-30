@@ -8,6 +8,8 @@ import {
 import styles from './CreateTournamentModal.module.css';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
+import { supabase } from '../../lib/supabase';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 
 interface Props {
   clubId: string;
@@ -54,6 +56,11 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   const [maxPlayers, setMaxPlayers] = useState('50');
   const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack'>('turbo');
   const [guaranteedPrize, setGuaranteedPrize] = useState('0');
+
+  // ── Satellite target (the tournament winners earn a seat into) ──
+  const [satelliteTargetId, setSatelliteTargetId] = useState('');
+  const [satelliteSeats, setSatelliteSeats] = useState('1');
+  const [satelliteTargets, setSatelliteTargets] = useState<{ id: string; name: string }[]>([]);
 
   // ── Start Time ──
   const [startTimeMode, setStartTimeMode] = useState<'now' | 'scheduled'>('now');
@@ -110,6 +117,32 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   const isSatellite = format === 'satellite';
   const isXmtt = format === 'xmtt';
 
+  // Load candidate target tournaments (upcoming, non-satellite in this club) once
+  // the satellite format is chosen, so the organiser can pick what seats feed into.
+  useEffect(() => {
+    if (!isSatellite) return;
+    let alive = true;
+    (async () => {
+      try {
+        const resolved = await resolveClubUUID(clubId);
+        const { data } = await supabase
+          .from('tournaments')
+          .select('id, name, tournament_type, status, start_time')
+          .eq('club_id', resolved)
+          .neq('tournament_type', 'satellite')
+          .in('status', ['registering', 'scheduled', 'upcoming', 'announced', 'pending', 'open'])
+          .order('start_time', { ascending: true })
+          .limit(50);
+        if (alive) setSatelliteTargets((data || []).map((t: any) => ({ id: t.id, name: t.name })));
+      } catch (e) {
+        reportError(e, 'CreateTournamentModal.loadSatelliteTargets');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isSatellite, clubId]);
+
   // ── Auto-set defaults when format changes ──
   const handleFormatChange = (f: TournamentFormat) => {
     setFormat(f);
@@ -165,6 +198,14 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
     setIsSubmitting(true);
 
     try {
+      // ── Satellite validation: without a target it silently becomes a cash
+      // payout, defeating the point (winners should earn seats). ──
+      if (isSatellite && !satelliteTargetId) {
+        toast.error('Pick the target tournament this satellite awards seats into.');
+        setIsSubmitting(false);
+        return;
+      }
+
       // ── Bounty validation (defense-in-depth) ──
       if (isBountyFormat) {
         const ba = parseFloat(bountyAmount);
@@ -239,6 +280,13 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
         addOnCost: addOnAvailable ? parseFloat(addOnCost) || parsedBuyIn : undefined,
         addOnLevels: addOnAvailable ? parseInt(addOnLevels) || 1 : undefined,
         guaranteedPrize: parseFloat(guaranteedPrize) || 0,
+        satelliteTarget:
+          isSatellite && satelliteTargetId
+            ? {
+                tournamentId: satelliteTargetId,
+                seatsAwarded: Math.max(1, parseInt(satelliteSeats) || 1),
+              }
+            : undefined,
         isMultiDay,
         totalDays: isMultiDay ? parseInt(totalDays) || 2 : undefined,
         isXmtt: !!unionId,
@@ -577,6 +625,48 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
               </div>
             </div>
           </div>
+
+          {/* ── Satellite Target ── */}
+          {isSatellite && (
+            <div className={styles.row}>
+              <div className={styles.col}>
+                <div className={styles.formGroup}>
+                  <label>Awards Seats Into</label>
+                  <select
+                    className={styles.select}
+                    value={satelliteTargetId}
+                    onChange={(e) => setSatelliteTargetId(e.target.value)}
+                  >
+                    <option value="">Select target tournament…</option>
+                    {satelliteTargets.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className={styles.helperText}>
+                    {satelliteTargets.length === 0
+                      ? 'No upcoming tournaments to feed into — create one first.'
+                      : 'Winners earn a seat into this tournament.'}
+                  </span>
+                </div>
+              </div>
+              <div className={styles.col}>
+                <div className={styles.formGroup}>
+                  <label>Seats Awarded</label>
+                  <input
+                    type="number"
+                    className={styles.input}
+                    value={satelliteSeats}
+                    onChange={(e) => setSatelliteSeats(e.target.value)}
+                    min="1"
+                    step="1"
+                  />
+                  <span className={styles.helperText}>Top N finishers win a seat</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Start Time ── */}
           {format !== 'sng' && format !== 'spin' && !isSatellite && (

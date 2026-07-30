@@ -223,37 +223,54 @@ export const LeaderboardService = {
   async getUnionLeaderboard(
     unionId: string,
     metric: LeaderboardMetric = 'profit',
-    _period: LeaderboardPeriod = 'weekly',
+    period: LeaderboardPeriod = 'weekly',
     limit: number = 20
   ): Promise<LeaderboardEntry[]> {
     try {
-      // Get clubs in this union
-      const { data: unionClubs } = await supabase
-        .from('union_clubs')
-        .select('club_id')
-        .eq('union_id', unionId);
+      const isRatio = metric === 'vpip' || metric === 'pfr';
+      const usePeriod = !isRatio && period !== 'all_time';
 
-      if (!unionClubs || unionClubs.length === 0) return [];
+      let statsData: any[] | null = null;
+      let statsError: any = null;
 
-      const clubIds = unionClubs.map((uc: UnionClubRow) => uc.club_id);
-      const metricToColumn: Record<string, string> = {
-        profit: 'total_winnings',
-        hands_played: 'hands_played',
-        vpip: 'vpip',
-        pfr: 'pfr',
-        tournaments_won: 'tournaments_won',
-        roi: 'total_winnings',
-      };
-      const orderCol = metricToColumn[metric] || 'total_winnings';
-
-      const { data: statsData, error: statsError } = await supabase
-        .from('player_stats')
-        .select(
-          'user_id, hands_played, total_winnings, total_losses, vpip, pfr, tournaments_played, tournaments_won'
-        )
-        .in('club_id', clubIds)
-        .order(orderCol, { ascending: false })
-        .limit(limit);
+      if (usePeriod) {
+        // Delta-based union period leaderboard (aggregated across member clubs).
+        const { data, error } = await supabase.rpc('fn_union_leaderboard_period', {
+          p_union_id: unionId,
+          p_metric: metric,
+          p_period: period,
+          p_limit: limit,
+        });
+        statsData = data;
+        statsError = error;
+      } else {
+        // All-time (or ratio metric): direct aggregate across member clubs.
+        const { data: unionClubs } = await supabase
+          .from('union_clubs')
+          .select('club_id')
+          .eq('union_id', unionId);
+        if (!unionClubs || unionClubs.length === 0) return [];
+        const clubIds = unionClubs.map((uc: UnionClubRow) => uc.club_id);
+        const metricToColumn: Record<string, string> = {
+          profit: 'total_winnings',
+          hands_played: 'hands_played',
+          vpip: 'vpip',
+          pfr: 'pfr',
+          tournaments_won: 'tournaments_won',
+          roi: 'total_winnings',
+        };
+        const orderCol = metricToColumn[metric] || 'total_winnings';
+        const { data, error } = await supabase
+          .from('player_stats')
+          .select(
+            'user_id, hands_played, total_winnings, total_losses, vpip, pfr, tournaments_played, tournaments_won'
+          )
+          .in('club_id', clubIds)
+          .order(orderCol, { ascending: false })
+          .limit(limit);
+        statsData = data;
+        statsError = error;
+      }
 
       if (statsError || !statsData) return [];
 
@@ -395,9 +412,27 @@ export const LeaderboardService = {
     userId: string,
     clubId: string,
     metric: LeaderboardMetric = 'profit',
-    _period: LeaderboardPeriod = 'weekly'
+    period: LeaderboardPeriod = 'weekly'
   ): Promise<{ rank: number; total: number } | null> {
     try {
+      const resolvedClubId = await resolveClubUUID(clubId);
+      const isRatio = metric === 'vpip' || metric === 'pfr';
+
+      // Period rank via the delta RPC (ratio metrics stay all-time).
+      if (!isRatio && period !== 'all_time') {
+        const { data, error } = await supabase.rpc('fn_user_rank_period', {
+          p_user_id: userId,
+          p_club_id: resolvedClubId,
+          p_metric: metric,
+          p_period: period,
+        });
+        if (error || !data?.found) {
+          if (error) reportError(error, 'LeaderboardService.getUserRank_period');
+          return null;
+        }
+        return { rank: Number(data.rank || 0), total: Number(data.total || 0) };
+      }
+
       const metricToColumn: Record<string, string> = {
         profit: 'total_winnings',
         hands_played: 'hands_played',

@@ -899,7 +899,7 @@ export default function ProfilePage() {
           <button
             className={styles.editButton}
             onClick={() => {
-              const url = 'https://smarter.poker/hub/avatars-complete';
+              const url = 'https://smarter.poker/hub/avatars';
               window.open(url, '_blank');
             }}
           >

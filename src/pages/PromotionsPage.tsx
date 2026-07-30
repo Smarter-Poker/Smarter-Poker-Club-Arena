@@ -48,8 +48,41 @@ export default function PromotionsPage() {
   const [showBonusWheel, setShowBonusWheel] = useState(false);
   const [showReferral, setShowReferral] = useState(false);
   const [visiblePromoCards, setVisiblePromoCards] = useState(new Set<number>());
+  const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());
+  const [claimingId, setClaimingId] = useState<string | null>(null);
   const loadPromotionsRef = useRef(async () => {});
   const isMounted = useIsMounted();
+
+  // Load the user's existing claims so cards show Claimed vs claimable.
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      try {
+        const claims = await promotionService.getUserClaims(user.id);
+        if (!isMounted.current) return;
+        setClaimedIds(new Set(claims.map((c: any) => c.promotionId).filter(Boolean)));
+      } catch (e) {
+        reportError(e, 'PromotionsPage.loadClaims');
+      }
+    })();
+  }, [user?.id, isMounted]);
+
+  const handleClaimPromo = async (promoId: string) => {
+    if (!user?.id || claimingId || claimedIds.has(promoId)) return;
+    setClaimingId(promoId);
+    try {
+      await promotionService.claimPromotion(promoId, user.id);
+      if (!isMounted.current) return;
+      setClaimedIds((prev) => new Set(prev).add(promoId));
+      masterBus.emit('BALANCE_UPDATED', { source: 'promotion_claim', userId: user.id });
+      toast.success('Promotion claimed!');
+    } catch (err: any) {
+      if (isMounted.current) toast.error(err?.message || 'Failed to claim promotion');
+      reportError(err, 'PromotionsPage.claim');
+    } finally {
+      if (isMounted.current) setClaimingId(null);
+    }
+  };
 
   // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
   useEffect(() => {
@@ -330,6 +363,39 @@ export default function PromotionsPage() {
                     />
                   </div>
                 )}
+
+                {/* Claim action — active, non-leaderboard promos (leaderboard payouts
+                    are ranked, not manually claimed). */}
+                {promo.type !== 'leaderboard' &&
+                  new Date(promo.end_date) > now &&
+                  new Date(promo.start_date) <= now && (
+                    <button
+                      className="promo-claim-btn"
+                      disabled={claimedIds.has(promo.id) || claimingId === promo.id}
+                      onClick={() => handleClaimPromo(promo.id)}
+                      style={{
+                        marginTop: '0.75rem',
+                        width: '100%',
+                        padding: '0.7rem',
+                        borderRadius: '10px',
+                        border: 'none',
+                        fontWeight: 700,
+                        fontSize: '0.9rem',
+                        cursor: claimedIds.has(promo.id) ? 'default' : 'pointer',
+                        color: '#fff',
+                        background: claimedIds.has(promo.id)
+                          ? 'rgba(255,255,255,0.12)'
+                          : 'linear-gradient(135deg,#31A24C,#248a3d)',
+                        opacity: claimingId === promo.id ? 0.6 : 1,
+                      }}
+                    >
+                      {claimedIds.has(promo.id)
+                        ? '✓ Claimed'
+                        : claimingId === promo.id
+                          ? 'Claiming…'
+                          : 'Claim'}
+                    </button>
+                  )}
               </div>
             </div>
           ))

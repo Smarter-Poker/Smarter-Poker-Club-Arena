@@ -6566,8 +6566,8 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                toast.info('VIP features coming soon!');
                 setIsSideMenuOpen(false);
+                navigate('/vip');
               }}
             >
               <span className="menu-item-icon">★</span>

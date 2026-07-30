@@ -103,7 +103,7 @@ describe('AvatarService', () => {
 
   describe('getHubAvatarUrl', () => {
     it('should return the correct Hub URL', () => {
-      expect(avatarService.getHubAvatarUrl()).toBe('https://smarter.poker/hub/avatars-complete');
+      expect(avatarService.getHubAvatarUrl()).toBe('https://smarter.poker/hub/avatars');
     });
   });
 });

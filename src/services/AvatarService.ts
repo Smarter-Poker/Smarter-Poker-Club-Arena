@@ -7,7 +7,7 @@
  *   - social-media/avatars/      → AI-generated preset avatar storage bucket
  *   - custom-avatars/generated/  → user's custom AI-generated avatars
  *
- * The World Hub at smarter.poker/hub/avatars-complete handles the full
+ * The World Hub at smarter.poker/hub/avatars handles the full
  * avatar creation + selection experience. Club Arena reads the results.
  *
  * SVG fallback (avatarGenerator) is used ONLY when no real image exists.
@@ -70,7 +70,7 @@ class AvatarServiceClass {
    * Get the Hub avatar page URL for embedding or navigation
    */
   getHubAvatarUrl(): string {
-    return 'https://smarter.poker/hub/avatars-complete';
+    return 'https://smarter.poker/hub/avatars';
   }
 
   /**

@@ -17,6 +17,7 @@ import RecentPlayers from '../components/social/RecentPlayers';
 import FriendActivityFeed from '../components/social/FriendActivityFeed';
 import InviteToTable from '../components/social/InviteToTable';
 import FriendChallengeModal from '../components/social/FriendChallengeModal';
+import FriendChallengesPanel from '../components/social/FriendChallengesPanel';
 import FriendSuggestions from '../components/social/FriendSuggestions';
 import { useSwipeAction } from '../hooks/useSwipeAction';
 import { playerStatusService } from '../services/PlayerStatusService';
@@ -33,7 +34,7 @@ interface Friend {
   is_online: boolean;
 }
 
-type FriendsTab = 'friends' | 'pending' | 'recent';
+type FriendsTab = 'friends' | 'pending' | 'recent' | 'challenges';
 
 // ── SWR Cache helpers (with 5-minute TTL) ──
 const FR_CACHE_PREFIX = 'fr_cache_';
@@ -490,7 +491,15 @@ export default function FriendsPage() {
         >
           🕒 Recent
         </button>
+        <button
+          className={`fr-filter-chip ${activeTab === 'challenges' ? 'active' : ''}`}
+          onClick={() => setActiveTab('challenges')}
+        >
+          ⚔️ Challenges
+        </button>
       </div>
+
+      {activeTab === 'challenges' && user?.id && <FriendChallengesPanel userId={user.id} />}
 
       {activeTab === 'friends' && (
         <>

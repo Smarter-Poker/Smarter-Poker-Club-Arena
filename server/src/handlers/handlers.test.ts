@@ -22,6 +22,33 @@ vi.mock('../http/auth.js', () => ({ authenticateRequest: vi.fn() }));
 vi.mock('../http/body.js', () => ({ readBody: vi.fn() }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
+// Audit S1: admin/pause|resume now resolve the caller's club-admin role via
+// supabase (tables.club_id -> club_members.role). Mock it with mutable results.
+const sb = vi.hoisted(() => ({
+  tablesResult: { data: { club_id: 't-club' } as { club_id: string } | null, error: null as unknown },
+  membersResult: { data: { role: 'owner' } as { role: string } | null, error: null as unknown },
+}));
+vi.mock('../services/supabase.js', () => ({
+  supabase: {
+    from: (table: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const b: any = {
+        select: () => b,
+        eq: () => b,
+        maybeSingle: async () =>
+          table === 'tables'
+            ? sb.tablesResult
+            : table === 'club_members'
+              ? sb.membersResult
+              : { data: null, error: null },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        insert: () => ({ then: (cb: any) => cb({ error: null }) }),
+      };
+      return b;
+    },
+  },
+}));
+
 import { handleTimebank } from './timebank.js';
 import { handleHeartbeat } from './heartbeat.js';
 import { handlePreaction } from './preaction.js';
@@ -117,18 +144,6 @@ const POST_CASES: HandlerCase[] = [
     engineMethod: 'submitDiscard',
   },
   {
-    name: 'admin/pause',
-    body: { tableId: 't1', reason: 'maintenance' },
-    invoke: (req, res, gs) => handleAdminPause(req, res, { gameServer: gs }),
-    engineMethod: 'adminPause',
-  },
-  {
-    name: 'admin/resume',
-    body: { tableId: 't1' },
-    invoke: (req, res, gs) => handleAdminResume(req, res, { gameServer: gs }),
-    engineMethod: 'adminResume',
-  },
-  {
     name: 'post-bb',
     body: { tableId: 't1' },
     invoke: (req, res, gs) => handlePostBB(req, res, { gameServer: gs }),
@@ -171,7 +186,91 @@ describe.each(POST_CASES)(
   }
 );
 
-// ── GET /insurance-preview ──────────────────────────────────────────────────
+// ── admin/pause + admin/resume — club-admin authorization (Audit S1) ─────────
+
+describe.each([
+  {
+    name: 'admin/pause',
+    body: { tableId: 't1', reason: 'maintenance' },
+    invoke: (
+      req: ReturnType<typeof mockReq>,
+      res: ReturnType<typeof mockRes>['res'],
+      gs: ReturnType<typeof mockGameServer>
+    ) => handleAdminPause(req, res, { gameServer: gs }),
+    engineMethod: 'adminPause',
+  },
+  {
+    name: 'admin/resume',
+    body: { tableId: 't1' },
+    invoke: (
+      req: ReturnType<typeof mockReq>,
+      res: ReturnType<typeof mockRes>['res'],
+      gs: ReturnType<typeof mockGameServer>
+    ) => handleAdminResume(req, res, { gameServer: gs }),
+    engineMethod: 'adminResume',
+  },
+])('POST /$name — club-admin authz contract', ({ name: _name, body, invoke, engineMethod }) => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // default: authenticated, table resolves to a club, caller is an owner
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
+    vi.mocked(readBody).mockResolvedValue(JSON.stringify(body));
+    sb.tablesResult = { data: { club_id: 't-club' }, error: null };
+    sb.membersResult = { data: { role: 'owner' }, error: null };
+  });
+
+  it('401 when unauthenticated', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue(null);
+    const { res, captured } = mockRes();
+    await invoke(mockReq(), res, mockGameServer(mockEngine(), 't1'));
+    expect(captured.statusCode).toBe(401);
+  });
+
+  it('404 when table/club cannot be resolved', async () => {
+    sb.tablesResult = { data: null, error: null };
+    const { res, captured } = mockRes();
+    await invoke(mockReq(), res, mockGameServer(mockEngine(), 't1'));
+    expect(captured.statusCode).toBe(404);
+  });
+
+  it('403 when caller is not a club member', async () => {
+    sb.membersResult = { data: null, error: null };
+    const { res, captured } = mockRes();
+    await invoke(mockReq(), res, mockGameServer(mockEngine(), 't1'));
+    expect(captured.statusCode).toBe(403);
+  });
+
+  it('403 when caller lacks an admin role (plain member)', async () => {
+    sb.membersResult = { data: { role: 'member' }, error: null };
+    const { res, captured } = mockRes();
+    await invoke(mockReq(), res, mockGameServer(mockEngine(), 't1'));
+    expect(captured.statusCode).toBe(403);
+  });
+
+  it('403 when caller is only an agent', async () => {
+    sb.membersResult = { data: { role: 'agent' }, error: null };
+    const { res, captured } = mockRes();
+    await invoke(mockReq(), res, mockGameServer(mockEngine(), 't1'));
+    expect(captured.statusCode).toBe(403);
+  });
+
+  it('404 when engine missing (authorized caller)', async () => {
+    const { res, captured } = mockRes();
+    await invoke(mockReq(), res, mockGameServer(mockEngine(), 'other-table'));
+    expect(captured.statusCode).toBe(404);
+  });
+
+  it('200 happy path for club admin calls engine method', async () => {
+    const engine = mockEngine();
+    const { res, captured } = mockRes();
+    await invoke(mockReq(), res, mockGameServer(engine, 't1'));
+    expect(captured.statusCode).toBe(200);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((engine as any)[engineMethod]).toHaveBeenCalled();
+  });
+});
+
+// ── GET /insurance-preview ─────────────────────────────────────
 
 describe('handleInsurancePreview', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -207,7 +306,7 @@ describe('handleInsurancePreview', () => {
   });
 });
 
-// ── Regex-matched GETs (tableId as positional arg) ──────────────────────────
+// ── Regex-matched GETs (tableId as positional arg) ─────────────────────
 
 describe('handleGetActions', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -269,7 +368,7 @@ describe('handleGetState', () => {
   });
 });
 
-// ── /leave has a special 200 path when engine missing ──────────────────────
+// ── /leave has a special 200 path when engine missing ──────────────────
 
 describe('handleLeave — engine-missing edge case', () => {
   beforeEach(() => vi.clearAllMocks());

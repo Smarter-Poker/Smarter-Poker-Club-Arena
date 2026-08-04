@@ -28,15 +28,60 @@ export interface AdminDeps {
   };
 }
 
+/**
+ * SECURITY (Audit 2026-08-04, finding S1): shared authorization gate for all
+ * table-admin actions. Previously pause/resume only checked that the caller
+ * held a valid JWT — ANY authenticated user could freeze/unfreeze dealing on
+ * ANY table by id. This resolves the caller's club role the same way kick does
+ * (owner / admin / super_agent in the club that owns the table).
+ *
+ * Returns the verified caller + club on success, or a ready-to-send error.
+ */
+async function authorizeTableAdmin(
+  req: IncomingMessage,
+  tableId: string | undefined
+): Promise<
+  | { ok: true; userId: string; clubId: string }
+  | { ok: false; status: number; error: string }
+> {
+  const auth = await authenticateRequest(req);
+  if (!auth) return { ok: false, status: 401, error: 'Authentication required' };
+  if (!tableId) return { ok: false, status: 400, error: 'Missing tableId' };
+
+  const { data: tableRow, error: tErr } = await supabase
+    .from('tables')
+    .select('club_id')
+    .eq('id', tableId)
+    .maybeSingle();
+  if (tErr || !tableRow?.club_id) {
+    return { ok: false, status: 404, error: 'Table or club not found' };
+  }
+
+  const { data: membership, error: mErr } = await supabase
+    .from('club_members')
+    .select('role')
+    .eq('club_id', tableRow.club_id)
+    .eq('user_id', auth.userId)
+    .maybeSingle();
+  if (mErr || !membership) {
+    return { ok: false, status: 403, error: 'Not a club member' };
+  }
+  // Admin tier = owner OR admin OR super_agent (matches kick / waitlist / lobby).
+  if (!['owner', 'admin', 'super_agent'].includes(String(membership.role))) {
+    return { ok: false, status: 403, error: 'Admin role required' };
+  }
+  return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
+}
+
 export async function handleAdminPause(
   req: IncomingMessage,
   res: ServerResponse,
   deps: AdminDeps
 ): Promise<void> {
   try {
-    const auth = await authenticateRequest(req);
-    if (!auth) return sendJSON(res, 401, { success: false, error: 'Authentication required' });
     const body = JSON.parse(await readBody(req));
+    const authz = await authorizeTableAdmin(req, body.tableId);
+    if (!authz.ok) return sendJSON(res, authz.status, { success: false, error: authz.error });
     const engine = deps.gameServer.getTableEngine(body.tableId);
     if (!engine) return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     return sendJSON(res, 200, engine.adminPause(body.reason));
@@ -52,9 +97,9 @@ export async function handleAdminResume(
   deps: AdminDeps
 ): Promise<void> {
   try {
-    const auth = await authenticateRequest(req);
-    if (!auth) return sendJSON(res, 401, { success: false, error: 'Authentication required' });
     const body = JSON.parse(await readBody(req));
+    const authz = await authorizeTableAdmin(req, body.tableId);
+    if (!authz.ok) return sendJSON(res, authz.status, { success: false, error: authz.error });
     const engine = deps.gameServer.getTableEngine(body.tableId);
     if (!engine) return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     return sendJSON(res, 200, engine.adminResume());
@@ -85,10 +130,6 @@ export async function handleAdminKick(
   deps: AdminDeps
 ): Promise<void> {
   try {
-    const auth = await authenticateRequest(req);
-    if (!auth) {
-      return sendJSON(res, 401, { success: false, error: 'Authentication required' });
-    }
     const body = JSON.parse(await readBody(req));
     const { tableId, userId: targetUserId } = body as {
       tableId?: string;
@@ -99,32 +140,11 @@ export async function handleAdminKick(
       return sendJSON(res, 400, { success: false, error: 'Missing tableId or userId' });
     }
 
-    // Resolve the table's club_id, then check caller's role in club_members
-    const { data: tableRow, error: tErr } = await supabase
-      .from('tables')
-      .select('club_id')
-      .eq('id', tableId)
-      .maybeSingle();
-    if (tErr || !tableRow?.club_id) {
-      return sendJSON(res, 404, { success: false, error: 'Table or club not found' });
-    }
-
-    const { data: membership, error: mErr } = await supabase
-      .from('club_members')
-      .select('role')
-      .eq('club_id', tableRow.club_id)
-      .eq('user_id', auth.userId)
-      .maybeSingle();
-    if (mErr || !membership) {
-      return sendJSON(res, 403, { success: false, error: 'Not a club member' });
-    }
-    // Round 72: production roles are owner / admin / super_agent / agent /
-    // member / player. 'manager' is in the enum but unused in production —
-    // dropped from this check. Admin tier = owner OR admin OR super_agent
-    // (matches waitlist / club-analytics / lobby-ordering / etc).
-    if (!['owner', 'admin', 'super_agent'].includes(String(membership.role))) {
-      return sendJSON(res, 403, { success: false, error: 'Admin role required' });
-    }
+    // Resolve caller + verify club-admin role (owner / admin / super_agent).
+    const authz = await authorizeTableAdmin(req, tableId);
+    if (!authz.ok) return sendJSON(res, authz.status, { success: false, error: authz.error });
+    const callerUserId = authz.userId;
+    const clubId = authz.clubId;
 
     const engine = deps.gameServer.getTableEngine(tableId);
     if (!engine) {
@@ -144,15 +164,15 @@ export async function handleAdminKick(
       .insert({
         event_type: 'player_kicked',
         player_id: targetUserId,
-        club_id: tableRow.club_id,
+        club_id: clubId,
         table_id: tableId,
         details: {
           reason: reasonText,
-          kicked_by: auth.userId,
+          kicked_by: callerUserId,
           source: 'engine_admin_kick',
           immediate: result.immediate ?? false,
         },
-        triggered_by: auth.userId,
+        triggered_by: callerUserId,
       })
       .then(({ error }) => {
         if (error) {
@@ -162,7 +182,7 @@ export async function handleAdminKick(
 
     return sendJSON(res, result.success ? 200 : 400, {
       ...result,
-      kicked_by: auth.userId,
+      kicked_by: callerUserId,
       target_user_id: targetUserId,
     });
   } catch (err: unknown) {

@@ -459,6 +459,11 @@ export const SeatSlot = memo(
     // ─── OCCUPIED SEAT ─────────────────────────────────────────────────────
     // Use deterministic SVG avatar (colorful, unique per player) when no real image exists
     const avatarUrl = getAvatarWithFallback(player.avatar || null, player.id, player.name);
+    // 2026-08-04 PokerBros-style: library bust art (/avatars/table|free|vip/*)
+    // is a transparent-background character PNG — render it free-floating
+    // (no circle crop, no ring, larger) like the reference client. Uploaded
+    // photos and generated SVGs keep the circular frame.
+    const isBustArt = /\/avatars\/(table|free|vip)\//.test(avatarUrl);
 
     // 2026-04-15 Bible V8 §6.1 — pure-CSS ring countdown. Set animation
     // duration + a negative animation-delay so the ring animates from the
@@ -569,12 +574,12 @@ export const SeatSlot = memo(
         {/* Avatar Circle — large, sits on top of info box */}
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div
-          className="seat__avatar-wrap"
+          className={`seat__avatar-wrap${isBustArt ? ' seat__avatar-wrap--bust' : ''}`}
           style={showAvatar ? undefined : { visibility: 'hidden' }}
         >
           {/* Timer is shown via smooth conic-gradient border on the info box below */}
           <div
-            className="seat__avatar"
+            className={`seat__avatar${isBustArt ? ' seat__avatar--bust' : ''}`}
             onClick={(e) => {
               if (onAvatarClick && !player.isHero) {
                 e.stopPropagation();

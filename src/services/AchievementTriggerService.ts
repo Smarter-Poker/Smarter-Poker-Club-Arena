@@ -1,7 +1,7 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ════════════════════════════════════════════════════════════════════════════════════
  *  ACHIEVEMENT TRIGGER SERVICE — Auto-Award Engine
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ════════════════════════════════════════════════════════════════════════════════════
  *
  * Connects poker engine events to achievement progress.
  * Listens for hand completions, showdowns, wins, and special conditions
@@ -15,19 +15,17 @@ import { dailyChallengeService } from './DailyChallengeService';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════════
 // TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
-
+// ════════════════════════════════════════════════════════════════════════════════════
 interface TriggerResult {
   triggeredAchievements: Achievement[];
   chipsAwarded: number;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════════
 // SERVICE
-// ═══════════════════════════════════════════════════════════════════════════════
-
+// ════════════════════════════════════════════════════════════════════════════════════
 class AchievementTriggerServiceClass {
   /**
    * Process a completed hand and check for achievements
@@ -115,6 +113,13 @@ class AchievementTriggerServiceClass {
     } catch (dcErr) {
       console.debug('[AchievementTrigger] Daily challenge progress update failed:', dcErr);
     }
+
+    // 7. Bump any active 'hand_grinder' friend challenges (most hands wins).
+    supabase
+      .rpc('fn_bump_friend_challenge_progress', { p_challenge_type: 'hand_grinder', p_amount: 1 })
+      .then(({ error }) => {
+        if (error) console.debug('[AchievementTrigger] friend-challenge bump failed:', error.message);
+      });
 
     return result;
   }
@@ -320,12 +325,12 @@ class AchievementTriggerServiceClass {
 export const achievementTriggerService = new AchievementTriggerServiceClass();
 export default achievementTriggerService;
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════════
 // AUTO-WIRE: friends_added challenge trigger via bus event
 // FriendsPage + PublicProfilePage emit FRIEND_REQUEST_ACCEPTED when a friend
 // request is accepted, but neither calls onFriendAdded(). This centralized
 // listener ensures the 'friends_added' challenge type always increments.
-// ═══════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════════
 masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', async () => {
   try {
     const {

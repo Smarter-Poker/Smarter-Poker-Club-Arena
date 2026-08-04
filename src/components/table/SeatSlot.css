@@ -263,7 +263,7 @@
   filter: brightness(0.4) grayscale(0.5);
 }
 
-/* ─── STATUS DOT ────────────────────────────────────────────────────── */
+/* ─── STATUS DOT ──────────────────────────────────────────────────── */
 
 .seat__status-dot {
   position: absolute;
@@ -714,7 +714,7 @@
    STATE VARIANTS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* ─── HERO ────────────────────────────────────────────────────────── */
+/* ─── HERO ──────────────────────────────────────────────────────────── */
 
 /* PokerBros-style avatar timer ring — conic gradient around avatar circle */
 .seat--active .seat__avatar-wrap::before {
@@ -779,7 +779,7 @@
   border-color: rgba(255, 215, 0, 0.25);
 }
 
-/* ─── ACTIVE PLAYER (avatar pulses with golden ring) ───────────────── */
+/* ─── ACTIVE PLAYER (avatar pulses with golden ring) ─────────────────── */
 
 .seat--active .seat__avatar {
   border-color: var(--timer-color, #ffd700);
@@ -807,7 +807,7 @@
   }
 }
 
-/* ─── FOLDED ────────────────────────────────────────────────────────── */
+/* ─── FOLDED ────────────────────────────────────────────────────────────── */
 
 .seat--folded {
   /* Mockup v3: folded seat (avatar + box + cards) dimmed to ~0.4 */
@@ -902,7 +902,7 @@
   }
 }
 
-/* ─── AWAY / SITTING OUT ────────────────────────────────────────────── */
+/* ─── AWAY / SITTING OUT ──────────────────────────────────────────────── */
 
 .seat--away,
 .seat--sitting_out {
@@ -930,7 +930,7 @@
   z-index: 5;
 }
 
-/* ─── ALL IN ──────────────────────────────────────────────────────── */
+/* ─── ALL IN ──────────────────────────────────────────────────────────── */
 
 .seat--all_in .seat__avatar {
   border-color: #ef4444;
@@ -1299,7 +1299,7 @@
   gap: 1px;
 }
 
-/* ─── OPPONENT CARD BACKS — Deal-in animation ────────────────────── */
+/* ─── OPPONENT CARD BACKS — Deal-in animation ────────────────────────── */
 
 .seat__cards--opponent .seat__card--back {
   animation: opponentCardDeal 0.4s ease-out forwards;

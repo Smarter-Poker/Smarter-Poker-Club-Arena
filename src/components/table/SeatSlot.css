@@ -207,7 +207,63 @@
   border-radius: 50%;
 }
 
-/* ─── STATUS DOT ──────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BUST-ART MODE — PokerBros-style free-floating character avatars
+   ─────────────────────────────────────────────────────────────────────────────
+   2026-08-04: library avatars (/avatars/table|free|vip/*.png) are transparent-
+   background character busts. Per the reference client they must NOT be
+   cropped into a circle — the character floats above the nameplate at a
+   larger size. Uploaded photos / generated SVG monograms keep the circle
+   (`.seat__avatar` base styles) since they have opaque backgrounds.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat__avatar--bust {
+  border-radius: 0;
+  overflow: visible;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.seat__avatar--bust .seat__avatar-img {
+  border-radius: 0;
+  object-fit: contain;
+  /* Enlarge the character beyond the 56px slot and anchor it to the
+     nameplate below, PokerBros-style. overflow:visible on the parent lets
+     the head rise above the slot without shifting layout. */
+  transform: scale(1.45);
+  transform-origin: 50% 88%;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
+}
+
+/* Hover zoom must compose with the base bust scale (was scale(1.08) alone,
+   which would SHRINK a bust from 1.45 back to 1.08) */
+.seat:not(.seat--empty):not(.seat--folded) .seat__avatar--bust:hover .seat__avatar-img {
+  transform: scale(1.55);
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6)) brightness(1.1);
+}
+
+/* No ring/glow chrome on hover for busts — the art itself is the element */
+.seat:not(.seat--hero):not(.seat--empty) .seat__avatar--bust:hover {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Folded: dim the character itself instead of a circular smoke overlay */
+.seat__avatar--bust .seat__avatar-fold-overlay {
+  display: none;
+}
+
+.seat--folded .seat__avatar--bust .seat__avatar-img {
+  filter: brightness(0.35) saturate(0.6);
+}
+
+/* Disconnected dim parity with the circular style */
+.seat--disconnected .seat__avatar--bust .seat__avatar-img {
+  filter: brightness(0.4) grayscale(0.5);
+}
+
+/* ─── STATUS DOT ────────────────────────────────────────────────────── */
 
 .seat__status-dot {
   position: absolute;
@@ -658,7 +714,7 @@
    STATE VARIANTS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* ─── HERO ────────────────────────────────────────────────────────────── */
+/* ─── HERO ────────────────────────────────────────────────────────── */
 
 /* PokerBros-style avatar timer ring — conic gradient around avatar circle */
 .seat--active .seat__avatar-wrap::before {
@@ -723,7 +779,7 @@
   border-color: rgba(255, 215, 0, 0.25);
 }
 
-/* ─── ACTIVE PLAYER (avatar pulses with golden ring) ─────────────────── */
+/* ─── ACTIVE PLAYER (avatar pulses with golden ring) ───────────────── */
 
 .seat--active .seat__avatar {
   border-color: var(--timer-color, #ffd700);
@@ -751,7 +807,7 @@
   }
 }
 
-/* ─── FOLDED ──────────────────────────────────────────────────────────── */
+/* ─── FOLDED ────────────────────────────────────────────────────────── */
 
 .seat--folded {
   /* Mockup v3: folded seat (avatar + box + cards) dimmed to ~0.4 */
@@ -846,7 +902,7 @@
   }
 }
 
-/* ─── AWAY / SITTING OUT ──────────────────────────────────────────────── */
+/* ─── AWAY / SITTING OUT ────────────────────────────────────────────── */
 
 .seat--away,
 .seat--sitting_out {
@@ -874,7 +930,7 @@
   z-index: 5;
 }
 
-/* ─── ALL IN ──────────────────────────────────────────────────────────── */
+/* ─── ALL IN ──────────────────────────────────────────────────────── */
 
 .seat--all_in .seat__avatar {
   border-color: #ef4444;
@@ -1243,7 +1299,7 @@
   gap: 1px;
 }
 
-/* ─── OPPONENT CARD BACKS — Deal-in animation ────────────────────────── */
+/* ─── OPPONENT CARD BACKS — Deal-in animation ────────────────────── */
 
 .seat__cards--opponent .seat__card--back {
   animation: opponentCardDeal 0.4s ease-out forwards;

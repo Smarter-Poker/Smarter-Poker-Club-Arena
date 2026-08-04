@@ -263,7 +263,7 @@
   filter: brightness(0.4) grayscale(0.5);
 }
 
-/* ─── STATUS DOT ──────────────────────────────────────────────────── */
+/* ─── STATUS DOT ──────────────────────────────────────────────────────── */
 
 .seat__status-dot {
   position: absolute;

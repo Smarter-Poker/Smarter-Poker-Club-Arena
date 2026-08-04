@@ -99,18 +99,32 @@ export function generateDefaultAvatar(size = 128): string {
   return generateAvatarSvg('default-player', '?', size);
 }
 
+/** The World Hub serves the avatar library art (Club Arena is hosted under its origin) */
+const HUB_ORIGIN = 'https://smarter.poker';
+
 /**
  * Get an avatar URL with SVG fallback.
- * If avatarUrl is truthy and not a broken /avatars/ path, returns it as-is.
- * Otherwise generates an SVG placeholder.
+ *
+ * `/avatars/free|vip/*.png` paths ARE real assets — the 75-avatar library the
+ * World Hub ships under its public/ dir. Horses and players who equip a
+ * library avatar store exactly these paths in profiles.avatar_url. They are
+ * mapped to the table-optimized bust art (`/avatars/table/{tier}_{name}.png`).
+ * (This function used to treat every /avatars/ path as broken and demote
+ * library avatars to generated monograms at the table seats.)
  */
 export function getAvatarWithFallback(
   avatarUrl: string | null | undefined,
   seed: string,
   name: string
 ): string {
-  // If we have a real URL (not a /avatars/ placeholder that doesn't exist)
-  if (avatarUrl && !avatarUrl.startsWith('/avatars/')) {
+  if (avatarUrl && avatarUrl.trim()) {
+    // Library avatar → table-optimized bust (absolute URL so it also works
+    // when the client runs on a non-Hub origin, e.g. local dev)
+    const lib = /^\/avatars\/(free|vip)\/([\w-]+)\.png$/.exec(avatarUrl);
+    if (lib) return `${HUB_ORIGIN}/avatars/table/${lib[1]}_${lib[2]}.png`;
+    // Any other Hub-relative avatar path (e.g. already table-optimized)
+    if (avatarUrl.startsWith('/avatars/')) return `${HUB_ORIGIN}${avatarUrl}`;
+    // Full URL (Supabase storage custom avatars, etc.)
     return avatarUrl;
   }
   // Generate deterministic SVG fallback

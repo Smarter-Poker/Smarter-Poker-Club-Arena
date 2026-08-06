@@ -74,6 +74,17 @@ import { CommissionService } from '../../src/services/CommissionService';
 describe('CommissionService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks does NOT drain queued mock*ValueOnce implementations, so a
+    // test that queues more one-shot responses than the code consumes leaks the
+    // remainder into the NEXT test. mockReset drains them.
+    mockRpc.mockReset();
+    mockMaybeSingle.mockReset();
+    mockUpsert.mockReset();
+    // setRate writes through the fn_admin_update_agent SECURITY DEFINER RPC
+    // (direct `agents` writes are RLS-locked). Without a default resolution the
+    // service destructures `undefined` and every setRate test dies in the mock
+    // rather than in the code under test.
+    mockRpc.mockResolvedValue({ data: { success: true }, error: null });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -157,8 +168,11 @@ describe('CommissionService', () => {
   describe('executePayout', () => {
     it('should emit COMMISSION_PAID bus event on successful payout', async () => {
       mockRpc.mockResolvedValueOnce({ error: null }); // execute_commission_payout
+      // sweep #3: execute_commission_payout operates on agent_commissions, which
+      // is keyed by user_id and stores the figure in `amount` — NOT the legacy
+      // commission_payouts shape (agent_id / net_payout) this mock used to use.
       mockMaybeSingle.mockResolvedValueOnce({
-        data: { agent_id: 'agent-1', net_payout: 5000 },
+        data: { user_id: 'agent-1', amount: 5000 },
       }); // fetch payout record
 
       await CommissionService.executePayout('payout-123');

@@ -545,15 +545,28 @@ export const RakeService = {
     numPlayers?: number;
   }): Promise<boolean> {
     // Direct INSERT into rake_records (bypasses broken execute_pot_drops RPC)
-    const { error } = await supabase.from('rake_records').insert({
-      hand_id: params.handId,
-      table_id: params.tableId,
-      club_id: params.clubId,
-      rake_amount: params.rakeAmount,
-      bbj_contribution: params.bbjAmount,
-      pot_size: params.potSize || 0,
-      num_players: params.numPlayers || 0,
-    });
+    //
+    // NOTE (Audit M2): the CANONICAL production rake writer is the
+    // `atomic_distribute_rake` SECURITY DEFINER function called by the engine —
+    // every recent rake_records row carries source='atomic_distribute_rake'.
+    // That function is already fully idempotent (ON CONFLICT (hand_id) DO
+    // NOTHING plus per-leg claims in rake_distribution_legs). This client path
+    // is a legacy fallback, but it must not be able to reopen the hole, so the
+    // bare .insert() is now an upsert against uq_rake_records_hand_id. A
+    // replayed hand-complete becomes a benign no-op instead of either a
+    // duplicate rake record or a spurious 23505 reported as a hand failure.
+    const { error } = await supabase.from('rake_records').upsert(
+      {
+        hand_id: params.handId,
+        table_id: params.tableId,
+        club_id: params.clubId,
+        rake_amount: params.rakeAmount,
+        bbj_contribution: params.bbjAmount,
+        pot_size: params.potSize || 0,
+        num_players: params.numPlayers || 0,
+      },
+      { onConflict: 'hand_id', ignoreDuplicates: true }
+    );
 
     if (error) {
       reportError(error, 'RakeService.executePotDrops');

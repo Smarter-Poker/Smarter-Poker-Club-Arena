@@ -6,7 +6,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { reportError } from '../utils/errorReporter';
@@ -45,16 +44,57 @@ export interface BonusStatus {
   streak: number;
 }
 
-// Daily bonus rewards by day (7-day cycle)
-const DAILY_REWARDS = [
-  { day: 1, reward: 100, type: 'chips' },
-  { day: 2, reward: 150, type: 'chips' },
-  { day: 3, reward: 200, type: 'chips' },
-  { day: 4, reward: 300, type: 'chips' },
-  { day: 5, reward: 500, type: 'chips' },
-  { day: 6, reward: 200, type: 'vip_points' },
-  { day: 7, reward: 1000, type: 'chips' }, // Jackpot day!
-];
+// AUDIT M18: the 7-day reward schedule used to live here as a client constant.
+// It now lives in public.daily_bonus_rewards and arrives via
+// fn_daily_bonus_status, because three different copies of it had already
+// drifted apart: this constant, BonusPage's hardcoded `day * 10` chips, and the
+// old claim_daily_bonus RPC's `p_amount DEFAULT 100`. The client must never
+// decide what a bonus pays.
+interface DailyScheduleEntry {
+  day: number;
+  reward: number;
+  reward_type: 'chips' | 'vip_points';
+}
+
+interface DailyBonusStatusRpc {
+  streak: number;
+  last_claim: string | null;
+  can_claim: boolean;
+  next_day: number;
+  schedule: DailyScheduleEntry[];
+}
+
+interface ClaimDailyBonusRpc {
+  ok: boolean;
+  reason?: string;
+  day?: number;
+  streak?: number;
+  amount?: number;
+  reward_type?: 'chips' | 'vip_points';
+}
+
+interface ClaimSpecialBonusRpc {
+  ok: boolean;
+  reason?: string;
+  amount?: number;
+  reward_type?: 'chips' | 'vip_points';
+}
+
+// Reasons fn_claim_special_bonus / fn_claim_daily_bonus return for an ordinary
+// refusal, mapped to something a player can act on. An unmapped reason is a
+// contract change and should read as one rather than as a generic failure.
+const CLAIM_REASON_TEXT: Record<string, string> = {
+  not_found: 'That bonus is no longer available',
+  already_claimed: 'Bonus already claimed',
+  already_claimed_today: 'Daily bonus already claimed today',
+  expired: 'That bonus has expired',
+  requirements_not_met: 'Bonus requirements not met',
+  non_positive_reward: 'That bonus has no reward to pay',
+};
+
+function claimReasonText(reason: string | undefined): string {
+  return CLAIM_REASON_TEXT[reason ?? ''] ?? `Bonus could not be claimed (${reason ?? 'unknown'})`;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE CLASS
@@ -65,24 +105,37 @@ class BonusServiceClass {
    * Get user's bonus status
    */
   async getBonusStatus(userId: string): Promise<BonusStatus> {
-    // Get user's bonus data
-    const { data: bonusData } = await supabase
-      .from('user_bonuses')
-      .select('id, user_id, daily_streak, last_daily_claim')
-      .eq('user_id', userId)
-      .maybeSingle();
+    // AUDIT M18: the daily half comes from fn_daily_bonus_status, which returns
+    // the streak, whether a claim is available, the ladder position that would
+    // pay next, and the live reward schedule. Reading `user_bonuses` directly
+    // here was half the problem: the table is SELECT-own-only and nothing
+    // client-side could ever write it, so the streak never moved, and the
+    // amounts shown came from a constant that no payout path consulted.
+    const { data: dailyRaw, error: dailyErr } = await supabase.rpc('fn_daily_bonus_status');
 
-    const today = new Date().toISOString().split('T')[0];
-    const lastClaim = bonusData?.last_daily_claim?.split('T')[0];
-    const canClaimDaily = lastClaim !== today;
-    const currentDay = ((bonusData?.daily_streak || 0) % 7) + 1;
+    if (dailyErr) {
+      reportError(dailyErr, 'BonusService.getBonusStatus.fn_daily_bonus_status', { userId });
+      throw new Error('Could not load daily bonus status');
+    }
 
-    // Build daily bonuses array
-    const dailyBonuses: DailyBonus[] = DAILY_REWARDS.map((r, i) => ({
-      day: r.day,
-      claimed: i < (bonusData?.daily_streak || 0) % 7,
-      reward: r.reward,
-      rewardType: r.type as DailyBonus['rewardType'],
+    const daily = dailyRaw as DailyBonusStatusRpc | null;
+    const schedule = daily?.schedule ?? [];
+    const streak = daily?.streak ?? 0;
+    const currentDay = daily?.next_day ?? 1;
+    const canClaimDaily = daily?.can_claim ?? false;
+
+    // A day is shown as claimed when it sits behind the current position in the
+    // active 7-day cycle. `next_day` is 1-based, so the completed count is
+    // next_day - 1 while a claim is still available today, and next_day - 1 is
+    // likewise correct once today's claim is spent, because next_day has
+    // already advanced past it.
+    const completedInCycle = Math.max(0, currentDay - 1);
+
+    const dailyBonuses: DailyBonus[] = schedule.map((entry) => ({
+      day: entry.day,
+      claimed: entry.day <= completedInCycle,
+      reward: entry.reward,
+      rewardType: entry.reward_type,
     }));
 
     // Get special bonuses
@@ -119,46 +172,62 @@ class BonusServiceClass {
       canClaimDaily,
       nextDailyReset: tomorrow.toISOString(),
       specialBonuses,
-      streak: bonusData?.daily_streak || 0,
+      streak,
     };
   }
 
   /**
    * Claim daily bonus
    */
-  async claimDailyBonus(
-    userId: string
-  ): Promise<{ success: boolean; reward: number; rewardType: string }> {
-    // Atomic claim: RPC checks last_daily_claim < today AND increments streak in one operation
-    // This prevents TOCTOU double-claims from concurrent requests
-    const { data: claimResult, error } = await retryAsync(
-      () =>
-        supabase.rpc('claim_daily_bonus', {
-          p_user_id: userId,
-        }),
+  async claimDailyBonus(userId: string): Promise<{
+    success: boolean;
+    reward: number;
+    rewardType: string;
+    day: number;
+    streak: number;
+  }> {
+    // AUDIT M18: one round trip that owns the whole claim — the once-per-UTC-day
+    // guard, the streak arithmetic, the payout lookup and the credit, in one
+    // transaction. The old shape made two independent calls (claim_daily_bonus,
+    // then a separate client-side credit), which was broken four ways at once:
+    // the RPC was never granted to `authenticated`; its return shape had no
+    // `claimed` or `new_streak` field for the client to read; it stamped
+    // profiles.last_login_date while the UI read user_bonuses.daily_streak; and
+    // it credited internally AND expected the client to credit again, so an
+    // unblocked version would have paid every daily bonus twice.
+    //
+    // No amount is sent. The server decides what a bonus pays; the client is
+    // told what was paid.
+    const { data: claimRaw, error } = await retryAsync(
+      () => supabase.rpc('fn_claim_daily_bonus'),
       3
     );
 
     if (error) {
-      reportError(error, 'BonusService.Failed_to_claim');
+      reportError(error, 'BonusService.claimDailyBonus.fn_claim_daily_bonus', { userId });
       throw new Error('Failed to claim bonus');
     }
 
-    if (!claimResult?.claimed) {
-      throw new Error('Daily bonus already claimed today');
+    const claim = claimRaw as ClaimDailyBonusRpc | null;
+
+    if (!claim?.ok) {
+      // A refusal is a business outcome, not a fault: surface the server's own
+      // reason rather than a guess, so "already claimed today" cannot be
+      // reported as an infrastructure error (or vice versa).
+      throw new Error(claimReasonText(claim?.reason));
     }
 
-    // claimResult contains { claimed: true, new_streak: number }
-    const currentDay = (claimResult.new_streak - 1) % 7;
-    const reward = DAILY_REWARDS[currentDay];
-
-    // Award the reward
-    await this.awardReward(userId, reward.reward, reward.type);
+    masterBus.emit('BALANCE_UPDATED', {
+      source: claim.reward_type === 'vip_points' ? 'bonus_vip_points' : 'bonus_chips',
+      userId,
+    });
 
     return {
       success: true,
-      reward: reward.reward,
-      rewardType: reward.type,
+      reward: claim.amount ?? 0,
+      rewardType: claim.reward_type ?? 'chips',
+      day: claim.day ?? 1,
+      streak: claim.streak ?? 0,
     };
   }
 
@@ -264,39 +333,39 @@ class BonusServiceClass {
    * Claim special bonus
    */
   async claimSpecialBonus(userId: string, bonusId: string): Promise<boolean> {
-    // Check if bonus exists and is claimable
-    const { data: bonus } = await supabase
-      .from('special_bonuses')
-      .select(
-        'id, name, description, reward, reward_type, condition, progress, target, claimed, expires_at'
-      )
-      .eq('id', bonusId)
-      .eq('user_id', userId)
-      .maybeSingle();
+    // AUDIT M17: the eligibility checks, the claim and the payout all happen
+    // inside fn_claim_special_bonus, in one transaction. Doing them here was
+    // not merely racy, it was inert: special_bonuses is SELECT-own-only, so the
+    // client's "mark as claimed" UPDATE matched zero rows — and PostgREST
+    // reports no error for a zero-row write, so this method returned true and
+    // the UI said the bonus was claimed while nothing at all had happened.
+    //
+    // The amount is never sent. It is read server-side from the bonus row,
+    // which a player cannot write; that is the only reason the function is
+    // allowed to be SECURITY DEFINER.
+    const { data: claimRaw, error } = await retryAsync(
+      () => supabase.rpc('fn_claim_special_bonus', { p_bonus_id: bonusId }),
+      3
+    );
 
-    if (!bonus) {
-      throw new Error('Bonus not found');
+    if (error) {
+      reportError(error, 'BonusService.claimSpecialBonus.fn_claim_special_bonus', {
+        userId,
+        bonusId,
+      });
+      throw new Error('Failed to claim bonus');
     }
 
-    if (bonus.claimed) {
-      throw new Error('Bonus already claimed');
+    const claim = claimRaw as ClaimSpecialBonusRpc | null;
+
+    if (!claim?.ok) {
+      throw new Error(claimReasonText(claim?.reason));
     }
 
-    if (bonus.progress < bonus.target) {
-      throw new Error('Bonus requirements not met');
-    }
-
-    // Mark as claimed — user_id filter prevents cross-user claim
-    const { error: claimErr } = await supabase
-      .from('special_bonuses')
-      .update({ claimed: true, claimed_at: new Date().toISOString() })
-      .eq('id', bonusId)
-      .eq('user_id', userId)
-      .eq('claimed', false); // Prevent double-claim race
-    if (claimErr) throw new Error(`Claim update failed: ${claimErr.message}`);
-
-    // Award reward
-    await this.awardReward(userId, bonus.reward, bonus.reward_type);
+    masterBus.emit('BALANCE_UPDATED', {
+      source: claim.reward_type === 'vip_points' ? 'bonus_vip_points' : 'bonus_chips',
+      userId,
+    });
 
     return true;
   }
@@ -332,55 +401,15 @@ class BonusServiceClass {
     }
   }
 
-  /**
-   * Award reward to user
-   */
-  private async awardReward(userId: string, amount: number, type: string): Promise<void> {
-    const amt = Math.trunc(amount * 100) / 100;
-    let error;
-    switch (type) {
-      case 'chips':
-        // Use proper wallet system with ATOMIC audit trail
-        ({ error } = await retryAsync(
-          () =>
-            supabase.rpc('atomic_credit_wallet_and_log', {
-              p_user_id: userId,
-              p_amount: amt,
-              p_category: 'bonus',
-              p_description: `Bonus chip reward`,
-              p_table_id: null,
-              p_hand_id: null,
-              p_related_entity_id: null,
-            }),
-          3
-        ));
-        if (!error) {
-          masterBus.emit('BALANCE_UPDATED', { source: 'bonus_chips', userId });
-        }
-        break;
-
-      case 'vip_points':
-        ({ error } = await retryAsync(
-          () => supabase.rpc('add_vip_points', { p_user_id: userId, p_points: amt }),
-          3
-        ));
-        if (!error) {
-          masterBus.emit('BALANCE_UPDATED', { source: 'bonus_vip_points', userId });
-        }
-        break;
-      default:
-        reportError(
-          new Error(`[Bonus] Unknown reward type: ${type}`),
-          'BonusService.Unknown_reward_type'
-        );
-        return;
-    }
-
-    if (error) {
-      reportError(error, 'BonusService.Failed_to_award_type_reward');
-      throw new Error(`Failed to award ${type} reward`);
-    }
-  }
+  // AUDIT M17/M18: `awardReward` was removed, not repaired. It was the client's
+  // own credit path, and neither branch could ever succeed from a browser:
+  // `atomic_credit_wallet_and_log` is SECURITY INVOKER and dies on the wallets
+  // RLS policy (42501), and `add_vip_points` is granted to postgres and
+  // service_role only, so it dies on the function grant (42501). Both callers
+  // now claim through a SECURITY DEFINER RPC that pays as part of the same
+  // transaction that consumes the bonus, so there is no second leg to award and
+  // nothing left for this method to do. Do not reintroduce a client-side
+  // credit helper: a browser-callable "credit this user N chips" is a mint.
 }
 
 // Export singleton

@@ -53,6 +53,8 @@ in production); `check-phantom-columns` 0; `check-stranded-writers` 0.
 
 **Migration applied to production:** `20260806_uq_rake_attributions_hand_player`
 
+**Client merged:** PR #34 -> `main` as `71937dba` (2026-08-06)
+
 **Filed as P0. It is not.** Verify-live-first downgraded it before a single line
 was written. The canonical production rake writer is
 `atomic_distribute_rake`, a SECURITY DEFINER function called by the engine —
@@ -88,6 +90,8 @@ its braces.
 **Migrations applied to production:** `20260806_fn_raise_financial_alert`
 (plus a follow-up `REVOKE EXECUTE ... FROM anon`)
 
+**Client merged:** PR #34 -> `main` as `71937dba` (2026-08-06)
+
 **Worse than filed.** The finding described an RLS denial affecting non-admin
 users. The live database says otherwise: `financial_alerts` has RLS on with
 exactly ONE policy, `financial_alerts_service_only`, scoped to `service_role`.
@@ -102,7 +106,7 @@ was writing to nothing.
 
 _Durable layer:_ `fn_raise_financial_alert`, a SECURITY DEFINER **raise-only**
 entry point. Authenticated clients may raise an alert; they still cannot read,
-update or resolve one, so the service_role-only read policy is untouched. It
+update or resolve one, so the `service_role`-only read policy is untouched. It
 refuses a NULL `auth.uid()`, clamps severity to the three valid values, and
 truncates source/message. A per-reporter throttle (30/min, backed by a new
 functional index on `(context ->> 'reported_by', created_at DESC)`) stops a
@@ -146,6 +150,71 @@ including `fn_raise_financial_alert`); `check-phantom-tables` 0,
 
 ---
 
+## M3 — Insurance ledger writes could fail silently (DB LANDED, server merged)
+
+**Migration applied to production:** `20260806_fn_raise_server_financial_alert`
+
+**The bug.** `logInsuranceSettlement` returned `Promise<void>` and swallowed
+every failure. By the time it runs the table stacks have **already** been
+mutated (`+payout`, `-premium`) and already persisted by `syncStacks()` — it is
+the offsetting bank entry, not the payment itself. So a lost write minted or
+burned chips silently, leaving nothing in the database an operator could
+reconcile against. It also shipped a broken template literal (`...paramspl`)
+that dropped the player id out of the one error report it did produce, so even
+the Sentry breadcrumb could not identify whose chips moved.
+
+**The fix.** The function now returns a discriminated `InsuranceLedgerResult`,
+so failure is observable at all. It retries up to three attempts (backoff 150ms,
+500ms) — safe only because the RPC is idempotent on the
+`(table_id, hand_number, player_id)` unique index, which was verified against
+production before a line was written. When the RPC reports no error but returns
+a payload shape no id can be read out of, it does a **confirm-read** rather than
+guessing: guessing success hides a lost ledger write, guessing failure raises a
+CRITICAL on every settlement, so it asks the database instead. The `paramspl`
+literal is repaired, and the report now carries the real player id plus every id
+and amount needed to settle by hand. And the function is **total** — it never
+rejects, so it cannot abort the settlement loop it sits inside.
+
+**The M7 gap this exposed.** M7 gave the browser client a durable alert path,
+but `fn_raise_financial_alert` hard-requires `auth.uid()` so that every alert is
+attributable to a signed-in reporter. The game server connects with the SERVICE
+ROLE key, under which `auth.uid()` is NULL — verified live, the call fails with
+SQLSTATE 28000. **The durable alert path was unreachable from the one process
+that actually moves money.** `fn_raise_server_financial_alert` closes that:
+SECURITY DEFINER, `service_role` only, 60/min per source flood guard, with a
+supporting `(source, created_at DESC)` index. The same named-role revoke trap
+from M7 applies and was handled the same way — `anon` and `authenticated` are
+revoked explicitly, because `REVOKE ALL ... FROM PUBLIC` does not remove what
+`ALTER DEFAULT PRIVILEGES` granted by name.
+
+**Where the alarm lives, and why.** It is raised inside `logInsuranceSettlement`
+rather than delegated to `ServerTableEngine`. This layer is the only one that
+can tell the difference between "the ledger row exists" and "it does not", and a
+caller that forgets to check the result would reintroduce exactly the
+silent-loss bug the change exists to kill. `financialAlerts.ts` imports this
+module for the Supabase client, so the dependency is closed with a lazy
+`await import()` inside the failure branch only — no module-load cycle, and zero
+cost on the happy path, which is every hand.
+
+**What this deliberately does NOT do.** It does not attempt to reverse the
+table-stack mutation. The hand is over, the chips may already have been
+re-wagered, and a blind compensating write is how a one-chip discrepancy becomes
+a two-chip one. The alert row is the reconciliation input that M4 will consume.
+Per-step isolation of `postHandTasks` stays filed as audit finding E8; it is not
+needed for correctness here, because `logInsuranceSettlement` is now proven
+total by test. `server/src/engine/ServerTableEngine.ts` is unchanged by this
+finding.
+
+**Gates run:** M3 suites 20/20 across 2 files; server `tsc --noEmit` 0 errors;
+server `vitest` 425/425 across 40 files; root `tsc --noEmit` 0 errors;
+zero phantoms from `check-phantom-tables`, `check-phantom-columns` and
+`check-stranded-writers`. The root suite was compared against a clean-HEAD
+`git worktree` baseline and produced an **identical failing-file set**, which is
+how the 43 pre-existing failures were proven untouched rather than merely
+asserted.
+
+---
+
 ## Verification method for this wave
 
 The CI invariant gates resolve every `.rpc()` call against a live manifest
@@ -168,3 +237,11 @@ with negative controls — so they are live independently of the frontend build
 pipeline. **Client TypeScript is not deployed until the served bundle changes.**
 Per CLAUDE.md §1.4, an M-number marked "DB LANDED" means the durable half is
 protecting money right now; it does not mean the client half is in production.
+
+**Server TypeScript is a third class again.** A merge to `main` touching
+`server/**` triggers `auto-deploy-hetzner.yml`, but a green workflow is not
+proof the engine is running the new code. Per CLAUDE.md, that is confirmed
+through the database — the restart dip in per-minute `hand_history` counts and
+boot-time effects in `tables` — never through the health endpoint, which is
+CDN-cached and will happily serve a stale answer. "Server merged" in this log
+means merged, not running.

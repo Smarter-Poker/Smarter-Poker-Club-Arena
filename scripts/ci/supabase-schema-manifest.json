@@ -1236,6 +1236,7 @@
     "fn_purchase_vip_card",
     "fn_queue_video_transcode",
     "fn_raise_financial_alert",
+    "fn_raise_server_financial_alert",
     "fn_rakeback_settlement_status",
     "fn_recompute_club_level_on_member_change",
     "fn_recompute_club_level_on_rake",

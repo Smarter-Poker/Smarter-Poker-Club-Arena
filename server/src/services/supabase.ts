@@ -879,6 +879,87 @@ export async function logBBJCollection(
  * - Union clubs: premiums/payouts flow through union bank
  * - Standalone clubs: premiums/payouts flow through club main bank
  */
+/**
+ * Outcome of an insurance bank-ledger write.
+ *
+ * AUDIT M3: this used to be `Promise<void>`, which made the failure literally
+ * unobservable to the caller — the engine `await`ed a value that could not
+ * carry bad news.
+ */
+export type InsuranceLedgerResult =
+  | { ok: true; transactionId: string | null; attempts: number }
+  | {
+      ok: false;
+      attempts: number;
+      reason: 'rpc_error' | 'threw' | 'not_persisted';
+      error: unknown;
+    };
+
+/** Attempts (1 initial + retries) before an insurance ledger write is declared lost. */
+const INSURANCE_LEDGER_MAX_ATTEMPTS = 3;
+/** Backoff before attempt N (index 0 is the wait before attempt 2). */
+const INSURANCE_LEDGER_BACKOFF_MS = [150, 500];
+
+function extractInsuranceTxId(data: unknown): string | null {
+  // `record_insurance_transaction` RETURNS insurance_transactions (a composite),
+  // which PostgREST surfaces as an object — but a single-row composite has been
+  // seen wrapped in an array by older PostgREST versions, so handle both rather
+  // than assuming. Anything unrecognised returns null and triggers a confirm-read
+  // instead of a false alarm.
+  const row = Array.isArray(data) ? data[0] : data;
+  if (row && typeof row === 'object' && typeof (row as { id?: unknown }).id === 'string') {
+    return (row as { id: string }).id;
+  }
+  return null;
+}
+
+/**
+ * Write one insurance settlement to the bank ledger.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * AUDIT M3 — WHY THIS FUNCTION RETRIES, AND WHY THAT IS SAFE
+ * ═══════════════════════════════════════════════════════════════════════════
+ * By the time this runs, the table stacks have ALREADY been mutated (payout
+ * credited, premium debited — ServerTableEngine HAND_COMPLETE) and ALREADY been
+ * persisted by syncStacks(). This call is the offsetting bank entry. If it is
+ * lost, chips have been minted or burned at the table with nothing on the other
+ * side of the ledger. The old implementation swallowed the RPC error into a
+ * fire-and-forget reportError with a broken, never-interpolated context string
+ * ('...RPC_failed_for_player_paramspl'), so the player it happened to could not
+ * even be identified afterwards.
+ *
+ * Retrying is safe — verified against production before this change was written:
+ *   - `insurance_transactions_table_hand_player_uidx` is a UNIQUE index on
+ *     (table_id, hand_number, player_id).
+ *   - `record_insurance_transaction` inserts with
+ *     `ON CONFLICT (table_id, hand_number, player_id) DO NOTHING`, and applies
+ *     the union/club bank delta ONLY on the branch where a row was actually
+ *     inserted. A replay re-selects and returns the existing row untouched.
+ *   - Proven behaviorally inside a rolled-back transaction: calling the RPC
+ *     twice with identical arguments left exactly 1 ledger row and moved the
+ *     bank wallet exactly once, on both the union and the standalone-club path.
+ *
+ * So a network timeout that actually committed server-side costs nothing on
+ * retry, and a genuine failure gets another chance instead of vanishing.
+ *
+ * WHEN EVERY ATTEMPT FAILS, this function raises the durable CRITICAL financial
+ * alert itself rather than delegating that to the caller. The alarm lives here
+ * because this is the only layer that can tell the difference between "the
+ * ledger entry exists" and "it does not", and because a caller that forgets to
+ * check the result would otherwise reintroduce exactly the silent-loss bug this
+ * change exists to kill. Every id and amount an operator needs to settle the
+ * discrepancy by hand is already in `params`.
+ *
+ * We deliberately do NOT try to reverse the table-stack mutation. The hand is
+ * over, the chips may already have been re-wagered, and a blind compensating
+ * write is how a one-chip discrepancy becomes a two-chip one. The alert row is
+ * the reconciliation input (audit M4 consumes it).
+ *
+ * `financialAlerts.js` imports this module for the Supabase client, so it is
+ * pulled in with a dynamic import inside the failure branch — that keeps the
+ * dependency one-directional at module-load time and costs nothing on the happy
+ * path, which is every hand.
+ */
 export async function logInsuranceSettlement(params: {
   tableId: string;
   clubId: string;
@@ -889,26 +970,116 @@ export async function logInsuranceSettlement(params: {
   insuredAmount: number;
   payout: number;
   playerWon: boolean;
-}): Promise<void> {
-  try {
-    const { error } = await supabase.rpc('record_insurance_transaction', {
-      p_table_id: params.tableId,
-      p_club_id: params.clubId,
-      p_hand_number: params.handNumber,
-      p_player_id: params.playerId,
-      p_equity_percent: params.equityPercent,
-      p_premium: params.premium,
-      p_insured_amount: params.insuredAmount,
-      p_payout: params.payout,
-      p_player_won: params.playerWon,
-    });
+}): Promise<InsuranceLedgerResult> {
+  let lastError: unknown = null;
+  let lastReason: 'rpc_error' | 'threw' | 'not_persisted' = 'rpc_error';
 
-    if (error) {
-      reportError(error, 'logInsuranceSettlement.RPC_failed_for_player_paramspl');
+  for (let attempt = 1; attempt <= INSURANCE_LEDGER_MAX_ATTEMPTS; attempt++) {
+    try {
+      const { data, error } = await supabase.rpc('record_insurance_transaction', {
+        p_table_id: params.tableId,
+        p_club_id: params.clubId,
+        p_hand_number: params.handNumber,
+        p_player_id: params.playerId,
+        p_equity_percent: params.equityPercent,
+        p_premium: params.premium,
+        p_insured_amount: params.insuredAmount,
+        p_payout: params.payout,
+        p_player_won: params.playerWon,
+      });
+
+      if (!error) {
+        const txId = extractInsuranceTxId(data);
+        if (txId) {
+          return { ok: true, transactionId: txId, attempts: attempt };
+        }
+
+        // The RPC reported success but we could not read an id out of the
+        // response shape. Do NOT guess. Confirm against the unique key — the
+        // row either landed or it did not, and that is cheap to establish.
+        const { data: confirmed, error: confirmError } = await supabase
+          .from('insurance_transactions')
+          .select('id')
+          .eq('table_id', params.tableId)
+          .eq('hand_number', params.handNumber)
+          .eq('player_id', params.playerId)
+          .maybeSingle();
+
+        if (!confirmError && confirmed?.id) {
+          return { ok: true, transactionId: confirmed.id, attempts: attempt };
+        }
+
+        lastReason = 'not_persisted';
+        lastError = confirmError ?? new Error('record_insurance_transaction returned no row');
+      } else {
+        lastReason = 'rpc_error';
+        lastError = error;
+      }
+    } catch (e) {
+      lastReason = 'threw';
+      lastError = e;
     }
-  } catch (e) {
-    console.warn(`[logInsuranceSettlement] Failed for hand #${params.handNumber}:`, e);
+
+    const backoff = INSURANCE_LEDGER_BACKOFF_MS[attempt - 1];
+    if (attempt < INSURANCE_LEDGER_MAX_ATTEMPTS && backoff) {
+      await new Promise((resolve) => setTimeout(resolve, backoff));
+    }
   }
+
+  // Every attempt failed. Report with the context string the original code
+  // MEANT to build — the old literal 'paramspl' fragment was a template literal
+  // that had lost its backticks, so the player id never made it into the alert.
+  reportError(lastError, `logInsuranceSettlement.RPC_failed_for_player_${params.playerId}`, {
+    tableId: params.tableId,
+    clubId: params.clubId,
+    handNumber: params.handNumber,
+    playerId: params.playerId,
+    premium: params.premium,
+    insuredAmount: params.insuredAmount,
+    payout: params.payout,
+    attempts: INSURANCE_LEDGER_MAX_ATTEMPTS,
+    reason: lastReason,
+  });
+
+  // Durable, operator-visible alarm. Sentry alone is not enough: this is a
+  // money discrepancy that has to be reconcilable from the database long after
+  // the process that saw it has been recycled.
+  // Positive net delta = chips entered the table economy from nowhere.
+  const netChipDelta = params.payout - params.premium;
+  try {
+    const { raiseFinancialAlert } = await import('./financialAlerts.js');
+    await raiseFinancialAlert(
+      'critical',
+      'logInsuranceSettlement.insurance_ledger_write_failed',
+      `Insurance settled at the table but the bank ledger write failed after ${INSURANCE_LEDGER_MAX_ATTEMPTS} attempts (${lastReason}). ` +
+        `Table stack was adjusted by ${netChipDelta} with no offsetting bank entry.`,
+      {
+        table_id: params.tableId,
+        club_id: params.clubId,
+        hand_number: params.handNumber,
+        player_id: params.playerId,
+        equity_percent: params.equityPercent,
+        premium: params.premium,
+        insured_amount: params.insuredAmount,
+        payout: params.payout,
+        player_won: params.playerWon,
+        net_chip_delta: netChipDelta,
+        attempts: INSURANCE_LEDGER_MAX_ATTEMPTS,
+        reason: lastReason,
+      }
+    );
+  } catch (alertErr) {
+    // raiseFinancialAlert is itself total, so this only fires if the module
+    // could not be loaded at all. Never let the alarm break the settlement loop.
+    console.error('[logInsuranceSettlement] failed to raise the financial alert:', alertErr);
+  }
+
+  return {
+    ok: false,
+    attempts: INSURANCE_LEDGER_MAX_ATTEMPTS,
+    reason: lastReason,
+    error: lastError,
+  };
 }
 
 /**

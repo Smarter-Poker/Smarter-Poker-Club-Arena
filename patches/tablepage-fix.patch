@@ -1,0 +1,131 @@
+--- a/src/pages/TablePage.tsx	2026-08-06 16:50:06.676221085 +0000
++++ b/src/pages/TablePage.tsx	2026-08-04 19:13:38.985942007 +0000
+@@ -216,6 +216,7 @@
+ import { MiniStatsCard } from '../components/table/MiniStatsCard';
+ import { PreviousHandCard } from '../components/table/PreviousHandCard';
+ import { reportError } from '../utils/errorReporter';
++import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
+ import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
+ import { TableModalsLayer } from '../components/table/TableModalsLayer';
+ 
+@@ -3979,7 +3980,7 @@
+             ...prev,
+             handNumber: syncData.hand_number,
+             pot: syncData.pot || 0,
+-            communityCards: syncData.community_cards || [],
++            communityCards: normalizeCards(syncData.community_cards) as Card[],
+             // P2-5 FIX: TableState uses `boardStage` (typed BoardStage), not
+             // `stage`. The old `stage` write was dead, leaving the board stuck
+             // in a stale stage after mid-hand reconnect. Map to boardStage.
+@@ -3994,11 +3995,11 @@
+         break;
+       }
+       case 'DEAL_CARDS':
+-        // Update community cards
++        // Update community cards (normalized — accepts string or object cards)
+         if ((evt.data as any).communityCards) {
+           setTableState((prev) => ({
+             ...prev,
+-            communityCards: (evt.data as any).communityCards as Card[],
++            communityCards: normalizeCards((evt.data as any).communityCards) as Card[],
+           }));
+         }
+         break;
+@@ -4059,15 +4060,12 @@
+           actionAmount > 0
+         ) {
+           // Translate seat percentage → screen px using the rotated layout.
++          // 2026-08-04 FIX: percentages are relative to the TABLE SCALER, not
++          // the viewport — mapping them through window.innerWidth/Height threw
++          // chips off the felt on desktop. Use the measured scaler rect.
+           const seatPct = seatPositions[seatIdx] || { x: 50, y: 90 };
+-          const fromPos = {
+-            x: (seatPct.x / 100) * window.innerWidth,
+-            y: (seatPct.y / 100) * window.innerHeight,
+-          };
+-          const potPos = {
+-            x: (50 / 100) * window.innerWidth,
+-            y: (45 / 100) * window.innerHeight,
+-          };
++          const fromPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
++          const potPos = seatPctToViewportPx(tableScalerRef.current, { x: 50, y: 45 });
+           const id = `pa_${Date.now()}_${seatIdx}_${Math.random().toString(36).slice(2, 6)}`;
+           setChipAnimations((prev) => [
+             ...prev,
+@@ -4154,18 +4152,13 @@
+         const postings =
+           ((evt.data as any).postings as Array<{ seat: number; type: string; amount: number }>) ||
+           [];
+-        const potPos = {
+-          x: (50 / 100) * window.innerWidth,
+-          y: (45 / 100) * window.innerHeight,
+-        };
++        // 2026-08-04 FIX: scaler-relative percentages, not viewport (see PLAYER_ACTION)
++        const potPos = seatPctToViewportPx(tableScalerRef.current, { x: 50, y: 45 });
+         for (const p of postings) {
+           if (p.seat > 0 && p.amount > 0) {
+             const seatIdx = p.seat - 1;
+             const seatPct = seatPositions[seatIdx] || { x: 50, y: 90 };
+-            const fromPos = {
+-              x: (seatPct.x / 100) * window.innerWidth,
+-              y: (seatPct.y / 100) * window.innerHeight,
+-            };
++            const fromPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
+             const id = `blind_${Date.now()}_${seatIdx}_${Math.random().toString(36).slice(2, 6)}`;
+             setChipAnimations((prev) => [
+               ...prev,
+@@ -4201,7 +4194,13 @@
+       case 'COMMUNITY_CARDS_DEALT': {
+         // Slide the new community cards onto the board the millisecond the
+         // engine flips them. The full board is also sent for safety.
+-        const board = ((evt.data as any).board as Card[]) || [];
++        // 2026-08-04 FIX (board morphing to five aces): the engine broadcasts
++        // `board` as STRINGS ("9spades") — the hand_history storage format —
++        // while the snapshot path sends {rank,suit} objects. Rendering the
++        // strings as Card objects made CardImage's unknown-card guard draw
++        // EVERY board card as the Ace of Spades until the next snapshot.
++        // normalizeCards() accepts both wire formats.
++        const board = normalizeCards((evt.data as any).board) as Card[];
+         const stage = ((evt.data as any).stage as string) || 'preflop';
+ 
+         // Bible V8 §1.16 — chip-to-pot collection animation. Before updating
+@@ -4394,10 +4393,8 @@
+             const seatPct = seatPositions[firstWinnerIdx] || { x: 50, y: 50 };
+             setWinnerParticle({
+               active: true,
+-              origin: {
+-                x: (seatPct.x / 100) * window.innerWidth,
+-                y: (seatPct.y / 100) * window.innerHeight,
+-              },
++              // 2026-08-04 FIX: scaler-relative percentages, not viewport
++              origin: seatPctToViewportPx(tableScalerRef.current, seatPct),
+               intensity: potAmount > 500 ? 2 : 1, // Big win = 2x particle intensity
+             });
+           }
+@@ -4434,10 +4431,10 @@
+         if (winnerIds.length > 0 && potAmount > 0) {
+           // Pot center in screen px (mirrors the constant 50,45 used by
+           // chip-to-pot animations elsewhere).
+-          const potPos = {
+-            x: (50 / 100) * window.innerWidth,
+-            y: (45 / 100) * window.innerHeight,
+-          };
++          // 2026-08-04 FIX: scaler-relative percentages, not viewport. The old
++          // window.innerWidth/Height math stranded pot-win chips at the screen
++          // edges on desktop (split pots parked one chip on EACH edge).
++          const potPos = seatPctToViewportPx(tableScalerRef.current, { x: 50, y: 45 });
+           // Resolve each winner's seat from the current player list (rotated
+           // positions already account for hero-at-bottom view).
+           const sharePerWinner = potAmount / winnerIds.length;
+@@ -4448,10 +4445,7 @@
+             if (seatIdx < 0) continue;
+             // AUDIT FIX 2026-07-19: physical-seat index — no +1 (see above).
+             const seatPct = seatPositions[seatIdx] || { x: 50, y: 50 };
+-            const winnerPos = {
+-              x: (seatPct.x / 100) * window.innerWidth,
+-              y: (seatPct.y / 100) * window.innerHeight,
+-            };
++            const winnerPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
+             // createPotToWinnerEvent already returns a fan of 3-8 chips with
+             // bezier arc, staggered 40ms each, 600ms duration — spec match.
+             events.push(...createPotToWinnerEvent(potPos, winnerPos, sharePerWinner));

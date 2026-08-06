@@ -1,0 +1,28 @@
+# ONE-SHOT: applies patches/tablepage-fix.patch to src/pages/TablePage.tsx, then
+# removes both the patch and this workflow in the same commit. Exists because
+# the session tooling that authored the fix cannot transport a 300KB file
+# through its API payload limits — the patch is 7KB, so GitHub applies it here.
+name: apply-tablepage-patch
+on:
+  push:
+    branches: [fix/table-bust-avatars-chip-coords-board-cards]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: "!contains(github.event.head_commit.message, '[patch-applied]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch and clean up
+        run: |
+          set -e
+          if [ ! -f patches/tablepage-fix.patch ]; then echo "patch already applied/removed"; exit 0; fi
+          git apply --whitespace=nowarn patches/tablepage-fix.patch
+          rm -f patches/tablepage-fix.patch
+          rm -f .github/workflows/apply-tablepage-patch.yml
+          git config user.name "Claude"
+          git config user.email "noreply@anthropic.com"
+          git add -A
+          git commit -m "fix(table): scaler-space chip animations + tolerant board card decode (TablePage) [patch-applied]"
+          git push

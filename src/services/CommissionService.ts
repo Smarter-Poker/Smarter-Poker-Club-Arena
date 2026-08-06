@@ -281,6 +281,8 @@ export const CommissionService = {
    * Called by RakeService after pot drops
    */
   async attributeRake(handId: string, attributions: RakeAttribution[]): Promise<void> {
+    if (attributions.length === 0) return;
+
     const records = attributions.map((a) => ({
       hand_id: handId,
       player_id: a.playerId,
@@ -289,7 +291,15 @@ export const CommissionService = {
       created_at: new Date().toISOString(),
     }));
 
-    const { error } = await supabase.from('rake_attributions').insert(records);
+    // Audit M2: this was a bare .insert() with no uniqueness guard, so a
+    // replayed hand-complete wrote a second attribution row per player —
+    // which downstream becomes double rakeback AND double agent commission.
+    // Migration 20260806_uq_rake_attributions_hand_player adds
+    // UNIQUE (hand_id, player_id); upserting against it makes a replay a
+    // no-op rather than a duplicate credit or a thrown 23505.
+    const { error } = await supabase
+      .from('rake_attributions')
+      .upsert(records, { onConflict: 'hand_id,player_id', ignoreDuplicates: true });
 
     if (error) throw error;
   },
@@ -400,6 +410,22 @@ export const CommissionService = {
       .select('user_id, amount')
       .eq('id', payoutId)
       .maybeSingle();
+
+    // Audit: the payout ITSELF already succeeded above, so this read-back
+    // failing is not fatal — but it must not be silent. The fallback below
+    // emits the payout id in the agentId slot and an amount of 0, which is
+    // wrong data, not missing data. Every current subscriber treats
+    // COMMISSION_PAID as a refresh trigger, so the UI still recovers, but a
+    // future consumer that trusts the payload deserves a trail.
+    if (!payout) {
+      reportError(
+        new Error(
+          'COMMISSION_PAID emitted with degraded payload: payout read-back returned no row'
+        ),
+        'CommissionService.executePayout.readBack',
+        { payoutId }
+      );
+    }
 
     // Notify listening pages (ClubFinancialsPage) that a commission was paid
     masterBus.emit('COMMISSION_PAID', {

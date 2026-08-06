@@ -637,7 +637,7 @@ export class RakebackSettlerService {
       this.cursor = hwm.value;
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
     // AUDIT M6 — composite (created_at, id) keyset read.
     //
     // The original filter was `.gt('created_at', since).limit(10000)` with the
@@ -659,7 +659,7 @@ export class RakebackSettlerService {
     // first cycle after this deploy, when high_water_mark_id is still NULL.
     // That path is byte-for-byte the old behaviour, so the deploy is a no-op
     // until the first cycle writes an id, and exact from the second onward.
-    // ═════════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
     const sinceIso =
       this.cursor?.createdAt ?? new Date(Date.now() - 7 * 86400 * 1000).toISOString();
     const useKeyset =

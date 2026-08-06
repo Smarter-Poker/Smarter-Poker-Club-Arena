@@ -23,6 +23,17 @@ jobs:
       - name: Checkout Club Arena
         uses: actions/checkout@v4
 
+      # DIAGNOSTIC (2026-08-06): stage markers.
+      # `git push HEAD:refs/heads/...` publishes the already-checked-out commit
+      # under a new ref. It creates no commit and never touches the working
+      # tree, so it cannot influence the build. `|| true` guarantees a marker
+      # failure can never fail the deploy. Which markers exist tells us which
+      # stage died, without needing the Actions API.
+      - name: Marker - checkout reached
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+          git push --no-verify --force origin "HEAD:refs/heads/ci-marker/${SHORT_SHA}-checkout" || true
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -31,6 +42,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Marker - dependencies installed
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+          git push --no-verify --force origin "HEAD:refs/heads/ci-marker/${SHORT_SHA}-deps" || true
 
       - name: Build Club Arena
         env:
@@ -41,6 +57,11 @@ jobs:
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
         run: npm run build
+
+      - name: Marker - build succeeded
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+          git push --no-verify --force origin "HEAD:refs/heads/ci-marker/${SHORT_SHA}-build" || true
 
       - name: Commit dist to sync branch
         id: set-branch
@@ -54,7 +75,7 @@ jobs:
           git checkout -b "${BRANCH}"
           git add --force dist/
           git commit -m "build: compiled dist for world hub sync (${SHORT_SHA})"
-          git push --no-verify origin "${BRANCH}"
+          git push --no-verify --force origin "${BRANCH}"
 
       - name: Build summary
         run: |
@@ -94,11 +115,23 @@ jobs:
           git add public/hub/club-arena/
           if git diff --cached --quiet; then
             echo "No changes to sync — World Hub already up to date."
-          else
-            git commit -m "chore(club-arena): sync build ${{ github.sha }}"
-            git push
-            echo "World Hub updated successfully."
+            exit 0
           fi
+          git commit -m "chore(club-arena): sync build ${{ github.sha }}"
+          # World Hub main receives pushes from other pipelines while this job
+          # runs, so a bare push loses the race with a non-fast-forward reject.
+          # Rebase our single sync commit on top and retry.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "World Hub updated successfully (attempt ${attempt})."
+              exit 0
+            fi
+            echo "Push rejected on attempt ${attempt}; rebasing onto origin/main."
+            git pull --rebase --no-edit origin main || exit 1
+            sleep 5
+          done
+          echo "World Hub push failed after 5 attempts."
+          exit 1
 
       - name: Sync summary
         run: |

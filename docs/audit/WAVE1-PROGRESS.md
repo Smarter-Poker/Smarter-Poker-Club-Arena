@@ -1,7 +1,7 @@
 # Wave 1 — Money Integrity: Progress Log
 
 Execution log for Wave 1 of the Club Arena Master Spec & Gap Analysis audit
-(findings M1–M17). One entry per finding worked, landed or reopened. Nothing is
+(findings M1–M18). One entry per finding worked, landed or reopened. Nothing is
 marked shipped here until the change is merged to `main` AND its effect is
 observed in production — see "Verification method for this wave" at the bottom,
 which was corrected on 2026-08-06 after M1 proved that a shipped call can be
@@ -339,13 +339,24 @@ inside one tool call, which exceeds the per-call output ceiling of any model —
 the main loop and two subagents all failed, the third mid-generation. That is a
 hard limit; retrying cannot fix it. The file was therefore delivered to Dan's
 disk **by path**, so its bytes never entered a token stream, and verified
-byte-exact as git blob `dd1fde34…`. `~/Downloads/finish-m6-manifest.command`
+byte-exact as git blob `dd1fde34…`. `~/Downloads/finish-manifests.command`
 lands it: it re-verifies the hash, refuses to run on a dirty tree, restores the
 original branch via an `EXIT` trap, commits with hooks disabled (this is
 generator output and must stay byte-identical to what `gen-schema-manifest.mjs`
 emits, so Prettier must not touch it), pushes, and re-fetches to confirm the
 landed remote blob matches. The other three M6 files are already on the branch
 and byte-verified.
+
+That script also lands the **schema** manifest for M17/M18, which hit the same
+ceiling from the other direction (68 KB — small enough to read or to write, but
+not both in one call). Two blockers, one double-click; it supersedes the earlier
+`finish-m6-manifest.command`. Worth naming the general rule, because it will
+recur: **any file this environment must round-trip through a token stream is
+capped at roughly 65 KB**, and both CI manifests are generator output that will
+cross that line again on the next schema change. The durable fix is to
+regenerate the manifests in CI from `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`
+rather than committing them, which removes the file from the push path
+entirely. Filed as part of Q6.
 
 **Pre-deploy baseline captured, so the post-deploy check is unambiguous:** all
 three daemons currently have `high_water_mark_id = NULL`;
@@ -356,7 +367,7 @@ the cycle following boot (the settler runs every 30 minutes).
 
 ---
 
-## M17 — The browser wallet-credit surface is dead in production, and is a latent mint (FILED)
+## M17 — The browser money-write surface is inert in production, and is a latent mint (FILED)
 
 Discovered by generalizing the M1 reopening above from one call site to all of
 them. Nothing is fixed yet; this entry records the finding and the fix
@@ -369,22 +380,50 @@ stopped at runtime by RLS — `wallets` has no UPDATE policy, `idempotency_keys`
 is `service_role`-only. Two of the nine are genuinely dead code
 (`OfflineQueueService.ts:219`, nothing enqueues; `ChipFlowService.ts:336`
 `mintToUnionOwner`, no caller anywhere). The other **seven are live
-user-facing features that fail silently in production**: tournament refund on
-admin removal before start (`TournamentRegistration.tsx:154`), table-close
+user-facing features that do nothing at all in production**: tournament refund
+on admin removal before start (`TournamentRegistration.tsx:154`), table-close
 refund fallback (`TableService.ts:275`), admin kick refund
 (`TableService.ts:772`), dispute credit adjustment (`DisputeService.ts:244`),
 credit-invoice payment rollback (`CreditService.ts:543`), bonus claim payout
 (`BonusService.ts:346`), and Cashier table cash-out (`WalletService.ts:495`).
 
-**Three of them corrupt state rather than merely erroring**, which is worse than
-a plain failure because the user's records now disagree with their balance:
+### Corrected the same day, by probe — it is an outage, not a corruption
 
-- `BonusService` commits `claimed = true` **before** the credit, so a 42501
-  burns the bonus with no payout and no way to retry.
-- `TableService.closeTable` sets `tables.status = 'closed'` **before** the
-  refund loop, stranding seats with un-zeroed stacks on a closed table.
-- `TableOperationsPanel.tsx:487-491` ignores `kickPlayer`'s boolean return, so
-  an admin kick that fails to refund shows **no error at all**.
+The first version of this entry claimed three of these features **corrupt
+state**: that `BonusService` burns the bonus by committing `claimed = true`
+before the credit, that `TableService.closeTable` strands un-zeroed seat stacks
+by setting `tables.status = 'closed'` before the refund loop, and that a failed
+admin kick leaves inconsistent seat state. That was inferred from reading the
+source. Impersonating role `authenticated` against production, inside rolled-back
+transactions, falsifies all three. Every one of those writes is a **zero-row
+no-op**, because each table has RLS enabled with no applicable write policy:
+
+| Write the client attempts                 | Result as `authenticated`              |
+| ----------------------------------------- | -------------------------------------- |
+| `fn_idempotent_credit_wallet`             | `42501` on `idempotency_keys`          |
+| `atomic_credit_wallet_and_log`            | `42501` on `wallets`                   |
+| `add_vip_points`                          | `42501 permission denied for function` |
+| `special_bonuses` UPDATE `claimed = true` | **0 rows**, no error                   |
+| `tables` UPDATE `status = 'closed'`       | **0 rows**, no error                   |
+| `table_seats` UPDATE `stack`              | **0 rows**, no error                   |
+| `tournament_registrations` DELETE         | **0 rows**, no error                   |
+| `special_bonuses` INSERT (forge attempt)  | `42501` — blocked                      |
+
+Nothing is half-applied, so no ledger can drift out of agreement with any table.
+The correction matters in both directions: the corruption is not real, and the
+outage is **broader** than first filed. `add_vip_points` is granted only to
+`postgres` and `service_role`, so the `vip_points` reward branch of
+`awardReward` fails too, by a different mechanism (function EXECUTE denied
+rather than RLS) — the bonus feature has no working branch at all. And
+`special_bonuses` currently holds **0 rows**, so nothing populates it either.
+
+**The real severity is truth-in-UI.** PostgREST returns success for a zero-row
+write, so `claimErr` and its siblings are null, the client takes the happy path,
+and the interface reports success. An admin is told the table closed. A player
+is told the bonus was claimed. Neither happened, and nothing anywhere records
+that it didn't. `TableOperationsPanel.tsx:487-491` compounds this by discarding
+`kickPlayer`'s boolean return entirely — that part of the original entry stands,
+though its consequence is a missing error message rather than corrupt state.
 
 **The latent mint, and why the obvious fix is the wrong one.** None of these
 credits has an offsetting debit, and two of them take a **client-supplied
@@ -416,8 +455,144 @@ naming `anon` explicitly, because Supabase's `ALTER DEFAULT PRIVILEGES` grants i
 by name and `REVOKE ALL … FROM PUBLIC` does not remove it (the same trap already
 hit in M7).
 
+**SECURITY DEFINER is not banned here — generic SECURITY DEFINER is.** The
+distinction the fix turns on: a DEFINER function that credits an amount the
+caller supplies is a mint, while a DEFINER function that looks up the amount
+itself and enforces its own authorization is exactly how this is supposed to
+work. `fn_claim_special_bonus` below is the first instance built to that shape,
+and it was only greenlit after a probe confirmed a player cannot forge the row
+it reads from (`special_bonuses` self-INSERT as `authenticated` → `42501`).
+Every subsequent M17 call site gets the same treatment and the same
+pre-flight check: **if the caller can write the row the amount is read from,
+the function is a mint no matter how it is written.**
+
 **Priority: P0.** It is simultaneously a seven-feature production outage and a
 mint that is one well-intentioned commit away from being live.
+
+### M17 part 1 — the bonus claim (DB LANDED, client merged)
+
+**Migration applied to production:** `20260806_fn_claim_special_bonus`
+
+The first of the seven call sites converted to the target shape.
+`fn_claim_special_bonus(p_bonus_id uuid)` is SECURITY DEFINER, granted to
+`authenticated` and `service_role` only, and takes **no amount parameter**. It
+locks the bonus row with `user_id = auth.uid()` (that predicate is the entire
+authorization model), rejects the ordinary refusals with a `reason` the UI can
+act on rather than raising, consumes the bonus, and pays it — all in one
+transaction, so the bonus can never be spent without being paid.
+
+It does not touch `wallets` itself. Two things stopped that, one of them a
+guard nobody had mentioned:
+
+- `public.wallets` carries a Phase 4.1.6a trigger, `guard_wallet_balance_write`,
+  which reads `PG_CONTEXT` and refuses any balance mutation whose call stack
+  does not name one of ~35 whitelisted money RPCs. The first draft of this
+  function updated `wallets` directly and was rejected with 42501 at probe time.
+  Adding the function to that whitelist would also have worked and was rejected
+  on purpose: the whitelist is a money-safety inventory and should grow when a
+  new primitive appears, not when a new caller does.
+- Worth recording what that guard implies. Its own error text calls the
+  whitelist "SECURITY DEFINER RPCs", but `atomic_credit_wallet_and_log` and
+  `fn_idempotent_credit_wallet` — two of the names on it — are SECURITY INVOKER.
+  The guard was written expecting a property those functions do not have. That
+  is the same wrong assumption M1 was closed on, found independently in a
+  second place.
+
+So it delegates to `atomic_credit_wallet_and_log` with a deterministic
+idempotency key (`bonus:<bonus_id>`), which satisfies the guard by construction
+and reuses the canonical credit shape rather than forking a money path.
+
+**Verified live, rolled back, six cases in one transaction:** happy path pays
+250 chips with exactly one ledger row and one idempotency key; an immediate
+repeat returns `already_claimed` and the balance delta stays at 250;
+`progress < target` returns `requirements_not_met`; an expired bonus returns
+`expired`; another user's bonus returns `not_found` and stays unclaimed; the
+`vip_points` branch succeeds through the definer even though `add_vip_points` is
+not granted to `authenticated`. Negative control: `anon` gets 42501. Post-probe,
+zero rows leaked.
+
+**Client:** `BonusService.claimSpecialBonus` and `BonusPage.claimSpecialBonus`
+both route through the RPC. `awardReward` was **deleted rather than repaired** —
+it was the client's own credit path and neither branch could ever have worked.
+A browser-callable "credit this user N chips" is a mint whatever it is named.
+
+---
+
+## M18 — the daily login bonus is broken four ways and holds two latent money bugs (DB LANDED, client merged)
+
+**Migration applied to production:** `20260806_fn_claim_daily_bonus`
+
+Found while fixing M17, by following `awardReward`'s other caller.
+`BonusService.claimDailyBonus` called `claim_daily_bonus(p_user_id, p_amount)`
+and then credited separately. Every layer of that was wrong:
+
+1. **Grant.** `claim_daily_bonus` is SECURITY INVOKER, granted to `postgres` and
+   `service_role` only. Every browser call is 42501. Same root cause as M17.
+2. **Contract.** The function returns `{ success, error }` or
+   `{ success, amount }`. The client reads `claimResult?.claimed` and
+   `claimResult.new_streak` — neither field exists. Even with the grant fixed,
+   `!claimResult?.claimed` would have thrown "already claimed today" on a
+   _successful_ claim, and `(undefined - 1) % 7` would have indexed the reward
+   table with `NaN`.
+3. **Tables.** The function stamps `profiles.last_login_date`. `BonusService`
+   reads `user_bonuses.daily_streak`. `BonusPage` read a third thing,
+   `profiles.streak_days`. Three tables, one feature. `user_bonuses` holds 0
+   rows and nothing writes it, so the streak could never advance whatever else
+   was fixed.
+4. **Rewards.** Three disagreeing schedules: `BonusService`'s `DAILY_REWARDS`
+   constant (100/150/200/300/500/200vip/1000), `BonusPage`'s hardcoded
+   `day * 10` chips with "100 Diamonds" on day 7, and the function's
+   `p_amount DEFAULT 100`. No two of them would have paid the same bonus.
+
+And two money bugs waiting for someone to "just fix the grant":
+
+- **Double credit.** The function credits internally via `credit_player_wallet`
+  **and** the client credited again afterwards. Unblocking both legs pays every
+  daily bonus twice.
+- **Mint.** `p_amount` is caller-supplied. Granting the existing function to
+  `authenticated` lets any player claim an arbitrary amount, once a day.
+
+**The fix.** `fn_claim_daily_bonus()` — SECURITY DEFINER, no parameters at all —
+owns the whole claim: the once-per-UTC-day guard, the streak arithmetic, the
+payout lookup and exactly one credit, in one transaction. The schedule moved out
+of the client into `public.daily_bonus_rewards`, seeded to the existing
+`DAILY_REWARDS` values so no payout amount changes — only where it is decided.
+That table has RLS on, no policies, and is revoked from `anon` and
+`authenticated`: a player must not be able to read or write their own payout
+table. A companion `fn_daily_bonus_status()` returns the streak, whether a claim
+is available, the ladder position that would pay next, and the live schedule, so
+the UI renders the ladder that actually pays instead of recomputing one.
+
+The idempotency key is `daily_bonus:<user>:<utc-date>`, which makes a repeated
+credit impossible within a day even if the day-guard were somehow bypassed.
+
+`claim_daily_bonus` is deliberately left in place and untouched — it is still
+reachable by `service_role`, and retiring it is a separate decision from making
+the player-facing path work.
+
+**Verified live, rolled back:** a first claim pays day 1 / 100 chips and sets
+streak 1; an immediate second returns `already_claimed_today` with no second
+credit; backdating the stamp one day and claiming again pays day 2 / 150 with
+streak 2 and a matching ledger row; backdating five days resets to day 1 /
+streak 1. A player reading `daily_bonus_rewards` directly gets 42501, and
+writing it gets 42501.
+
+**Client:** `BonusService` and `BonusPage` both go through the new RPCs.
+`BonusPage` no longer emits `DAILY_REWARD_CLAIMED` with an amount it invented.
+The claim button is gated on the server's `can_claim` rather than on an inferred
+ladder position.
+
+**Gates run for M17 part 1 + M18:** `tsc --noEmit` 0 errors; `eslint` 0 errors;
+`vitest` 16/16 on a rewritten `BonusService.test.ts` (the old suite's mock
+resolved every call to `{ data: null, error: null }`, a shape no real RPC
+returns, and asserted behaviour that only existed under the mock); all three CI
+invariant gates green against a schema manifest resynced from live — the diff is
+exactly the four new objects, nothing else had drifted.
+
+The load-bearing tests are the negative ones: the client must never call
+`atomic_credit_wallet_and_log`, `fn_idempotent_credit_wallet`, `add_vip_points`,
+`credit_player_wallet` or `claim_daily_bonus`; `fn_claim_daily_bonus` must be
+called with no arguments at all; and `awardReward` must stay gone.
 
 ---
 

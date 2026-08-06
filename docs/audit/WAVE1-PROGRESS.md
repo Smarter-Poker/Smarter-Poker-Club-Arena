@@ -1,13 +1,15 @@
 # Wave 1 — Money Integrity: Progress Log
 
 Execution log for Wave 1 of the Club Arena Master Spec & Gap Analysis audit
-(findings M1–M14). One entry per landed finding. Nothing is marked shipped
-here until the change is merged to `main` AND observed in the production
-bundle served from `https://smarter.poker/hub/club-arena/`.
+(findings M1–M17). One entry per finding worked, landed or reopened. Nothing is
+marked shipped here until the change is merged to `main` AND its effect is
+observed in production — see "Verification method for this wave" at the bottom,
+which was corrected on 2026-08-06 after M1 proved that a shipped call can be
+permission-denied on every single invocation.
 
 ---
 
-## M1 — Idempotent cash-out credit (LANDED)
+## M1 — Idempotent cash-out credit (LANDED, BUT INERT — REOPENED 2026-08-06)
 
 **Merged:** PR #33 -> `main` as `6b56ef4a` (2026-08-06)
 
@@ -46,6 +48,51 @@ failed against the real `fn_wallet_type_transfer` contract.
 `check-phantom-tables` 0 phantoms against a live 744-table / 1630-function
 manifest (which is itself the proof that `fn_idempotent_credit_wallet` exists
 in production); `check-phantom-columns` 0; `check-stranded-writers` 0.
+
+### REOPENED 2026-08-06 — this fix has never executed in production
+
+Production verification of the merged change did not confirm it. It falsified
+it. The reasoning above contains one unexamined assumption: that the permission
+wall which blocked the _deduct_ leg did not also block the _credit_ leg. It
+does.
+
+Four independent pieces of evidence, all gathered against production:
+
+1. **`public.idempotency_keys` contains 0 rows.** Every successful call to
+   `fn_idempotent_credit_wallet` must write one. Before concluding, a reaper was
+   ruled out: `cron.job` has no entry matching `%idempotency%`, and no function
+   body deletes from the table. Zero rows therefore means zero successful calls,
+   ever — not "recently cleaned".
+2. **Nothing in the chain is `SECURITY DEFINER`.** `SELECT prosecdef` returns
+   false for `fn_idempotent_credit_wallet`, `claim_idempotency_key`,
+   `store_idempotency_result` **and** `atomic_credit_wallet_and_log`. The
+   in-code comments describing "the IDEMPOTENT SECURITY DEFINER wrapper" are
+   simply wrong, and had been taken at their word.
+3. **A live probe as role `authenticated` fails.** Executed inside a rolled-back
+   transaction with `set_config('request.jwt.claims', …)` +
+   `SET LOCAL ROLE authenticated`, the call returns SQLSTATE **42501**,
+   `new row violates row-level security policy for table "idempotency_keys"`
+   — that table carries a single `service_role`-only ALL policy.
+4. **It was broken before M1 too.** The pre-M1 path (`atomic_credit_wallet_and_log`
+   called directly) fails identically with `42501 … for table "wallets"`,
+   because `wallets` has SELECT and INSERT policies but **no UPDATE policy**.
+
+So M1 did not regress anything — it moved the failure one call earlier — but
+neither did it fix anything. **Idempotency cannot be asserted on a code path
+that has never run.** The 206 real cash-outs in the preceding 48 hours were all
+written by the engine's `markSeatAsLeft`, not by this client path; the
+server-side money layer is healthy (`wallet_credit_idempotency` took 1,172 keys
+in 48h).
+
+Generalizing the probe to every browser call site turned this into audit finding
+**M17**, recorded below. M1's credit leg will be resolved by construction when
+M17's engine-ownership migration lands; it is not resolvable on its own terms.
+
+**The lesson for this log.** A green test suite, a green phantom-RPC gate and a
+merged PR proved only that the function _exists_ and that the _client_ calls it
+correctly. None of them could see the grant. Wave 1's verify-live-first rule now
+has a second half: for any RPC a browser calls, **impersonate the role and run
+it** before marking the finding resolved.
 
 ---
 
@@ -150,7 +197,7 @@ including `fn_raise_financial_alert`); `check-phantom-tables` 0,
 
 ---
 
-## M3 — Insurance ledger writes could fail silently (DB LANDED, server merged)
+## M3 — Insurance ledger writes could fail silently (DB LANDED, server merged AND DEPLOY-VERIFIED)
 
 **Migration applied to production:** `20260806_fn_raise_server_financial_alert`
 
@@ -213,6 +260,165 @@ zero phantoms from `check-phantom-tables`, `check-phantom-columns` and
 how the 43 pre-existing failures were proven untouched rather than merely
 asserted.
 
+**Deploy verified in production (2026-08-06).** Per CLAUDE.md the Hetzner
+deploy is confirmed through the database, never the CDN-cached health endpoint.
+Per-minute `hand_history` counts show the restart signature unambiguously:
+20:50 = 24 hands, 20:51 = 10, **20:52 = zero**, 20:53 = 3, 20:54 = 2, then
+recovery to normal throughput (~1,959 hands/hour). The boot-time effect
+corroborates it: five tournament tables flipped to `closed` inside a 0.5-second
+window at 20:52:29–20:52:30, which is the new process running its startup
+reconciliation. Merged **and** running.
+
+---
+
+## M6 — Rakeback settler watermark can skip rows forever (DB LANDED, code complete, PR BLOCKED)
+
+**Migration applied to production:** `20260806_daemon_state_hwm_id`
+
+**PR #37 is open as a draft and cannot be completed from this environment.**
+See "The blocker" below. Nothing here is claimed as shipped.
+
+**The bug.** `RakebackSettlerService` reads new rake with a timestamp-only
+cursor — `.gt('created_at', sinceIso).order('created_at').limit(10000)` — and
+then persists `rows[rows.length - 1].created_at` as the new watermark. Two rows
+sharing one `created_at` value that straddle the LIMIT boundary are lost
+permanently: row 10000 sets the watermark to T, and row 10001 (also at T) is
+excluded forever by the strict `>` on the next cycle. Rakeback that is never
+paid is never noticed, because nothing downstream knows the row existed. The
+period table self-heals by recomputing from source; agent commissions and player
+stats do not.
+
+**It is real, not theoretical — and it is only accidentally safe.** Production
+has **12 exact-duplicate `created_at` groups** across 481k `rake_records`. The
+collision has not fired yet for a reason nobody designed: V8's
+`new Date(pgTimestamp)` truncates Postgres microseconds _downward_, which pushes
+the saved watermark strictly below every existing tie and accidentally
+re-includes both rows on the next pass. That is an artifact of a lossy
+conversion. It would evaporate the moment anyone made the timestamp handling
+more precise — which is exactly the kind of tidy-up a future contributor would
+make with no idea they were removing the only thing preventing silent money
+loss. The cursor has to be made exact instead of lucky.
+
+**The fix.** A composite **(created_at, id) keyset cursor** — a total order, so
+there is no boundary a row can hide inside. `daemon_state.high_water_mark_id` is
+**NULLable on purpose**: on the first cycle after deploy the settler has a
+timestamp but no id and falls back to today's plain `.gt(created_at)` read, so
+the deploy is a behavioural no-op until the first cycle writes an id, and exact
+from cycle two onward. Re-processing is safe in every direction that matters —
+`credit_agent_commission_from_rake` dedupes on `(user_id, source_id,
+source_type)`, `apply_rakeback_player_stats` claims through
+`rakeback_stats_applied`, and `rakeback_periods` recomputes from source — so a
+cursor that occasionally repeats a row costs nothing, while one that skips a row
+loses money. The migration only widens the cursor; it cannot move it forward.
+
+**The index.** `rake_records` already had `idx_rake_records_date` on
+`(created_at)` alone, which cannot serve the tie-break. The new
+`(created_at, id)` index was built against production with
+`CREATE INDEX CONCURRENTLY`, not the plain `IF NOT EXISTS` form the migration
+file replays — `rake_records` is 301 MB and takes a write on every hand played,
+so a plain build would have held an ACCESS EXCLUSIVE lock across the
+rake-distribution path. Note that `CREATE INDEX CONCURRENTLY` exceeds the
+Supabase MCP 60-second tool timeout but **continues in the background**; it was
+confirmed by polling `pg_index.indisvalid` rather than trusting the timeout.
+
+**The two other daemons are deliberately untouched.** `tournament_sentinel`
+watermarks `tournaments.updated_at` and `weekly_financial_close` stores a
+week-start date, not a row timestamp. Neither reads `high_water_mark_id`, and
+the column is NULLable, so both keep working unchanged.
+
+**Gates run:** 13 new tests in `rakebackWatermark.test.ts`; server
+`tsc --noEmit` 0 errors; all three CI invariant gates green locally.
+
+**The blocker.** The phantom-column gate compares code against
+`scripts/ci/supabase-columns-manifest.json`, a committed snapshot of the live
+schema. Adding `high_water_mark_id` requires regenerating it. The regenerated
+file is **134,322 bytes**, and two independent limits stack: `git push` from this
+sandbox is 403-blocked by the session's repository allowlist (confirmed five
+times), and the GitHub MCP `push_files` tool requires the file's full content
+inside one tool call, which exceeds the per-call output ceiling of any model —
+the main loop and two subagents all failed, the third mid-generation. That is a
+hard limit; retrying cannot fix it. The file was therefore delivered to Dan's
+disk **by path**, so its bytes never entered a token stream, and verified
+byte-exact as git blob `dd1fde34…`. `~/Downloads/finish-m6-manifest.command`
+lands it: it re-verifies the hash, refuses to run on a dirty tree, restores the
+original branch via an `EXIT` trap, commits with hooks disabled (this is
+generator output and must stay byte-identical to what `gen-schema-manifest.mjs`
+emits, so Prettier must not touch it), pushes, and re-fetches to confirm the
+landed remote blob matches. The other three M6 files are already on the branch
+and byte-verified.
+
+**Pre-deploy baseline captured, so the post-deploy check is unambiguous:** all
+three daemons currently have `high_water_mark_id = NULL`;
+`rakeback_settler.high_water_mark = 2026-08-06 22:06:09.862+00`,
+`updated_at = 22:07:47.681+00`. After the merge, M6 is confirmed when
+`daemon_state.high_water_mark_id` for `rakeback_settler` becomes **non-NULL** on
+the cycle following boot (the settler runs every 30 minutes).
+
+---
+
+## M17 — The browser wallet-credit surface is dead in production, and is a latent mint (FILED)
+
+Discovered by generalizing the M1 reopening above from one call site to all of
+them. Nothing is fixed yet; this entry records the finding and the fix
+direction, because the naive fix is dangerous.
+
+**Every client path that credits a wallet is blocked.** All nine go through
+`fn_idempotent_credit_wallet` or `atomic_credit_wallet_and_log`. Both are
+SECURITY INVOKER, both are granted to `anon`/`authenticated`/PUBLIC, and both are
+stopped at runtime by RLS — `wallets` has no UPDATE policy, `idempotency_keys`
+is `service_role`-only. Two of the nine are genuinely dead code
+(`OfflineQueueService.ts:219`, nothing enqueues; `ChipFlowService.ts:336`
+`mintToUnionOwner`, no caller anywhere). The other **seven are live
+user-facing features that fail silently in production**: tournament refund on
+admin removal before start (`TournamentRegistration.tsx:154`), table-close
+refund fallback (`TableService.ts:275`), admin kick refund
+(`TableService.ts:772`), dispute credit adjustment (`DisputeService.ts:244`),
+credit-invoice payment rollback (`CreditService.ts:543`), bonus claim payout
+(`BonusService.ts:346`), and Cashier table cash-out (`WalletService.ts:495`).
+
+**Three of them corrupt state rather than merely erroring**, which is worse than
+a plain failure because the user's records now disagree with their balance:
+
+- `BonusService` commits `claimed = true` **before** the credit, so a 42501
+  burns the bonus with no payout and no way to retry.
+- `TableService.closeTable` sets `tables.status = 'closed'` **before** the
+  refund loop, stranding seats with un-zeroed stacks on a closed table.
+- `TableOperationsPanel.tsx:487-491` ignores `kickPlayer`'s boolean return, so
+  an admin kick that fails to refund shows **no error at all**.
+
+**The latent mint, and why the obvious fix is the wrong one.** None of these
+credits has an offsetting debit, and two of them take a **client-supplied
+amount**: `DisputeService.ts:244`, and `WalletService.ts:495` where the player
+types the cash-out figure and **no server-side seat-stack decrement exists
+anywhere in that path** (`useWalletStore.ts:282-320` adjusts `locked`
+optimistically, client-side only, and reverts on throw). These calls are inert
+today _only because RLS happens to block them_. The obvious repair — making the
+wrappers SECURITY DEFINER, which the code comments already incorrectly claim
+they are — would convert a broken feature into an **unlimited chip mint
+exploitable by any authenticated player**. Widening privileges here is not a fix;
+it is the exploit.
+
+**The fix direction is engine ownership plus revocation.** The correct pattern is
+already in the codebase twice. `TablePage.tsx:1598-1625` routes partial cash-out
+through `GameServerAPI.removeChips` → `atomic_table_withdraw`, which credits the
+wallet and reduces the seat stack atomically, only between hands. And
+`server/src/services/supabase.ts:255-435` (`markSeatAsLeft`) credits the
+**actual** `table_seats` stack — never a client figure — idempotent on the
+seat-occupancy row id, and refuses to vacate the seat if the credit fails. That
+is the path that wrote all 206 real cash-outs in the preceding 48 hours. There is
+also precedent for the UI half: the Cashier's `'buyin'` branch used to perform a
+real debit and was deliberately reduced to navigation, so that
+`atomic_table_buyin` is the single point at which buy-in funds move. The
+`'cashout'` branch at `CashierPage.tsx:1071-1114` still violates that rule and
+must be converted the same way. Once every credit is engine-owned,
+`REVOKE EXECUTE` on both wrappers from `anon`, `authenticated` **and** PUBLIC —
+naming `anon` explicitly, because Supabase's `ALTER DEFAULT PRIVILEGES` grants it
+by name and `REVOKE ALL … FROM PUBLIC` does not remove it (the same trap already
+hit in M7).
+
+**Priority: P0.** It is simultaneously a seven-feature production outage and a
+mint that is one well-intentioned commit away from being live.
+
 ---
 
 ## Verification method for this wave
@@ -244,4 +450,22 @@ proof the engine is running the new code. Per CLAUDE.md, that is confirmed
 through the database — the restart dip in per-minute `hand_history` counts and
 boot-time effects in `tables` — never through the health endpoint, which is
 CDN-cached and will happily serve a stale answer. "Server merged" in this log
-means merged, not running.
+means merged, not running — a heading is only upgraded to "DEPLOY-VERIFIED"
+once the restart dip and a boot-time effect have both been observed. M3 is the
+first entry to carry that upgrade; the evidence is recorded in its section.
+
+**Correction to this section (2026-08-06).** The paragraph above describes
+production presence for client code as "grepping the served entry chunk under
+`/hub/club-arena/assets/` for the new RPC name". That check is not available
+from this environment and, more importantly, it is not sufficient. `WebFetch`
+cannot decode the compressed production bundle, GitHub code search does not
+index minified assets, and the binding web-content rule forbids routing around
+either. But even a successful grep would only prove the _call_ shipped — M1
+above is the proof that a shipped call can be permission-denied on every
+invocation and leave no trace anywhere in the bundle. The stronger check, and
+the one this log now requires for any browser-callable money RPC, is the
+**rolled-back role-impersonation probe**: set `request.jwt.claims` and
+`SET LOCAL ROLE authenticated` inside a transaction, execute the real call,
+capture the outcome into a variable, then `RAISE EXCEPTION` to roll the whole
+thing back and surface the captured result in the error message. It answers
+"can the deployed client actually do this?" definitively, and it moves no money.

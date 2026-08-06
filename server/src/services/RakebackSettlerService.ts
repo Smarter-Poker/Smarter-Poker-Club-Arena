@@ -637,29 +637,7 @@ export class RakebackSettlerService {
       this.cursor = hwm.value;
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    // AUDIT M6 — composite (created_at, id) keyset read.
-    //
-    // The original filter was `.gt('created_at', since).limit(10000)` with the
-    // new watermark taken from the LAST row's created_at. Two rows sharing one
-    // created_at that straddle the LIMIT boundary are then lost forever: row
-    // 10000 sets the watermark to T and row 10001 (also at T) is excluded by
-    // the strict `>` on every subsequent cycle. Production has 12 such
-    // duplicate-timestamp groups today, so the collision is real.
-    //
-    // The direction of the danger is asymmetric and decides the design: every
-    // downstream accumulator is idempotent (credit_agent_commission_from_rake
-    // dedupes on (user_id, source_id, source_type), apply_rakeback_player_stats
-    // claims through rakeback_stats_applied, rakeback_periods recomputes from
-    // source), so RE-processing a row costs nothing while SKIPPING one loses a
-    // player's money with no trace. Everything below therefore prefers the
-    // wider read whenever it is unsure.
-    //
-    // `.gt(created_at)` is still the fallback when the cursor has no id — the
-    // first cycle after this deploy, when high_water_mark_id is still NULL.
-    // That path is byte-for-byte the old behaviour, so the deploy is a no-op
-    // until the first cycle writes an id, and exact from the second onward.
-    // ══════════════════════════════════════════════════════════════════
+    for_the_next_replacement_marker_AUDIT_M6_BANNER_640
     const sinceIso =
       this.cursor?.createdAt ?? new Date(Date.now() - 7 * 86400 * 1000).toISOString();
     const useKeyset =

@@ -20,6 +20,24 @@ import { FinancialAlertService } from './FinancialAlertService';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// IDEMPOTENCY (Audit finding M1)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Client-initiated money RPCs are wrapped in retryAsync (retries on
+// timeout/5xx). Without an idempotency key, a commit-then-timeout re-applies
+// the mutation on retry — double-debiting a buy-in or double-crediting a
+// cash-out. The DB already ships an idempotency framework
+// (claim_idempotency_key + fn_idempotent_* wrappers): pass ONE key per logical
+// operation, generated OUTSIDE the retry closure so every retry of that same
+// operation shares the key and the DB de-duplicates, while a genuinely new
+// operation gets a fresh key. Returns jsonb { ok, rpc } (not a bare boolean).
+function newIdempotencyKey(): string {
+  return typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `wal-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -423,6 +441,10 @@ export const WalletService = {
     // The RPC returns false if insufficient balance —- no separate pre-check needed.
     // (Removing the pre-check eliminates a TOCTOU race condition where two concurrent
     // buy-ins could both pass the SELECT check but one would fail the deduct.)
+    // NOTE (Audit M1): buy-in DEDUCTION is engine-owned — atomic_deduct_wallet_and_log
+    // is service-role only, so client-side idempotency belongs on the server buy-in
+    // path (atomic_table_buyin), not here. The cash-out CREDIT path (unlockFromTable)
+    // is the client-initiated money mover and is made idempotent below.
     const { data: deductResult, error: deductError } = await retryAsync(async () => {
       const res = await supabase.rpc('atomic_deduct_wallet_and_log', {
         p_user_id: userId,
@@ -464,9 +486,14 @@ export const WalletService = {
       throw new Error('Cash-out amount must be a positive number');
     }
 
-    // Credit to Player Wallet AND LOG using SECURITY DEFINER RPC
-    const { error: creditError } = await retryAsync(async () => {
-      const res = await supabase.rpc('atomic_credit_wallet_and_log', {
+    // Credit to Player Wallet AND LOG via the IDEMPOTENT SECURITY DEFINER wrapper
+    // (Audit M1). One key per cash-out, generated OUTSIDE the retry closure so a
+    // retry after a commit-then-timeout de-duplicates instead of double-crediting
+    // (the worst case: a duplicated cash-out mints chips). Returns jsonb { ok, rpc }.
+    const idempotencyKey = newIdempotencyKey();
+    const { data: creditResult, error: creditError } = await retryAsync(async () => {
+      const res = await supabase.rpc('fn_idempotent_credit_wallet', {
+        p_idempotency_key: idempotencyKey,
         p_user_id: userId,
         p_amount: amount,
         p_category: 'cashout',
@@ -481,6 +508,10 @@ export const WalletService = {
     if (creditError) {
       reportError(creditError, 'WalletService.unlockFromTable', { userId, tableId, amount });
       throw new Error(`Cash-out failed: ${creditError.message}`);
+    }
+
+    if (creditResult?.ok === false) {
+      throw new Error('Cash-out failed: wallet credit was rejected');
     }
 
     // Emit bus event so CashierPage/PlayerWalletPage refresh balances

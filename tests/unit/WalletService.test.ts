@@ -102,7 +102,8 @@ describe('WalletService', () => {
     });
 
     it('should emit BALANCE_UPDATED on successful transfer', async () => {
-      mockRpc.mockResolvedValueOnce({ error: null }); // wallet_internal_transfer RPC
+      // fn_wallet_type_transfer returns jsonb { success: true } on success.
+      mockRpc.mockResolvedValueOnce({ data: { success: true }, error: null });
       mockFromChain.mockResolvedValue({ data: null, error: null }); // log transactions
 
       await WalletService.internalTransfer('user1', {
@@ -232,6 +233,27 @@ describe('WalletService', () => {
         p_hand_id: null,
         p_related_entity_id: null,
       });
+    });
+  });
+
+  describe('unlockFromTable', () => {
+    it('should call the idempotent credit wrapper with a generated key (Audit M1)', async () => {
+      mockRpc.mockResolvedValueOnce({ data: { ok: true, rpc: 'atomic_credit_wallet_and_log' }, error: null });
+
+      await WalletService.unlockFromTable('user1', 'table-123', 500);
+
+      expect(mockRpc).toHaveBeenCalledWith(
+        'fn_idempotent_credit_wallet',
+        expect.objectContaining({
+          p_user_id: 'user1',
+          p_amount: 500,
+          p_category: 'cashout',
+          p_table_id: 'table-123',
+        })
+      );
+      const args = mockRpc.mock.calls[0][1];
+      expect(typeof args.p_idempotency_key).toBe('string');
+      expect(args.p_idempotency_key.length).toBeGreaterThan(0);
     });
   });
 });

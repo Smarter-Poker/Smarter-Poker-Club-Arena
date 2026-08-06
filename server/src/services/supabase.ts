@@ -916,9 +916,9 @@ function extractInsuranceTxId(data: unknown): string | null {
 /**
  * Write one insurance settlement to the bank ledger.
  *
- * ══════════════════════════════════════════════════════════════════════
+ * ═══════════════════════════════════════════════════════════════════════════
  * AUDIT M3 — WHY THIS FUNCTION RETRIES, AND WHY THAT IS SAFE
- * ══════════════════════════════════════════════════════════════════════
+ * ═══════════════════════════════════════════════════════════════════════════
  * By the time this runs, the table stacks have ALREADY been mutated (payout
  * credited, premium debited — ServerTableEngine HAND_COMPLETE) and ALREADY been
  * persisted by syncStacks(). This call is the offsetting bank entry. If it is
@@ -1134,7 +1134,7 @@ export async function logHandHistory(params: {
     holeCards: { rank: string; suit: string }[];
   }[];
 }): Promise<{ handId: string | null }> {
-  // ── Tier 1: Raw Events ───────────────────────────────────────────
+  // ── Tier 1: Raw Events ──────────────────────────────────────────────
   const rawEvents = params.actions.map((a, idx) => ({
     seq: idx,
     seat: a.seat,
@@ -1145,7 +1145,7 @@ export async function logHandHistory(params: {
     timestamp: a.timestamp ?? Date.now(),
   }));
 
-  // ── Tier 2: Audit Log ──────────────────────────────────────────────────
+  // ── Tier 2: Audit Log ───────────────────────────────────────────────
   const auditLog = {
     table_id: params.tableId,
     tournament_id: params.tournamentId || null,
@@ -1162,7 +1162,7 @@ export async function logHandHistory(params: {
     created_at: new Date().toISOString(),
   };
 
-  // ── Tier 3: Player Summaries ───────────────────────────────────────────
+  // ── Tier 3: Player Summaries ────────────────────────────────────────
   const playerSummaries = params.players.map((p) => {
     const winRecord = params.winners.find((w) => w.userId === p.userId);
     const showdown = params.showdownResults?.find((s) => s.userId === p.userId);
@@ -1181,7 +1181,7 @@ export async function logHandHistory(params: {
     };
   });
 
-  // ── Tier 4: Dispute Review Package ──────────────────────────────────────
+  // ── Tier 4: Dispute Review Package ──────────────────────────────────
   const disputeReview = {
     raw_events: rawEvents,
     audit_log: auditLog,
@@ -1465,9 +1465,9 @@ export async function processBBJPayout(params: {
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // FIX 137: Hand State Snapshots for Crash Recovery (Bible V8 §7.17, §9.2)
-// ───────────────────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Save or update the hand state snapshot after every action.

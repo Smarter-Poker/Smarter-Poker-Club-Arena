@@ -70,39 +70,62 @@ export const FinancialAlertService = {
       createdAt: new Date().toISOString(),
     };
 
-    // 1. Persist to Supabase for ops dashboard
+    // 1. Persist to Supabase for ops dashboard.
+    //
+    // AUDIT M7 — this used to be a bare `.insert()` into financial_alerts, with
+    // an RLS denial (42501) downgraded to console.warn. financial_alerts has
+    // RLS on with a SINGLE service_role-scoped policy, so that denial was not
+    // the rare non-admin edge case the old comment claimed: it was EVERY client
+    // session, always. The table proves it — the newest row predates this audit
+    // by months. Every "ops will be alerted" recovery path was writing to
+    // /dev/null.
+    //
+    // Alerts now route through fn_raise_financial_alert, a SECURITY DEFINER
+    // raise-only entry point granted to `authenticated` (migration
+    // 20260806_fn_raise_financial_alert). Clients can raise an alert but still
+    // cannot read, update or resolve one.
+    let persisted = false;
+    let persistFailure: unknown = null;
+
     try {
-      const { error: insertErr } = await supabase.from('financial_alerts').insert({
-        severity: alert.severity,
-        source: alert.source,
-        message: alert.message,
-        context: alert.context,
-        resolved: false,
-        created_at: alert.createdAt,
+      const { data: alertId, error: rpcErr } = await supabase.rpc('fn_raise_financial_alert', {
+        p_severity: alert.severity,
+        p_source: alert.source,
+        p_message: alert.message,
+        p_context: alert.context,
       });
-      if (insertErr) {
-        // RLS policy violations (code 42501) mean the client-side SPA user lacks INSERT
-        // permission on financial_alerts — expected for non-admin sessions. Log to console
-        // only; do NOT report to Sentry as this is a known config-level permission boundary.
-        const isRLSViolation =
-          insertErr.code === '42501' ||
-          insertErr.message?.includes('row-level security') ||
-          insertErr.message?.includes('permission denied');
-        if (isRLSViolation) {
-          console.warn(
-            `[FinancialAlert] Insert blocked by RLS (expected for client session): ${source} — ${message}`
-          );
-        } else {
-          reportError(insertErr, 'FinancialAlertService._log.insert', {
-            severity,
-            source,
-            message,
-          });
-        }
+      if (rpcErr) {
+        persistFailure = rpcErr;
+      } else if (alertId) {
+        persisted = true;
+      } else {
+        // NULL id means the per-reporter throttle tripped. The alert was
+        // intentionally dropped by the server, but a CRITICAL must still leave
+        // a trace, so treat it as a persistence failure for escalation below.
+        persistFailure = new Error('financial alert throttled by fn_raise_financial_alert');
       }
     } catch (err: unknown) {
-      // If the table doesn't exist yet, log to console as fallback — non-fatal
-      console.warn('[FinancialAlertService] Insert failed (non-fatal):', err);
+      persistFailure = err;
+    }
+
+    // AUDIT M7 — never swallow. If the durable channel failed and this is a
+    // CRITICAL (money may be in an inconsistent state), escalate to the error
+    // reporter so it reaches Sentry. A dropped critical alert is itself an
+    // incident, not a config-level permission boundary to shrug at.
+    if (!persisted && persistFailure) {
+      if (severity === 'critical') {
+        reportError(persistFailure, 'FinancialAlertService.CRITICAL_ALERT_UNPERSISTED', {
+          severity,
+          source,
+          message,
+          context,
+        });
+      } else {
+        console.warn(
+          `[FinancialAlert] ${severity} alert not persisted: ${source} — ${message}`,
+          persistFailure
+        );
+      }
     }
 
     // 2. Emit bus event for real-time dashboard
@@ -119,11 +142,18 @@ export const FinancialAlertService = {
       // Bus emission failure is non-fatal
     }
 
-    // 3. Log to console — debug level so it's stripped from production builds
-    // Alerts are persisted to DB (financial_alerts table) and visible on the admin dashboard.
+    // 3. Log to console.
+    // AUDIT M7: warning/info stay at debug level (stripped from production
+    // builds), but CRITICAL goes to console.error so it survives the production
+    // build and is captured by breadcrumb collection. A critical financial
+    // alert must never depend on a single channel.
     const prefix =
       severity === 'critical' ? 'CRITICAL' : severity === 'warning' ? 'WARNING' : 'INFO';
-    console.debug(`[FinancialAlert] ${prefix}: ${source}: ${message}`, context);
+    if (severity === 'critical') {
+      console.error(`[FinancialAlert] ${prefix}: ${source}: ${message}`, context);
+    } else {
+      console.debug(`[FinancialAlert] ${prefix}: ${source}: ${message}`, context);
+    }
 
     // NOTE: Financial alerts are ops-only signals. They are NOT shown as user-facing toasts.
     // They appear on the admin Financial Alerts page (/financial-alerts) via the

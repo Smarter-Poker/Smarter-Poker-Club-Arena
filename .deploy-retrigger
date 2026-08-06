@@ -1,0 +1,6 @@
+Re-trigger marker for "Build for World Hub Sync".
+
+The 2026-08-06 GitHub Actions outage throttled webhooks, so the merge of PR #36
+(commit 6b8b003 — TablePage bust avatars + chip coordinates + board card decode)
+did not fire the sync workflow. This no-op commit re-triggers the on-push build
+so the fix is compiled into World Hub public/hub/club-arena and deployed.

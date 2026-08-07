@@ -10,8 +10,8 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './TournamentRegistration.css';
-import { retryAsync } from '../../utils/retryAsync';
 import { reportError } from '../../utils/errorReporter';
+import { adminActionReasonText } from '../../services/TableService';
 
 interface TournamentRegistrationProps {
   tournamentId: string;
@@ -122,95 +122,69 @@ export function TournamentRegistration({
     if (!isAdmin) return;
 
     try {
-      // Fetch tournament to calculate refund amount
-      const { data: tournament } = await supabase
-        .from('tournaments')
-        .select('buy_in_amount, buy_in_fee, status')
-        .eq('id', tournamentId)
-        .maybeSingle();
+      // AUDIT M17: this used to be five client round trips — read the tournament,
+      // check its status, delete the registration, credit
+      // buy_in_amount + buy_in_fee computed HERE, and re-insert the player if the
+      // credit failed. The credit was permission-denied every time (42501 on the
+      // wallets RLS) and the delete matched zero rows (tournament_registrations
+      // is service-role write-only), so nothing happened and the UI said
+      // "Player removed and refunded".
+      //
+      // fn_admin_remove_tournament_player does all of it in one transaction:
+      // club-admin check, pre-start status gate, delete, and a refund read from
+      // the tournaments row rather than computed by the caller. The
+      // re-insert-on-failure compensation is gone because it is no longer
+      // needed — a failed refund un-removes the player by rolling back.
+      const { data, error } = await supabase.rpc('fn_admin_remove_tournament_player', {
+        p_tournament_id: tournamentId,
+        p_user_id: playerId,
+      });
 
-      // Only allow admin removal before tournament starts (ANNOUNCED or REGISTERING)
-      if (tournament && !['ANNOUNCED', 'REGISTERING'].includes(tournament.status)) {
-        if (isMounted.current) toast.error('Cannot remove players after tournament has started');
+      if (error) {
+        reportError(error, 'TournamentRegistration.removePlayer', { tournamentId, playerId });
+        if (isMounted.current) toast.error('Could not remove the player');
         return;
       }
 
-      // Delete the tournament_players entry first
-      const { error: delErr } = await supabase
-        .from('tournament_players')
-        .delete()
-        .eq('tournament_id', tournamentId)
-        .eq('user_id', playerId);
+      const res = data as { ok: boolean; reason?: string; refunded?: number } | null;
 
-      if (delErr) throw delErr;
+      if (!res?.ok) {
+        if (isMounted.current) toast.error(adminActionReasonText(res?.reason));
+        return;
+      }
 
-      // Refund the player's buy-in + fee
-      if (tournament) {
-        const refundAmount =
-          Math.trunc(((tournament.buy_in_amount || 0) + (tournament.buy_in_fee || 0)) * 100) / 100;
-        if (refundAmount > 0) {
-          const { error: refundErr } = await retryAsync(
-            () =>
-              supabase.rpc('atomic_credit_wallet_and_log', {
-                p_user_id: playerId,
-                p_amount: refundAmount,
-                p_category: 'refund',
-                p_description: `Admin removed from tournament — refund`,
-                p_table_id: null,
-                p_hand_id: null,
-                p_related_entity_id: tournamentId,
-              }),
-            3
-          );
+      if ((res.refunded ?? 0) > 0) {
+        masterBus.emit('BALANCE_UPDATED', {
+          source: 'tournament_admin_refund',
+          userId: playerId,
+        });
+      }
 
-          if (refundErr) {
-            reportError(refundErr, 'TournamentRegistration.Refund_failed__reinserting_player');
-            // Re-insert the player since refund failed — preserve tournament integrity
-            try {
-              const playerEntry = players.find((p) => p.id === playerId);
-              await supabase.from('tournament_players').insert({
-                tournament_id: tournamentId,
-                user_id: playerId,
-                username: playerEntry?.username || 'Player',
-                status: 'registered',
-              });
-              if (isMounted.current)
-                toast.error('Removal cancelled — refund failed, player re-inserted');
-            } catch (reinsertErr) {
-              reportError(reinsertErr, 'TournamentRegistration.CRITICAL');
-              if (isMounted.current)
-                toast.error('CRITICAL: Player removed but refund failed — contact support');
-            }
-            return;
-          }
+      // Player-count upkeep is display state, so it stays on the client: a
+      // stale count is cosmetic, and it must never be able to fail the removal.
+      const { data: t } = await supabase
+        .from('tournaments')
+        .select('current_players')
+        .eq('id', tournamentId)
+        .maybeSingle();
 
-          // Emit balance update to sync Global Headers across pages
-          masterBus.emit('BALANCE_UPDATED', {
-            source: 'tournament_admin_refund',
-            userId: playerId,
-          });
-        }
-
-        // Decrement current_players
-        const { data: t } = await supabase
+      if (t) {
+        const { error: updateErr } = await supabase
           .from('tournaments')
-          .select('current_players')
-          .eq('id', tournamentId)
-          .maybeSingle();
+          .update({ current_players: Math.max((t.current_players || 1) - 1, 0) })
+          .eq('id', tournamentId);
 
-        if (t) {
-          const { error: updateErr } = await supabase
-            .from('tournaments')
-            .update({ current_players: Math.max((t.current_players || 1) - 1, 0) })
-            .eq('id', tournamentId);
-
-          if (updateErr) {
-            reportError(updateErr, 'TournamentRegistration.Failed_to_decrement_player_count');
-          }
+        if (updateErr) {
+          reportError(updateErr, 'TournamentRegistration.Failed_to_decrement_player_count');
         }
       }
 
-      if (isMounted.current) toast.success('Player removed and refunded');
+      if (isMounted.current)
+        toast.success(
+          (res.refunded ?? 0) > 0
+            ? `Player removed and refunded ${(res.refunded ?? 0).toLocaleString()} chips`
+            : 'Player removed'
+        );
       loadPlayers();
     } catch (err) {
       reportError(err, 'TournamentRegistration.Error');

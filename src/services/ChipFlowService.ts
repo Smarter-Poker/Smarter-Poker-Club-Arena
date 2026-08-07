@@ -313,67 +313,25 @@ export const ChipFlowService = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // MINTING (System → Union Owner)
+  // MINTING (System → Union Owner) — REMOVED
   // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Mint chips to the Union Owner's wallet.
-   * This is the origin point of ALL chips in the system.
-   *
-   * RULE: Once a club joins a union, minting is LOCKED at the club level.
-   * Only the Union owner can mint. Standalone clubs (no union) can still mint directly.
-   */
-  async mintToUnionOwner(
-    unionOwnerId: string,
-    amount: number,
-    unionId: string,
-    reason: string = 'System chip mint for union distribution'
-  ): Promise<number> {
-    const amt = exact(amount);
-
-    const { error } = await retryAsync(
-      () =>
-        supabase.rpc('atomic_credit_wallet_and_log', {
-          p_user_id: unionOwnerId,
-          p_amount: amt,
-          p_category: 'mint',
-          p_description: reason,
-          p_table_id: null,
-          p_hand_id: null,
-          p_related_entity_id: unionId,
-        }),
-      3
-    );
-
-    if (error) throw new Error(`Mint failed: ${error.message}`);
-
-    // LOG TO IMMUTABLE CHIP LEDGER
-    await logToLedger({
-      performed_by: unionOwnerId,
-      from_type: 'system_mint',
-      from_label: 'System Mint',
-      to_type: 'player_wallet',
-      to_entity_id: unionOwnerId,
-      to_label: `Union Owner ${unionOwnerId.slice(0, 8)}`,
-      amount: amt,
-      category: 'mint',
-      description: reason,
-      union_id: unionId,
-    });
-
-    // Emit bus event so all UI components refresh balance instantly
-    masterBus.emit('BALANCE_UPDATED', { source: 'union_mint', userId: unionOwnerId });
-
-    // Return new balance
-    const { data: wallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', unionOwnerId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
-
-    return wallet?.balance || 0;
-  },
+  //
+  // AUDIT M17: `mintToUnionOwner` is deleted. It was a browser-callable chip
+  // mint in the most literal sense — it credited an arbitrary caller-supplied
+  // amount to an arbitrary user id, under category 'mint', with no offsetting
+  // debit and no authorization check of any kind. Nothing in the codebase called
+  // it, and the underlying `atomic_credit_wallet_and_log` is refused by RLS from
+  // a browser, so it never ran. Both of those are accidents, not safeguards.
+  //
+  // Minting is the origin point of every chip in the system, so it belongs
+  // exactly where the rest of M17 puts money: behind a SECURITY DEFINER RPC that
+  // enforces its own authorization (union owner, and locked at the club level
+  // once a club joins a union) and records the mint in the immutable ledger as
+  // part of the same transaction. `distribute_chips` and `mint_club_chips` are
+  // already on the wallet guard's whitelist for that purpose.
+  //
+  // Deleting it is not a loss of function: there was no function, only a
+  // loaded gun with the safety on.
 
   // ─────────────────────────────────────────────────────────────────────────────
   // BALANCE RESET (for re-initialization)

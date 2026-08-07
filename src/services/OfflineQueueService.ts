@@ -199,100 +199,37 @@ export const OfflineQueueService = {
   },
 
   /**
-   * Execute a single mutation against Supabase
+   * Execute a single mutation against Supabase.
+   *
+   * AUDIT M17: this used to replay four money mutations — ADD_CHIPS,
+   * WITHDRAW_CHIPS, CREDIT_COMMISSION and CREDIT_RAKEBACK — by calling a
+   * generic credit or deduct RPC with an amount read out of IndexedDB.
+   *
+   * Nothing in the codebase ever enqueued any of them, so none had run. That is
+   * the only reason this was not the worst instance of the M17 pattern: a
+   * caller-supplied amount, taken from browser-local storage, replayed after an
+   * unknown delay, by a caller with no way to know whether the original
+   * operation had already succeeded. Every property that makes a money path
+   * safe was missing at once.
+   *
+   * The cases are removed rather than repaired. An offline queue must not move
+   * money: a chip credit needs server-side authorization, an amount derived from
+   * authoritative state, and idempotency against the operation it is replaying —
+   * none of which a client-side replay buffer can supply. If offline money
+   * operations are ever wanted, the queue should hold an INTENT that the server
+   * validates and prices, not a pre-computed credit.
+   *
+   * The action type is deliberately left intact so that entries already sitting
+   * in a user's IndexedDB from an older build are drained and rejected loudly
+   * instead of being replayed by a future change.
    */
   async executeMutation(mutation: QueuedMutation): Promise<boolean> {
-    // Lazy import to avoid circular dependency
-    const { retryAsync } = await import('../utils/retryAsync');
-    const { supabase } = await import('../lib/supabase');
-
-    switch (mutation.action) {
-      case 'ADD_CHIPS': {
-        const { userId, amount, clubId } = mutation.payload as {
-          userId: string;
-          amount: number;
-          clubId: string;
-          walletType: string;
-        };
-        const { error } = await retryAsync(
-          () =>
-            supabase.rpc('atomic_credit_wallet_and_log', {
-              p_user_id: userId,
-              p_amount: amount,
-              p_category: 'transfer',
-              p_description: 'Offline queue replay: Add chips',
-              p_table_id: null,
-              p_hand_id: null,
-              p_related_entity_id: clubId,
-            }),
-          3
-        );
-        return !error;
-      }
-      case 'WITHDRAW_CHIPS': {
-        const { userId, amount, clubId } = mutation.payload as {
-          userId: string;
-          amount: number;
-          clubId: string;
-        };
-        const { data } = await retryAsync(
-          () =>
-            supabase.rpc('atomic_deduct_wallet_and_log', {
-              p_user_id: userId,
-              p_amount: amount,
-              p_category: 'transfer',
-              p_description: 'Offline queue replay: Withdraw chips',
-              p_table_id: null,
-              p_hand_id: null,
-              p_related_entity_id: clubId,
-            }),
-          3
-        );
-        return data !== false;
-      }
-      case 'CREDIT_COMMISSION': {
-        const { agentId, amount, periodId, clubId } = mutation.payload as {
-          agentId: string;
-          amount: number;
-          periodId: string;
-          clubId: string;
-        };
-        const { error } = await retryAsync(
-          () =>
-            supabase.rpc('credit_agent_commission', {
-              p_agent_id: agentId,
-              p_amount: amount,
-              p_description: `Commission for period ${periodId} club ${clubId}`,
-            }),
-          3
-        );
-        return !error;
-      }
-      case 'CREDIT_RAKEBACK': {
-        const { userId, amount, periodId, clubId } = mutation.payload as {
-          userId: string;
-          amount: number;
-          periodId: string;
-          clubId: string;
-        };
-        const { error } = await retryAsync(
-          () =>
-            supabase.rpc('credit_player_rakeback', {
-              p_user_id: userId,
-              p_amount: amount,
-              p_description: `Rakeback payout for period ${periodId}`,
-            }),
-          3
-        );
-        return !error;
-      }
-      default:
-        reportError(
-          new Error(`[OfflineQueue] Unknown action: ${mutation.action}`),
-          'OfflineQueueService.Unknown_action'
-        );
-        return false;
-    }
+    reportError(
+      new Error(`[OfflineQueue] Refusing to replay money mutation: ${mutation.action}`),
+      'OfflineQueueService.MONEY_REPLAY_REFUSED',
+      { action: mutation.action }
+    );
+    return false;
   },
 
   // ─── IndexedDB Helpers ────────────────────────────────────────────────

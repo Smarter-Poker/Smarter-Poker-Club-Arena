@@ -1075,43 +1075,26 @@ export default function CashierPage() {
         // 2) If no table → request-cashout API (escrow → agent approval)
 
         if (tableId) {
-          // Table-context cashout: unlock chips from table session
-          const { unlockFromTable } = useWalletStore.getState();
-          const success = await unlockFromTable(user.id, value, tableId);
-          if (success) {
-            // Log cashout to chip_ledger (pre-resolve club UUID to avoid await inside fire-and-forget)
-            const resolvedCashoutClub = clubId ? await resolveClubUUID(clubId) : undefined;
-            supabase
-              .from('chip_ledger')
-              .insert({
-                performed_by: user.id,
-                from_type: 'player_wallet',
-                from_entity_id: user.id,
-                from_label: 'Table Session (locked)',
-                to_type: 'player_wallet',
-                to_entity_id: user.id,
-                to_label: user.username || 'Player',
-                amount: value,
-                category: 'cashout',
-                description: `Table cash-out: ${value.toLocaleString()} chips unlocked`,
-                table_id: tableId,
-                club_id: resolvedCashoutClub,
-              })
-              .then(({ error: le }) => {
-                if (le) console.warn('[Cashier] Ledger write failed:', le.message);
-              });
-
-            if (isMounted.current)
-              setMessage({
-                type: 'success',
-                text: `Cashed out ${value.toLocaleString()} chips from table`,
-              });
-            notifyWalletChange(user.id, value);
-            navigate(`/table/${tableId}`);
-          } else {
-            if (isMounted.current)
-              setMessage({ type: 'error', text: 'Cash-out failed. Please try again.' });
-          }
+          // AUDIT M17: the Cashier used to move this money itself — it called
+          // unlockFromTable with the amount the PLAYER TYPED, which credited the
+          // wallet through a generic credit RPC with no offsetting debit
+          // anywhere. There is no seat-stack decrement on that path at all; the
+          // store only adjusted `locked` optimistically, client-side. It was
+          // inert solely because RLS refused the credit, and it would have
+          // become an unlimited mint the moment anyone widened that grant.
+          //
+          // This now mirrors the 'buyin' branch above exactly, and for the same
+          // reason: NO money moves in the Cashier. The player is routed to the
+          // table, where the engine owns the withdrawal end to end —
+          // GameServerAPI.removeChips -> atomic_table_withdraw credits the
+          // wallet and reduces the seat stack atomically, only between hands,
+          // deriving the amount from authoritative state rather than a text box.
+          if (isMounted.current)
+            setMessage({
+              type: 'info',
+              text: 'Cash out from the table itself — taking you there now.',
+            });
+          navigate(`/table/${tableId}`);
         } else {
           // Standard cashout: request-cashout API (escrow → agent approval)
           // U-03 FIX: Confirmation for high-value cashouts

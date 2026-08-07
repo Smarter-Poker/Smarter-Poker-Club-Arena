@@ -23,20 +23,22 @@ import { reportError } from '../utils/errorReporter';
 // IDEMPOTENCY (Audit finding M1)
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// Client-initiated money RPCs are wrapped in retryAsync (retries on
-// timeout/5xx). Without an idempotency key, a commit-then-timeout re-applies
-// the mutation on retry — double-debiting a buy-in or double-crediting a
-// cash-out. The DB already ships an idempotency framework
-// (claim_idempotency_key + fn_idempotent_* wrappers): pass ONE key per logical
-// operation, generated OUTSIDE the retry closure so every retry of that same
-// operation shares the key and the DB de-duplicates, while a genuinely new
-// operation gets a fresh key. Returns jsonb { ok, rpc } (not a bare boolean).
-function newIdempotencyKey(): string {
-  return typeof globalThis.crypto?.randomUUID === 'function'
-    ? globalThis.crypto.randomUUID()
-    : `wal-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
+// AUDIT M17: `newIdempotencyKey` is removed along with its one caller.
+//
+// It existed for M1: client money RPCs are wrapped in retryAsync, so a
+// commit-then-timeout could re-apply a credit unless every retry of one logical
+// operation shared a key. That reasoning was correct, and it is now moot from
+// this side — the client no longer initiates a wallet credit at all. Both
+// generic credit wrappers are revoked from `authenticated`, and every client
+// feature that used to credit now calls a purpose-built SECURITY DEFINER
+// function that owns its own idempotency key, derived from the thing being paid
+// for (`bonus:<id>`, `cashout:<seat_id>`, `daily_bonus:<user>:<date>`).
+//
+// That is the stronger design regardless of grants: a key minted by the browser
+// only de-duplicates retries the browser knows about, whereas a key derived
+// from the underlying row de-duplicates against every path that could pay it,
+// including the engine's.
+//
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -476,52 +478,26 @@ export const WalletService = {
     return true;
   },
 
-  /**
-   * Credit chips on cash-out from table
-   * Credits to Player Wallet (wallets table) using atomic RPC
-   */
-  async unlockFromTable(userId: string, tableId: string, amount: number): Promise<boolean> {
-    // VALIDATION: Prevent negative/zero/non-finite amounts before RPC call
-    if (!amount || amount <= 0 || !Number.isFinite(amount)) {
-      throw new Error('Cash-out amount must be a positive number');
-    }
-
-    // Credit to Player Wallet AND LOG via the IDEMPOTENT SECURITY DEFINER wrapper
-    // (Audit M1). One key per cash-out, generated OUTSIDE the retry closure so a
-    // retry after a commit-then-timeout de-duplicates instead of double-crediting
-    // (the worst case: a duplicated cash-out mints chips). Returns jsonb { ok, rpc }.
-    const idempotencyKey = newIdempotencyKey();
-    const { data: creditResult, error: creditError } = await retryAsync(async () => {
-      const res = await supabase.rpc('fn_idempotent_credit_wallet', {
-        p_idempotency_key: idempotencyKey,
-        p_user_id: userId,
-        p_amount: amount,
-        p_category: 'cashout',
-        p_description: 'Cash game cash-out from table',
-        p_table_id: tableId,
-        p_hand_id: null,
-        p_related_entity_id: null,
-      });
-      return res;
-    });
-
-    if (creditError) {
-      reportError(creditError, 'WalletService.unlockFromTable', { userId, tableId, amount });
-      throw new Error(`Cash-out failed: ${creditError.message}`);
-    }
-
-    if (creditResult?.ok === false) {
-      throw new Error('Cash-out failed: wallet credit was rejected');
-    }
-
-    // Emit bus event so CashierPage/PlayerWalletPage refresh balances
-    masterBus.emit('BALANCE_UPDATED', { source: 'cashout', userId, tableId });
-
-    console.debug(
-      `[WalletService] Cash-out: ${amount} chips credited to Player Wallet for user ${userId} and logged`
-    );
-    return true;
-  },
+  // AUDIT M17: `unlockFromTable` is deleted, not repaired.
+  //
+  // It was the client-initiated cash-out: it credited the PLAYER wallet with the
+  // amount the player TYPED INTO THE CASHIER, through a generic credit RPC, with
+  // no seat-stack decrement anywhere on the path. `useWalletStore` adjusted
+  // `locked` optimistically in browser memory and reverted on throw, which is
+  // presentation, not accounting. So the only thing standing between this
+  // function and an unlimited chip mint was the RLS policy that refused the
+  // credit — which is also why M1's idempotency fix for this exact call site
+  // could never have taken effect.
+  //
+  // Table cash-out is engine-owned. `TablePage.handleWithdrawChips` calls
+  // `GameServerAPI.removeChips` -> `atomic_table_withdraw`, which credits the
+  // wallet and reduces the seat stack atomically, only between hands, using the
+  // authoritative stack rather than a text box. Leaving a table entirely goes
+  // through the engine's `markSeatAsLeft`, which credits the actual seat stack
+  // and refuses to vacate the seat if the credit fails.
+  //
+  // The Cashier now routes the player to the table instead of moving money,
+  // exactly as its 'buyin' branch already did for the same reason.
 
   /**
    * Log a wallet transaction for audit trail

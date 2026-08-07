@@ -19,6 +19,7 @@ import { masterBus } from '../../core/MasterBus';
 import { tableService } from '../../services/TableService';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
+import { useToast } from '../common/Toast';
 
 interface TableInfo {
   id: string;
@@ -332,6 +333,7 @@ const getStatusBadgeStyle = (status: string): React.CSSProperties => ({
 
 export default function TableOperationsPanel({ clubId }: Props) {
   const isMounted = useIsMounted();
+  const toast = useToast();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // CA-24 BUG FIX (part 1): staggerTimersRef had no unmount-guard useEffect.
@@ -484,15 +486,21 @@ export default function TableOperationsPanel({ clubId }: Props) {
     if (!confirmAction || confirmAction.type !== 'kick' || !confirmAction.userId) return;
     setActionLoading(confirmAction.tableId);
     try {
+      // AUDIT M17: this used to discard kickPlayer's boolean return entirely, so
+      // a refund that failed produced no error anywhere — the admin saw the
+      // dialog close and assumed it worked. kickPlayer now throws, and the
+      // failure is shown rather than only reported to Sentry.
       await tableService.kickPlayer(
         confirmAction.tableId,
         confirmAction.userId,
         'Removed by admin'
       );
+      toast.success('Player removed and their chips returned');
       await loadSeatedPlayers(confirmAction.tableId);
       await loadTables();
     } catch (err) {
       reportError(err, 'TableOperationsPanel.Failed_to_kick_player');
+      toast.error(err instanceof Error ? err.message : 'Could not kick the player');
     } finally {
       if (isMounted.current) setConfirmAction(null);
       setActionLoading(null);
@@ -504,9 +512,11 @@ export default function TableOperationsPanel({ clubId }: Props) {
     setActionLoading(confirmAction.tableId);
     try {
       await tableService.closeTable(confirmAction.tableId);
+      toast.success('Table closed and all seated players refunded');
       await loadTables();
     } catch (err) {
       reportError(err, 'TableOperationsPanel.Failed_to_close_table');
+      toast.error(err instanceof Error ? err.message : 'Could not close the table');
     } finally {
       if (isMounted.current) setConfirmAction(null);
       setActionLoading(null);

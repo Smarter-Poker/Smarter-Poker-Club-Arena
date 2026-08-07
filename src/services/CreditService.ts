@@ -20,13 +20,27 @@
 
 import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
-import { FinancialAlertService } from './FinancialAlertService';
 import { SettlementService } from './SettlementService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+
+// AUDIT M17: fn_pay_credit_invoice_from_wallet returns a `reason` for ordinary
+// refusals rather than raising, so "you cannot afford this" and "the database is
+// down" do not read as the same event.
+const CREDIT_PAYMENT_REASON_TEXT: Record<string, string> = {
+  non_positive_amount: 'Enter an amount greater than zero',
+  invoice_not_found: 'That invoice no longer exists',
+  agent_user_not_found: 'No wallet is linked to that agent',
+  not_your_wallet: 'You can only pay an invoice from your own wallet',
+  insufficient_balance: 'Not enough chips in your wallet for this payment',
+};
+
+function creditPaymentReasonText(reason: string | undefined): string {
+  return CREDIT_PAYMENT_REASON_TEXT[reason ?? ''] ?? `Payment refused (${reason ?? 'unknown'})`;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -366,10 +380,14 @@ export const CreditService = {
       });
 
       if (error || !data?.success) {
-        reportError(error || new Error(data?.error || 'invoice generation failed'), 'CreditService.generateSundayInvoice', {
-          agentId,
-          debtOwed: debt.debtOwed,
-        });
+        reportError(
+          error || new Error(data?.error || 'invoice generation failed'),
+          'CreditService.generateSundayInvoice',
+          {
+            agentId,
+            debtOwed: debt.debtOwed,
+          }
+        );
         return null;
       }
       return this.mapInvoice(data.invoice, account.agentName);
@@ -447,139 +465,79 @@ export const CreditService = {
     amount: number,
     method: 'wallet' | 'diamonds' | 'external'
   ): Promise<CreditPayment> {
-    // Get current invoice
-    const { data: invoiceResult, error: invoiceError } = await supabase
-      .from('credit_invoices')
-      .select(
-        'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
-      )
-      .eq('id', invoiceId)
-      .maybeSingle();
-
-    if (invoiceError) throw invoiceError;
-    if (!invoiceResult) throw new Error(`Invoice not found: ${invoiceId}`);
-
-    // STEP 1: If paying from wallet, deduct FIRST (before recording anything)
+    // AUDIT M17: the wallet path used to be deduct -> apply -> compensating
+    // credit if apply failed. That compensating leg existed because the two
+    // writes were separate round trips that could diverge — a real hazard, and
+    // carefully written. It was also unreachable: atomic_deduct_wallet_and_log
+    // is granted to postgres and service_role only, so STEP 1 threw on every
+    // browser call and nothing downstream of it ever ran.
+    //
+    // fn_pay_credit_invoice_from_wallet puts the deduct and the apply in ONE
+    // transaction. The rollback is deleted rather than repaired, because there
+    // is no longer anything to compensate for: if the apply fails, the deduct
+    // rolls back with it. The function also refuses to spend a wallet that is
+    // not the caller's own.
     if (method === 'wallet') {
-      // Get agent's user_id for wallet deduction
-      const { data: agentData } = await supabase
-        .from('agents')
-        .select('user_id')
-        .eq('id', invoiceResult.agent_id)
-        .maybeSingle();
-
-      if (!agentData?.user_id) {
-        throw new Error('Agent user not found for wallet deduction');
-      }
-
-      const amt = Math.trunc(amount * 100) / 100;
-      const { data: deductResult, error: deductError } = await retryAsync(
+      const { data, error } = await retryAsync(
         () =>
-          supabase.rpc('atomic_deduct_wallet_and_log', {
-            p_user_id: agentData.user_id,
-            p_amount: amt,
-            p_category: 'settlement',
-            p_description: `Credit invoice payment: ${invoiceId}`,
-            p_table_id: null,
-            p_hand_id: null,
-            p_related_entity_id: null,
+          supabase.rpc('fn_pay_credit_invoice_from_wallet', {
+            p_invoice_id: invoiceId,
+            p_amount: amount,
           }),
         3
       );
-      if (deductError) {
-        throw new Error(`Wallet deduction failed: ${deductError.message}`);
-      }
-      if (!deductResult) {
-        throw new Error('Insufficient wallet balance for payment');
+
+      if (error) {
+        reportError(error, 'CreditService.processPayment.wallet', { invoiceId, amount });
+        throw new Error('Payment failed');
       }
 
-      // Emit bus event so UI (header balances, cashier) updates immediately
+      const res = data as {
+        ok: boolean;
+        reason?: string;
+        amount?: number;
+        payment?: { id?: string; transaction_id?: string; created_at?: string };
+      } | null;
+
+      if (!res?.ok) {
+        throw new Error(creditPaymentReasonText(res?.reason));
+      }
+
       masterBus.emit('BALANCE_UPDATED', {
         source: 'credit_payment',
-        userId: agentData.user_id,
-        amount: -amt,
+        amount: -(res.amount ?? amount),
       });
+
+      return {
+        id: res.payment?.id,
+        invoiceId,
+        amount: res.amount ?? amount,
+        paymentMethod: method,
+        transactionId: res.payment?.transaction_id,
+        createdAt: res.payment?.created_at,
+      } as CreditPayment;
     }
 
-    // STEP 2+3: Atomically update the invoice AND record the payment in one
-    // SECURITY DEFINER RPC. credit_invoices/credit_payments are service-role
-    // -write-only under RLS, and the invoice update + payment insert must not be
-    // able to diverge. Wallet money (if any) already moved in STEP 1. The RPC
-    // recomputes amount_paid/remaining/status/paid_at from the locked DB row
-    // (no TOCTOU) and sets 'partial' vs 'paid' correctly.
-    let updateError: any = null;
-    let paymentRow: any = null;
-    try {
-      const { data: applyRes, error: _applyErr } = await supabase.rpc('fn_apply_credit_payment', {
-        p_invoice_id: invoiceId,
-        p_amount: amount,
-        p_method: method,
-      });
-      if (_applyErr) {
-        updateError = _applyErr;
-      } else if (!applyRes?.success) {
-        updateError = new Error(applyRes?.error || 'payment application failed');
-      } else {
-        paymentRow = applyRes.payment;
-      }
-    } catch (e) {
-      reportError(e, 'CreditService.processPayment.applyPayment', { invoiceId });
-      updateError = e;
+    // Non-wallet methods move no chips here — they only record that money
+    // arrived by some other rail — so they stay on the existing SECURITY
+    // DEFINER apply RPC, which recomputes amount_paid/remaining/status from the
+    // locked invoice row (no TOCTOU).
+    const { data: applyRes, error: applyErr } = await supabase.rpc('fn_apply_credit_payment', {
+      p_invoice_id: invoiceId,
+      p_amount: amount,
+      p_method: method,
+    });
+
+    if (applyErr) {
+      reportError(applyErr, 'CreditService.processPayment.apply', { invoiceId, method });
+      throw new Error(`Invoice update failed: ${applyErr.message}`);
     }
 
-    if (updateError) {
-      // Rollback wallet deduction if invoice update failed — MUST BE LOGGED atomically
-      if (method === 'wallet') {
-        try {
-          const { data: agentForRollback } = await supabase
-            .from('agents')
-            .select('user_id')
-            .eq('id', invoiceResult.agent_id)
-            .maybeSingle();
-
-          if (agentForRollback?.user_id) {
-            const { error: rollbackErr2 } = await retryAsync(
-              () =>
-                supabase.rpc('atomic_credit_wallet_and_log', {
-                  p_user_id: agentForRollback.user_id,
-                  p_amount: amount,
-                  p_category: 'refund',
-                  p_description: `Refund: Credit invoice update failed for ${invoiceId}`,
-                  p_table_id: null,
-                  p_hand_id: null,
-                  p_related_entity_id: null,
-                }),
-              3
-            );
-            if (rollbackErr2) {
-              reportError(rollbackErr2, 'CreditService.processPayment.rollback', {
-                invoiceId,
-                agentId: invoiceResult.agent_id,
-                amount,
-              });
-              FinancialAlertService.logCritical(
-                'CreditService',
-                'Wallet rollback failed after invoice update failure',
-                {
-                  invoiceId,
-                  agentId: invoiceResult.agent_id,
-                  amount,
-                  rollbackError: rollbackErr2.message,
-                }
-              );
-            } else {
-              masterBus.emit('BALANCE_UPDATED', {
-                source: 'credit_payment_rollback',
-                userId: agentForRollback.user_id,
-              });
-            }
-          }
-        } catch (rollbackErr) {
-          reportError(rollbackErr, 'CreditService.processPayment.rollbackOuter', { invoiceId });
-        }
-      }
-      throw new Error(`Invoice update failed: ${updateError.message}`);
+    if (!applyRes?.success) {
+      throw new Error(`Invoice update failed: ${applyRes?.error || 'payment application failed'}`);
     }
+
+    const paymentRow = applyRes.payment;
 
     // Payment row was recorded atomically by fn_apply_credit_payment above.
     return {
@@ -632,7 +590,9 @@ export const CreditService = {
     });
 
     if (error || !res?.success) {
-      throw new Error(`Failed to suspend agent: ${error?.message || res?.error || 'update failed'}`);
+      throw new Error(
+        `Failed to suspend agent: ${error?.message || res?.error || 'update failed'}`
+      );
     }
 
     // Emit CREDIT_UPDATED
@@ -665,7 +625,9 @@ export const CreditService = {
     });
 
     if (error || !res?.success) {
-      throw new Error(`Failed to reinstate agent: ${error?.message || res?.error || 'update failed'}`);
+      throw new Error(
+        `Failed to reinstate agent: ${error?.message || res?.error || 'update failed'}`
+      );
     }
 
     // Emit CREDIT_UPDATED

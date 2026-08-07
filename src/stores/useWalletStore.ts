@@ -95,7 +95,6 @@ interface WalletState {
 
   // Wallet operations
   lockForBuyIn: (userId: string, amount: number, tableId: string) => Promise<boolean>;
-  unlockFromTable: (userId: string, amount: number, tableId: string) => Promise<boolean>;
   internalTransfer: (
     userId: string,
     fromWallet: WalletType,
@@ -275,52 +274,6 @@ export const useWalletStore = create<WalletState>()(
             balances: previousBalances,
           });
           reportError(error, 'useWalletStore.Lock_for_buyin_failed');
-          return false;
-        }
-      },
-
-      unlockFromTable: async (userId: string, amount: number, tableId: string) => {
-        // Mutex: prevent concurrent wallet operations from racing
-        if (get()._operationInFlight) {
-          console.warn('[Store] Wallet operation already in flight, skipping unlockFromTable');
-          return false;
-        }
-
-        const { balances, pendingTableId } = get();
-        if (pendingTableId !== tableId) {
-          console.warn('[Store] Table ID mismatch for unlock');
-        }
-
-        // Deep copy previous state for safe rollback (shallow copy shares nested refs)
-        const previousBalances = JSON.parse(JSON.stringify(balances));
-
-        set({
-          _operationInFlight: true,
-          pendingBuyIn: null,
-          pendingTableId: null,
-          balances: {
-            ...balances,
-            PLAYER: {
-              ...balances.PLAYER,
-              available: balances.PLAYER.available + amount,
-              locked: Math.max(0, balances.PLAYER.locked - amount),
-            },
-          },
-        });
-
-        try {
-          await WalletService.unlockFromTable(userId, tableId, amount);
-          set({ _operationInFlight: false });
-          return true;
-        } catch (error) {
-          // Revert optimistic update on failure + release mutex
-          set({
-            _operationInFlight: false,
-            balances: previousBalances,
-            pendingBuyIn: null,
-            pendingTableId: null,
-          });
-          reportError(error, 'useWalletStore.Unlock_from_table_failed');
           return false;
         }
       },

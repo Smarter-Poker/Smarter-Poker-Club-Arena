@@ -236,24 +236,28 @@ describe('WalletService', () => {
     });
   });
 
-  describe('unlockFromTable', () => {
-    it('should call the idempotent credit wrapper with a generated key (Audit M1)', async () => {
-      mockRpc.mockResolvedValueOnce({ data: { ok: true, rpc: 'atomic_credit_wallet_and_log' }, error: null });
+  describe('no client-side wallet credit (AUDIT M17 regression guard)', () => {
+    it('no longer exposes unlockFromTable', () => {
+      // This was the cash-out mint: it credited the PLAYER wallet with the
+      // amount the player typed into the Cashier, through a generic credit RPC,
+      // with no seat-stack decrement anywhere on the path. Table cash-out is
+      // engine-owned now (GameServerAPI.removeChips -> atomic_table_withdraw).
+      // If this ever comes back, it should come back deliberately.
+      expect((WalletService as unknown as Record<string, unknown>).unlockFromTable).toBeUndefined();
+    });
 
-      await WalletService.unlockFromTable('user1', 'table-123', 500);
+    it('never calls a generic wallet-credit RPC from any method', async () => {
+      // Both wrappers are revoked from `authenticated` in production, so a call
+      // would fail anyway — but failing loudly at review time is better than
+      // failing at runtime on a money path.
+      const forbidden = ['atomic_credit_wallet_and_log', 'fn_idempotent_credit_wallet'];
 
-      expect(mockRpc).toHaveBeenCalledWith(
-        'fn_idempotent_credit_wallet',
-        expect.objectContaining({
-          p_user_id: 'user1',
-          p_amount: 500,
-          p_category: 'cashout',
-          p_table_id: 'table-123',
-        })
-      );
-      const args = mockRpc.mock.calls[0][1];
-      expect(typeof args.p_idempotency_key).toBe('string');
-      expect(args.p_idempotency_key.length).toBeGreaterThan(0);
+      mockRpc.mockResolvedValue({ data: true, error: null });
+      await WalletService.lockForBuyIn('user1', 'table-123', 500).catch(() => undefined);
+
+      for (const [name] of mockRpc.mock.calls) {
+        expect(forbidden).not.toContain(name);
+      }
     });
   });
 });

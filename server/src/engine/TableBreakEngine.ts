@@ -56,6 +56,24 @@ export interface BreakResult {
   movements: PlayerMovement[];
   remainingTables: string[];
   totalMoved: number;
+  /**
+   * A6 FIX: players the break could NOT seat anywhere because every remaining
+   * table was full. These players MUST be left seated at the broken table (or
+   * the break must be deferred) — the old code silently dropped them, which
+   * removed both their seat and their stack from the tournament.
+   */
+  unplaced: UnplacedPlayer[];
+}
+
+export interface UnplacedPlayer {
+  playerId: string;
+  seat: number;
+  stack: number;
+}
+
+export interface RedistributionPlan {
+  movements: PlayerMovement[];
+  unplaced: UnplacedPlayer[];
 }
 
 export type TableBreakEventType =
@@ -158,12 +176,24 @@ export class TableBreakEngine {
     });
 
     // Calculate optimal redistribution
-    const movements = this.calculateRedistribution(brokenTable, remainingTables);
+    const plan = this.planRedistribution(brokenTable, remainingTables);
+    const movements = plan.movements;
+    if (plan.unplaced.length > 0) {
+      // A6 FIX: never let this pass silently. The caller must keep these
+      // players seated at the broken table rather than deleting their seats.
+      reportError(
+        new Error(
+          `[TableBreakEngine] Table break of ${brokenTable.tableId} left ${plan.unplaced.length} player(s) unplaced — every remaining table is full. Their seats MUST be preserved: ${plan.unplaced.map((u) => u.playerId).join(', ')}`
+        ),
+        'TableBreakEngine.unplaced_players'
+      );
+    }
     const result: BreakResult = {
       brokenTableId: brokenTable.tableId,
       movements,
       remainingTables: remainingTables.map((t) => t.tableId),
       totalMoved: movements.length,
+      unplaced: plan.unplaced,
     };
 
     // Emit individual player movements
@@ -187,6 +217,7 @@ export class TableBreakEngine {
       tournamentId,
       totalMoved: movements.length,
       remainingTableCount: remainingTables.length,
+      unplacedCount: plan.unplaced.length,
     });
 
     return result;
@@ -200,73 +231,111 @@ export class TableBreakEngine {
     brokenTable: TableSnapshot,
     remainingTables: TableSnapshot[]
   ): PlayerMovement[] {
-    if (remainingTables.length === 0 || brokenTable.players.length === 0) {
-      return [];
+    const plan = this.planRedistribution(brokenTable, remainingTables);
+    if (plan.unplaced.length > 0) {
+      reportError(
+        new Error(
+          `[TableBreakEngine] calculateRedistribution could not seat ${plan.unplaced.length} player(s) from ${brokenTable.tableId} — every remaining table is full. Use planRedistribution() to handle them; do NOT delete their seats.`
+        ),
+        'TableBreakEngine.unplaced_players'
+      );
+    }
+    return plan.movements;
+  }
+
+  /**
+   * A6 FIX (2026-07-28) — the version that cannot lose a player.
+   *
+   * The previous implementation walked a round-robin index across a list that
+   * was sorted by player count exactly ONCE, and when the single table it
+   * looked at *and* the single next table were both full it ran `continue` —
+   * silently dropping that player. A dropped player loses their seat AND their
+   * stack, i.e. they are removed from the tournament and their chips vanish,
+   * even though other tables may still have had open seats.
+   *
+   * This version, for every player, recomputes the set of tables that actually
+   * have BOTH a free slot and a free seat number, and picks the emptiest of
+   * them (ties broken by table id, so the plan is deterministic). A player is
+   * only ever reported as `unplaced` when there is genuinely nowhere to sit —
+   * and even then they are returned to the caller instead of being discarded.
+   *
+   * It also no longer mutates the caller's snapshots: it plans against private
+   * clones, so calling this twice gives the same answer.
+   */
+  planRedistribution(
+    brokenTable: TableSnapshot,
+    remainingTables: TableSnapshot[]
+  ): RedistributionPlan {
+    const movements: PlayerMovement[] = [];
+    const unplaced: UnplacedPlayer[] = [];
+
+    if (brokenTable.players.length === 0) {
+      return { movements, unplaced };
+    }
+    if (remainingTables.length === 0) {
+      // Nowhere to go at all — surface every player rather than returning an
+      // empty movement list that reads like "nothing to do".
+      for (const p of brokenTable.players) {
+        unplaced.push({ playerId: p.playerId, seat: p.seat, stack: p.stack });
+      }
+      return { movements, unplaced };
     }
 
-    const movements: PlayerMovement[] = [];
-    const playersToMove = [...brokenTable.players];
+    // Plan against clones so repeated calls are idempotent and the caller's
+    // snapshots are never corrupted by a plan that is later discarded.
+    const tables: TableSnapshot[] = remainingTables.map((t) => ({
+      ...t,
+      occupiedSeats: [...t.occupiedSeats],
+    }));
 
-    // Sort remaining tables by player count (ascending) — fill emptiest first
-    const sortedTables = [...remainingTables].sort((a, b) => a.playerCount - b.playerCount);
+    for (const player of brokenTable.players) {
+      const candidates = tables
+        .filter((t) => t.playerCount < t.maxPlayers && this.openSeats(t).length > 0)
+        .sort((a, b) => a.playerCount - b.playerCount || a.tableId.localeCompare(b.tableId));
 
-    // Distribute players round-robin to maintain balance
-    let tableIndex = 0;
-    for (const player of playersToMove) {
-      const targetTable = sortedTables[tableIndex % sortedTables.length];
-
-      // Skip if target table is full
-      if (targetTable.playerCount >= targetTable.maxPlayers) {
-        tableIndex++;
-        // Try next table
-        const nextTable = sortedTables[tableIndex % sortedTables.length];
-        if (nextTable.playerCount >= nextTable.maxPlayers) continue;
-        // Use next table instead
-        const seat = this.findOptimalSeat(nextTable);
-        movements.push({
-          playerId: player.playerId,
-          fromTableId: brokenTable.tableId,
-          fromSeat: player.seat,
-          toTableId: nextTable.tableId,
-          toSeat: seat,
-          stack: player.stack,
-        });
-        nextTable.playerCount++;
-        nextTable.occupiedSeats.push(seat);
-      } else {
-        // Seat lottery: pick a random empty seat
-        const seat = this.findOptimalSeat(targetTable);
-        movements.push({
-          playerId: player.playerId,
-          fromTableId: brokenTable.tableId,
-          fromSeat: player.seat,
-          toTableId: targetTable.tableId,
-          toSeat: seat,
-          stack: player.stack,
-        });
-        targetTable.playerCount++;
-        targetTable.occupiedSeats.push(seat);
+      const target = candidates[0];
+      const seat = target ? this.findOptimalSeat(target) : null;
+      if (!target || seat === null) {
+        unplaced.push({ playerId: player.playerId, seat: player.seat, stack: player.stack });
+        continue;
       }
 
-      tableIndex++;
+      movements.push({
+        playerId: player.playerId,
+        fromTableId: brokenTable.tableId,
+        fromSeat: player.seat,
+        toTableId: target.tableId,
+        toSeat: seat,
+        stack: player.stack,
+      });
+      target.playerCount++;
+      target.occupiedSeats.push(seat);
     }
 
-    return movements;
+    return { movements, unplaced };
+  }
+
+  /** Seat numbers 1..maxPlayers that are not in `occupiedSeats`. */
+  private openSeats(table: TableSnapshot): number[] {
+    const occupied = new Set(table.occupiedSeats);
+    const empty: number[] = [];
+    for (let s = 1; s <= table.maxPlayers; s++) {
+      if (!occupied.has(s)) empty.push(s);
+    }
+    return empty;
   }
 
   /**
    * Find optimal seat at a table using seat lottery.
    * Picks a random empty seat for fair positioning.
+   *
+   * A6 FIX: returns null when the table has no free seat. It used to return
+   * seat 1 — a seat that by definition was already taken — which produced two
+   * players on the same seat number instead of an honest failure.
    */
-  private findOptimalSeat(table: TableSnapshot): number {
-    const occupied = new Set(table.occupiedSeats);
-    const emptySeats: number[] = [];
-
-    for (let s = 1; s <= table.maxPlayers; s++) {
-      if (!occupied.has(s)) emptySeats.push(s);
-    }
-
-    if (emptySeats.length === 0) return 1; // Shouldn't happen
+  private findOptimalSeat(table: TableSnapshot): number | null {
+    const emptySeats = this.openSeats(table);
+    if (emptySeats.length === 0) return null;
 
     // FIX 163: Random seat from available (seat lottery) — crypto-secure for fairness
     return emptySeats[secureRandomInt(emptySeats.length)];
@@ -298,6 +367,8 @@ export class TableBreakEngine {
     if (!playerToMove) return [];
 
     const seat = this.findOptimalSeat(smallestTable);
+    // A6 FIX: findOptimalSeat now returns null instead of colliding on seat 1.
+    if (seat === null) return [];
     movements.push({
       playerId: playerToMove.playerId,
       fromTableId: largestTable.tableId,

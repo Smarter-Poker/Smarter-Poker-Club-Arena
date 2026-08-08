@@ -35,7 +35,38 @@ export interface VerificationContext {
   pot: number;
   stage: string; // preflop | flop | turn | river | showdown
   initialChipTotal?: number;
+  /**
+   * A7 FIX (2026-07-28): which point of the hand this snapshot was taken at.
+   * It selects the conservation equation, because the two points are genuinely
+   * different accounting states:
+   *
+   *   'in_hand'       chips are split between stacks and the pot, and nothing
+   *                   has been raked yet, so the invariant is
+   *                       Σ stacks + pot + rakeTaken === initial
+   *                   Committed bets are ALREADY inside `pot` (HandController
+   *                   adds to `state.pot` at the moment a chip is committed),
+   *                   so `bet` must NOT be added again.
+   *
+   *   'hand_complete' the pot has been distributed back into stacks and the
+   *                   rake has been removed, so the invariant is
+   *                       Σ stacks === initial - rake
+   *                   (`initial` here is the baseline already reduced by
+   *                   deductRake()). `bet` at this point is a stale artifact of
+   *                   the last street — see FIX 204.
+   *
+   * Defaults to 'hand_complete' so every pre-existing caller keeps its exact
+   * current semantics.
+   */
+  phase?: VerificationPhase;
+  /**
+   * A7: rake + BBJ fee already taken OUT of the pot at the moment of this
+   * snapshot. Only relevant for 'in_hand'; at 'hand_complete' the rake is
+   * accounted for by deductRake() against the stored baseline instead.
+   */
+  rakeTaken?: number;
 }
+
+export type VerificationPhase = 'in_hand' | 'hand_complete';
 
 export interface IntegrityViolation {
   type: string;
@@ -47,7 +78,18 @@ export interface IntegrityViolation {
 export interface VerificationResult {
   valid: boolean;
   violations: IntegrityViolation[];
+  /**
+   * A7 FIX: this is now the SAME quantity the conservation check compared —
+   * it used to be `Σ stacks + pot` unconditionally while the check looked at
+   * `Σ stacks` alone, so a caller that logged `chipTotal` was reading a number
+   * that could not be reconciled with the verdict next to it.
+   */
   chipTotal: number;
+  /** The baseline `chipTotal` was compared against (undefined = no baseline). */
+  expectedChipTotal?: number;
+  /** chipTotal - expectedChipTotal, or undefined when there is no baseline. */
+  drift?: number;
+  phase: VerificationPhase;
 }
 
 export interface ViolationEvent {
@@ -56,6 +98,13 @@ export interface ViolationEvent {
   violationCount: number;
   violations: { type: string; message: string; severity: string }[];
 }
+
+/**
+ * A7: shared tolerance for every chip comparison. Large enough to swallow the
+ * IEEE 754 drift that multi-street fractional betting accumulates (~0.003-0.01
+ * per hand), small enough that anything above one cent is a real defect.
+ */
+const CHIP_TOLERANCE = 0.02;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // STATE VERIFIER CLASS
@@ -122,9 +171,15 @@ export class StateVerifier {
    */
   verify(context: VerificationContext): VerificationResult {
     const violations: IntegrityViolation[] = [];
+    const phase: VerificationPhase = context.phase ?? 'hand_complete';
 
     // 1. Chip Conservation
     this.verifyChipConservation(context, violations);
+
+    // 1b. A7: pot === Σ contributions. Catches chips appearing in (or leaking
+    //     out of) the pot WITHIN a street, which the stacks-only check at
+    //     HAND_COMPLETE cannot see because by then the pot is already gone.
+    this.verifyPotAccounting(context, violations);
 
     // 2. No Negative Stacks
     this.verifyNoNegativeStacks(context, violations);
@@ -185,13 +240,44 @@ export class StateVerifier {
       }
     }
 
-    const chipTotal = context.players.reduce((sum, p) => sum + (p.stack ?? 0), 0) + context.pot;
+    // A7: report exactly what was measured, and against what.
+    const chipTotal = this.liveChipTotal(context);
+    const expectedChipTotal = this.expectedTotalFor(context);
 
     return {
       valid: violations.length === 0,
       violations,
       chipTotal,
+      expectedChipTotal,
+      drift:
+        expectedChipTotal === undefined
+          ? undefined
+          : Math.round((chipTotal - expectedChipTotal) * 100) / 100,
+      phase,
     };
+  }
+
+  /** The baseline this table's chips are measured against, if one was recorded. */
+  getExpectedChipTotal(tableId: string): number | undefined {
+    return this.chipTotals.get(tableId);
+  }
+
+  /**
+   * A7: every chip currently in play, expressed so that it is directly
+   * comparable to the recorded baseline for the given phase.
+   */
+  private liveChipTotal(context: VerificationContext): number {
+    const stacks = context.players.reduce((sum, p) => sum + (p.stack ?? 0), 0);
+    if ((context.phase ?? 'hand_complete') === 'in_hand') {
+      // Bets are already inside `pot` — adding them would double-count.
+      return Math.round((stacks + context.pot + (context.rakeTaken ?? 0)) * 100) / 100;
+    }
+    // FIX 204: at HAND_COMPLETE the pot is distributed and `bet` is stale.
+    return Math.round(stacks * 100) / 100;
+  }
+
+  private expectedTotalFor(context: VerificationContext): number | undefined {
+    return context.initialChipTotal ?? this.chipTotals.get(context.tableId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -254,36 +340,94 @@ export class StateVerifier {
   // INDIVIDUAL CHECKS
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * A7 FIX (2026-07-28): chip conservation, now valid at BOTH points of the hand.
+   *
+   * Previously this only ever ran at HAND_COMPLETE and only summed stacks, so
+   * chips minted or destroyed *inside* a street were completely invisible: they
+   * lived in the pot, and by the time the check ran the pot had already been
+   * paid out, folding the error into the winner's stack where it looked like a
+   * legitimate win. Running with phase 'in_hand' at every street transition is
+   * what actually closes that hole.
+   */
   private verifyChipConservation(
     context: VerificationContext,
     violations: IntegrityViolation[]
   ): void {
-    const expectedTotal = context.initialChipTotal ?? this.chipTotals.get(context.tableId);
+    const expectedTotal = this.expectedTotalFor(context);
     if (expectedTotal === undefined) return; // No baseline to compare
 
-    // FIX 204: Only sum stacks — NOT bets. At HAND_COMPLETE, bets are stale artifacts
-    // from the last street (not zeroed when hand ends by fold via advanceGame→completeHand
-    // instead of advanceStage→completeHand). Those bet chips are already in the pot
-    // and distributed to winners, so including them double-counts and causes false positives.
-    const currentTotal = context.players.reduce((sum, p) => sum + (p.stack ?? 0), 0);
+    const phase: VerificationPhase = context.phase ?? 'hand_complete';
+    const currentTotal = this.liveChipTotal(context);
 
-    // FIX 204b: Widen tolerance from 0.001 to 0.02. After multiple streets of
-    // fractional-chip betting (PLO, hi-lo splits, odd-chip allocation), IEEE 754
-    // rounding accumulates ~0.003-0.01 per hand. 0.02 catches real chip creation
+    // FIX 204b: Tolerance 0.02. After multiple streets of fractional-chip
+    // betting (PLO, hi-lo splits, odd-chip allocation), IEEE 754 rounding
+    // accumulates ~0.003-0.01 per hand. 0.02 catches real chip creation
     // (>1 cent) while ignoring harmless floating-point drift.
-    if (Math.abs(currentTotal - expectedTotal) > 0.02) {
+    if (Math.abs(currentTotal - expectedTotal) > CHIP_TOLERANCE) {
+      const diff = Math.round((currentTotal - expectedTotal) * 100) / 100;
       violations.push({
         type: 'CHIP_CONSERVATION',
-        message: `Chip total mismatch: expected ${expectedTotal}, got ${currentTotal} (diff: ${currentTotal - expectedTotal})`,
+        message: `Chip total mismatch (${phase}): expected ${expectedTotal}, got ${currentTotal} (diff: ${diff})`,
         severity: 'critical',
         details: {
+          phase,
+          stage: context.stage,
           expected: expectedTotal,
           actual: currentTotal,
-          diff: currentTotal - expectedTotal,
+          diff,
+          pot: context.pot,
+          rakeTaken: context.rakeTaken ?? 0,
           playerStacks: context.players.map((p) => ({
             id: p.user_id,
             stack: p.stack,
             bet: p.bet,
+            totalInvested: p.totalInvested,
+          })),
+        },
+      });
+    }
+  }
+
+  /**
+   * A7 FIX (2026-07-28): pot === Σ contributions.
+   *
+   * `HandController` moves chips into `state.pot` and into the contributing
+   * player's `totalInvested` in the same breath (blinds, antes, straddles,
+   * calls, raises, all-ins — and the uncalled-bet return decrements both), so
+   * the two must stay equal for the whole hand, modulo any rake already pulled
+   * out. A divergence means chips entered or left the pot without a player
+   * paying or being paid: the exact signature of in-street chip creation.
+   *
+   * Only meaningful before the pot is distributed, so it is skipped at
+   * 'hand_complete' (where pot is 0 but contributions are the hand's history).
+   */
+  private verifyPotAccounting(
+    context: VerificationContext,
+    violations: IntegrityViolation[]
+  ): void {
+    if ((context.phase ?? 'hand_complete') !== 'in_hand') return;
+
+    const contributions = context.players.reduce((sum, p) => sum + (p.totalInvested ?? 0), 0);
+    const accounted = Math.round((context.pot + (context.rakeTaken ?? 0)) * 100) / 100;
+
+    if (Math.abs(accounted - contributions) > CHIP_TOLERANCE) {
+      const diff = Math.round((accounted - contributions) * 100) / 100;
+      violations.push({
+        type: 'POT_ACCOUNTING',
+        message: `Pot does not match contributions at ${context.stage}: pot+rake ${accounted}, Σ totalInvested ${contributions} (diff: ${diff})`,
+        severity: 'critical',
+        details: {
+          stage: context.stage,
+          pot: context.pot,
+          rakeTaken: context.rakeTaken ?? 0,
+          contributions,
+          diff,
+          perPlayer: context.players.map((p) => ({
+            id: p.user_id,
+            bet: p.bet,
+            totalInvested: p.totalInvested,
+            folded: p.is_folded,
           })),
         },
       });
@@ -301,6 +445,25 @@ export class StateVerifier {
           message: `Player ${player.user_id} has negative stack: ${player.stack}`,
           severity: 'critical',
           details: { userId: player.user_id, stack: player.stack },
+        });
+      }
+      // A7: a negative bet or a negative contribution is chip creation with a
+      // minus sign in front of it — the conservation sums would quietly absorb
+      // it, so name it explicitly.
+      if ((player.bet ?? 0) < 0) {
+        violations.push({
+          type: 'NEGATIVE_BET',
+          message: `Player ${player.user_id} has negative bet: ${player.bet}`,
+          severity: 'critical',
+          details: { userId: player.user_id, bet: player.bet },
+        });
+      }
+      if ((player.totalInvested ?? 0) < 0) {
+        violations.push({
+          type: 'NEGATIVE_CONTRIBUTION',
+          message: `Player ${player.user_id} has negative totalInvested: ${player.totalInvested}`,
+          severity: 'critical',
+          details: { userId: player.user_id, totalInvested: player.totalInvested },
         });
       }
     }

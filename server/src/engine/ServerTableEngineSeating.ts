@@ -33,8 +33,17 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    *  - Between hands: the RPC also bumps table_seats.stack (apply_to_seat=true)
    *    and we credit the in-memory stack immediately.
    *  - Mid-hand: the RPC debits the wallet only (the engine owns the live stack
-   *    and persists it in postHandTasks); the debited amount is queued and
-   *    applied to the stack after the hand.
+   *    and persists it in postHandTasks) AND writes a durable row into
+   *    `table_pending_addons` in the same transaction. The in-memory
+   *    `pendingAddOns` map is now only a cache for the buy-in cap arithmetic
+   *    below; the ledger row is the source of truth for delivery.
+   *
+   * A2 FIX (2026-08-08): before the ledger existed, mid-hand chips lived ONLY
+   * in that in-memory map. A crash between the wallet debit and the end of the
+   * hand meant the player was charged and the chips were never delivered and
+   * never refunded — money simply gone, with nothing on disk to reconcile
+   * against. The row now lands atomically with the debit, so the two can never
+   * be separated by a crash.
    */
   public async addChips(
     userId: string,
@@ -77,6 +86,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
     if (midHand) {
       this.pendingAddOns.set(userId, pending + applied);
+      // A2: a durable ledger row now exists (written by the RPC in the same
+      // transaction as the debit). Make sure the next sweep looks for it.
+      this.pendingAddOnSweepNeeded = true;
       console.log(
         `[ServerTableEngine:${this.tableId}] Add-on debited + queued for ${userId}: +${applied} (pending ${pending + applied}) — hand in progress`
       );
@@ -149,61 +161,116 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   }
 
   /**
-   * Process pending add-ons after hand completion.
-   * Caps each add-on so player's stack does not exceed max buy-in.
-   * If the player's stack already >= max buy-in (e.g., they won a big pot),
-   * the add-on is fully canceled and the chips are returned to their wallet.
+   * A2 FIX (2026-08-08): deliver pending add-ons from the DURABLE ledger.
+   *
+   * This used to iterate the in-memory `pendingAddOns` map, apply the chips to
+   * the stack in JS, write `table_seats` directly, and refund the excess with a
+   * second unkeyed RPC. Three ways to lose money: the map died with the
+   * process; the stack write and the refund were separate non-atomic steps; and
+   * a retry of either could double-apply.
+   *
+   * Now every unresolved `table_pending_addons` row for this table is handed to
+   * `resolve_pending_addon`, which — in ONE transaction, with the row and the
+   * seat locked — caps the add-on at the max buy-in, bumps `table_seats.stack`,
+   * refunds any excess through `atomic_credit_wallet_and_log` under the
+   * idempotency key `addon_refund:<row id>`, and stamps the row resolved. A
+   * second call on an already-resolved row is a no-op that echoes what the
+   * first call did, so retries, concurrent engines and crash-recovery sweeps
+   * all converge instead of compounding.
+   *
+   * A row we fail to resolve is deliberately LEFT OPEN — the next hand (or the
+   * next engine start) picks it up. Nothing is dropped on the floor.
    */
   protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
-    if (this.pendingAddOns.size === 0) return;
+    if (!this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0) return;
 
-    const maxBuyIn = this.getMaxBuyIn();
     const { supabase } = require('../services/supabase.js');
+    const maxBuyIn = this.getMaxBuyIn();
 
-    // NOTE: each `debitedAmount` here was ALREADY debited from the player's
-    // wallet at request time (atomic_table_addon, apply_to_seat=false). Here we
-    // only apply it to the (now-settled) stack, capped at max buy-in, and
-    // refund any excess back to the PLAYER wallet.
-    for (const [userId, debitedAmount] of this.pendingAddOns.entries()) {
-      const player = players.find((p) => p.user_id === userId);
-      if (!player) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] Pending add-on for ${userId} — player no longer seated, refunding ${debitedAmount}`
-        );
-        await this._refundAddOnToWallet(userId, debitedAmount);
+    const { data: rows, error: readErr } = await supabase
+      .from('table_pending_addons')
+      .select('id, user_id, amount')
+      .eq('table_id', this.tableId)
+      .is('resolved_at', null);
+
+    if (readErr) {
+      // Leave the map and the ledger alone; retry on the next hand.
+      reportError(readErr, `ServerTableEngine.${this.tableId}.pending_addon_read_failed`);
+      return;
+    }
+    if (!rows || rows.length === 0) {
+      this.pendingAddOns.clear();
+      this.pendingAddOnSweepNeeded = false;
+      return;
+    }
+
+    let delivered = 0;
+    let unresolved = 0;
+    for (const row of rows as Array<{ id: string; user_id: string; amount: number }>) {
+      const { data, error: resolveErr } = await supabase.rpc('resolve_pending_addon', {
+        p_pending_id: row.id,
+        p_max_buy_in: maxBuyIn,
+      });
+
+      if (resolveErr) {
+        // Row stays unresolved -> retried next hand / next start. No chips move.
+        reportError(resolveErr, `ServerTableEngine.${this.tableId}.pending_addon_resolve_failed`, {
+          userId: row.user_id,
+          pendingId: row.id,
+          amount: row.amount,
+        });
+        unresolved++;
         continue;
       }
 
-      const headroom = Math.max(0, maxBuyIn - player.stack);
-      const actualAddOn = Math.min(debitedAmount, headroom);
-      const refundAmount = Math.round((debitedAmount - actualAddOn) * 100) / 100;
+      const result = Array.isArray(data) ? data[0] : data;
+      const applied = Number(result?.applied ?? 0);
+      const refunded = Number(result?.refunded ?? 0);
+      const wasResolvedByUs = result?.was_resolved !== false;
 
-      if (actualAddOn > 0) {
-        player.stack += actualAddOn;
-        // syncStacks already ran (STEP 8) before this (STEP 8e), so persist the
-        // add-on to table_seats directly here.
-        await supabase
-          .from('table_seats')
-          .update({ stack: player.stack })
-          .eq('table_id', this.tableId)
-          .eq('user_id', userId)
-          .is('left_at', null);
+      // Mirror the DB's decision into the live in-memory stack. The RPC has
+      // already written table_seats, so this only keeps the engine's view in
+      // step until the next loadSeatedPlayers re-reads it.
+      if (wasResolvedByUs && applied > 0) {
+        const player = players.find((p) => p.user_id === row.user_id);
+        if (player) player.stack = Math.round((player.stack + applied) * 100) / 100;
+        delivered++;
       }
 
-      if (refundAmount > 0) {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] Add-on capped for ${userId}: debited ${debitedAmount}, applied ${actualAddOn}, refunding ${refundAmount} to wallet`
-        );
-        await this._refundAddOnToWallet(userId, refundAmount);
-      } else {
-        console.log(
-          `[ServerTableEngine:${this.tableId}] Add-on applied for ${userId}: +${actualAddOn} (stack now ${player.stack})`
-        );
-      }
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Pending add-on ${row.id} for ${row.user_id}: ` +
+          `debited ${row.amount}, applied ${applied}, refunded ${refunded}` +
+          (wasResolvedByUs ? '' : ' (already resolved elsewhere — no-op)')
+      );
     }
 
-    this.pendingAddOns.clear();
-    this.broadcastCurrentState();
+    // Only forget the in-memory cache once the ledger agrees it is empty. If a
+    // row could not be resolved, keep the sweep flag set so the next hand — or
+    // the next engine start — tries again rather than stranding the money.
+    if (unresolved === 0) {
+      this.pendingAddOns.clear();
+      this.pendingAddOnSweepNeeded = false;
+    } else {
+      this.pendingAddOnSweepNeeded = true;
+    }
+    if (delivered > 0) this.broadcastCurrentState();
+  }
+
+  /**
+   * A2 FIX (2026-08-08): crash-recovery sweep, run on engine start.
+   *
+   * `processPendingAddOns` only runs at the end of a hand. If the process died
+   * mid-hand and the table then sat idle, the debited-but-undelivered rows
+   * would wait forever for a hand that never comes. This resolves them against
+   * the seats as they currently stand — a player who is no longer seated simply
+   * gets the whole amount refunded by the RPC.
+   */
+  protected async resolveOrphanedAddOns(): Promise<void> {
+    try {
+      await this.processPendingAddOns(this.seatedPlayers);
+    } catch (err) {
+      reportError(err, `ServerTableEngine.${this.tableId}.orphaned_addon_sweep_failed`);
+    }
   }
 
   /**
@@ -211,7 +278,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * balance atomic_table_addon debited). Uses atomic_credit_wallet_and_log so
    * the refund is logged and matches the debit side.
    */
-  protected async _refundAddOnToWallet(userId: string, amount: number): Promise<void> {
+  protected async _refundAddOnToWallet(
+    userId: string,
+    amount: number,
+    idempotencyKey?: string
+  ): Promise<void> {
     if (amount <= 0) return;
     try {
       const { supabase } = require('../services/supabase.js');
@@ -223,6 +294,11 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         p_table_id: this.tableId,
         p_hand_id: null,
         p_related_entity_id: null,
+        // A2 FIX: the ledger path (resolve_pending_addon) keys its own refund on
+        // `addon_refund:<row id>`. This helper is now only a fallback for
+        // callers that have no ledger row, but it must still be keyable — an
+        // unkeyed refund inside any retry is a mint waiting to happen.
+        p_idempotency_key: idempotencyKey ?? null,
       });
       if (error) {
         reportError(error, `ServerTableEngine.${this.tableId}.addon_refund_failed`, {

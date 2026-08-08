@@ -1,0 +1,516 @@
+/**
+ * ServerTableEngine, layer 2/8 — buy-ins, cash-outs, sit-out/leave, admin locks, BB entry.
+ *
+ * Split out of the 5,623-line `src/engine/ServerTableEngine.ts` monolith on
+ * 2026-08-08 (every deploy tool in this pipeline caps a single file at ~50 KB).
+ * Behavior is preserved line-for-line: the only edits are module boundaries,
+ * `private` widened to `protected` across the split, and `abstract`
+ * declarations for the hooks each layer calls on the layer below.
+ */
+
+import {
+  syncStacks,
+  markSeatAsLeft,
+  atomicCashout,
+  processLeavePending,
+  supabase,
+} from '../services/supabase.js';
+import type {
+  SeatedPlayer,
+} from '../types.js';
+import { reportError } from '../services/errorReporter.js';
+import { ServerTableEngineBase } from './ServerTableEngineBase.js';
+
+export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
+
+  /**
+   * AUDIT FIX 2026-07-19: `POST /addchips` previously credited the stack with
+   * NO wallet debit and no buy-in cap — a seated player could mint chips. Now
+   * the amount is capped to the table max buy-in BEFORE any money moves, and
+   * the player's PLAYER wallet is debited atomically via `atomic_table_addon`;
+   * the stack is only credited if that debit succeeds.
+   *
+   *  - Between hands: the RPC also bumps table_seats.stack (apply_to_seat=true)
+   *    and we credit the in-memory stack immediately.
+   *  - Mid-hand: the RPC debits the wallet only (the engine owns the live stack
+   *    and persists it in postHandTasks); the debited amount is queued and
+   *    applied to the stack after the hand.
+   */
+  public async addChips(
+    userId: string,
+    amount: number
+  ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'Player not seated' };
+    if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
+
+    const maxBuyIn = this.getMaxBuyIn();
+    const { supabase } = require('../services/supabase.js');
+    const midHand = !!this.handController;
+
+    // Effective current chips for the cap: mid-hand include already-queued
+    // (already-debited) pending add-ons so we never exceed the ceiling.
+    const pending = this.pendingAddOns.get(userId) || 0;
+    const effectiveStack = midHand ? player.stack + pending : player.stack;
+    const headroom = Math.max(0, maxBuyIn - effectiveStack);
+    const applied = Math.min(amount, headroom);
+    if (applied <= 0) {
+      return { success: false, error: 'Already at the maximum buy-in for this table' };
+    }
+
+    // Debit the wallet atomically. apply_to_seat only between hands.
+    const { error } = await supabase.rpc('atomic_table_addon', {
+      p_user_id: userId,
+      p_table_id: this.tableId,
+      p_amount: applied,
+      p_apply_to_seat: !midHand,
+    });
+    if (error) {
+      const msg = String(error.message || '');
+      const clean = /insufficient/i.test(msg) ? 'Insufficient wallet balance' : 'Add-on failed';
+      reportError(error, `ServerTableEngine.${this.tableId}.addChips_debit_failed`, {
+        userId,
+        amount: applied,
+      });
+      return { success: false, error: clean };
+    }
+
+    if (midHand) {
+      this.pendingAddOns.set(userId, pending + applied);
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Add-on debited + queued for ${userId}: +${applied} (pending ${pending + applied}) — hand in progress`
+      );
+      this.broadcastCurrentState();
+      return { success: true, queued: true, applied };
+    }
+
+    // Between hands — wallet debited AND table_seats bumped by the RPC.
+    player.stack += applied;
+    this.broadcastCurrentState();
+    return { success: true, applied };
+  }
+
+  /**
+   * Server-authoritative partial cash-out (withdraw) — the mirror of `addChips`.
+   *
+   *  - Between hands: `atomic_table_withdraw` CREDITS the player's PLAYER wallet
+   *    by `amount` and REDUCES `table_seats.stack` by the same amount
+   *    (apply_to_seat=true); we reduce the in-memory stack immediately and
+   *    broadcast. The RPC guards `amount > 0` and `amount <= seated stack`, so
+   *    an over-withdraw is rejected atomically and no chips are minted.
+   *  - Mid-hand: rejected outright — a player may not cash out chips that are
+   *    live in a hand. Unlike an add-on, this is NOT queued.
+   */
+  public async withdrawChips(
+    userId: string,
+    amount: number
+  ): Promise<{ success: boolean; error?: string }> {
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'Player not seated' };
+    if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
+
+    const { supabase } = require('../services/supabase.js');
+    const midHand = !!this.handController;
+
+    // Mid-hand cash-out is not allowed (do NOT queue).
+    if (midHand) {
+      return { success: false, error: 'Cannot cash out during a hand' };
+    }
+
+    // Guard client-side too so we can surface a clean message; the RPC also
+    // rejects over-withdraw atomically as the authoritative check.
+    if (amount > player.stack) {
+      return { success: false, error: 'Cannot withdraw more than your table stack' };
+    }
+
+    // Credit the wallet AND reduce table_seats.stack atomically (between hands).
+    const { error } = await supabase.rpc('atomic_table_withdraw', {
+      p_user_id: userId,
+      p_table_id: this.tableId,
+      p_amount: amount,
+      p_apply_to_seat: true,
+    });
+    if (error) {
+      const msg = String(error.message || '');
+      const clean = /exceeds seated stack/i.test(msg)
+        ? 'Cannot withdraw more than your table stack'
+        : 'Cash-out failed';
+      reportError(error, `ServerTableEngine.${this.tableId}.withdrawChips_credit_failed`, {
+        userId,
+        amount,
+      });
+      return { success: false, error: clean };
+    }
+
+    // Between hands — wallet credited AND table_seats reduced by the RPC.
+    player.stack -= amount;
+    this.broadcastCurrentState();
+    return { success: true };
+  }
+
+  /**
+   * Process pending add-ons after hand completion.
+   * Caps each add-on so player's stack does not exceed max buy-in.
+   * If the player's stack already >= max buy-in (e.g., they won a big pot),
+   * the add-on is fully canceled and the chips are returned to their wallet.
+   */
+  protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
+    if (this.pendingAddOns.size === 0) return;
+
+    const maxBuyIn = this.getMaxBuyIn();
+    const { supabase } = require('../services/supabase.js');
+
+    // NOTE: each `debitedAmount` here was ALREADY debited from the player's
+    // wallet at request time (atomic_table_addon, apply_to_seat=false). Here we
+    // only apply it to the (now-settled) stack, capped at max buy-in, and
+    // refund any excess back to the PLAYER wallet.
+    for (const [userId, debitedAmount] of this.pendingAddOns.entries()) {
+      const player = players.find((p) => p.user_id === userId);
+      if (!player) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Pending add-on for ${userId} — player no longer seated, refunding ${debitedAmount}`
+        );
+        await this._refundAddOnToWallet(userId, debitedAmount);
+        continue;
+      }
+
+      const headroom = Math.max(0, maxBuyIn - player.stack);
+      const actualAddOn = Math.min(debitedAmount, headroom);
+      const refundAmount = Math.round((debitedAmount - actualAddOn) * 100) / 100;
+
+      if (actualAddOn > 0) {
+        player.stack += actualAddOn;
+        // syncStacks already ran (STEP 8) before this (STEP 8e), so persist the
+        // add-on to table_seats directly here.
+        await supabase
+          .from('table_seats')
+          .update({ stack: player.stack })
+          .eq('table_id', this.tableId)
+          .eq('user_id', userId)
+          .is('left_at', null);
+      }
+
+      if (refundAmount > 0) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Add-on capped for ${userId}: debited ${debitedAmount}, applied ${actualAddOn}, refunding ${refundAmount} to wallet`
+        );
+        await this._refundAddOnToWallet(userId, refundAmount);
+      } else {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Add-on applied for ${userId}: +${actualAddOn} (stack now ${player.stack})`
+        );
+      }
+    }
+
+    this.pendingAddOns.clear();
+    this.broadcastCurrentState();
+  }
+
+  /**
+   * Refund unused add-on chips back to the player's PLAYER wallet (the same
+   * balance atomic_table_addon debited). Uses atomic_credit_wallet_and_log so
+   * the refund is logged and matches the debit side.
+   */
+  protected async _refundAddOnToWallet(userId: string, amount: number): Promise<void> {
+    if (amount <= 0) return;
+    try {
+      const { supabase } = require('../services/supabase.js');
+      const { error } = await supabase.rpc('atomic_credit_wallet_and_log', {
+        p_user_id: userId,
+        p_amount: amount,
+        p_category: 'addon_refund',
+        p_description: 'Add-on exceeded table max buy-in — refunded',
+        p_table_id: this.tableId,
+        p_hand_id: null,
+        p_related_entity_id: null,
+      });
+      if (error) {
+        reportError(error, `ServerTableEngine.${this.tableId}.addon_refund_failed`, {
+          userId,
+          amount,
+        });
+      } else {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Refunded ${amount} chips to ${userId}'s PLAYER wallet`
+        );
+      }
+    } catch (err) {
+      reportError(err, `ServerTableEngine.${this.tableId}.addon_refund_failed`, {
+        userId,
+        amount,
+      });
+    }
+  }
+
+  /**
+   * POST /sitout — Bible V8 §7.12: Player sits out or back in
+   */
+  public sitOut(
+    userId: string,
+    sitOut: boolean
+  ): { success: boolean; error?: string; willFoldNextHand: boolean } {
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) {
+      return { success: false, error: 'Player not found at this table', willFoldNextHand: false };
+    }
+
+    if (sitOut) {
+      // FIX 143: Bible V8 §7.12 — Can't fold mid-hand.
+      // If a hand is in progress, defer the sit-out until after the hand completes.
+      // The player continues playing the current hand normally.
+      if (this.handController !== null) {
+        this.pendingSitOut.add(userId);
+      } else {
+        this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+      }
+    } else {
+      // Cancel any pending sit-out
+      this.pendingSitOut.delete(userId);
+      this.disconnectEngine.sitBack(this.tableId, userId);
+      // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand
+      this.returningFromSitout.add(userId);
+    }
+
+    // FIX 143: willFoldNextHand is informational — player finishes current hand normally
+    const willFoldNextHand = sitOut && this.handController !== null;
+
+    return { success: true, willFoldNextHand };
+  }
+
+  /**
+   * POST /leave — Player leaves the table. If mid-hand, auto-fold then mark leave_pending.
+   * If between hands, mark seat as left immediately.
+   */
+  public leaveTable(userId: string): { success: boolean; error?: string; immediate: boolean } {
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) {
+      return { success: false, error: 'Player not found at this table', immediate: false };
+    }
+
+    // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so
+    // every connected client (including spectators) can re-render the
+    // empty seat without diffing the next state snapshot.
+    this.hub?.emitEvent(this.tableId, {
+      type: 'seat_left',
+      table_id: this.tableId,
+      seat: player.seat_number,
+      user_id: userId,
+      mid_hand: this.handController !== null,
+      timestamp: Date.now(),
+    });
+
+    if (this.handController !== null) {
+      // Mid-hand: fold the player immediately if it's their turn or they're still in
+      const state = this.handController.getState();
+      const enginePlayer = state.players.find((p) => p.user_id === userId);
+
+      if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
+        try {
+          this.handController.performAction(enginePlayer.seat, 'fold');
+          console.log(`[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`);
+        } catch (err) {
+          // Player might not be the current actor — that's fine, they'll be skipped
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Auto-fold on leave failed (not their turn): ${err}`
+          );
+        }
+      }
+
+      // Mark as leave_pending — processLeavePending will handle cashout at end of hand
+      supabase
+        .from('table_seats')
+        .update({ leave_pending: true, status: 'sitting_out' })
+        .eq('table_id', this.tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .then(({ error }) => {
+          if (error)
+            console.warn(`[ServerTableEngine] leave_pending update failed:`, error.message);
+        });
+
+      // Also mark in disconnect engine so they don't get dealt next hand
+      this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+
+      return { success: true, immediate: false };
+    } else {
+      // Between hands: remove immediately via atomic cashout.
+      // AUDIT FIX 2026-07-19: the hand controller is nulled at HAND_COMPLETE
+      // BEFORE postHandTasks (which runs syncStacks) finishes. A leave arriving
+      // in that window would take this branch and cash out the STALE pre-hand
+      // seat stack — the pot won vanishes (or a bust is refunded). Wait for any
+      // in-flight settlement to persist the final stack first.
+      const finishCashout = () =>
+        atomicCashout(userId, this.tableId, player.seat_number)
+          .then(() => {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
+            );
+            this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+            this.timeBankEngine.removePlayer(this.tableId, userId);
+            this.straddleEngine.removePlayer(this.tableId, userId);
+            this.preActionEngine.removePlayer(this.tableId, userId);
+          })
+          .catch((err) => {
+            console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
+            markSeatAsLeft(this.tableId, userId, player.seat_number);
+            this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+            this.timeBankEngine.removePlayer(this.tableId, userId);
+            this.straddleEngine.removePlayer(this.tableId, userId);
+            this.preActionEngine.removePlayer(this.tableId, userId);
+          });
+
+      if (this.postHandTasksPromise) {
+        // Settlement for the just-finished hand is still writing stacks — cash
+        // out only after it lands.
+        this.postHandTasksPromise.then(finishCashout, finishCashout);
+      } else {
+        finishCashout();
+      }
+
+      return { success: true, immediate: true };
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // Bible V8 §6.17: ADMIN PAUSE / MAINTENANCE LOCK
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /admin/pause — Bible V8 §6.17: Admin pause. Current hand finishes, then no new hands.
+   */
+  public adminPause(reason?: string): { success: boolean } {
+    this.adminPauseLock = true;
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Admin pause activated${reason ? `: ${reason}` : ''}`
+    );
+    // Phase X5 (2026-04-29) — Bible V8 §1.16 table_paused discrete event so
+    // clients can render the paused-overlay + suppress the action timer.
+    this.hub?.emitEvent(this.tableId, {
+      type: 'table_paused',
+      table_id: this.tableId,
+      reason: reason ?? null,
+      timestamp: Date.now(),
+    });
+    return { success: true };
+  }
+
+  /**
+   * POST /admin/resume — Bible V8 §6.17: Resume dealing after admin pause.
+   */
+  public adminResume(): { success: boolean } {
+    this.adminPauseLock = false;
+    this.maintenanceLock = false;
+    if (this.tableFSM.state === 'paused') {
+      this.tableFSM.transition('running');
+    }
+    console.log(`[ServerTableEngine:${this.tableId}] Admin resume — dealing will continue`);
+    // Phase X5 (2026-04-29) — Bible V8 §1.16 table_resumed discrete event.
+    this.hub?.emitEvent(this.tableId, {
+      type: 'table_resumed',
+      table_id: this.tableId,
+      timestamp: Date.now(),
+    });
+    return { success: true };
+  }
+
+  /**
+   * POST /admin/maintenance — Bible V8 §6.17: Full maintenance lock. No hands, no new joins.
+   */
+  public setMaintenanceLock(locked: boolean): { success: boolean } {
+    this.maintenanceLock = locked;
+    if (locked && this.tableFSM.state === 'running') {
+      this.tableFSM.transition('paused');
+    }
+    console.log(`[ServerTableEngine:${this.tableId}] Maintenance lock: ${locked}`);
+    return { success: true };
+  }
+
+  /**
+   * Bible V8 §4.2: Register a new player as waiting-for-BB.
+   * Called when a player sits down at a table with wait_for_big_blind enabled.
+   * The player cannot play until the BB position rotates to their seat.
+   */
+  public registerWaitForBB(userId: string): void {
+    if (this.tableInfo?.wait_for_big_blind) {
+      this.waitingForBB.add(userId);
+    }
+  }
+
+  /**
+   * Bible V8 §4.2: Player opts to "Post BB" to enter immediately.
+   * When a new player sits at a cash game, they choose: post the BB now to be dealt
+   * in immediately, OR wait for the BB to reach their seat naturally.
+   * If they post, they pay 1× BB as a live blind and get dealt into the current hand.
+   */
+  public postBBToEnter(userId: string): { success: boolean; error?: string } {
+    if (!this.waitingForBB.has(userId)) {
+      return { success: false, error: 'Player is not waiting for BB' };
+    }
+    this.waitingForBB.delete(userId);
+    // AUDIT FIX 2026-07-19: post ONLY a live BB to enter (no dead SB). Route
+    // through postingBBToEnter, not returningFromSitout (which owes a dead SB
+    // for a MISSED blind).
+    this.postingBBToEnter.add(userId);
+    return { success: true };
+  }
+
+  /**
+   * Bible V8 §4.2: Check if a player is currently waiting for BB.
+   */
+  public isWaitingForBB(userId: string): boolean {
+    return this.waitingForBB.has(userId);
+  }
+
+  /**
+   * POST /straddle — Bible V8 §4.4: Toggle auto-straddle enrollment
+   */
+  public toggleStraddle(userId: string, enabled: boolean): { success: boolean; error?: string } {
+    if (!this.tableInfo?.straddle_enabled) {
+      return { success: false, error: 'Straddles are not enabled at this table' };
+    }
+    this.straddleEngine.toggleAutoStraddle(this.tableId, userId, enabled);
+    return { success: true };
+  }
+
+  /**
+   * Bible V8 §4.21: Player chooses to show hand at showdown (even if not required).
+   * Auto-muck: losing hands are hidden unless player explicitly shows.
+   */
+  public showHand(userId: string): { success: boolean; error?: string } {
+    if (!this.handController) {
+      return { success: false, error: 'No active hand' };
+    }
+
+    // FIX-D3 2026-07-19 (Bible V8 §11): honor the table's show-hand toggle. The
+    // column was loaded but never checked, so voluntary show-hand was always
+    // allowed even when the host disabled it. Default allowed unless explicitly off.
+    if ((this.tableInfo as { show_hand_enabled?: boolean })?.show_hand_enabled === false) {
+      return { success: false, error: 'Showing hands is disabled at this table' };
+    }
+
+    const state = this.handController.getState();
+    if (state.stage !== 'showdown') {
+      return { success: false, error: 'Can only show hand during showdown' };
+    }
+
+    const player = state.players.find((p) => p.user_id === userId);
+    if (!player) {
+      return { success: false, error: 'Player not found at this table' };
+    }
+
+    if (player.is_folded) {
+      return { success: false, error: 'Cannot show a folded hand' };
+    }
+
+    // Mark this player as voluntarily showing their hand
+    if (!this.showHandPlayers) {
+      this.showHandPlayers = new Set<string>();
+    }
+    this.showHandPlayers.add(userId);
+
+    // Broadcast updated state so this player's cards become visible
+    this.broadcastCurrentState();
+
+    return { success: true };
+  }
+}

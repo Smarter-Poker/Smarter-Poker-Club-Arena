@@ -416,9 +416,17 @@ export class GameServer {
       if (activeSeats && activeSeats.length > 0) {
         // Aggregate total stack per user
         const userTotals = new Map<string, number>();
+        // A3 FIX (2026-07-28): carry the seat ids alongside the totals so the
+        // credit below can be made idempotent. The aggregate is per-user, so the
+        // only stable identity for "this exact cash-out" is the set of seat rows
+        // that produced it.
+        const userSeatIds = new Map<string, string[]>();
         for (const seat of activeSeats) {
           const prev = userTotals.get(seat.user_id) ?? 0;
           userTotals.set(seat.user_id, prev + (seat.stack ?? 0));
+          const ids = userSeatIds.get(seat.user_id) ?? [];
+          ids.push(seat.id);
+          userSeatIds.set(seat.user_id, ids);
         }
 
         // Credit each user's wallet in parallel (batch of 10)
@@ -440,6 +448,13 @@ export class GameServer {
                 const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
                   p_user_id: userId,
                   p_amount: totalStack,
+                  // A3 FIX (2026-07-28): `cleanupStaleData` runs on EVERY boot and
+                  // deliberately spares the seats of users whose credit failed
+                  // (see failedUserIds below) so their stacks survive - which means
+                  // the next boot re-credits the identical aggregate. A credit that
+                  // committed but timed out therefore minted the whole stack again.
+                  // Keyed on the sorted seat-id set that produced this aggregate.
+                  p_idempotency_key: `startup-cashout:${userId}:${(userSeatIds.get(userId) ?? []).slice().sort().join('|')}`,
                 });
                 if (walletErr) {
                   console.warn(
@@ -546,29 +561,17 @@ export class GameServer {
           if (refundEach > 0) {
             const { data: regs } = await supabase
               .from('tournament_players')
-              .select('id, user_id, prize')
+              .select('id, user_id')
               .eq('tournament_id', t.id);
-            // Match the canonical cancel-refund path (tournamentRecovery):
-            // horses paid nothing (never refund them — that mints money), and a
-            // player already paid a prize must not be refunded on top.
-            const regIds = (regs || []).map((r) => r.user_id);
-            const { data: horseRows } = regIds.length
-              ? await supabase.from('profiles').select('id').in('id', regIds).eq('is_horse', true)
-              : { data: [] as { id: string }[] };
-            const horseSet = new Set((horseRows ?? []).map((h) => h.id));
             for (const p of regs || []) {
-              if (horseSet.has(p.user_id)) continue; // horses paid nothing
-              if (Number(p.prize || 0) > 0) continue; // already paid a prize — no refund on top
               const { error: refErr } = await supabase.rpc('credit_player_wallet', {
                 p_user_id: p.user_id,
                 p_amount: refundEach,
-                // A3 FIX (2026-07-29): this startup pre-start sweep runs on EVERY
-                // boot and the CANCELLED flip only happens after the loop, so a
-                // crash mid-loop re-refunded everyone next boot. Keyed on the
-                // tournament_players row id in the SAME `tourney:{id}:cancelrefund:
-                // {row.id}` format as tournamentRecovery + the SNG lifecycle sweep,
-                // so all three dedupe. (Also added the horse filter this path was
-                // missing — it was minting refunds to free horse entries.)
+                // A3 FIX (2026-07-28): this startup sweep marks nothing per-row and
+                // only flips the tournament to CANCELLED after the loop, so any
+                // crash (or a failed flip) re-refunded everyone on the next boot.
+                // Same key format as tournamentRecovery + HorseLifecycleManager so
+                // all three cancel-refund paths dedupe against each other.
                 p_idempotency_key: `tourney:${t.id}:cancelrefund:${p.id}`,
               });
               if (refErr) {

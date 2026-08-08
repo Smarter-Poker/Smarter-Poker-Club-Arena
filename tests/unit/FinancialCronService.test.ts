@@ -12,6 +12,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Hoisted so the M4 tests can assert which tables the client touches.
+const { mockFrom } = vi.hoisted(() => ({ mockFrom: vi.fn() }));
+
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
 const buildChain = (): any => {
@@ -29,7 +32,10 @@ const buildChain = (): any => {
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    from: () => buildChain(),
+    from: (table: string) => {
+      mockFrom(table);
+      return buildChain();
+    },
     rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
   },
 }));
@@ -104,9 +110,16 @@ describe('FinancialCronService', () => {
 
     it('should stop previous run when started again', () => {
       FinancialCronService.start();
-      const firstTimer = FinancialCronService._reconciliationTimer;
+      const firstTimer = FinancialCronService._suspensionTimer;
       FinancialCronService.start(); // Restart
-      expect(FinancialCronService._reconciliationTimer).not.toBe(firstTimer);
+      expect(FinancialCronService._suspensionTimer).not.toBe(firstTimer);
+    });
+
+    it('does not schedule a reconciliation timer at all (AUDIT M4)', () => {
+      // The browser cannot reconcile a chip supply it can only see one row of.
+      // Scheduling it here is what produced 1,039 false failures over 5 months.
+      FinancialCronService.start();
+      expect(FinancialCronService._reconciliationTimer).toBeNull();
     });
   });
 
@@ -165,17 +178,26 @@ describe('FinancialCronService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('runReconciliation', () => {
-    it('should return balanced result on success', async () => {
+    it('reports itself unavailable rather than guessing (AUDIT M4)', async () => {
+      // The distinction that matters: "the books do not balance" and "this
+      // process is not in a position to know" are different answers, and
+      // conflating them is what filled the ops table with noise.
       const result = await FinancialCronService.runReconciliation();
-      expect(result.isBalanced).toBe(true);
+      expect(result.unavailable).toBe(true);
       expect(result.difference).toBe(0);
       expect(result.checkedAt).toBeTruthy();
     });
 
-    it('should store last reconciliation', async () => {
+    it('writes nothing anywhere (AUDIT M4)', async () => {
+      // financial_health_checks is service_role-write-only as of the M4
+      // migration, so an attempt would 42501 - but the client should not be
+      // attempting it in the first place.
+      mockFrom.mockClear();
       await FinancialCronService.runReconciliation();
-      expect(FinancialCronService._lastReconciliation).not.toBeNull();
-      expect(FinancialCronService._lastReconciliation!.isBalanced).toBe(true);
+      const touched = mockFrom.mock.calls.map((c: unknown[]) => c[0]);
+      expect(touched).not.toContain('financial_health_checks');
+      expect(touched).not.toContain('wallets');
+      expect(touched).not.toContain('wallet_transactions');
     });
   });
 

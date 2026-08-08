@@ -143,6 +143,16 @@ export abstract class ServerTableEngineBase {
   // If a player wins a pot and their stack + add-on exceeds max buy-in,
   // the add-on is reduced or canceled. Map<userId, requestedAmount>.
   protected pendingAddOns: Map<string, number> = new Map();
+  /**
+   * A2: does the durable `table_pending_addons` ledger need a sweep?
+   *
+   * Starts true so a freshly started engine always checks once for rows a dead
+   * predecessor left behind. Set true again whenever a mid-hand add-on is
+   * debited or a resolve fails; cleared only after a sweep that leaves zero
+   * unresolved rows. This keeps the steady-state cost at zero extra queries per
+   * hand while making it impossible for an open row to be forgotten.
+   */
+  protected pendingAddOnSweepNeeded = true;
 
   // FIX 2 (2026-07-24): per-hand hole cards kept in memory so we can (a) retry
   // the RLS insert and (b) re-push a player's cards on reconnect/RESYNC. The
@@ -511,6 +521,14 @@ export abstract class ServerTableEngineBase {
       // FIX: Horses are server-side bots — send simulated heartbeats so they don't time out.
       this.heartbeatActive = true;
       this.scheduleHeartbeatCheck();
+
+      // A2 FIX (2026-08-08): sweep up any add-on that was durably debited but
+      // never delivered — e.g. this engine (or its predecessor) died between
+      // the wallet debit and the end of the hand. The ledger rows outlive the
+      // process, so recovery is just "resolve whatever is still open". Doing it
+      // here as well as in postHandTasks matters for a table that goes idle:
+      // otherwise an orphaned row would wait for a next hand that never comes.
+      await this.resolveOrphanedAddOns();
 
       // Start dealing loop
       this.dealingLoop();
@@ -937,6 +955,9 @@ export abstract class ServerTableEngineBase {
 
     return true;
   }
+
+  // ── Implemented by ServerTableEngineSeating (layer 2/8) ──
+  protected abstract resolveOrphanedAddOns(): Promise<void>;
 
   // ── Implemented by ServerTableEngineTurns (layer 3/8) ──
   protected abstract clearTurnTimer(): void;

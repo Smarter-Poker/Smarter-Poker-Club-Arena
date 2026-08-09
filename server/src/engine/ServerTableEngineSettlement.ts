@@ -40,6 +40,7 @@ import type {
   SeatedPlayer,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
@@ -625,6 +626,27 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             new Error(`[atomic_distribute_rake] failed after retries: ${rdErr.message}`),
             'postHandTasks.atomic_distribute_rake_failed'
           );
+          // A5 FIX (2026-08-08): the retries are exhausted, but the rake is
+          // ALREADY out of the pot. Reporting an error and moving on destroyed
+          // those chips — nothing on disk said they were owed. Queue the exact
+          // arguments so the FeeReconciler can re-drive them. Re-driving is
+          // safe: atomic_distribute_rake is gated on the hand
+          // (uq_rake_records_hand_id), so an entry that actually did land is a
+          // no-op rather than a double-bank.
+          await queueUnbankedFee('rake', {
+            tableId: this.tableId,
+            clubId: this.tableInfo?.club_id,
+            handId: v_handHistoryId,
+            handNumber: this.handCount,
+            rake: this.currentHandRake,
+            bbj: this.currentHandBBJFee,
+            pot: this.currentHandPotSize,
+            numPlayers: this.currentHandContributions.size,
+            contributions: contribsObj,
+            tournamentId: this.tableInfo?.tournament_id || null,
+            bigBlind: this.tableInfo?.big_blind ?? null,
+            lastError: rdErr.message,
+          });
         } else {
           await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
         }
@@ -635,7 +657,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // Round 44: pass v_handHistoryId so bbj_contributions.hand_id links to
     // hand_history (consistent with rake_records and club_wallet_transactions).
     if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
-      await logBBJCollection(
+      // A5 FIX (2026-08-08): this return value used to be discarded, and
+      // logBBJCollection swallowed every failure while logging 1 hand in 100.
+      // That was not cosmetic. atomic_distribute_rake computes
+      // `v_net := p_rake - v_bbj` and credits the club wallet only v_net,
+      // deliberately excluding the BBJ slice because bbj_record_contribution is
+      // what puts it into the jackpot pool. So a failure here left the chips in
+      // NEITHER place — out of the pot and out of existence. An audit of the
+      // 20,000 most recent raked hands (joined on hand_id) found zero actually
+      // lost, so this is a hole being closed before it bites rather than a bleed
+      // being stopped — but it was a hole nobody could have SEEN bite, which is
+      // the part that had to change.
+      const bbjBanked = await logBBJCollection(
         this.tableId,
         this.tableInfo.club_id,
         this.handCount,
@@ -643,6 +676,22 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         this.tableInfo.big_blind,
         v_handHistoryId
       );
+      if (!bbjBanked) {
+        await queueUnbankedFee('bbj_contribution', {
+          tableId: this.tableId,
+          clubId: this.tableInfo.club_id,
+          handId: v_handHistoryId,
+          handNumber: this.handCount,
+          rake: this.currentHandRake,
+          bbj: this.currentHandBBJFee,
+          pot: this.currentHandPotSize,
+          numPlayers: this.currentHandContributions.size,
+          contributions: {},
+          tournamentId: this.tableInfo?.tournament_id || null,
+          bigBlind: this.tableInfo?.big_blind ?? null,
+          lastError: 'logBBJCollection returned false',
+        });
+      }
     }
 
     // SETTLEMENT STEP 12: rakeback input (durable rake_records) is now written

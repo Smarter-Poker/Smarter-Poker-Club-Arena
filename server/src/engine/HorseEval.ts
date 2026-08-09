@@ -32,7 +32,36 @@ const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 // (Card dealing uses CryptoRandom; this is only for decision mixing + MC deals.)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-let rngState = (Date.now() ^ 0x9e3779b9) >>> 0;
+/**
+ * Seed selection.
+ *
+ * This was `Date.now() ^ 0x9e3779b9`, unconditionally — and it was the real
+ * source of the long-standing `HorseLogic V10` test flakiness. Seeding
+ * Math.random in the test file did nothing for it, because the V10 A/B blocks
+ * drive simulateEquity, which draws from HERE. Every run got a different stream,
+ * so two statistical assertions flipped red roughly one run in three and taught
+ * everyone to re-run a red suite instead of reading it.
+ *
+ *   - HORSE_FUZZ_SEED=<n>  pin the stream explicitly (tests, or reproducing a
+ *                          specific decision sequence while debugging)
+ *   - under vitest         pinned automatically, so the suite is reproducible
+ *                          without every test file having to remember to do it
+ *   - otherwise            time-seeded, so production restarts are not
+ *                          correlated with each other
+ */
+const FAST_RNG_SEED =
+  Number(process.env.HORSE_FUZZ_SEED) ||
+  (process.env.VITEST ? 0x5eed1e : Date.now() ^ 0x9e3779b9);
+
+// xorshift32 is a fixed point at 0 — a zero state emits zeros forever — so the
+// seed is forced non-zero here and in seedFastRandom.
+let rngState = (FAST_RNG_SEED >>> 0) || 1;
+
+/** Pin the strategy/Monte-Carlo stream. Exported for tests and for replaying a decision. */
+export function seedFastRandom(seed: number): void {
+  rngState = (seed >>> 0) || 1;
+}
+
 export function fastRandom(): number {
   // xorshift32 — ~4x faster than Math.random in tight MC loops and good enough
   rngState ^= rngState << 13;

@@ -3,14 +3,27 @@ import { TableStateHub, type HubSubscriber } from './TableStateHub.js';
 
 function makeSub(id: string, readyState = 1 /* OPEN */) {
   const outbox: string[] = [];
-  const sub: HubSubscriber & { outbox: string[]; close(): void; _readyState: number } = {
+  const sub: HubSubscriber & {
+    outbox: string[];
+    close(): void;
+    _readyState: number;
+    // B12: writable so a test can simulate a socket whose send buffer is backed up.
+    _bufferedAmount: number;
+    sendCalls: number;
+  } = {
     id,
     outbox,
     _readyState: readyState,
+    _bufferedAmount: 0,
+    sendCalls: 0,
     get readyState() {
       return this._readyState;
     },
+    get bufferedAmount() {
+      return this._bufferedAmount;
+    },
     send(data: string) {
+      this.sendCalls++;
       outbox.push(data);
     },
     close() {
@@ -205,6 +218,107 @@ describe('TableStateHub', () => {
       hub.subscribe(TABLE, makeSub('s2'));
       hub.subscribe(t2, makeSub('s3'));
       expect(hub.totalSubscribers()).toBe(3);
+    });
+  });
+  describe('C16 — payload is serialized once per publish, not per subscriber', () => {
+    it('hands every subscriber the identical string instance', () => {
+      const a = makeSub('a');
+      const b = makeSub('b');
+      const c = makeSub('c');
+      hub.subscribe(TABLE, a);
+      hub.subscribe(TABLE, b);
+      hub.subscribe(TABLE, c);
+
+      hub.publish(TABLE, { pot: 100 });
+
+      // Same content for all three...
+      expect(a.outbox[0]).toBe(b.outbox[0]);
+      expect(b.outbox[0]).toBe(c.outbox[0]);
+      // ...and it is literally the SAME string object, which is only possible if
+      // JSON.stringify ran once outside the per-subscriber loop. This is the
+      // regression guard: moving stringify back inside the loop still produces
+      // equal strings, but no longer the same reference.
+      expect(a.outbox[0] === b.outbox[0]).toBe(true);
+      expect(Object.is(a.outbox[0], c.outbox[0])).toBe(true);
+    });
+  });
+
+  describe('B12 — WebSocket backpressure', () => {
+    const SOFT = 256 * 1024;
+    const HARD = 4 * 1024 * 1024;
+
+    it('keeps sending to a subscriber whose buffer is healthy', () => {
+      const fast = makeSub('fast');
+      hub.subscribe(TABLE, fast);
+      hub.publish(TABLE, { pot: 1 });
+      hub.publish(TABLE, { pot: 2 });
+      expect(fast.outbox).toHaveLength(2);
+      expect(hub.backpressureStats().softDropped).toBe(0);
+    });
+
+    it('drops DELTAs to a backed-up subscriber without touching the healthy one', () => {
+      const slow = makeSub('slow');
+      const fast = makeSub('fast');
+      hub.subscribe(TABLE, slow);
+      hub.subscribe(TABLE, fast);
+
+      hub.publish(TABLE, { pot: 1 }); // SNAPSHOT to both
+      expect(slow.outbox).toHaveLength(1);
+
+      slow._bufferedAmount = SOFT + 1;
+      hub.publish(TABLE, { pot: 2 }); // DELTA
+
+      expect(slow.outbox).toHaveLength(1); // dropped
+      expect(fast.outbox).toHaveLength(2); // unaffected
+      expect(hub.backpressureStats().softDropped).toBe(1);
+      // still subscribed — it can catch up once its buffer drains
+      expect(hub.subscriberCount(TABLE)).toBe(2);
+    });
+
+    it('resumes delivery once the buffer drains', () => {
+      const slow = makeSub('slow');
+      hub.subscribe(TABLE, slow);
+      hub.publish(TABLE, { pot: 1 });
+
+      slow._bufferedAmount = SOFT + 1;
+      hub.publish(TABLE, { pot: 2 });
+      expect(slow.outbox).toHaveLength(1);
+
+      slow._bufferedAmount = 0;
+      hub.publish(TABLE, { pot: 3 });
+      expect(slow.outbox).toHaveLength(2);
+    });
+
+    it('never drops a SNAPSHOT — it is how a gapped client recovers', () => {
+      const slow = makeSub('slow');
+      slow._bufferedAmount = SOFT + 1;
+      hub.subscribe(TABLE, slow);
+      hub.publish(TABLE, { pot: 1 }); // first publish is a SNAPSHOT
+      expect(slow.outbox).toHaveLength(1);
+      expect(parse(slow.outbox[0]).type).toBe('SNAPSHOT');
+    });
+
+    it('evicts a subscriber past the hard limit instead of buffering for it', () => {
+      const hopeless = makeSub('hopeless');
+      const fine = makeSub('fine');
+      hub.subscribe(TABLE, hopeless);
+      hub.subscribe(TABLE, fine);
+      hub.publish(TABLE, { pot: 1 });
+
+      hopeless._bufferedAmount = HARD + 1;
+      hub.publish(TABLE, { pot: 2 });
+
+      expect(hub.subscriberCount(TABLE)).toBe(1);
+      expect(hub.backpressureStats().hardDropped).toBe(1);
+      expect(fine.outbox).toHaveLength(2);
+    });
+
+    it('treats a subscriber with no bufferedAmount as healthy', () => {
+      const plain = { id: 'plain', readyState: 1, sent: [] as string[], send(d: string) { this.sent.push(d); } };
+      hub.subscribe(TABLE, plain as unknown as HubSubscriber);
+      hub.publish(TABLE, { pot: 1 });
+      hub.publish(TABLE, { pot: 2 });
+      expect(plain.sent).toHaveLength(2);
     });
   });
 });

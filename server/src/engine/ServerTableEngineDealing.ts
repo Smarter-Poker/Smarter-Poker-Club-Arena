@@ -634,8 +634,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       try {
         this.handController!.start();
 
-        // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery
-        this.saveSnapshot().catch(() => {});
+        // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery.
+        // C15: deliberately NOT coalesced. The hand-start snapshot is the anchor
+        // every later delta is read against, so it is worth one guaranteed write.
+        this.snapshotDirty = true;
+        void this.flushSnapshot();
       } catch (err) {
         reportError(err, 'ServerTableEnginethistableId.Failed_to_start_hand');
         clearTimeout(handTimeout);

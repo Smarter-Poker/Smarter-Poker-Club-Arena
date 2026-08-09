@@ -65,6 +65,12 @@ export interface SchedulerOptions {
    */
   maxFirePerTick?: number;
   /**
+   * C18: stop firing once a single tick has spent this long, even if more
+   * deadlines are due. Whatever is left is picked up on the next tick, so a
+   * burst degrades into slight lateness instead of a stalled event loop.
+   */
+  maxTickBudgetMs?: number;
+  /**
    * Override for the current-time function. Only used by tests to advance
    * simulated wall-clock. Defaults to Date.now.
    */
@@ -79,11 +85,63 @@ export interface SchedulerOptions {
 // ─── Scheduler ────────────────────────────────────────────────────────────────
 
 /**
- * Simple binary min-heap keyed by deadlineMs. Extracted so it can be
- * unit-tested in isolation from the scheduler's timer behavior.
+ * Binary min-heap keyed by deadlineMs, with O(1) key lookup.
+ *
+ * C18 FIX (2026-08-09): every mutation used to be O(n) in the TOTAL number of
+ * pending deadlines across every table, because `remove` did an `Array.findIndex`
+ * and `removeTable`/`listTable` did a full `filter`. That would be fine if the
+ * queue were cold, but it is the hottest path in the engine: arming a turn timer
+ * calls schedule(), which removes-then-pushes, and every table also re-arms a
+ * heartbeat every 10 seconds. At 300 tables that is a linear scan of the whole
+ * queue several times a second, and the cost grows with the square of the table
+ * count.
+ *
+ * Two indexes now ride alongside the array:
+ *   - `pos`     key -> current array index, so remove() is O(log n)
+ *   - `byTable` tableId -> its keys, so removeTable()/listTable() are O(k) in
+ *               that table's own entries rather than O(n) in everyone's
+ *
+ * Both are maintained by `place()`, which is the ONLY way an element is written
+ * into the array — that invariant is what keeps the index honest through every
+ * sift. There is an `assertConsistent()` escape hatch for tests.
  */
 class DeadlineHeap {
   private arr: Deadline[] = [];
+  /** key -> index in `arr`. */
+  private pos = new Map<string, number>();
+  /** tableId -> set of keys belonging to it. */
+  private byTable = new Map<string, Set<string>>();
+
+  private static key(tableId: string, eventId: string): string {
+    // NUL separator: ids are uuids/slugs, so this can never collide the way
+    // a ':' would if an eventId ever contained one.
+    return `${tableId}\u0000${eventId}`;
+  }
+
+  /** The single writer into `arr`. Keeps `pos` in step with every move. */
+  private place(i: number, d: Deadline): void {
+    this.arr[i] = d;
+    this.pos.set(DeadlineHeap.key(d.tableId, d.eventId), i);
+  }
+
+  private track(d: Deadline): void {
+    let set = this.byTable.get(d.tableId);
+    if (!set) {
+      set = new Set();
+      this.byTable.set(d.tableId, set);
+    }
+    set.add(DeadlineHeap.key(d.tableId, d.eventId));
+  }
+
+  private untrack(d: Deadline): void {
+    const k = DeadlineHeap.key(d.tableId, d.eventId);
+    this.pos.delete(k);
+    const set = this.byTable.get(d.tableId);
+    if (set) {
+      set.delete(k);
+      if (set.size === 0) this.byTable.delete(d.tableId);
+    }
+  }
 
   size(): number {
     return this.arr.length;
@@ -94,51 +152,71 @@ class DeadlineHeap {
   }
 
   push(d: Deadline): void {
+    // Defensive: the index can only hold one entry per key, so a duplicate push
+    // would desynchronise it. Callers already remove-then-push, but making push
+    // itself replace keeps the invariant true regardless of caller discipline.
+    this.remove(d.tableId, d.eventId);
+    const i = this.arr.length;
     this.arr.push(d);
-    this.siftUp(this.arr.length - 1);
+    this.place(i, d);
+    this.track(d);
+    this.siftUp(i);
   }
 
   /** Pop the earliest deadline. Returns undefined if empty. */
   pop(): Deadline | undefined {
     if (this.arr.length === 0) return undefined;
     const top = this.arr[0];
-    const last = this.arr.pop();
-    if (this.arr.length > 0 && last !== undefined) {
-      this.arr[0] = last;
+    const last = this.arr.pop()!;
+    this.untrack(top);
+    if (this.arr.length > 0 && last !== top) {
+      this.place(0, last);
       this.siftDown(0);
     }
     return top;
   }
 
-  /**
-   * Remove an entry by (tableId, eventId). O(n); we expect pending queues
-   * to stay small (<1000 items across all tables) so this is fine.
-   */
+  /** Remove an entry by (tableId, eventId). O(log n) via the index. */
   remove(tableId: string, eventId: string): Deadline | undefined {
-    const idx = this.arr.findIndex((d) => d.tableId === tableId && d.eventId === eventId);
-    if (idx === -1) return undefined;
+    const idx = this.pos.get(DeadlineHeap.key(tableId, eventId));
+    if (idx === undefined) return undefined;
     const removed = this.arr[idx];
-    const last = this.arr.pop();
-    if (idx < this.arr.length && last !== undefined) {
-      this.arr[idx] = last;
-      // Either sift up or down depending on where the replacement lands
+    const last = this.arr.pop()!;
+    this.untrack(removed);
+    if (idx < this.arr.length) {
+      this.place(idx, last);
+      // The replacement can belong either above or below its new slot.
       this.siftUp(idx);
-      this.siftDown(idx);
+      this.siftDown(this.pos.get(DeadlineHeap.key(last.tableId, last.eventId))!);
     }
     return removed;
   }
 
-  /** Drop every entry for a tableId. Returns how many were removed. */
+  /** Drop every entry for a tableId. O(k) in that table's entries. */
   removeTable(tableId: string): number {
-    const before = this.arr.length;
-    this.arr = this.arr.filter((d) => d.tableId !== tableId);
-    this.reheapify();
-    return before - this.arr.length;
+    const keys = this.byTable.get(tableId);
+    if (!keys || keys.size === 0) return 0;
+    let removed = 0;
+    // Snapshot: remove() mutates the set we are iterating.
+    for (const k of [...keys]) {
+      const idx = this.pos.get(k);
+      if (idx === undefined) continue;
+      const d = this.arr[idx];
+      if (this.remove(d.tableId, d.eventId)) removed++;
+    }
+    return removed;
   }
 
   /** Read-only snapshot of all entries for a tableId (used for persistence). */
   listTable(tableId: string): Deadline[] {
-    return this.arr.filter((d) => d.tableId === tableId);
+    const keys = this.byTable.get(tableId);
+    if (!keys) return [];
+    const out: Deadline[] = [];
+    for (const k of keys) {
+      const idx = this.pos.get(k);
+      if (idx !== undefined) out.push(this.arr[idx]);
+    }
+    return out;
   }
 
   /** Read-only all entries — used by tests. */
@@ -148,13 +226,49 @@ class DeadlineHeap {
 
   clear(): void {
     this.arr = [];
+    this.pos.clear();
+    this.byTable.clear();
+  }
+
+  /**
+   * Test hook: verify the indexes still describe the array exactly, and that the
+   * heap property holds. An index that silently drifts would turn cancel() into
+   * a no-op and leave a fired-but-cancelled timer behind, so this is worth
+   * asserting directly rather than inferring from behaviour.
+   */
+  assertConsistent(): void {
+    if (this.pos.size !== this.arr.length) {
+      throw new Error(`DeadlineHeap: pos has ${this.pos.size} keys for ${this.arr.length} entries`);
+    }
+    let tracked = 0;
+    for (const set of this.byTable.values()) tracked += set.size;
+    if (tracked !== this.arr.length) {
+      throw new Error(`DeadlineHeap: byTable tracks ${tracked} keys for ${this.arr.length} entries`);
+    }
+    for (let i = 0; i < this.arr.length; i++) {
+      const d = this.arr[i];
+      const k = DeadlineHeap.key(d.tableId, d.eventId);
+      if (this.pos.get(k) !== i) {
+        throw new Error(`DeadlineHeap: pos[${k}] = ${this.pos.get(k)}, expected ${i}`);
+      }
+      if (!this.byTable.get(d.tableId)?.has(k)) {
+        throw new Error(`DeadlineHeap: byTable missing ${k}`);
+      }
+      const parent = (i - 1) >> 1;
+      if (i > 0 && this.arr[parent].deadlineMs > d.deadlineMs) {
+        throw new Error(`DeadlineHeap: heap property violated at ${i}`);
+      }
+    }
   }
 
   private siftUp(i: number): void {
     while (i > 0) {
       const parent = (i - 1) >> 1;
       if (this.arr[parent].deadlineMs <= this.arr[i].deadlineMs) break;
-      [this.arr[parent], this.arr[i]] = [this.arr[i], this.arr[parent]];
+      const a = this.arr[parent];
+      const b = this.arr[i];
+      this.place(parent, b);
+      this.place(i, a);
       i = parent;
     }
   }
@@ -168,13 +282,12 @@ class DeadlineHeap {
       if (left < n && this.arr[left].deadlineMs < this.arr[smallest].deadlineMs) smallest = left;
       if (right < n && this.arr[right].deadlineMs < this.arr[smallest].deadlineMs) smallest = right;
       if (smallest === i) break;
-      [this.arr[smallest], this.arr[i]] = [this.arr[i], this.arr[smallest]];
+      const a = this.arr[smallest];
+      const b = this.arr[i];
+      this.place(smallest, b);
+      this.place(i, a);
       i = smallest;
     }
-  }
-
-  private reheapify(): void {
-    for (let i = (this.arr.length >> 1) - 1; i >= 0; i--) this.siftDown(i);
   }
 }
 
@@ -185,6 +298,7 @@ export class DeadlineScheduler {
   private tickHandle: ReturnType<typeof setInterval> | null = null;
   private readonly tickMs: number;
   private readonly maxFirePerTick: number;
+  private readonly maxTickBudgetMs: number;
   private readonly now: () => number;
   private readonly setIntervalFn: (cb: () => void, ms: number) => ReturnType<typeof setInterval>;
   private readonly clearIntervalFn: (h: ReturnType<typeof setInterval>) => void;
@@ -192,7 +306,14 @@ export class DeadlineScheduler {
 
   constructor(opts: SchedulerOptions = {}) {
     this.tickMs = opts.tickMs ?? 100;
-    this.maxFirePerTick = opts.maxFirePerTick ?? 128;
+    // C18: the old default of 128 with a 100 ms tick imposed a hard process
+    // ceiling of ~1,280 timer fires per second — reached well before the table
+    // count that the rest of the engine can handle, and silently: deadlines just
+    // started running late. The real thing worth protecting is event-loop
+    // responsiveness, so the count cap is now generous and a wall-clock budget
+    // does the actual limiting.
+    this.maxFirePerTick = opts.maxFirePerTick ?? 4096;
+    this.maxTickBudgetMs = opts.maxTickBudgetMs ?? 20;
     this.now = opts.now ?? Date.now;
     this.setIntervalFn = opts.setInterval ?? setInterval;
     this.clearIntervalFn = opts.clearInterval ?? clearInterval;
@@ -294,10 +415,15 @@ export class DeadlineScheduler {
    */
   private tick(): number {
     const now = this.now();
+    const budgetEndsAt = now + this.maxTickBudgetMs;
     let fired = 0;
     while (fired < this.maxFirePerTick) {
       const top = this.heap.peek();
       if (!top || top.deadlineMs > now) break;
+      // C18: check the wall-clock budget between fires, not just the count.
+      // `fired > 0` guarantees forward progress — one deadline always runs, so a
+      // single slow callback can never starve the queue completely.
+      if (fired > 0 && this.now() >= budgetEndsAt) break;
       this.heap.pop();
       try {
         top.callback();

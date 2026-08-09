@@ -153,6 +153,11 @@ export abstract class ServerTableEngineBase {
    * hand while making it impossible for an open row to be forgotten.
    */
   protected pendingAddOnSweepNeeded = true;
+  /** C15: minimum gap between persisted hand snapshots, per table. */
+  protected static readonly SNAPSHOT_MIN_INTERVAL_MS = 1000;
+  protected lastSnapshotAtMs = 0;
+  protected snapshotDirty = false;
+  protected snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 
   // FIX 2 (2026-07-24): per-hand hole cards kept in memory so we can (a) retry
   // the RLS insert and (b) re-push a player's cards on reconnect/RESYNC. The
@@ -549,6 +554,14 @@ export abstract class ServerTableEngineBase {
     this.tableFSM.transition('closing');
 
     this.clearTurnTimer();
+    // C15: flush any coalesced snapshot BEFORE dropping the controller — after
+    // handController is null saveSnapshot() early-returns, so a pending write
+    // would be silently lost on every shutdown.
+    await this.flushSnapshot();
+    if (this.snapshotTimer) {
+      clearTimeout(this.snapshotTimer);
+      this.snapshotTimer = null;
+    }
     this.handController = null;
 
     // FIX 147 + Phase 1.2 PR-G-real: tear down heartbeat scheduler entry.
@@ -852,6 +865,57 @@ export abstract class ServerTableEngineBase {
    * Called after every successful action and after hand start.
    * The snapshot excludes the `deck` field (not JSON-serializable).
    */
+  /**
+   * C15 FIX (2026-08-09): coalesce snapshot writes instead of paying one per action.
+   *
+   * saveSnapshot() serializes the whole hand state and does one or two upserts.
+   * It was fired after EVERY accepted action — 20 to 80 writes per hand per
+   * table — which at 500+ tables is enough on its own to saturate the connection
+   * pool. And it buys very little today: rehydrate() is never called and
+   * checkCrashRecovery() abandons in-flight hands (see B10), so the snapshot's
+   * only live consumers are forensics and getActiveHandSnapshot.
+   *
+   * Rather than drop it (which would foreclose resume-after-restart) this
+   * coalesces: write immediately if the last write is old enough, otherwise mark
+   * dirty and let one trailing timer do it. Bursty streets collapse to ~1 write
+   * per second per table while the LAST state of any burst is still persisted —
+   * which is the state a crash would actually need.
+   */
+  protected requestSnapshot(): void {
+    this.snapshotDirty = true;
+    const since = Date.now() - this.lastSnapshotAtMs;
+    if (since >= ServerTableEngineBase.SNAPSHOT_MIN_INTERVAL_MS) {
+      void this.flushSnapshot();
+      return;
+    }
+    if (this.snapshotTimer) return; // a trailing write is already queued
+    this.snapshotTimer = setTimeout(
+      () => {
+        this.snapshotTimer = null;
+        void this.flushSnapshot();
+      },
+      ServerTableEngineBase.SNAPSHOT_MIN_INTERVAL_MS - since
+    );
+    // Never hold the process open for a snapshot.
+    this.snapshotTimer.unref?.();
+  }
+
+  /** Write now if anything changed since the last write. Safe to call spuriously. */
+  protected async flushSnapshot(): Promise<void> {
+    if (this.snapshotTimer) {
+      clearTimeout(this.snapshotTimer);
+      this.snapshotTimer = null;
+    }
+    if (!this.snapshotDirty) return;
+    this.snapshotDirty = false;
+    this.lastSnapshotAtMs = Date.now();
+    try {
+      await this.saveSnapshot();
+    } catch {
+      /* snapshotting must never affect gameplay */
+    }
+  }
+
   protected async saveSnapshot(): Promise<void> {
     if (!this.handController || !this.tableInfo) return;
 

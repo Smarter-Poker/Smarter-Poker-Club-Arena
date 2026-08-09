@@ -113,9 +113,12 @@ class DeadlineHeap {
   private byTable = new Map<string, Set<string>>();
 
   private static key(tableId: string, eventId: string): string {
-    // NUL separator: ids are uuids/slugs, so this can never collide the way
-    // a ':' would if an eventId ever contained one.
-    return `${tableId}\u0000${eventId}`;
+    // Length-prefixed rather than separator-joined: `${a}:${b}` is ambiguous if
+    // either id can contain the separator, and a NUL separator — while
+    // unambiguous — is a genuine hazard to transfer through tooling. Prefixing
+    // the first id's length makes the encoding injective with no escaping and no
+    // reserved character at all.
+    return `${tableId.length}:${tableId}:${eventId}`;
   }
 
   /** The single writer into `arr`. Keeps `pos` in step with every move. */

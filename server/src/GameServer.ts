@@ -15,6 +15,7 @@ import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
 import { RakebackSettlerService } from './services/RakebackSettlerService.js';
+import { reconcilePendingFees, auditBBJDrift } from './services/FeeReconciler.js';
 import {
   reportError,
   initSentry,
@@ -59,6 +60,11 @@ export class GameServer {
 
   // Synchronized break timer — all MTT/XMTT tournaments break at the top of every hour
   private breakTimer: NodeJS.Timeout | null = null;
+  /**
+   * A5: drains `pending_fee_distributions` — rake / BBJ fees that left a pot but
+   * whose banking RPC failed — and runs the independent BBJ ledger-drift alarm.
+   */
+  private feeReconcileTimer: NodeJS.Timeout | null = null;
   private breakResumeTimer: NodeJS.Timeout | null = null;
   private static readonly BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -120,6 +126,15 @@ export class GameServer {
       // Step 7: Start synchronized break timer (top of every hour, 5 min duration)
       this.scheduleSynchronizedBreaks();
 
+      // Step 8 (A5): Start the fee reconciler. Rake and the BBJ contribution are
+      // taken out of the pot inside the hand; if the banking RPC fails the chips
+      // exist nowhere. The engine now queues those failures durably — this drains
+      // that queue, and independently compares what rake_records booked as BBJ
+      // contribution against what the jackpot pool actually received, because a
+      // failure the engine never noticed would otherwise stay invisible (it did,
+      // for a week).
+      this.startFeeReconciler();
+
       console.log('[GameServer] Running. All services started.');
     } else if (testTableId) {
       // E2E test mode: boot a single table engine for the designated test id.
@@ -171,6 +186,10 @@ export class GameServer {
     if (this.breakTimer) {
       clearTimeout(this.breakTimer);
       this.breakTimer = null;
+    }
+    if (this.feeReconcileTimer) {
+      clearInterval(this.feeReconcileTimer);
+      this.feeReconcileTimer = null;
     }
     if (this.breakResumeTimer) {
       clearTimeout(this.breakResumeTimer);
@@ -323,6 +342,53 @@ export class GameServer {
         60 * 60 * 1000
       ); // Every hour
     }, msUntilNextHour);
+  }
+
+  /**
+   * A5: every 5 minutes, re-drive any fee the engine could not bank, then check
+   * the two BBJ ledgers against each other.
+   *
+   * Both underlying operations are idempotent — `atomic_distribute_rake` is
+   * hand-gated and `bbj_record_contribution` is keyed per (table, hand) — so a
+   * cycle that overlaps a queue entry which has since succeeded resolves it as a
+   * no-op rather than double-banking. `running` is re-checked inside the tick so
+   * a shutdown mid-cycle cannot start new work.
+   */
+  private startFeeReconciler(): void {
+    const FEE_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
+    // Only alarm on drift once an hour; the reconciler runs 12x more often than
+    // that and a standing drift would otherwise page twelve times per hour.
+    const DRIFT_EVERY_N_CYCLES = 12;
+    let cycle = 0;
+
+    const tick = async () => {
+      if (!this.running) return;
+      try {
+        const summary = await reconcilePendingFees();
+        if (summary.scanned > 0) {
+          console.log(
+            `[FeeReconciler] scanned ${summary.scanned}, resolved ${summary.resolved}, ` +
+              `still failing ${summary.stillFailing}, exhausted ${summary.exhausted}`
+          );
+        }
+      } catch (err) {
+        reportError(err, 'GameServer.fee_reconcile_failed');
+      }
+      if (cycle % DRIFT_EVERY_N_CYCLES === 0) {
+        try {
+          await auditBBJDrift(1);
+        } catch (err) {
+          reportError(err, 'GameServer.bbj_drift_audit_failed');
+        }
+      }
+      cycle++;
+    };
+
+    void tick();
+    this.feeReconcileTimer = setInterval(() => {
+      void tick();
+    }, FEE_RECONCILE_INTERVAL_MS);
+    console.log('[GameServer] Fee reconciler started (5-min cycle, hourly BBJ drift audit)');
   }
 
   private async triggerSynchronizedBreak(): Promise<void> {

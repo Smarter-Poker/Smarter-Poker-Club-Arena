@@ -17,6 +17,7 @@ import type {
   HandEvent,
   SeatedPlayer,
 } from '../types.js';
+import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSettlement } from './ServerTableEngineSettlement.js';
 
 export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettlement {
@@ -255,6 +256,22 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         if (this.shadowRecorder && event.stage) {
           this.shadowRecorder.recordStreetAdvanced(event.stage as ShadowStreet);
         }
+        // A7 FIX (2026-08-08): verify chip conservation AT EVERY STREET, while
+        // the pot still exists.
+        //
+        // The verifier previously ran only at HAND_COMPLETE and only summed
+        // stacks, which made in-street chip creation structurally invisible: the
+        // extra chips sat in the pot, and by the time the check ran the pot had
+        // been distributed, so the drift was already folded into a winner's
+        // stack where it looked like a legitimate win. Checking here — flop,
+        // turn and river — is what actually closes that hole, and it also
+        // catches a pot that has drifted from the sum of what players paid in.
+        //
+        // Safe to assert exact conservation mid-hand: withdrawChips is rejected
+        // outright while a hand is live, and a mid-hand add-on is queued rather
+        // than applied to the live stack, so nothing legitimately moves chips
+        // in or out between the deal and settlement.
+        this.verifyStreetIntegrity();
         this.broadcastCurrentState();
         break;
       }
@@ -462,6 +479,44 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         await this.handleHandCompleteEvent(event, players);
         break;
       }
+    }
+  }
+
+  /**
+   * A7: run the full integrity suite against the live mid-hand state.
+   *
+   * Cheap (a few sums over at most nine players) and deliberately fired on the
+   * hot path — a conservation violation is worth knowing about within
+   * milliseconds, not at the end of the hand. Violations are reported by
+   * StateVerifier itself and drive the recovery FSM; this only adds the engine
+   * context to the log.
+   */
+  protected verifyStreetIntegrity(): void {
+    if (!this.handController) return;
+    try {
+      const live = this.handController.getState();
+      const result = this.stateVerifier.verify({
+        tableId: this.tableId,
+        handNumber: this.handCount,
+        players: live.players,
+        communityCards: live.communityCards,
+        pot: live.pot,
+        stage: live.stage,
+        phase: 'in_hand',
+        // Nothing is raked until settlement, so every chip is still in a stack
+        // or in the pot.
+        rakeTaken: 0,
+      });
+      if (!result.valid) {
+        reportError(
+          `Hand ${this.handCount} @ ${live.stage}: ` +
+            result.violations.map((v) => v.message).join('; '),
+          `ServerTableEngine.${this.tableId}.street_integrity_violation`
+        );
+      }
+    } catch (err) {
+      // A verification failure must never take down a live hand.
+      reportError(err, `ServerTableEngine.${this.tableId}.street_integrity_threw`);
     }
   }
 }

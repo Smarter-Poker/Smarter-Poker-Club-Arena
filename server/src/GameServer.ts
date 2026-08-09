@@ -814,12 +814,21 @@ export class GameServer {
   private async discoverCashTables(): Promise<void> {
     while (this.running) {
       try {
-        // Find all cash tables (no tournament_id) that have 2+ seated players
-        const { data: tables, error } = await supabase
-          .from('tables')
-          .select('id, status')
-          .is('tournament_id', null)
-          .in('status', ['waiting', 'running']);
+        // C17 FIX (2026-08-08): ONE grouped query, not an N+1.
+        //
+        // This used to read every waiting/running cash table and then issue a
+        // separate count(*) on table_seats FOR EACH ONE. With 500-1,000 tables
+        // that is 500-1,000 serial round trips every 5 seconds — and the worst
+        // case is immediately after a restart, when no table has an engine yet
+        // so every single one gets counted, at exactly the moment the database
+        // is already absorbing the reconnect storm.
+        //
+        // cash_tables_with_players() does the GROUP BY ... HAVING server-side
+        // (PostgREST cannot express it) and returns only tables that already
+        // meet the threshold, which is the only thing the loop below cared about.
+        const { data: ready, error } = await supabase.rpc('cash_tables_with_players', {
+          p_min: 2,
+        });
 
         if (error) {
           const errMsg =
@@ -829,30 +838,21 @@ export class GameServer {
           continue;
         }
 
-        for (const table of tables || []) {
+        for (const row of (ready || []) as Array<{ table_id: string; player_count: number }>) {
           // Skip if already running
-          if (this.tableEngines.has(table.id)) continue;
+          if (this.tableEngines.has(row.table_id)) continue;
 
-          // Check if table has 2+ players
-          const { count } = await supabase
-            .from('table_seats')
-            .select('*', { count: 'exact', head: true })
-            .eq('table_id', table.id)
-            .is('left_at', null);
-
-          if ((count || 0) >= 2) {
-            console.log(
-              `[GameServer] Starting engine for cash table ${table.id} (${count} players)`
-            );
-            const engine = new ServerTableEngine(table.id);
-            engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
-            this.tableEngines.set(table.id, engine);
-            engine.start().catch((err) => {
-              reportError(err, 'GameServer.Engine_start_failed_for_tablei');
-              this.tableEngines.delete(table.id);
-              tableStateHub.dropTable(table.id);
-            });
-          }
+          console.log(
+            `[GameServer] Starting engine for cash table ${row.table_id} (${row.player_count} players)`
+          );
+          const engine = new ServerTableEngine(row.table_id);
+          engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
+          this.tableEngines.set(row.table_id, engine);
+          engine.start().catch((err) => {
+            reportError(err, 'GameServer.Engine_start_failed_for_tablei');
+            this.tableEngines.delete(row.table_id);
+            tableStateHub.dropTable(row.table_id);
+          });
         }
 
         // Clean up engines for tables that stopped

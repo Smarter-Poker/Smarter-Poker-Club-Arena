@@ -71,8 +71,33 @@ export type HubMessage = SnapshotMessage | DeltaMessage | EventMessage;
 export interface HubSubscriber {
   readonly id: string;
   readonly readyState: number; // ws.OPEN === 1
+  /**
+   * B12: bytes queued in the socket's send buffer but not yet flushed to the
+   * network. `ws.WebSocket` exposes this natively; it is optional here so test
+   * doubles stay trivial (an absent value is read as 0, i.e. "not backed up").
+   */
+  readonly bufferedAmount?: number;
   send(data: string): void;
 }
+
+/**
+ * B12 — WebSocket backpressure thresholds.
+ *
+ * There was no backpressure at all: every publish called `send` on every
+ * subscriber regardless of how far behind they were, so one slow consumer grew
+ * an unbounded send buffer full of full-state deltas until the process ran out
+ * of memory. Nothing anywhere read `bufferedAmount`.
+ *
+ * SOFT: stop sending DELTA/EVENT to a socket this far behind. Dropping a DELTA
+ * is safe by design — the client sees the seq gap and asks for a RESYNC, which
+ * is the same recovery path a dropped packet already triggers. SNAPSHOTs are
+ * never dropped, because a snapshot is how a gapped client gets well again.
+ *
+ * HARD: the socket is hopeless. Evict it; the client reconnects and resubscribes
+ * from a clean snapshot, which is cheaper than holding megabytes for it.
+ */
+const HUB_SOFT_BACKPRESSURE_BYTES = 256 * 1024;
+const HUB_HARD_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
 
 /**
  * Per-tableId bookkeeping stored on the hub.
@@ -89,6 +114,10 @@ interface TableRoom {
 
 export class TableStateHub {
   private rooms: Map<string, TableRoom> = new Map();
+  /** B12: messages skipped because a socket was backed up past the soft limit. */
+  private softDropped = 0;
+  /** B12: subscribers evicted because a socket blew past the hard limit. */
+  private hardDropped = 0;
 
   /**
    * Publish a new authoritative state for the table.
@@ -143,7 +172,7 @@ export class TableStateHub {
         seq: room.lastSeq,
         state: room.lastSnapshot,
       };
-      this.safeSend(sub, snap);
+      this.safeSend(sub, JSON.stringify(snap));
     }
   }
 
@@ -185,7 +214,7 @@ export class TableStateHub {
       seq: room.lastSeq,
       state: room.lastSnapshot,
     };
-    this.safeSend(sub, snap);
+    this.safeSend(sub, JSON.stringify(snap));
     return true;
   }
 
@@ -234,23 +263,54 @@ export class TableStateHub {
   }
 
   private broadcast(room: TableRoom, message: HubMessage): void {
+    // C16: serialize ONCE for the whole room. This used to sit inside safeSend,
+    // i.e. inside the per-subscriber loop, so a table with a dozen spectators
+    // re-stringified the same full-state payload a dozen times per publish. The
+    // message is identical for every subscriber — the Hub publishes the already
+    // public-scrubbed shape — so there is nothing per-subscriber to serialize.
+    const payload = JSON.stringify(message);
+
+    // B12: a SNAPSHOT is the recovery path for a client that has missed
+    // messages, so it is never dropped. DELTA and EVENT are catch-up-able.
+    const droppable = message.type !== 'SNAPSHOT';
+
     const dead: HubSubscriber[] = [];
     for (const sub of room.subscribers) {
       if (sub.readyState !== 1 /* ws.OPEN */) {
         dead.push(sub);
         continue;
       }
-      this.safeSend(sub, message);
+      const buffered = sub.bufferedAmount ?? 0;
+      if (buffered > HUB_HARD_BACKPRESSURE_BYTES) {
+        // Beyond saving — evict rather than keep buffering for it.
+        this.hardDropped++;
+        dead.push(sub);
+        continue;
+      }
+      if (droppable && buffered > HUB_SOFT_BACKPRESSURE_BYTES) {
+        this.softDropped++;
+        continue;
+      }
+      this.safeSend(sub, payload);
     }
     for (const d of dead) room.subscribers.delete(d);
   }
 
-  private safeSend(sub: HubSubscriber, msg: HubMessage): void {
+  private safeSend(sub: HubSubscriber, payload: string): void {
     try {
-      sub.send(JSON.stringify(msg));
+      sub.send(payload);
     } catch {
       // Swallow — next publish will evict this sub if still closed.
     }
+  }
+
+  /**
+   * B12 counters, for the metrics endpoint. A steadily climbing softDropped is
+   * the early warning that clients cannot keep up with the publish rate; any
+   * hardDropped means a socket was evicted mid-session.
+   */
+  backpressureStats(): { softDropped: number; hardDropped: number } {
+    return { softDropped: this.softDropped, hardDropped: this.hardDropped };
   }
 }
 

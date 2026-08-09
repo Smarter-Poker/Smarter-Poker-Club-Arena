@@ -689,8 +689,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         /* metrics must never affect gameplay */
       }
 
-      // FIX 137: Bible V8 §7.17 — Snapshot hand state after every successful action (fire-and-forget)
-      this.saveSnapshot().catch(() => {});
+      // FIX 137: Bible V8 §7.17 — snapshot hand state after a successful action.
+      // C15: coalesced (see requestSnapshot). This used to be an unconditional
+      // write per action; a busy street now collapses to about one write per
+      // second per table, and the last state of the burst is still the one that
+      // lands.
+      this.requestSnapshot();
 
       return { success: true };
     } catch (err) {

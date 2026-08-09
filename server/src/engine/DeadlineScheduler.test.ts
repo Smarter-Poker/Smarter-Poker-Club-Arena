@@ -396,3 +396,220 @@ describe('DeadlineScheduler', () => {
     expect([a, b, c]).toEqual([true, true, true]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// C18 — indexed heap + tick budget
+//
+// Every heap mutation used to be O(n) in the TOTAL pending deadlines across all
+// tables: remove() did an Array.findIndex, removeTable()/listTable() a full
+// filter. That is the hottest path in the engine — arming a turn timer calls
+// schedule(), which is remove-then-push, and every table re-arms a heartbeat
+// every 10s — so the cost grew with the square of the table count.
+//
+// The risk in adding an index is that it silently drifts out of step with the
+// array during a sift, which would turn cancel() into a no-op and leave a
+// cancelled timer to fire. So these tests assert the invariant directly via
+// assertConsistent() rather than inferring it from behaviour.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function mkDeadline(tableId: string, eventId: string, deadlineMs: number, onFire?: () => void) {
+  return { tableId, eventId, deadlineMs, callback: onFire ?? (() => {}) };
+}
+
+describe('DeadlineHeap — C18 index integrity', () => {
+  it('stays consistent through pushes, removes and pops', () => {
+    const h = new DeadlineHeap();
+    for (let i = 0; i < 50; i++) h.push(mkDeadline(`t${i % 7}`, `e${i}`, 1000 + ((i * 37) % 100)));
+    h.assertConsistent();
+
+    for (let i = 0; i < 50; i += 3) h.remove(`t${i % 7}`, `e${i}`);
+    h.assertConsistent();
+
+    while (h.size() > 10) h.pop();
+    h.assertConsistent();
+  });
+
+  it('pops in deadline order after heavy churn', () => {
+    const h = new DeadlineHeap();
+    // Deterministic pseudo-shuffle — no Math.random, so a failure reproduces.
+    let x = 12345;
+    const next = () => (x = (x * 1103515245 + 12345) & 0x7fffffff);
+
+    const live = new Map<string, number>();
+    for (let i = 0; i < 400; i++) {
+      const t = `t${next() % 12}`;
+      const e = `e${next() % 500}`;
+      const ms = 1000 + (next() % 5000);
+      h.push(mkDeadline(t, e, ms));
+      live.set(`${t}|${e}`, ms);
+      if (i % 5 === 0 && live.size > 0) {
+        const victim = [...live.keys()][next() % live.size];
+        const [vt, ve] = victim.split('|');
+        h.remove(vt, ve);
+        live.delete(victim);
+      }
+    }
+    h.assertConsistent();
+    expect(h.size()).toBe(live.size);
+
+    const order: number[] = [];
+    let d = h.pop();
+    while (d) {
+      order.push(d.deadlineMs);
+      d = h.pop();
+    }
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(order).toHaveLength(live.size);
+    h.assertConsistent();
+  });
+
+  it('a re-push of the same key replaces rather than duplicating', () => {
+    const h = new DeadlineHeap();
+    h.push(mkDeadline('t1', 'turn', 5000));
+    h.push(mkDeadline('t1', 'turn', 2000));
+    expect(h.size()).toBe(1);
+    expect(h.peek()!.deadlineMs).toBe(2000);
+    h.assertConsistent();
+  });
+
+  it('removeTable drops exactly one table and leaves the rest intact', () => {
+    const h = new DeadlineHeap();
+    for (let i = 0; i < 30; i++) h.push(mkDeadline(i % 3 === 0 ? 'doomed' : `t${i}`, `e${i}`, 1000 + i));
+    const doomed = h.listTable('doomed').length;
+    expect(doomed).toBe(10);
+
+    expect(h.removeTable('doomed')).toBe(10);
+    expect(h.listTable('doomed')).toEqual([]);
+    expect(h.size()).toBe(20);
+    expect(h.listAll().some((d) => d.tableId === 'doomed')).toBe(false);
+    h.assertConsistent();
+
+    // Idempotent on an unknown / already-cleared table
+    expect(h.removeTable('doomed')).toBe(0);
+    expect(h.removeTable('never-existed')).toBe(0);
+    h.assertConsistent();
+  });
+
+  it('listTable returns only that table, without scanning everyone', () => {
+    const h = new DeadlineHeap();
+    h.push(mkDeadline('a', 'e1', 1000));
+    h.push(mkDeadline('b', 'e1', 1001));
+    h.push(mkDeadline('a', 'e2', 1002));
+    const a = h.listTable('a');
+    expect(a.map((d) => d.eventId).sort()).toEqual(['e1', 'e2']);
+    expect(h.listTable('nobody')).toEqual([]);
+  });
+
+  it('removing the last remaining entry empties every index', () => {
+    const h = new DeadlineHeap();
+    h.push(mkDeadline('t', 'only', 1000));
+    expect(h.remove('t', 'only')).toBeDefined();
+    expect(h.size()).toBe(0);
+    expect(h.listTable('t')).toEqual([]);
+    h.assertConsistent();
+    // and a second remove is a safe no-op
+    expect(h.remove('t', 'only')).toBeUndefined();
+  });
+
+  it('clear() wipes the indexes too', () => {
+    const h = new DeadlineHeap();
+    for (let i = 0; i < 10; i++) h.push(mkDeadline('t', `e${i}`, 1000 + i));
+    h.clear();
+    expect(h.size()).toBe(0);
+    expect(h.listTable('t')).toEqual([]);
+    h.assertConsistent();
+  });
+});
+
+describe('DeadlineScheduler — C18 tick budget', () => {
+  it('fires a large burst without the old 128-per-tick ceiling', () => {
+    const harness = makeHarness();
+    const s = new DeadlineScheduler({
+      now: harness.nowFn,
+      setInterval: harness.setIntervalFn,
+      clearInterval: harness.clearIntervalFn,
+    });
+    s.start();
+
+    let fired = 0;
+    for (let i = 0; i < 1000; i++) {
+      s.schedule({
+        tableId: `t${i}`,
+        eventId: 'turn',
+        deadlineMs: harness.nowFn() + 50,
+        callback: () => {
+          fired++;
+        },
+      });
+    }
+    harness.advance(100);
+    harness.tick();
+    // The old default (128) would have left 872 deadlines late.
+    expect(fired).toBe(1000);
+  });
+
+  it('stops early once the wall-clock budget is spent, and resumes next tick', () => {
+    const harness = makeHarness();
+    // Each callback costs 5 virtual ms; a 20 ms budget therefore admits a
+    // handful per tick, not the whole queue.
+    const s = new DeadlineScheduler({
+      now: harness.nowFn,
+      setInterval: harness.setIntervalFn,
+      clearInterval: harness.clearIntervalFn,
+      maxTickBudgetMs: 20,
+    });
+    s.start();
+
+    let fired = 0;
+    for (let i = 0; i < 50; i++) {
+      s.schedule({
+        tableId: `t${i}`,
+        eventId: 'turn',
+        deadlineMs: harness.nowFn() + 10,
+        callback: () => {
+          fired++;
+          harness.advance(5);
+        },
+      });
+    }
+
+    harness.advance(20);
+    harness.tick();
+    const afterFirst = fired;
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(afterFirst).toBeLessThan(50); // budget bit
+
+    // Nothing is lost — subsequent ticks drain the rest.
+    for (let i = 0; i < 40 && fired < 50; i++) harness.tick();
+    expect(fired).toBe(50);
+  });
+
+  it('always fires at least one deadline per tick, even with a zero budget', () => {
+    const harness = makeHarness();
+    const s = new DeadlineScheduler({
+      now: harness.nowFn,
+      setInterval: harness.setIntervalFn,
+      clearInterval: harness.clearIntervalFn,
+      maxTickBudgetMs: 0,
+    });
+    s.start();
+    let fired = 0;
+    for (let i = 0; i < 3; i++) {
+      s.schedule({
+        tableId: `t${i}`,
+        eventId: 'turn',
+        deadlineMs: harness.nowFn() + 10,
+        callback: () => {
+          fired++;
+          harness.advance(1);
+        },
+      });
+    }
+    harness.advance(20);
+    harness.tick();
+    // Forward progress is guaranteed — a zero budget must not deadlock the queue.
+    expect(fired).toBe(1);
+    harness.tick();
+    expect(fired).toBe(2);
+  });
+});

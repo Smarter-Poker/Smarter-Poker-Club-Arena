@@ -11,7 +11,6 @@ import { bonusService } from '../services/BonusService';
 import { useToast } from '../components/common/Toast';
 import { haptic } from '../services/HapticService';
 import './BonusPage.css';
-import { retryAsync } from '../utils/retryAsync';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -41,6 +40,9 @@ export default function BonusPage() {
 
   const [dailyBonuses, setDailyBonuses] = useState<DailyBonus[]>([]);
   const [currentDay, setCurrentDay] = useState(1);
+  // Server-decided, not inferred from the ladder: whether a claim is available
+  // depends on the last claim's UTC date, which only the server knows.
+  const [canClaimDaily, setCanClaimDaily] = useState(false);
   const [specialBonuses, setSpecialBonuses] = useState<SpecialBonus[]>([]);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
@@ -127,31 +129,25 @@ export default function BonusPage() {
     loadingRef.current = true;
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
-      const { data: profile } = await retryFetch(
-        () =>
-          supabase
-            .from('profiles')
-            .select('streak_days, last_login')
-            .eq('id', user?.id)
-            .maybeSingle()
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
+      // AUDIT M18: this page used to read `profiles.streak_days` and render a
+      // hardcoded `day * 10` chips ladder with "100 Diamonds" on day 7. That was
+      // a third, independent idea of what the daily bonus is — disagreeing with
+      // BonusService's DAILY_REWARDS constant AND with what the claim RPC paid.
+      // The schedule and the streak now both come from the server, through
+      // BonusService, so the ladder shown is the ladder that pays.
+      const status = await bonusService.getBonusStatus(user!.id);
 
       if (getIsMounted && !getIsMounted()) return;
-      if (profile) {
-        setCurrentDay(profile.streak_days || 1);
 
-        const dailies: DailyBonus[] = [];
-        for (let i = 1; i <= 7; i++) {
-          dailies.push({
-            day: i,
-            reward: i === 7 ? ' 100 Diamonds' : `${i * 10} Chips`,
-            claimed: i <= (profile.streak_days || 0),
-          });
-        }
-        setDailyBonuses(dailies);
-      }
+      setCurrentDay(status.currentDay);
+      setCanClaimDaily(status.canClaimDaily);
+      setDailyBonuses(
+        status.dailyBonuses.map((b) => ({
+          day: b.day,
+          reward: `${b.reward.toLocaleString()} ${b.rewardType === 'vip_points' ? 'VIP Points' : 'Chips'}`,
+          claimed: b.claimed,
+        }))
+      );
 
       const { data: specials } = await retryFetch(
         () =>
@@ -189,25 +185,25 @@ export default function BonusPage() {
   };
 
   const claimDailyBonus = async () => {
-    if (claiming) return;
+    if (claiming || !user?.id) return;
     setClaiming(true);
     try {
-      // Update streak and claim bonus
-      const { error: claimErr } = await retryAsync(
-        () => supabase.rpc('claim_daily_bonus', { p_user_id: user?.id }),
-        3
+      // AUDIT M18: one server-owned claim. The old version called
+      // `claim_daily_bonus` directly (never granted to `authenticated`, so it
+      // always failed) and then emitted DAILY_REWARD_CLAIMED with an amount the
+      // page invented — `currentDay * 10` — which matched nothing that could
+      // ever have been paid. The reward now comes back from the claim itself.
+      const result = await bonusService.claimDailyBonus(user.id);
+
+      toast.success(
+        `Daily bonus claimed: ${result.reward.toLocaleString()} ${
+          result.rewardType === 'vip_points' ? 'VIP Points' : 'Chips'
+        }`
       );
-      if (claimErr) {
-        reportError(claimErr, 'BonusPage.claim_daily_bonus_failed');
-        toast.error('Failed to claim bonus');
-        setClaiming(false);
-        return;
-      }
-      toast.success('Daily bonus claimed!');
       masterBus.emit('DAILY_REWARD_CLAIMED', {
-        amount: currentDay === 7 ? 100 : currentDay * 10,
-        rewardType: currentDay === 7 ? 'diamonds' : 'chips',
-        streakDay: currentDay,
+        amount: result.reward,
+        rewardType: result.rewardType,
+        streakDay: result.day,
       });
       setShowConfetti(true);
       haptic.medium();
@@ -215,7 +211,10 @@ export default function BonusPage() {
       loadBonuses();
     } catch (error) {
       reportError(error, 'BonusPage.Failed_to_claim_bonus');
-      toast.error('Failed to claim bonus');
+      // The service turns the server's refusal reason into player-facing text
+      // ("already claimed today", "requirements not met"), so show it rather
+      // than flattening every outcome into one generic failure.
+      toast.error(error instanceof Error ? error.message : 'Failed to claim bonus');
     }
     setClaiming(false);
   };
@@ -223,19 +222,18 @@ export default function BonusPage() {
   const claimSpecialBonus = async (bonusId: string) => {
     if (!user?.id) return;
     try {
-      const { error } = await supabase
-        .from('special_bonuses')
-        .update({ claimed: true, claimed_at: new Date().toISOString() })
-        .eq('id', bonusId)
-        .eq('user_id', user.id)
-        .eq('claimed', false); // Prevent double-claim race condition
-      if (error) throw error;
+      // AUDIT M17: this used to UPDATE special_bonuses directly. The table is
+      // SELECT-own-only, so that write matched zero rows — and because
+      // PostgREST reports no error for a zero-row write, the page showed
+      // "Special bonus claimed!" every time while nothing was claimed and
+      // nothing was paid.
+      await bonusService.claimSpecialBonus(user.id, bonusId);
       toast.success('Special bonus claimed!');
       masterBus.emit('BALANCE_UPDATED', { source: 'special_bonus', userId: user.id });
       loadBonuses();
     } catch (error) {
       reportError(error, 'BonusPage.Failed_to_claim_special_bonus');
-      toast.error('Failed to claim special bonus');
+      toast.error(error instanceof Error ? error.message : 'Failed to claim special bonus');
     }
   };
 
@@ -325,13 +323,9 @@ export default function BonusPage() {
         <button
           className="btn btn-primary claim-btn"
           onClick={claimDailyBonus}
-          disabled={claiming || dailyBonuses[currentDay - 1]?.claimed}
+          disabled={claiming || !canClaimDaily}
         >
-          {claiming
-            ? 'Claiming...'
-            : dailyBonuses[currentDay - 1]?.claimed
-              ? 'Already Claimed'
-              : "Claim Today's Bonus"}
+          {claiming ? 'Claiming...' : canClaimDaily ? "Claim Today's Bonus" : 'Already Claimed'}
         </button>
       </section>
 

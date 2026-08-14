@@ -12,6 +12,20 @@ import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindSt
 import type { Tournament, TournamentPlayer } from '../types/database.types';
 import { reportError } from '../utils/errorReporter';
 
+// AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
+// refusals rather than raising, so a player is told why - "you are already
+// seated" and "the database is down" must not read as the same event.
+const UNREGISTER_REASON_TEXT: Record<string, string> = {
+  tournament_not_found: 'That tournament no longer exists',
+  registration_closed: 'Registration has closed for this tournament',
+  too_close_to_start: 'You cannot unregister within a minute of the start time',
+  not_registered_or_seated: 'You are not registered, or you have already been seated at a table',
+};
+
+function unregisterReasonText(reason: string | undefined): string {
+  return UNREGISTER_REASON_TEXT[reason ?? ''] ?? `Could not unregister (${reason ?? 'unknown'})`;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -480,11 +494,9 @@ export const SPIN_BLIND_STRUCTURE: BlindLevel[] = [
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
+// AUDIT M19: `ordinal` is removed with its only caller, the deleted
+// eliminatePlayer. It formatted a finish position for a prize-credit error
+// message, and prize credits are engine-owned now.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
@@ -1104,162 +1116,54 @@ class TournamentService {
   }
 
   /**
-   * Unregister a player (with full refund)
+   * Unregister a player and refund their buy-in.
+   *
+   * AUDIT M19: this used to be six client round trips - read the tournament,
+   * check the start-time window, verify the registration, delete it, credit
+   * `buy_in_amount + buy_in_fee` computed HERE through `credit_player_wallet`,
+   * and re-INSERT the player if the credit failed.
+   *
+   * The credit was permission-denied on every call (`credit_player_wallet` is
+   * granted to postgres and service_role only), so no player has ever actually
+   * been refunded by this path - and because the delete DID matter, the failure
+   * mode was the worst kind: the compensating re-INSERT was the only thing
+   * putting the player back.
+   *
+   * It also passed no idempotency key, so each `retryAsync` attempt would have
+   * been a fresh credit if the grant had ever been widened.
+   *
+   * `fn_unregister_from_tournament` does the whole thing in one transaction. It
+   * takes no user id (a player may only unregister themselves, and the way to
+   * guarantee that is to never accept a target) and no amount (the refund is
+   * read from the tournaments row). It also enforces the one-minute pre-start
+   * lockout that the old code documented but could not implement - the comment
+   * there admitted that nothing enforced it and players could yank their entry
+   * at the exact start instant and race the seating flow - because the server
+   * takes a row lock the seating flow cannot interleave with.
+   *
+   * The compensating re-INSERT is gone because it is no longer needed: a failed
+   * refund rolls the delete back with it, so the player is simply still
+   * registered.
    */
   async unregisterPlayer(tournamentId: string, userId: string): Promise<void> {
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
-    // Allow unregister during late registration window too (level-based)
-    const lateRegLevels2 = tournament.late_reg_levels || tournament.late_reg_mins || 0;
-    const levelState2 = this.getCurrentLevelState(tournament);
-    const isLateRegOpen =
-      tournament.status === 'RUNNING' &&
-      lateRegLevels2 > 0 &&
-      levelState2.levelIndex < lateRegLevels2;
+    const { data, error } = await supabase.rpc('fn_unregister_from_tournament', {
+      p_tournament_id: tournamentId,
+    });
 
-    if (
-      tournament.status !== 'REGISTERING' &&
-      tournament.status !== 'ANNOUNCED' &&
-      !isLateRegOpen
-    ) {
-      throw new Error('Cannot unregister after tournament started');
+    if (error) {
+      reportError(error, 'TournamentService.unregisterPlayer', { tournamentId, userId });
+      throw new Error('Could not unregister - please try again');
     }
 
-    // TOURNEY-AUDIT 2026-07-24 (sweep 4): enforce the 1-minute-before-start
-    // cutoff the sign-up modal has always PROMISED ("Cannot unregister within
-    // 1 minute of the start time") but nothing enforced — players could yank
-    // their entry at the exact start instant and race the seating flow.
-    if (
-      (tournament.status === 'REGISTERING' || tournament.status === 'ANNOUNCED') &&
-      tournament.start_time
-    ) {
-      const msToStart = new Date(tournament.start_time).getTime() - Date.now();
-      if (msToStart <= 60 * 1000 && msToStart > -5 * 60 * 1000) {
-        throw new Error('Cannot unregister within 1 minute of the start time');
-      }
+    const res = data as { ok: boolean; reason?: string; refunded?: number } | null;
+
+    if (!res?.ok) {
+      throw new Error(unregisterReasonText(res?.reason));
     }
 
-    // CRITICAL: Verify player is actually registered BEFORE issuing any refund
-    const { data: existingReg } = await supabase
-      .from('tournament_players')
-      .select('id, username, status')
-      .eq('tournament_id', tournamentId)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (!existingReg) {
-      throw new Error('Player is not registered for this tournament');
+    if ((res.refunded ?? 0) > 0) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
     }
-
-    if (existingReg.status !== 'registered') {
-      throw new Error('Cannot unregister: You have already been seated at an active table.');
-    }
-
-    // Delete registration FIRST as an atomic Compare-And-Swap to prevent double-refund
-    // or race conditions with TournamentEngine.seatAlternates()
-    const { data: deletedRows, error: deleteError } = await supabase
-      .from('tournament_players')
-      .delete()
-      .eq('tournament_id', tournamentId)
-      .eq('user_id', userId)
-      .eq('status', 'registered') // Lock constraint
-      .select('id');
-
-    if (deleteError) {
-      reportError(deleteError, 'TournamentService.Failed_to_delete_registration');
-      throw new Error('Failed to unregister — please try again');
-    }
-
-    if (!deletedRows || deletedRows.length === 0) {
-      // The row is either gone or has changed status (e.g. to 'playing')
-      throw new Error('Unregister failed: You may have just been seated at a table.');
-    }
-
-    // Calculate refund amount (buy-in + fee — exact penny values from DB, NO rounding)
-    const buyInAmount = tournament.buy_in_amount || 0;
-    const refundAmount = buyInAmount + (tournament.buy_in_fee || 0);
-
-    // Refund to Player Wallet — only AFTER successful deletion
-    const { error: refundError } = await retryAsync(
-      () =>
-        supabase.rpc('credit_player_wallet', {
-          p_user_id: userId,
-          p_amount: refundAmount,
-        }),
-      3
-    );
-
-    if (refundError) {
-      reportError(refundError, 'TournamentService.Refund_to_Player_Wallet_failed');
-      // Re-register the player since refund failed (rollback)
-      const { error: rollbackErr } = await supabase.from('tournament_players').insert({
-        tournament_id: tournamentId,
-        user_id: userId,
-        username: existingReg?.username || 'Unknown',
-        status: 'registered',
-        chips: 0,
-      });
-      if (rollbackErr) {
-        reportError(rollbackErr, 'TournamentService.CRITICAL');
-      }
-      throw new Error('Refund failed — registration restored');
-    }
-
-    // Log refund transaction
-    await WalletService.logTransaction(
-      userId,
-      'PLAYER',
-      refundAmount,
-      'credit',
-      'refund',
-      `Tournament unregister refund: ${tournament.name}`,
-      undefined,
-      undefined,
-      tournamentId
-    );
-    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
-
-    // RAKE-AUDIT 2026-07-24: the refund above includes the entry fee, but the
-    // fee recorded at registration (rake_records + total_rake counters) was
-    // never reversed — clubs were billed in settlement for fees that had been
-    // returned to the player. Record a negative fee-reversal row so the ledger
-    // nets to zero for a register→unregister cycle.
-    const refundedFee = tournament.buy_in_fee || 0;
-    if (refundedFee > 0) {
-      await this.recordTournamentFee(
-        tournament,
-        tournamentId,
-        userId,
-        -refundedFee,
-        'tournament_fee_refund'
-      );
-    }
-
-    // Re-read fresh tournament data to avoid stale read-then-write race condition
-    const { data: freshTourney } = await supabase
-      .from('tournaments')
-      .select('current_players, guaranteed_prize')
-      .eq('id', tournamentId)
-      .maybeSingle();
-    const newPlayerCount = Math.max(
-      0,
-      (freshTourney?.current_players ?? tournament.current_players) - 1
-    );
-    const { error: countError } = await supabase
-      .from('tournaments')
-      .update({
-        current_players: newPlayerCount,
-      })
-      .eq('id', tournamentId);
-
-    if (countError) {
-      reportError(countError, 'TournamentService.Failed_to_decrement_registration_count');
-    }
-
-    // Recompute prize pool from actual entries + rebuys + add-ons (the row was
-    // already deleted above), rather than overwriting with buyIn*count which
-    // would discard rebuy/add-on contributions.
-    await this.recalculatePrizePool(tournamentId);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1503,157 +1407,29 @@ class TournamentService {
     return data;
   }
 
-  /**
-   * Eliminate a player (with prize payout and achievements)
-   */
-  async eliminatePlayer(tournamentId: string, userId: string, position: number): Promise<void> {
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
+  // AUDIT M19: `eliminatePlayer` is deleted, not converted.
+  //
+  // Same story as collectBounty below. The engine owns finish-position payouts:
+  // it computes each prize server-side from `tournaments.payout_structure` and
+  // `prize_pool`, credits it via `credit_player_wallet` keyed
+  // `tourney:{id}:prize:{user}:{position}`, retries three times, and logs the
+  // transaction. This client copy computed the prize itself and passed no
+  // idempotency key, so it was a latent double-payout on top of the engine
+  // rather than an independent feature - and it had no callers outside this
+  // file.
+  //
+  // `calculatePayout` below is kept: it is a pure function used for DISPLAYING
+  // projected payouts in the lobby, which is a legitimate client concern. It
+  // must never be wired back into a credit.
 
-    // Calculate prize — exact precision arithmetic, no rounding
-    const payoutArr = (() => {
-      const raw = tournament.payout_structure;
-      if (!raw) return [];
-      if (Array.isArray(raw)) return raw;
-      if (typeof raw === 'string') {
-        try {
-          return JSON.parse(raw);
-        } catch (err) {
-          reportError(err, 'TournamentService.Error');
-          return [];
-        }
-      }
-      return [];
-    })();
-
-    // Guard: if position should pay but payout structure is empty/corrupted, log and award 0
-    if (payoutArr.length === 0 && position === 1) {
-      reportError(
-        new Error(
-          `[TournamentService] CRITICAL: No payout structure for tournament ${tournamentId} — winner gets full pool fallback`
-        ),
-        'TournamentService.CRITICAL'
-      );
-    }
-
-    const payoutEntry = payoutArr.find((p: any) => p.place === position);
-    // Exact precision: trunc(pool * percentage) / 100
-    // For position 1 with no payout structure, award full pool as fallback
-    const prize = payoutEntry
-      ? Math.trunc(tournament.prize_pool * payoutEntry.percentage) / 100
-      : position === 1 && payoutArr.length === 0
-        ? Math.trunc((tournament.prize_pool || 0) * 100) / 100
-        : 0;
-
-    await supabase
-      .from('tournament_players')
-      .update({
-        status: 'eliminated',
-        position: position,
-        prize: prize,
-        eliminated_at: new Date().toISOString(),
-      })
-      .eq('tournament_id', tournamentId)
-      .eq('user_id', userId);
-
-    // Credit prize to Player Wallet
-    if (prize > 0) {
-      // Credit prize to Player Wallet (not club_members — wallets are separate)
-      const { error: prizeError } = await retryAsync(
-        () =>
-          supabase.rpc('credit_player_wallet', {
-            p_user_id: userId,
-            p_amount: prize,
-          }),
-        3
-      );
-
-      if (prizeError) {
-        reportError(prizeError, 'TournamentService.CRITICAL');
-        throw new Error(`Failed to credit ${ordinal(position)} place prize of ${prize}`);
-      }
-
-      // Log prize payout transaction
-      await WalletService.logTransaction(
-        userId,
-        'PLAYER',
-        prize,
-        'credit',
-        'prize',
-        `Tournament prize: ${ordinal(position)} place — ${tournament.name}`,
-        undefined,
-        undefined,
-        tournamentId
-      );
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_prize', userId });
-    }
-
-    // Trigger tournament achievement
-    try {
-      const { achievementTriggerService } = await import('./AchievementTriggerService');
-      const { count } = await supabase
-        .from('tournament_players')
-        .select('*', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId);
-
-      await achievementTriggerService.onTournamentComplete(userId, {
-        position,
-        entries: count || 0,
-        won: position === 1,
-        prizeAmount: prize,
-      });
-    } catch (err: unknown) {
-      reportError(err, 'TournamentService.Tournament_trigger_failed');
-    }
-  }
-
-  /**
-   * Automatically eliminate a player:
-   * 1. Calculate rank based on remaining players.
-   * 2. Update status to eliminated.
-   * 3. Remove from table seat.
-   */
-  async eliminatePlayerAuto(tournamentId: string, userId: string): Promise<void> {
-    // 1. Get current active player count (this will be the position)
-    const { count } = await supabase
-      .from('tournament_players')
-      .select('*', { count: 'exact', head: true })
-      .eq('tournament_id', tournamentId)
-      .eq('status', 'playing');
-
-    const position = count || 1;
-
-    // 2. Eliminate
-    await this.eliminatePlayer(tournamentId, userId, position);
-
-    // 3. Remove from seat (and trigger room update via postgres change or client refresh)
-    // Find seat first to check correctness?
-    // Note: Using maybeSingle to be safe.
-    const { data: seat } = await supabase
-      .from('table_seats')
-      .select('table_id')
-      .eq('user_id', userId)
-      .is('left_at', null)
-      .maybeSingle();
-    if (seat) {
-      const { data: table, error: tableErr } = await supabase
-        .from('tables')
-        .select('tournament_id')
-        .eq('id', seat.table_id)
-        .maybeSingle();
-      if (tableErr) {
-        reportError(tableErr, 'TournamentService.eliminatePlayerAuto_table_lookup_failed');
-      }
-      if (table?.tournament_id === tournamentId) {
-        await supabase
-          .from('table_seats')
-          .update({ left_at: new Date().toISOString() })
-          .eq('user_id', userId)
-          .eq('table_id', seat.table_id)
-          .is('left_at', null);
-      }
-    }
-  }
+  // AUDIT M19: `eliminatePlayerAuto` is deleted with `eliminatePlayer`.
+  //
+  // It was that method's only caller, and nothing anywhere called IT - not the
+  // client, not the engine. The whole chain was a dead client duplicate of
+  // `TournamentManagerEliminations`, which runs on the server, derives the
+  // finish position from authoritative state, and pays the prize idempotently.
+  // Eliminating a player is a consequence of losing a hand; it is not something
+  // a browser should be able to assert.
 
   /**
    * Get payout amount for a position
@@ -2742,231 +2518,24 @@ class TournamentService {
   // BOUNTY TOURNAMENTS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Process bounty collection on elimination
-   */
-  async collectBounty(
-    tournamentId: string,
-    eliminatedPlayerId: string,
-    collectorPlayerId: string
-  ): Promise<{ bountyAmount: number; collectorNewBounty?: number }> {
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
-
-    // Build BountyConfig from individual tournament columns
-    if (!tournament.is_bounty && !tournament.is_pko && !tournament.is_mystery_bounty) {
-      return { bountyAmount: 0 };
-    }
-    const bountyConfig: BountyConfig = {
-      bountyType: tournament.is_pko
-        ? 'progressive'
-        : tournament.is_mystery_bounty
-          ? 'mystery'
-          : 'fixed',
-      baseBounty: tournament.bounty_amount || 0,
-      mysteryTiers: tournament.is_mystery_bounty
-        ? [
-            {
-              minMultiplier: tournament.mystery_bounty_min || 1,
-              maxMultiplier: tournament.mystery_bounty_max || 1,
-              probability: 60,
-            },
-            { minMultiplier: 2, maxMultiplier: 2, probability: 25 },
-            { minMultiplier: 5, maxMultiplier: 5, probability: 10 },
-            { minMultiplier: 10, maxMultiplier: 10, probability: 4 },
-            {
-              minMultiplier: tournament.mystery_bounty_max || 50,
-              maxMultiplier: tournament.mystery_bounty_max || 50,
-              probability: 1,
-            },
-          ]
-        : undefined,
-    };
-
-    // Get eliminated player's bounty
-    const { data: eliminatedPlayer } = await supabase
-      .from('tournament_players')
-      .select('current_bounty')
-      .eq('tournament_id', tournamentId)
-      .eq('user_id', eliminatedPlayerId)
-      .maybeSingle();
-
-    const bountyAmount = eliminatedPlayer?.current_bounty || bountyConfig.baseBounty;
-
-    if (bountyConfig.bountyType === 'progressive') {
-      // Progressive: 50% to collector, 50% added to collector's head
-      // Collector gets floor, knocked-out player gets ceiling (any odd penny)
-      const collectorPortion = Math.floor((bountyAmount * 100) / 2) / 100;
-      const addedToHead = bountyAmount - collectorPortion; // Explicit remainder
-
-      // Get collector's current bounty
-      const { data: collector } = await supabase
-        .from('tournament_players')
-        .select('current_bounty')
-        .eq('tournament_id', tournamentId)
-        .eq('user_id', collectorPlayerId)
-        .maybeSingle();
-
-      const newCollectorBounty =
-        (collector?.current_bounty || bountyConfig.baseBounty) + addedToHead;
-
-      // Atomically increment collector's bounty to prevent race on concurrent knockouts
-      const { error: bountyUpdateError } = await supabase
-        .from('tournament_players')
-        .update({ current_bounty: newCollectorBounty })
-        .eq('tournament_id', tournamentId)
-        .eq('user_id', collectorPlayerId);
-
-      if (bountyUpdateError) {
-        reportError(bountyUpdateError, 'TournamentService.Failed_to_update_collector_bounty');
-      }
-
-      // Record bounty payout
-      const { error: bountyInsErr } = await supabase.from('tournament_bounties').insert({
-        tournament_id: tournamentId,
-        eliminated_player_id: eliminatedPlayerId,
-        collector_player_id: collectorPlayerId,
-        bounty_amount: collectorPortion,
-        added_to_collector_bounty: addedToHead,
-      });
-      if (bountyInsErr) reportError(bountyInsErr, 'TournamentService.Failed_to_record_PKO_bounty');
-
-      // Credit bounty to collector's wallet
-      if (collectorPortion > 0) {
-        const { error: bountyWalletError } = await retryAsync(
-          () =>
-            supabase.rpc('credit_player_wallet', {
-              p_user_id: collectorPlayerId,
-              p_amount: collectorPortion,
-            }),
-          3
-        );
-
-        if (bountyWalletError) {
-          reportError(bountyWalletError, 'TournamentService.Failed_to_credit_bounty_to_wallet');
-        } else {
-          // Log bounty transaction
-          await WalletService.logTransaction(
-            collectorPlayerId,
-            'PLAYER',
-            collectorPortion,
-            'credit',
-            'bounty',
-            `Progressive bounty: ${tournament.name}`,
-            undefined,
-            undefined,
-            tournamentId
-          );
-        }
-      }
-
-      // Emit balance update
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_bounty', userId: collectorPlayerId });
-
-      return { bountyAmount: collectorPortion, collectorNewBounty: newCollectorBounty };
-    } else if (bountyConfig.bountyType === 'mystery') {
-      // Mystery: Reveal hidden bounty value
-      const mysteryValue = this.rollMysteryBounty(bountyConfig);
-
-      const { error: mysteryInsErr } = await supabase.from('tournament_bounties').insert({
-        tournament_id: tournamentId,
-        eliminated_player_id: eliminatedPlayerId,
-        collector_player_id: collectorPlayerId,
-        bounty_amount: mysteryValue,
-        is_mystery_revealed: true,
-      });
-      if (mysteryInsErr)
-        reportError(mysteryInsErr, 'TournamentService.Failed_to_record_mystery_bounty');
-
-      // Credit bounty to collector's wallet
-      if (mysteryValue > 0) {
-        const { error: bountyWalletError } = await retryAsync(
-          () =>
-            supabase.rpc('credit_player_wallet', {
-              p_user_id: collectorPlayerId,
-              p_amount: mysteryValue,
-            }),
-          3
-        );
-
-        if (bountyWalletError) {
-          reportError(
-            bountyWalletError,
-            'TournamentService.Failed_to_credit_mystery_bounty_to_walle'
-          );
-        } else {
-          // Log bounty transaction
-          await WalletService.logTransaction(
-            collectorPlayerId,
-            'PLAYER',
-            mysteryValue,
-            'credit',
-            'bounty',
-            `Mystery bounty revealed: ${tournament.name}`,
-            undefined,
-            undefined,
-            tournamentId
-          );
-        }
-      }
-
-      // Emit balance update
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_bounty', userId: collectorPlayerId });
-
-      // Notify UI to show mystery bounty reveal animation
-      masterBus.emit('MYSTERY_BOUNTY_REVEALED', {
-        tournamentId,
-        eliminatedPlayerId,
-        collectorPlayerId,
-        amount: mysteryValue,
-      });
-
-      return { bountyAmount: mysteryValue };
-    } else {
-      // Fixed bounty
-      const { error: fixedInsErr } = await supabase.from('tournament_bounties').insert({
-        tournament_id: tournamentId,
-        eliminated_player_id: eliminatedPlayerId,
-        collector_player_id: collectorPlayerId,
-        bounty_amount: bountyAmount,
-      });
-      if (fixedInsErr) reportError(fixedInsErr, 'TournamentService.Failed_to_record_fixed_bounty');
-
-      // Credit bounty to collector's wallet
-      if (bountyAmount > 0) {
-        const { error: bountyWalletError } = await retryAsync(
-          () =>
-            supabase.rpc('credit_player_wallet', {
-              p_user_id: collectorPlayerId,
-              p_amount: bountyAmount,
-            }),
-          3
-        );
-
-        if (bountyWalletError) {
-          reportError(bountyWalletError, 'TournamentService.Failed_to_credit_bounty_to_wallet');
-        } else {
-          // Log bounty transaction
-          await WalletService.logTransaction(
-            collectorPlayerId,
-            'PLAYER',
-            bountyAmount,
-            'credit',
-            'bounty',
-            `Bounty: ${tournament.name}`,
-            undefined,
-            undefined,
-            tournamentId
-          );
-        }
-      }
-
-      // Emit balance update
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_bounty', userId: collectorPlayerId });
-
-      return { bountyAmount };
-    }
-  }
+  // AUDIT M19: `collectBounty` is deleted, not converted.
+  //
+  // It was a client-side reimplementation of bounty payouts that the ENGINE
+  // already owns and owns correctly:
+  // `server/src/tournament/TournamentManagerEliminations.ts` handles fixed, PKO
+  // and mystery bounties, computing each from the tournament row and crediting
+  // through `credit_player_wallet` with an idempotency key derived from the
+  // payout itself.
+  //
+  // This version passed NO idempotency key - `credit_player_wallet`'s third
+  // parameter defaults to NULL and the client only ever passed two arguments -
+  // so it was not merely an unbacked credit. Had it ever been unblocked it would
+  // have paid a SECOND bounty on top of the engine's, and the engine's key could
+  // not have stopped it, because a call with no key never touches the dedupe
+  // table. It would also have double-paid against its own retryAsync retries.
+  //
+  // It had no callers anywhere outside this file. Deleting it removes a
+  // duplicate money path; it removes no function.
 
   /**
    * Roll mystery bounty value

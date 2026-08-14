@@ -9,6 +9,11 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const { mockRpc, mockEmit } = vi.hoisted(() => ({
+  mockRpc: vi.fn(),
+  mockEmit: vi.fn(),
+}));
+
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => {
@@ -27,13 +32,13 @@ vi.mock('../../src/lib/supabase', () => {
   return {
     supabase: {
       from: () => buildChain(),
-      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+      rpc: mockRpc,
     },
   };
 });
 
 vi.mock('../../src/core/MasterBus', () => ({
-  masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
+  masterBus: { emit: mockEmit, subscribe: vi.fn(() => vi.fn()) },
 }));
 
 vi.mock('../../src/utils/retryAsync', () => ({
@@ -225,6 +230,109 @@ describe('TournamentService', () => {
     it('should return empty array when no tournaments', async () => {
       const result = await tournamentService.getTournaments('club-1');
       expect(result).toEqual([]);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // AUDIT M19 — tournament money is server-owned
+  // ───────────────────────────────────────────────────────────────────────────
+
+  describe('unregisterPlayer (AUDIT M19)', () => {
+    beforeEach(() => {
+      mockRpc.mockReset();
+      mockEmit.mockReset();
+    });
+
+    it('sends only the tournament id — no user, no amount', async () => {
+      // No user parameter is the authorization model: a player may only
+      // unregister themselves, and the way to guarantee that is to never accept
+      // a target. No amount is the anti-mint rule: the refund is read from the
+      // tournaments row server-side.
+      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 110 }, error: null });
+
+      await tournamentService.unregisterPlayer('t-1', 'u-1');
+
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      const [name, args] = mockRpc.mock.calls[0];
+      expect(name).toBe('fn_unregister_from_tournament');
+      expect(args).toEqual({ p_tournament_id: 't-1' });
+      expect(Object.keys(args)).toHaveLength(1);
+    });
+
+    it('emits a balance update only when something was actually refunded', async () => {
+      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 0 }, error: null });
+      await tournamentService.unregisterPlayer('t-1', 'u-1');
+      expect(mockEmit).not.toHaveBeenCalled();
+
+      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 110 }, error: null });
+      await tournamentService.unregisterPlayer('t-1', 'u-1');
+      expect(mockEmit).toHaveBeenCalledWith('BALANCE_UPDATED', {
+        source: 'tournament_unregister_refund',
+        userId: 'u-1',
+      });
+    });
+
+    it('surfaces the server refusal reason rather than a generic failure', async () => {
+      mockRpc.mockResolvedValue({
+        data: { ok: false, reason: 'too_close_to_start' },
+        error: null,
+      });
+
+      await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow(
+        /within a minute of the start time/i
+      );
+    });
+
+    it('reports an unrecognised reason as itself', async () => {
+      mockRpc.mockResolvedValue({ data: { ok: false, reason: 'brand_new_rule' }, error: null });
+      await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow(
+        /brand_new_rule/
+      );
+    });
+
+    it('throws when the RPC itself errors', async () => {
+      mockRpc.mockResolvedValue({ data: null, error: { message: 'boom' } });
+      await expect(tournamentService.unregisterPlayer('t-1', 'u-1')).rejects.toThrow(
+        /could not unregister/i
+      );
+    });
+  });
+
+  describe('no client-side tournament payouts (AUDIT M19 regression guard)', () => {
+    it('never calls a wallet-credit RPC while unregistering', async () => {
+      // credit_player_wallet's third parameter is an idempotency key that
+      // defaults to NULL. The old client passed two arguments, so every call
+      // was un-deduplicated — a double-payout on top of the engine's own
+      // credit, had the grant ever been widened.
+      const forbidden = [
+        'credit_player_wallet',
+        'atomic_credit_wallet_and_log',
+        'fn_idempotent_credit_wallet',
+        'atomic_tournament_unregister',
+      ];
+
+      mockRpc.mockResolvedValue({ data: { ok: true, refunded: 110 }, error: null });
+      await tournamentService.unregisterPlayer('t-1', 'u-1');
+
+      for (const [name] of mockRpc.mock.calls) {
+        expect(forbidden).not.toContain(name);
+      }
+    });
+
+    it('no longer exposes eliminatePlayer, eliminatePlayerAuto or collectBounty', () => {
+      // All three were client duplicates of TournamentManagerEliminations, which
+      // computes prizes and bounties server-side and credits them idempotently.
+      // Deleting them removed duplicate money paths, not features.
+      const svc = tournamentService as unknown as Record<string, unknown>;
+      expect(svc.eliminatePlayer).toBeUndefined();
+      expect(svc.eliminatePlayerAuto).toBeUndefined();
+      expect(svc.collectBounty).toBeUndefined();
+    });
+
+    it('keeps calculatePayout, which is display-only', () => {
+      // Pure function used to show projected payouts in the lobby. Legitimate
+      // client concern; must never be wired back into a credit.
+      expect(typeof tournamentService.calculatePayout).toBe('function');
     });
   });
 });

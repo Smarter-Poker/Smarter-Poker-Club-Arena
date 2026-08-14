@@ -4,7 +4,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Runs on configurable intervals to enforce financial integrity:
- * - P2-11: Ledger reconciliation (ChipFlowService.runReconciliation)
+ * - Ledger reconciliation REMOVED (AUDIT M4) - it is server-side and
+ *   snapshot-based now; see fn_snapshot_chip_supply
  * - P2-12: Credit invoice auto-suspension for overdue agents
  * - P2-17: Commission rate change audit trail logging
  *
@@ -13,7 +14,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { ChipFlowService } from './ChipFlowService';
 import { CreditService } from './CreditService';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
@@ -38,6 +38,13 @@ export interface ReconciliationResult {
   isBalanced: boolean;
   difference: number;
   checkedAt: string;
+  /**
+   * AUDIT M4: true when the client cannot answer the question at all, which is
+   * now always. Distinguishes "the books do not balance" from "this process is
+   * not in a position to know" - conflating those two is what produced 1,039
+   * false failures.
+   */
+  unavailable?: boolean;
 }
 
 export interface SuspensionCheckResult {
@@ -90,16 +97,24 @@ export const FinancialCronService = {
 
     // Delay first run by 30s — avoids noisy failures during app startup
     // when database connections may not be fully established
+    // AUDIT M4: reconciliation is NO LONGER scheduled here. It ran in every
+    // browser session, and under RLS a browser sees exactly one wallet - its
+    // own - so `minted - wallets - locked` evaluated to
+    // `0 - (that user's balance) - 0`. The "discrepancy" it reported was simply
+    // the caller's own balance, negated, and it wrote that to
+    // financial_health_checks: 1,049 rows between 2026-03-13 and 2026-08-05,
+    // 1,039 of them failing, with 199 distinct values. A check that fails 99% of
+    // the time is worse than no check, because it teaches everyone to ignore the
+    // channel M3 built.
+    //
+    // Chip-supply reconciliation is now server-side and snapshot-based
+    // (fn_snapshot_chip_supply, service_role only). See the migration for why it
+    // measures deltas between snapshots rather than asserting balance against a
+    // genesis figure that does not exist.
     this._startupTimer = setTimeout(() => {
-      this.runReconciliation();
       this.runSuspensionCheck();
       this.escalateStaleDisputes();
     }, 30_000);
-
-    this._reconciliationTimer = setInterval(
-      () => this.runReconciliation(),
-      this._config.reconciliationIntervalMs
-    );
     this._suspensionTimer = setInterval(
       () => this.runSuspensionCheck(),
       this._config.suspensionCheckIntervalMs
@@ -154,37 +169,26 @@ export const FinancialCronService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Run full ledger reconciliation.
-   * Delegates to ChipFlowService.runReconciliation() which verifies
-   * total minted === total in wallets + locked.
+   * Ledger reconciliation is server-side now — this is a deliberate no-op.
+   *
+   * AUDIT M4: kept as a method (FinancialHealthPage still calls it from an
+   * admin button) but it no longer computes or writes anything. A browser
+   * cannot reconcile a chip supply it can only see one row of, and
+   * financial_health_checks is service_role-write-only as of the same
+   * migration, so an attempt would now fail with 42501 rather than silently
+   * recording a per-user number.
    */
   async runReconciliation(): Promise<ReconciliationResult> {
-    try {
-      const result = await ChipFlowService.runReconciliation();
-      const reconciliationResult: ReconciliationResult = {
-        isBalanced: result.isBalanced,
-        difference: result.difference,
-        checkedAt: new Date().toISOString(),
-      };
-      this._lastReconciliation = reconciliationResult;
-
-      // Persist result to financial_health_checks table for historical tracking
-      try {
-        await supabase.from('financial_health_checks').insert({
-          check_type: 'ledger_reconciliation',
-          passed: result.isBalanced,
-          details: { difference: result.difference },
-          created_at: reconciliationResult.checkedAt,
-        });
-      } catch (err) {
-        reportError(err, 'FinancialCronService.runReconciliation.auditLog');
-      }
-
-      return reconciliationResult;
-    } catch (err: unknown) {
-      reportError(err, 'FinancialCronService.runReconciliation');
-      return { isBalanced: false, difference: -1, checkedAt: new Date().toISOString() };
-    }
+    console.warn(
+      '[FinancialCron] Ledger reconciliation is server-side (fn_snapshot_chip_supply); ' +
+        'the client-side check was removed in AUDIT M4.'
+    );
+    return {
+      isBalanced: false,
+      difference: 0,
+      checkedAt: new Date().toISOString(),
+      unavailable: true,
+    };
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

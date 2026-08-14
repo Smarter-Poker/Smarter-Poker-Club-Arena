@@ -197,7 +197,6 @@ export function useWallet() {
     loadBalances,
     loadDiamonds,
     lockForBuyIn,
-    unlockFromTable,
     internalTransfer,
     mintChips,
   } = useWalletStore();
@@ -223,7 +222,8 @@ export function useWallet() {
     availableForPlay,
     isLoading: isLoadingWallet || isLoadingDiamonds,
     lockForBuyIn,
-    unlockFromTable,
+    // AUDIT M17: unlockFromTable is gone. Table cash-out is engine-owned via
+    // GameServerAPI.removeChips -> atomic_table_withdraw; see WalletService.
     internalTransfer,
     mintChips,
     refresh: () => {

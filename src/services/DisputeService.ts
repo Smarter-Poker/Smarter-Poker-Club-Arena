@@ -14,10 +14,26 @@ import { supabase } from '../lib/supabase';
 import { pushNotificationService } from './PushNotificationService';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
-import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+
+// AUDIT M17: fn_resolve_dispute returns a `reason` for ordinary refusals rather
+// than raising, so an admin sees why the server said no.
+const DISPUTE_REASON_TEXT: Record<string, string> = {
+  not_found: 'That dispute no longer exists',
+  not_authorized: 'You do not have admin rights on this club',
+  already_resolved: 'That dispute has already been resolved',
+  invalid_adjustment_type: 'Adjustment type must be none, credit or debit',
+  no_submitter_to_adjust: 'That dispute has no submitter to adjust',
+  dispute_has_no_amount: 'That dispute has no amount, so it cannot carry an adjustment',
+};
+
+function disputeReasonText(reason: string | undefined): string {
+  return (
+    DISPUTE_REASON_TEXT[reason ?? ''] ?? `Dispute could not be resolved (${reason ?? 'unknown'})`
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -201,87 +217,61 @@ export const DisputeService = {
     reviewerId: string,
     resolution: DisputeResolution
   ): Promise<Dispute> {
-    // CRITICAL FIX: Update dispute status FIRST (atomically mark resolved),
-    // then adjust wallet. If status update fails, dispute remains open and cannot be
-    // resolved again. If wallet adjustment fails after status update, we can alert ops
-    // but we won't double-pay. This prevents the race condition where wallet is adjusted
-    // but status update fails, leaving dispute open for re-resolution.
+    // AUDIT M17: this used to mark the dispute resolved, then adjust the wallet
+    // in a second round trip. The comment above that ordering argued it was the
+    // safe direction — "if wallet adjustment fails after status update, we can
+    // alert ops but we won't double-pay" — and that reasoning was sound for two
+    // independent calls. It was also moot: the adjustment RPC
+    // (atomic_credit_wallet_and_log / atomic_deduct_wallet_and_log) was
+    // permission-denied on every call from a browser, so no dispute has ever
+    // been adjusted, and the disputes UPDATE itself matched zero rows.
+    //
+    // fn_resolve_dispute makes the choice unnecessary: the status change and the
+    // adjustment are one transaction, so neither can happen without the other
+    // and there is nothing to reconcile afterwards.
+    //
+    // This is the ONE money function in M17 that still takes a caller-supplied
+    // amount, because "what should this dispute pay" is a judgement rather than
+    // a lookup. It is made safe two other ways instead: it requires club-admin
+    // authority over the dispute's own club, and the server CAPS the adjustment
+    // at the disputed amount. An adjustment larger than the sum in dispute is
+    // not a resolution, and it is refused with the cap reported back.
+    const { data: res, error } = await supabase.rpc('fn_resolve_dispute', {
+      p_dispute_id: disputeId,
+      p_resolution: resolution.resolution,
+      p_adjustment_type: resolution.adjustmentType ?? 'none',
+      p_adjustment_amount: resolution.adjustmentAmount ?? 0,
+    });
 
-    // 1. First, atomically update dispute status to 'resolved'
-    const { data, error } = await supabase
-      .from('disputes')
-      .update({
-        status: 'resolved',
-        resolution: resolution.resolution,
-        resolved_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', disputeId)
-      .select()
-      .maybeSingle();
-
-    if (error || !data) {
-      if (error) throw error;
-      throw new Error('Dispute not found or already resolved');
+    if (error) {
+      reportError(error, 'DisputeService.resolveDispute', { disputeId, reviewerId });
+      throw new Error('Could not resolve the dispute');
     }
 
-    // 2. If adjustment is needed, execute it AFTER status is safely updated
-    if (
-      resolution.adjustmentType &&
-      resolution.adjustmentType !== 'none' &&
-      resolution.adjustmentAmount &&
-      resolution.adjustmentAmount > 0
-    ) {
-      const { data: dispute } = await supabase
-        .from('disputes')
-        .select('submitted_by, club_id, amount')
-        .eq('id', disputeId)
-        .maybeSingle();
+    const out = res as {
+      ok: boolean;
+      reason?: string;
+      cap?: number;
+      amount?: number;
+      adjustment_type?: string;
+    } | null;
 
-      if (dispute?.submitted_by) {
-        const rpcName =
-          resolution.adjustmentType === 'credit'
-            ? 'atomic_credit_wallet_and_log'
-            : 'atomic_deduct_wallet_and_log';
-
-        const { error: adjustErr } = await retryAsync(
-          () =>
-            supabase.rpc(rpcName, {
-              p_user_id: dispute.submitted_by,
-              p_amount: resolution.adjustmentAmount,
-              p_category: 'dispute_resolution',
-              p_description: `Dispute ${disputeId} resolved: ${resolution.resolution}`,
-              p_table_id: null,
-              p_hand_id: null,
-              p_related_entity_id: disputeId,
-            }),
-          3
+    if (!out?.ok) {
+      if (out?.reason === 'adjustment_exceeds_disputed_amount') {
+        throw new Error(
+          `Adjustment exceeds the disputed amount (cap ${(out.cap ?? 0).toLocaleString()})`
         );
-
-        if (adjustErr) {
-          // Dispute is already marked resolved. Log alert but don't fail (dispute is safe).
-          await FinancialAlertService.logWarning(
-            'DisputeService',
-            `Dispute ${disputeId}: status resolved but wallet adjustment failed — manual action needed`,
-            {
-              disputeId,
-              adjustmentType: resolution.adjustmentType,
-              adjustmentAmount: resolution.adjustmentAmount,
-              error: adjustErr.message,
-            }
-          );
-          throw new Error(
-            `Wallet adjustment failed (dispute marked resolved): ${adjustErr.message}`
-          );
-        }
-
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'dispute_resolution',
-          userId: dispute.submitted_by,
-          disputeId,
-        });
       }
+      throw new Error(disputeReasonText(out?.reason));
     }
+
+    if ((out.amount ?? 0) > 0) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'dispute_resolution', disputeId });
+    }
+
+    // Re-read for the return value. The RPC owns the write; this is display
+    // state, and a failure here must not imply the resolution did not happen.
+    const { data } = await supabase.from('disputes').select('*').eq('id', disputeId).maybeSingle();
 
     // Notify the submitter
     if (data?.submitted_by) {

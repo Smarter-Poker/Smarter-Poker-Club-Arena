@@ -69,7 +69,8 @@ describe('useWalletStore', () => {
     expect(typeof state.loadTransactions).toBe('function');
     expect(typeof state.refreshAll).toBe('function');
     expect(typeof state.lockForBuyIn).toBe('function');
-    expect(typeof state.unlockFromTable).toBe('function');
+    // AUDIT M17: unlockFromTable is deliberately gone — see WalletService.
+    expect((state as unknown as Record<string, unknown>).unlockFromTable).toBeUndefined();
     expect(typeof state.internalTransfer).toBe('function');
     expect(typeof state.mintChips).toBe('function');
     expect(typeof state.reset).toBe('function');

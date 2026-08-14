@@ -6,13 +6,32 @@
 import { supabase } from '../lib/supabase';
 import { engineChannelClient } from './EngineStateClient';
 import type { PokerTable, TableSettings, GameVariant, HandState } from '../types/database.types';
-import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
+
+// AUDIT M17: the admin money RPCs return a `reason` for ordinary refusals rather
+// than raising, so the UI can tell "you are not an admin here" apart from "the
+// database is down". An unmapped reason is a contract change and should read as
+// one instead of collapsing into a generic failure.
+const ADMIN_ACTION_REASON_TEXT: Record<string, string> = {
+  table_not_found: 'That table no longer exists',
+  not_authorized: 'You do not have admin rights on this club',
+  not_seated: 'That player is no longer seated at this table',
+  tournament_not_found: 'That tournament no longer exists',
+  tournament_already_started: 'Players cannot be removed after the tournament has started',
+  not_registered: 'That player is not registered for this tournament',
+};
+
+export function adminActionReasonText(reason: string | undefined): string {
+  return (
+    ADMIN_ACTION_REASON_TEXT[reason ?? ''] ??
+    `Action refused by the server (${reason ?? 'unknown'})`
+  );
+}
 
 class TableService {
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -241,82 +260,42 @@ class TableService {
   }
 
   /**
-   * Close a table
-   * Uses force_close_table_and_refund RPC to gracefully return all chips
-   * in the table_seats stack directly back to player_wallets before closing.
+   * Close a table — refunds every seated player and closes it, atomically.
+   *
+   * AUDIT M17: this used to call `force_close_table_and_refund` and, when that
+   * failed, fall back to closing the table and then crediting each player in a
+   * client-side loop. Both halves were dead.
+   * `force_close_table_and_refund` takes THREE arguments (uuid, uuid, text) and
+   * the client passed one, so the primary path was a signature error before it
+   * was ever a permission error — and it is granted to postgres/service_role
+   * only regardless. In the fallback, every `atomic_credit_wallet_and_log` was
+   * 42501 and the `tables` UPDATE matched zero rows, which PostgREST reports as
+   * success. So the table never closed, nobody was refunded, and the UI said it
+   * worked.
+   *
+   * `fn_admin_close_table` does it all server-side in one transaction: club-admin
+   * check, refund each seat from its ACTUAL stack, vacate the seats, close the
+   * table. Each refund is idempotent on the seat-occupancy row id, so it cannot
+   * double-pay against the engine's own cash-out path.
    */
   async closeTable(tableId: string): Promise<void> {
-    const { data: result, error } = await supabase.rpc('force_close_table_and_refund', {
+    const { data, error } = await supabase.rpc('fn_admin_close_table', {
       p_table_id: tableId,
     });
 
     if (error) {
-      reportError(error, 'TableService.forceCloseAndRefund');
+      reportError(error, 'TableService.closeTable', { tableId });
+      throw new Error('Could not close the table');
+    }
 
-      // CRITICAL: The RPC that atomically refunds chips AND closes the table failed.
-      // Fallback: close the table to prevent new hands, but chips may be orphaned.
-      // Log a CRITICAL financial alert so ops can manually reconcile.
-      await supabase
-        .from('tables')
-        .update({ status: 'closed', current_players: 0 })
-        .eq('id', tableId);
+    const res = data as { ok: boolean; reason?: string; players_refunded?: number } | null;
 
-      // Attempt per-player refund as best-effort recovery
-      try {
-        const { data: seatedPlayers } = await supabase
-          .from('table_seats')
-          .select('user_id, stack, seat_number')
-          .eq('table_id', tableId)
-          .is('left_at', null)
-          .gt('stack', 0);
+    if (!res?.ok) {
+      throw new Error(adminActionReasonText(res?.reason));
+    }
 
-        let refundedCount = 0;
-        for (const player of seatedPlayers || []) {
-          const { error: refundErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
-            p_user_id: player.user_id,
-            p_amount: player.stack,
-            p_category: 'cashout',
-            p_description: `Emergency table close refund: ${player.stack} chips (table ${tableId})`,
-            p_table_id: tableId,
-            p_hand_id: null,
-            p_related_entity_id: null,
-          });
-          if (!refundErr) {
-            // Mark seat as left
-            await supabase
-              .from('table_seats')
-              .update({ left_at: new Date().toISOString() })
-              .eq('table_id', tableId)
-              .eq('seat_number', player.seat_number)
-              .is('left_at', null);
-            refundedCount++;
-          } else {
-            reportError(refundErr, 'TableService.refundPlayer', { userId: player.user_id });
-          }
-        }
-        console.warn(
-          `[TableService] Emergency refund: ${refundedCount}/${(seatedPlayers || []).length} players refunded`
-        );
-      } catch (refundErr: unknown) {
-        reportError(refundErr, 'TableService.emergencyRefund');
-      }
-
-      // Log critical financial alert for ops visibility
-      try {
-        const { FinancialAlertService } = await import('./FinancialAlertService');
-        await FinancialAlertService.logCritical(
-          'TableService.closeTable',
-          `force_close_table_and_refund RPC failed — emergency fallback used. Manual chip reconciliation may be required.`,
-          { tableId, rpcError: error.message }
-        );
-      } catch (e) {
-        reportError(e, 'TableService');
-        /* best effort — already logged to console */
-      }
-    } else {
-      console.debug(`[TableService] Table closed successfully. Result:`, result);
-      // Emit for ALL players who were seated — the RPC refunds them atomically
-      masterBus.emit('BALANCE_UPDATED', { source: 'table_force_close_refund' });
+    if ((res.players_refunded ?? 0) > 0) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'table_close_refund' });
     }
     masterBus.emit('TABLE_CLOSED', { tableId });
   }
@@ -753,53 +732,49 @@ class TableService {
   }
 
   /**
-   * Kick a player from a table — marks seat as left, returns chips to wallet
+  /**
+   * Kick a player from a table — refunds their stack and vacates the seat.
+   *
+   * AUDIT M17: the old version read the seat, credited `seat.stack` through
+   * `atomic_credit_wallet_and_log`, then marked the seat left — three round
+   * trips, of which the credit was always 42501 (wallets has no UPDATE policy)
+   * and the seat UPDATE always matched zero rows (table_seats is service-role
+   * write-only). It returned false when the credit failed, but
+   * TableOperationsPanel discarded that boolean, so an admin saw no error at
+   * all while nothing whatsoever happened.
+   *
+   * `fn_admin_kick_player` does the whole thing in one transaction and derives
+   * the refund from the seat row itself, so a kick can never pay out more than
+   * the player actually had. It is idempotent on the occupancy row id — the
+   * same key shape the engine's markSeatAsLeft uses — so the two paths cannot
+   * double-pay each other if they race.
    */
   async kickPlayer(tableId: string, userId: string, reason?: string): Promise<boolean> {
-    // Get player's current stack
-    const { data: seat } = await supabase
-      .from('table_seats')
-      .select('stack, seat_number')
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .is('left_at', null)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc('fn_admin_kick_player', {
+      p_table_id: tableId,
+      p_user_id: userId,
+      p_reason: reason ?? null,
+    });
 
-    if (!seat) return false;
+    if (error) {
+      reportError(error, 'TableService.kickPlayer', { tableId, userId });
+      throw new Error('Could not kick the player');
+    }
 
-    // Return chips to player wallet ATOMICALLY with log
-    if (seat.stack > 0) {
-      const { error: walletErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
-        p_user_id: userId,
-        p_amount: seat.stack,
-        p_category: 'cashout',
-        p_description: `Kicked from table: ${seat.stack} chips returned${reason ? ` (${reason})` : ''}`,
-        p_table_id: tableId,
-        p_hand_id: null,
-        p_related_entity_id: null,
-      });
-      if (walletErr) {
-        reportError(walletErr, 'TableService.kickWalletCredit');
-        return false;
-      }
+    const res = data as { ok: boolean; reason?: string; refunded?: number } | null;
 
+    // Throw rather than return false. The previous signature let the one caller
+    // ignore the outcome; an exception cannot be ignored by accident.
+    if (!res?.ok) {
+      throw new Error(adminActionReasonText(res?.reason));
+    }
+
+    if ((res.refunded ?? 0) > 0) {
       masterBus.emit('BALANCE_UPDATED', { source: 'table_kick_cashout', userId });
     }
 
-    // Mark seat as left
-    const { error } = await supabase
-      .from('table_seats')
-      .update({ left_at: new Date().toISOString() })
-      .eq('table_id', tableId)
-      .eq('user_id', userId)
-      .is('left_at', null);
-
-    if (error) {
-      reportError(error, 'TableService.kickPlayer');
-      return false;
-    }
-
-    // Update player count
+    // The seat count is recomputed here rather than in the RPC: it is display
+    // state, and a stale count is a cosmetic problem, not a money one.
     const { count, error: countErr } = await supabase
       .from('table_seats')
       .select('*', { count: 'exact', head: true })

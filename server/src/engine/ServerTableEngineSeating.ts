@@ -85,12 +85,20 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     }
 
     if (midHand) {
-      this.pendingAddOns.set(userId, pending + applied);
+      // AUDIT M5: `pending` was captured before the `await atomic_table_addon`
+      // above. On the single-threaded event loop another addChips for this same
+      // user can interleave at that await and update pendingAddOns in between;
+      // accumulating onto the stale snapshot would drop the concurrent add-on
+      // from the buy-in-cap arithmetic (the durable table_pending_addons ledger
+      // is unaffected and still delivers every debited chip — this map is only
+      // the cap cache). Re-read the live value and accumulate onto that.
+      const livePending = this.pendingAddOns.get(userId) || 0;
+      this.pendingAddOns.set(userId, livePending + applied);
       // A2: a durable ledger row now exists (written by the RPC in the same
       // transaction as the debit). Make sure the next sweep looks for it.
       this.pendingAddOnSweepNeeded = true;
       console.log(
-        `[ServerTableEngine:${this.tableId}] Add-on debited + queued for ${userId}: +${applied} (pending ${pending + applied}) — hand in progress`
+        `[ServerTableEngine:${this.tableId}] Add-on debited + queued for ${userId}: +${applied} (pending ${livePending + applied}) — hand in progress`
       );
       this.broadcastCurrentState();
       return { success: true, queued: true, applied };

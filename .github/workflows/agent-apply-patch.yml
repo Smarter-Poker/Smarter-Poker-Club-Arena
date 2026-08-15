@@ -6,6 +6,7 @@ name: Agent Apply Patch
 # few KB regardless of target size. Flow:
 #   1. agent creates branch patch/<name> from main
 #   2. agent pushes .agent/patches/<name>.patch (unified diff, -p1 paths)
+#      and optionally .agent/deletes.txt (one repo-relative path per line)
 #   3. this workflow applies it, removes the patch file, commits, pushes
 #   4. agent opens a normal PR from the branch — build gate runs as usual
 # Pushes made with GITHUB_TOKEN do not trigger workflows, so the apply
@@ -37,7 +38,8 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           patches=(.agent/patches/*.patch)
-          if [ ${#patches[@]} -eq 0 ]; then
+          deletes=.agent/deletes.txt
+          if [ ${#patches[@]} -eq 0 ] && [ ! -f "$deletes" ]; then
             echo "No queued patches — nothing to do."
             exit 0
           fi
@@ -70,4 +72,27 @@ jobs:
             git commit -m "agent-patch: apply $(basename "$p")"
             echo "::endgroup::"
           done
+          # File removals. A deletion inside a unified diff has to carry every
+          # removed line, which for a handful of components is tens of KB of
+          # pure noise across the bridge — and every one of those lines is
+          # another chance to mis-transcribe. A path list does the same job.
+          if [ -f "$deletes" ]; then
+            echo "::group::Processing $deletes"
+            while IFS= read -r target || [ -n "$target" ]; do
+              # Skip blanks and # comments.
+              case "$target" in ''|\#*) continue ;; esac
+              # Refuse anything that could escape the repo.
+              case "$target" in /*|*..*) echo "::error::Refusing unsafe path: $target"; exit 1 ;; esac
+              if [ -e "$target" ]; then
+                git rm -r -q "$target"
+                echo "deleted $target"
+              else
+                echo "::error::Listed for deletion but not found: $target"
+                exit 1
+              fi
+            done < "$deletes"
+            git rm -q "$deletes"
+            git commit -m "agent-patch: process deletes.txt"
+            echo "::endgroup::"
+          fi
           git push

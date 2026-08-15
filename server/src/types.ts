@@ -280,6 +280,16 @@ export type HandEvent =
   | { type: 'SHOWDOWN'; results: ShowdownResult[] }
   | { type: 'WINNERS'; winners: Winner[] }
   | { type: 'UNCALLED_BET_RETURNED'; seat: number; userId: string; amount: number }
+  /**
+   * DEAD-WIRING FIX 2026-08-15. Bomb pot hands were running silently: the
+   * engine collected a forced ante from every seated player and dealt straight
+   * to the flop with no preflop betting, and the client was told nothing about
+   * it. BombPotOverlay is mounted (TableModalsLayer) and subscribes to the
+   * BOMB_POT_TRIGGERED bus event, which had no emitter anywhere. From the
+   * player's side chips just vanished from their stack and the hand started on
+   * the flop with no explanation.
+   */
+  | { type: 'BOMB_POT_TRIGGERED'; anteAmount: number; bbMultiplier: number }
   | { type: 'HAND_COMPLETE'; handNumber: number; rake: number; bbjFee: number };
 
 export interface ShowdownResult {

@@ -43,6 +43,20 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         this.broadcastCurrentState();
         break;
 
+      case 'BOMB_POT_TRIGGERED' as any: {
+        // Fan the engine's bomb-pot announcement out to the table so
+        // BombPotOverlay can explain the forced ante before the flop lands.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'bomb_pot_triggered',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          ante_amount: (event as any).anteAmount,
+          bb_multiplier: (event as any).bbMultiplier,
+          timestamp: Date.now(),
+        });
+        break;
+      }
+
       case 'BLINDS_POSTED' as any: {
         // Bible V8 §1.16: discrete blinds_posted event so the client animates
         // SB/BB chips flying from each blind seat into the pot, instead of

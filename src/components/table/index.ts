@@ -90,10 +90,6 @@ export type {
   LeaderboardPeriod,
 } from './LeaderboardPanel';
 
-// Emote Panel
-export { EmotePanel, DEFAULT_EMOTES, QUICK_TEXT_EMOTES } from './EmotePanel';
-export type { EmotePanelProps, Emote } from './EmotePanel';
-
 // Tournament Break Screen
 export { TournamentBreakScreen } from './TournamentBreakScreen';
 export type {

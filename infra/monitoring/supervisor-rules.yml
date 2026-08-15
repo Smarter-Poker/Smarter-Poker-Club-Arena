@@ -71,6 +71,43 @@ groups:
       # ── The engine, seen from the host rather than from the internet ──────
       # Distinguishes "the engine is down" from "Caddy/DNS/TLS is down", which
       # the externally-probed alerts cannot tell apart.
+      # ── Crash loops that hide from every other signal ─────────────────────
+      # An engine that restarts faster than the supervisor's 120s boot grace
+      # looked healthy on EVERY sample: /health was never called and the
+      # serving gauge was asserted as 1 without asking. These two counters are
+      # what make that state visible.
+      - alert: EngineBootChurn
+        expr: club_arena_engine_boot_churn >= 2
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Engine keeps restarting before it finishes booting"
+          description: >-
+            The engine has restarted {{ $value }} times without once clearing
+            its boot-grace window. Players cannot complete a hand. This is the
+            failure mode that used to be completely invisible — every sample
+            looked like a normal startup. Check `docker logs club-arena-engine`
+            and `journalctl -u club-arena-supervisor` for the captured
+            boot-churn log.
+
+      - alert: EngineCrashLooping
+        expr: club_arena_engine_restarting_samples >= 2
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Engine container is stuck in Docker's 'restarting' state"
+          description: >-
+            Docker is backing off and retrying the container. Note that
+            `docker start` is a no-op in this state, so anything that "restarts"
+            it is doing nothing — the supervisor deliberately waits and then
+            recreates from :current rather than looping. Almost always a bad
+            build or a broken .env.
+
+      # serving == 0 only. The supervisor reports -1 (unknown) during boot
+      # grace, so this no longer fires while the engine is legitimately
+      # starting, and boot grace can no longer be mistaken for an all-clear.
       - alert: EngineNotServingOnHost
         expr: club_arena_engine_serving == 0
         for: 3m

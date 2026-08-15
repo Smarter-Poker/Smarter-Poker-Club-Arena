@@ -999,6 +999,7 @@
     "fn_add_prepaid_credit_atomic",
     "fn_admin_close_table",
     "fn_admin_kick_player",
+    "fn_admin_remove_player_chips",
     "fn_admin_remove_tournament_player",
     "fn_admin_update_agent",
     "fn_agent_approve_cashout",

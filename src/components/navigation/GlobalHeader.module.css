@@ -2,6 +2,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * GLOBAL HEADER — Pixel-match to World Hub UniversalHeader
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * [HARD RULE]: DO NOT DEVIATE FROM THESE AESTHETICS.
+ * This file is structurally locked. Any AI agent modifying this file MUST ensure
+ * the visual aesthetics remain pixel-identical to the smarter.poker/hub WorldNavHeader.
+ *
  * bg: black | border-bottom: 3px solid rgba(200,200,200,0.8)
  * Desktop right-side icons: 40x40px with 200% image overflow (World Hub standard)
  * Hamburger: 56x56px inline in header-left (World Hub standard)

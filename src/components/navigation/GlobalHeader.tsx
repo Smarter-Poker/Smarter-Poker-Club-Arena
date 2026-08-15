@@ -3,7 +3,10 @@
  * GLOBAL HEADER — Exact replica of World Hub UniversalHeader
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * CRITICAL: This must be pixel-identical to smarter.poker/hub header.
+ * [HARD RULE]: DO NOT REMOVE THE BRAIN ICON OR BACK ARROW.
+ * This file is structurally locked by tests/components/GlobalHeader.test.tsx.
+ * Any AI agent modifying this file MUST ensure the visual aesthetics remain
+ * pixel-identical to the smarter.poker/hub WorldNavHeader.jsx.
  *
  * Layout:
  *   LEFT:   BACK button (btn-back.png) on sub-pages, HUB button (btn-hub.png) on lobby

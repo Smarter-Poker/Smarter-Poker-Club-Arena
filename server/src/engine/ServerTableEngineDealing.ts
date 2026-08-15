@@ -19,6 +19,8 @@ import {
   loadTable,
   loadSeatedPlayers,
   supabase,
+  autoRebuyHorse,
+  markSeatAsLeft,
 } from '../services/supabase.js';
 import type {
   SeatPlayer,
@@ -32,9 +34,9 @@ import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
   // DEALING LOOP — Millisecond-level performance
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   protected async dealingLoop(): Promise<void> {
     while (this.running) {
@@ -156,6 +158,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (!currentHorseIds.has(horseId)) {
             this.horseRebuys.delete(horseId);
           }
+        }
+
+        // DEAD-TABLE / ZOMBIE-SEAT RECOVERY (2026-08-15, live E2E finding):
+        // after a mid-hand engine restart the table hydrates from table_seats
+        // with horses whose stacks were already committed to the aborted
+        // hand's pot (stack 0, left_at NULL). Settlement's auto-rebuy step
+        // only scans the players OF A COMPLETED HAND, so hydrated 0-stack
+        // horses are invisible to it forever: with fewer than 2 funded seats
+        // the table slept in the branch below with every seat showing 0
+        // chips (dead table), and with 2+ funded seats the zombies sat out
+        // eternally while others played around them (live DB showed tables
+        // running 2-handed with five 0-stack horses seated). Run the same
+        // rebuy-or-remove routine every idle tick — it is a no-op when no
+        // seated horse is busted, and per-horse attempts are throttled.
+        if (!this.isTournamentTable()) {
+          await this.recoverBustedSeatedHorses();
         }
 
         if (activePlayers.length < 2) {
@@ -285,9 +303,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     }
   }
 
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
   // DEAL HAND — Complete hand lifecycle
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
     if (!this.tableInfo) return;
@@ -649,9 +667,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     });
   }
 
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
   // EVENT HANDLING
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   /**
    * FIX 2 (2026-07-24): reliably persist a player's hole cards to the
@@ -718,5 +736,74 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const entry = this.currentHandHoleCards.get(userId);
     if (!entry) return;
     await this.persistHoleCardsWithRetry(userId, entry.seat, entry.cards);
+  }
+
+  /**
+   * DEAD-TABLE RECOVERY (2026-08-15): rebuy-or-remove any SEATED horse whose
+   * stack is 0 on a cash table. Mirrors Settlement step 5 ("Auto-rebuy busted
+   * horses"), which only fires when a hand completes — this variant runs from
+   * the dealing loop every iteration so tables that hydrated with busted
+   * horses after a mid-hand restart come back to life instead of sleeping
+   * forever, and zombie 0-stack seats on still-active tables get swept too.
+   * Per-horse attempts are throttled to one per 30s so a drained club
+   * treasury cannot turn the 3s idle loop into an RPC hammer.
+   */
+  private bustRecoveryLastAttempt: Map<string, number> = new Map();
+
+  protected async recoverBustedSeatedHorses(): Promise<void> {
+    const bustHorses = this.seatedPlayers.filter((p) => p.is_horse && p.stack <= 0);
+    if (bustHorses.length === 0) return;
+
+    const now = Date.now();
+    for (const horse of bustHorses) {
+      const lastAttempt = this.bustRecoveryLastAttempt.get(horse.user_id) || 0;
+      if (now - lastAttempt < 30000) continue;
+      this.bustRecoveryLastAttempt.set(horse.user_id, now);
+
+      const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
+
+      // Stop-Loss Bankroll logic (same rule as Settlement step 5): after two
+      // rebuys (3 buy-ins lost) the horse leaves instead of rebuying again.
+      if (currentRebuys >= 2) {
+        await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
+        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
+        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+        this.horseRebuys.delete(horse.user_id);
+        this.bustRecoveryLastAttempt.delete(horse.user_id);
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} at stop-loss — removed.`
+        );
+        continue;
+      }
+
+      const rebuyAmount = this.tableInfo?.big_blind ? this.tableInfo.big_blind * 100 : 200;
+      const success = await autoRebuyHorse(
+        this.tableId,
+        horse.user_id,
+        rebuyAmount,
+        this.tableInfo?.club_id || ''
+      );
+      if (success) {
+        horse.stack = rebuyAmount;
+        this.horseRebuys.set(horse.user_id, currentRebuys + 1);
+        this.bustRecoveryLastAttempt.delete(horse.user_id);
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Dead-table recovery: rebought ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
+        );
+      } else {
+        await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
+        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
+        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+        this.horseRebuys.delete(horse.user_id);
+        this.bustRecoveryLastAttempt.delete(horse.user_id);
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} left — insufficient treasury funds`
+        );
+      }
+    }
   }
 }

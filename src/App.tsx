@@ -131,6 +131,9 @@ const NewConversationPage = lazy(() => import('./pages/NewConversationPage'));
 
 // Shared/Public Pages
 const HandReplayerPage = lazy(() => import('./pages/share/HandReplayerPage'));
+// VISIBLE FIX 2026-08-15: ShareHand emits /replay?h=<payload> for every share
+// channel, and no such route existed — every shared link 404'd.
+const SharedHandReplayPage = lazy(() => import('./pages/share/SharedHandReplayPage'));
 const SimPage = lazy(() => import('./pages/SimPage'));
 
 // System Pages
@@ -348,6 +351,7 @@ export default function App() {
 
               {/* Public Hand Replay — shareable link, no auth required */}
               <Route path="/share/hand/:handId" element={<HandReplayerPage />} />
+              <Route path="/replay" element={<SharedHandReplayPage />} />
 
               {/* Scenario Sim — deterministic UI regression playback, no auth */}
               <Route path="/sim" element={<SimPage />} />

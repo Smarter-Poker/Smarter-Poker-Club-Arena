@@ -4,6 +4,21 @@ name: Auto-Deploy Hetzner Engine (on server/ changes)
 # on the main branch. No manual confirmation required — this is CI/CD.
 #
 # Required repo secrets:
+# SELF-HEALING NOTES (2026-08-15, learned from a production drill):
+#
+#   1. `--label autoheal=true` is LOAD-BEARING. Docker's HEALTHCHECK only sets
+#      .State.Health.Status — plain Docker NEVER restarts an unhealthy
+#      container (only Swarm/Kubernetes do). The sp-autoheal sidecar
+#      (/opt/smarter-poker-monitoring/autoheal-compose.yml) watches for this
+#      label and performs the restart. Drop the label and the healthcheck
+#      becomes a status light wired to nothing.
+#
+#   2. `--restart always` does NOT fire after `docker stop` or `docker kill`.
+#      Docker treats those as manual stops and leaves the container down until
+#      the daemon restarts or someone starts it by hand. So an operator stop,
+#      or a deploy that halts between stop and run, leaves the engine dead with
+#      no automatic recovery. Deploys must always reach the `docker run` below.
+#
 #   HETZNER_SSH_KEY  — full contents of the deploy private key
 #   HETZNER_HOST     — Hetzner VPS IP (e.g. 178.156.160.206)
 
@@ -84,6 +99,7 @@ jobs:
               --name $CONTAINER \
               --restart always \
               --health-start-period=90s \
+              --label autoheal=true \
               -p 8080:8080 \
               --env-file $REPO_DIR/server/.env \
               $CONTAINER"

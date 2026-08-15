@@ -28,6 +28,23 @@
 #
 set -euo pipefail
 
+# ── Mutual exclusion ─────────────────────────────────────────────────────────
+# engine-supervisor.sh takes this same lock (non-blocking; it skips its tick if
+# held). Without it, a supervisor tick landing in the window between the
+# `docker rm` and `docker run` below sees "container absent", launches its own
+# copy of this script, and ends up stopping and recreating the container the
+# deploy had just created — which fails the deploy's health verification and
+# rolls back a build that was fine. The mirror case is two simultaneous
+# `docker run`s, where the loser dies on "container name already in use".
+LOCK_FILE="${LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
+if [ "${ENGINE_UP_LOCK_HELD:-0}" != "1" ]; then
+  exec 9>"$LOCK_FILE"
+  # Wait rather than fail: the caller wants the engine up, and the other holder
+  # is about to put it up. 180s comfortably exceeds `docker stop -t 45` plus a
+  # container start.
+  flock -w 180 9 || { echo "[engine-up] FATAL: could not acquire $LOCK_FILE within 180s"; exit 1; }
+fi
+
 CONTAINER="${CONTAINER:-club-arena-engine}"
 IMAGE="${IMAGE:-club-arena-engine:current}"
 ENV_FILE="${ENV_FILE:-/opt/club-arena/server/.env}"

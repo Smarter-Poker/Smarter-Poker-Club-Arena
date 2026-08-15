@@ -294,6 +294,10 @@ export class GameServer {
       // itself with no human involved.
       liveness: stalledTables.length > 0 || discoveryStaleMs > 60_000 ? 'dead' : 'ok',
       stalledTableCount: stalledTables.length,
+      // Deploy drain gate reads this. A restart voids in-flight hands, so a
+      // routine server/ push waits (or is explicitly forced) while real people
+      // are seated. Horses are excluded — they do not care.
+      humansSeatedTotal: tableLiveness.reduce((n, t) => n + t.humans, 0),
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
@@ -389,6 +393,7 @@ export class GameServer {
       tableId: id,
       seated: engine.seatedCount(),
       dealable: engine.dealableCount(),
+      humans: engine.humansSeated(),
       handCount: engine.getHandCount(),
       msSinceProgress: engine.msSinceProgress(),
       isTournament: engine.isTournament(),

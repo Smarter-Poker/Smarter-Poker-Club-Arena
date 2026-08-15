@@ -189,6 +189,65 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 2: Full production build + bundle metrics (depends on typecheck)
   # ─────────────────────────────────────────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SERVER ENGINE — added 2026-08-15.
+  #
+  # Until this job existed, `server/` had NO CI coverage of any kind: no tests,
+  # no typecheck, no lint. The root `tsc --noEmit` only covers the client
+  # (root tsconfig include is ["src"]), and the root vitest config only globs
+  # tests/**, so the 45 server test files — including the freeze and watchdog
+  # regressions written after the 2026-08-15 freeze incident — never ran on a
+  # PR or a push. Every one of those bugs could have been silently reintroduced
+  # by a green build.
+  #
+  # This job is deliberately cheap (about 15s of tests) so there is never a
+  # reason to skip it. It MUST stay blocking.
+  # ═══════════════════════════════════════════════════════════════════════════
+  server:
+    name: Server Engine (typecheck + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.3.1
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # server/ is a separate package with its own tsconfig; the root typecheck
+      # job never compiles it, so a type error here used to ship to production.
+      - name: TypeScript Check (server)
+        run: npx tsc --noEmit
+
+      # BLOCKING. Named explicitly so it is obvious in the job log which
+      # regressions are being defended, and so deleting them is a visible diff.
+      - name: Freeze + watchdog regression suite
+        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts --reporter=verbose
+
+      - name: Full server test suite
+        run: npm test
+
+      # Guards the single highest-impact line of the freeze fix. The all-in
+      # dead-buttons bug (production hand #1315: 30.1s between a river shove
+      # and a forced fold) was CSS, not engine logic — `pointer-events: none`
+      # on the action panel in all-in mode made Call and Fold unclickable while
+      # the timer ran down. No test can catch that, so it is asserted here.
+      - name: All-in action panel must never be pointer-events:none
+        working-directory: .
+        run: node scripts/ci/check-allin-pointer-events.mjs
+
   build:
     name: Production Build
     runs-on: ubuntu-latest

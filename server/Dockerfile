@@ -22,6 +22,16 @@ RUN npm prune --production
 ENV NODE_ENV=production
 EXPOSE 8080
 
+# 2026-08-15 DEPLOY VERIFIABILITY.
+# Before this, /health reported version:"local" in production — the running
+# engine could not tell you which commit it was built from, so a deploy that
+# silently reused a stale image was indistinguishable from a successful one.
+# Baked as a build ARG (not a `docker run -e`) so the SHA is a property of the
+# IMAGE: any container started from it — by the deploy, by autoheal, by the
+# host supervisor — reports the same truthful value.
+ARG GIT_COMMIT_SHA=unknown
+ENV GIT_COMMIT_SHA=$GIT_COMMIT_SHA
+
 # 2026-08-15 SELF-HEALING. Without a HEALTHCHECK, Docker's only restart trigger
 # is process exit — so a process that is up but wedged (every table frozen) was
 # invisible to the supervisor forever. `liveness` goes 'dead' when any table

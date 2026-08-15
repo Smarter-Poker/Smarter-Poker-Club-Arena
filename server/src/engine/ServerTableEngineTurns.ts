@@ -29,6 +29,43 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   /**
+   * FAULT INJECTION — deliberately reproduce the freeze this engine's watchdog
+   * exists to recover from, so recovery can be PROVEN rather than assumed.
+   *
+   * Every recovery path shipped on 2026-08-15 was written against a bug report
+   * and unit tests. Two of them turned out to be broken in ways only a drill
+   * would reveal (the watchdog could not reach its kill tier; Docker never
+   * restarts unhealthy containers). Untested recovery is not recovery.
+   *
+   * This reproduces the precise shape the real defects produced: a seat that is
+   * the current actor, with NO clock armed and no pending action. The watchdog
+   * should notice within one heartbeat and re-arm the clock (Tier 1).
+   *
+   * Returns a description of what was broken, for the drill log. Callers are
+   * responsible for the safety gate — see handlers/faultInjection.ts, which
+   * refuses to run when any human is seated.
+   */
+  injectTurnStall(): { tableId: string; seat: number; hadClock: boolean; handNumber: number } {
+    const state = this.handController?.getState();
+    const seat = state?.currentPlayerSeat ?? -1;
+    const player = state?.players.find((p) => p.seat === seat);
+    const hadClock = player ? this.preciseTimer.hasTimer(this.tableId, player.user_id) : false;
+
+    // 1. Kill the clock — this is what every real freeze had in common.
+    this.preciseTimer.clearTable(this.tableId);
+    // 2. Backdate progress past the stall threshold so the next heartbeat trips
+    //    the watchdog immediately rather than after a 45s wait.
+    this.lastProgressAtMs = Date.now() - (ServerTableEngineBase.WATCHDOG_STALL_MS + 5_000);
+    this.watchdogTrips = 0;
+
+    console.warn(
+      `[ServerTableEngine:${this.tableId}] FAULT INJECTED: turn stall at seat ${seat} ` +
+        `(clock removed, progress backdated). Watchdog should recover this.`
+    );
+    return { tableId: this.tableId, seat, hadClock, handNumber: this.handCount };
+  }
+
+  /**
    * Cancel every turn deadline this table owns.
    *
    * 2026-08-15: this was an EMPTY FUNCTION with a comment explaining that the

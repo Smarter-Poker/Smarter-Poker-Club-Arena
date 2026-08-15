@@ -39,6 +39,7 @@ import { handleShowhand } from './handlers/showhand.js';
 import { handleDiscard } from './handlers/discard.js';
 import { handleAdminPause, handleAdminResume, handleAdminKick } from './handlers/admin.js';
 import { handlePostBB } from './handlers/postbb.js';
+import { handleInjectFault } from './handlers/faultInjection.js';
 import { handleGetActions, handleGetState } from './handlers/state.js';
 import type { ChannelHub } from './hub/ChannelHub.js';
 
@@ -186,6 +187,11 @@ export function createRouter(
     if (method === 'POST' && url === '/admin/kick')
       return handleAdminKick(req, res, { gameServer });
     if (method === 'POST' && url === '/post-bb') return handlePostBB(req, res, { gameServer });
+
+    // Fault injection for freeze drills. 404s unless FAULT_INJECTION_TOKEN is
+    // set, requires that token, and refuses any table with a human seated.
+    if (method === 'POST' && url === '/admin/inject-fault')
+      return handleInjectFault(req, res, { gameServer });
 
     if (method === 'GET' && url?.startsWith('/insurance-preview')) {
       return handleInsurancePreview(req, res, { gameServer });

@@ -63,7 +63,13 @@ export async function handleInjectFault(
       return sendJSON(res, 401, { error: 'Unauthorized' });
     }
 
-    const body = (await readBody(req)) as { tableId?: string; fault?: string };
+    // readBody returns the raw string, not a parsed object.
+    let body: { tableId?: string; fault?: string };
+    try {
+      body = JSON.parse(await readBody(req)) as { tableId?: string; fault?: string };
+    } catch {
+      return sendJSON(res, 400, { error: 'Invalid JSON body' });
+    }
     const tableId = body?.tableId;
     if (!tableId) return sendJSON(res, 400, { error: 'Missing tableId' });
 

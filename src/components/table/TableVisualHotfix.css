@@ -19,6 +19,14 @@
  *      inside of it").
  *   6. Side pots + TOTAL stacked downward from the pot pill into the board
  *      (59px overlap measured at showdown).
+ *  Wave 2 (same session, post-deploy verification):
+ *   8. The action-timer conic ring rendered as a stray empty circle floating
+ *      behind free-floating bust art (it frames circular photos fine). The
+ *      active seat already carries the neon timer border on its info pill.
+ *   9. Folded bust art at brightness(0.35) × opacity 0.55 was still nearly
+ *      invisible — real rooms keep folded players clearly present, just dim.
+ *  10. Pot display chips stayed small after bet chips doubled.
+ *  11. Empty seat "+ SIT" targets were barely visible on the dark rail.
  *  Shipped as an override sheet so the fix rides one small file; the base
  *  rules in SeatSlot.css / ChipPhysics.css / TablePage.css are unchanged.
  *  Imported from ChipAnimation.tsx (bundled with the table page).
@@ -120,4 +128,47 @@
 /* ── 7. Folded seats stay legible (were ghosting to near-invisible) ─────── */
 .table-page .seat--folded {
   opacity: 0.55 !important;
+}
+
+/* ── 8. No stray timer ring behind free-floating bust art ───────────────── */
+/* The conic countdown ring + its inner mask frame CIRCULAR avatars. Behind a
+   transparent bust they float as an empty white circle. The acting seat keeps
+   its neon timer border on the info pill, so nothing is lost. */
+.table-page .seat__avatar-wrap--bust::before,
+.table-page .seat__avatar-wrap--bust::after {
+  display: none !important;
+}
+
+/* ── 9. Folded character art stays visible, just dimmed ─────────────────── */
+.table-page .seat--folded .seat__avatar--bust .seat__avatar-img {
+  filter: brightness(0.65) saturate(0.6) !important;
+}
+
+/* ── 10. Pot display chips match the doubled bet chips ──────────────────── */
+.table-page .pot-display__chip {
+  width: 28px !important;
+  height: 28px !important;
+}
+.table-page .pot-display__chip-face {
+  width: 16px !important;
+  height: 16px !important;
+}
+.table-page .pot-display__chip-stack {
+  width: 28px !important;
+}
+.table-page .pot-display__chips {
+  height: 52px !important;
+}
+
+/* ── 11. Empty seats are visible, inviting targets ──────────────────────── */
+.table-page .seat--empty {
+  opacity: 0.9 !important;
+}
+.table-page .seat__empty-label {
+  border: 1.5px dashed rgba(255, 255, 255, 0.35) !important;
+  border-radius: 999px !important;
+  padding: 6px 14px !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  background: rgba(0, 0, 0, 0.35) !important;
+  font-weight: 700 !important;
 }

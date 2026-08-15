@@ -110,7 +110,11 @@ export async function refundAndCloseCancelledTournament(
         if (fee > 0 && fullT?.club_id) {
           await supabase.from('rake_records').insert({
             hand_id: null,
-            table_id: tournamentId,
+            // AUDIT 2026-08-15: table_id has an FK to tables — a tournament id
+            // here violated it, so this reversal row NEVER inserted (probe-
+            // caught while building fn_register_for_tournament). The
+            // tournament is carried by tournament_id below.
+            table_id: null,
             club_id: fullT.club_id,
             rake_amount: -fee,
             pot_size: fee,

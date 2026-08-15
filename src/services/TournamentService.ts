@@ -4,7 +4,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -21,6 +20,18 @@ const UNREGISTER_REASON_TEXT: Record<string, string> = {
   too_close_to_start: 'You cannot unregister within a minute of the start time',
   not_registered_or_seated: 'You are not registered, or you have already been seated at a table',
 };
+
+const REGISTER_REASON_TEXT: Record<string, string> = {
+  tournament_not_found: 'Tournament not found',
+  registration_closed: 'Registration is closed',
+  tournament_full: 'Tournament is full',
+  already_registered: 'Already registered for this tournament',
+  insufficient_balance: 'Insufficient chips in Player Wallet.',
+};
+
+function registerReasonText(reason: string | undefined): string {
+  return REGISTER_REASON_TEXT[reason ?? ''] ?? `Could not register (${reason ?? 'unknown'})`;
+}
 
 function unregisterReasonText(reason: string | undefined): string {
   return UNREGISTER_REASON_TEXT[reason ?? ''] ?? `Could not unregister (${reason ?? 'unknown'})`;
@@ -818,305 +829,76 @@ class TournamentService {
     const tournament = await this.getTournament(tournamentId);
     if (!tournament) throw new Error('Tournament not found');
 
-    // Check registration eligibility (level-based late registration)
-    const lateRegLevels = tournament.late_reg_levels || tournament.late_reg_mins || 0;
-    const levelState = this.getCurrentLevelState(tournament);
-    const isLateRegOpen =
-      tournament.status === 'RUNNING' && lateRegLevels > 0 && levelState.levelIndex < lateRegLevels;
-
-    if (
-      tournament.status !== 'REGISTERING' &&
-      tournament.status !== 'ANNOUNCED' &&
-      !isLateRegOpen
-    ) {
-      throw new Error('Registration is closed');
-    }
-    if (tournament.max_players && tournament.current_players >= tournament.max_players) {
-      throw new Error('Tournament is full');
-    }
-
-    // ─── Duplicate registration check ───
-    const { data: existing } = await supabase
-      .from('tournament_players')
-      .select('id')
-      .eq('tournament_id', tournamentId)
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (existing) {
-      throw new Error('Already registered for this tournament');
-    }
-
-    // Calculate total cost (buy-in + fee — exact penny values from DB, NO rounding)
-    const buyIn = tournament.buy_in_amount || 0;
-    const rake = tournament.buy_in_fee || 0;
-    const totalCost = buyIn + rake;
-
-    // ─── ATOMIC Tournament Registration ───
-    // Chip flow: Player Wallet → Tournament entry
-    // Uses atomic_tournament_register RPC to deduct + insert in a single transaction
-    const clubId = tournament.club_id;
-
-    // Initialize bounty values for bounty tournaments (needed BEFORE the RPC call)
-    const isBountyTournament =
-      tournament.is_bounty || tournament.is_pko || tournament.is_mystery_bounty;
-    let currentBounty = 0;
-    let mysteryBountyValue = 0;
-    if (isBountyTournament) {
-      currentBounty = tournament.bounty_amount || 0;
-      if (tournament.is_mystery_bounty) {
-        const baseBounty = tournament.bounty_amount || 0;
-        // Use same tier logic as collectBounty() — respect mystery_bounty_min/max columns
-        const bountyConfig: BountyConfig = {
-          bountyType: 'mystery',
-          baseBounty,
-          mysteryTiers: [
-            {
-              minMultiplier: tournament.mystery_bounty_min || 1,
-              maxMultiplier: tournament.mystery_bounty_max || 1,
-              probability: 60,
-            },
-            { minMultiplier: 2, maxMultiplier: 2, probability: 25 },
-            { minMultiplier: 5, maxMultiplier: 5, probability: 10 },
-            { minMultiplier: 10, maxMultiplier: 10, probability: 4 },
-            {
-              minMultiplier: tournament.mystery_bounty_max || 50,
-              maxMultiplier: tournament.mystery_bounty_max || 50,
-              probability: 1,
-            },
-          ],
-        };
-        mysteryBountyValue = this.rollMysteryBounty(bountyConfig);
-        currentBounty = mysteryBountyValue;
-      }
-    }
-
-    // ATOMIC: Deduct wallet + insert tournament_players in a single Postgres transaction
-    const { data: atomicPlayerId, error: atomicError } = await retryAsync(
-      () =>
-        supabase.rpc('atomic_tournament_register', {
-          p_tournament_id: tournamentId,
-          p_user_id: userId,
-          p_username: username,
-          p_total_cost: totalCost,
-          p_current_bounty: currentBounty,
-          p_mystery_bounty_value: mysteryBountyValue || 0,
-          p_is_bounty_tournament: isBountyTournament,
-        }),
+    // ═══ AUDIT 2026-08-15: registration is SERVER-AUTHORITATIVE ═══
+    // The old path called atomic_tournament_register directly — a
+    // service_role-only RPC — so EVERY human registration from the browser
+    // failed with 42501 (every completed tournament was horse-filled), and
+    // then attempted ~10 privileged client writes (rake_records, tournaments
+    // counters, unions.total_rake) that RLS rejects, plus a CLIENT-side
+    // mystery-bounty roll (manipulable). fn_register_for_tournament now does
+    // the whole thing in one transaction on the server: derives the cost from
+    // the tournaments row (never trusts the client), enforces status /
+    // late-reg (current_level vs late_reg_levels, minutes fallback) / full /
+    // duplicate under a row lock, rolls mystery bounties server-side, debits
+    // via the guarded wallet RPC with a wallet_transactions ledger row, writes
+    // the entry FEE to the rake_records fee ledger (what the finalize
+    // settlement actually credits to the club/union), and bumps
+    // current_players + prize_pool.
+    const { data: rpcResult, error: rpcError } = await retryAsync(
+      () => supabase.rpc('fn_register_for_tournament', { p_tournament_id: tournamentId }),
       3
     );
-
-    if (atomicError) {
-      // Duplicate registration (23505 unique constraint) surfaces as an RPC exception
-      if (atomicError.message?.includes('duplicate') || atomicError.message?.includes('23505')) {
-        throw new Error('Already registered for this tournament');
-      }
-      if (atomicError.message?.includes('Insufficient')) {
-        throw new Error(atomicError.message);
-      }
-      throw new Error(`Tournament registration failed: ${atomicError.message}`);
+    if (rpcError) {
+      throw new Error(`Tournament registration failed: ${rpcError.message}`);
+    }
+    const res = rpcResult as {
+      ok: boolean;
+      reason?: string;
+      registration_id?: string;
+      cost?: number;
+      mystery_bounty?: number | null;
+    } | null;
+    if (!res?.ok || !res.registration_id) {
+      throw new Error(registerReasonText(res?.reason));
     }
 
-    // Re-fetch the player row we just inserted (the RPC returns only the id)
+    // Re-fetch the player row the server created (the RPC returns only ids)
     const { data, error } = await supabase
       .from('tournament_players')
       .select(
         'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
       )
-      .eq('id', atomicPlayerId)
+      .eq('id', res.registration_id)
       .maybeSingle();
-
     if (error || !data) {
       reportError(error, 'TournamentService.Could_not_refetch_registered_player');
       throw new Error('Registration succeeded but player data could not be retrieved');
     }
 
-    // Log buy-in transaction (just the buy-in amount that feeds prize pool)
-    if (buyIn > 0) {
-      await WalletService.logTransaction(
-        userId,
-        'PLAYER',
-        -buyIn,
-        'debit',
-        'buyin',
-        `Tournament buy-in: ${tournament.name}`,
-        undefined,
-        tournamentId
-      );
-    }
-
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
-    // FIX: Also emit TOURNAMENT_UPDATED — UI components listen for this event, not TOURNAMENT_REGISTERED
     masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, userId, clubId: tournament.club_id });
     masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: tournament.status });
 
-    // Log rake/fee separately for clean audit trail
-    if (rake > 0) {
-      await WalletService.logTransaction(
-        userId,
-        'PLAYER',
-        -rake,
-        'debit',
-        'rake',
-        `Tournament fee: ${tournament.name}`,
-        undefined,
-        undefined,
-        tournamentId
-      );
-
-      // ── Credit tournament rake to club + track at union level ──
-      // RAKE-AUDIT 2026-07-24: hand_id was a synthetic TEXT string
-      // ("tournament-reg-<id>-<id>") but rake_records.hand_id is UUID — the
-      // insert failed on EVERY registration since launch (verified live: zero
-      // tournament rows in rake_records, all-time) and the error was swallowed.
-      // hand_id is now null (nullable), is_tournament/tournament_id/source are
-      // stamped, and the fee is attributed to the paying player via
-      // player_contributions so per-player fee reports and settlement rollups
-      // include tournament/SNG fees.
-      try {
-        const { error: rrError } = await supabase.from('rake_records').insert({
-          hand_id: null,
-          table_id: tournamentId,
-          club_id: clubId,
-          rake_amount: rake,
-          pot_size: totalCost,
-          num_players: 1,
-          bbj_contribution: 0,
-          is_tournament: true,
-          tournament_id: tournamentId,
-          source: 'TournamentService.register',
-          player_contributions: { [userId]: rake },
-          metadata: { kind: 'tournament_entry_fee', user_id: userId },
-        });
-        if (rrError) {
-          reportError(rrError, 'TournamentService.Failed_to_insert_tournament_rake_record');
-        }
-      } catch (e: unknown) {
-        reportError(e, 'TournamentService.Failed_to_insert_tournament_rake_record');
-      }
-
-      // Update tournament total_rake atomically to prevent lost updates on concurrent registrations
-      try {
-        const { error: rakeIncErr } = await retryAsync(
-          () =>
-            supabase.rpc('increment_tournament_rake', {
-              p_tournament_id: tournamentId,
-              p_amount: rake,
-            }),
-          3
-        );
-        // Fallback: read-modify-write (still inside try/catch for non-existence of RPC)
-        if (rakeIncErr) {
-          const { data: tData } = await supabase
-            .from('tournaments')
-            .select('total_rake')
-            .eq('id', tournamentId)
-            .maybeSingle();
-          if (tData) {
-            const { error: fallbackErr } = await supabase
-              .from('tournaments')
-              .update({ total_rake: (tData.total_rake || 0) + rake })
-              .eq('id', tournamentId);
-            if (fallbackErr)
-              reportError(fallbackErr, 'TournamentService.total_rake_update_fallback_failed');
-          }
-        }
-      } catch (e: unknown) {
-        reportError(e, 'TournamentService.Failed_to_update_tournament_total_rake');
-      }
-
-      // Track at union level if club belongs to a union
-      if (tournament.union_id) {
-        try {
-          const { data: unionData } = await supabase
-            .from('unions')
-            .select('total_rake')
-            .eq('id', tournament.union_id)
-            .maybeSingle();
-          if (unionData) {
-            const { error: unionRakeErr } = await supabase
-              .from('unions')
-              .update({ total_rake: (unionData.total_rake || 0) + rake })
-              .eq('id', tournament.union_id);
-            if (unionRakeErr)
-              reportError(unionRakeErr, 'TournamentService.union_total_rake_update_failed');
-          }
-        } catch (e: unknown) {
-          reportError(e, 'TournamentService.Failed_to_update_union_total_rake');
-        }
-      }
-    }
-
-    // Re-read fresh tournament data to avoid stale read-then-write race condition
+    // ── SNG/SPIN AUTO-START nudge (unchanged behavior): when full, pull
+    // start_time to now so the server discovery loop starts it immediately.
     const { data: freshTournament } = await supabase
       .from('tournaments')
-      .select('current_players, guaranteed_prize')
+      .select('current_players, max_players, variant')
       .eq('id', tournamentId)
       .maybeSingle();
-    // Use fresh DB count (not stale registrations.length) for accurate player tracking
-    const freshPlayerCount =
-      (freshTournament?.current_players ?? tournament.current_players ?? 0) + 1;
-    const { error: countError } = await supabase
-      .from('tournaments')
-      .update({
-        current_players: freshPlayerCount,
-      })
-      .eq('id', tournamentId);
-
-    if (countError) {
-      reportError(countError, 'TournamentService.Failed_to_increment_registration_count_r');
-      // Retry once — this is important for accurate player count
-      const { error: retryErr } = await supabase
-        .from('tournaments')
-        .update({
-          current_players: freshPlayerCount,
-        })
-        .eq('id', tournamentId);
-      if (retryErr) {
-        reportError(retryErr, 'TournamentService.WARN');
-      }
-    }
-
-    // Recompute prize pool from actual entries + rebuys + add-ons. Never derive
-    // it as buyIn*count here — that would wipe any rebuy/add-on money accrued
-    // during the late-reg/rebuy overlap window.
-    await this.recalculatePrizePool(tournamentId);
-
-    // ── SNG AUTO-START: if tournament is full, trigger immediate start ──
     if (
-      tournament.max_players &&
-      freshPlayerCount >= tournament.max_players &&
-      (tournament.variant === 'sng' || tournament.variant === 'spin')
+      freshTournament?.max_players &&
+      (freshTournament.current_players ?? 0) >= freshTournament.max_players &&
+      (freshTournament.variant === 'sng' || freshTournament.variant === 'spin')
     ) {
-      console.debug(
-        `[TournamentService] SNG ${tournamentId} is full (${freshPlayerCount}/${tournament.max_players}), auto-starting...`
-      );
       try {
-        // Set start_time to NOW so server's tournament discovery loop picks it up
-        // Server polls for REGISTERING tournaments where start_time <= now && players >= 2
         await supabase
           .from('tournaments')
-          .update({
-            start_time: new Date().toISOString(),
-          })
+          .update({ start_time: new Date().toISOString() })
           .eq('id', tournamentId);
       } catch (autoStartErr) {
         reportError(autoStartErr, 'TournamentService.SNG_autostart_failed');
       }
-    }
-
-    // ── LATE REGISTRATION ──
-    // TOURNEY-AUDIT 2026-07-24 (sweep 6): seating is now SERVER-AUTHORITATIVE.
-    // Dan's rule: an MTT late registrant is never waiting — the tournament
-    // engine's ensureLateRegSeated() cycle (every 5s) seats them at a table
-    // with an open seat, or spawns a new table and lets the TableBalancer
-    // redraw seats across all tables. The old client-side seating raced the
-    // engine (double-seat risk), inserted seats WITHOUT stacks in one path,
-    // and dumped players onto a dead "alternate list" when its case-sensitive
-    // status filter missed. The client now only registers; the engine seats.
-    if (isLateRegOpen) {
-      console.debug(
-        `[TournamentService] Late reg: ${userId.slice(0, 8)} registered — engine will seat within ~5s`
-      );
     }
 
     return data;

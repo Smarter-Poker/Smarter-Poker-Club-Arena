@@ -28,9 +28,9 @@ import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
   // TURN TIMER MANAGEMENT
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   protected clearTurnTimer(): void {
     // Phase 1.2: Cancel the PreciseActionTimer for the current player.
@@ -427,9 +427,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     return { success: true };
   }
 
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
   // MISSING ENDPOINTS — Bible V8 Required (heartbeat, preaction, sitout, state)
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   /**
    * POST /heartbeat — Bible V8 §6.3: Reset disconnect timer for a player
@@ -479,12 +479,50 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
 
     this.preActionEngine.setPreAction(this.tableId, userId, action as any, maxCallAmount);
+
+    // LIVE E2E FIX 2026-08-15: a pre-action armed AFTER the player's turn had
+    // already started used to sit queued until their NEXT turn — the only
+    // execution hook was handleTurnChange step 1, which had already run. Live
+    // repro: hero armed CALL ANY as a bet landed and the turn began; nothing
+    // fired and the turn timer ran. Real poker rooms convert the armed
+    // pre-action into an immediate action in that case. If it is currently
+    // this player's turn and they can still act, resolve the pre-action now
+    // and route it through the normal serialized action path
+    // (handlePlayerAction: validation, lock, timer clear, broadcast).
+    if (
+      player.seat === state.currentPlayerSeat &&
+      !player.is_folded &&
+      !player.is_all_in &&
+      !player.is_sitting_out
+    ) {
+      const toCall = Math.max(0, state.currentBet - (player.bet ?? 0));
+      const preResult = this.preActionEngine.executePreAction(
+        this.tableId,
+        userId,
+        toCall === 0,
+        toCall,
+        player.stack
+      );
+      if (preResult.executed && preResult.action) {
+        const acted = this.handlePlayerAction(userId, preResult.action, preResult.amount);
+        if (acted.success) {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Pre-action armed mid-turn executed immediately: ${userId} -> ${preResult.action}${preResult.amount ? ` ${preResult.amount}` : ''}`
+          );
+        } else {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Immediate pre-action ${preResult.action} rejected: ${acted.error}`
+          );
+        }
+      }
+    }
+
     return { success: true };
   }
 
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
   // REAL PLAYER ACTION — Accept actions from HTTP endpoint
-  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════════
 
   /**
    * Handle an action from a REAL player (not a horse).
@@ -809,11 +847,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const enginePlayer = state.players.find((p) => p.seat === seat);
     if (!enginePlayer) return;
 
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
     // UNIFIED TURN HANDLING — Horses and real players follow the EXACT same flow.
     // Bible V8: Horses MUST be indistinguishable from real players.
     // Same timer, same broadcast, same action path. NO EXCEPTIONS.
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
 
     const actionTime = this.tableInfo?.action_time_seconds || 15;
     this.timeBankActivatedThisTurn = false; // Reset anti-spam lock for this NEW turn

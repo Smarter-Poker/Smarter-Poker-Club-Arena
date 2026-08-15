@@ -345,6 +345,14 @@ export class HandController {
     this.state.currentBet = 0;
     // AUDIT V6: snap chips after ante collection
     this.snapChips();
+    // DEAD-WIRING FIX 2026-08-15: announce the bomb pot. Without this the only
+    // thing the client saw was a POT_UPDATE — an unexplained ante off every
+    // stack, then a hand that inexplicably began on the flop.
+    this.emit({
+      type: 'BOMB_POT_TRIGGERED',
+      anteAmount,
+      bbMultiplier: bombPot.anteMultiplier,
+    });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: this.state.pots });
   }
 

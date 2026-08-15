@@ -35,6 +35,16 @@ interface TournamentConfig {
   blindStructure: any[];
   payoutStructure: any[];
   bountyPercent?: number;
+  /**
+   * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
+   * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
+   * tournaments ever created carried these flags, so the whole feature was
+   * unreachable regardless of the server path being fixed. Opt-in per
+   * template so the first live exposure is a handful of formats, not the
+   * fleet.
+   */
+  rebuy?: boolean;
+  addOn?: boolean;
 }
 
 interface SNGConfig {
@@ -80,6 +90,16 @@ interface XMTTConfig {
   blindStructure: any[];
   payoutStructure: any[];
   bountyPercent?: number;
+  /**
+   * ROLLOUT 2026-08-15 (Dan: "enable on a few recurring formats first").
+   * Rebuys / re-entries / add-ons had NEVER been offered: 0 of 8,210
+   * tournaments ever created carried these flags, so the whole feature was
+   * unreachable regardless of the server path being fixed. Opt-in per
+   * template so the first live exposure is a handful of formats, not the
+   * fleet.
+   */
+  rebuy?: boolean;
+  addOn?: boolean;
 }
 
 interface HourlyTournamentBlock {
@@ -267,6 +287,8 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         horsesToRegister: 14,
         blindStructure: BLIND_STRUCTURES.TURBO,
         payoutStructure: PAYOUT_STRUCTURES.FIVE,
+        rebuy: true,
+        addOn: true,
       },
       {
         name: 'Sunrise Bounty (NLH)',
@@ -301,6 +323,8 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         horsesToRegister: 12,
         blindStructure: BLIND_STRUCTURES.TURBO,
         payoutStructure: PAYOUT_STRUCTURES.FIVE,
+        rebuy: true,
+        addOn: true,
       },
       {
         name: 'Brunch Special PKO (PLO8)',
@@ -335,6 +359,8 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         horsesToRegister: 20,
         blindStructure: BLIND_STRUCTURES.STANDARD,
         payoutStructure: PAYOUT_STRUCTURES.NINE,
+        rebuy: true,
+        addOn: true,
       },
     ],
   },
@@ -941,6 +967,20 @@ export class TournamentRecurringService {
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,
+            // Rebuy / add-on rollout — opt-in per template (see config docs).
+            // Cost and chips default to the buy-in and the starting stack,
+            // matching what process_tournament_rebuy computes server-side.
+            is_rebuy: (config as { rebuy?: boolean }).rebuy === true,
+            is_reentry: (config as { rebuy?: boolean }).rebuy === true,
+            rebuy_cost: (config as { rebuy?: boolean }).rebuy ? config.buyIn : null,
+            rebuy_chips: (config as { rebuy?: boolean }).rebuy ? config.startingStack : null,
+            rebuy_levels: (config as { rebuy?: boolean }).rebuy ? 6 : null,
+            max_rebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
+            max_reentries: (config as { rebuy?: boolean }).rebuy ? 1 : null,
+            add_on_available: (config as { addOn?: boolean }).addOn === true,
+            addon_cost: (config as { addOn?: boolean }).addOn ? config.buyIn : null,
+            addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
+            addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
           })
           .select()
           .maybeSingle(); // FIX 168
@@ -1096,6 +1136,20 @@ export class TournamentRecurringService {
             bounty_amount: bountyAmount,
             mystery_bounty_min: mysteryMin,
             mystery_bounty_max: mysteryMax,
+            // Rebuy / add-on rollout — opt-in per template (see config docs).
+            // Cost and chips default to the buy-in and the starting stack,
+            // matching what process_tournament_rebuy computes server-side.
+            is_rebuy: (config as { rebuy?: boolean }).rebuy === true,
+            is_reentry: (config as { rebuy?: boolean }).rebuy === true,
+            rebuy_cost: (config as { rebuy?: boolean }).rebuy ? config.buyIn : null,
+            rebuy_chips: (config as { rebuy?: boolean }).rebuy ? config.startingStack : null,
+            rebuy_levels: (config as { rebuy?: boolean }).rebuy ? 6 : null,
+            max_rebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
+            max_reentries: (config as { rebuy?: boolean }).rebuy ? 1 : null,
+            add_on_available: (config as { addOn?: boolean }).addOn === true,
+            addon_cost: (config as { addOn?: boolean }).addOn ? config.buyIn : null,
+            addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
+            addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
           })
           .select()
           .maybeSingle(); // FIX 168

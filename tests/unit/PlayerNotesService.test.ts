@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Tests player notes constants, cache behavior, and default fallbacks:
- * - NOTE_COLORS: 8 colors with unique IDs, valid hex values
+ * - NOTE_COLORS: 7 colors with unique IDs, valid hex values
  * - PLAYER_TAGS: 15 player tags
  * - getNote: cache hit, cache miss → default, saveNote → cache update
  * - clearCache: empties the internal map
@@ -58,8 +58,10 @@ describe('PlayerNotesService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('NOTE_COLORS', () => {
-    it('should contain exactly 8 colors', () => {
-      expect(NOTE_COLORS.length).toBe(8);
+    it('should contain exactly 7 colors', () => {
+      // Was 8; NOTE_COLORS is now pinned to the DB color_label CHECK
+      // (none, green, yellow, orange, red, blue, purple) = 7 entries.
+      expect(NOTE_COLORS.length).toBe(7);
     });
 
     it('should have unique IDs', () => {
@@ -73,9 +75,18 @@ describe('PlayerNotesService', () => {
       }
     });
 
-    it('should include blue as first color with hex #3b82f6', () => {
-      expect(NOTE_COLORS[0].id).toBe('blue');
-      expect(NOTE_COLORS[0].hex).toBe('#3b82f6');
+    it('should include "none" as first color with hex #6b7280', () => {
+      // First colour was blue/#3b82f6; the list now leads with the DB default
+      // label 'none' (grey) so the palette order matches the CHECK constraint.
+      expect(NOTE_COLORS[0].id).toBe('none');
+      expect(NOTE_COLORS[0].value).toBe('none');
+      expect(NOTE_COLORS[0].hex).toBe('#6b7280');
+    });
+
+    it('should have id and value matching for every color', () => {
+      for (const color of NOTE_COLORS) {
+        expect(color.value).toBe(color.id);
+      }
     });
   });
 
@@ -92,8 +103,14 @@ describe('PlayerNotesService', () => {
       expect(PLAYER_TAGS.some((t) => t.includes('Fish'))).toBe(true);
     });
 
-    it('should include "Calling Station" tag', () => {
-      expect(PLAYER_TAGS.some((t) => t.includes('Calling Station'))).toBe(true);
+    it('should include the "Station" tag', () => {
+      // Tag was renamed from 'Calling Station' to 'Station' (shorter chip label).
+      expect(PLAYER_TAGS).toContain('Station');
+      expect(PLAYER_TAGS.some((t) => t.includes('Calling Station'))).toBe(false);
+    });
+
+    it('should have unique tags', () => {
+      expect(new Set(PLAYER_TAGS).size).toBe(PLAYER_TAGS.length);
     });
   });
 

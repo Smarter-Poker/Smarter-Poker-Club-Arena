@@ -74,16 +74,18 @@ describe('HydraService', () => {
       expect(HydraService.config.fleetSize).toBe(308);
     });
 
-    it('should have maxHorsesPerTable = 3', () => {
-      expect(HydraService.config.maxHorsesPerTable).toBe(3);
+    it('should have maxHorsesPerTable = 4', () => {
+      // Was 3; DEFAULT_CONFIG now seats up to 4 horses at a cash game table.
+      expect(HydraService.config.maxHorsesPerTable).toBe(4);
     });
 
     it('should have minHorsesPerTable = 0', () => {
       expect(HydraService.config.minHorsesPerTable).toBe(0);
     });
 
-    it('should have entryDelayRange [10, 90]', () => {
-      expect(HydraService.config.entryDelayRange).toEqual([10, 90]);
+    it('should have entryDelayRange [1, 3]', () => {
+      // Was [10, 90] seconds; entry delay was tightened to [1, 3] so tables fill fast.
+      expect(HydraService.config.entryDelayRange).toEqual([1, 3]);
     });
 
     it('should have organicRecedeEnabled = true', () => {
@@ -111,6 +113,8 @@ describe('HydraService', () => {
       // Others remain default
       expect(HydraService.config.organicRecedeEnabled).toBe(true);
       expect(HydraService.config.seatWarmupDelay).toBe(2000);
+      // Default entryDelayRange is [1, 3] (was [10, 90]) and survives the merge.
+      expect(HydraService.config.entryDelayRange).toEqual([1, 3]);
     });
 
     it('should reset to defaults when called with no args', () => {

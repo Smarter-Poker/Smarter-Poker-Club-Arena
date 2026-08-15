@@ -58,7 +58,13 @@ describe('ErrorBoundary Component', () => {
       </ErrorBoundary>
     );
 
-    expect(screen.getByText('⚠️')).toBeInTheDocument();
+    // UPDATED: the '⚠️' glyph was replaced with the literal word "Warning" —
+    // CLAUDE.md §"No emoji in source files (breaks SWC compiler)". It still
+    // renders in the same 4rem display-icon slot above the heading, so assert
+    // the text AND that it is the oversized icon element.
+    const icon = screen.getByText('Warning');
+    expect(icon).toBeInTheDocument();
+    expect(icon).toHaveStyle('font-size: 4rem');
 
     consoleErrorSpy.mockRestore();
   });

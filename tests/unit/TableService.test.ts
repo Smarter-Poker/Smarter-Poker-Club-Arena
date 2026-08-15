@@ -129,9 +129,17 @@ describe('TableService', () => {
       expect(typeof unsub).toBe('function');
     });
 
-    it('subscribeToHand returns unsubscribe function', () => {
-      const unsub = tableService.subscribeToHand('table-1', vi.fn());
-      expect(typeof unsub).toBe('function');
+    it('subscribeToHand is gone — hand state comes from the engine socket', () => {
+      // 2026-08-15: the old test expected tableService.subscribeToHand to
+      // return an unsubscribe function. That helper was INTENTIONALLY deleted
+      // in "Phase 1.1 PR-5 (NO-GO-2)" (TableService.ts:544-549): hand/game
+      // state is now consumed by TablePage through
+      // src/hooks/useEngineTableState.ts over the engine WebSocket, not via
+      // Supabase Realtime. Pin the removal so the dead path cannot come back.
+      const surface = tableService as unknown as Record<string, unknown>;
+      expect(surface.subscribeToHand).toBeUndefined();
+      // The surviving metadata subscription still exists and is exercised above.
+      expect(typeof tableService.subscribeToTable).toBe('function');
     });
   });
 });

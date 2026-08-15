@@ -15,34 +15,20 @@ const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 // ─── Mock dependencies ────────────────────────────────────────────────────
-
-vi.mock('../../src/services/ReconnectingWebSocket', () => ({
-  ReconnectingWebSocket: vi.fn().mockImplementation(() => ({
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    send: vi.fn(),
-    onMessage: vi.fn(),
-    getStatus: vi.fn().mockReturnValue('CLOSED'),
-  })),
-}));
-
-vi.mock('../../src/services/DeltaSyncService', () => ({
-  DeltaSyncService: vi.fn().mockImplementation(() => ({
-    onChange: vi.fn(),
-    onSnapshotRequest: vi.fn(),
-    processMessage: vi.fn(),
-    getVersion: vi.fn().mockReturnValue(0),
-  })),
-}));
+//
+// UPDATED (Round 56, 2026-05-01): the ReconnectingWebSocket / DeltaSyncService
+// mocks that used to live here were deleted along with their modules — see the
+// "WEBSOCKET CONNECTIVITY" note in src/services/GameServerAPI.ts. Nothing in
+// GameServerAPI imports them any more, so mocking non-existent module paths
+// was dead weight.
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
+import * as GameServerAPI from '../../src/services/GameServerAPI';
 import {
   submitAction,
   getAvailableActions,
   getServerStatus,
-  getWebSocketStatus,
-  disconnectTableWebSocket,
 } from '../../src/services/GameServerAPI';
 
 describe('GameServerAPI', () => {
@@ -138,13 +124,43 @@ describe('GameServerAPI', () => {
   });
 
   describe('WebSocket helpers', () => {
-    it('getWebSocketStatus should return null when not connected', () => {
-      expect(getWebSocketStatus()).toBeNull();
+    // UPDATED (Round 56, 2026-05-01): GameServerAPI no longer owns a WebSocket.
+    // The legacy connectTableWebSocket / getWebSocketStatus /
+    // disconnectTableWebSocket trio was deleted because it duplicated the
+    // engine WS wiring without bearer auth or PING replies; the production
+    // reconnect path is services/EngineStateClient.ts. These tests used to
+    // call the removed helpers — they now pin the removal so the footgun
+    // cannot be reintroduced through this module.
+    it('no longer exports the legacy table WebSocket helpers', () => {
+      const surface = GameServerAPI as unknown as Record<string, unknown>;
+      expect(surface.connectTableWebSocket).toBeUndefined();
+      expect(surface.getWebSocketStatus).toBeUndefined();
+      expect(surface.disconnectTableWebSocket).toBeUndefined();
     });
 
-    it('disconnectTableWebSocket should not crash when not connected', () => {
-      disconnectTableWebSocket();
-      // No throw = pass
+    it('exposes only HTTP action endpoints on its default export', () => {
+      const keys = Object.keys(GameServerAPI.default).sort();
+      expect(keys).toEqual(
+        [
+          'activateTimeBank',
+          'addChips',
+          'getAvailableActions',
+          'getServerStatus',
+          'getTableState',
+          'previewInsurance',
+          'removeChips',
+          'respondToInsurance',
+          'respondToRIT',
+          'sendHeartbeat',
+          'setPreAction',
+          'setSitOut',
+          'showHand',
+          'submitAction',
+          'submitDiscard',
+          'toggleStraddle',
+        ].sort()
+      );
+      expect(keys.some((k) => /websocket/i.test(k))).toBe(false);
     });
   });
 });

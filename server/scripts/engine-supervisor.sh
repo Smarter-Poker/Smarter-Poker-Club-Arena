@@ -34,16 +34,54 @@ STATE_FILE="$STATE_DIR/supervisor-fails"
 FAIL_THRESHOLD="${FAIL_THRESHOLD:-3}"
 # Grace after container start, must exceed --health-start-period.
 BOOT_GRACE_SEC="${BOOT_GRACE_SEC:-120}"
+# node-exporter textfile collector directory. The supervisor publishes its own
+# heartbeat and recovery counters here. This matters more than it looks: a
+# supervisor that dies is otherwise completely invisible — the thing watching
+# for silence is the thing that went silent. The heartbeat gauge lets
+# Prometheus alert on the supervisor itself going stale.
+TEXTFILE_DIR="${TEXTFILE_DIR:-/var/lib/node-exporter-textfile}"
+METRIC_FILE="$TEXTFILE_DIR/club_arena_supervisor.prom"
+COUNTER_FILE="$STATE_DIR/recoveries"
 
 mkdir -p "$STATE_DIR" 2>/dev/null || true
 
 log() { echo "[engine-supervisor] $*"; logger -t engine-supervisor -- "$*" 2>/dev/null || true; }
 
 act() {
-  # $1 = reason. Records the recovery so it shows up in journalctl and can be
-  # alerted on — a supervisor that silently papers over a crash-loop is worse
-  # than no supervisor.
+  # $1 = reason. Records the recovery so it shows up in journalctl AND in
+  # Prometheus — a supervisor that silently papers over a crash-loop is worse
+  # than no supervisor, because it converts a loud outage into a quiet one.
   log "RECOVERY: $1"
+  local n
+  n=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  echo $((n + 1)) > "$COUNTER_FILE" 2>/dev/null || true
+}
+
+# Written on EVERY run, including clean no-op runs, so the heartbeat gauge stays
+# fresh. Temp file + mv, because node-exporter reads this concurrently and a
+# half-written file is a parse error that drops all of these series at once.
+emit_metrics() {
+  local serving="$1" state="$2"
+  local recoveries
+  recoveries=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
+  case "$recoveries" in ''|*[!0-9]*) recoveries=0 ;; esac
+  mkdir -p "$TEXTFILE_DIR" 2>/dev/null || return 0
+  local tmp="$METRIC_FILE.$$"
+  {
+    echo "# HELP club_arena_supervisor_last_run_timestamp_seconds Unix time of the last supervisor run."
+    echo "# TYPE club_arena_supervisor_last_run_timestamp_seconds gauge"
+    echo "club_arena_supervisor_last_run_timestamp_seconds $(date +%s)"
+    echo "# HELP club_arena_supervisor_recoveries_total Times the supervisor had to intervene."
+    echo "# TYPE club_arena_supervisor_recoveries_total counter"
+    echo "club_arena_supervisor_recoveries_total $recoveries"
+    echo "# HELP club_arena_engine_serving 1 when the engine answered /health with running:true."
+    echo "# TYPE club_arena_engine_serving gauge"
+    echo "club_arena_engine_serving $serving"
+    echo "# HELP club_arena_engine_container_running 1 when the container state is 'running'."
+    echo "# TYPE club_arena_engine_container_running gauge"
+    echo "club_arena_engine_container_running $state"
+  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$METRIC_FILE" 2>/dev/null || rm -f "$tmp" 2>/dev/null
 }
 
 reset_fails() { echo 0 > "$STATE_FILE" 2>/dev/null || true; }
@@ -58,6 +96,7 @@ bump_fails() {
 
 if ! docker info >/dev/null 2>&1; then
   log "docker daemon unreachable — nothing this script can do; leaving to systemd/docker.service"
+  emit_metrics 0 0
   exit 0
 fi
 
@@ -70,6 +109,7 @@ if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
     log "FATAL: $UP_SCRIPT missing or not executable — cannot recreate"
   fi
   reset_fails
+  emit_metrics 0 0
   exit 0
 fi
 
@@ -84,6 +124,7 @@ if [ "$STATUS" != "running" ]; then
     [ -x "$UP_SCRIPT" ] && CONTAINER="$CONTAINER" IMAGE="$IMAGE" PORT="$PORT" "$UP_SCRIPT" || log "engine-up.sh failed"
   fi
   reset_fails
+  emit_metrics 0 1
   exit 0
 fi
 
@@ -96,6 +137,7 @@ if [ -n "$STARTED_AT" ]; then
   if [ "$START_EPOCH" -gt 0 ] && [ "$AGE" -lt "$BOOT_GRACE_SEC" ]; then
     log "running for ${AGE}s (< ${BOOT_GRACE_SEC}s boot grace) — not judging health yet"
     reset_fails
+    emit_metrics 1 1
     exit 0
   fi
 fi
@@ -111,6 +153,7 @@ if [ "$SERVING" = "1" ]; then
   PREV=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
   [ "$PREV" != "0" ] && log "health recovered after $PREV consecutive failures"
   reset_fails
+  emit_metrics 1 1
   exit 0
 fi
 
@@ -127,4 +170,5 @@ if [ "$FAILS" -ge "$FAIL_THRESHOLD" ]; then
   reset_fails
 fi
 
+emit_metrics 0 1
 exit 0

@@ -292,10 +292,6 @@ export default function PublicProfilePage() {
         <div className="public-profile-empty">
           <span className="empty-icon">👤</span>
           <h2>Player Not Found</h2>
-          <p>This player doesn't exist or their profile is hidden.</p>
-          <button className="back-btn" onClick={() => navigate(-1)}>
-            ← Go Back
-          </button>
         </div>
       </div>
     );
@@ -310,9 +306,6 @@ export default function PublicProfilePage() {
     <div className="public-profile-page">
       {/* Header with avatar & name */}
       <div className="public-profile-header">
-        <button className="back-btn" onClick={() => navigate(-1)}>
-          ←
-        </button>
         <div className="profile-hero">
           <PlayerAvatar
             src={profile.avatarUrl || generateDefaultAvatar()}

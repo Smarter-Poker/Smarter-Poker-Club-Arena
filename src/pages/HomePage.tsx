@@ -1488,7 +1488,6 @@ function HomePageInner() {
                 />
                 <span className={styles.tileLabel}>{tile.alt}</span>
               </div>
-              <div className={styles.tileEdge}></div>
             </button>
           ))}
         </div>

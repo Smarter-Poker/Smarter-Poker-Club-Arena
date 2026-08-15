@@ -452,14 +452,9 @@ export default function ClubLobby() {
 
   return (
     <div className="club-lobby">
-      {/* Header */}
-      <header className="lobby-header">
+      {/* Toolbar */}
+      <div className="lobby-toolbar">
         <div className="header-left">
-          <Link to="/" className="back-btn" aria-label="Back to Home">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
-            </svg>
-          </Link>
           <div className="header-icons">
             {/* Fix #3: Wired search button */}
             <button
@@ -490,7 +485,7 @@ export default function ClubLobby() {
               </div>
             )}
         </div>
-      </header>
+      </div>
 
       {/* Search Bar (toggleable) */}
       {showSearch && (

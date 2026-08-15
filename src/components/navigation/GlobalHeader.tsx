@@ -191,27 +191,33 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
       </Suspense>
 
       <header className={styles.header} style={headerStyle}>
-        {/* LEFT: Hamburger Menu + Back/Hub Button */}
+        {/* LEFT: Hamburger Menu OR Back/Hub Button */}
         <div className={styles.headerLeft}>
-          <button onClick={handleMenuToggle} className={styles.hamburgerBtn} aria-label="Open Menu">
-            <img
-              src={`${BASE}images/btn-hamburger-v4.png`}
-              alt="Menu"
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          </button>
-
-          <button
-            onClick={isSubPage ? handleBackClick : handleHubClick}
-            className={`${styles.headerImgBtn} ${styles.headerNavBtn}`}
-            aria-label={isSubPage ? 'Go back' : 'Return to Hub'}
-          >
-            <img
-              src={isSubPage ? `${BASE}images/btn-back.png` : `${BASE}images/btn-hub-v4.png`}
-              alt={isSubPage ? 'Back' : 'Hub'}
-              style={{ height: '100%', width: '100%', objectFit: 'contain' }}
-            />
-          </button>
+          {!isSubPage ? (
+            <button
+              onClick={handleMenuToggle}
+              className={styles.hamburgerBtn}
+              aria-label="Open Menu"
+            >
+              <img
+                src={`${BASE}images/btn-hamburger-v4.png`}
+                alt="Menu"
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            </button>
+          ) : (
+            <button
+              onClick={handleBackClick}
+              className={`${styles.headerImgBtn} ${styles.headerNavBtn}`}
+              aria-label="Go back"
+            >
+              <img
+                src={`${BASE}images/btn-back.png`}
+                alt="Back"
+                style={{ height: '100%', width: '100%', objectFit: 'contain' }}
+              />
+            </button>
+          )}
         </div>
 
         {/* CENTER: Brand Text Image */}

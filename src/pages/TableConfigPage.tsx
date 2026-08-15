@@ -853,12 +853,9 @@ export default function TableConfigPage() {
   return (
     <div className="table-config-page">
       {/* Header */}
-      <header className="config-header">
-        <button className="back-btn" onClick={() => navigate(`/clubs/${clubId}/create-table`)}>
-          ‹‹
-        </button>
+      <div className="config-header">
         <h1 className="config-title">{gameInfo.name}</h1>
-      </header>
+      </div>
 
       {/* Game Mode Tabs */}
       <div className="mode-tabs">

@@ -1041,9 +1041,6 @@ export default function ClubDetailPage() {
       <div className={styles.error}>
         <h2>Club Not Found</h2>
         <p>The club you're looking for doesn't exist.</p>
-        <Link to="/clubs" className={styles.backLink}>
-          ← Back to Clubs
-        </Link>
       </div>
     );
   }

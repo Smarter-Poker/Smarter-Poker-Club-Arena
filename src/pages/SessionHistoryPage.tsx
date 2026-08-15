@@ -245,9 +245,6 @@ export default function SessionHistoryPage() {
     <div className="session-history-page">
       {/* Header */}
       <div className="sh-header">
-        <button className="sh-back" onClick={() => navigate(-1)}>
-          ← Back
-        </button>
         <h1 className="sh-title">Session History</h1>
       </div>
 

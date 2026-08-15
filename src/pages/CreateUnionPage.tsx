@@ -188,12 +188,9 @@ export default function CreateUnionPage() {
     <div className={styles.page}>
       <div className={styles.container}>
         {/* Header */}
-        <header className={styles.header}>
-          <button className={styles.backButton} onClick={() => navigate('/unions')}>
-            ← Back
-          </button>
+        <div className={styles.header}>
           <h1>Create Your Union</h1>
-        </header>
+        </div>
 
         {/* Progress */}
         <div className={styles.progress}>

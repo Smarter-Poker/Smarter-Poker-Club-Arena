@@ -147,7 +147,11 @@ describe('mapEngineSnapshot — per-seat chips in front (AUDIT FIX client-1)', (
 });
 
 describe('mapEngineSnapshot — side-pot eligibility (AUDIT FIX client-5)', () => {
-  it('resolves eligible USER IDs to seat numbers', () => {
+  it('resolves eligible USER IDs to seat numbers and excludes the main pot', () => {
+    // Three-way all-in producing a full settlement partition:
+    //   pots[0] = main pot   300, everyone eligible      (seats 3, 5, 7)
+    //   pots[1] = side pot 1 200, u-b + u-c eligible     (seats 5, 7)
+    //   pots[2] = side pot 2 100, u-c only               (seat 7)
     const snap = makeSnapshot({
       players: [
         { seat: 3, user_id: 'u-a', stack: 0, bet: 0 } as never,
@@ -157,10 +161,28 @@ describe('mapEngineSnapshot — side-pot eligibility (AUDIT FIX client-5)', () =
       pots: [
         { amount: 300, eligible: ['u-a', 'u-b', 'u-c'] },
         { amount: 200, eligible: ['u-b', 'u-c'] },
+        { amount: 100, eligible: ['u-c'] },
       ],
     } as never);
     const out = mapEngineSnapshot(snap, 'u-a', 9);
-    expect(out.sidePots[0].eligibleSeats).toEqual([3, 5, 7]);
-    expect(out.sidePots[1].eligibleSeats).toEqual([5, 7]);
+
+    // UPDATED for LIVE E2E FIX 2026-08-15 (src/utils/mapEngineSnapshot.ts):
+    // pots[0] IS the main pot and is now rendered as `pot`, not as a side pot
+    // — mapping every entry double-rendered it ("POT 300 / SIDE POT 1: 300").
+    // Only pots[1..] become sidePots, so two pots here, not three.
+    expect(out.pot).toBe(300);
+    expect(out.sidePots).toHaveLength(2);
+
+    // The original point of this test: `pots[].eligible` holds USER IDs and the
+    // mapper must resolve each to its seat number (client-5).
+    expect(out.sidePots[0].amount).toBe(200);
+    expect(out.sidePots[0].eligibleSeats).toEqual([5, 7]);
+    expect(out.sidePots[1].amount).toBe(100);
+    expect(out.sidePots[1].eligibleSeats).toEqual([7]);
+
+    // Regression guard for the slice(1) fix: the main pot must not appear in
+    // sidePots under any index (neither by amount nor by its eligibility set).
+    expect(out.sidePots.map((p) => p.amount)).not.toContain(300);
+    expect(out.sidePots.map((p) => p.eligibleSeats)).not.toContainEqual([3, 5, 7]);
   });
 });

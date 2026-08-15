@@ -162,8 +162,13 @@ describe('AchievementTriggerService', () => {
   // ON TOURNAMENT COMPLETE
   // ─────────────────────────────────────────────────────────────────────────
 
+  // UPDATED: the tournament achievement IDs were corrected in
+  // src/services/AchievementTriggerService.ts — 'tourney_played_10' and
+  // 'tourney_wins_5' never existed in the ACHIEVEMENTS catalogue, so those
+  // increments silently no-op'd. The real IDs (see src/services/
+  // AchievementService.ts) are 'tourney_played_50' and 'tourney_win_1'.
   describe('onTournamentComplete', () => {
-    it('should increment tourney_played_10', async () => {
+    it('should increment tourney_played_50', async () => {
       await achievementTriggerService.onTournamentComplete('user-1', {
         position: 5,
         entries: 50,
@@ -171,10 +176,10 @@ describe('AchievementTriggerService', () => {
         prizeAmount: 0,
       });
 
-      expect(mockIncrementProgress).toHaveBeenCalledWith('user-1', 'tourney_played_10');
+      expect(mockIncrementProgress).toHaveBeenCalledWith('user-1', 'tourney_played_50');
     });
 
-    it('should increment tourney_wins_5 only when won', async () => {
+    it('should increment tourney_win_1 only when won', async () => {
       await achievementTriggerService.onTournamentComplete('user-1', {
         position: 1,
         entries: 50,
@@ -182,10 +187,10 @@ describe('AchievementTriggerService', () => {
         prizeAmount: 5000,
       });
 
-      expect(mockIncrementProgress).toHaveBeenCalledWith('user-1', 'tourney_wins_5');
+      expect(mockIncrementProgress).toHaveBeenCalledWith('user-1', 'tourney_win_1');
     });
 
-    it('should NOT increment tourney_wins_5 when not won', async () => {
+    it('should NOT increment tourney_win_1 when not won', async () => {
       await achievementTriggerService.onTournamentComplete('user-1', {
         position: 10,
         entries: 50,
@@ -193,6 +198,10 @@ describe('AchievementTriggerService', () => {
         prizeAmount: 0,
       });
 
+      expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'tourney_win_1');
+      // ...and the stale IDs must never come back: they match nothing in the
+      // ACHIEVEMENTS catalogue, so awarding through them is a silent no-op.
+      expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'tourney_played_10');
       expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'tourney_wins_5');
     });
   });

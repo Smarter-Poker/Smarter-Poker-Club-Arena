@@ -40,6 +40,15 @@ vi.mock('../../src/lib/supabase', () => {
         }),
       },
     },
+    // 2026-08-15: src/lib/supabase also exports the getAuthUser() helper, and
+    // ClubsService imports it (ClubsService.ts:8) for canJoinMoreClubs. This
+    // suite-local mock only stubbed the `supabase` client, so vitest threw
+    // 'No "getAuthUser" export is defined on the "../../src/lib/supabase" mock'.
+    // Mirrors the real helper's shape: { data: { user }, error }.
+    getAuthUser: vi.fn().mockResolvedValue({
+      data: { user: { id: 'test-user-id' } },
+      error: null,
+    }),
   };
 });
 

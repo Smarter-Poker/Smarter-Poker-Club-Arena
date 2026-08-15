@@ -85,7 +85,11 @@ describe('AgentService', () => {
           playerRakebackRate: 0.3,
           creditLimit: 10000,
         })
-      ).rejects.toThrow(/exceed 70%/i);
+        // 2026-08-15: regex updated to the message createAgent actually throws.
+        // The 70% cap IS enforced (AgentService.ts:270-271); only the wording
+        // differs from the old /exceed 70%/i — createAgent says "must be between
+        // 0% and 70%", while updateRates says "cannot exceed 70%".
+      ).rejects.toThrow(/commission rate must be between 0% and 70%/i);
     });
 
     it('should reject commission rate at 71%', async () => {
@@ -117,7 +121,10 @@ describe('AgentService', () => {
           playerRakebackRate: 0.55,
           creditLimit: 10000,
         })
-      ).rejects.toThrow(/exceed 50%/i);
+        // 2026-08-15: regex updated to the message createAgent actually throws.
+        // The 50% rakeback cap IS enforced (AgentService.ts:272-273); the
+        // wording is "must be between 0% and 50%", not "cannot exceed 50%".
+      ).rejects.toThrow(/rakeback rate must be between 0% and 50%/i);
     });
   });
 

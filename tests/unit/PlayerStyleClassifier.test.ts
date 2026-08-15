@@ -28,7 +28,8 @@ describe('PlayerStyleClassifier', () => {
       });
       expect(result.style).toBe('unknown');
       expect(result.confidence).toBe(0);
-      expect(result.icon).toBe('❓');
+      // Icons moved from emoji to letters 2026-08 (was '❓'); classification itself unchanged.
+      expect(result.icon).toBe('?');
     });
 
     it('should return "unknown" for 0 hands', () => {
@@ -56,7 +57,8 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 10,
       });
       expect(result.style).toBe('nit');
-      expect(result.icon).toBe('🧊');
+      // Icons moved from emoji to letters 2026-08 (was '🧊'); classification itself unchanged.
+      expect(result.icon).toBe('N');
     });
 
     it('should classify Rock (VPIP < 18, PFR < 10, AF < 2.0)', () => {
@@ -69,7 +71,8 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 10, // AF = 1.0
       });
       expect(result.style).toBe('rock');
-      expect(result.icon).toBe('🪨');
+      // Icons moved from emoji to letters 2026-08 (was '🪨'); classification itself unchanged.
+      expect(result.icon).toBe('R');
     });
 
     it('should classify Maniac (VPIP > 40, PFR > 25, AF > 2.5)', () => {
@@ -82,7 +85,8 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 10, // AF = 3.0
       });
       expect(result.style).toBe('maniac');
-      expect(result.icon).toBe('🔥');
+      // Icons moved from emoji to letters 2026-08 (was '🔥'); classification itself unchanged.
+      expect(result.icon).toBe('M');
     });
 
     it('should classify Calling Station (VPIP > 40, PFR < 12, AF < 1.5)', () => {
@@ -95,7 +99,8 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 20, // AF = 0.25
       });
       expect(result.style).toBe('calling_station');
-      expect(result.icon).toBe('📞');
+      // Icons moved from emoji to letters 2026-08 (was '📞'); 'CS' is the only 2-letter icon.
+      expect(result.icon).toBe('CS');
     });
 
     it('should classify Fish (VPIP > 35, PFR < 15, AF < 2.0)', () => {
@@ -108,6 +113,7 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 10, // AF = 1.0
       });
       expect(result.style).toBe('fish');
+      // Fish + Shark still carry emoji icons in STYLE_MAP (letter migration 2026-08 left them).
       expect(result.icon).toBe('🐟');
     });
 
@@ -121,6 +127,7 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 10, // AF = 3.0
       });
       expect(result.style).toBe('shark');
+      // Fish + Shark still carry emoji icons in STYLE_MAP (letter migration 2026-08 left them).
       expect(result.icon).toBe('🦈');
     });
 
@@ -134,7 +141,8 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 10, // AF = 2.0
       });
       expect(result.style).toBe('lag');
-      expect(result.icon).toBe('💥');
+      // Icons moved from emoji to letters 2026-08 (was '💥'); classification itself unchanged.
+      expect(result.icon).toBe('L');
     });
 
     it('should classify TAG (VPIP 15-28, PFR >= 10, AF >= 1.5)', () => {
@@ -147,7 +155,8 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 10, // AF = 1.5
       });
       expect(result.style).toBe('tag');
-      expect(result.icon).toBe('🎯');
+      // Icons moved from emoji to letters 2026-08 (was '🎯'); classification itself unchanged.
+      expect(result.icon).toBe('T');
     });
   });
 
@@ -236,13 +245,14 @@ describe('PlayerStyleClassifier', () => {
       expect(label).toBe('🦈 Shark');
     });
 
-    it('should return "❓ ?" for insufficient data', () => {
+    it('should return "? ?" for insufficient data', () => {
       const label = playerStyleClassifier.getStyleLabel({
         handsPlayed: 5,
         vpipCount: 1,
         pfrCount: 0,
       });
-      expect(label).toBe('❓ ?');
+      // Unknown icon moved from '❓' to '?' 2026-08, so the label is now '? ?'.
+      expect(label).toBe('? ?');
     });
   });
 
@@ -250,9 +260,16 @@ describe('PlayerStyleClassifier', () => {
     it('should return all 9 style definitions', () => {
       const defs = playerStyleClassifier.getStyleDefinitions();
       expect(Object.keys(defs).length).toBe(9);
+      // Shark/Fish kept their emoji; unknown moved '❓' → '?' in the 2026-08 letter migration.
       expect(defs.shark.icon).toBe('🦈');
       expect(defs.fish.icon).toBe('🐟');
-      expect(defs.unknown.icon).toBe('❓');
+      expect(defs.unknown.icon).toBe('?');
+      expect(defs.rock.icon).toBe('R');
+      expect(defs.maniac.icon).toBe('M');
+      expect(defs.tag.icon).toBe('T');
+      expect(defs.lag.icon).toBe('L');
+      expect(defs.nit.icon).toBe('N');
+      expect(defs.calling_station.icon).toBe('CS');
     });
 
     it('should return a copy (not mutate original)', () => {

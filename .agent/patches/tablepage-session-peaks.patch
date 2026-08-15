@@ -1,0 +1,30 @@
+diff --git a/src/pages/TablePage.tsx b/src/pages/TablePage.tsx
+index 6fb2eb7..740576c 100644
+--- a/src/pages/TablePage.tsx
++++ b/src/pages/TablePage.tsx
+@@ -969,6 +969,25 @@ export default function TablePage({
+   } = useTableSession();
+   const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
+ 
++  // LIVE E2E FIX 2026-08-15 (first change shipped via the agent-patch
++  // pipeline): tick-accurate session peaks. The Session Complete modal used
++  // to show "BIGGEST POT 0" (ref never written here) and a stale peak stack
++  // (only moved on buy-ins). Track both from the authoritative tableState on
++  // every update while the hero is seated; the MasterBus-based tracking in
++  // useTableSession stays as a fallback for values these updates miss.
++  useEffect(() => {
++    if (tableState.heroSeat > 0) {
++      if (tableState.pot > biggestPotRef.current) {
++        biggestPotRef.current = tableState.pot;
++      }
++      const heroStack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
++      if (heroStack > peakStackRef.current) {
++        peakStackRef.current = heroStack;
++      }
++    }
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [tableState.pot, tableState.players, tableState.heroSeat]);
++
+   // Previous hand tracking for bottom-left HUD card
+   const [prevHandResult, setPrevHandResult] = useState<{
+     handNumber: number;

@@ -528,7 +528,7 @@
 ═══════════════════════════════════════════════════════════════════════════════ */
 .club-home__games {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 1rem;
   padding: 1rem;
   position: relative;
@@ -888,17 +888,9 @@
     flex-direction: row;
     justify-content: space-between;
   }
-
-  .club-home__games {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
-@media (max-width: 380px) {
-  .club-home__games {
-    grid-template-columns: 1fr;
-  }
-}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    CLUB LEVEL BADGE & PROGRESS

@@ -763,6 +763,18 @@ export abstract class ServerTableEngineBase {
     return this.isTournamentTable();
   }
 
+  /**
+   * Seated roster, used by the fault-injection safety gate to refuse a drill on
+   * any table where a real person is sitting.
+   */
+  seatedRoster(): Array<{ user_id: string; seat_number: number; is_horse: boolean }> {
+    return this.seatedPlayers.map((p) => ({
+      user_id: p.user_id,
+      seat_number: p.seat_number,
+      is_horse: !!p.is_horse,
+    }));
+  }
+
   // FIX 153: Expose telemetry snapshot for health endpoint
   getTelemetrySnapshot() {
     return this.engineTelemetry.getSnapshot();

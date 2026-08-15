@@ -48,7 +48,16 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
 fi
 
 log "replacing $CONTAINER with image $IMAGE"
-docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+# STOP, then remove. NOT `docker rm -f`, which is SIGKILL with no grace period.
+# The engine drains its table engines and flushes hand-state snapshots on
+# SIGTERM; killing it outright loses whatever was mid-flush. Docker's default
+# grace is 10s, which was already found to be too short — it SIGKILLed the
+# engine partway through the flush — hence -t 45.
+if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+  log "stopping $CONTAINER (SIGTERM, 45s grace for snapshot flush)"
+  docker stop -t 45 "$CONTAINER" >/dev/null 2>&1 || true
+  docker rm "$CONTAINER" >/dev/null 2>&1 || docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+fi
 
 docker run -d \
   --name "$CONTAINER" \

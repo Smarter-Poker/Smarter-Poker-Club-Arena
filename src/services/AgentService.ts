@@ -11,6 +11,7 @@
  */
 
 import { supabase, getAuthUser } from '../lib/supabase';
+import { callClubArenaApi } from './clubArenaApi';
 import { WalletService } from './WalletService';
 import { ChipFlowService } from './ChipFlowService';
 import { masterBus } from '../core/MasterBus';
@@ -1081,24 +1082,30 @@ class AgentServiceClass {
 
     const sanitizedAmount = Math.floor(amount);
 
-    const { data: result, error: rpcErr } = await retryAsync(
-      () =>
-        supabase.rpc('distribute_chips', {
-          p_club_id: clubId,
-          p_to_user_id: toUserId,
-          p_amount: sanitizedAmount,
-          p_distributed_by: distributedBy,
-        }),
-      3
-    );
-
-    if (rpcErr) {
-      reportError(rpcErr, 'AgentService.treasuryDistribution');
-      return { success: false, error: rpcErr.message || 'Distribution failed' };
-    }
-
-    if (!result?.success) {
-      return { success: false, error: result?.error || 'Distribution failed' };
+    // Distribute SERVER-SIDE. `distribute_chips` is service_role-only, so the old
+    // direct browser rpc() returned 42501 and this button could never work. The
+    // route derives the distributor from the JWT (p_distributed_by cannot be
+    // spoofed), branches correctly for agent-vs-owner, enforces the settlement
+    // lock and rate limits, and writes the audit trail.
+    let result: {
+      treasury_before?: number;
+      treasury_after?: number;
+      member_before?: number;
+      member_after?: number;
+    };
+    try {
+      result = await callClubArenaApi('distribute-chips', {
+        clubId,
+        toUserId,
+        amount: sanitizedAmount,
+        notes,
+      });
+    } catch (err) {
+      reportError(err, 'AgentService.treasuryDistribution');
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Distribution failed',
+      };
     }
 
     masterBus.emit('BALANCE_UPDATED', { source: 'treasury_distribution' });

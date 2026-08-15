@@ -3121,6 +3121,35 @@ export default function TablePage({
                     `[TablePage] Rebuy: ${rebuyData.userId.slice(0, 8)} +${rebuyData.chips} chips`
                   );
                 }
+              } else if (
+                data?.type === 'bounty_collected' ||
+                data?.type === 'mystery_bounty_revealed'
+              ) {
+                // VISIBLE FIX 2026-08-15: a knockout in a bounty event produced
+                // no feedback at the table at all — no overlay, no sound, and
+                // the seat head badges never moved. The engine now broadcasts
+                // the claim (both names, the mode, the cash amount); celebrate
+                // it and keep the badges honest: a PKO knockout grows the
+                // winner's head and the eliminated player's head goes to zero.
+                const b = data.payload || {};
+                setAnnouncement({ type: data.type, data: b });
+                try {
+                  if (data.type === 'mystery_bounty_revealed') {
+                    soundService.playMysteryBountyReveal();
+                  } else {
+                    soundService.playBountyCollected();
+                  }
+                } catch {
+                  /* audio is best-effort */
+                }
+                setTableState((prev) => {
+                  const next = { ...prev.bountyMap };
+                  if (b.eliminatedUserId) delete next[b.eliminatedUserId];
+                  if (b.knockerUserId && b.addedToHead > 0) {
+                    next[b.knockerUserId] = (next[b.knockerUserId] || 0) + Number(b.addedToHead);
+                  }
+                  return { ...prev, bountyMap: next };
+                });
               } else if (data?.type === 'level_up') {
                 // Blind level increased
                 const levelData = data.payload || {};

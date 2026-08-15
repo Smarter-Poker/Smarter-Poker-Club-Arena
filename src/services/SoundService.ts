@@ -1230,6 +1230,28 @@ class SoundService {
   }
 
   /**
+   * Bounty Collected — knockout "cha-ching". Fired when a player claims a
+   * bounty head (regular KO, or the cash half of a PKO). Deliberately shorter
+   * and punchier than the mystery reveal, which keeps its own suspense build.
+   */
+  playBountyCollected() {
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+
+    // Metallic strike — the "ching"
+    [1567.98, 2093.0].forEach((freq, i) => {
+      this.playTone(freq, 0.28, 0.06 + i * 0.02, 'triangle', 0.32);
+    });
+    // Coin shimmer tail
+    [2637.02, 3135.96].forEach((freq, i) => {
+      this.playTone(freq, 0.22, 0.14 + i * 0.05, 'sine', 0.18);
+    });
+    // Low confirmation thump so it lands on small speakers too
+    this.playTone(220.0, 0.24, 0.0, 'sine', 0.26);
+
+    haptic.mysteryReveal();
+  }
+
+  /**
    * Mystery Bounty Reveal — suspenseful pause then dramatic reveal
    */
   playMysteryBountyReveal() {

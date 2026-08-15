@@ -1,0 +1,43 @@
+diff --git a/src/pages/TablePage.tsx b/src/pages/TablePage.tsx
+index 93dbcee..05065cd 100644
+--- a/src/pages/TablePage.tsx
++++ b/src/pages/TablePage.tsx
+@@ -4358,2 +4358,19 @@ export default function TablePage({
+       }
++      case 'HOLE_CARDS_UNAVAILABLE': {
++        // DEAD-WIRING FIX 2026-08-15: the engine emits this as a last resort
++        // after insert_hole_cards fails three times
++        // (ServerTableEngineDealing.ts). No client handler existed, so the
++        // hero sat dealt-in with no visible cards while the server turn timer
++        // ran down and auto-folded them -- a real-money outcome from a
++        // transient DB error, with no feedback. Tell the player, and drive the
++        // SAME re-fetch path the reconnect flow already uses.
++        reportError(
++          new Error(`[TablePage] Engine reported hole cards unavailable (table ${tableId})`),
++          'TablePage.hole_cards_unavailable'
++        );
++        toast?.error?.('Could not load your cards - retrying. Use your time bank if needed.');
++        heroCardFetchRef.current?.();
++        setTimeout(() => heroCardFetchRef.current?.(), 1200);
++        break;
++      }
+       case 'HAND_COMPLETE_EVENT':
+@@ -4375,2 +4392,18 @@ export default function TablePage({
+             achievementFiredHandRef.current = hn;
++            // DEAD-WIRING FIX 2026-08-15: MasterBus 'HAND_COMPLETED' has 23
++            // subscribers across the app -- SessionHUD profit, Daily
++            // Challenges, the Rakeback dashboard, Bankroll / Position / Stake
++            // stats, Hand History, the Cashier balance and the BBJ page -- and
++            // NOT ONE EMITTER anywhere in the repo. Every one of those
++            // surfaces sat stale until a manual reload. Emit it inside the
++            // existing once-per-hand guard so a duplicated or re-emitted
++            // HAND_COMPLETE cannot double-fire it.
++            try {
++              masterBus.emit('HAND_COMPLETED', {
++                handId: String(tableStateRef.current.handNumber ?? hn),
++                tableId: tableId || '',
++              });
++            } catch {
++              /* bus publish is best-effort -- never block the table reset */
++            }
+             achievementTriggerService

@@ -32,7 +32,6 @@ import type { BoardStage } from '../components/table/CommunityCards';
 // public/hub/club-arena/images/. A new file dropped in images/ would never
 // reach production, and git-safe-push.sh's `git clean` sweeps untracked files
 // there — assets/ is explicitly excluded from that clean.
-import rabbitHuntIcon from '../assets/rabbit-hunt.png';
 // Vertical black-and-gold table artwork — the same design used by the
 // Commander /commander/table-tablets table, rotated to portrait.
 // MUST be a Vite asset import: public/images/ is never refreshed by
@@ -1139,6 +1138,12 @@ export default function TablePage({
   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
 
   // Chat — extracted to useTableChat hook
+  // VISIBLE FIX 2026-08-15: throws are broadcast over chat, but useTableChat
+  // is declared before useTableAnimations. Bridge them through a ref so an
+  // incoming throw reaches the animation layer instead of being dropped.
+  const receiveThrowRef = useRef<
+    ((fromSeat: number, toSeat: number, throwableId: string) => void) | null
+  >(null);
   const {
     chatMessages,
     setChatMessages,
@@ -1151,7 +1156,9 @@ export default function TablePage({
     parseIncomingMessage,
     unreadCount,
     clearUnread,
-  } = useTableChat(tableId, userId, tableState.players);
+  } = useTableChat(tableId, userId, tableState.players, (fromSeat, toSeat, throwableId) =>
+    receiveThrowRef.current?.(fromSeat, toSeat, throwableId)
+  );
 
   // ═══════════════════════════════════════════════════════════════════════
   // Observer chat permission — Admin/Owner roles can chat even when observing
@@ -1470,12 +1477,14 @@ export default function TablePage({
     activeThrows,
     handleThrowableSelect,
     handleThrowComplete,
+    receiveThrow,
     getSeatPositions,
     chipAnimations,
     setChipAnimations,
     showConfetti,
     setShowConfetti,
   } = useTableAnimations(tableId, userId, tableState.heroSeat);
+  receiveThrowRef.current = receiveThrow;
 
   // Tip Dealer state
   const [showTipDealer, setShowTipDealer] = useState(false);
@@ -6641,21 +6650,13 @@ export default function TablePage({
 
                   return (
                     <>
-                      {/* Rabbit Hunt square — mockup v3: small square button
-                          ABOVE the Fold button. Wired to the existing
-                          handleRabbitReveal handler (it internally gates on
-                          availability and toasts when no server cards exist). */}
-                      <div className="action-secondary-row">
-                        <button
-                          type="button"
-                          className="rabbit-hunt-square"
-                          title="Rabbit Hunt — reveal remaining cards"
-                          aria-label="Rabbit Hunt"
-                          onClick={handleRabbitReveal}
-                        >
-                          <img src={rabbitHuntIcon} alt="Rabbit Hunt" />
-                        </button>
-                      </div>
+                      {/* VISIBLE FIX 2026-08-15: a second Rabbit Hunt button
+                          used to live here, calling handleRabbitReveal directly
+                          and DISCARDING the returned cards. It consumed
+                          serverRabbitCardsRef for free and showed nothing — and
+                          the real paid RabbitHunt panel then charged 5 diamonds
+                          and revealed an empty board. The RabbitHunt component
+                          in TableModalsLayer is the single entry point. */}
                       <ActionPanel
                         canFold={true}
                         canCheck={callAmount === 0}

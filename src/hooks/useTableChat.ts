@@ -25,7 +25,7 @@ export interface ReactionEvent {
 }
 
 const REACTION_MSG_REGEX = /^\[REACTION:(.+):(\d+)\]$/;
-const THROW_MSG_REGEX = /^\[THROW:.+:\d+\]$/;
+const THROW_MSG_REGEX = /^\[THROW:(.+):(\d+)\]$/;
 const REACTION_LIFETIME_MS = 2500;
 const RATE_LIMIT_MS = 1000; // 1 message per second
 
@@ -69,7 +69,13 @@ export interface UseTableChatReturn {
 export function useTableChat(
   tableId: string | undefined,
   userId: string,
-  players: any[]
+  players: any[],
+  // VISIBLE FIX 2026-08-15: throws were send-only. The thrower rendered a local
+  // animation and broadcast `[THROW:id:seat]` over chat, but the ONLY inbound
+  // consumer matched the message and dropped it, so nobody else ever saw the
+  // throw they had just paid a diamond for. This callback hands a parsed throw
+  // to the animation layer.
+  onThrowReceived?: (fromSeat: number, toSeat: number, throwableId: string) => void
 ): UseTableChatReturn {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatCollapsed, setIsChatCollapsed] = useState(true);
@@ -79,6 +85,10 @@ export function useTableChat(
   const reactionIdRef = useRef(0);
   const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const lastSendTimestampRef = useRef(0);
+  const onThrowReceivedRef = useRef(onThrowReceived);
+  useEffect(() => {
+    onThrowReceivedRef.current = onThrowReceived;
+  }, [onThrowReceived]);
   const isChatCollapsedRef = useRef(isChatCollapsed);
   const isChatMutedRef = useRef(isChatMuted);
 
@@ -332,7 +342,7 @@ export function useTableChat(
   }, [tableId]);
 
   // Parse incoming messages — returns true if message was a special command (reaction/throw)
-  const parseIncomingMessage = useCallback((content: string, _senderId: string): boolean => {
+  const parseIncomingMessage = useCallback((content: string, senderId: string): boolean => {
     // Check for reaction messages
     const reactionMatch = content.match(REACTION_MSG_REGEX);
     if (reactionMatch) {
@@ -358,13 +368,31 @@ export function useTableChat(
       return true; // Don't add to chat
     }
 
-    // Check for throw messages (already handled by throwable system)
-    if (THROW_MSG_REGEX.test(content)) {
+    // Throw messages: render the incoming throw for everyone EXCEPT the
+    // thrower, who already animated it locally when they sent it.
+    const throwMatch = content.match(THROW_MSG_REGEX);
+    if (throwMatch) {
+      if (senderId && senderId !== userId) {
+        // DoS guard, same ceiling as reactions.
+        if (pendingTimersRef.current.size < 20) {
+          const throwableId = throwMatch[1];
+          const toSeat = parseInt(throwMatch[2], 10);
+          // players[] is seat-ordered (index 0 = seat 1), matching the rest of
+          // the table; resolve the thrower's seat from their id.
+          const fromIdx = players.findIndex((pl) => pl && pl.id === senderId);
+          const fromSeat = fromIdx >= 0 ? fromIdx + 1 : 0;
+          if (Number.isFinite(toSeat) && toSeat > 0) {
+            onThrowReceivedRef.current?.(fromSeat, toSeat, throwableId);
+          }
+        }
+      }
       return true; // Don't add to chat
     }
 
     return false; // Normal message — add to chat
-  }, []);
+    // players/userId are read through refs where they must stay fresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players, userId]);
 
   const handleSendChatMessage = useCallback(
     async (message: string) => {

@@ -8,10 +8,14 @@
  * and confetti trigger state.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { throwableService, type Throwable, type ThrowEvent } from '../services/ThrowableService';
 import { roomService } from '../services/RoomService';
+import { soundService } from '../services/SoundService';
 import type { ChipAnimationEvent } from '../components/table/ChipAnimation';
+
+/** Minimum gap between outgoing throws (ms) — prevents spam + diamond drain. */
+const THROW_RATE_LIMIT_MS = 1500;
 
 export interface UseTableAnimationsReturn {
   // Throwables
@@ -22,6 +26,7 @@ export interface UseTableAnimationsReturn {
   activeThrows: ThrowEvent[];
   handleThrowableSelect: (throwable: Throwable) => void;
   handleThrowComplete: (eventId: string) => void;
+  receiveThrow: (fromSeat: number, toSeat: number, throwableId: string) => void;
   getSeatPositions: (maxPlayers: number) => Map<number, { x: number; y: number }>;
   // Chip animations
   chipAnimations: ChipAnimationEvent[];
@@ -37,6 +42,7 @@ export function useTableAnimations(
   heroSeat: number
 ): UseTableAnimationsReturn {
   // Throwable state
+  const lastThrowAtRef = useRef(0);
   const [showThrowableSelector, setShowThrowableSelector] = useState(false);
   const [throwTargetSeat, setThrowTargetSeat] = useState<number | null>(null);
   const [activeThrows, setActiveThrows] = useState<ThrowEvent[]>([]);
@@ -51,10 +57,21 @@ export function useTableAnimations(
     async (throwable: Throwable) => {
       if (!tableId || !userId || throwTargetSeat === null) return;
 
+      // Rate limit: this path bypassed the chat limiter entirely, so a held
+      // tap could emit unbounded broadcasts (and diamond charges).
+      const now = Date.now();
+      if (now - lastThrowAtRef.current < THROW_RATE_LIMIT_MS) return;
+      lastThrowAtRef.current = now;
+
       const event = throwableService.createThrowEvent(heroSeat, throwTargetSeat, throwable.id);
 
       if (event) {
         setActiveThrows((prev) => [...prev, event]);
+        try {
+          soundService.playThrowableImpact();
+        } catch {
+          /* audio is best-effort */
+        }
         roomService.sendChat(tableId, userId, `[THROW:${throwable.id}:${throwTargetSeat}]`);
       }
 
@@ -62,6 +79,25 @@ export function useTableAnimations(
       setThrowTargetSeat(null);
     },
     [tableId, userId, heroSeat, throwTargetSeat]
+  );
+
+  /**
+   * Render a throw sent by ANOTHER player. Wired from useTableChat, which
+   * parses the `[THROW:id:seat]` broadcast. Without this the receiving client
+   * dropped the message and showed nothing.
+   */
+  const receiveThrow = useCallback(
+    (fromSeat: number, toSeat: number, throwableId: string) => {
+      const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId);
+      if (!event) return;
+      setActiveThrows((prev) => (prev.length >= 12 ? prev : [...prev, event]));
+      try {
+        soundService.playThrowableImpact();
+      } catch {
+        /* audio is best-effort */
+      }
+    },
+    []
   );
 
   const handleThrowComplete = useCallback((eventId: string) => {
@@ -106,6 +142,7 @@ export function useTableAnimations(
     activeThrows,
     handleThrowableSelect,
     handleThrowComplete,
+    receiveThrow,
     getSeatPositions,
     chipAnimations,
     setChipAnimations,

@@ -96,7 +96,19 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
 
     setIsRevealing(true);
     try {
-      // Check access and charge if needed
+      // VISIBLE FIX 2026-08-15: this used to charge BEFORE revealing. If the
+      // server cards had already been consumed the reveal returned [], and the
+      // player lost 5 diamonds for an empty board with no refund. Fetch the
+      // cards first; only charge once we know there is something to show.
+      const cards = await onReveal();
+
+      if (!cards || cards.length === 0) {
+        toast.error('No rabbit hunt cards available for this hand');
+        setIsRevealing(false);
+        return;
+      }
+
+      // Check access and charge — only now that the reveal is guaranteed.
       const result = await vipService.useFeature(user.id, 'rabbit_hunt');
 
       if (!result.success) {
@@ -109,9 +121,6 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
       if (result.charged > 0) {
         toast.info(` ${result.charged} diamonds charged`);
       }
-
-      // Reveal the cards
-      const cards = await onReveal();
 
       // Reveal cards one by one with delay
       for (let i = 0; i < cards.length; i++) {

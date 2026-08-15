@@ -86,24 +86,35 @@ export function useTableAnimations(
    * parses the `[THROW:id:seat]` broadcast. Without this the receiving client
    * dropped the message and showed nothing.
    */
-  const receiveThrow = useCallback(
-    (fromSeat: number, toSeat: number, throwableId: string) => {
-      const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId);
-      if (!event) return;
-      setActiveThrows((prev) => (prev.length >= 12 ? prev : [...prev, event]));
-      try {
-        soundService.playThrowableImpact();
-      } catch {
-        /* audio is best-effort */
-      }
-    },
-    []
-  );
+  const receiveThrow = useCallback((fromSeat: number, toSeat: number, throwableId: string) => {
+    const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId);
+    if (!event) return;
+    setActiveThrows((prev) => (prev.length >= 12 ? prev : [...prev, event]));
+    try {
+      soundService.playThrowableImpact();
+    } catch {
+      /* audio is best-effort */
+    }
+  }, []);
 
   const handleThrowComplete = useCallback((eventId: string) => {
     setActiveThrows((prev) => prev.filter((e) => e.id !== eventId));
   }, []);
 
+  /**
+   * @deprecated Dan 2026-08-15 (item 4) — NOT the real table geometry.
+   *
+   * This invents an 800x500 LANDSCAPE ellipse (centre 400,250 / radii
+   * 300,150) that corresponds to nothing on screen. The real table is a
+   * 341:609 PORTRAIT box, so throws positioned by this launched and landed at
+   * arbitrary points and never hit the villain's avatar.
+   *
+   * Throwables now use `throwSeatPositions` in TablePage, derived from the
+   * same hero-rotated percentage map the seats themselves render from and
+   * scaled to .table-scaler. This has zero callers as of this commit and is
+   * retained only so the hook's public shape does not change mid-session;
+   * delete it outright in the next cleanup pass.
+   */
   const getSeatPositions = useCallback(
     (maxPlayers: number): Map<number, { x: number; y: number }> => {
       const positions = new Map<number, { x: number; y: number }>();

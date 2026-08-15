@@ -40,6 +40,7 @@ import type {
   SeatedPlayer,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 
@@ -216,6 +217,38 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // ALL insured players: premium deducted from their stack at end (like rake)
         // For losers: payout - premium = net gain. For winners: -premium = net cost.
         if (settlement.premium > 0) {
+          // AUDIT M16: the clamps below silently absorb (Math.max(0, ...)) any
+          // premium the stack cannot cover. A premium larger than the stack it
+          // is pulled from means the insurance bank collected less than the
+          // premium that was priced and written to the audit ledger — a
+          // real-money under-collection that must never pass silently. Alert
+          // with the exact shortfall, durably (raiseFinancialAlert never
+          // throws), before clamping exactly as before.
+          const premiumStack = seatedPlayer
+            ? seatedPlayer.stack
+            : enginePlayer
+              ? enginePlayer.stack
+              : 0;
+          if (settlement.premium > premiumStack) {
+            const shortfall =
+              Math.round((settlement.premium - premiumStack) * 100) / 100;
+            await raiseFinancialAlert(
+              'critical',
+              'ServerTableEngine.insurance_premium_exceeds_stack',
+              `Insurance premium ${settlement.premium} exceeds stack ${premiumStack} by ${shortfall} for ${settlement.playerId}; premium clamped and under-collected`,
+              {
+                tableId: this.tableId,
+                playerId: settlement.playerId,
+                premium: settlement.premium,
+                stack: premiumStack,
+                shortfall,
+                insuredAmount: settlement.insuredAmount,
+                equity: settlement.equity,
+                won: settlement.won,
+                payout: settlement.payout,
+              }
+            );
+          }
           if (seatedPlayer) {
             seatedPlayer.stack = Math.max(0, seatedPlayer.stack - settlement.premium);
             console.log(

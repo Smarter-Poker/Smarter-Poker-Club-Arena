@@ -378,9 +378,9 @@ function buildTournaments() {
 // EXECUTION
 // ═══════════════════════════════════════════════════════════════════════════════
 async function run() {
-  console.log('══════════════════════════════════════════════════════════════');
+  console.log('═══════════════════════════════════════════════════════════════');
   console.log('  MIDWAY UNION — COMPREHENSIVE TABLE & TOURNAMENT PROVISIONING');
-  console.log('══════════════════════════════════════════════════════════════\n');
+  console.log('═══════════════════════════════════════════════════════════════\n');
 
   // ── Step 1: Delete existing tables under union ──
   console.log('═══ Step 1: Clear existing union tables ═══');

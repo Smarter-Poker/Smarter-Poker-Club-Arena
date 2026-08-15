@@ -652,7 +652,14 @@ export default function ClubHomePage() {
             'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id'
           )
           .in('club_id', unionClubIds)
-          .neq('status', 'COMPLETED')
+          // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
+          // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
+          // through, and this page -- /clubs/:clubId, the one the featured
+          // club card opens -- kept serving a cancelled April Sit&Go as a
+          // joinable 6/6 card after TournamentService was fixed, because it
+          // runs its own query rather than the service. Same rule as the
+          // service now: a lobby lists what can be ENTERED.
+          .in('status', ['REGISTERING', 'RUNNING'])
           .order('start_time', { ascending: true }),
         (async () => {
           try {
@@ -677,7 +684,8 @@ export default function ClubHomePage() {
                 )
                 .eq('union_id', unionId)
                 .eq('is_xmtt', true)
-                .neq('status', 'COMPLETED')
+                // Joinable-only -- same rule as the club query above.
+                .in('status', ['REGISTERING', 'RUNNING'])
                 .order('start_time', { ascending: true }),
             ]
           : []),

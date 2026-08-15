@@ -149,6 +149,66 @@ export async function logRakeCollection(
  * - Union clubs: premiums/payouts flow through union bank
  * - Standalone clubs: premiums/payouts flow through club main bank
  */
+export type InsuranceLedgerResult =
+  | { ok: true; transactionId: string; attempts: number }
+  | { ok: false; reason: 'rpc_error' | 'threw' | 'not_persisted'; attempts: number };
+
+const INSURANCE_LEDGER_MAX_ATTEMPTS = 3;
+
+function extractInsuranceTxId(data: unknown): string | null {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (row && typeof row === 'object' && 'id' in row) {
+    const id = (row as { id?: unknown }).id;
+    if (typeof id === 'string' && id.length > 0) return id;
+  }
+  return null;
+}
+
+function insuranceDataHasContent(data: unknown): boolean {
+  if (data == null) return false;
+  if (Array.isArray(data)) return data.length > 0;
+  if (typeof data === 'object') return Object.keys(data as object).length > 0;
+  return true;
+}
+
+async function confirmInsuranceTx(params: {
+  tableId: string;
+  handNumber: number;
+  playerId: string;
+}): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('insurance_transactions')
+      .select('id')
+      .eq('table_id', params.tableId)
+      .eq('hand_number', params.handNumber)
+      .eq('player_id', params.playerId)
+      .maybeSingle();
+    if (error) return null;
+    return extractInsuranceTxId(data);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * AUDIT M3 (restored): the offsetting insurance bank entry. By the time this
+ * runs the table stacks were already moved (+payout, -premium) and persisted,
+ * so a lost write here mints or burns chips silently. This write is therefore:
+ *   - OBSERVABLE — returns a discriminated result the caller can branch on;
+ *   - RETRIED — the RPC is idempotent on (table_id, hand_number, player_id), so
+ *     a transient error or a dropped socket is retried up to three times;
+ *   - CONFIRMED — a no-error response we cannot read an id out of triggers a
+ *     read-back rather than a guess, and a definitive failure is re-checked
+ *     against the row before we declare the write lost (it may have landed);
+ *   - DURABLE on failure — a lost write raises a CRITICAL financial_alert (a
+ *     reconcilable DB row, not just Sentry) carrying the player id and the net
+ *     chip delta an operator needs to settle by hand;
+ *   - TOTAL — it never rejects, so the settlement loop cannot be aborted by it.
+ *
+ * Regressed to a `Promise<void>` stub during the 2026-08-08 supabase.ts split;
+ * this restores the contract `insuranceLedger.test.ts` still encodes.
+ */
 export async function logInsuranceSettlement(params: {
   tableId: string;
   clubId: string;
@@ -159,24 +219,119 @@ export async function logInsuranceSettlement(params: {
   insuredAmount: number;
   payout: number;
   playerWon: boolean;
-}): Promise<void> {
-  try {
-    const { error } = await supabase.rpc('record_insurance_transaction', {
-      p_table_id: params.tableId,
-      p_club_id: params.clubId,
-      p_hand_number: params.handNumber,
-      p_player_id: params.playerId,
-      p_equity_percent: params.equityPercent,
-      p_premium: params.premium,
-      p_insured_amount: params.insuredAmount,
-      p_payout: params.payout,
-      p_player_won: params.playerWon,
-    });
+}): Promise<InsuranceLedgerResult> {
+  const rpcArgs = {
+    p_table_id: params.tableId,
+    p_club_id: params.clubId,
+    p_hand_number: params.handNumber,
+    p_player_id: params.playerId,
+    p_equity_percent: params.equityPercent,
+    p_premium: params.premium,
+    p_insured_amount: params.insuredAmount,
+    p_payout: params.payout,
+    p_player_won: params.playerWon,
+  };
+
+  let attempts = 0;
+  let reason: 'rpc_error' | 'threw' | 'not_persisted' = 'not_persisted';
+  let lastError: unknown = null;
+
+  for (let i = 1; i <= INSURANCE_LEDGER_MAX_ATTEMPTS; i++) {
+    attempts = i;
+    let result: { data: unknown; error: unknown } | null = null;
+    try {
+      result = (await supabase.rpc('record_insurance_transaction', rpcArgs)) as {
+        data: unknown;
+        error: unknown;
+      };
+    } catch (e) {
+      reason = 'threw';
+      lastError = e;
+      continue; // transient transport failure; the RPC is idempotent, so retry
+    }
+
+    const error = result?.error;
+    const data = result?.data;
 
     if (error) {
-      reportError(error, 'logInsuranceSettlement.RPC_failed_for_player_paramspl');
+      reason = 'rpc_error';
+      lastError = error;
+      continue; // retry — idempotent on (table_id, hand_number, player_id)
     }
-  } catch (e) {
-    console.warn(`[logInsuranceSettlement] Failed for hand #${params.handNumber}:`, e);
+
+    const id = extractInsuranceTxId(data);
+    if (id) {
+      return { ok: true, transactionId: id, attempts };
+    }
+
+    // No error but no readable id. If the RPC returned an unrecognised payload,
+    // retrying an idempotent write returns the same shape — stop and confirm by
+    // reading the row. If it returned nothing, treat it as a soft miss and retry.
+    reason = 'not_persisted';
+    if (insuranceDataHasContent(data)) {
+      break;
+    }
   }
+
+  // Authoritative read-back: the write may have landed even when the client saw
+  // an error or an unreadable payload (the RPC is idempotent).
+  const confirmedId = await confirmInsuranceTx(params);
+  if (confirmedId) {
+    return { ok: true, transactionId: confirmedId, attempts };
+  }
+
+  // Definitive failure: the offsetting bank entry never landed, so the table
+  // stack was moved with nothing on the other side.
+  reportError(
+    lastError instanceof Error
+      ? lastError
+      : new Error(
+          lastError && typeof lastError === 'object'
+            ? JSON.stringify(lastError)
+            : `insurance ledger write ${reason}`
+        ),
+    `logInsuranceSettlement.RPC_failed_for_player_${params.playerId}`,
+    {
+      tableId: params.tableId,
+      clubId: params.clubId,
+      handNumber: params.handNumber,
+      playerId: params.playerId,
+      equityPercent: params.equityPercent,
+      premium: params.premium,
+      insuredAmount: params.insuredAmount,
+      payout: params.payout,
+      playerWon: params.playerWon,
+      attempts,
+      reason,
+    }
+  );
+
+  try {
+    const { raiseFinancialAlert } = await import('../financialAlerts.js');
+    await raiseFinancialAlert(
+      'critical',
+      'logInsuranceSettlement.insurance_ledger_write_failed',
+      `Insurance ledger write failed after ${attempts} attempts (${reason}); ` +
+        `table stack moved with no offsetting bank entry`,
+      {
+        table_id: params.tableId,
+        club_id: params.clubId,
+        hand_number: params.handNumber,
+        player_id: params.playerId,
+        equity_percent: params.equityPercent,
+        premium: params.premium,
+        insured_amount: params.insuredAmount,
+        payout: params.payout,
+        player_won: params.playerWon,
+        net_chip_delta: params.payout - params.premium,
+        attempts,
+        reason,
+      }
+    );
+  } catch (alertErr) {
+    // A durable alert that itself fails must not abort the settlement loop.
+    console.warn('[logInsuranceSettlement] durable alert failed:', alertErr);
+  }
+
+  return { ok: false, reason, attempts };
 }

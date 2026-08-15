@@ -19,7 +19,7 @@ import { reconcilePendingFees, auditBBJDrift } from './services/FeeReconciler.js
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
-import { reportError } from './services/errorReporter.js';
+
 import {
   refundAndCloseCancelledTournament,
   recoverStuckCompletingTournaments,

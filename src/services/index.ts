@@ -44,13 +44,12 @@ export * from './AgentService';
 export * from './WalletService';
 
 // Rake & Commissions
-export { RakeService } from './RakeService';
-export type {
-  RakeCalculation,
-  RakeAttribution,
-  WaterfallResult,
-  DealtInPlayer,
-} from './RakeService';
+// RakeService deleted 2026-08-15: 924 lines of client-side rake math with zero
+// callers, carrying a fourth copy of the rake schedule. Rake is server-
+// authoritative (server/src/engine/PokerEngine.calculateRake). Its schedule
+// assertions live on in tests/unit/RakeConfig.schedule.test.ts.
+// Note: CommissionService exports its own RakeAttribution - the removed block
+// re-exported a DIFFERENT type under the same name from RakeService.
 export * from './CommissionService';
 export * from './SettlementService';
 export * from './CreditService';

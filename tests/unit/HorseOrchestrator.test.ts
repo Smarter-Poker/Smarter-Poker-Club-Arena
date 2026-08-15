@@ -66,9 +66,9 @@ vi.mock('../../src/services/TournamentService', () => ({
   PAYOUT_STRUCTURES: { sng6: [], sng9: [], mtt10: [] },
 }));
 
-vi.mock('../../src/services/RakeService', () => ({
-  RakeService: { calculateRake: vi.fn().mockReturnValue(0) },
-}));
+// RakeService mock removed 2026-08-15 with the service itself. HorseOrchestrator
+// no longer imports it (rake is server-authoritative), so the mock was inert and
+// pointed at a module that no longer exists.
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 

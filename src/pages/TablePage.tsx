@@ -119,7 +119,6 @@ import { useTableAnimations } from '../hooks/useTableAnimations';
 import { useTableSound } from '../hooks/useTableSound';
 import { useTableSession } from '../hooks/useTableSession';
 import { GTOQueryService, type GTOSolution } from '../services/GTOQueryService';
-import type { RakeCalculation } from '../services/RakeService';
 import { tableService } from '../services/TableService';
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
@@ -2163,7 +2162,6 @@ export default function TablePage({
   };
 
   // Rake state
-  const [currentRake, setCurrentRake] = useState<RakeCalculation | null>(null);
   const [sessionRake, setSessionRake] = useState(0);
 
   // [MIGRATION] handleHandComplete REMOVED — FIX 181

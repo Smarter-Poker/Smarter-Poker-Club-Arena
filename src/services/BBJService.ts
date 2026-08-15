@@ -281,7 +281,8 @@ export const BBJService = {
     clubId?: string;
     handNumber?: number;
     stakesTier?: string;
-    /** Pre-calculated BBJ drop from RakeService tier chart (preferred over flat 0.5×BB) */
+    /** Pre-calculated BBJ drop from the tier schedule in src/config/RakeConfig
+     *  (preferred over a flat 0.5xBB). Was RakeService, deleted 2026-08-15. */
     bbjDrop?: number;
   }): Promise<BBJContribution | null> {
     // Use pre-calculated tier-based BBJ drop from RakeService when available,

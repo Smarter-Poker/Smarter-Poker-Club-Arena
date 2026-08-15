@@ -417,7 +417,9 @@ export class HandPersistence {
         }
       }
 
-      // NOTE: rake_records insertion is handled by RakeService.executePotDrops()
+      // NOTE: rake_records insertion is server-side. The engine writes it via
+      // atomic_distribute_rake (ServerTableEngineSettlement). The old pointer
+      // here referenced RakeService.executePotDrops, deleted 2026-08-15.
       // in the executeRakeWaterfall flow (HeadlessTableEngine). Do NOT insert here
       // to avoid duplicate records and incorrect bbj_contribution (always 0 here).
     }

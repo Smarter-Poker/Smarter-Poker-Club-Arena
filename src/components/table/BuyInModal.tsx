@@ -78,6 +78,24 @@ export function BuyInModal({
   const animationFrameRef = useRef<number>(0);
   const countStartRef = useRef<number>(0);
 
+  // LIVE E2E FIX 2026-08-15: the initial amount was captured by useState at
+  // FIRST MOUNT, while accountBalance / blind props were still loading — the
+  // modal could open showing a stale, below-minimum default (seen live:
+  // 191.24 on a 200-minimum table). Re-derive and clamp the default every
+  // time the modal OPENS (and if min/max settle late), from the live props.
+  useEffect(() => {
+    if (!isOpen) return;
+    const fresh = defaultBuyIn || Math.min(maxBuyIn, accountBalance);
+    const clamped = Math.max(minBuyIn, Math.min(maxBuyIn, fresh));
+    if (Number.isFinite(clamped) && clamped > 0) {
+      setBuyInAmount(clamped);
+      setDisplayAmount(clamped);
+    }
+    // Intentionally NOT depending on accountBalance/defaultBuyIn: once open
+    // with settled table limits, the player's own slider input must win.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, minBuyIn, maxBuyIn]);
+
   // Clamp buy-in to valid range
   const clampedBuyIn = useMemo(() => {
     return Math.max(minBuyIn, Math.min(maxBuyIn, buyInAmount));

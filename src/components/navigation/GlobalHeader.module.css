@@ -10,24 +10,24 @@
  */
 
 .header {
-  background: #000000;
-  padding: 8px 12px;
+  background: linear-gradient(180deg, rgba(10, 22, 40, 0.98) 0%, rgba(10, 22, 40, 0.9) 100%);
+  padding: 0 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 3px solid rgba(200, 200, 200, 0.8);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   width: 100%;
-  height: 60px; /* #4: Taller header to match World Hub visual weight */
+  height: 60px;
   z-index: 1000;
   gap: 8px;
   flex-wrap: nowrap;
   box-sizing: border-box;
-  backdrop-filter: blur(8px) saturate(1.1);
-  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 /* ─── LEFT Section ─── */
@@ -72,39 +72,74 @@
   object-fit: contain;
 }
 
-.hubBtn {
-  height: 22px;
-  width: 80px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
+/* Brain Icon Button */
+.brainBtn {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.brainBtn:hover {
+  background: rgba(0, 212, 255, 0.15);
+  transform: scale(1.05);
+}
+
+.brainBtn:active {
+  transform: scale(0.95);
+}
+
+/* Back Arrow Button */
+.backBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
-.hubImg {
-  height: 100%;
-  width: 100%;
-  object-fit: contain;
+.backBtn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
 }
 
 /* ─── CENTER Section ─── */
 .headerCenter {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
-  min-width: 0;
+  pointer-events: none; /* Let clicks pass through to elements underneath if needed */
 }
 
 .brandText {
-  height: 20px;
-  width: auto;
-  object-fit: contain;
-  opacity: 0.9;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }
 
 /* ─── RIGHT Section ─── */
@@ -319,9 +354,15 @@
     height: 48px;
   }
 
-  .hubBtn {
-    width: 60px;
-    height: 18px;
+  .brainBtn {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .backBtn {
+    padding: 6px 8px;
+    font-size: 11px;
   }
 
   .hamburgerBtn {
@@ -341,9 +382,16 @@
     gap: 1px;
   }
 
-  .hubBtn {
-    width: 50px;
-    height: 16px;
+  .brainBtn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  .backBtn {
+    padding: 4px 6px;
+    font-size: 10px;
+    gap: 4px;
   }
 
   .orbBtn,

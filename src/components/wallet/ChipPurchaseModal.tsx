@@ -6,11 +6,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { supabase } from '../../lib/supabase';
+import { callClubArenaApi } from '../../services/clubArenaApi';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './ChipPurchaseModal.css';
-import { retryAsync } from '../../utils/retryAsync';
 
 interface ChipPurchaseModalProps {
   isOpen: boolean;
@@ -74,17 +73,14 @@ export function ChipPurchaseModal({
 
     setPurchasing(pkg.id);
     try {
-      const { error } = await retryAsync(
-        () =>
-          supabase.rpc('fn_purchase_chips', {
-            p_user_id: user.id,
-            p_diamond_cost: pkg.diamonds,
-            p_chip_amount: pkg.chips,
-          }),
-        3
-      );
-
-      if (error) throw error;
+      // Purchase SERVER-SIDE, sending ONLY the package id.
+      // The old call passed the chip amount AND the diamond price from this
+      // component's hard-coded CHIP_PACKAGES list, so the price was entirely
+      // client-controlled. (It never actually ran: fn_purchase_chips is
+      // service_role-only and those parameter names do not exist on it.)
+      // The route holds the authoritative package table, charges the diamonds
+      // and credits the chips atomically, and is idempotent against double-taps.
+      await callClubArenaApi('purchase-chips', { packageId: pkg.id });
 
       if (!isMounted.current) return;
       toast.success(`${pkg.chips.toLocaleString()} chips added to your wallet!`);

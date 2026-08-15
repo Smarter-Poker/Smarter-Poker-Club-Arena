@@ -28,6 +28,26 @@
    EMPTY SEAT — "EMPTY" text like PokerBros
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Dan 2026-08-15: once hero is seated, every other open seat reads "EMPTY"
+   and is inert — a user must never be able to sit at two seats. Driven by the
+   `canSit={false}` prop, which also strips onClick/role/tabIndex in the TSX. */
+.seat--empty.seat--empty-locked {
+  cursor: default;
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.seat--empty.seat--empty-locked::before {
+  animation: none;
+  border-color: transparent;
+}
+
+.seat--empty.seat--empty-locked .seat__empty-label {
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.14em;
+}
+
 .seat--empty {
   width: 60px;
   height: 42px;
@@ -571,6 +591,14 @@
    - A nested ::after masks the inside to reveal only the border ring
 */
 
+/* Dan 2026-08-15: "the countdown clock should go right to left."
+   Every countdown ring on this table fills [0%, progress] from 12 o'clock, so
+   the arc was consumed anti-clockwise — top, then LEFT, then bottom, then
+   right. Filling [100% - progress, 100%] instead consumes it clockwise from
+   12 o'clock: top, then RIGHT, then bottom, then LEFT. Applied to the base
+   ring and to both urgency overrides so the direction can never disagree
+   between the yellow, orange and red phases. */
+
 /* 2026-04-15 Bible V8 §6.1 — the countdown ring is driven by a CSS
    @property animation, not a JS hook. This works identically for hero AND
    opponent turns, and continues running even on hidden / background tabs
@@ -601,16 +629,24 @@
     --timer-progress: 0%;
   }
 }
+/* Dan 2026-08-15: "the countdown clock should be 15 seconds long on the yellow
+   countdown, it's currently too fast."
+   The old keyframe hardcoded the red snap at 80% of the turn. Every table runs
+   action_time_seconds = 15 (verified across all 26 live tables), so yellow only
+   ever lasted 12s and the last 3s were red — the yellow countdown was 3 seconds
+   shorter than the shot clock it represents.
+   The switch point is now a variable the component computes as
+   min(100%, 15s / duration), so:
+     - a normal 15s turn is yellow for the FULL 15 seconds, no red at all;
+     - a time-bank-extended turn stays yellow for its first 15s and then goes
+       red for the borrowed time, which is where urgency actually belongs. */
 @keyframes spTimerColorShift {
   0% {
     --timer-color: #ffd700;
-  } /* Yellow from 15s → 3s remaining */
-  80% {
+  }
+  99.99% {
     --timer-color: #ffd700;
   }
-  80.01% {
-    --timer-color: #ef4444;
-  } /* Red snap at 3s remaining */
   100% {
     --timer-color: #ef4444;
   }
@@ -619,9 +655,12 @@
 .seat--active .seat__info {
   border-color: transparent;
   /* Shrink + color-shift share the same duration/delay so they stay in sync */
+  /* The shrink runs for the whole turn; the colour animation runs only for the
+     yellow window (--sp-timer-yellow-duration, capped at the turn length), so
+     red appears exactly when the yellow 15s is spent and not a moment sooner. */
   animation:
     spTimerRingShrink var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards,
-    spTimerColorShift var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards;
+    spTimerColorShift var(--sp-timer-yellow-duration, 15s) linear var(--sp-timer-delay, 0s) forwards;
 }
 
 /* Outer glow container */
@@ -632,10 +671,10 @@
   border-radius: 10px;
   background: conic-gradient(
     from 0deg,
-    var(--timer-color, #ffd700) 0%,
-    var(--timer-color, #ffd700) var(--timer-progress, 100%),
-    transparent var(--timer-progress, 100%),
-    transparent 100%
+    transparent 0%,
+    transparent calc(100% - var(--timer-progress, 100%)),
+    var(--timer-color, #ffd700) calc(100% - var(--timer-progress, 100%)),
+    var(--timer-color, #ffd700) 100%
   );
   z-index: -2;
   /* Neon glow — color matches ring; drop-shadow tracks --timer-color implicitly */
@@ -665,10 +704,10 @@
 .seat--timer-urgent .seat__info::before {
   background: conic-gradient(
     from 0deg,
-    #ff6b35 0%,
-    #ff6b35 var(--timer-progress, 100%),
-    transparent var(--timer-progress, 100%),
-    transparent 100%
+    transparent 0%,
+    transparent calc(100% - var(--timer-progress, 100%)),
+    #ff6b35 calc(100% - var(--timer-progress, 100%)),
+    #ff6b35 100%
   ) !important;
   /* Smooth transition, no pulsing animation */
   filter: drop-shadow(0 0 8px rgba(255, 107, 53, 0.5)) !important;
@@ -678,10 +717,10 @@
 .seat--timer-critical .seat__info::before {
   background: conic-gradient(
     from 0deg,
-    #ef4444 0%,
-    #ef4444 var(--timer-progress, 100%),
-    transparent var(--timer-progress, 100%),
-    transparent 100%
+    transparent 0%,
+    transparent calc(100% - var(--timer-progress, 100%)),
+    #ef4444 calc(100% - var(--timer-progress, 100%)),
+    #ef4444 100%
   ) !important;
   /* Smooth glow, no pulsing animation */
   filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.6)) !important;
@@ -727,10 +766,10 @@
   border-radius: 50%;
   background: conic-gradient(
     from 0deg,
-    var(--timer-color, #ffd700) 0%,
-    var(--timer-color, #ffd700) var(--timer-progress, 100%),
-    transparent var(--timer-progress, 100%),
-    transparent 100%
+    transparent 0%,
+    transparent calc(100% - var(--timer-progress, 100%)),
+    var(--timer-color, #ffd700) calc(100% - var(--timer-progress, 100%)),
+    var(--timer-color, #ffd700) 100%
   );
   z-index: 1;
   filter: drop-shadow(0 0 4px var(--timer-glow, rgba(255, 215, 0, 0.5)));
@@ -752,10 +791,10 @@
 .seat--timer-urgent .seat__avatar-wrap::before {
   background: conic-gradient(
     from 0deg,
-    #ff6b35 0%,
-    #ff6b35 var(--timer-progress, 100%),
-    transparent var(--timer-progress, 100%),
-    transparent 100%
+    transparent 0%,
+    transparent calc(100% - var(--timer-progress, 100%)),
+    #ff6b35 calc(100% - var(--timer-progress, 100%)),
+    #ff6b35 100%
   ) !important;
   filter: drop-shadow(0 0 6px rgba(255, 107, 53, 0.6)) !important;
 }
@@ -763,16 +802,27 @@
 .seat--timer-critical .seat__avatar-wrap::before {
   background: conic-gradient(
     from 0deg,
-    #ef4444 0%,
-    #ef4444 var(--timer-progress, 100%),
-    transparent var(--timer-progress, 100%),
-    transparent 100%
+    transparent 0%,
+    transparent calc(100% - var(--timer-progress, 100%)),
+    #ef4444 calc(100% - var(--timer-progress, 100%)),
+    #ef4444 100%
   ) !important;
   filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.7)) !important;
 }
 
+/* Dan 2026-08-15: "HERO avatar should always be 33% bigger than the villains."
+   Villains use the global --seat-avatar-size (84px). Redeclaring the token on
+   .seat--hero cascades to BOTH .seat__avatar-wrap and .seat__avatar (they each
+   read var(--seat-avatar-size)), so the ring, the mask and the photo all scale
+   together — the two never drift apart. 84 * 1.33 = 111.7 -> 112px. */
+.seat--hero {
+  --seat-avatar-size: 112px;
+  width: 128px; /* was 96px — must clear the wider avatar */
+}
+
 .seat--hero .seat__avatar {
   border-color: #ffd700;
+  border-width: 3px;
   box-shadow:
     0 0 12px rgba(255, 215, 0, 0.25),
     0 4px 12px rgba(0, 0, 0, 0.5);
@@ -780,6 +830,19 @@
 
 .seat--hero .seat__info {
   border-color: rgba(255, 215, 0, 0.25);
+}
+
+/* Dan 2026-08-15, verbatim: "HERO SHOULD NEVER BE FADED UNTIL THEY FOLD, EVEN
+   WHEN ACTION ISN'T ON THEM. They should never be faded while they have a
+   live hand." seat--in-hand is present exactly while status is active/all_in
+   and absent the moment the hand is folded, so this override is self-limiting:
+   a folded hero still dims via .seat--folded. Declared last and with two
+   classes so it out-specifies any single-class dim rule. */
+.seat--hero.seat--in-hand,
+.seat--hero.seat--in-hand .seat__avatar-img,
+.seat--hero.seat--in-hand .seat__cards {
+  opacity: 1 !important;
+  filter: none !important;
 }
 
 /* ─── ACTIVE PLAYER ───────────────────────────────────────────────────── */
@@ -1020,10 +1083,17 @@
   --sp-hero-card-step: 32px;
   --sp-hero-gap: 8px;
 
+  /* Dan 2026-08-15: "the hole cards should be centered with the Hero Avatar."
+     The previous anchor (bottom: --sp-hero-box-half + translateY(50%)) centred
+     the row on the .seat__info NAME BOX, which with the 1.33x avatar sits well
+     below the avatar's midline — the cards read as hanging off the corner.
+     Anchoring to half the avatar token centres the row on the avatar itself and
+     stays correct at every breakpoint and hand size, because the 50% translate
+     is of the ROW's own height. */
   left: calc(100% + var(--sp-hero-gap));
-  top: auto;
-  bottom: var(--sp-hero-box-half);
-  transform: translateY(50%);
+  bottom: auto;
+  top: calc(var(--seat-avatar-size, 84px) / 2);
+  transform: translateY(-50%);
   display: flex;
   align-items: flex-end;
   justify-content: flex-start;

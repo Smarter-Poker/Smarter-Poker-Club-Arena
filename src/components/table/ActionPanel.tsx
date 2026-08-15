@@ -25,8 +25,16 @@ interface ActionPanelProps {
   showPotOdds?: boolean;
   confirmAllIn?: boolean;
   showBetSizePresets?: boolean;
-  /** Phase 2 T1-02 hint — drives preflop 2X/3X/4X presets vs postflop fraction presets. */
+  /** Phase 2 T1-02 hint — drives preflop 2X/3X/4X/5X presets vs postflop fraction presets. */
   isPreflop?: boolean;
+  /**
+   * Highest bet on the CURRENT street (server-authoritative `currentBet`), as a
+   * raise-TO absolute. Required for the multiplier presets to mean anything
+   * when hero is facing a bet: "3X" against an open to 15 is a raise to 45, not
+   * to 3 big blinds. Defaults to 0 (unopened pot) -> multipliers fall back to
+   * the big blind, which is the correct baseline for an opening raise.
+   */
+  currentBet?: number;
   /**
    * Phase 2 T1-02: render the slider vertically on the right side per spec §5.2
    * "Vertical or angled slider on the RIGHT side of the screen". When false,
@@ -73,6 +81,7 @@ export default function ActionPanel({
   confirmAllIn = true,
   showBetSizePresets = true,
   isPreflop = false,
+  currentBet = 0,
   verticalSlider = true,
 }: ActionPanelProps) {
   const smallestChip = Math.max(bigBlind / 2, 0.01);
@@ -137,21 +146,53 @@ export default function ActionPanel({
   //   Postflop: 33% / 50% / 75% / POT GTO Wizard quartet per §5.5 — replaces
   //             the 1/2 / 2/3 / POT trio with 4 presets so users get
   //             smaller-bet flexibility on the bottom end and 100% pot at top.
+  //
+  // 2026-08-15 ROOT-CAUSE FIX (Dan: "when hero is facing a bet and you click
+  // 3X 4X 5X etc it's not calculating or changing the bet amount").
+  //
+  // The old math was `bigBlind * N`, then clamped into [minRaise, maxRaise].
+  // Facing a raise, minRaise is already well above 4 big blinds — e.g. against
+  // an open to 3BB the min raise-TO is 6BB — so 2X, 3X AND 4X all clamped to
+  // the identical minRaise value. Every multiplier produced the same number and
+  // the displayed amount never moved. That is precisely the reported symptom.
+  //
+  // A multiplier preset is a multiple of the BET BEING FACED, not of the blind.
+  // Unopened, the bet being faced IS the big blind, so an opening raise still
+  // reads 2X/3X/4X/5X of the BB exactly as before. Facing an open to 15, "3X"
+  // now correctly means raise TO 45.
+  //
+  // Postflop presets are raise-TO absolutes too, so when hero is facing a bet a
+  // "POT" raise is `currentBet + callAmount + (pot + callAmount)` — the standard
+  // pot-sized-raise identity — not a bare fraction of the pot, which would have
+  // been below the minimum and clamped into the same dead value.
+  //
   const presets = useMemo(() => {
-    if (isPreflop && bigBlind > 0) {
-      return [
-        { label: '2X', value: roundToChip(bigBlind * 2, smallestChip, minRaise, maxRaise) },
-        { label: '3X', value: roundToChip(bigBlind * 3, smallestChip, minRaise, maxRaise) },
-        { label: '4X', value: roundToChip(bigBlind * 4, smallestChip, minRaise, maxRaise) },
-      ];
+    const clamp = (raw: number) => roundToChip(raw, smallestChip, minRaise, maxRaise);
+
+    if (isPreflop) {
+      // Baseline: the live bet to beat. Unopened pot -> the big blind.
+      const base = Math.max(currentBet, bigBlind) || bigBlind || 1;
+      return [2, 3, 4, 5].map((n) => ({
+        label: `${n}X`,
+        raw: base * n,
+        value: clamp(base * n),
+      }));
     }
-    return [
-      { label: '33%', value: roundToChip(pot * 0.33, smallestChip, minRaise, maxRaise) },
-      { label: '50%', value: roundToChip(pot * 0.5, smallestChip, minRaise, maxRaise) },
-      { label: '75%', value: roundToChip(pot * 0.75, smallestChip, minRaise, maxRaise) },
-      { label: 'POT', value: roundToChip(pot, smallestChip, minRaise, maxRaise) },
+
+    // Postflop. `pot` excludes hero's call, so the true pot after hero calls is
+    // pot + callAmount; a pot-sized raise tops that with the call itself.
+    const potAfterCall = pot + callAmount;
+    const fractions: Array<[string, number]> = [
+      ['33%', 0.33],
+      ['50%', 0.5],
+      ['75%', 0.75],
+      ['POT', 1],
     ];
-  }, [isPreflop, bigBlind, pot, smallestChip, minRaise, maxRaise]);
+    return fractions.map(([label, f]) => {
+      const raw = currentBet + callAmount + potAfterCall * f;
+      return { label, raw, value: clamp(raw) };
+    });
+  }, [isPreflop, bigBlind, currentBet, callAmount, pot, smallestChip, minRaise, maxRaise]);
 
   // Track last slider value for haptic snap feedback
   const lastSnapRef = useRef<number>(minRaise);
@@ -414,10 +455,16 @@ export default function ActionPanel({
                 {presets.map((p) => (
                   <button
                     key={p.label}
-                    className="raise-preset"
+                    className={`raise-preset${raiseAmount === p.value ? ' raise-preset--on' : ''}`}
                     onClick={() => setPreset(p.value)}
-                    disabled={p.value > maxRaise || p.value < minRaise}
-                    aria-label={`Bet ${p.label}`}
+                    /* Only dead when there is no legal raise at all. The old
+                       `p.value < minRaise` test could never fire (value is
+                       already clamped to minRaise) while `p.value > maxRaise`
+                       greyed out every preset a short stack could still shove
+                       into. Over-stack now snaps to all-in, per spec 5.2. */
+                    disabled={minRaise > maxRaise}
+                    title={`Raise to ${formatChips(p.value)}`}
+                    aria-label={`Bet ${p.label} — raise to ${formatChips(p.value)}`}
                   >
                     {p.label}
                   </button>

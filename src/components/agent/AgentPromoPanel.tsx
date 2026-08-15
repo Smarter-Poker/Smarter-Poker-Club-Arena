@@ -11,7 +11,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
-import { retryAsync } from '../../utils/retryAsync';
+import { callClubArenaApi } from '../../services/clubArenaApi';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { masterBus } from '../../core/MasterBus';
 import { triggerHaptic } from '../../services/HapticService';
@@ -217,17 +217,17 @@ export default function AgentPromoPanel({
         setDistributing(false);
         return;
       }
-      // Direct Supabase RPC for distribution — p_agent_id is agents.id PK, NOT auth.users.id
-      const { error } = await retryAsync(
-        () =>
-          supabase.rpc('distribute_promo_chips', {
-            p_agent_id: agentPkId,
-            p_player_id: selectedPlayer,
-            p_amount: amt,
-          }),
-        3
-      );
-      if (error) throw error;
+      // Distribute SERVER-SIDE. `distribute_promo_chips` is service_role-only, so
+      // the old direct browser rpc() returned 42501 and this button could never
+      // work. The route identifies the agent from the JWT, enforces the promo
+      // lifetime cap / playthrough rules, rate limits and idempotency, and writes
+      // the audit trail.
+      await callClubArenaApi('distribute-promo', {
+        action: 'send',
+        clubId,
+        targetUserId: selectedPlayer,
+        amount: amt,
+      });
 
       showToast(`🎉 ${amt.toLocaleString()} promo chips sent!`);
       masterBus.emit('DATA_MUTATED', { table: 'agents', action: 'promo_distributed' });

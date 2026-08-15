@@ -1,16 +1,15 @@
 diff --git a/src/pages/TournamentPage.css b/src/pages/TournamentPage.css
-index 4d8468e..697d3bb 100644
+index 4d8468e..f7f4009 100644
 --- a/src/pages/TournamentPage.css
 +++ b/src/pages/TournamentPage.css
-@@ -1094,3 +1094,62 @@
+@@ -1094,3 +1094,61 @@
    color: #ffd700;
    text-shadow: 0 0 6px rgba(255, 215, 0, 0.3);
  }
 +
-+/* ── Live pane (2026-08-15) ─────────────────────────────────────────────────
-+   Clock + chip counts + table list for a tournament that is actually running.
-+   The detail pane used to show the same static blind chart whether the event
-+   had started or not. */
++/* Live pane (2026-08-15): clock + chip counts + table list for a tournament
++   that is actually running. The detail pane used to show the same static
++   blind chart whether the event had started or not. */
 +.tourney-live-pane {
 +  display: flex;
 +  flex-direction: column;
@@ -66,27 +65,26 @@ index 4d8468e..697d3bb 100644
 +  color: #ffd700;
 +}
 diff --git a/src/pages/TournamentPage.tsx b/src/pages/TournamentPage.tsx
-index 154a8eb..723c08b 100644
+index 154a8eb..e0cb7fd 100644
 --- a/src/pages/TournamentPage.tsx
 +++ b/src/pages/TournamentPage.tsx
-@@ -25,6 +25,12 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
+@@ -25,6 +25,11 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
  import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
  import ClubBottomNav from '../components/club/ClubBottomNav';
  import MysteryBountyReveal from '../components/tournament/MysteryBountyReveal';
 +// LOBBY FIX 2026-08-15: the detail pane below showed a STATIC blind chart and
-+// a payout list and nothing else — no clock, no standings, no tables. Every one
-+// of these three components already existed and was fully working; two of them
-+// were rendered nowhere in the app at all. See the block near "Live pane".
++// a payout list and nothing else, no clock, no standings, no tables. All three
++// components already existed and worked; two were rendered nowhere in the app.
 +import { TournamentClock } from '../components/tournament/TournamentClock';
 +import TournamentStandings from '../components/tournament/TournamentStandings';
  import { reportError } from '../utils/errorReporter';
  
  type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
-@@ -45,6 +51,17 @@ export default function TournamentPage() {
+@@ -45,6 +50,17 @@ export default function TournamentPage() {
  
    const [tournaments, setTournaments] = useState<Tournament[]>([]);
    const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
-+  /** Tables in the selected RUNNING tournament — see the "Live pane" block. */
++  /** Tables in the selected RUNNING tournament (see the live pane below). */
 +  const [tourneyTables, setTourneyTables] = useState<
 +    Array<{
 +      id: string;
@@ -100,13 +98,13 @@ index 154a8eb..723c08b 100644
    const [filter, setFilter] = useState<TournFilter>('all');
    const [isLoading, setIsLoading] = useState(true);
    const [showCreateModal, setShowCreateModal] = useState(false);
-@@ -693,6 +710,39 @@ export default function TournamentPage() {
-     });
-   }, [tournaments, filter]);
+@@ -737,6 +753,39 @@ export default function TournamentPage() {
+     return () => clearInterval(interval);
+   }, [tournaments]);
  
-+  // ─── Live pane: tables in the selected running tournament ──────────
-+  // Only fetched while a RUNNING tournament is selected, so the lobby costs
-+  // nothing extra when you are just browsing upcoming events.
++  // Live pane: which tables the selected RUNNING tournament is playing on.
++  // Only fetched while a RUNNING tournament is selected, so browsing upcoming
++  // events costs nothing extra.
 +  useEffect(() => {
 +    const t = selectedTournament;
 +    if (!t || t.status !== 'RUNNING') {
@@ -128,8 +126,8 @@ index 154a8eb..723c08b 100644
 +      }
 +    };
 +    load();
-+    // Tables merge and break as the field shrinks; 20s is frequent enough to
-+    // track that without hammering the lobby.
++    // Tables merge and break as the field shrinks; 20s tracks that without
++    // hammering the lobby.
 +    const iv = setInterval(load, 20_000);
 +    return () => {
 +      cancelled = true;
@@ -137,23 +135,23 @@ index 154a8eb..723c08b 100644
 +    };
 +  }, [selectedTournament]);
 +
-   // ─── Countdown Timer Hook (Initiative 2) ──────────────────────
-   const [countdownStr, setCountdownStr] = useState<Record<string, string>>({});
-   // SWEEP #6: live blind-level chip per RUNNING tournament in the lobby list.
-@@ -1007,6 +1057,51 @@ export default function TournamentPage() {
+   if (isLoading) {
+     return (
+       <div className="tournament-page">
+@@ -1007,6 +1056,51 @@ export default function TournamentPage() {
                  )}
                </div>
  
-+              {/* ── Live pane (RUNNING only) ────────────────────────────────
-+                  LOBBY FIX 2026-08-15. Until now, opening a tournament that
-+                  was actually in progress showed exactly what an unstarted one
-+                  showed: a static blind chart and a payout list. No clock, no
-+                  standings, no idea which tables were running or how many
-+                  players were left. The three components below were ALREADY
-+                  BUILT and working — TournamentClock was rendered only on the
-+                  separate mobile details route, and TournamentStandings only
-+                  behind a tab there — so the lobby was the one place you could
-+                  not see the tournament you were in. */}
++              {/* Live pane, RUNNING only. Until now, opening a tournament
++                  that was actually in progress showed exactly what an
++                  unstarted one showed: a static blind chart and a payout
++                  list. No clock, no standings, no idea which tables were
++                  running or how many players were left. All three components
++                  below were ALREADY BUILT and working: TournamentClock was
++                  rendered only on the separate mobile details route, and
++                  TournamentStandings only behind a tab there, so the lobby
++                  was the one place you could not see the tournament you were
++                  actually playing. */}
 +              {selectedTournament.status === 'RUNNING' && (
 +                <div className="tourney-live-pane">
 +                  <TournamentClock tournamentId={selectedTournament.id} compact />

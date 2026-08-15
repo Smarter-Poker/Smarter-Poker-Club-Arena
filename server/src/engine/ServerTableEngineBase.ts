@@ -763,6 +763,11 @@ export abstract class ServerTableEngineBase {
     return this.isTournamentTable();
   }
 
+  /** Drill-only public wrapper over the protected killForRestart path. */
+  killForRestartPublic(reason: string): void {
+    this.killForRestart(reason);
+  }
+
   /**
    * Seated roster, used by the fault-injection safety gate to refuse a drill on
    * any table where a real person is sitting.

@@ -31,6 +31,9 @@ import { reportError } from '../services/errorReporter.js';
 
 /** Only the members this handler uses; the router passes the real engine. */
 interface FaultEngine {
+  /** Marks the engine dead so GameServer reaps and rebuilds it — the exact
+   *  path that calls hub.dropTable() while players are still connected. */
+  killForRestartPublic(reason: string): void;
   injectTurnStall(): {
     tableId: string;
     seat: number;
@@ -98,8 +101,24 @@ export async function handleInjectFault(
     }
 
     const fault = body?.fault || 'turn_stall';
-    if (fault !== 'turn_stall') {
+    if (fault !== 'turn_stall' && fault !== 'kill_engine') {
       return sendJSON(res, 400, { error: `Unknown fault type: ${fault}` });
+    }
+
+    if (fault === 'kill_engine') {
+      // Drills the engine-rebuild path end to end: killForRestart -> GameServer
+      // reaper -> hub.dropTable() -> discovery rebuilds. The question this
+      // answers is whether a CONNECTED PLAYER keeps receiving afterwards, which
+      // before the dropTable fix they did not — the rebuilt engine published
+      // into an empty room while their socket stayed open and healthy forever.
+      engine.killForRestartPublic('fault_injection_drill');
+      return sendJSON(res, 200, {
+        ok: true,
+        fault,
+        tableId,
+        expect:
+          'GameServer reaps the dead engine, dropTable() runs with live subscribers, discovery rebuilds within ~5s, and connected clients keep receiving.',
+      });
     }
 
     const before = {

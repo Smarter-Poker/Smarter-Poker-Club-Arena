@@ -414,6 +414,8 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         horsesToRegister: 30,
         blindStructure: BLIND_STRUCTURES.STANDARD,
         payoutStructure: PAYOUT_STRUCTURES.NINE,
+        rebuy: true,
+        addOn: true,
       },
       {
         name: 'Evening Mystery Bounty (PLO5)',

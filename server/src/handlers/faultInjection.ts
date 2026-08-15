@@ -31,7 +31,13 @@ import { reportError } from '../services/errorReporter.js';
 
 /** Only the members this handler uses; the router passes the real engine. */
 interface FaultEngine {
-  injectTurnStall(): { tableId: string; seat: number; hadClock: boolean; handNumber: number };
+  injectTurnStall(): {
+    tableId: string;
+    seat: number;
+    hadClock: boolean;
+    hadHorseTimer: boolean;
+    handNumber: number;
+  };
   seatedRoster(): Array<{ user_id: string; seat_number: number; is_horse: boolean }>;
   msSinceProgress(): number;
   getHandCount(): number;

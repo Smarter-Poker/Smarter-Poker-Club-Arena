@@ -45,14 +45,29 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * responsible for the safety gate — see handlers/faultInjection.ts, which
    * refuses to run when any human is seated.
    */
-  injectTurnStall(): { tableId: string; seat: number; hadClock: boolean; handNumber: number } {
+  injectTurnStall(): {
+    tableId: string;
+    seat: number;
+    hadClock: boolean;
+    hadHorseTimer: boolean;
+    handNumber: number;
+  } {
     const state = this.handController?.getState();
     const seat = state?.currentPlayerSeat ?? -1;
     const player = state?.players.find((p) => p.seat === seat);
     const hadClock = player ? this.preciseTimer.hasTimer(this.tableId, player.user_id) : false;
+    const hadHorseTimer = !!this.horseActionTimer;
 
     // 1. Kill the clock — this is what every real freeze had in common.
     this.preciseTimer.clearTable(this.tableId);
+    // 1b. Suppress the pending horse action too. Removing only the enforcement
+    //     clock is NOT a freeze: the horse's think-time timer still fires and
+    //     the table carries on, which is exactly what the first drill showed.
+    //     A real freeze is "nobody is going to act AND no clock will force it".
+    if (this.horseActionTimer) {
+      clearTimeout(this.horseActionTimer);
+      this.horseActionTimer = null;
+    }
     // 2. Backdate progress past the stall threshold so the next heartbeat trips
     //    the watchdog immediately rather than after a 45s wait.
     this.lastProgressAtMs = Date.now() - (ServerTableEngineBase.WATCHDOG_STALL_MS + 5_000);
@@ -62,7 +77,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       `[ServerTableEngine:${this.tableId}] FAULT INJECTED: turn stall at seat ${seat} ` +
         `(clock removed, progress backdated). Watchdog should recover this.`
     );
-    return { tableId: this.tableId, seat, hadClock, handNumber: this.handCount };
+    return { tableId: this.tableId, seat, hadClock, hadHorseTimer, handNumber: this.handCount };
   }
 
   /**
@@ -1257,7 +1272,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     const handControllerRef = this.handController;
 
-    setTimeout(() => {
+    this.horseActionTimer = setTimeout(() => {
+      this.horseActionTimer = null;
       if (!handControllerRef || !this.running) return;
 
       // AUDIT V2 FIX: if a NEW hand started, this.handController was replaced.

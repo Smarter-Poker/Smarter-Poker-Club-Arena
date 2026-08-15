@@ -853,6 +853,14 @@ export abstract class ServerTableEngineBase {
       : (this.tableInfo?.big_blind || 2) * 200;
   }
   protected pineappleDiscardTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Pending horse think-time timer. Tracked so it can be cancelled — a stray
+   * horse action scheduled for a hand that has since ended is a real hazard
+   * (the callback's identity guards catch it, but an untracked timer cannot be
+   * cleared on teardown), and freeze drills need to suppress the horse action
+   * to reproduce a genuine stall rather than one the horse papers over.
+   */
+  protected horseActionTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Bible V8 §2.3 — Calculate position labels for each seat (BTN, SB, BB, UTG, MP, CO, etc.)

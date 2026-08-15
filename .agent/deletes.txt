@@ -1,0 +1,41 @@
+# Orphan test files, removed 2026-08-15.
+#
+# Each of these imports a source module that NO LONGER EXISTS on disk, so the
+# suite failed at collection with "Failed to resolve import". They are the
+# leftovers of the server-authoritative migration: the client-side engine and
+# its services were deleted (their siblings were archived into
+# tests/_archive/engine_clientside/, these ones were missed) and the tests were
+# never removed with them.
+#
+# Verified before deletion: every import target was confirmed absent from src/,
+# under both .ts and .tsx and as a directory index. None of these tests has
+# been capable of running for as long as the modules have been gone -- deleting
+# them removes 28 permanently-failing files and costs zero real coverage.
+tests/utils/offlineQueue.test.ts
+tests/unit/AntiCollusionService.test.ts
+tests/unit/ArenaLobbyEngine.test.ts
+tests/unit/AutoRebuyService.test.ts
+tests/unit/BombPotEngine.test.ts
+tests/unit/ClubService.test.ts
+tests/unit/DeltaSyncService.test.ts
+tests/unit/GrindRewardsService.test.ts
+tests/unit/HandValidationService.test.ts
+tests/unit/HorseLifecycleManager.test.ts
+tests/unit/InviteService.test.ts
+tests/unit/RateLimiter.test.ts
+tests/unit/ReconnectingWebSocket.test.ts
+tests/unit/SnapshotService.test.ts
+tests/unit/SocialEnhancementsService.test.ts
+tests/unit/SoundManager.test.ts
+tests/unit/SoundPackService.test.ts
+tests/unit/TableSettingsService.test.ts
+tests/unit/offlineQueue.test.ts
+tests/unit/safeServiceCall.test.ts
+tests/unit/useOptimisticMutation.test.ts
+tests/unit/usePoker.test.ts
+tests/unit/usePrefetch.test.ts
+tests/unit/useRealtimeRecovery.test.ts
+tests/unit/useResponsive.test.ts
+tests/unit/useSupabaseQuery.test.ts
+tests/unit/useTableGameState.test.ts
+tests/unit/useTableSidePanels.test.ts

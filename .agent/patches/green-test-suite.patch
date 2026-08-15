@@ -1,0 +1,881 @@
+diff --git a/tests/components/ErrorBoundary.test.tsx b/tests/components/ErrorBoundary.test.tsx
+index bdd046a..cb0622b 100644
+--- a/tests/components/ErrorBoundary.test.tsx
++++ b/tests/components/ErrorBoundary.test.tsx
+@@ -61 +61,7 @@ describe('ErrorBoundary Component', () => {
+-    expect(screen.getByText('⚠️')).toBeInTheDocument();
++    // UPDATED: the '⚠️' glyph was replaced with the literal word "Warning" —
++    // CLAUDE.md §"No emoji in source files (breaks SWC compiler)". It still
++    // renders in the same 4rem display-icon slot above the heading, so assert
++    // the text AND that it is the oversized icon element.
++    const icon = screen.getByText('Warning');
++    expect(icon).toBeInTheDocument();
++    expect(icon).toHaveStyle('font-size: 4rem');
+diff --git a/tests/components/GlobalHeader.test.tsx b/tests/components/GlobalHeader.test.tsx
+index 31d7b25..ff67811 100644
+--- a/tests/components/GlobalHeader.test.tsx
++++ b/tests/components/GlobalHeader.test.tsx
+@@ -55 +55,6 @@ describe('GlobalHeader Component', () => {
+-  it('renders the Hub button image when on the lobby (pageDepth 1)', () => {
++  // UPDATED: the header's left slot no longer carries a "Return to Hub"
++  // button — GlobalHeader now renders only the hamburger at lobby depth and
++  // adds the Back button on sub-pages (`isSubPage = pageDepth >= 2`).
++  // Hub navigation moved to the right-hand orbs (/hub/*) and the hamburger
++  // menu, so this test now pins the hamburger-only left slot at depth 1.
++  it('renders only the hamburger (no Back button) on the lobby (pageDepth 1)', () => {
+@@ -61,2 +66,2 @@ describe('GlobalHeader Component', () => {
+-    const btn = screen.getByRole('button', { name: /Return to Hub/i });
+-    expect(btn).toBeInTheDocument();
++    const menuBtn = screen.getByRole('button', { name: /Open Menu/i });
++    expect(menuBtn).toBeInTheDocument();
+@@ -64 +69 @@ describe('GlobalHeader Component', () => {
+-    const img = screen.getByAltText('Hub');
++    const img = screen.getByAltText('Menu');
+@@ -66 +71 @@ describe('GlobalHeader Component', () => {
+-    expect(img).toHaveAttribute('src', expect.stringContaining('btn-hub-v4.png'));
++    expect(img).toHaveAttribute('src', expect.stringContaining('btn-hamburger-v4.png'));
+@@ -68 +73 @@ describe('GlobalHeader Component', () => {
+-    // Ensures we don't have the Go Back button
++    // Ensures we don't have the Go Back button at lobby depth
+@@ -69,0 +75,3 @@ describe('GlobalHeader Component', () => {
++    expect(screen.queryByAltText('Back')).not.toBeInTheDocument();
++    // ...nor the removed Hub button
++    expect(screen.queryByAltText('Hub')).not.toBeInTheDocument();
+@@ -83,0 +92,3 @@ describe('GlobalHeader Component', () => {
++
++    // UPDATED: the hamburger stays alongside the Back button on sub-pages.
++    expect(screen.getByRole('button', { name: /Open Menu/i })).toBeInTheDocument();
+diff --git a/tests/setup.ts b/tests/setup.ts
+index eda6ebd..915a907 100644
+--- a/tests/setup.ts
++++ b/tests/setup.ts
+@@ -55,0 +56,12 @@ vi.mock('@sentry/react', () => ({
++//
++// TEST-INFRA FIX 2026-08-15: `from: vi.fn()` returns UNDEFINED, so the very
++// common `supabase.from('x').select('y').eq(...)` threw "Cannot read
++// properties of undefined (reading 'select')" the moment any service touched
++// the database. Individual suites worked around it by re-mocking the module
++// themselves; the ones that did not, died.
++//
++// This builds a chainable PostgREST-shaped stub: every filter/modifier returns
++// the same builder, and the builder is thenable, so it resolves to
++// `{ data: [], error: null }` whether the caller awaits the chain directly, or
++// calls .single() / .maybeSingle() first. Suites that need specific rows still
++// override with their own vi.mock — this only stops the default from crashing.
+@@ -59,5 +71,50 @@ vi.mock('../src/lib/supabase', () => ({
+-      signInWithPassword: vi.fn(),
+-      signUp: vi.fn(),
+-      resetPasswordForEmail: vi.fn(),
+-      signOut: vi.fn(),
+-      getUser: vi.fn(),
++      signInWithPassword: vi.fn(() => Promise.resolve({ data: { user: null }, error: null })),
++      signUp: vi.fn(() => Promise.resolve({ data: { user: null }, error: null })),
++      resetPasswordForEmail: vi.fn(() => Promise.resolve({ data: {}, error: null })),
++      signOut: vi.fn(() => Promise.resolve({ error: null })),
++      getUser: vi.fn(() => Promise.resolve({ data: { user: null }, error: null })),
++      getSession: vi.fn(() => Promise.resolve({ data: { session: null }, error: null })),
++      onAuthStateChange: vi.fn(() => ({
++        data: { subscription: { unsubscribe: vi.fn() } },
++      })),
++    },
++    from: vi.fn(() => {
++      const result = { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
++      const builder: Record<string, unknown> = {};
++      const chain = () => builder;
++      for (const method of [
++        'select', 'insert', 'update', 'upsert', 'delete', 'eq', 'neq', 'gt',
++        'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in', 'contains',
++        'containedBy', 'rangeGt', 'rangeLt', 'overlaps', 'match', 'not', 'or',
++        'filter', 'order', 'limit', 'range', 'abortSignal', 'returns',
++      ]) {
++        builder[method] = vi.fn(chain);
++      }
++      builder.single = vi.fn(() => Promise.resolve({ data: null, error: null }));
++      builder.maybeSingle = vi.fn(() => Promise.resolve({ data: null, error: null }));
++      // Thenable, so `await supabase.from('x').select('y').eq(...)` resolves
++      // without the caller having to call .single() first.
++      builder.then = (resolve: (v: typeof result) => unknown) =>
++        Promise.resolve(result).then(resolve);
++      return builder;
++    }),
++    rpc: vi.fn(() => Promise.resolve({ data: null, error: null })),
++    channel: vi.fn(() => {
++      const ch: Record<string, unknown> = {};
++      ch.on = vi.fn(() => ch);
++      ch.subscribe = vi.fn((cb?: (s: string) => void) => {
++        cb?.('SUBSCRIBED');
++        return ch;
++      });
++      ch.unsubscribe = vi.fn(() => Promise.resolve('ok'));
++      ch.send = vi.fn(() => Promise.resolve('ok'));
++      return ch;
++    }),
++    removeChannel: vi.fn(() => Promise.resolve('ok')),
++    storage: {
++      from: vi.fn(() => ({
++        upload: vi.fn(() => Promise.resolve({ data: null, error: null })),
++        download: vi.fn(() => Promise.resolve({ data: null, error: null })),
++        getPublicUrl: vi.fn(() => ({ data: { publicUrl: '' } })),
++        remove: vi.fn(() => Promise.resolve({ data: null, error: null })),
++      })),
+@@ -65 +121,0 @@ vi.mock('../src/lib/supabase', () => ({
+-    from: vi.fn(),
+@@ -69,0 +126,13 @@ vi.mock('../src/lib/supabase', () => ({
++//
++// TEST-INFRA FIX 2026-08-15: this mock used to expose exactly three methods —
++// emit, on, off — and TWO OF THOSE DO NOT EXIST on the real MasterBusCore. The
++// real surface is subscribe / emit / subscribeDebounced / getOrCreateChannel /
++// removeRegisteredChannel / onEvent / init / reset / ... Any module that
++// subscribes at import time (AchievementTriggerService does, at module scope)
++// therefore threw `masterBus.subscribe is not a function` while the test file
++// was still being collected, which fails the WHOLE SUITE before a single test
++// runs. That is the single largest cause of the red suite: the code was fine
++// and the harness was lying about it.
++//
++// Mirrors the real contract where it matters: subscribe() returns an
++// unsubscribe function, and getOrCreateChannel() returns a chainable channel.
+@@ -71,0 +141,6 @@ vi.mock('../src/core/MasterBus', () => ({
++    init: vi.fn(() => ({ online: true })),
++    // The real subscribe returns an unsubscribe function. Handing back
++    // undefined made every `const off = masterBus.subscribe(...)` + `off()`
++    // cleanup throw on unmount.
++    subscribe: vi.fn(() => vi.fn()),
++    subscribeDebounced: vi.fn(() => vi.fn()),
+@@ -73,2 +148,26 @@ vi.mock('../src/core/MasterBus', () => ({
+-    on: vi.fn(),
+-    off: vi.fn(),
++    onEvent: vi.fn(() => vi.fn()),
++    executeOptimistic: vi.fn(async (_e: unknown, _p: unknown, fn: () => unknown) => fn?.()),
++    getOrCreateChannel: vi.fn(() => {
++      const ch: Record<string, unknown> = {};
++      ch.on = vi.fn(() => ch);
++      ch.subscribe = vi.fn((cb?: (s: string) => void) => {
++        cb?.('SUBSCRIBED');
++        return ch;
++      });
++      ch.unsubscribe = vi.fn(() => Promise.resolve('ok'));
++      ch.send = vi.fn(() => Promise.resolve('ok'));
++      ch.track = vi.fn(() => Promise.resolve('ok'));
++      ch.presenceState = vi.fn(() => ({}));
++      return ch;
++    }),
++    removeRegisteredChannel: vi.fn(),
++    registerChannelFactory: vi.fn(),
++    removeChannelFactory: vi.fn(),
++    hasChannel: vi.fn(() => false),
++    getChannelCount: vi.fn(() => 0),
++    getStatus: vi.fn(() => ({ online: true })),
++    isOnline: vi.fn(() => true),
++    reset: vi.fn(),
++    getDiagnostics: vi.fn(() => ({ subscribers: {}, channels: [], eventLog: [] })),
++    getEventLog: vi.fn(() => []),
++    clearEventLog: vi.fn(),
+@@ -75,0 +175,2 @@ vi.mock('../src/core/MasterBus', () => ({
++  // Some modules import the hook rather than the singleton.
++  useMasterBusSubscription: vi.fn(),
+diff --git a/tests/unit/AchievementTriggerService.test.ts b/tests/unit/AchievementTriggerService.test.ts
+index 9f1e29a..0af6b93 100644
+--- a/tests/unit/AchievementTriggerService.test.ts
++++ b/tests/unit/AchievementTriggerService.test.ts
+@@ -164,0 +165,5 @@ describe('AchievementTriggerService', () => {
++  // UPDATED: the tournament achievement IDs were corrected in
++  // src/services/AchievementTriggerService.ts — 'tourney_played_10' and
++  // 'tourney_wins_5' never existed in the ACHIEVEMENTS catalogue, so those
++  // increments silently no-op'd. The real IDs (see src/services/
++  // AchievementService.ts) are 'tourney_played_50' and 'tourney_win_1'.
+@@ -166 +171 @@ describe('AchievementTriggerService', () => {
+-    it('should increment tourney_played_10', async () => {
++    it('should increment tourney_played_50', async () => {
+@@ -174 +179 @@ describe('AchievementTriggerService', () => {
+-      expect(mockIncrementProgress).toHaveBeenCalledWith('user-1', 'tourney_played_10');
++      expect(mockIncrementProgress).toHaveBeenCalledWith('user-1', 'tourney_played_50');
+@@ -177 +182 @@ describe('AchievementTriggerService', () => {
+-    it('should increment tourney_wins_5 only when won', async () => {
++    it('should increment tourney_win_1 only when won', async () => {
+@@ -185 +190 @@ describe('AchievementTriggerService', () => {
+-      expect(mockIncrementProgress).toHaveBeenCalledWith('user-1', 'tourney_wins_5');
++      expect(mockIncrementProgress).toHaveBeenCalledWith('user-1', 'tourney_win_1');
+@@ -188 +193 @@ describe('AchievementTriggerService', () => {
+-    it('should NOT increment tourney_wins_5 when not won', async () => {
++    it('should NOT increment tourney_win_1 when not won', async () => {
+@@ -195,0 +201,4 @@ describe('AchievementTriggerService', () => {
++      expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'tourney_win_1');
++      // ...and the stale IDs must never come back: they match nothing in the
++      // ACHIEVEMENTS catalogue, so awarding through them is a silent no-op.
++      expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'tourney_played_10');
+diff --git a/tests/unit/AgentService.test.ts b/tests/unit/AgentService.test.ts
+index 4b8a2a5..9856d14 100644
+--- a/tests/unit/AgentService.test.ts
++++ b/tests/unit/AgentService.test.ts
+@@ -88 +88,5 @@ describe('AgentService', () => {
+-      ).rejects.toThrow(/exceed 70%/i);
++        // 2026-08-15: regex updated to the message createAgent actually throws.
++        // The 70% cap IS enforced (AgentService.ts:270-271); only the wording
++        // differs from the old /exceed 70%/i — createAgent says "must be between
++        // 0% and 70%", while updateRates says "cannot exceed 70%".
++      ).rejects.toThrow(/commission rate must be between 0% and 70%/i);
+@@ -120 +124,4 @@ describe('AgentService', () => {
+-      ).rejects.toThrow(/exceed 50%/i);
++        // 2026-08-15: regex updated to the message createAgent actually throws.
++        // The 50% rakeback cap IS enforced (AgentService.ts:272-273); the
++        // wording is "must be between 0% and 50%", not "cannot exceed 50%".
++      ).rejects.toThrow(/rakeback rate must be between 0% and 50%/i);
+diff --git a/tests/unit/AvatarService.test.ts b/tests/unit/AvatarService.test.ts
+index b749dbd..a6b61e1 100644
+--- a/tests/unit/AvatarService.test.ts
++++ b/tests/unit/AvatarService.test.ts
+@@ -6,2 +6,10 @@
+- * Tests avatar library size, category distribution, default fallback URL,
+- * getUserAvatarUrl default, and getUserAvatars empty input.
++ * Tests the storage-backed avatar library, category distribution, the
++ * generated-SVG default fallback, getUserAvatarUrl default, and
++ * getUserAvatars empty input.
++ *
++ * NOTE (2026-08): the avatar library is no longer a hardcoded 75-entry
++ * (25 free / 50 VIP) array. getAvatarLibrary() now lists the
++ * `social-media/avatars` storage bucket for presets (all category 'free')
++ * and merges the user's `user_avatars` rows (category 'custom'). There is
++ * no 'vip' category any more. The default avatar likewise moved from
++ * '/avatars/default-player.png' to a generated inline SVG data URL.
+@@ -13,0 +22,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
++// Preset avatar files as the `social-media/avatars` bucket would list them.
++// `notes.txt` is a non-image and must be filtered out; `ab.png` has a name too
++// short to use as a label and must fall back to a positional "Avatar N" name.
++const { BUCKET_FILES } = vi.hoisted(() => ({
++  BUCKET_FILES: [
++    { name: 'ace-hunter.png' },
++    { name: 'bluff_queen.jpg' },
++    { name: 'chip-leader.webp' },
++    { name: 'river-rat.svg' },
++    { name: 'ab.png' },
++    { name: 'notes.txt' },
++  ],
++}));
++
+@@ -27 +49,10 @@ vi.mock('../../src/lib/supabase', () => {
+-  return { supabase: { from: () => buildChain() } };
++  return {
++    supabase: {
++      from: () => buildChain(),
++      storage: {
++        from: () => ({
++          list: () => Promise.resolve({ data: BUCKET_FILES, error: null }),
++        }),
++      },
++    },
++  };
+@@ -32,0 +64,10 @@ import { avatarService } from '../../src/services/AvatarService';
++import { getAvatarWithFallback } from '../../src/utils/avatarGenerator';
++
++/** Every preset image in BUCKET_FILES (i.e. everything except notes.txt) */
++const PRESET_IMAGE_NAMES = [
++  'ace-hunter.png',
++  'bluff_queen.jpg',
++  'chip-leader.webp',
++  'river-rat.svg',
++  'ab.png',
++];
+@@ -38 +79,3 @@ describe('AvatarService', () => {
+-    it('should return 75 avatars', async () => {
++    it('should return one avatar per image file in the preset bucket', async () => {
++      // Was a hardcoded 75-entry library; presets now come from the
++      // social-media/avatars storage bucket, and non-images are skipped.
+@@ -40 +83,2 @@ describe('AvatarService', () => {
+-      expect(library).toHaveLength(75);
++      expect(library).toHaveLength(PRESET_IMAGE_NAMES.length);
++      expect(library.map((a) => a.id)).toEqual(PRESET_IMAGE_NAMES);
+@@ -43 +87,2 @@ describe('AvatarService', () => {
+-    it('should have 25 free avatars', async () => {
++    it('should mark every preset avatar as category "free"', async () => {
++      // Was 25 free out of 75; every bucket preset is now free-tier.
+@@ -46 +91,10 @@ describe('AvatarService', () => {
+-      expect(free).toHaveLength(25);
++      expect(free).toHaveLength(PRESET_IMAGE_NAMES.length);
++    });
++
++    it('should expose no VIP avatars (tier removed — presets are free, user art is custom)', async () => {
++      // Was 50 VIP avatars; the 'vip' tier no longer exists in the library.
++      const library = await avatarService.getAvatarLibrary();
++      expect(library.filter((a) => a.category === 'vip')).toHaveLength(0);
++      for (const avatar of library) {
++        expect(['free', 'custom']).toContain(avatar.category);
++      }
+@@ -49 +103 @@ describe('AvatarService', () => {
+-    it('should have 50 VIP avatars', async () => {
++    it('should build public storage URLs and humanised names for presets', async () => {
+@@ -51,2 +105,8 @@ describe('AvatarService', () => {
+-      const vip = library.filter((a) => a.category === 'vip');
+-      expect(vip).toHaveLength(50);
++      const byId = new Map(library.map((a) => [a.id, a]));
++      expect(byId.get('ace-hunter.png')!.imageUrl).toBe(
++        'https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/social-media/avatars/ace-hunter.png'
++      );
++      expect(byId.get('ace-hunter.png')!.name).toBe('ace hunter');
++      expect(byId.get('bluff_queen.jpg')!.name).toBe('bluff queen');
++      // Names of 2 chars or fewer fall back to a positional label (1-indexed).
++      expect(byId.get('ab.png')!.name).toBe('Avatar 5');
+@@ -71 +131,3 @@ describe('AvatarService', () => {
+-    it('should return default URL when user not found', async () => {
++    it('should return a generated SVG data URL when user not found', async () => {
++      // Was the static '/avatars/default-player.png'; the fallback is now a
++      // deterministic inline SVG monogram seeded on the user id.
+@@ -73 +135,15 @@ describe('AvatarService', () => {
+-      expect(url).toBe('/avatars/default-player.png');
++      expect(url.startsWith('data:image/svg+xml,')).toBe(true);
++      expect(url.length).toBeGreaterThan('data:image/svg+xml,'.length);
++      expect(url).toBe(getAvatarWithFallback(null, 'unknown-user', 'Player'));
++    });
++
++    it('should generate a different fallback avatar per user', async () => {
++      const a = await avatarService.getUserAvatarUrl('user-a');
++      const b = await avatarService.getUserAvatarUrl('user-b');
++      expect(a).not.toBe(b);
++    });
++
++    it('should be deterministic for the same user', async () => {
++      const first = await avatarService.getUserAvatarUrl('stable-user');
++      const second = await avatarService.getUserAvatarUrl('stable-user');
++      expect(first).toBe(second);
+@@ -83 +159,3 @@ describe('AvatarService', () => {
+-    it('should return default avatars for unknown users', async () => {
++    it('should return distinct generated SVG avatars for unknown users', async () => {
++      // Was the shared '/avatars/default-player.png' for every user; each user
++      // now gets their own deterministic inline SVG monogram.
+@@ -85,2 +163,5 @@ describe('AvatarService', () => {
+-      expect(map.get('user-1')).toBe('/avatars/default-player.png');
+-      expect(map.get('user-2')).toBe('/avatars/default-player.png');
++      expect(map.get('user-1')).toBe(getAvatarWithFallback(null, 'user-1', 'Player'));
++      expect(map.get('user-2')).toBe(getAvatarWithFallback(null, 'user-2', 'Player'));
++      expect(map.get('user-1')!.startsWith('data:image/svg+xml,')).toBe(true);
++      expect(map.get('user-2')!.startsWith('data:image/svg+xml,')).toBe(true);
++      expect(map.get('user-1')).not.toBe(map.get('user-2'));
+@@ -103,0 +185,9 @@ describe('AvatarService', () => {
++  describe('getDefaultAvatarUrl', () => {
++    it('should return a generated SVG data URL, not a static png path', () => {
++      // Was '/avatars/default-player.png'; now generateDefaultAvatar().
++      const url = avatarService.getDefaultAvatarUrl();
++      expect(url.startsWith('data:image/svg+xml,')).toBe(true);
++      expect(url).not.toBe('/avatars/default-player.png');
++    });
++  });
++
+diff --git a/tests/unit/CashoutService.test.ts b/tests/unit/CashoutService.test.ts
+index 589780a..2e06a41 100644
+--- a/tests/unit/CashoutService.test.ts
++++ b/tests/unit/CashoutService.test.ts
+@@ -7 +7 @@
+-import { describe, it, expect, vi, beforeEach } from 'vitest';
++import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+@@ -23,0 +24,17 @@ vi.mock('../../src/lib/supabase', () => {
++      // 2026-08-15: this suite-local mock overrides the (complete) global one in
++      // tests/setup.ts and had NO `auth`, so every privileged path exploded with
++      // "Cannot read properties of undefined (reading 'getSession')" inside
++      // callClubArenaApi (clubArenaApi.ts:50). cancel/approve/reject all route
++      // through that helper. A session WITH an access_token is used so the tests
++      // exercise the real request, not the 'Not authenticated' short-circuit.
++      auth: {
++        getSession: vi.fn(() =>
++          Promise.resolve({
++            data: { session: { access_token: 'test-jwt', user: { id: 'player-1' } } },
++            error: null,
++          })
++        ),
++        getUser: vi.fn(() =>
++          Promise.resolve({ data: { user: { id: 'player-1' } }, error: null })
++        ),
++      },
+@@ -38,0 +56 @@ import { cashoutService } from '../../src/services/CashoutService';
++import { masterBus } from '../../src/core/MasterBus';
+@@ -75,3 +93,33 @@ describe('CashoutService', () => {
+-    it('should return false for cancelCashout on nonexistent id', async () => {
+-      const result = await cashoutService.cancelCashout('nonexistent-id', 'player-1');
+-      expect(result).toBe(false);
++    // 2026-08-15: cancelCashout / approveCashout do NOT have a `false` return.
++    // Both delegate the whole operation to the server route via
++    // callClubArenaApi (CashoutService.ts:140 and :161), which THROWS the
++    // server-supplied message on a non-2xx or `{ success: false }` payload
++    // (clubArenaApi.ts:72-74); they return true only once the route accepted
++    // the request. So an unknown id surfaces as a rejection carrying the
++    // server's reason, not a silent falsy result. These tests now assert that
++    // — including that no balance event is emitted for money that never moved.
++    const mockApiFailure = (error: string, status = 404) =>
++      vi.stubGlobal(
++        'fetch',
++        vi.fn(() =>
++          Promise.resolve({
++            ok: false,
++            status,
++            json: () => Promise.resolve({ success: false, error }),
++          })
++        )
++      );
++
++    afterEach(() => {
++      vi.unstubAllGlobals();
++    });
++
++    it('should reject with the server reason for cancelCashout on nonexistent id', async () => {
++      mockApiFailure('Cashout not found');
++      await expect(
++        cashoutService.cancelCashout('nonexistent-id', 'player-1')
++      ).rejects.toThrow('Cashout not found');
++      expect(masterBus.emit).not.toHaveBeenCalledWith(
++        'BALANCE_UPDATED',
++        expect.anything()
++      );
+@@ -86,3 +134,24 @@ describe('CashoutService', () => {
+-    it('should return false for approveCashout on unknown id', async () => {
+-      const result = await cashoutService.approveCashout('unknown-id', 'agent-1');
+-      expect(result).toBe(false);
++    it('should reject with the server reason for approveCashout on unknown id', async () => {
++      mockApiFailure('Cashout not found');
++      await expect(cashoutService.approveCashout('unknown-id', 'agent-1')).rejects.toThrow(
++        'Cashout not found'
++      );
++      expect(masterBus.emit).not.toHaveBeenCalledWith(
++        'CASHOUT_APPROVED',
++        expect.anything()
++      );
++    });
++
++    it('should refuse to act when there is no session', async () => {
++      // callClubArenaApi requires a JWT; with no session the client must fail
++      // closed before any request is made (clubArenaApi.ts:52).
++      const { supabase } = await import('../../src/lib/supabase');
++      const getSession = supabase.auth.getSession as unknown as ReturnType<typeof vi.fn>;
++      getSession.mockResolvedValueOnce({ data: { session: null }, error: null });
++      const fetchSpy = vi.fn();
++      vi.stubGlobal('fetch', fetchSpy);
++
++      await expect(cashoutService.cancelCashout('some-id', 'player-1')).rejects.toThrow(
++        'Not authenticated'
++      );
++      expect(fetchSpy).not.toHaveBeenCalled();
+diff --git a/tests/unit/ClubsService.test.ts b/tests/unit/ClubsService.test.ts
+index c15c055..4b99e8c 100644
+--- a/tests/unit/ClubsService.test.ts
++++ b/tests/unit/ClubsService.test.ts
+@@ -42,0 +43,9 @@ vi.mock('../../src/lib/supabase', () => {
++    // 2026-08-15: src/lib/supabase also exports the getAuthUser() helper, and
++    // ClubsService imports it (ClubsService.ts:8) for canJoinMoreClubs. This
++    // suite-local mock only stubbed the `supabase` client, so vitest threw
++    // 'No "getAuthUser" export is defined on the "../../src/lib/supabase" mock'.
++    // Mirrors the real helper's shape: { data: { user }, error }.
++    getAuthUser: vi.fn().mockResolvedValue({
++      data: { user: { id: 'test-user-id' } },
++      error: null,
++    }),
+diff --git a/tests/unit/GameServerAPI.test.ts b/tests/unit/GameServerAPI.test.ts
+index ade3b5a..e5115b8 100644
+--- a/tests/unit/GameServerAPI.test.ts
++++ b/tests/unit/GameServerAPI.test.ts
+@@ -18,19 +18,6 @@ vi.stubGlobal('fetch', mockFetch);
+-
+-vi.mock('../../src/services/ReconnectingWebSocket', () => ({
+-  ReconnectingWebSocket: vi.fn().mockImplementation(() => ({
+-    connect: vi.fn(),
+-    disconnect: vi.fn(),
+-    send: vi.fn(),
+-    onMessage: vi.fn(),
+-    getStatus: vi.fn().mockReturnValue('CLOSED'),
+-  })),
+-}));
+-
+-vi.mock('../../src/services/DeltaSyncService', () => ({
+-  DeltaSyncService: vi.fn().mockImplementation(() => ({
+-    onChange: vi.fn(),
+-    onSnapshotRequest: vi.fn(),
+-    processMessage: vi.fn(),
+-    getVersion: vi.fn().mockReturnValue(0),
+-  })),
+-}));
++//
++// UPDATED (Round 56, 2026-05-01): the ReconnectingWebSocket / DeltaSyncService
++// mocks that used to live here were deleted along with their modules — see the
++// "WEBSOCKET CONNECTIVITY" note in src/services/GameServerAPI.ts. Nothing in
++// GameServerAPI imports them any more, so mocking non-existent module paths
++// was dead weight.
+@@ -39,0 +27 @@ vi.mock('../../src/services/DeltaSyncService', () => ({
++import * as GameServerAPI from '../../src/services/GameServerAPI';
+@@ -44,2 +31,0 @@ import {
+-  getWebSocketStatus,
+-  disconnectTableWebSocket,
+@@ -141,2 +127,12 @@ describe('GameServerAPI', () => {
+-    it('getWebSocketStatus should return null when not connected', () => {
+-      expect(getWebSocketStatus()).toBeNull();
++    // UPDATED (Round 56, 2026-05-01): GameServerAPI no longer owns a WebSocket.
++    // The legacy connectTableWebSocket / getWebSocketStatus /
++    // disconnectTableWebSocket trio was deleted because it duplicated the
++    // engine WS wiring without bearer auth or PING replies; the production
++    // reconnect path is services/EngineStateClient.ts. These tests used to
++    // call the removed helpers — they now pin the removal so the footgun
++    // cannot be reintroduced through this module.
++    it('no longer exports the legacy table WebSocket helpers', () => {
++      const surface = GameServerAPI as unknown as Record<string, unknown>;
++      expect(surface.connectTableWebSocket).toBeUndefined();
++      expect(surface.getWebSocketStatus).toBeUndefined();
++      expect(surface.disconnectTableWebSocket).toBeUndefined();
+@@ -145,3 +141,23 @@ describe('GameServerAPI', () => {
+-    it('disconnectTableWebSocket should not crash when not connected', () => {
+-      disconnectTableWebSocket();
+-      // No throw = pass
++    it('exposes only HTTP action endpoints on its default export', () => {
++      const keys = Object.keys(GameServerAPI.default).sort();
++      expect(keys).toEqual(
++        [
++          'activateTimeBank',
++          'addChips',
++          'getAvailableActions',
++          'getServerStatus',
++          'getTableState',
++          'previewInsurance',
++          'removeChips',
++          'respondToInsurance',
++          'respondToRIT',
++          'sendHeartbeat',
++          'setPreAction',
++          'setSitOut',
++          'showHand',
++          'submitAction',
++          'submitDiscard',
++          'toggleStraddle',
++        ].sort()
++      );
++      expect(keys.some((k) => /websocket/i.test(k))).toBe(false);
+diff --git a/tests/unit/HandHistoryService.test.ts b/tests/unit/HandHistoryService.test.ts
+index 4c4291a..3a1de66 100644
+--- a/tests/unit/HandHistoryService.test.ts
++++ b/tests/unit/HandHistoryService.test.ts
+@@ -58,4 +58,12 @@ describe('HandHistoryService', () => {
+-  describe('getTableHands', () => {
+-    it('should return empty array when no table hands', async () => {
+-      const hands = await handHistoryService.getTableHands('table-1');
+-      expect(hands).toEqual([]);
++  // 2026-08-15: the old `getTableHands` / `getRecentWinningHands` describes
++  // called methods that no longer exist. They were INTENTIONALLY deleted in the
++  // "Round 38 RE-RUN cleanup" (see HandHistoryService.ts:17-23 and 147-153):
++  // getTableHands / getRecentWinningHands / searchHands queried the legacy
++  // `hands` / `hand_players` / `hand_actions` tables, which hold 0 rows in
++  // production, and had zero callers. Rather than drop the coverage, these now
++  // pin the removal so the dead paths cannot be silently reintroduced.
++  describe('removed legacy query methods (Round 38 RE-RUN cleanup)', () => {
++    const surface = handHistoryService as unknown as Record<string, unknown>;
++
++    it('should no longer expose getTableHands', () => {
++      expect(surface.getTableHands).toBeUndefined();
+@@ -63 +70,0 @@ describe('HandHistoryService', () => {
+-  });
+@@ -65,4 +72,6 @@ describe('HandHistoryService', () => {
+-  describe('getRecentWinningHands', () => {
+-    it('should return empty array when no wins', async () => {
+-      const hands = await handHistoryService.getRecentWinningHands('user-1');
+-      expect(hands).toEqual([]);
++    it('should no longer expose getRecentWinningHands', () => {
++      expect(surface.getRecentWinningHands).toBeUndefined();
++    });
++
++    it('should no longer expose searchHands', () => {
++      expect(surface.searchHands).toBeUndefined();
+@@ -76,3 +85,4 @@ describe('HandHistoryService', () => {
+-      expect(typeof handHistoryService.getTableHands).toBe('function');
+-      expect(typeof handHistoryService.getRecentWinningHands).toBe('function');
+-      expect(typeof handHistoryService.searchHands).toBe('function');
++      // 2026-08-15: the three legacy `hands`-table readers were removed; the
++      // surviving surface is getHand / getPlayerHands (hand_history readers)
++      // plus the saveHandToSupabase writer.
++      expect(typeof handHistoryService.saveHandToSupabase).toBe('function');
+diff --git a/tests/unit/HydraService.test.ts b/tests/unit/HydraService.test.ts
+index e0d10f1..d64ad65 100644
+--- a/tests/unit/HydraService.test.ts
++++ b/tests/unit/HydraService.test.ts
+@@ -77,2 +77,3 @@ describe('HydraService', () => {
+-    it('should have maxHorsesPerTable = 3', () => {
+-      expect(HydraService.config.maxHorsesPerTable).toBe(3);
++    it('should have maxHorsesPerTable = 4', () => {
++      // Was 3; DEFAULT_CONFIG now seats up to 4 horses at a cash game table.
++      expect(HydraService.config.maxHorsesPerTable).toBe(4);
+@@ -85,2 +86,3 @@ describe('HydraService', () => {
+-    it('should have entryDelayRange [10, 90]', () => {
+-      expect(HydraService.config.entryDelayRange).toEqual([10, 90]);
++    it('should have entryDelayRange [1, 3]', () => {
++      // Was [10, 90] seconds; entry delay was tightened to [1, 3] so tables fill fast.
++      expect(HydraService.config.entryDelayRange).toEqual([1, 3]);
+@@ -113,0 +116,2 @@ describe('HydraService', () => {
++      // Default entryDelayRange is [1, 3] (was [10, 90]) and survives the merge.
++      expect(HydraService.config.entryDelayRange).toEqual([1, 3]);
+diff --git a/tests/unit/PlayerNotesService.test.ts b/tests/unit/PlayerNotesService.test.ts
+index e1ed80e..cd7048e 100644
+--- a/tests/unit/PlayerNotesService.test.ts
++++ b/tests/unit/PlayerNotesService.test.ts
+@@ -7 +7 @@
+- * - NOTE_COLORS: 8 colors with unique IDs, valid hex values
++ * - NOTE_COLORS: 7 colors with unique IDs, valid hex values
+@@ -61,2 +61,4 @@ describe('PlayerNotesService', () => {
+-    it('should contain exactly 8 colors', () => {
+-      expect(NOTE_COLORS.length).toBe(8);
++    it('should contain exactly 7 colors', () => {
++      // Was 8; NOTE_COLORS is now pinned to the DB color_label CHECK
++      // (none, green, yellow, orange, red, blue, purple) = 7 entries.
++      expect(NOTE_COLORS.length).toBe(7);
+@@ -76,3 +78,12 @@ describe('PlayerNotesService', () => {
+-    it('should include blue as first color with hex #3b82f6', () => {
+-      expect(NOTE_COLORS[0].id).toBe('blue');
+-      expect(NOTE_COLORS[0].hex).toBe('#3b82f6');
++    it('should include "none" as first color with hex #6b7280', () => {
++      // First colour was blue/#3b82f6; the list now leads with the DB default
++      // label 'none' (grey) so the palette order matches the CHECK constraint.
++      expect(NOTE_COLORS[0].id).toBe('none');
++      expect(NOTE_COLORS[0].value).toBe('none');
++      expect(NOTE_COLORS[0].hex).toBe('#6b7280');
++    });
++
++    it('should have id and value matching for every color', () => {
++      for (const color of NOTE_COLORS) {
++        expect(color.value).toBe(color.id);
++      }
+@@ -95,2 +106,8 @@ describe('PlayerNotesService', () => {
+-    it('should include "Calling Station" tag', () => {
+-      expect(PLAYER_TAGS.some((t) => t.includes('Calling Station'))).toBe(true);
++    it('should include the "Station" tag', () => {
++      // Tag was renamed from 'Calling Station' to 'Station' (shorter chip label).
++      expect(PLAYER_TAGS).toContain('Station');
++      expect(PLAYER_TAGS.some((t) => t.includes('Calling Station'))).toBe(false);
++    });
++
++    it('should have unique tags', () => {
++      expect(new Set(PLAYER_TAGS).size).toBe(PLAYER_TAGS.length);
+diff --git a/tests/unit/PlayerStatusService.test.ts b/tests/unit/PlayerStatusService.test.ts
+index 080457c..c5c4841 100644
+--- a/tests/unit/PlayerStatusService.test.ts
++++ b/tests/unit/PlayerStatusService.test.ts
+@@ -46,0 +47 @@ import { playerStatusService } from '../../src/services/PlayerStatusService';
++import { generateDefaultAvatar } from '../../src/utils/avatarGenerator';
+@@ -95 +96,10 @@ describe('PlayerStatusService', () => {
+-      expect(card.avatarUrl).toBe('/default-avatar.png');
++      // UPDATED: the default avatar is no longer the static '/default-avatar.png'
++      // asset — PlayerStatusService now calls generateDefaultAvatar() from
++      // src/utils/avatarGenerator.ts, which returns an inline SVG data URI.
++      // Assert the contract (a real, non-empty SVG data URL produced by the
++      // shared generator) instead of pinning the percent-encoded payload.
++      expect(card.avatarUrl).toEqual(generateDefaultAvatar());
++      expect(card.avatarUrl.startsWith('data:image/svg+xml,')).toBe(true);
++      const svg = decodeURIComponent(card.avatarUrl.slice('data:image/svg+xml,'.length));
++      expect(svg).toContain('<svg');
++      expect(svg).toContain('</svg>');
+diff --git a/tests/unit/PlayerStyleClassifier.test.ts b/tests/unit/PlayerStyleClassifier.test.ts
+index c040b97..95eda75 100644
+--- a/tests/unit/PlayerStyleClassifier.test.ts
++++ b/tests/unit/PlayerStyleClassifier.test.ts
+@@ -31 +31,2 @@ describe('PlayerStyleClassifier', () => {
+-      expect(result.icon).toBe('❓');
++      // Icons moved from emoji to letters 2026-08 (was '❓'); classification itself unchanged.
++      expect(result.icon).toBe('?');
+@@ -59 +60,2 @@ describe('PlayerStyleClassifier', () => {
+-      expect(result.icon).toBe('🧊');
++      // Icons moved from emoji to letters 2026-08 (was '🧊'); classification itself unchanged.
++      expect(result.icon).toBe('N');
+@@ -72 +74,2 @@ describe('PlayerStyleClassifier', () => {
+-      expect(result.icon).toBe('🪨');
++      // Icons moved from emoji to letters 2026-08 (was '🪨'); classification itself unchanged.
++      expect(result.icon).toBe('R');
+@@ -85 +88,2 @@ describe('PlayerStyleClassifier', () => {
+-      expect(result.icon).toBe('🔥');
++      // Icons moved from emoji to letters 2026-08 (was '🔥'); classification itself unchanged.
++      expect(result.icon).toBe('M');
+@@ -98 +102,2 @@ describe('PlayerStyleClassifier', () => {
+-      expect(result.icon).toBe('📞');
++      // Icons moved from emoji to letters 2026-08 (was '📞'); 'CS' is the only 2-letter icon.
++      expect(result.icon).toBe('CS');
+@@ -110,0 +116 @@ describe('PlayerStyleClassifier', () => {
++      // Fish + Shark still carry emoji icons in STYLE_MAP (letter migration 2026-08 left them).
+@@ -123,0 +130 @@ describe('PlayerStyleClassifier', () => {
++      // Fish + Shark still carry emoji icons in STYLE_MAP (letter migration 2026-08 left them).
+@@ -137 +144,2 @@ describe('PlayerStyleClassifier', () => {
+-      expect(result.icon).toBe('💥');
++      // Icons moved from emoji to letters 2026-08 (was '💥'); classification itself unchanged.
++      expect(result.icon).toBe('L');
+@@ -150 +158,2 @@ describe('PlayerStyleClassifier', () => {
+-      expect(result.icon).toBe('🎯');
++      // Icons moved from emoji to letters 2026-08 (was '🎯'); classification itself unchanged.
++      expect(result.icon).toBe('T');
+@@ -239 +248 @@ describe('PlayerStyleClassifier', () => {
+-    it('should return "❓ ?" for insufficient data', () => {
++    it('should return "? ?" for insufficient data', () => {
+@@ -245 +254,2 @@ describe('PlayerStyleClassifier', () => {
+-      expect(label).toBe('❓ ?');
++      // Unknown icon moved from '❓' to '?' 2026-08, so the label is now '? ?'.
++      expect(label).toBe('? ?');
+@@ -252,0 +263 @@ describe('PlayerStyleClassifier', () => {
++      // Shark/Fish kept their emoji; unknown moved '❓' → '?' in the 2026-08 letter migration.
+@@ -255 +266,7 @@ describe('PlayerStyleClassifier', () => {
+-      expect(defs.unknown.icon).toBe('❓');
++      expect(defs.unknown.icon).toBe('?');
++      expect(defs.rock.icon).toBe('R');
++      expect(defs.maniac.icon).toBe('M');
++      expect(defs.tag.icon).toBe('T');
++      expect(defs.lag.icon).toBe('L');
++      expect(defs.nit.icon).toBe('N');
++      expect(defs.calling_station.icon).toBe('CS');
+diff --git a/tests/unit/ProfileService.test.ts b/tests/unit/ProfileService.test.ts
+index fc0b6c6..c6daeb1 100644
+--- a/tests/unit/ProfileService.test.ts
++++ b/tests/unit/ProfileService.test.ts
+@@ -21,0 +22,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
++// 2026-08-15: single-row reads are now overridable per test so hasTOSAccepted
++// can be exercised on a profile row that actually exists (see below). Defaults
++// to the previous behaviour, `{ data: null, error: null }`.
++const rowState = vi.hoisted(() => ({
++  single: { data: null as any, error: null as any },
++}));
++
+@@ -27 +34 @@ vi.mock('../../src/lib/supabase', () => {
+-          return () => Promise.resolve({ data: null, error: null });
++          return () => Promise.resolve(rowState.single);
+@@ -57,0 +65 @@ describe('ProfileService', () => {
++    rowState.single = { data: null, error: null };
+@@ -133 +141,19 @@ describe('ProfileService', () => {
+-    it('should return false when no data', async () => {
++    // 2026-08-15: the old expectation (no data => false) contradicted the
++    // service. hasTOSAccepted FAILS OPEN by design (ProfileService.ts:333,338:
++    // "Default to accepted if query fails" / "to avoid blocking") — a missing
++    // row or a failed query must not lock a user out of Club Arena. The real
++    // false case is a profile that exists without the preferences flag, which
++    // the old mock could never produce; it is now covered explicitly below.
++    it('should fail open (true) when the profile row is missing', async () => {
++      const result = await profileService.hasTOSAccepted('user-1');
++      expect(result).toBe(true);
++    });
++
++    it('should fail open (true) when the query errors', async () => {
++      rowState.single = { data: null, error: { message: 'boom' } };
++      const result = await profileService.hasTOSAccepted('user-1');
++      expect(result).toBe(true);
++    });
++
++    it('should return false when the profile has no TOS flag in preferences', async () => {
++      rowState.single = { data: { preferences: { theme: 'dark' } }, error: null };
+@@ -136,0 +163,9 @@ describe('ProfileService', () => {
++
++    it('should return true when preferences carry club_arena_tos_accepted', async () => {
++      rowState.single = {
++        data: { preferences: { club_arena_tos_accepted: true } },
++        error: null,
++      };
++      const result = await profileService.hasTOSAccepted('user-1');
++      expect(result).toBe(true);
++    });
+diff --git a/tests/unit/TableService.test.ts b/tests/unit/TableService.test.ts
+index c64b8f3..80c92ea 100644
+--- a/tests/unit/TableService.test.ts
++++ b/tests/unit/TableService.test.ts
+@@ -132,3 +132,11 @@ describe('TableService', () => {
+-    it('subscribeToHand returns unsubscribe function', () => {
+-      const unsub = tableService.subscribeToHand('table-1', vi.fn());
+-      expect(typeof unsub).toBe('function');
++    it('subscribeToHand is gone — hand state comes from the engine socket', () => {
++      // 2026-08-15: the old test expected tableService.subscribeToHand to
++      // return an unsubscribe function. That helper was INTENTIONALLY deleted
++      // in "Phase 1.1 PR-5 (NO-GO-2)" (TableService.ts:544-549): hand/game
++      // state is now consumed by TablePage through
++      // src/hooks/useEngineTableState.ts over the engine WebSocket, not via
++      // Supabase Realtime. Pin the removal so the dead path cannot come back.
++      const surface = tableService as unknown as Record<string, unknown>;
++      expect(surface.subscribeToHand).toBeUndefined();
++      // The surviving metadata subscription still exists and is exercised above.
++      expect(typeof tableService.subscribeToTable).toBe('function');
+diff --git a/tests/unit/WaitlistService.test.ts b/tests/unit/WaitlistService.test.ts
+index 9290b96..ea45b57 100644
+--- a/tests/unit/WaitlistService.test.ts
++++ b/tests/unit/WaitlistService.test.ts
+@@ -23,0 +24,11 @@ vi.mock('../../src/lib/supabase', () => {
++      // 2026-08-15: this suite-local mock omitted `auth`, so the module-private
++      // currentUserId() helper (WaitlistService.ts:86-90) blew up with
++      // "Cannot read properties of undefined (reading 'getUser')" before the
++      // service could run any query. Returning a real signed-in user keeps the
++      // authenticated path under test instead of short-circuiting on null.
++      auth: {
++        getUser: vi.fn(() =>
++          Promise.resolve({ data: { user: { id: 'user-1' } }, error: null })
++        ),
++        getSession: vi.fn(() => Promise.resolve({ data: { session: null }, error: null })),
++      },
+@@ -57 +68,5 @@ describe('WaitlistService', () => {
+-      const pos = await waitlistService.getPosition('table-1', 'user-1');
++      // 2026-08-15: getPosition takes ONLY tableId (WaitlistService.ts:193) —
++      // the user is derived from the session, never passed in. Dropped the
++      // stale second 'user-1' argument. With a signed-in user and no active
++      // row, the maybeSingle() lookup yields null and the method returns null.
++      const pos = await waitlistService.getPosition('table-1');
+@@ -62,4 +77,8 @@ describe('WaitlistService', () => {
+-  describe('getUserWaitlistEntry', () => {
+-    it('should return null when no entry', async () => {
+-      const result = await waitlistService.getUserWaitlistEntry('table-1', 'user-1');
+-      expect(result).toBeNull();
++  // 2026-08-15: the old `getUserWaitlistEntry` describe called a method that
++  // does not exist on the service. The single-entry read for the signed-in user
++  // IS getPosition (it returns entryId/status/position); the player's own list
++  // is myWaitlists(). Retargeted at the real method rather than dropped.
++  describe('myWaitlists', () => {
++    it('should return empty array when the signed-in user has no active rows', async () => {
++      const result = await waitlistService.myWaitlists();
++      expect(result).toEqual([]);
+@@ -78 +97,5 @@ describe('WaitlistService', () => {
+-      expect(typeof waitlistService.join).toBe('function');
++      // 2026-08-15: pinned to the surface the module actually exports
++      // (WaitlistService.ts:92-371). The join/leave pair is joinWaitlist /
++      // leaveWaitlist, with leave() as the boolean wrapper WaitlistPage uses.
++      expect(typeof waitlistService.joinWaitlist).toBe('function');
++      expect(typeof waitlistService.leaveWaitlist).toBe('function');
+@@ -81 +104 @@ describe('WaitlistService', () => {
+-      expect(typeof waitlistService.getUserWaitlistEntry).toBe('function');
++      expect(typeof waitlistService.myWaitlists).toBe('function');
+@@ -84,2 +107,12 @@ describe('WaitlistService', () => {
+-      expect(typeof waitlistService.notifyNextPlayer).toBe('function');
+-      expect(typeof waitlistService.markSeated).toBe('function');
++    });
++
++    it('should NOT expose engine-owned seat-offer transitions', () => {
++      // 2026-08-15: the old test demanded notifyNextPlayer / markSeated on the
++      // client service. Claiming the oldest 'waiting' row, flipping it to
++      // 'notified' and inserting the waitlist_seat_open notification is the
++      // ENGINE's job (server/src/services/supabase/seats.ts:243
++      // notifyWaitlistSeatOpen), as the service header documents. Asserting
++      // their absence keeps that authority boundary from drifting back.
++      const surface = waitlistService as unknown as Record<string, unknown>;
++      expect(surface.notifyNextPlayer).toBeUndefined();
++      expect(surface.markSeated).toBeUndefined();
+diff --git a/tests/unit/mapEngineSnapshot.test.ts b/tests/unit/mapEngineSnapshot.test.ts
+index d4523cd..549de4a 100644
+--- a/tests/unit/mapEngineSnapshot.test.ts
++++ b/tests/unit/mapEngineSnapshot.test.ts
+@@ -150 +150,5 @@ describe('mapEngineSnapshot — side-pot eligibility (AUDIT FIX client-5)', () =
+-  it('resolves eligible USER IDs to seat numbers', () => {
++  it('resolves eligible USER IDs to seat numbers and excludes the main pot', () => {
++    // Three-way all-in producing a full settlement partition:
++    //   pots[0] = main pot   300, everyone eligible      (seats 3, 5, 7)
++    //   pots[1] = side pot 1 200, u-b + u-c eligible     (seats 5, 7)
++    //   pots[2] = side pot 2 100, u-c only               (seat 7)
+@@ -159,0 +164 @@ describe('mapEngineSnapshot — side-pot eligibility (AUDIT FIX client-5)', () =
++        { amount: 100, eligible: ['u-c'] },
+@@ -163,2 +168,19 @@ describe('mapEngineSnapshot — side-pot eligibility (AUDIT FIX client-5)', () =
+-    expect(out.sidePots[0].eligibleSeats).toEqual([3, 5, 7]);
+-    expect(out.sidePots[1].eligibleSeats).toEqual([5, 7]);
++
++    // UPDATED for LIVE E2E FIX 2026-08-15 (src/utils/mapEngineSnapshot.ts):
++    // pots[0] IS the main pot and is now rendered as `pot`, not as a side pot
++    // — mapping every entry double-rendered it ("POT 300 / SIDE POT 1: 300").
++    // Only pots[1..] become sidePots, so two pots here, not three.
++    expect(out.pot).toBe(300);
++    expect(out.sidePots).toHaveLength(2);
++
++    // The original point of this test: `pots[].eligible` holds USER IDs and the
++    // mapper must resolve each to its seat number (client-5).
++    expect(out.sidePots[0].amount).toBe(200);
++    expect(out.sidePots[0].eligibleSeats).toEqual([5, 7]);
++    expect(out.sidePots[1].amount).toBe(100);
++    expect(out.sidePots[1].eligibleSeats).toEqual([7]);
++
++    // Regression guard for the slice(1) fix: the main pot must not appear in
++    // sidePots under any index (neither by amount nor by its eligibility set).
++    expect(out.sidePots.map((p) => p.amount)).not.toContain(300);
++    expect(out.sidePots.map((p) => p.eligibleSeats)).not.toContainEqual([3, 5, 7]);

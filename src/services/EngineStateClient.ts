@@ -115,6 +115,35 @@ export class EngineStateClient {
   private snapshot: EngineSnapshot | null = null;
   private seq: number = 0;
 
+  // ─── Dan 2026-08-15 — INBOUND STALENESS WATCHDOG (item 6) ────────────────
+  //
+  // "Games can never just freeze." Every recovery path in this client is
+  // driven by `ws.onclose`. That covers a dropped connection, but it is blind
+  // to the failure that actually strands players: the socket stays OPEN while
+  // the server stops sending. readyState reads 1, status reads 'connected',
+  // the UI looks healthy, and nothing ever fires — no close, no error, no
+  // reconnect. The table sits dead indefinitely with no way back.
+  //
+  // The server pings every 25s unconditionally (EngineWebSocketServer
+  // HEARTBEAT_INTERVAL_MS), so on a healthy link we hear *something* at least
+  // that often. Prolonged silence means the far end is gone no matter what
+  // readyState claims. Two tiers:
+  //   SOFT — request a RESYNC. Cheap, and recovers the case where frames were
+  //          lost but the socket is genuinely still alive.
+  //   HARD — force the socket closed, routing into the existing
+  //          onclose -> scheduleReconnect backoff ladder. This is the escape
+  //          hatch that did not exist before.
+  private lastInboundAt = 0;
+  private watchdogTimer: number | null = null;
+  private onVisibility: (() => void) | null = null;
+
+  /** How often the watchdog samples. */
+  private static readonly WATCHDOG_TICK_MS = 5_000;
+  /** Silence beyond this requests a RESYNC (server pings every 25s). */
+  private static readonly STALE_SOFT_MS = 35_000;
+  /** Silence beyond this tears the socket down and reconnects. */
+  private static readonly STALE_HARD_MS = 60_000;
+
   constructor(opts: EngineStateClientOptions) {
     this.opts = {
       onStatus: () => undefined,
@@ -142,6 +171,11 @@ export class EngineStateClient {
   /** Close the connection permanently. */
   disconnect(): void {
     this.intentionalClose = true;
+    // Dan 2026-08-15 (item 6): tear the watchdog down here or its interval and
+    // visibilitychange listener outlive the client. In MultiTablePage, where
+    // up to four of these exist and tabs open/close freely, that leaks a timer
+    // per closed table and keeps firing against a dead socket.
+    this.stopWatchdog();
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -197,6 +231,8 @@ export class EngineStateClient {
     ws.onopen = () => {
       this.retryCount = 0;
       this.setStatus('connected');
+      // Dan 2026-08-15 (item 6): arm the staleness watchdog for this socket.
+      this.startWatchdog();
       // Server sends SNAPSHOT on subscribe — no explicit RESYNC needed on
       // first connect. On reconnect after a gap, we explicitly request one.
       if (this.seq > 0) {
@@ -209,6 +245,11 @@ export class EngineStateClient {
     };
 
     ws.onmessage = (e) => {
+      // Dan 2026-08-15 (item 6): stamp BEFORE parsing, and for every frame
+      // including PING. Any byte from the server proves the link is alive;
+      // gating this on a successful parse would let a malformed frame look
+      // like silence and trip the watchdog on a healthy connection.
+      this.lastInboundAt = Date.now();
       let msg: ServerMessage | null = null;
       try {
         msg = JSON.parse(e.data) as ServerMessage;
@@ -327,6 +368,78 @@ export class EngineStateClient {
       this.ws?.send(JSON.stringify({ type: 'RESYNC' }));
     } catch {
       /* onclose will reconnect */
+    }
+  }
+
+  /**
+   * Dan 2026-08-15 (item 6) — start the inbound staleness watchdog.
+   * Idempotent; safe to call on every (re)open.
+   */
+  private startWatchdog(): void {
+    this.lastInboundAt = Date.now();
+    if (this.watchdogTimer !== null) return;
+
+    this.watchdogTimer = window.setInterval(() => {
+      if (this.intentionalClose) return;
+      // Only meaningful while we believe we are connected. During
+      // 'reconnecting' the backoff ladder already owns recovery.
+      if (this.status !== 'connected') return;
+      // A tab that was backgrounded has throttled timers, so the elapsed gap
+      // says nothing about the link. The visibilitychange handler re-arms the
+      // clock on wake; skip the check while hidden.
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+      const silentFor = Date.now() - this.lastInboundAt;
+
+      if (silentFor >= EngineStateClient.STALE_HARD_MS) {
+        // The socket claims to be open but the server has said nothing for a
+        // full minute — well past two missed 25s pings. Force it closed so
+        // onclose -> scheduleReconnect runs. Without this the table is stuck.
+        this.opts.onError({
+          reason: `engine silent for ${Math.round(silentFor / 1000)}s — forcing reconnect`,
+        });
+        this.lastInboundAt = Date.now(); // don't re-fire while the close lands
+        try {
+          this.ws?.close(4001, 'client staleness watchdog');
+        } catch {
+          /* fall through — schedule directly below */
+        }
+        // If close() did not synchronously trigger onclose (already CLOSING,
+        // or a wedged socket), drive the reconnect ourselves.
+        if (!this.ws || this.ws.readyState === 3 /* CLOSED */) {
+          this.scheduleReconnect();
+        }
+        return;
+      }
+
+      if (silentFor >= EngineStateClient.STALE_SOFT_MS) {
+        // Might just be dropped frames on a live socket — ask for a full
+        // snapshot. A reply refreshes lastInboundAt and clears the condition.
+        this.requestResync();
+      }
+    }, EngineStateClient.WATCHDOG_TICK_MS);
+
+    // Coming back to a backgrounded tab: timers were throttled, so treat the
+    // gap as unknown rather than as evidence of failure. Re-arm the clock and
+    // pull a fresh snapshot immediately — the table may have moved on a lot.
+    if (typeof document !== 'undefined' && this.onVisibility === null) {
+      this.onVisibility = () => {
+        if (document.visibilityState !== 'visible') return;
+        this.lastInboundAt = Date.now();
+        if (this.status === 'connected') this.requestResync();
+      };
+      document.addEventListener('visibilitychange', this.onVisibility);
+    }
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer !== null) {
+      window.clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+    if (this.onVisibility !== null && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onVisibility);
+      this.onVisibility = null;
     }
   }
 
@@ -457,7 +570,12 @@ export type ChannelServerMessage =
 export type ChannelClientMessage =
   | { type: 'JOIN_CLUB'; clubId: string }
   | { type: 'LEAVE_CLUB'; clubId: string }
-  | { type: 'UPDATE_PRESENCE'; clubId: string; status: 'online' | 'at_table' | 'away'; currentTableId?: string }
+  | {
+      type: 'UPDATE_PRESENCE';
+      clubId: string;
+      status: 'online' | 'at_table' | 'away';
+      currentTableId?: string;
+    }
   | { type: 'JOIN_TOURNAMENT'; tournamentId: string }
   | { type: 'LEAVE_TOURNAMENT'; tournamentId: string }
   | { type: 'JOIN_LOBBY' }
@@ -784,8 +902,9 @@ export class EngineChannelClient {
 // localStorage (same key as the Supabase session) so it always uses the
 // latest token without needing an explicit setter.
 
-const ENGINE_BASE_URL = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL
-  ?? 'https://engine.smarter.poker';
+const ENGINE_BASE_URL =
+  (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL ??
+  'https://engine.smarter.poker';
 
 const AUTH_STORAGE_KEY = 'smarter-poker-auth';
 

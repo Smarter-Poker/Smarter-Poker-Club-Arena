@@ -275,5 +275,8 @@ function formatAmount(amount: number): string {
   if (amount >= 1000) {
     return `${(amount / 1000).toFixed(1)}K`;
   }
-  return amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  // Dan 2026-08-14 live E2E: a 23 bet rendered as "23.08" mid-flight (engine
+  // amounts carry sub-chip decimals). Whole chips for >= 1, cents below 1.
+  if (amount >= 1) return Math.round(amount).toLocaleString('en-US');
+  return amount.toFixed(2);
 }

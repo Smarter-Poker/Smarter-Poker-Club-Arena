@@ -12,6 +12,7 @@ import LeaderboardCard from '../components/leaderboard/LeaderboardCard';
 import ReferralModal from '../components/social/ReferralModal';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import { bonusService } from '../services/BonusService';
 import { promotionService } from '../services/PromotionService';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import './PromotionsPage.css';
@@ -411,8 +412,22 @@ export default function PromotionsPage() {
             </button>
             <DailyBonusWheel
               onSpin={async () => {
-                // Handle spin completion
-                setShowBonusWheel(false);
+                // The wheel is presentation; the SERVER decides what a daily
+                // bonus pays (fn_claim_daily_bonus derives the user from
+                // auth.uid() and the amount from the streak schedule). Report
+                // what was actually credited rather than the segment shown.
+                try {
+                  const res = await bonusService.claimDailyBonus(user?.id || '');
+                  toast.success(
+                    res.rewardType === 'vip_points'
+                      ? `Daily bonus: ${res.reward.toLocaleString()} VIP points (day ${res.day})`
+                      : `Daily bonus: ${res.reward.toLocaleString()} chips (day ${res.day})`
+                  );
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');
+                } finally {
+                  setShowBonusWheel(false);
+                }
               }}
             />
           </div>

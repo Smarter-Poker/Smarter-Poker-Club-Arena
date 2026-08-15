@@ -39,6 +39,120 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // and clearTable is used for full hand cleanup.
   }
 
+  /**
+   * Last-resort clock. Depends on nothing but the seat and the timer, so it
+   * still works when the normal turn-change path has thrown partway through.
+   */
+  protected forceArmTurnTimer(seat: number, seconds: number): void {
+    const p = this.seatedPlayers.find((sp) => sp.seat_number === seat);
+    if (!p) return;
+    this.startTurnTimer(p.user_id, seat, seconds);
+  }
+
+  /**
+   * TABLE WATCHDOG (Dan 2026-08-15: "the game keeps freezing... this will
+   * literally kill any users from joining or playing with us").
+   *
+   * Before this existed the engine had NO liveness check of any kind — the only
+   * signal was `isRunning()`, a boolean that cannot go false when the loop dies.
+   * On 2026-08-15 that let ten cash tables (including Dan's own NLH 2/5, hand
+   * #1320) sit frozen at preflop for 18+ minutes with funded seats, invisible to
+   * discovery.
+   *
+   * Every freeze this recovers from is a bug somewhere else. The watchdog exists
+   * so that such a bug costs ONE HAND rather than a table. It escalates and
+   * never touches chips directly:
+   *   Tier 1  the seat simply lost its clock         -> give it one back
+   *   Tier 2  still stalled                          -> force check-if-free/fold,
+   *                                                     which restarts the whole
+   *                                                     event cascade
+   *   Tier 3  unrecoverable in-process               -> kill the engine so
+   *                                                     GameServer rebuilds it
+   * Runs on the 10s heartbeat tick.
+   */
+  protected override runTableWatchdog(): void {
+    const idleMs = this.msSinceProgress();
+
+    // Case B: no live hand, but the table is dealable and nothing is starting.
+    if (!this.handController) {
+      const dealable = this.seatedPlayers.filter((p) => (p.stack || 0) > 0).length;
+      if (dealable >= 2 && idleMs > ServerTableEngineBase.WATCHDOG_IDLE_MS) {
+        this.watchdogTrips++;
+        reportError(
+          new Error(
+            'Table idle ' +
+              Math.round(idleMs / 1000) +
+              's with ' +
+              dealable +
+              ' dealable seats — dealing loop is not looping'
+          ),
+          'ServerTableEngine.' + this.tableId + '.watchdog_loop_dead',
+          { handCount: this.handCount, trips: this.watchdogTrips }
+        );
+        if (this.watchdogTrips >= 2) this.killForRestart('dealing_loop_dead');
+      }
+      return;
+    }
+
+    if (idleMs <= ServerTableEngineBase.WATCHDOG_STALL_MS) return;
+
+    const state = this.handController.getState();
+    const seat = state.currentPlayerSeat;
+
+    if (seat < 0) {
+      // No actionable seat and no runout continuation fired. Finish the hand
+      // rather than wait out the 10-minute safety void.
+      this.watchdogTrips++;
+      reportError(
+        new Error(
+          'Hand #' + this.handCount + ' stalled ' + Math.round(idleMs / 1000) + 's with no current seat'
+        ),
+        'ServerTableEngine.' + this.tableId + '.watchdog_no_seat'
+      );
+      try {
+        (this.handController as any).continueRunout?.();
+      } catch {
+        /* fall through to the kill tier */
+      }
+      if (this.watchdogTrips >= 3) this.killForRestart('stalled_no_seat');
+      return;
+    }
+
+    const p = state.players.find((x: any) => x.seat === seat);
+    if (!p) return;
+    const hasClock = this.preciseTimer.hasTimer(this.tableId, (p as any).id || (p as any).userId || '');
+    this.watchdogTrips++;
+
+    reportError(
+      new Error(
+        'Hand #' + this.handCount + ' stalled ' + Math.round(idleMs / 1000) + 's at seat ' + seat +
+          ' (clock=' + hasClock + ', stage=' + state.stage + ', trip=' + this.watchdogTrips + ')'
+      ),
+      'ServerTableEngine.' + this.tableId + '.watchdog_turn_stalled'
+    );
+
+    if (this.watchdogTrips === 1 && !hasClock) {
+      this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
+      return;
+    }
+
+    if (this.watchdogTrips <= 3) {
+      const toCall = Math.max(0, (state.currentBet || 0) - ((p as any).bet || 0));
+      const forced = toCall === 0 ? 'check' : 'fold';
+      try {
+        if (!this.handController.performAction(seat, forced as any)) {
+          this.handController.performAction(seat, 'fold' as any);
+        }
+        this.markProgress();
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.watchdog_force_action_failed');
+      }
+      return;
+    }
+
+    this.killForRestart('turn_unrecoverable');
+  }
+
   protected startTurnTimer(userId: string, seat: number, durationSeconds: number): void {
     this.clearTurnTimer();
     // NOTE: Do NOT reset timeBankActivatedThisTurn here — this method is also called
@@ -1023,20 +1137,35 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         }
       }
 
+      // 2026-08-15 FREEZE FIX. HandController.performAction RETURNS FALSE on an
+      // illegal action — it does not throw (HandController.ts:416/430/437). So
+      // this catch never fired, and a horse whose decision the engine rejected
+      // (stale raise amount, re-open rule, min-raise floor) simply never acted.
+      // The human path was already fixed for exactly this in July ("the table
+      // froze with no clock", Turns.ts SWEEP #4); the horse path was missed.
+      // Check the boolean and degrade the same way a rejected human action does:
+      // check if free, else fold. A seat must never be left unacted.
+      let applied = false;
       try {
-        handControllerRef.performAction(seat, action as any, amount);
-      } catch {
-        // FIX 210: Bible V8 §1.7.4 — preferCheckOverFold: try check before fold
+        applied = handControllerRef.performAction(seat, action as any, amount);
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
+      }
+      if (!applied) {
+        console.warn(
+          '[ServerTableEngine:' + this.tableId + '] Horse action ' + action +
+            ' rejected at seat ' + seat + ' — falling back to check/fold'
+        );
         try {
-          handControllerRef.performAction(seat, 'check');
-        } catch {
-          try {
-            handControllerRef.performAction(seat, 'fold');
-          } catch {
-            /* Hand done */
+          // Bible V8 §1.7.4 preferCheckOverFold.
+          if (!handControllerRef.performAction(seat, 'check' as any)) {
+            handControllerRef.performAction(seat, 'fold' as any);
           }
+        } catch {
+          /* Hand already resolved. */
         }
       }
+      this.markProgress();
     }, thinkTimeMs);
   }
 }

@@ -1437,8 +1437,23 @@ export default function ProfilePage() {
               ✕
             </button>
             <DailyBonusWheel
-              onSpin={async (segment) => {
-                setShowBonusWheel(false);
+              onSpin={async () => {
+                // The wheel is presentation; the SERVER decides what a daily
+                // bonus pays (fn_claim_daily_bonus derives the user from
+                // auth.uid() and the amount from the streak schedule). Report
+                // what was actually credited rather than the segment shown.
+                try {
+                  const res = await bonusService.claimDailyBonus(user!.id);
+                  toast.success(
+                    res.rewardType === 'vip_points'
+                      ? `Daily bonus: ${res.reward.toLocaleString()} VIP points (day ${res.day})`
+                      : `Daily bonus: ${res.reward.toLocaleString()} chips (day ${res.day})`
+                  );
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');
+                } finally {
+                  setShowBonusWheel(false);
+                }
               }}
             />
           </div>

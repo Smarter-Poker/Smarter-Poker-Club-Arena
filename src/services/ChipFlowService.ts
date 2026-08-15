@@ -28,44 +28,13 @@ import { reportError } from '../utils/errorReporter';
 // Exact cent precision — never round
 const exact = (v: number): number => Math.trunc(v * 100) / 100;
 
-/**
- * Log every chip movement to the immutable chip_ledger table.
- * This is append-only — no updates, no deletes. Every chip that moves gets recorded.
+/*
+ * logToLedger REMOVED (2026-08-15): chip_ledger is the legacy ledger and is
+ * now server-owned (client INSERT revoked; the open forge policy dropped).
+ * atomic_chip_transfer logs the authoritative wallet_transactions rows inside
+ * its own transaction — the client-side narration row it used to add here was
+ * forgeable and duplicative.
  */
-async function logToLedger(entry: {
-  performed_by: string;
-  from_type: string;
-  from_entity_id?: string;
-  from_label?: string;
-  to_type: string;
-  to_entity_id?: string;
-  to_label?: string;
-  amount: number;
-  category: string;
-  description?: string;
-  notes?: string;
-  club_id?: string;
-  union_id?: string;
-  table_id?: string;
-  hand_id?: string;
-  tournament_id?: string;
-}): Promise<void> {
-  try {
-    const { error } = await supabase.from('chip_ledger').insert(entry);
-    if (error) {
-      reportError(error, 'ChipFlowService.logToLedger', { category: entry.category });
-      // Don't throw — ledger failure shouldn't block the transaction
-      // But DO report it as a critical alert
-      FinancialAlertService.logCritical(
-        'ChipFlowService.ledger',
-        `Ledger write failed for ${entry.category}: ${error.message}`,
-        entry
-      );
-    }
-  } catch (e) {
-    reportError(e, 'ChipFlowService.logToLedger.exception');
-  }
-}
 
 export interface ChipTransferResult {
   success: boolean;
@@ -137,24 +106,6 @@ export const ChipFlowService = {
       reportError(transferErr, 'ChipFlowService.transfer', { fromUserId, toUserId, amount: amt });
       throw new Error(`Transfer failed: ${transferErr.message}`);
     }
-
-    // 4. LOG TO IMMUTABLE CHIP LEDGER
-    // Determine wallet types from description (Agent → Player, Club → Agent, etc.)
-    const isToAgent = description.toLowerCase().includes('agent');
-    const isFromAgent = description.toLowerCase().includes('agent') && description.indexOf('→') > 0;
-    await logToLedger({
-      performed_by: fromUserId,
-      from_type: isFromAgent ? 'agent_wallet' : 'player_wallet',
-      from_entity_id: fromUserId,
-      from_label: description.split('→')[0]?.trim() || `User ${fromUserId.slice(0, 8)}`,
-      to_type: isToAgent && !isFromAgent ? 'agent_wallet' : 'player_wallet',
-      to_entity_id: toUserId,
-      to_label: description.split('→')[1]?.split(':')[0]?.trim() || `User ${toUserId.slice(0, 8)}`,
-      amount: amt,
-      category,
-      description,
-      club_id: relatedEntityId || undefined,
-    });
 
     // 5. Emit bus events so CashierPage/PlayerWallet pages refresh for BOTH parties
     masterBus.emit('BALANCE_UPDATED', {

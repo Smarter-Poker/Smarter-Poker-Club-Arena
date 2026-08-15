@@ -55,17 +55,26 @@ describe('HandHistoryService', () => {
     });
   });
 
-  describe('getTableHands', () => {
-    it('should return empty array when no table hands', async () => {
-      const hands = await handHistoryService.getTableHands('table-1');
-      expect(hands).toEqual([]);
-    });
-  });
+  // 2026-08-15: the old `getTableHands` / `getRecentWinningHands` describes
+  // called methods that no longer exist. They were INTENTIONALLY deleted in the
+  // "Round 38 RE-RUN cleanup" (see HandHistoryService.ts:17-23 and 147-153):
+  // getTableHands / getRecentWinningHands / searchHands queried the legacy
+  // `hands` / `hand_players` / `hand_actions` tables, which hold 0 rows in
+  // production, and had zero callers. Rather than drop the coverage, these now
+  // pin the removal so the dead paths cannot be silently reintroduced.
+  describe('removed legacy query methods (Round 38 RE-RUN cleanup)', () => {
+    const surface = handHistoryService as unknown as Record<string, unknown>;
 
-  describe('getRecentWinningHands', () => {
-    it('should return empty array when no wins', async () => {
-      const hands = await handHistoryService.getRecentWinningHands('user-1');
-      expect(hands).toEqual([]);
+    it('should no longer expose getTableHands', () => {
+      expect(surface.getTableHands).toBeUndefined();
+    });
+
+    it('should no longer expose getRecentWinningHands', () => {
+      expect(surface.getRecentWinningHands).toBeUndefined();
+    });
+
+    it('should no longer expose searchHands', () => {
+      expect(surface.searchHands).toBeUndefined();
     });
   });
 
@@ -73,9 +82,10 @@ describe('HandHistoryService', () => {
     it('should export singleton with all query methods', () => {
       expect(typeof handHistoryService.getHand).toBe('function');
       expect(typeof handHistoryService.getPlayerHands).toBe('function');
-      expect(typeof handHistoryService.getTableHands).toBe('function');
-      expect(typeof handHistoryService.getRecentWinningHands).toBe('function');
-      expect(typeof handHistoryService.searchHands).toBe('function');
+      // 2026-08-15: the three legacy `hands`-table readers were removed; the
+      // surviving surface is getHand / getPlayerHands (hand_history readers)
+      // plus the saveHandToSupabase writer.
+      expect(typeof handHistoryService.saveHandToSupabase).toBe('function');
     });
   });
 });

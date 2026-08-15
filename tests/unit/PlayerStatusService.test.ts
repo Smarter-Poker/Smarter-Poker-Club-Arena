@@ -44,6 +44,7 @@ vi.mock('../../src/core/MasterBus', () => ({
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { playerStatusService } from '../../src/services/PlayerStatusService';
+import { generateDefaultAvatar } from '../../src/utils/avatarGenerator';
 
 // Mock window.location.origin for SSR-safe testing
 Object.defineProperty(window, 'location', {
@@ -92,7 +93,16 @@ describe('PlayerStatusService', () => {
         userId: 'u1',
         username: 'Bob',
       });
-      expect(card.avatarUrl).toBe('/default-avatar.png');
+      // UPDATED: the default avatar is no longer the static '/default-avatar.png'
+      // asset — PlayerStatusService now calls generateDefaultAvatar() from
+      // src/utils/avatarGenerator.ts, which returns an inline SVG data URI.
+      // Assert the contract (a real, non-empty SVG data URL produced by the
+      // shared generator) instead of pinning the percent-encoded payload.
+      expect(card.avatarUrl).toEqual(generateDefaultAvatar());
+      expect(card.avatarUrl.startsWith('data:image/svg+xml,')).toBe(true);
+      const svg = decodeURIComponent(card.avatarUrl.slice('data:image/svg+xml,'.length));
+      expect(svg).toContain('<svg');
+      expect(svg).toContain('</svg>');
     });
 
     it('should default level to 1 when not provided', () => {

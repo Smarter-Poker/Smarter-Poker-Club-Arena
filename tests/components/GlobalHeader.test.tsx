@@ -52,21 +52,29 @@ describe('GlobalHeader Component', () => {
     expect(brandImage).toHaveAttribute('src', expect.stringContaining('brand-text-clean.png'));
   });
 
-  it('renders the Hub button image when on the lobby (pageDepth 1)', () => {
+  // UPDATED: the header's left slot no longer carries a "Return to Hub"
+  // button — GlobalHeader now renders only the hamburger at lobby depth and
+  // adds the Back button on sub-pages (`isSubPage = pageDepth >= 2`).
+  // Hub navigation moved to the right-hand orbs (/hub/*) and the hamburger
+  // menu, so this test now pins the hamburger-only left slot at depth 1.
+  it('renders only the hamburger (no Back button) on the lobby (pageDepth 1)', () => {
     render(
       <MemoryRouter>
         <GlobalHeader pageDepth={1} />
       </MemoryRouter>
     );
-    const btn = screen.getByRole('button', { name: /Return to Hub/i });
-    expect(btn).toBeInTheDocument();
+    const menuBtn = screen.getByRole('button', { name: /Open Menu/i });
+    expect(menuBtn).toBeInTheDocument();
 
-    const img = screen.getByAltText('Hub');
+    const img = screen.getByAltText('Menu');
     expect(img).toBeInTheDocument();
-    expect(img).toHaveAttribute('src', expect.stringContaining('btn-hub-v4.png'));
+    expect(img).toHaveAttribute('src', expect.stringContaining('btn-hamburger-v4.png'));
 
-    // Ensures we don't have the Go Back button
+    // Ensures we don't have the Go Back button at lobby depth
     expect(screen.queryByRole('button', { name: /Go back/i })).not.toBeInTheDocument();
+    expect(screen.queryByAltText('Back')).not.toBeInTheDocument();
+    // ...nor the removed Hub button
+    expect(screen.queryByAltText('Hub')).not.toBeInTheDocument();
   });
 
   it('renders the Back button image when on a sub-page (pageDepth >= 2)', () => {
@@ -81,5 +89,8 @@ describe('GlobalHeader Component', () => {
     const img = screen.getByAltText('Back');
     expect(img).toBeInTheDocument();
     expect(img).toHaveAttribute('src', expect.stringContaining('btn-back.png'));
+
+    // UPDATED: the hamburger stays alongside the Back button on sub-pages.
+    expect(screen.getByRole('button', { name: /Open Menu/i })).toBeInTheDocument();
   });
 });

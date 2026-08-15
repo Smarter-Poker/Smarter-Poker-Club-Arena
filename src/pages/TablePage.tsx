@@ -1478,7 +1478,6 @@ export default function TablePage({
     handleThrowableSelect,
     handleThrowComplete,
     receiveThrow,
-    getSeatPositions,
     chipAnimations,
     setChipAnimations,
     showConfetti,
@@ -4906,6 +4905,39 @@ export default function TablePage({
   // Expose the flat positions array for legacy references (same length, rotated)
   const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Dan 2026-08-15 — THROWABLE GEOMETRY (item 4).
+  //
+  // Throws used to be positioned by useTableAnimations.getSeatPositions(),
+  // which invented a hardcoded 800x500 ellipse (centre 400,250 / radii
+  // 300,150) that corresponds to nothing on screen. The real table is a
+  // 341:609 PORTRAIT box, so the projectile launched and landed at arbitrary
+  // points — never on the villain's avatar. Every other animation on this
+  // table (dealer button, deal, chip flights) drives off `seatPositions`,
+  // the hero-rotated percentage map that the seats themselves render from.
+  //
+  // Convert those same percentages into pixels RELATIVE TO .table-scaler and
+  // mount the animation layer inside it. Scaler-relative rather than viewport
+  // pixels on purpose: MultiTablePage puts a `transform` on its container, so
+  // a position:fixed overlay would re-anchor to that transformed strip and
+  // land the throw in the wrong tab. .table-scaler is position:relative, so an
+  // absolutely-positioned child inside it shares exactly the seats' geometry
+  // and follows the table through any resize or rescale.
+  //
+  // Keyed by 1-indexed seat number to match ThrowEvent.fromSeat/toSeat.
+  // ═══════════════════════════════════════════════════════════════════════
+  const throwSeatPositions = useMemo(() => {
+    const map = new Map<number, { x: number; y: number }>();
+    seatPositions.forEach((pct, physIdx) => {
+      if (!pct) return;
+      map.set(physIdx + 1, {
+        x: (pct.x / 100) * scalerSize.w,
+        y: (pct.y / 100) * scalerSize.h,
+      });
+    });
+    return map;
+  }, [seatPositions, scalerSize]);
+
   // ── Dealer Button seat index ──
   // AUDIT FIX 2026-07-19: DealerButton indexes `seatPositions`, which is ALREADY
   // physical-seat-indexed AND already hero-rotated (seatPositions[physIdx] =
@@ -6296,6 +6328,17 @@ export default function TablePage({
             isVisible={tableState.isHandInProgress && dealerVisualIndex >= 0}
           />
 
+          {/* Dan 2026-08-15 (item 4) — throwables land ON the villain.
+              This used to render from TableModalsLayer, a SIBLING of
+              .table-scaler, so its `position:absolute; inset:0` resolved
+              against the wrong ancestor and the coordinates meant nothing.
+              Mounted here it shares the seats' own coordinate space. */}
+          <ThrowAnimationContainer
+            events={activeThrows}
+            seatPositions={throwSeatPositions}
+            onEventComplete={handleThrowComplete}
+          />
+
           {/* Deal Animation — card backs flying from dealer to players on new hand */}
           {/* Bible V8 §11.1: card_slide toggle gates the deal animation */}
           {dealAnimationKey > 0 && v8Settings.card_slide && (
@@ -7154,7 +7197,6 @@ export default function TablePage({
         // Throwables
         showThrowableSelector={showThrowableSelector}
         activeThrows={activeThrows}
-        seatPositions={getSeatPositions(tableState.maxPlayers || 6)}
         onThrowableSelect={handleThrowableSelect}
         onThrowableClose={() => setShowThrowableSelector(false)}
         onThrowComplete={handleThrowComplete}

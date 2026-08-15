@@ -20,7 +20,6 @@ import { RunItTwicePrompt } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
-import { ThrowAnimationContainer } from './ThrowAnimation';
 import type { ThrowEvent } from '../../services/ThrowableService';
 import TipDealer from './TipDealer';
 import DiamondWalletModal from '../wallet/DiamondWalletModal';
@@ -176,7 +175,9 @@ export interface TableModalsLayerProps {
   // Throwables
   showThrowableSelector: boolean;
   activeThrows: ThrowEvent[];
-  seatPositions: any;
+  // Dan 2026-08-15 (item 4): `seatPositions` removed. The throw animation
+  // layer moved into .table-scaler (TablePage) so it shares the seats' real
+  // coordinate space; this layer no longer positions anything in table-space.
   onThrowableSelect: (throwable: any) => void;
   onThrowableClose: () => void;
   onThrowComplete: (id: string) => void;
@@ -430,7 +431,6 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     // Throwables
     showThrowableSelector,
     activeThrows,
-    seatPositions,
     onThrowableSelect,
     onThrowableClose,
     onThrowComplete,
@@ -726,12 +726,12 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         </div>
       )}
 
-      {/* Throw Animations */}
-      <ThrowAnimationContainer
-        events={activeThrows}
-        seatPositions={seatPositions}
-        onEventComplete={onThrowComplete}
-      />
+      {/* Dan 2026-08-15 (item 4): ThrowAnimationContainer used to render HERE,
+          but this layer is a SIBLING of .table-scaler, so the container's
+          `position:absolute; inset:0` resolved against the wrong ancestor and
+          seat coordinates landed nowhere near the avatars. It now mounts
+          inside .table-scaler in TablePage, sharing the seats' own geometry.
+          The throwable SELECTOR stays here — it is a modal, not table-space. */}
 
       {/* Bible V8 §5.1: Tiered winner celebration */}
       <ConfettiCanvas

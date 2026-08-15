@@ -10,7 +10,9 @@
     "dev": "tsx watch --env-file=.env src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "sim": "tsx sim/runner.ts"
+    "sim": "tsx sim/runner.ts",
+    "fix:esbuild": "node scripts/fix-vitest-esbuild.mjs",
+    "pretest": "node scripts/fix-vitest-esbuild.mjs"
   },
   "dependencies": {
     "@sentry/node": "^10.46.0",

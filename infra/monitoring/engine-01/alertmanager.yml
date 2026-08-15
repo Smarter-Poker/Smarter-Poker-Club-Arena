@@ -1,28 +1,84 @@
-# AlertManager routing — engine-01 co-located (Phase 5.1.3a adapted 2026-04-20)
+# AlertManager — engine-01 co-located
 #
-# Stripped-down from the cron-01 config:
-#   - No Slack/PagerDuty notification wiring yet — placeholders in .env.
-#     Set SLACK_ALERT_URL + PAGERDUTY_SERVICE_KEY in .env and replace this
-#     file with the full alertmanager.yml from infra/monitoring/ when ready.
-#   - All alerts route to a "black-hole" receiver; they still appear in the
-#     AlertManager UI at /alertmanager for triage.
+# 2026-08-15: this file previously routed EVERY alert to a `null-receiver`
+# black hole. Combined with 27 alert rules that referenced non-existent metrics,
+# the monitoring stack could not have notified anyone of anything — which is
+# why ten tables frozen for 18 minutes were reported by a player rather than by
+# an alert. A real Slack webhook was already configured in
+# /opt/smarter-poker-monitoring/.env and was simply not wired to this instance.
+#
+# Routing philosophy:
+#   critical → Slack immediately, repeat hourly until resolved. These are
+#              "players cannot play" conditions.
+#   warning  → Slack, grouped, repeat every 12h so infra noise (CPU, memory)
+#              cannot drown out a critical.
+#   info     → suppressed here; visible in the AlertManager UI for triage.
 
 global:
   resolve_timeout: 5m
+  slack_api_url: ${SLACK_ALERT_URL}
 
 route:
-  receiver: null-receiver
-  group_by: [alertname, cluster, component]
+  receiver: slack-critical
+  group_by: [alertname, component]
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 4h
+  repeat_interval: 1h
+  routes:
+    # Players are affected right now — page loudly and keep paging.
+    - matchers:
+        - severity="critical"
+      receiver: slack-critical
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Infra pressure. Real, but must never bury a critical.
+    - matchers:
+        - severity="warning"
+      receiver: slack-warning
+      group_wait: 2m
+      group_interval: 30m
+      repeat_interval: 12h
+
+    - matchers:
+        - severity="info"
+      receiver: null-receiver
 
 receivers:
   - name: null-receiver
 
+  - name: slack-critical
+    slack_configs:
+      - channel: '#alerts-ops'
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}:rotating_light: CRITICAL{{ else }}:white_check_mark: RESOLVED{{ end }} — {{ .CommonLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}*{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          {{ if .Annotations.runbook }}Runbook: {{ .Annotations.runbook }}{{ end }}
+          {{ end }}
+
+  - name: slack-warning
+    slack_configs:
+      - channel: '#alerts-ops'
+        send_resolved: true
+        title: ':warning: {{ .CommonLabels.alertname }} ({{ .Alerts.Firing | len }})'
+        text: |
+          {{ range .Alerts }}{{ .Annotations.summary }}
+          {{ end }}
+
 inhibit_rules:
+  # If the engine is unreachable entirely, do not also spam per-table freeze
+  # alerts — they are all downstream of the same cause.
   - source_matchers:
-      - alertname="EngineDown"
+      - alertname="EngineScrapeDown"
     target_matchers:
       - component="engine"
     equal: [instance]
+
+  # A frozen platform implies frozen tables; lead with the platform alert.
+  - source_matchers:
+      - alertname="EngineDiscoveryStalled"
+    target_matchers:
+      - alertname="PokerTablesFrozen"
+    equal: [cluster]

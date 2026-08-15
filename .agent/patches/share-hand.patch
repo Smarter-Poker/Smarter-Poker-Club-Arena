@@ -1,0 +1,736 @@
+diff --git a/src/components/table/ShareHand.tsx b/src/components/table/ShareHand.tsx
+index 0a34ee1..3ff5d99 100644
+--- a/src/components/table/ShareHand.tsx
++++ b/src/components/table/ShareHand.tsx
+@@ -101 +101,30 @@ function decodeCards(str: string, count: number): ShareableCard[] {
+-const ACTIONS = 'FCXBRA'; // Fold, Check, Call, Bet, Raise, All-in
++const ACTIONS = 'FCXBRA'; // Fold, Call, Check, Bet, Raise, All-in
++
++/**
++ * CODEC FIX 2026-08-15 — CHECK was encoded as CALL.
++ *
++ * The old encoder took the action's FIRST LETTER and looked it up in
++ * 'FCXBRA'. 'CHECK'[0] and 'CALL'[0] are both 'C', so both encoded to 'C' —
++ * and the decoder maps 'C' to CALL. Every check in every shared hand was
++ * replayed to the recipient as a call, which changes the whole reading of the
++ * hand. 'X' (the actual check code the decoder expects) was unreachable.
++ *
++ * Explicit table, no first-letter inference.
++ */
++const ACTION_CODE: Record<ShareableAction['action'], string> = {
++  FOLD: 'F',
++  CALL: 'C',
++  CHECK: 'X',
++  BET: 'B',
++  RAISE: 'R',
++  ALL_IN: 'A',
++};
++
++const CODE_ACTION: Record<string, ShareableAction['action']> = {
++  F: 'FOLD',
++  C: 'CALL',
++  X: 'CHECK',
++  B: 'BET',
++  R: 'RAISE',
++  A: 'ALL_IN',
++};
+@@ -104,2 +133 @@ function encodeAction(action: ShareableAction): string {
+-  const a = ACTIONS.indexOf(action.action[0] === 'A' ? 'A' : action.action[0]);
+-  let str = `${action.seat}${ACTIONS[a]}`;
++  let str = `${action.seat}${ACTION_CODE[action.action] || 'X'}`;
+@@ -107 +135 @@ function encodeAction(action: ShareableAction): string {
+-    str += action.amount.toString(36); // Base36 for compact numbers
++    str += Math.max(0, Math.round(action.amount)).toString(36); // Base36 for compact numbers
+@@ -115,0 +144,57 @@ function encodeActions(actions: ShareableAction[]): string {
++/** Shared action-list parser — the old decoder inlined this three times and
++ *  still never called it for the turn or the river. */
++function decodeActions(str: string | undefined): ShareableAction[] {
++  const out: ShareableAction[] = [];
++  if (!str) return out;
++  for (const token of str.split(',')) {
++    if (token.length < 2) continue;
++    const seat = parseInt(token[0], 10);
++    if (!Number.isFinite(seat)) continue;
++    const action: ShareableAction = { seat, action: CODE_ACTION[token[1]] || 'CHECK' };
++    if (token.length > 2) {
++      const amt = parseInt(token.substring(2), 36);
++      if (Number.isFinite(amt)) action.amount = amt;
++    }
++    out.push(action);
++  }
++  return out;
++}
++
++/** Split a `cards|actions` street segment; either side may be empty. */
++function splitStreet(part: string | undefined): { cards: string; actions: string } | null {
++  if (!part || !part.includes('|')) return null;
++  const idx = part.indexOf('|');
++  return { cards: part.slice(0, idx), actions: part.slice(idx + 1) };
++}
++
++/**
++ * btoa() throws on any code point above U+00FF, so a single emoji or
++ * non-Latin character in a player name (or the table name) blew up the whole
++ * encode and the share modal rendered a broken link. UTF-8 first, then base64,
++ * padding stripped — '=' inside a ':'-delimited field corrupted the re-pad on
++ * the way back out.
++ */
++function b64utf8(text: string): string {
++  try {
++    const bytes = new TextEncoder().encode(text);
++    let bin = '';
++    for (const b of bytes) bin += String.fromCharCode(b);
++    return btoa(bin).replace(/=+$/, '');
++  } catch {
++    return '';
++  }
++}
++
++function unb64utf8(text: string): string {
++  if (!text) return '';
++  try {
++    const padded = text + '='.repeat((4 - (text.length % 4)) % 4);
++    const bin = atob(padded);
++    const bytes = new Uint8Array(bin.length);
++    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
++    return new TextDecoder().decode(bytes);
++  } catch {
++    return '';
++  }
++}
++
+@@ -120,2 +205,6 @@ export function encodeHand(hand: ShareableHand): string {
+-  // Version + variant
+-  parts.push('v1');
++  // Version + variant.
++  // CODEC FIX 2026-08-15: bumped to v2. v1 dropped the turn, the river, the
++  // winners, the table name and the hero/winner flags on the way back out —
++  // see decodeHandFromUrl. v1 payloads still decode (there are none in the
++  // wild: the /replay route did not exist until today).
++  parts.push('v2');
+@@ -127 +216,4 @@ export function encodeHand(hand: ShareableHand): string {
+-  // Players: seat:name:stack:cards
++  // Players: seat:name:stack:cards:flags
++  //   flags — 'h' hero, 'w' winner, 'hw' both, '' neither.
++  // v1 truncated the base64 name to 8 chars (≈6 bytes) and lost isHero /
++  // isWinner entirely, so a replay could not mark who shared it or who won.
+@@ -130,3 +222,3 @@ export function encodeHand(hand: ShareableHand): string {
+-      let ps = `${p.seat}:${btoa(p.name).substring(0, 8)}:${p.stack.toString(36)}`;
+-      if (p.cards) ps += ':' + encodeCards(p.cards);
+-      return ps;
++      const flags = `${p.isHero ? 'h' : ''}${p.isWinner ? 'w' : ''}`;
++      const cards = p.cards?.length ? encodeCards(p.cards) : '';
++      return `${p.seat}:${b64utf8((p.name || '').slice(0, 24))}:${Math.max(0, Math.round(p.stack || 0)).toString(36)}:${cards}:${flags}`;
+@@ -159,4 +251,12 @@ export function encodeHand(hand: ShareableHand): string {
+-  parts.push(hand.potTotal.toString(36));
+-  parts.push(hand.winners.map((w) => `${w.seat}:${w.amount.toString(36)}`).join(';'));
+-
+-  // Base64 URL-safe encode
++  parts.push(Math.max(0, Math.round(hand.potTotal || 0)).toString(36));
++  parts.push(
++    (hand.winners || [])
++      .map((w) => `${w.seat}:${Math.max(0, Math.round(w.amount || 0)).toString(36)}`)
++      .join(';')
++  );
++  // v2 field — the table name. v1 hard-coded "Shared Hand" on decode, so the
++  // recipient never saw which table the hand came from.
++  parts.push(b64utf8((hand.tableName || '').slice(0, 40)));
++
++  // Base64 URL-safe encode. Everything above is ASCII by construction (names
++  // are base64'd), so btoa cannot throw here.
+@@ -175 +275,6 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
+-    if (parts[0] !== 'v1') return null;
++    const version = parts[0];
++    // CODEC FIX 2026-08-15: v1 is still accepted so no link can rot, but v1
++    // payloads genuinely do not carry the turn, the river, the winners, the
++    // table name or the hero/winner flags — they were never encoded as
++    // recoverable fields. v2 does.
++    if (version !== 'v1' && version !== 'v2') return null;
+@@ -179,40 +284,19 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
+-    const stakes = parts[2].replace('-', '/');
+-    const buttonSeat = parseInt(parts[3]);
+-    const timestamp = parseInt(parts[4], 36);
+-
+-    // Parse players
+-    const players: ShareablePlayer[] = parts[5].split(';').map((ps) => {
+-      const [seat, nameB64, stackB36, cardsStr] = ps.split(':');
+-      const player: ShareablePlayer = {
+-        seat: parseInt(seat),
+-        name: atob(nameB64 + '=='.substring(0, (4 - (nameB64.length % 4)) % 4)),
+-        stack: parseInt(stackB36, 36),
+-      };
+-      if (cardsStr) player.cards = decodeCards(cardsStr, cardsStr.length);
+-      return player;
+-    });
+-
+-    // Parse preflop actions from parts[6]
+-    const preflop: ShareableAction[] = [];
+-    if (parts[6]) {
+-      const actionStrings = parts[6].split(',');
+-      for (const actionStr of actionStrings) {
+-        if (actionStr.length >= 2) {
+-          const seat = parseInt(actionStr[0]);
+-          const actionCode = actionStr[1];
+-          const actionMap: Record<string, ShareableAction['action']> = {
+-            F: 'FOLD',
+-            C: 'CALL',
+-            X: 'CHECK',
+-            B: 'BET',
+-            R: 'RAISE',
+-            A: 'ALL_IN',
+-          };
+-          const action: ShareableAction = {
+-            seat,
+-            action: actionMap[actionCode] || 'CHECK',
+-          };
+-          if (actionStr.length > 2) {
+-            action.amount = parseInt(actionStr.substring(2), 36);
+-          }
+-          preflop.push(action);
++    const stakes = (parts[2] || '').replace('-', '/');
++    const buttonSeat = parseInt(parts[3], 10) || 0;
++    const timestamp = parseInt(parts[4], 36) || Date.now();
++
++    // Parse players — v1: seat:name:stack:cards / v2 adds :flags
++    const players: ShareablePlayer[] = (parts[5] || '')
++      .split(';')
++      .filter(Boolean)
++      .map((ps) => {
++        const [seat, nameB64, stackB36, cardsStr, flags] = ps.split(':');
++        const player: ShareablePlayer = {
++          seat: parseInt(seat, 10) || 0,
++          name: unb64utf8(nameB64) || `Seat ${seat}`,
++          stack: parseInt(stackB36, 36) || 0,
++        };
++        if (cardsStr) player.cards = decodeCards(cardsStr, cardsStr.length);
++        if (flags) {
++          if (flags.includes('h')) player.isHero = true;
++          if (flags.includes('w')) player.isWinner = true;
+@@ -220 +304,14 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
+-      }
++        return player;
++      });
++
++    // Streets. THE BUG: the old decoder parsed preflop and the flop, then
++    // jumped straight to building the object — parts[8] (turn) and parts[9]
++    // (river) were read by nothing, so every shared hand ended on the flop no
++    // matter how it actually played, and parts[11] (winners) was discarded in
++    // favour of a hard-coded empty array.
++    const preflop = decodeActions(parts[6]);
++
++    let flop: ShareableHand['flop'];
++    const flopSeg = splitStreet(parts[7]);
++    if (flopSeg) {
++      flop = { cards: decodeCards(flopSeg.cards, 3), actions: decodeActions(flopSeg.actions) };
+@@ -223,30 +320,4 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
+-    // Parse flop if present (parts[7])
+-    let flop: ShareableHand['flop'] = undefined;
+-    if (parts[7] && parts[7].includes('|')) {
+-      const [cardsStr, actionsStr] = parts[7].split('|');
+-      const flopCards = decodeCards(cardsStr, 3);
+-      const flopActions: ShareableAction[] = [];
+-      // Parse flop actions similar to preflop
+-      if (actionsStr) {
+-        const actionStrings = actionsStr.split(',');
+-        for (const actionStr of actionStrings) {
+-          if (actionStr.length >= 2) {
+-            const seat = parseInt(actionStr[0]);
+-            const actionCode = actionStr[1];
+-            const actionMap: Record<string, ShareableAction['action']> = {
+-              F: 'FOLD',
+-              C: 'CALL',
+-              X: 'CHECK',
+-              B: 'BET',
+-              R: 'RAISE',
+-              A: 'ALL_IN',
+-            };
+-            flopActions.push({
+-              seat,
+-              action: actionMap[actionCode] || 'CHECK',
+-              amount: actionStr.length > 2 ? parseInt(actionStr.substring(2), 36) : undefined,
+-            });
+-          }
+-        }
+-      }
+-      flop = { cards: flopCards, actions: flopActions };
++    let turn: ShareableHand['turn'];
++    const turnSeg = splitStreet(parts[8]);
++    if (turnSeg && turnSeg.cards) {
++      turn = { card: decodeCard(turnSeg.cards[0]), actions: decodeActions(turnSeg.actions) };
+@@ -254,0 +326,14 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
++    let river: ShareableHand['river'];
++    const riverSeg = splitStreet(parts[9]);
++    if (riverSeg && riverSeg.cards) {
++      river = { card: decodeCard(riverSeg.cards[0]), actions: decodeActions(riverSeg.actions) };
++    }
++
++    const winners = (parts[11] || '')
++      .split(';')
++      .filter(Boolean)
++      .map((w) => {
++        const [seat, amt] = w.split(':');
++        return { seat: parseInt(seat, 10) || 0, amount: parseInt(amt, 36) || 0 };
++      });
++
+@@ -258 +343 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
+-      tableName: 'Shared Hand',
++      tableName: unb64utf8(parts[12]) || 'Shared Hand',
+@@ -265,0 +351,2 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
++      turn,
++      river,
+@@ -267 +354 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
+-      winners: [],
++      winners,
+diff --git a/src/pages/TablePage.tsx b/src/pages/TablePage.tsx
+index 6ddd259..3f58f90 100644
+--- a/src/pages/TablePage.tsx
++++ b/src/pages/TablePage.tsx
+@@ -127 +127,8 @@ import PreActionBar from '../components/table/PreActionBar';
+-import ShareHand from '../components/table/ShareHand';
++// The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
++// default import this line used to carry was unused. TablePage builds the
++// payload, so it needs the types.
++import type {
++  ShareableHand,
++  ShareableCard,
++  ShareableAction,
++} from '../components/table/ShareHand';
+@@ -158 +165,4 @@ import { handPersistenceService } from '../services/HandPersistenceService';
+-import { handHistoryService } from '../services/HandHistoryService';
++import {
++  handHistoryService,
++  type HandRecord as ServiceHandRecord,
++} from '../services/HandHistoryService';
+@@ -454,0 +465,93 @@ const createEmptySeats = (count: 6 | 9): (SeatPlayer | null)[] => {
++// ═══════════════════════════════════════════════════════════════════════════════
++// HAND HISTORY ADAPTER — service wire record → panel view model
++// ═══════════════════════════════════════════════════════════════════════════════
++// Two different `HandRecord` interfaces exist in this codebase and they share
++// nothing but the name: HandHistoryService exports the snake_case row that
++// comes off `hand_history`, while HandHistoryPanel expects a street-grouped
++// view model (handNumber / blinds / streets[] / winners[] / heroResult). The
++// panel's list rows read every one of those fields, so passing the service
++// shape straight through renders blank rows.
++const cardToStr = (c: { rank?: string; suit?: string } | null | undefined): string =>
++  c && c.rank && c.suit ? `${c.rank}${c.suit}` : '';
++
++/** Board cards revealed on each street, sliced out of the final board. */
++const STREET_BOARD_SLICE: Record<string, [number, number]> = {
++  preflop: [0, 0],
++  flop: [0, 3],
++  turn: [3, 4],
++  river: [4, 5],
++};
++
++function toPanelHandRecord(
++  h: ServiceHandRecord,
++  heroUserId: string
++): HandRecord {
++  const board = Array.isArray(h.community_cards) ? h.community_cards : [];
++  const svcPlayers = Array.isArray(h.players) ? h.players : [];
++  const svcActions = Array.isArray(h.actions) ? h.actions : [];
++
++  const nameByUserId = new Map<string, string>();
++  for (const p of svcPlayers) nameByUserId.set(p.user_id, p.username || 'Player');
++
++  // Group the flat action list into the panel's four streets. Only streets
++  // that actually happened are emitted, so a hand folded preflop shows one row
++  // rather than four empty ones.
++  const streets: HandHistoryStreet[] = [];
++  for (const name of ['preflop', 'flop', 'turn', 'river'] as const) {
++    const acts = svcActions.filter((a) => a.street === name);
++    const [from, to] = STREET_BOARD_SLICE[name];
++    const cards = board.slice(from, to).map(cardToStr).filter(Boolean);
++    if (acts.length === 0 && cards.length === 0) continue;
++    streets.push({
++      name,
++      cards: cards.length ? cards : undefined,
++      // The panel's action union spells all-in without the hyphen.
++      actions: acts.map((a) => ({
++        playerId: a.player_id,
++        playerName: nameByUserId.get(a.player_id) || 'Player',
++        action: (a.action === 'all-in' ? 'allin' : a.action) as HandHistoryAction['action'],
++        amount: a.amount,
++      })),
++      pot: 0,
++    });
++  }
++
++  const sidePots = Array.isArray(h.side_pots) ? h.side_pots : [];
++  const potTotal = (h.main_pot || 0) + sidePots.reduce((s, v) => s + (v || 0), 0);
++  // The panel shows a running pot per street; the wire record only carries the
++  // final total, so attribute it to the last street rather than leaving zeros.
++  if (streets.length > 0) streets[streets.length - 1].pot = potTotal;
++
++  const hero = svcPlayers.find((p) => p.user_id === heroUserId);
++
++  return {
++    id: h.id,
++    handNumber: h.hand_number || 0,
++    timestamp: h.played_at ? Date.parse(h.played_at) || Date.now() : Date.now(),
++    gameType: h.game_type || 'NLH',
++    blinds: h.stakes || '',
++    players: svcPlayers.map((p) => ({
++      id: p.user_id,
++      name: p.username || 'Player',
++      seat: p.seat,
++      // hand_history carries no per-seat stack; result is what the panel row
++      // actually surfaces, so leave stack at 0 rather than inventing a number.
++      stack: 0,
++      position: p.position || '',
++      holeCards: (p.hole_cards || []).map(cardToStr).filter(Boolean),
++    })),
++    streets,
++    winners: svcPlayers
++      .filter((p) => p.is_winner)
++      .map((p) => ({
++        playerId: p.user_id,
++        playerName: p.username || 'Player',
++        amount: p.result || 0,
++        hand: p.final_hand,
++      })),
++    heroId: heroUserId,
++    heroResult: hero?.result || 0,
++    potTotal,
++  };
++}
++
+@@ -1277,0 +1381,4 @@ export default function TablePage({
++  /** Mirror of winnerInfo for the WS event handlers, which close over stale
++   *  state. Read by the Share Hand snapshot at HAND_COMPLETE. */
++  const winnerInfoRef = useRef(winnerInfo);
++  winnerInfoRef.current = winnerInfo;
+@@ -1971 +2078,8 @@ export default function TablePage({
+-        if (!cancelled && hands && hands.length > 0) setHandHistory(hands);
++        // TYPE FIX 2026-08-15: the service and the panel each export their own
++        // HandRecord and they are NOT the same shape (snake_case wire record
++        // vs. the panel's street-grouped view model). Handing the raw service
++        // rows straight to the panel type-errored, and at runtime would have
++        // rendered a list of blank rows -- handNumber/blinds/streets/winners
++        // are all absent from the service shape. Adapt explicitly.
++        const adapted = (hands || []).map((h) => toPanelHandRecord(h, userId));
++        if (!cancelled && adapted.length > 0) setHandHistory(adapted);
+@@ -2048,0 +2163,3 @@ export default function TablePage({
++  /** Button seat captured at HAND_STARTED — the live dealerSeat has already
++   *  rotated by the time the hand completes. */
++  const shareButtonSeatRef = useRef(0);
+@@ -4211,0 +4329,20 @@ export default function TablePage({
++        // DEAD-WIRING FIX 2026-08-15: record the action for Share Hand.
++        // handActionsRef was declared 2,000 lines up and had ZERO writers and
++        // ZERO readers, and tableState.actionHistory was declared on the
++        // interface and never assigned. With no action log, sharedHandData
++        // could never be built -- which is why the ShareHand modal, gated on
++        // `showShareHand && sharedHandData`, never opened on a cash table no
++        // matter how many times the menu item was tapped.
++        if (actionSeat > 0 && action) {
++          const log = handActionsRef.current;
++          // Ceiling: a pathological hand cannot grow this without bound.
++          if (log.length < 400) {
++            log.push({
++              seat: actionSeat,
++              action,
++              amount: actionAmount > 0 ? actionAmount : undefined,
++              street: tableStateRef.current.boardStage || 'preflop',
++            });
++          }
++        }
++
+@@ -4310,0 +4448,13 @@ export default function TablePage({
++        // Fresh hand → reset the Share Hand action log and remember the button
++        // and the starting stacks BEFORE any chips move, so the shared replay
++        // shows what each player sat down with rather than what they finished
++        // with. (The button seat is needed for position labels on the replay.)
++        handActionsRef.current = [];
++        handStartStacksRef.current = {};
++        {
++          const st = tableStateRef.current;
++          shareButtonSeatRef.current = st.dealerSeat || 0;
++          st.players.forEach((p, i) => {
++            if (p) handStartStacksRef.current[i + 1] = p.stack || 0;
++          });
++        }
+@@ -4471,0 +4622,108 @@ export default function TablePage({
++        // ── Share Hand: capture the hand that just finished ─────────────────
++        // DEAD-WIRING FIX 2026-08-15. setSharedHandData had zero call sites,
++        // and TableModalsLayer gates the modal on `showShareHand &&
++        // sharedHandData`. The Share Hand menu item therefore set a flag that
++        // could never render anything -- the feature was unreachable on the
++        // cash surface for every player. Build the snapshot here, while the
++        // board, the pot and the winners are still on screen (they are cleared
++        // by the 3s reset timer further down this same case).
++        try {
++          const st = tableStateRef.current;
++          const board = st.communityCards || [];
++          const asShareCard = (c: Card): ShareableCard => ({
++            rank: c.rank,
++            suit: c.suit,
++          });
++          const asShareAction = (a: {
++            seat: number;
++            action: string;
++            amount?: number;
++          }): ShareableAction => {
++            const raw = (a.action || '').toLowerCase();
++            const mapped: ShareableAction['action'] =
++              raw === 'fold'
++                ? 'FOLD'
++                : raw === 'check'
++                  ? 'CHECK'
++                  : raw === 'call'
++                    ? 'CALL'
++                    : raw === 'bet'
++                      ? 'BET'
++                      : raw === 'raise'
++                        ? 'RAISE'
++                        : 'ALL_IN';
++            return { seat: a.seat, action: mapped, amount: a.amount };
++          };
++          const byStreet = (name: string) =>
++            handActionsRef.current.filter((a) => a.street === name).map(asShareAction);
++
++          const winnerSeats = new Set<number>();
++          const winnerRows: { seat: number; amount: number }[] = [];
++          for (const [uid, amt] of Object.entries(winnerInfoRef.current?.amounts || {})) {
++            const idx = st.players.findIndex((p) => p && p.id === uid);
++            if (idx >= 0) {
++              winnerSeats.add(idx + 1);
++              winnerRows.push({ seat: idx + 1, amount: Number(amt) || 0 });
++            }
++          }
++
++          const sharePlayers = st.players
++            .map((p, i) =>
++              p
++                ? {
++                    seat: i + 1,
++                    name: p.name || `Seat ${i + 1}`,
++                    // Stack as it was at the top of the hand, not post-payout.
++                    stack: handStartStacksRef.current[i + 1] ?? p.stack ?? 0,
++                    // Only cards actually visible on screen travel in the link
++                    // -- hero's own, plus anything shown down at showdown. A
++                    // shared hand must never leak a mucked holding.
++                    cards: (p.holeCards || []).length
++                      ? (p.holeCards as Card[]).map(asShareCard)
++                      : undefined,
++                    isHero: i + 1 === st.heroSeat,
++                    isWinner: winnerSeats.has(i + 1),
++                  }
++                : null
++            )
++            .filter(Boolean) as ShareableHand['players'];
++
++          if (sharePlayers.length > 0) {
++            const variant: ShareableHand['variant'] = (
++              ['NLH', 'PLO4', 'PLO5', 'PLO6'] as const
++            ).includes(st.gameType as any)
++              ? (st.gameType as ShareableHand['variant'])
++              : 'NLH';
++            const flopActions = byStreet('flop');
++            const turnActions = byStreet('turn');
++            const riverActions = byStreet('river');
++            setSharedHandData({
++              id: `${tableId || 'table'}-${st.handNumber ?? heroHandRef.current ?? 0}`,
++              tableName: st.tableName || 'Club Arena',
++              variant,
++              stakes: st.blinds || '',
++              timestamp: Date.now(),
++              buttonSeat: shareButtonSeatRef.current || st.dealerSeat || 0,
++              players: sharePlayers,
++              preflop: byStreet('preflop'),
++              flop:
++                board.length >= 3
++                  ? { cards: board.slice(0, 3).map(asShareCard), actions: flopActions }
++                  : undefined,
++              turn:
++                board.length >= 4
++                  ? { card: asShareCard(board[3]), actions: turnActions }
++                  : undefined,
++              river:
++                board.length >= 5
++                  ? { card: asShareCard(board[4]), actions: riverActions }
++                  : undefined,
++              potTotal: st.pot || 0,
++              winners: winnerRows,
++            } satisfies ShareableHand);
++          }
++        } catch (e) {
++          // Never let a share snapshot break the table reset.
++          reportError(e, 'TablePage.buildSharedHand');
++        }
++
+@@ -4607,0 +4866,10 @@ export default function TablePage({
++          // Write the mirror synchronously too. POT_WIN and HAND_COMPLETE can
++          // arrive in the same WS frame, in which case React has not
++          // re-rendered yet and the render-time mirror assignment would still
++          // hold the previous hand's winners when Share Hand reads it.
++          winnerInfoRef.current = {
++            playerIds: winnerIds,
++            handName: winHandName,
++            cardIndices: winCardIndices,
++            amounts,
++          };
+@@ -6248 +6516,10 @@ export default function TablePage({
+-              onShareHand={() => setShowShareHand(true)}
++              onShareHand={() => {
++                // The modal renders only when a hand has been captured. Say so
++                // instead of no-opping — tapping a menu item and getting
++                // nothing at all is how this looked before today.
++                if (!sharedHandData) {
++                  toast?.info?.('Play a hand to the end, then share it.');
++                  return;
++                }
++                setShowShareHand(true);
++              }}
+diff --git a/tests/unit/ShareHand.codec.test.ts b/tests/unit/ShareHand.codec.test.ts
+new file mode 100644
+index 0000000..dd2db0c
+--- /dev/null
++++ b/tests/unit/ShareHand.codec.test.ts
+@@ -0,0 +1,147 @@
++/**
++ * ═══════════════════════════════════════════════════════════════════════════════
++ *  SHARE HAND CODEC — round-trip tests
++ * ═══════════════════════════════════════════════════════════════════════════════
++ *
++ * Added 2026-08-15 alongside the fix that made Share Hand reachable on the cash
++ * table. Wiring the feature up without these would have shipped a replay that
++ * silently lied: before this commit the encoder wrote CHECK as CALL, and the
++ * decoder never read the turn, the river, the winners, the table name, or the
++ * hero / winner flags at all.
++ *
++ * Each test below fails against the pre-fix codec.
++ */
++
++import { describe, it, expect } from 'vitest';
++import { encodeHand, decodeHandFromUrl, type ShareableHand } from '../../src/components/table/ShareHand';
++
++const HAND: ShareableHand = {
++  id: 'h1',
++  tableName: 'Diamond Lounge — Table 3',
++  variant: 'PLO4',
++  stakes: '5/10',
++  timestamp: 1_755_300_000_000,
++  buttonSeat: 4,
++  players: [
++    {
++      seat: 1,
++      name: 'Dan',
++      stack: 12_500,
++      cards: [
++        { rank: 'A', suit: 's' },
++        { rank: 'K', suit: 'd' },
++      ],
++      isHero: true,
++    },
++    { seat: 4, name: 'Villain', stack: 9_800, isWinner: true },
++    { seat: 7, name: 'Ana', stack: 3_150 },
++  ],
++  preflop: [
++    { seat: 7, action: 'FOLD' },
++    { seat: 1, action: 'RAISE', amount: 30 },
++    { seat: 4, action: 'CALL', amount: 30 },
++  ],
++  flop: {
++    cards: [
++      { rank: 'A', suit: 'h' },
++      { rank: '7', suit: 'c' },
++      { rank: '2', suit: 'd' },
++    ],
++    actions: [
++      { seat: 4, action: 'CHECK' },
++      { seat: 1, action: 'BET', amount: 45 },
++      { seat: 4, action: 'CALL', amount: 45 },
++    ],
++  },
++  turn: {
++    card: { rank: 'T', suit: 's' },
++    actions: [
++      { seat: 4, action: 'CHECK' },
++      { seat: 1, action: 'CHECK' },
++    ],
++  },
++  river: {
++    card: { rank: 'Q', suit: 'h' },
++    actions: [
++      { seat: 4, action: 'BET', amount: 120 },
++      { seat: 1, action: 'ALL_IN', amount: 12_425 },
++      { seat: 4, action: 'FOLD' },
++    ],
++  },
++  potTotal: 12_800,
++  winners: [{ seat: 4, amount: 12_800 }],
++};
++
++describe('ShareHand codec', () => {
++  const decoded = decodeHandFromUrl(encodeHand(HAND));
++
++  it('round-trips at all', () => {
++    expect(decoded).not.toBeNull();
++  });
++
++  it('preserves CHECK as CHECK (was decoded as CALL)', () => {
++    // Two checks on the turn. The old encoder emitted 'C' for both CHECK and
++    // CALL because it keyed off the first letter of the action name.
++    expect(decoded!.turn!.actions.map((a) => a.action)).toEqual(['CHECK', 'CHECK']);
++    expect(decoded!.flop!.actions.map((a) => a.action)).toEqual(['CHECK', 'BET', 'CALL']);
++  });
++
++  it('preserves the turn and the river (were dropped entirely)', () => {
++    expect(decoded!.turn!.card).toEqual({ rank: 'T', suit: 's' });
++    expect(decoded!.river!.card).toEqual({ rank: 'Q', suit: 'h' });
++    expect(decoded!.river!.actions).toEqual([
++      { seat: 4, action: 'BET', amount: 120 },
++      { seat: 1, action: 'ALL_IN', amount: 12_425 },
++      { seat: 4, action: 'FOLD' },
++    ]);
++  });
++
++  it('preserves the winners (were hard-coded to [])', () => {
++    expect(decoded!.winners).toEqual([{ seat: 4, amount: 12_800 }]);
++  });
++
++  it('preserves the hero and winner flags (were never encoded)', () => {
++    expect(decoded!.players.find((p) => p.isHero)?.seat).toBe(1);
++    expect(decoded!.players.find((p) => p.isWinner)?.seat).toBe(4);
++  });
++
++  it('preserves the table name (was hard-coded to "Shared Hand")', () => {
++    expect(decoded!.tableName).toBe('Diamond Lounge — Table 3');
++  });
++
++  it('preserves the untruncated player names, board, stakes and pot', () => {
++    expect(decoded!.players.map((p) => p.name)).toEqual(['Dan', 'Villain', 'Ana']);
++    expect(decoded!.flop!.cards).toEqual(HAND.flop!.cards);
++    expect(decoded!.stakes).toBe('5/10');
++    expect(decoded!.potTotal).toBe(12_800);
++    expect(decoded!.buttonSeat).toBe(4);
++    expect(decoded!.variant).toBe('PLO4');
++    expect(decoded!.players[0].cards).toEqual(HAND.players[0].cards);
++  });
++
++  it('survives a non-Latin1 name instead of throwing in btoa', () => {
++    const emoji = decodeHandFromUrl(
++      encodeHand({ ...HAND, players: [{ ...HAND.players[0], name: '🐉 Ryū' }] })
++    );
++    expect(emoji?.players[0].name).toBe('🐉 Ryū');
++  });
++
++  it('produces a URL-safe payload', () => {
++    expect(encodeHand(HAND)).toMatch(/^[A-Za-z0-9\-_]+$/);
++  });
++
++  it('rejects a truncated or foreign payload rather than rendering garbage', () => {
++    expect(decodeHandFromUrl('not-a-real-payload')).toBeNull();
++  });
++
++  it('handles a hand that ended preflop', () => {
++    const short = decodeHandFromUrl(
++      encodeHand({ ...HAND, flop: undefined, turn: undefined, river: undefined, winners: [] })
++    );
++    expect(short).not.toBeNull();
++    expect(short!.flop).toBeUndefined();
++    expect(short!.turn).toBeUndefined();
++    expect(short!.river).toBeUndefined();
++    expect(short!.preflop).toHaveLength(3);
++  });
++});

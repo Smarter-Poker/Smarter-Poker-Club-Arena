@@ -98,13 +98,41 @@ function decodeCards(str: string, count: number): ShareableCard[] {
 }
 
 // Action encoding: seat(1) + action(1) + amount(variable)
-const ACTIONS = 'FCXBRA'; // Fold, Check, Call, Bet, Raise, All-in
+const ACTIONS = 'FCXBRA'; // Fold, Call, Check, Bet, Raise, All-in
+
+/**
+ * CODEC FIX 2026-08-15 — CHECK was encoded as CALL.
+ *
+ * The old encoder took the action's FIRST LETTER and looked it up in
+ * 'FCXBRA'. 'CHECK'[0] and 'CALL'[0] are both 'C', so both encoded to 'C' —
+ * and the decoder maps 'C' to CALL. Every check in every shared hand was
+ * replayed to the recipient as a call, which changes the whole reading of the
+ * hand. 'X' (the actual check code the decoder expects) was unreachable.
+ *
+ * Explicit table, no first-letter inference.
+ */
+const ACTION_CODE: Record<ShareableAction['action'], string> = {
+  FOLD: 'F',
+  CALL: 'C',
+  CHECK: 'X',
+  BET: 'B',
+  RAISE: 'R',
+  ALL_IN: 'A',
+};
+
+const CODE_ACTION: Record<string, ShareableAction['action']> = {
+  F: 'FOLD',
+  C: 'CALL',
+  X: 'CHECK',
+  B: 'BET',
+  R: 'RAISE',
+  A: 'ALL_IN',
+};
 
 function encodeAction(action: ShareableAction): string {
-  const a = ACTIONS.indexOf(action.action[0] === 'A' ? 'A' : action.action[0]);
-  let str = `${action.seat}${ACTIONS[a]}`;
+  let str = `${action.seat}${ACTION_CODE[action.action] || 'X'}`;
   if (action.amount !== undefined) {
-    str += action.amount.toString(36); // Base36 for compact numbers
+    str += Math.max(0, Math.round(action.amount)).toString(36); // Base36 for compact numbers
   }
   return str;
 }
@@ -113,23 +141,87 @@ function encodeActions(actions: ShareableAction[]): string {
   return actions.map(encodeAction).join(',');
 }
 
+/** Shared action-list parser — the old decoder inlined this three times and
+ *  still never called it for the turn or the river. */
+function decodeActions(str: string | undefined): ShareableAction[] {
+  const out: ShareableAction[] = [];
+  if (!str) return out;
+  for (const token of str.split(',')) {
+    if (token.length < 2) continue;
+    const seat = parseInt(token[0], 10);
+    if (!Number.isFinite(seat)) continue;
+    const action: ShareableAction = { seat, action: CODE_ACTION[token[1]] || 'CHECK' };
+    if (token.length > 2) {
+      const amt = parseInt(token.substring(2), 36);
+      if (Number.isFinite(amt)) action.amount = amt;
+    }
+    out.push(action);
+  }
+  return out;
+}
+
+/** Split a `cards|actions` street segment; either side may be empty. */
+function splitStreet(part: string | undefined): { cards: string; actions: string } | null {
+  if (!part || !part.includes('|')) return null;
+  const idx = part.indexOf('|');
+  return { cards: part.slice(0, idx), actions: part.slice(idx + 1) };
+}
+
+/**
+ * btoa() throws on any code point above U+00FF, so a single emoji or
+ * non-Latin character in a player name (or the table name) blew up the whole
+ * encode and the share modal rendered a broken link. UTF-8 first, then base64,
+ * padding stripped — '=' inside a ':'-delimited field corrupted the re-pad on
+ * the way back out.
+ */
+function b64utf8(text: string): string {
+  try {
+    const bytes = new TextEncoder().encode(text);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/=+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function unb64utf8(text: string): string {
+  if (!text) return '';
+  try {
+    const padded = text + '='.repeat((4 - (text.length % 4)) % 4);
+    const bin = atob(padded);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
 // Full hand encoding
 export function encodeHand(hand: ShareableHand): string {
   const parts: string[] = [];
 
-  // Version + variant
-  parts.push('v1');
+  // Version + variant.
+  // CODEC FIX 2026-08-15: bumped to v2. v1 dropped the turn, the river, the
+  // winners, the table name and the hero/winner flags on the way back out —
+  // see decodeHandFromUrl. v1 payloads still decode (there are none in the
+  // wild: the /replay route did not exist until today).
+  parts.push('v2');
   parts.push(hand.variant);
   parts.push(hand.stakes.replace('/', '-'));
   parts.push(hand.buttonSeat.toString());
   parts.push(hand.timestamp.toString(36));
 
-  // Players: seat:name:stack:cards
+  // Players: seat:name:stack:cards:flags
+  //   flags — 'h' hero, 'w' winner, 'hw' both, '' neither.
+  // v1 truncated the base64 name to 8 chars (≈6 bytes) and lost isHero /
+  // isWinner entirely, so a replay could not mark who shared it or who won.
   const playerStr = hand.players
     .map((p) => {
-      let ps = `${p.seat}:${btoa(p.name).substring(0, 8)}:${p.stack.toString(36)}`;
-      if (p.cards) ps += ':' + encodeCards(p.cards);
-      return ps;
+      const flags = `${p.isHero ? 'h' : ''}${p.isWinner ? 'w' : ''}`;
+      const cards = p.cards?.length ? encodeCards(p.cards) : '';
+      return `${p.seat}:${b64utf8((p.name || '').slice(0, 24))}:${Math.max(0, Math.round(p.stack || 0)).toString(36)}:${cards}:${flags}`;
     })
     .join(';');
   parts.push(playerStr);
@@ -156,10 +248,18 @@ export function encodeHand(hand: ShareableHand): string {
   }
 
   // Pot and winners
-  parts.push(hand.potTotal.toString(36));
-  parts.push(hand.winners.map((w) => `${w.seat}:${w.amount.toString(36)}`).join(';'));
+  parts.push(Math.max(0, Math.round(hand.potTotal || 0)).toString(36));
+  parts.push(
+    (hand.winners || [])
+      .map((w) => `${w.seat}:${Math.max(0, Math.round(w.amount || 0)).toString(36)}`)
+      .join(';')
+  );
+  // v2 field — the table name. v1 hard-coded "Shared Hand" on decode, so the
+  // recipient never saw which table the hand came from.
+  parts.push(b64utf8((hand.tableName || '').slice(0, 40)));
 
-  // Base64 URL-safe encode
+  // Base64 URL-safe encode. Everything above is ASCII by construction (names
+  // are base64'd), so btoa cannot throw here.
   const encoded = btoa(parts.join('~')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   return encoded;
 }
@@ -172,90 +272,75 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
     const decoded = atob(base64);
 
     const parts = decoded.split('~');
-    if (parts[0] !== 'v1') return null;
+    const version = parts[0];
+    // CODEC FIX 2026-08-15: v1 is still accepted so no link can rot, but v1
+    // payloads genuinely do not carry the turn, the river, the winners, the
+    // table name or the hero/winner flags — they were never encoded as
+    // recoverable fields. v2 does.
+    if (version !== 'v1' && version !== 'v2') return null;
 
     // Parse basic info
     const variant = parts[1] as ShareableHand['variant'];
-    const stakes = parts[2].replace('-', '/');
-    const buttonSeat = parseInt(parts[3]);
-    const timestamp = parseInt(parts[4], 36);
+    const stakes = (parts[2] || '').replace('-', '/');
+    const buttonSeat = parseInt(parts[3], 10) || 0;
+    const timestamp = parseInt(parts[4], 36) || Date.now();
 
-    // Parse players
-    const players: ShareablePlayer[] = parts[5].split(';').map((ps) => {
-      const [seat, nameB64, stackB36, cardsStr] = ps.split(':');
-      const player: ShareablePlayer = {
-        seat: parseInt(seat),
-        name: atob(nameB64 + '=='.substring(0, (4 - (nameB64.length % 4)) % 4)),
-        stack: parseInt(stackB36, 36),
-      };
-      if (cardsStr) player.cards = decodeCards(cardsStr, cardsStr.length);
-      return player;
-    });
-
-    // Parse preflop actions from parts[6]
-    const preflop: ShareableAction[] = [];
-    if (parts[6]) {
-      const actionStrings = parts[6].split(',');
-      for (const actionStr of actionStrings) {
-        if (actionStr.length >= 2) {
-          const seat = parseInt(actionStr[0]);
-          const actionCode = actionStr[1];
-          const actionMap: Record<string, ShareableAction['action']> = {
-            F: 'FOLD',
-            C: 'CALL',
-            X: 'CHECK',
-            B: 'BET',
-            R: 'RAISE',
-            A: 'ALL_IN',
-          };
-          const action: ShareableAction = {
-            seat,
-            action: actionMap[actionCode] || 'CHECK',
-          };
-          if (actionStr.length > 2) {
-            action.amount = parseInt(actionStr.substring(2), 36);
-          }
-          preflop.push(action);
+    // Parse players — v1: seat:name:stack:cards / v2 adds :flags
+    const players: ShareablePlayer[] = (parts[5] || '')
+      .split(';')
+      .filter(Boolean)
+      .map((ps) => {
+        const [seat, nameB64, stackB36, cardsStr, flags] = ps.split(':');
+        const player: ShareablePlayer = {
+          seat: parseInt(seat, 10) || 0,
+          name: unb64utf8(nameB64) || `Seat ${seat}`,
+          stack: parseInt(stackB36, 36) || 0,
+        };
+        if (cardsStr) player.cards = decodeCards(cardsStr, cardsStr.length);
+        if (flags) {
+          if (flags.includes('h')) player.isHero = true;
+          if (flags.includes('w')) player.isWinner = true;
         }
-      }
+        return player;
+      });
+
+    // Streets. THE BUG: the old decoder parsed preflop and the flop, then
+    // jumped straight to building the object — parts[8] (turn) and parts[9]
+    // (river) were read by nothing, so every shared hand ended on the flop no
+    // matter how it actually played, and parts[11] (winners) was discarded in
+    // favour of a hard-coded empty array.
+    const preflop = decodeActions(parts[6]);
+
+    let flop: ShareableHand['flop'];
+    const flopSeg = splitStreet(parts[7]);
+    if (flopSeg) {
+      flop = { cards: decodeCards(flopSeg.cards, 3), actions: decodeActions(flopSeg.actions) };
     }
 
-    // Parse flop if present (parts[7])
-    let flop: ShareableHand['flop'] = undefined;
-    if (parts[7] && parts[7].includes('|')) {
-      const [cardsStr, actionsStr] = parts[7].split('|');
-      const flopCards = decodeCards(cardsStr, 3);
-      const flopActions: ShareableAction[] = [];
-      // Parse flop actions similar to preflop
-      if (actionsStr) {
-        const actionStrings = actionsStr.split(',');
-        for (const actionStr of actionStrings) {
-          if (actionStr.length >= 2) {
-            const seat = parseInt(actionStr[0]);
-            const actionCode = actionStr[1];
-            const actionMap: Record<string, ShareableAction['action']> = {
-              F: 'FOLD',
-              C: 'CALL',
-              X: 'CHECK',
-              B: 'BET',
-              R: 'RAISE',
-              A: 'ALL_IN',
-            };
-            flopActions.push({
-              seat,
-              action: actionMap[actionCode] || 'CHECK',
-              amount: actionStr.length > 2 ? parseInt(actionStr.substring(2), 36) : undefined,
-            });
-          }
-        }
-      }
-      flop = { cards: flopCards, actions: flopActions };
+    let turn: ShareableHand['turn'];
+    const turnSeg = splitStreet(parts[8]);
+    if (turnSeg && turnSeg.cards) {
+      turn = { card: decodeCard(turnSeg.cards[0]), actions: decodeActions(turnSeg.actions) };
     }
+
+    let river: ShareableHand['river'];
+    const riverSeg = splitStreet(parts[9]);
+    if (riverSeg && riverSeg.cards) {
+      river = { card: decodeCard(riverSeg.cards[0]), actions: decodeActions(riverSeg.actions) };
+    }
+
+    const winners = (parts[11] || '')
+      .split(';')
+      .filter(Boolean)
+      .map((w) => {
+        const [seat, amt] = w.split(':');
+        return { seat: parseInt(seat, 10) || 0, amount: parseInt(amt, 36) || 0 };
+      });
 
     // Build hand object
     const hand: ShareableHand = {
       id: encoded.substring(0, 12),
-      tableName: 'Shared Hand',
+      tableName: unb64utf8(parts[12]) || 'Shared Hand',
       variant,
       stakes,
       timestamp,
@@ -263,8 +348,10 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
       players,
       preflop,
       flop,
+      turn,
+      river,
       potTotal: parseInt(parts[10], 36) || 0,
-      winners: [],
+      winners,
     };
 
     return hand;

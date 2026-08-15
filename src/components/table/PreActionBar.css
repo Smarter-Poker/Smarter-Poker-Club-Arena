@@ -142,11 +142,25 @@
   }
 }
 
+/* Dan 2026-08-15 — DEAD-CENTER RULE.
+   The bottom action controls must sit dead center of the table at ALL times,
+   never off to the left or right, whether or not the action is on the hero.
+   Previously .pre-action-bar used align-items:stretch, and a stretched flex
+   item capped by max-width falls back to flex-start — so this row hugged the
+   LEFT edge whenever it was not the hero's turn, while ActionPanel's
+   .action-row (which has margin:0 auto) stayed centered. The panel therefore
+   appeared to jump left/right as the turn passed around the table.
+   Fix: center this row, and match ActionPanel's 500px cap so the two states
+   occupy an identical footprint — the buttons no longer shift horizontally
+   at all when the turn arrives. Keep this max-width in sync with
+   ActionPanel.css .action-row. */
 .pre-action-buttons {
   display: flex;
   gap: 10px;
   width: 100%;
-  max-width: 420px;
+  max-width: 500px;
+  margin: 0 auto;
+  align-self: center;
 }
 
 /* ═══════════════════════════════════════════════════════════════

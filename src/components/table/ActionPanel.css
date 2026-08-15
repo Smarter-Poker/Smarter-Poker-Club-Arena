@@ -365,8 +365,15 @@
 
 .action-panel--raise-vertical {
   /* Give the slider rail room to sit on the right edge without pushing
-     the existing 3-button-wide content to overflow. */
+     the existing 3-button-wide content to overflow.
+     Dan 2026-08-15 — DEAD-CENTER RULE: this reservation used to be
+     right-only, which pushed the whole raise UI visually left of the
+     resting 3-button row's center on desktop. Mirror it on the left so the
+     content box stays centered on the table; the rail still lives in the
+     right gutter via `right: -56px`. Reset in the <=1023px block below,
+     where the rail moves inline and needs no gutter at all. */
   padding-right: calc(56px + 16px);
+  padding-left: calc(56px + 16px);
 }
 
 .raise-layout {
@@ -375,6 +382,11 @@
   flex-direction: row;
   gap: 12px;
   align-items: stretch;
+  /* Match .action-row so raise mode occupies the same centered footprint
+     as the resting 3-button row. Keep in sync with .action-row max-width. */
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
 }
 
 .raise-main {
@@ -476,7 +488,11 @@
    render the rail inline above the presets instead. */
 @media (max-width: 1023px) {
   .action-panel--raise-vertical {
+    /* Rail renders inline below 1024px, so drop both gutters and fall back
+       to the symmetric 16px the base .action-panel--raise already uses.
+       Both sides must reset together or the DEAD-CENTER RULE breaks. */
     padding-right: 16px;
+    padding-left: 16px;
   }
   .raise-slider-vertical {
     position: relative;

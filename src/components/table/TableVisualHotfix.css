@@ -27,6 +27,13 @@
  *      invisible — real rooms keep folded players clearly present, just dim.
  *  10. Pot display chips stayed small after bet chips doubled.
  *  11. Empty seat "+ SIT" targets were barely visible on the dark rail.
+ *  Wave 3:
+ *  12. Board looked LEFT-SHIFTED: the 5 board slots always exist, but the
+ *      turn/river placeholders use CardBack style="classic" and seats use
+ *      "black" — neither modifier exists in CardImage.css, so both fell to
+ *      the base navy gradient, invisible on dark felt. Placeholders become
+ *      real-room outlined empty slots; the base card back becomes a proper
+ *      visible back so opponent hole cards read as cards, not ghost boxes.
  *  Shipped as an override sheet so the fix rides one small file; the base
  *  rules in SeatSlot.css / ChipPhysics.css / TablePage.css are unchanged.
  *  Imported from ChipAnimation.tsx (bundled with the table page).
@@ -171,4 +178,27 @@
   color: rgba(255, 255, 255, 0.75) !important;
   background: rgba(0, 0, 0, 0.35) !important;
   font-weight: 700 !important;
+}
+
+/* ── 12a. Board placeholders: outlined empty slots (real-room style) ────── */
+/* The 5 board slots always exist — making the undealt ones visible is what
+   makes the board read as CENTERED. Undefined back-style "classic" fell to an
+   invisible navy fill; replace with a subtle outlined slot. */
+.table-page .community-cards__placeholder .card-back {
+  background: rgba(255, 255, 255, 0.035) !important;
+  border: 1.5px dashed rgba(255, 255, 255, 0.22) !important;
+}
+.table-page .community-cards__placeholder {
+  opacity: 0.9;
+}
+
+/* ── 12b. Seat hole-card backs: visible card backs, not ghost boxes ─────── */
+/* Undefined back-style "black" (user setting) also fell to the same navy.
+   Give the BASE card back real contrast so every undefined style reads as a
+   proper card back on dark felt. Defined styles (classic_red, etc.) are more
+   specific and still win. */
+.table-page .seat .card-image--back .card-back {
+  background: linear-gradient(135deg, #35598f 0%, #1c3providers560 100%) !important;
+  border: 2px solid #7aa7dd !important;
+  box-shadow: inset 0 0 0 2.5px rgba(255, 255, 255, 0.18), 0 1px 4px rgba(0, 0, 0, 0.5) !important;
 }

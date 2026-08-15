@@ -24,6 +24,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 2026-08-15: full history, NOT the default depth-1 shallow clone.
+          # `git apply --3way` needs the patch's preimage blob to be present
+          # locally; under a shallow checkout it never is, so the 3-way
+          # fallback silently degraded to "falling back to direct application"
+          # and failed on any patch cut against a slightly older main.
+          fetch-depth: 0
 
       - name: Apply queued patches
         run: |
@@ -36,11 +43,29 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          echo "Base commit: $(git log --oneline -1)"
           for p in "${patches[@]}"; do
             echo "::group::Applying $p"
             # --index stages the result; a patch that does not apply cleanly
             # fails the job loudly instead of committing garbage.
-            git apply --index --whitespace=nowarn "$p"
+            #
+            # Three forms, in order. Zero-context (-U0) diffs are the safest
+            # thing to hand across the agent bridge — they carry NO context
+            # lines, so a mis-transcribed character in a box-drawing comment
+            # can no longer break the apply — but git refuses them without
+            # --unidiff-zero. A 3-way merge is the last resort for a patch cut
+            # against a main that has since moved.
+            if git apply --index --whitespace=nowarn "$p"; then
+              echo "applied (standard)"
+            elif git apply --index --unidiff-zero --whitespace=nowarn "$p"; then
+              echo "applied (unidiff-zero)"
+            elif git apply --index --3way --whitespace=nowarn "$p"; then
+              echo "applied (3-way)"
+            else
+              echo "::error::Patch $p did not apply. Reject detail follows."
+              git apply --check --verbose "$p" || true
+              exit 1
+            fi
             git rm -q "$p"
             git commit -m "agent-patch: apply $(basename "$p")"
             echo "::endgroup::"

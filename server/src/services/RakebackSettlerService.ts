@@ -35,6 +35,83 @@ import { reportError } from './errorReporter.js';
 
 const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const DAEMON_KEY = 'rakeback_settler';
+
+/**
+ * Rows pulled from rake_records per batch. Exported so the M6 regression suite
+ * can build a dataset that genuinely straddles the LIMIT boundary rather than
+ * hard-coding a number that could drift away from the real one.
+ */
+export const FETCH_LIMIT = 10000;
+
+/**
+ * AUDIT M6: how many FULL batches one cycle will drain before deferring the
+ * rest to the next interval.
+ *
+ * Before this existed, a cycle read at most FETCH_LIMIT rows and then slept 30
+ * minutes regardless of how much backlog remained, so recovering from a long
+ * outage took one interval per 10,000 records. The cap is deliberately small
+ * rather than unbounded: a full batch runs thousands of SEQUENTIAL per-player
+ * commission RPCs, so each one is expensive, and an unbounded drain would let a
+ * single cycle run for hours while `isSettling` blocks every other cycle
+ * behind it. Three batches recovers ~9 hours of downtime per cycle, which is
+ * far more than the ~560 records a normal 30-minute cycle produces. When the
+ * cap is hit we LOG it — a silently truncated drain reads exactly like a
+ * finished one.
+ */
+export const MAX_DRAIN_BATCHES = 3;
+
+/**
+ * AUDIT M6 — the settler's resume position in rake_records.
+ *
+ * `createdAt` is kept as the RAW PostgREST string, never round-tripped through
+ * `new Date()`. Postgres timestamps carry microseconds; `new Date(iso)`
+ * truncates to milliseconds, so persisting a Date-derived value stored a
+ * cursor that does not correspond to any real row.
+ *
+ * `id` is null only for a cursor written before this field existed (or when a
+ * row somehow arrives without one). A null id means "no tie-break available",
+ * and the reader degrades to the old timestamp-only filter for exactly one
+ * cycle.
+ */
+interface RakeCursor {
+  createdAt: string;
+  id: string | null;
+}
+
+/**
+ * Outcome of one batch, so the drain loop knows whether to go round again.
+ *   'idle'   — fewer than FETCH_LIMIT rows: fully caught up, nothing to drain
+ *   'more'   — exactly FETCH_LIMIT rows: the cursor advanced, call again
+ *   'halted' — a read failed: the cursor did NOT advance, stop and retry later
+ */
+type CycleResult = 'idle' | 'more' | 'halted';
+
+/**
+ * PostgREST embeds filter values in a comma/parenthesis-delimited grammar, so a
+ * value carrying a quote, comma or bracket would change the SHAPE of the
+ * filter rather than its value. Both cursor components come from typed
+ * Postgres columns (timestamptz, uuid) and cannot contain these characters —
+ * this guard exists so that if that ever stops being true the settler falls
+ * back to the safe timestamp-only read instead of issuing a malformed or
+ * subtly-widened query.
+ */
+function isFilterSafe(value: string): boolean {
+  return !/["',()]/.test(value);
+}
+
+/**
+ * AUDIT M6 — the composite `(created_at, id)` keyset predicate.
+ *
+ * Values are DOUBLE-QUOTED: a timestamptz renders as `2026-08-06
+ * 20:30:07.941+00`, and both `:` and `+` are meaningful inside a PostgREST
+ * filter. Verified against the live REST endpoint before this shipped — the
+ * quoted form returns 200, and a malformed filter returns 400, so a green
+ * response is real evidence and not a silently ignored parameter.
+ */
+function keysetFilter(createdAt: string, id: string): string {
+  return `created_at.gt."${createdAt}",and(created_at.eq."${createdAt}",id.gt."${id}")`;
+}
+
 const RAKEBACK_TIERS = [
   { minRake: 0, rakebackPercent: 5, name: 'Bronze' },
   { minRake: 100, rakebackPercent: 10, name: 'Silver' },
@@ -116,7 +193,10 @@ export class RakebackSettlerService {
   // isSettling makes overlapping runs no-op.
   private isSettling = false;
   private intervalHandle: NodeJS.Timeout | null = null;
-  private lastSettledAt: Date | null = null;
+  // AUDIT M6: was `lastSettledAt: Date | null` — a timestamp alone is not a
+  // unique position in rake_records, so it could not express "resume after
+  // THIS row" when several rows share one created_at.
+  private cursor: RakeCursor | null = null;
 
   start(): void {
     if (this.isRunning) {
@@ -156,7 +236,7 @@ export class RakebackSettlerService {
    * run stopped instead of re-scanning the 7-day fallback window (which would
    * re-increment player_stats for already-settled hands).
    */
-  private async loadHighWaterMark(): Promise<{ ok: boolean; value: Date | null }> {
+  private async loadHighWaterMark(): Promise<{ ok: boolean; value: RakeCursor | null }> {
     // RAKE-AUDIT 2026-07-24: distinguish "no watermark row yet" (genuine first
     // run → 7-day fallback is correct) from "read FAILED" (transient DB error).
     // The old signature collapsed both to null, so a transient failure at
@@ -164,26 +244,39 @@ export class RakebackSettlerService {
     // player_stats accumulators (agent_commissions are safe — the RPC dedupes
     // on (user_id, source_id, source_type)). On a failed read the caller now
     // ABORTS the cycle and retries next interval instead of double-crediting.
+    //
+    // AUDIT M6: the timestamp is returned as the RAW string the database sent.
+    // The old code did `new Date(data.high_water_mark)`, which silently dropped
+    // the microsecond component of every Postgres timestamp — the cursor then
+    // pointed at an instant no row actually occupies.
     try {
       const { data, error } = await supabase
         .from('daemon_state')
-        .select('high_water_mark')
+        .select('high_water_mark, high_water_mark_id')
         .eq('daemon', DAEMON_KEY)
         .maybeSingle();
       if (error) return { ok: false, value: null };
-      return { ok: true, value: data?.high_water_mark ? new Date(data.high_water_mark) : null };
+      if (!data?.high_water_mark) return { ok: true, value: null };
+      return {
+        ok: true,
+        value: {
+          createdAt: String(data.high_water_mark),
+          id: data.high_water_mark_id ? String(data.high_water_mark_id) : null,
+        },
+      };
     } catch {
       return { ok: false, value: null };
     }
   }
 
-  /** Persist the high-water-mark durably (survives engine restarts). */
-  private async saveHighWaterMark(ts: Date): Promise<void> {
+  /** Persist the cursor durably (survives engine restarts). */
+  private async saveHighWaterMark(cursor: RakeCursor): Promise<void> {
     try {
       await supabase.from('daemon_state').upsert(
         {
           daemon: DAEMON_KEY,
-          high_water_mark: ts.toISOString(),
+          high_water_mark: cursor.createdAt,
+          high_water_mark_id: cursor.id,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'daemon' }
@@ -220,7 +313,22 @@ export class RakebackSettlerService {
     }
     this.isSettling = true;
     try {
-      await this._runSettlementInner();
+      // AUDIT M6: drain the backlog instead of processing one batch and then
+      // sleeping 30 minutes. `_runSettlementInner` advances the durable cursor
+      // before returning 'more', so each pass through this loop starts strictly
+      // after the last row of the previous one — an interruption anywhere in
+      // the loop resumes correctly rather than replaying.
+      for (let batch = 1; ; batch++) {
+        const result = await this._runSettlementInner();
+        if (result !== 'more') break;
+        if (batch >= MAX_DRAIN_BATCHES) {
+          console.warn(
+            `[RakebackSettler] drain cap reached after ${batch} full batches ` +
+              `(${batch * FETCH_LIMIT} records) — backlog REMAINS and will continue next cycle`
+          );
+          break;
+        }
+      }
       // RAKE-AUDIT 2026-07-24: weekly financial close now runs SERVER-SIDE.
       // Previously the weekly rakeback settlement + credit-invoice generation
       // lived only in the browser (FinancialCronService/SettlementCronService
@@ -514,55 +622,98 @@ export class RakebackSettlerService {
     }
   }
 
-  private async _runSettlementInner(): Promise<void> {
-    // On first run after (re)start, resume from the durable high-water-mark so we
-    // do not re-scan already-settled rake_records (which double-counts
-    // player_stats). Only fall back to the 7-day window on a genuine first run.
-    if (this.lastSettledAt === null) {
+  private async _runSettlementInner(): Promise<CycleResult> {
+    // On first run after (re)start, resume from the durable cursor so we do not
+    // re-scan already-settled rake_records (which double-counts player_stats).
+    // Only fall back to the 7-day window on a genuine first run.
+    if (this.cursor === null) {
       const hwm = await this.loadHighWaterMark();
       if (!hwm.ok) {
         // RAKE-AUDIT 2026-07-24: watermark read failed — do NOT fall back to a
         // 7-day rescan (double-credits player_stats). Retry next interval.
         console.warn('[RakebackSettler] high-water-mark read failed — skipping cycle');
-        return;
+        return 'halted';
       }
-      this.lastSettledAt = hwm.value;
+      this.cursor = hwm.value;
     }
-    const sinceIso = (this.lastSettledAt ?? new Date(Date.now() - 7 * 86400 * 1000)).toISOString();
+
+    // ════════════════════════════════════════════════════════════════════════
+    // AUDIT M6 — composite (created_at, id) keyset read.
+    //
+    // The original filter was `.gt('created_at', since).limit(10000)` with the
+    // new watermark taken from the LAST row's created_at. Two rows sharing one
+    // created_at that straddle the LIMIT boundary are then lost forever: row
+    // 10000 sets the watermark to T and row 10001 (also at T) is excluded by
+    // the strict `>` on every subsequent cycle. Production has 12 such
+    // duplicate-timestamp groups today, so the collision is real.
+    //
+    // The direction of the danger is asymmetric and decides the design: every
+    // downstream accumulator is idempotent (credit_agent_commission_from_rake
+    // dedupes on (user_id, source_id, source_type), apply_rakeback_player_stats
+    // claims through rakeback_stats_applied, rakeback_periods recomputes from
+    // source), so RE-processing a row costs nothing while SKIPPING one loses a
+    // player's money with no trace. Everything below therefore prefers the
+    // wider read whenever it is unsure.
+    //
+    // `.gt(created_at)` is still the fallback when the cursor has no id — the
+    // first cycle after this deploy, when high_water_mark_id is still NULL.
+    // That path is byte-for-byte the old behaviour, so the deploy is a no-op
+    // until the first cycle writes an id, and exact from the second onward.
+    // ════════════════════════════════════════════════════════════════════════
+    const sinceIso =
+      this.cursor?.createdAt ?? new Date(Date.now() - 7 * 86400 * 1000).toISOString();
+    const useKeyset =
+      this.cursor?.id != null &&
+      isFilterSafe(this.cursor.createdAt) &&
+      isFilterSafe(this.cursor.id);
     const startedAt = Date.now();
 
     // 1. Pull rake_records STRICTLY AFTER the last processed record (exclusive
-    // watermark => exactly-once processing) that have player_contributions.
+    // cursor => exactly-once processing) that have player_contributions.
     // RAKE-AUDIT 2026-07-24: id + is_tournament added — tournament/SNG fee rows
     // have no hand_id (they are not hands), so agent-commission crediting keys
     // idempotency on rake_records.id for those rows instead of skipping them.
-    const { data: rows, error: fetchErr } = await supabase
+    const base = supabase
       .from('rake_records')
-      .select('id, is_tournament, hand_id, club_id, rake_amount, player_contributions, created_at')
-      .gt('created_at', sinceIso)
+      .select('id, is_tournament, hand_id, club_id, rake_amount, player_contributions, created_at');
+    const filtered = useKeyset
+      ? base.or(keysetFilter(sinceIso, this.cursor!.id as string))
+      : base.gt('created_at', sinceIso);
+    const { data: rows, error: fetchErr } = await filtered
       .gt('rake_amount', 0)
       .not('player_contributions', 'is', null)
+      // Both ORDER BY keys are required: the LIMIT boundary is only
+      // deterministic if the sort is total, and a non-deterministic boundary
+      // reintroduces the skip this fix exists to remove.
       .order('created_at', { ascending: true })
-      .limit(10000);
+      .order('id', { ascending: true })
+      .limit(FETCH_LIMIT);
 
     if (fetchErr) {
       reportError(
         new Error(fetchErr?.message || JSON.stringify(fetchErr) || String(fetchErr)),
         'RakebackSettler.fetch_failed'
       );
-      return;
+      return 'halted';
     }
 
     if (!rows || rows.length === 0) {
       console.log(`[RakebackSettler] No new rake_records since ${sinceIso}`);
-      // Nothing processed — leave the watermark untouched so any late-arriving
+      // Nothing processed — leave the cursor untouched so any late-arriving
       // record with an earlier timestamp is still picked up next run.
-      return;
+      return 'idle';
     }
 
-    // Highest timestamp we will have fully processed this run. Persisting THIS
-    // (not now()) guarantees no record created after it is skipped.
-    const maxCreatedAt = new Date(rows[rows.length - 1].created_at);
+    // The exact position of the last row we will have fully processed this
+    // batch. Persisting THIS (not now(), and not a Date-truncated copy of it)
+    // guarantees no record after it is skipped and none before it is lost.
+    const lastRow = rows[rows.length - 1] as RakeRecordRow;
+    const nextCursor: RakeCursor = {
+      createdAt: lastRow.created_at,
+      id: lastRow.id ?? null,
+    };
+    // A full batch means there is almost certainly more behind it.
+    const hitLimit = rows.length >= FETCH_LIMIT;
 
     // 2. Aggregate per (user_id, club_id, week)
     type Bucket = {
@@ -611,9 +762,9 @@ export class RakebackSettlerService {
       console.log(
         `[RakebackSettler] Processed ${rows.length} rake_records — no eligible player-credits`
       );
-      this.lastSettledAt = maxCreatedAt;
-      await this.saveHighWaterMark(maxCreatedAt);
-      return;
+      this.cursor = nextCursor;
+      await this.saveHighWaterMark(nextCursor);
+      return hitLimit ? 'more' : 'idle';
     }
 
     // 2b. BUG 009 FIX — Agent commission credit (per-rake-record, not aggregated).
@@ -627,7 +778,7 @@ export class RakebackSettlerService {
       if (!row.player_contributions) continue;
       // Round 73: skip pre-R38-backfill rake_records that have no hand_id —
       // they can't be linked back to a hand for audit, and the settler used
-      // to reprocess them on every restart (lastSettledAt is in-memory),
+      // to reprocess them on every restart (the cursor was in-memory only),
       // emitting NULL-source-id agent_commission rows on every cycle. Skipping
       // is correct: any commission for these legacy rows was already created
       // before the bug surfaced; reprocessing only creates duplicates.
@@ -830,7 +981,8 @@ export class RakebackSettlerService {
     console.log(
       `[RakebackSettler] Settled ${upserts}/${buckets.size} period rows from ${rows.length} hand records in ${elapsedMs}ms (failures: ${failures})`
     );
-    this.lastSettledAt = maxCreatedAt;
-    await this.saveHighWaterMark(maxCreatedAt);
+    this.cursor = nextCursor;
+    await this.saveHighWaterMark(nextCursor);
+    return hitLimit ? 'more' : 'idle';
   }
 }

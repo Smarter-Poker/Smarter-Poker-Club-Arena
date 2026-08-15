@@ -182,7 +182,7 @@
   --seat-border: rgba(255, 255, 255, 0.08);
   --seat-active-border: var(--timer-color);
   --seat-allin-border: var(--color-danger);
-  --seat-avatar-size: 56px;
+  --seat-avatar-size: 84px; /* Dan 2026-08-15: all table avatars 50% larger (was 56px) */
 
   /* ─── Card Shadows ─── */
   --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);

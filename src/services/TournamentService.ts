@@ -539,6 +539,15 @@ class TournamentService {
         'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at'
       )
       .eq('club_id', resolvedId)
+      // Lobby fix 2026-08-15: this query had NO status filter, so every
+      // tournament the club has EVER created came back -- measured in
+      // production: 6,669 CANCELLED and 1,402 COMPLETED rows against 6
+      // REGISTERING and 2 RUNNING. The lobby rendered them all as joinable
+      // cards (the card template has no dead-state), so a player tapping one
+      // landed on a CANCELLED detail page whose only control is disabled --
+      // the reported "join silently failed". History views query completed
+      // tournaments themselves; the LOBBY is for joining.
+      .in('status', ['REGISTERING', 'RUNNING'])
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -586,6 +595,8 @@ class TournamentService {
             .eq('union_id', unionClub.union_id)
             .eq('is_xmtt', true)
             .neq('club_id', resolvedId) // Avoid duplicates (host club already included above)
+            // Same lobby fix as the club query above -- joinable states only.
+            .in('status', ['REGISTERING', 'RUNNING'])
             .order('created_at', { ascending: false });
 
           xmttTournaments = xmttData || [];

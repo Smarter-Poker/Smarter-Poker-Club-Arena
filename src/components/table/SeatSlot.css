@@ -15,7 +15,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 80px;
+  width: 96px; /* Dan 2026-08-15: widened with the 1.5x avatar (was 80px) */
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition:
@@ -107,8 +107,11 @@
 
 .seat__avatar-wrap {
   position: relative;
-  width: 56px;
-  height: 56px;
+  /* Follows --seat-avatar-size so the avatar and its wrap can never drift
+     apart again -- the old hardcoded 56px here was a second copy of the
+     token's value, and any resize had to find both. */
+  width: var(--seat-avatar-size, 84px);
+  height: var(--seat-avatar-size, 84px);
   flex-shrink: 0;
   z-index: 2;
   margin-bottom: -6px; /* overlap into info box */
@@ -779,54 +782,17 @@
   border-color: rgba(255, 215, 0, 0.25);
 }
 
-/* ─── ACTIVE PLAYER (avatar pulses with golden ring) ─────────────────── */
+/* ─── ACTIVE PLAYER ───────────────────────────────────────────────────── */
 
-/* Downward light-pool spotlight behind the acting player (replaces the disc halo) */
-.seat--active::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 230px;
-  height: 190px;
-  transform: translate(-50%, -48%);
-  background: radial-gradient(
-    ellipse 58% 62% at 50% 34%,
-    rgba(255, 228, 156, 0.34) 0%,
-    rgba(255, 212, 120, 0.18) 36%,
-    rgba(255, 198, 92, 0.07) 60%,
-    transparent 78%
-  );
-  z-index: -3;
-  pointer-events: none;
-  filter: blur(3px);
-  animation: spotlightBreathe 3.4s ease-in-out infinite;
-}
-@keyframes spotlightBreathe {
-  0%,
-  100% {
-    opacity: 0.82;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-.seat--timer-urgent.seat--active::before {
-  background: radial-gradient(
-    ellipse 58% 62% at 50% 34%,
-    rgba(255, 150, 90, 0.34) 0%,
-    rgba(255, 120, 60, 0.17) 40%,
-    transparent 78%
-  );
-}
-.seat--timer-critical.seat--active::before {
-  background: radial-gradient(
-    ellipse 58% 62% at 50% 34%,
-    rgba(255, 96, 96, 0.36) 0%,
-    rgba(239, 68, 68, 0.18) 40%,
-    transparent 78%
-  );
-}
+/* Dan 2026-08-15: NO glow of any kind behind the acting player. The disc
+   halo was removed once already and replaced with a light-pool spotlight
+   (.seat--active::before, radial-gradient at z-index -3) -- which still
+   read as "a ring appearing behind players". That block and its
+   urgent/critical variants and the spotlightBreathe keyframes are deleted,
+   not restyled: anything painted behind the seat will eventually be
+   reported as a ring again. Action indication is carried entirely by the
+   conic countdown ring around the avatar and the gold rim/border on the
+   avatar and info box below. */
 
 /* Active avatar: thin gold rim only — the pool is the highlight, not a disc */
 .seat--active .seat__avatar {
@@ -857,9 +823,11 @@
 /* ─── FOLDED ──────────────────────────────────────────────────────────── */
 
 .seat--folded {
-  /* Mockup v3: folded seat (avatar + box + cards) dimmed to ~0.4 */
-  opacity: 0.4;
-  filter: grayscale(40%);
+  /* Dan 2026-08-15: 0.4 was near-invisible on the dark felt -- "you can
+     barely see the players". Folded now reads as clearly OUT via heavier
+     desaturation while staying clearly VISIBLE via higher opacity. */
+  opacity: 0.65;
+  filter: grayscale(75%);
 }
 
 .seat--folded .seat__avatar {
@@ -1914,16 +1882,16 @@
 
 @media (max-width: 640px) {
   .seat {
-    width: 72px;
+    width: 88px; /* was 72px -- 1.5x avatars */
   }
 
   .seat__avatar-wrap {
-    width: 50px;
-    height: 50px;
+    width: 75px;
+    height: 75px;
   }
   .seat__avatar {
-    width: 50px;
-    height: 50px;
+    width: 75px;
+    height: 75px;
   }
 
   .seat__info {
@@ -2007,17 +1975,17 @@
 
 @media (max-width: 480px) {
   .seat {
-    width: 66px;
+    width: 80px; /* was 66px -- 1.5x avatars */
   }
 
   .seat__avatar-wrap {
-    width: 44px;
-    height: 44px;
+    width: 66px;
+    height: 66px;
     margin-bottom: -5px;
   }
   .seat__avatar {
-    width: 44px;
-    height: 44px;
+    width: 66px;
+    height: 66px;
   }
 
   .seat__info {
@@ -2097,17 +2065,17 @@
 
 @media (max-width: 380px) {
   .seat {
-    width: 58px;
+    width: 72px; /* was 58px -- 1.5x avatars */
   }
 
   .seat__avatar-wrap {
-    width: 38px;
-    height: 38px;
+    width: 57px;
+    height: 57px;
     margin-bottom: -4px;
   }
   .seat__avatar {
-    width: 38px;
-    height: 38px;
+    width: 57px;
+    height: 57px;
   }
 
   .seat__info {

@@ -154,23 +154,37 @@
   padding: 2px 8px !important;
 }
 
-/* ── 7. Folded seats stay legible (were ghosting to near-invisible) ─────── */
+/* ── 7. Folded seats stay legible (were ghosting to near-invisible) ───────
+   Round 2, Dan 2026-08-15: 0.55 was STILL too light on the live felt --
+   "you can barely see the players". Folded reads as OUT via the grayscale
+   below, not via disappearance. */
 .table-page .seat--folded {
-  opacity: 0.55 !important;
+  opacity: 0.75 !important;
 }
 
-/* ── 8. No stray timer ring behind free-floating bust art ───────────────── */
-/* The conic countdown ring + its inner mask frame CIRCULAR avatars. Behind a
-   transparent bust they float as an empty white circle. The acting seat keeps
-   its neon timer border on the info pill, so nothing is lost. */
+/* ── 8. No ring behind ANY avatar, ever ─────────────────────────────────── */
+/* Round 1 removed the conic countdown ring + inner mask behind BUST art only,
+   on the theory that it frames circular photos fine. Dan, round 2
+   (2026-08-15): "the ring is still appearing behind players when the action
+   is on them... make sure thats removed" -- circular avatars included. The
+   suppression now covers every avatar wrap. Action indication is carried by
+   the gold avatar border kept in 1 above and the neon timer border on the
+   info pill; the countdown ring is gone for everyone. This is the SECOND
+   round-trip on ring chrome behind seats (the SeatSlot spotlight was the
+   first): nothing painted behind or around a seat survives contact with the
+   live felt. Do not add another. */
 .table-page .seat__avatar-wrap--bust::before,
-.table-page .seat__avatar-wrap--bust::after {
+.table-page .seat__avatar-wrap--bust::after,
+.table-page .seat__avatar-wrap::before,
+.table-page .seat__avatar-wrap::after {
   display: none !important;
 }
 
-/* ── 9. Folded character art stays visible, just dimmed ─────────────────── */
+/* ── 9. Folded character art stays visible, just dimmed ───────────────────
+   Round 2, Dan 2026-08-15: raised with 7 -- the art was dimming twice
+   (seat opacity x art brightness) and vanishing into the rail. */
 .table-page .seat--folded .seat__avatar--bust .seat__avatar-img {
-  filter: brightness(0.65) saturate(0.6) !important;
+  filter: brightness(0.8) saturate(0.55) !important;
 }
 
 /* ── 10. Pot display chips match the doubled bet chips ──────────────────── */

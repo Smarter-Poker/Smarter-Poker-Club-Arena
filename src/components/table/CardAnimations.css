@@ -299,9 +299,7 @@
    Winning cards also get a subtle float effect.                     */
 
 .card--winning {
-  animation:
-    cardWinGlow var(--win-glow-duration) ease-in-out infinite,
-    cardWinFloat var(--win-glow-duration) ease-in-out infinite;
+  animation: cardWinGlow var(--win-glow-duration) ease-in-out infinite;
   z-index: 10;
 }
 

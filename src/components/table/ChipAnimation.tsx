@@ -13,6 +13,9 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import styles from './ChipAnimation.module.css';
+// Dan 2026-08-14 live E2E visual hotfix pack — bundled here because this
+// component is always in the table bundle (avatars, chips, felt, pot column).
+import './TableVisualHotfix.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

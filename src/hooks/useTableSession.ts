@@ -11,7 +11,8 @@
  * identical to the original TablePage behaviour.
  */
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import { masterBus } from '../core/MasterBus';
 
 export interface SessionRefs {
   /** Wall-clock timestamp when the player first sat down. */
@@ -23,7 +24,7 @@ export interface SessionRefs {
   /** Hands the hero won (any share of the pot). */
   handsWonRef: React.MutableRefObject<number>;
 
-  /** Largest pot the hero participated in (chips). */
+  /** Largest completed pot at the table during the session (chips). */
   biggestPotRef: React.MutableRefObject<number>;
 
   /** Highest stack the hero held during the session. */
@@ -75,6 +76,35 @@ export function useTableSession(): UseTableSessionReturn {
   const bustPromptFiredRef = useRef<boolean>(false);
   const heroWonCurrentHandRef = useRef<boolean>(false);
   const hadShowdownRef = useRef<boolean>(false);
+
+  // LIVE E2E FIX 2026-08-15: biggestPotRef was declared but NEVER written —
+  // the Session Complete modal showed "BIGGEST POT 0" every session, and
+  // peakStackRef only moved on buy-ins/rebuys (a session that peaked at 203
+  // reported 200). The engine's pot_distributed event (relayed onto the
+  // MasterBus by TablePage as POT_DISTRIBUTED) carries the authoritative
+  // total_pot for every completed hand — track the session maximum here,
+  // next to the ref it feeds. CHIPS_ADDED carries the post-top-up stack and
+  // keeps raising the peak. Exact tick-by-tick stack peaks need the WS merge
+  // inside TablePage (transport-blocked at 307KB); this covers every pot and
+  // every chip-add without touching it.
+  useEffect(() => {
+    const unsubPot = masterBus.subscribe('POT_DISTRIBUTED', (event) => {
+      const p = event.payload as { total_pot?: number };
+      const totalPot = typeof p?.total_pot === 'number' ? p.total_pot : 0;
+      if (totalPot > biggestPotRef.current) biggestPotRef.current = totalPot;
+    });
+    const unsubChips = masterBus.subscribe('CHIPS_ADDED', (event) => {
+      const p = event.payload as { newStack?: number };
+      const stack = typeof p?.newStack === 'number' ? p.newStack : 0;
+      if (stack > peakStackRef.current) peakStackRef.current = stack;
+    });
+    return () => {
+      unsubPot();
+      unsubChips();
+    };
+    // Refs are stable for the hook's lifetime — subscribe exactly once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resetSession = () => {
     sessionStartRef.current = Date.now();

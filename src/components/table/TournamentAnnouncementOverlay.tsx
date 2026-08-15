@@ -2,7 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import './TournamentAnnouncementOverlay.css';
 
 interface TournamentAnnouncementProps {
-  type: 'hand_for_hand' | 'bubble_burst' | 'final_table' | 'level_up' | 'seven_deuce_bounty' | null;
+  type:
+    | 'hand_for_hand'
+    | 'bubble_burst'
+    | 'final_table'
+    | 'level_up'
+    | 'seven_deuce_bounty'
+    | 'bounty_collected'
+    | 'mystery_bounty_revealed'
+    | null;
   data?: any;
   onDismiss: () => void;
 }
@@ -35,7 +43,7 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
           setVisible(false);
           dismissCallbackTimerRef.current = setTimeout(onDismiss, 500); // Wait for fade-out
         },
-        type === 'level_up' ? 2000 : 4000
+        type === 'level_up' ? 2000 : type === 'mystery_bounty_revealed' ? 5000 : 4000
       );
       return () => {
         if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
@@ -69,6 +77,35 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
       title: `LEVEL ${data?.level || 1}`,
       subtitle: `Blinds: ${data?.smallBlind ?? '—'}/${data?.bigBlind ?? '—'}${data?.ante ? ` Ante: ${data.ante}` : ''}`,
       color: '#3b82f6',
+    },
+    bounty_collected: {
+      icon: '\u{1F3AF}',
+      title: data?.mode === 'pko' ? 'BOUNTY CLAIMED' : 'KNOCKOUT!',
+      subtitle: (() => {
+        const who = data?.knockerName || 'A player';
+        const victim = data?.eliminatedName
+          ? ` knocked out ${data.eliminatedName}`
+          : ' scored a knockout';
+        const amt = data?.amount != null ? ` — collected ${data.amount}` : '';
+        const head = data?.addedToHead > 0 ? ` (+${data.addedToHead} onto their own head)` : '';
+        return `${who}${victim}${amt}${head}`;
+      })(),
+      color: '#f97316',
+    },
+    mystery_bounty_revealed: {
+      icon: '\u{1F381}',
+      title: 'MYSTERY BOUNTY!',
+      subtitle: (() => {
+        const who = data?.knockerName || 'A player';
+        const victim = data?.playerName || data?.eliminatedName;
+        const amt = data?.amount != null ? `${data.amount}` : 'a mystery prize';
+        const big =
+          data?.avgBounty && data?.amount && Number(data.amount) >= Number(data.avgBounty) * 3
+            ? ' — JACKPOT!'
+            : '';
+        return victim ? `${who} opened ${victim}'s envelope: ${amt}${big}` : `${who} revealed ${amt}${big}`;
+      })(),
+      color: '#eab308',
     },
     seven_deuce_bounty: {
       icon: '72',

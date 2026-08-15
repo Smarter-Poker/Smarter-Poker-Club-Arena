@@ -124,7 +124,14 @@ import { tableService } from '../services/TableService';
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
 import PreActionBar from '../components/table/PreActionBar';
-import ShareHand from '../components/table/ShareHand';
+// The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
+// default import this line used to carry was unused. TablePage builds the
+// payload, so it needs the types.
+import type {
+  ShareableHand,
+  ShareableCard,
+  ShareableAction,
+} from '../components/table/ShareHand';
 import SettingsPanel from '../components/table/SettingsPanel';
 import TableMenu from '../components/table/TableMenu';
 import {
@@ -1364,6 +1371,10 @@ export default function TablePage({
     cardIndices: [],
     amounts: {},
   });
+  /** Mirror of winnerInfo for the WS event handlers, which close over stale
+   *  state. Read by the Share Hand snapshot at HAND_COMPLETE. */
+  const winnerInfoRef = useRef(winnerInfo);
+  winnerInfoRef.current = winnerInfo;
 
   // Bible V8 §5.1: Winner particle burst emanating from winner's seat position
   const [winnerParticle, setWinnerParticle] = useState<{
@@ -2137,6 +2148,9 @@ export default function TablePage({
   >([]);
   const historyHandCountRef = useRef(0);
   const handStartStacksRef = useRef<Record<number, number>>({});
+  /** Button seat captured at HAND_STARTED — the live dealerSeat has already
+   *  rotated by the time the hand completes. */
+  const shareButtonSeatRef = useRef(0);
   // Per-street pot tracking — records pot at each stage transition for accurate hand history
   const streetPotsRef = useRef<Record<string, number>>({ preflop: 0, flop: 0, turn: 0, river: 0 });
 
@@ -4300,6 +4314,26 @@ export default function TablePage({
         const actionAmount = (data.amount as number) || 0;
         const seatIdx = actionSeat - 1;
 
+        // DEAD-WIRING FIX 2026-08-15: record the action for Share Hand.
+        // handActionsRef was declared 2,000 lines up and had ZERO writers and
+        // ZERO readers, and tableState.actionHistory was declared on the
+        // interface and never assigned. With no action log, sharedHandData
+        // could never be built -- which is why the ShareHand modal, gated on
+        // `showShareHand && sharedHandData`, never opened on a cash table no
+        // matter how many times the menu item was tapped.
+        if (actionSeat > 0 && action) {
+          const log = handActionsRef.current;
+          // Ceiling: a pathological hand cannot grow this without bound.
+          if (log.length < 400) {
+            log.push({
+              seat: actionSeat,
+              action,
+              amount: actionAmount > 0 ? actionAmount : undefined,
+              street: tableStateRef.current.boardStage || 'preflop',
+            });
+          }
+        }
+
         // Step 1: Action label (immediate, persists until next action / new street)
         if (seatIdx >= 0) {
           setTableState((prev) => {
@@ -4399,6 +4433,19 @@ export default function TablePage({
           potWon: 0,
           handRank: '',
         };
+        // Fresh hand → reset the Share Hand action log and remember the button
+        // and the starting stacks BEFORE any chips move, so the shared replay
+        // shows what each player sat down with rather than what they finished
+        // with. (The button seat is needed for position labels on the replay.)
+        handActionsRef.current = [];
+        handStartStacksRef.current = {};
+        {
+          const st = tableStateRef.current;
+          shareButtonSeatRef.current = st.dealerSeat || 0;
+          st.players.forEach((p, i) => {
+            if (p) handStartStacksRef.current[i + 1] = p.stack || 0;
+          });
+        }
         // Reset visual state instantly so the new hand starts crisp.
         setTableState((prev) => {
           const players = prev.players.map((p) =>
@@ -4560,6 +4607,114 @@ export default function TablePage({
       }
       case 'HAND_COMPLETE_EVENT':
       case 'HAND_COMPLETE': {
+        // ── Share Hand: capture the hand that just finished ─────────────────
+        // DEAD-WIRING FIX 2026-08-15. setSharedHandData had zero call sites,
+        // and TableModalsLayer gates the modal on `showShareHand &&
+        // sharedHandData`. The Share Hand menu item therefore set a flag that
+        // could never render anything -- the feature was unreachable on the
+        // cash surface for every player. Build the snapshot here, while the
+        // board, the pot and the winners are still on screen (they are cleared
+        // by the 3s reset timer further down this same case).
+        try {
+          const st = tableStateRef.current;
+          const board = st.communityCards || [];
+          const asShareCard = (c: Card): ShareableCard => ({
+            rank: c.rank,
+            suit: c.suit,
+          });
+          const asShareAction = (a: {
+            seat: number;
+            action: string;
+            amount?: number;
+          }): ShareableAction => {
+            const raw = (a.action || '').toLowerCase();
+            const mapped: ShareableAction['action'] =
+              raw === 'fold'
+                ? 'FOLD'
+                : raw === 'check'
+                  ? 'CHECK'
+                  : raw === 'call'
+                    ? 'CALL'
+                    : raw === 'bet'
+                      ? 'BET'
+                      : raw === 'raise'
+                        ? 'RAISE'
+                        : 'ALL_IN';
+            return { seat: a.seat, action: mapped, amount: a.amount };
+          };
+          const byStreet = (name: string) =>
+            handActionsRef.current.filter((a) => a.street === name).map(asShareAction);
+
+          const winnerSeats = new Set<number>();
+          const winnerRows: { seat: number; amount: number }[] = [];
+          for (const [uid, amt] of Object.entries(winnerInfoRef.current?.amounts || {})) {
+            const idx = st.players.findIndex((p) => p && p.id === uid);
+            if (idx >= 0) {
+              winnerSeats.add(idx + 1);
+              winnerRows.push({ seat: idx + 1, amount: Number(amt) || 0 });
+            }
+          }
+
+          const sharePlayers = st.players
+            .map((p, i) =>
+              p
+                ? {
+                    seat: i + 1,
+                    name: p.name || `Seat ${i + 1}`,
+                    // Stack as it was at the top of the hand, not post-payout.
+                    stack: handStartStacksRef.current[i + 1] ?? p.stack ?? 0,
+                    // Only cards actually visible on screen travel in the link
+                    // -- hero's own, plus anything shown down at showdown. A
+                    // shared hand must never leak a mucked holding.
+                    cards: (p.holeCards || []).length
+                      ? (p.holeCards as Card[]).map(asShareCard)
+                      : undefined,
+                    isHero: i + 1 === st.heroSeat,
+                    isWinner: winnerSeats.has(i + 1),
+                  }
+                : null
+            )
+            .filter(Boolean) as ShareableHand['players'];
+
+          if (sharePlayers.length > 0) {
+            const variant: ShareableHand['variant'] = (
+              ['NLH', 'PLO4', 'PLO5', 'PLO6'] as const
+            ).includes(st.gameType as any)
+              ? (st.gameType as ShareableHand['variant'])
+              : 'NLH';
+            const flopActions = byStreet('flop');
+            const turnActions = byStreet('turn');
+            const riverActions = byStreet('river');
+            setSharedHandData({
+              id: `${tableId || 'table'}-${st.handNumber ?? heroHandRef.current ?? 0}`,
+              tableName: st.tableName || 'Club Arena',
+              variant,
+              stakes: st.blinds || '',
+              timestamp: Date.now(),
+              buttonSeat: shareButtonSeatRef.current || st.dealerSeat || 0,
+              players: sharePlayers,
+              preflop: byStreet('preflop'),
+              flop:
+                board.length >= 3
+                  ? { cards: board.slice(0, 3).map(asShareCard), actions: flopActions }
+                  : undefined,
+              turn:
+                board.length >= 4
+                  ? { card: asShareCard(board[3]), actions: turnActions }
+                  : undefined,
+              river:
+                board.length >= 5
+                  ? { card: asShareCard(board[4]), actions: riverActions }
+                  : undefined,
+              potTotal: st.pot || 0,
+              winners: winnerRows,
+            } satisfies ShareableHand);
+          }
+        } catch (e) {
+          // Never let a share snapshot break the table reset.
+          reportError(e, 'TablePage.buildSharedHand');
+        }
+
         // ── Achievement / daily-challenge progress ──────────────────────────
         // Fire ONCE per hand for the hero if they were dealt in. Guarded by
         // hand number so HAND_COMPLETE_EVENT + HAND_COMPLETE (or a re-emit)
@@ -4696,6 +4851,16 @@ export default function TablePage({
             cardIndices: winCardIndices,
             amounts,
           });
+          // Write the mirror synchronously too. POT_WIN and HAND_COMPLETE can
+          // arrive in the same WS frame, in which case React has not
+          // re-rendered yet and the render-time mirror assignment would still
+          // hold the previous hand's winners when Share Hand reads it.
+          winnerInfoRef.current = {
+            playerIds: winnerIds,
+            handName: winHandName,
+            cardIndices: winCardIndices,
+            amounts,
+          };
           // Bible V8 §5.1: Tiered celebration per docs/_archive/POKERBROS_UPGRADE_PLAN.md §3.7
           // < 10 BB = gold glow only (default), 10-50 BB = confetti,
           // 50+ BB = confetti + screen shake + bigWin sound
@@ -6336,7 +6501,16 @@ export default function TablePage({
               didFold={prevHandResult?.didFold ?? false}
               handDescription={prevHandResult?.handDescription}
               onTap={() => setShowHandReplay(true)}
-              onShareHand={() => setShowShareHand(true)}
+              onShareHand={() => {
+                // The modal renders only when a hand has been captured. Say so
+                // instead of no-opping — tapping a menu item and getting
+                // nothing at all is how this looked before today.
+                if (!sharedHandData) {
+                  toast?.info?.('Play a hand to the end, then share it.');
+                  return;
+                }
+                setShowShareHand(true);
+              }}
             />
             {/* Visual representation of Needs Post Blind button */}
             <button className="floating-post-blind" style={{ display: 'none' }}>

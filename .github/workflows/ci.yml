@@ -49,6 +49,17 @@ jobs:
       - name: ESM Invariant — no CommonJS require() in server runtime code
         run: node scripts/ci/check-esm-require.mjs
 
+      # Money invariant. The rake schedule is declared twice — the engine copy
+      # decides what is actually taken from the pot, the client copy decides
+      # what the Game Rules modal tells the player. They cannot import each
+      # other (separate builds). On 2026-08-15 the modal was found stating
+      # "Rake 5% (Cap $3)" at every stake against a real 10% and caps up to
+      # $15, because the props feeding it were never assigned. Now that the
+      # modal reads the client schedule, the two copies drifting would silently
+      # recreate that misstatement. Fail the build instead.
+      - name: Rake Invariant — client and server rake schedules must match
+        run: node scripts/ci/check-rake-schedule-parity.mjs
+
       - name: Report Typecheck Time
         if: always()
         run: |

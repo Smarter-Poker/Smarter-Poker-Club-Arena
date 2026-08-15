@@ -12,16 +12,66 @@ anything conflicting gets deleted.** See item 8.
 
 ## Status
 
-| #   | Item                            | Verdict                                  | State                                             |
-| --- | ------------------------------- | ---------------------------------------- | ------------------------------------------------- |
-| 7   | Action buttons off-center       | CSS bug, root-caused                     | **SHIPPED + VERIFIED LIVE**                       |
-| 5   | Time-bank clock icon            | Already built, wrong visibility gate     | Pending (one-line gate change)                    |
-| 1   | Session Stats dead              | Wiring gap, service complete             | Pending                                           |
-| 3   | Prev Hand / Replay / Share dead | Wiring gap + missing server field        | Pending (needs engine change)                     |
-| 4   | Throwables wrong                | Two bugs: not broadcast + fake coords    | Pending                                           |
-| 6   | Reconnect / self-healing        | Partly landed by parallel agent today    | Pending (client staleness watchdog still missing) |
-| 2   | "+" opens Cashier not 2nd table | Multi-table infra already exists         | Pending (rewire one onClick)                      |
-| 8   | Rake / BBJ audit                | Collection CORRECT; attribution conflict | Pending (delete conflicting path)                 |
+**ALL EIGHT SHIPPED 2026-08-15.** Every row below was verified by fetching the
+live production bundle and grepping for the shipped code, not by trusting the
+push. Final verification snapshot at prod `ccfe1668`:
+
+```
+TablePage-Dc7Q5A60-v6.js   hand_history_saved 1 · recordHand 2 ·
+                           OPEN_LOBBY_TAB 1 · throw-animation-container 1
+index-*.js                 "client staleness watchdog" 1
+```
+
+| #   | Item                            | Root cause                                            | Commit          | State                |
+| --- | ------------------------------- | ----------------------------------------------------- | --------------- | -------------------- |
+| 7   | Action buttons off-center       | `.pre-action-buttons` lacked `margin:0 auto`          | `9cb4ebd2`      | SHIPPED + VERIFIED   |
+| 5   | Time-bank clock icon            | Existed; gated on `isHandInProgress`                  | `6f3c91bb`      | SHIPPED + VERIFIED   |
+| 1   | Session Stats dead              | `recordHand` never called; session owned by the modal | `6f3c91bb`      | SHIPPED + VERIFIED   |
+| 2   | "+" opens Cashier not 2nd table | Wired to CashierModal; `returnToMulti` read by nobody | `ee0d642c0`     | SHIPPED + VERIFIED   |
+| 4   | Throwables wrong                | Fictional 800x500 ellipse; container outside scaler   | `a1d062b15`     | SHIPPED + VERIFIED   |
+| 6   | Reconnect / self-healing        | No CLIENT staleness detector; only `onclose` recovery | `85df59c08`     | SHIPPED + VERIFIED   |
+| 3   | Prev Hand / Replay / Share      | Lazy "most recent hand" lookup RACED the insert       | `ad6548c83`     | SHIPPED + VERIFIED   |
+| 8   | Rake / BBJ attribution conflict | Two settlement engines writing one table              | WH `eabff063dc` | SHIPPED (preventive) |
+
+### Corrections to this document's original findings
+
+Three original diagnoses were wrong or incomplete:
+
+- **Item 4** — the broadcast half was NOT missing. `receiveThrow` resolves the
+  thrower's seat from the sender id in `useTableChat`. Only the geometry was
+  broken.
+- **Item 3** — the defect was worse than "shows an empty state". Once the lazy
+  lookup landed, Replay could show the PREVIOUS hand: a silently wrong answer,
+  which is worse than the empty state it replaced.
+- **Item 8** — the conflict was **latent, never realised**. Production held
+  2,376 `rakeback_periods` rows, zero duplicate `(user_id, club_id,
+period_start)` tuples, and zero master-period rows (`user_id IS NULL`). The
+  World Hub `close` branch needs an open master period to reach its insert, so
+  it had never executed. No player was ever double-credited; the deletion is
+  preventive, not a repair.
+
+### Fixed along the way (not in Dan's list)
+
+- **`main` was red.** `ee1a310f5` passed the snake_case `hand_history` row
+  straight into the camelCase `HandHistoryPanel` view-model — two different
+  `HandRecord` types. Every deploy was going out un-typechecked. Explicit
+  adapter added in `85df59c08`.
+- **Every Club Arena deploy was corrupting the repo.** `sync-club-arena.sh`
+  used `cp -r "$f" "$DEST/$fname"`, which nests when the destination already
+  exists. `game-card-icons/` buried itself one level deeper per deploy; one
+  sync staged 51 duplicate PNGs (~6 MB). Fixed in WH `b94e755ae1`.
+- **Unpushed freeze work was minutes from destruction.** Three local-only
+  commits (Supabase fetch timeout, zombie-engine reaper, table watchdog) sat on
+  `fix/table-freeze-and-dead-actions` while the reflog showed the
+  `reset --hard origin/main` loop had already fired once. Pushed to a remote
+  branch; later landed on main as `f041ccb1`.
+- **A live GitHub PAT is printed to stdout** by
+  `Smarter-Poker-World-Hub/.git/hooks/reference-transaction` whenever it blocks
+  a reset. Flagged for rotation; it should use a credential helper.
+- **The arena pre-commit guard blocks merge resolutions.** It rejects any
+  commit touching `public/hub/club-arena/` without `ARENA_BUILD=1`, including
+  merge-conflict resolutions, which `sync-club-arena.sh` cannot perform. It
+  should exempt `MERGE_HEAD`.
 
 ---
 

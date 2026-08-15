@@ -156,6 +156,7 @@ import PlayerCard from '../components/table/PlayerCard';
 // [MIGRATION] All engine imports removed — server-authoritative (Steps 1-7 complete)
 import { handPersistenceService } from '../services/HandPersistenceService';
 import { handHistoryService } from '../services/HandHistoryService';
+import { LeaderboardService } from '../services/LeaderboardService';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
 import { notificationService } from '../services/NotificationService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
@@ -1783,6 +1784,61 @@ export default function TablePage({
     }>
   >([]);
 
+  // DEAD-WIRING FIX 2026-08-15: three table panels were permanently empty
+  // because their state setters were never called ANYWHERE in the repo:
+  //   leaderboardPlayers -> "Session Leaderboard" always blank
+  //   handHistory        -> in-table Hand History blank after a long session
+  //   lastHandId         -> Hand Replay always "No recent hand to replay"
+  // The services behind them work fine; nothing ever called them. Each panel
+  // now loads lazily when it is opened, so a closed panel costs nothing.
+
+  // Leaderboard. Real data only became possible today: player_stats.vpip/pfr
+  // and tournaments_played/won had no writer, so this board would have been
+  // all zeros even if it had been wired.
+  useEffect(() => {
+    if (!showLeaderboard) return;
+    let cancelled = false;
+    const clubId = actualClubIdRef.current;
+    if (!clubId) {
+      setLeaderboardPlayers([]);
+      return;
+    }
+    const periodMap: Record<string, 'daily' | 'weekly' | 'monthly' | 'all_time'> = {
+      session: 'daily',
+      day: 'daily',
+      week: 'weekly',
+      month: 'monthly',
+      allTime: 'all_time',
+    };
+    (async () => {
+      try {
+        const rows = await LeaderboardService.getClubLeaderboard(
+          clubId,
+          'profit',
+          periodMap[leaderboardPeriod] || 'weekly',
+          25
+        );
+        if (cancelled) return;
+        setLeaderboardPlayers(
+          (rows || []).map((r) => ({
+            rank: r.rank,
+            playerId: r.userId,
+            playerName: r.username,
+            avatar: r.avatar,
+            amount: Math.abs(r.value ?? 0),
+            isPositive: (r.value ?? 0) >= 0,
+            isCurrentUser: r.userId === userId,
+          }))
+        );
+      } catch (e) {
+        if (!cancelled) reportError(e, 'TablePage.loadLeaderboard');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showLeaderboard, leaderboardPeriod, userId]);
+
   // Sound & vibration preferences — extracted to useTableSound hook
   const {
     isSoundEnabled,
@@ -1902,6 +1958,45 @@ export default function TablePage({
     }
   });
   const [showHandHistory, setShowHandHistory] = useState(false);
+
+  // Hand history panel — hydrate from the service the Hand History PAGE
+  // already uses. The local list only ever held what localStorage had cached,
+  // and nothing wrote to it, so it was empty for everyone.
+  useEffect(() => {
+    if (!showHandHistory || !userId || userId === 'guest') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const hands = await handHistoryService.getPlayerHands(userId, 50);
+        if (!cancelled && hands && hands.length > 0) setHandHistory(hands);
+      } catch (e) {
+        if (!cancelled) reportError(e, 'TablePage.loadHandHistoryPanel');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showHandHistory, userId]);
+
+  // Hand replay — resolve the most recent hand id lazily when the panel opens
+  // rather than paying a lookup on every completed hand.
+  useEffect(() => {
+    if (!showHandReplay || lastHandId || !userId || userId === 'guest') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const hands = await handHistoryService.getPlayerHands(userId, 1);
+        if (!cancelled && hands && hands.length > 0 && hands[0]?.id) {
+          setLastHandId(hands[0].id);
+        }
+      } catch (e) {
+        if (!cancelled) reportError(e, 'TablePage.resolveLastHandId');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showHandReplay, lastHandId, userId]);
 
   // Persist hand history to localStorage (debounced to prevent rapid-fire writes)
   const localStorageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

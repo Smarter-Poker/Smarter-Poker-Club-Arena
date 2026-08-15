@@ -25,6 +25,11 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import MysteryBountyReveal from '../components/tournament/MysteryBountyReveal';
+// LOBBY FIX 2026-08-15: the detail pane below showed a STATIC blind chart and
+// a payout list and nothing else, no clock, no standings, no tables. All three
+// components already existed and worked; two were rendered nowhere in the app.
+import { TournamentClock } from '../components/tournament/TournamentClock';
+import TournamentStandings from '../components/tournament/TournamentStandings';
 import { reportError } from '../utils/errorReporter';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
@@ -45,6 +50,17 @@ export default function TournamentPage() {
 
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  /** Tables in the selected RUNNING tournament (see the live pane below). */
+  const [tourneyTables, setTourneyTables] = useState<
+    Array<{
+      id: string;
+      name: string | null;
+      current_players: number | null;
+      max_players: number | null;
+      small_blind: number | null;
+      big_blind: number | null;
+    }>
+  >([]);
   const [filter, setFilter] = useState<TournFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -737,6 +753,39 @@ export default function TournamentPage() {
     return () => clearInterval(interval);
   }, [tournaments]);
 
+  // Live pane: which tables the selected RUNNING tournament is playing on.
+  // Only fetched while a RUNNING tournament is selected, so browsing upcoming
+  // events costs nothing extra.
+  useEffect(() => {
+    const t = selectedTournament;
+    if (!t || t.status !== 'RUNNING') {
+      setTourneyTables([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('tables')
+          .select('id, name, current_players, max_players, small_blind, big_blind')
+          .eq('tournament_id', t.id)
+          .order('name', { ascending: true });
+        if (error) throw error;
+        if (!cancelled) setTourneyTables(data || []);
+      } catch (e) {
+        if (!cancelled) reportError(e, 'TournamentPage.loadTournamentTables');
+      }
+    };
+    load();
+    // Tables merge and break as the field shrinks; 20s tracks that without
+    // hammering the lobby.
+    const iv = setInterval(load, 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [selectedTournament]);
+
   if (isLoading) {
     return (
       <div className="tournament-page">
@@ -1006,6 +1055,51 @@ export default function TournamentPage() {
                   </div>
                 )}
               </div>
+
+              {/* Live pane, RUNNING only. Until now, opening a tournament
+                  that was actually in progress showed exactly what an
+                  unstarted one showed: a static blind chart and a payout
+                  list. No clock, no standings, no idea which tables were
+                  running or how many players were left. All three components
+                  below were ALREADY BUILT and working: TournamentClock was
+                  rendered only on the separate mobile details route, and
+                  TournamentStandings only behind a tab there, so the lobby
+                  was the one place you could not see the tournament you were
+                  actually playing. */}
+              {selectedTournament.status === 'RUNNING' && (
+                <div className="tourney-live-pane">
+                  <TournamentClock tournamentId={selectedTournament.id} compact />
+
+                  <div className="tourney-live-section">
+                    <h3>Chip Counts</h3>
+                    <TournamentStandings
+                      tournamentId={selectedTournament.id}
+                      totalPlayers={selectedTournament.current_players || 0}
+                    />
+                  </div>
+
+                  <div className="tourney-live-section">
+                    <h3>Tables ({tourneyTables.length})</h3>
+                    {tourneyTables.length === 0 ? (
+                      <p className="tourney-live-empty">No tables running yet.</p>
+                    ) : (
+                      <div className="tourney-table-list">
+                        {tourneyTables.map((tb) => (
+                          <div key={tb.id} className="tourney-table-row">
+                            <span className="tourney-table-name">{tb.name || 'Table'}</span>
+                            <span className="tourney-table-blinds">
+                              {tb.small_blind ?? 0}/{tb.big_blind ?? 0}
+                            </span>
+                            <span className="tourney-table-seats">
+                              {tb.current_players ?? 0}/{tb.max_players ?? 9}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Blind Structure */}
               <div className="blind-structure">

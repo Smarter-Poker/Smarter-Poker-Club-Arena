@@ -55,12 +55,34 @@
   clip-path: inset(0 0 24.5% 0);
 }
 
-/* ── 3. Bet chips rest ON the felt, ~40% of the way to the pot ──────────── */
+/* ── 3. Bet chips rest ON the felt, ~40% of the way to the pot ────────────
+   LIVE E2E FIX 2026-08-15: the 1.82 multiplier alone pushed the SIDE seats'
+   chips ~109px inward — right/left-middle seats sit at the board's own
+   height, so their bets landed ON the community cards (seen live: a bet
+   chip covering the 9♦). Clamp the HORIZONTAL excursion so side seats stop
+   short of the board edge; hero/top seats have small x offsets and are
+   unaffected. Clamp scales with the breakpoints the chip sizes already use. */
 .table-page .seat__bet-chips {
   transform: translate(
-    calc(-50% + var(--bet-offset-x, 0px) * 1.82),
+    calc(-50% + clamp(-52px, var(--bet-offset-x, 0px) * 1.82, 52px)),
     calc(-50% + var(--bet-offset-y, 0px) * 1.82)
   ) !important;
+}
+@media (max-width: 1023px) {
+  .table-page .seat__bet-chips {
+    transform: translate(
+      calc(-50% + clamp(-44px, var(--bet-offset-x, 0px) * 1.82, 44px)),
+      calc(-50% + var(--bet-offset-y, 0px) * 1.82)
+    ) !important;
+  }
+}
+@media (max-width: 640px) {
+  .table-page .seat__bet-chips {
+    transform: translate(
+      calc(-50% + clamp(-26px, var(--bet-offset-x, 0px) * 1.82, 26px)),
+      calc(-50% + var(--bet-offset-y, 0px) * 1.82)
+    ) !important;
+  }
 }
 
 /* ── 4. Chips doubled ───────────────────────────────────────────────────── */

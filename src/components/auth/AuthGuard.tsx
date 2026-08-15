@@ -321,7 +321,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   // Redirect to auth ONLY if not authenticated
   if (!isAuthenticated) {
-    return <Navigate to="/auth" state={{ from: location }} replace />;
+    // HARDENED: Always redirect to the canonical World Hub login page
+    // instead of the regressed internal SPA auth component.
+    const redirectUrl = '/hub/club-arena' + location.pathname + location.search;
+    window.location.href = `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`;
+    return null;
   }
 
   // Render protected content

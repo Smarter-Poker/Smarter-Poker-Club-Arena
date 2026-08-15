@@ -231,14 +231,7 @@ export class GameServer {
   getStatus() {
     // Per-table liveness first — everything below is aggregate telemetry that
     // cannot distinguish a dealing table from a frozen one.
-    const tableLiveness = [...this.tableEngines].map(([id, engine]) => ({
-      tableId: id,
-      seated: engine.seatedCount(),
-      dealable: engine.dealableCount(),
-      handCount: engine.getHandCount(),
-      msSinceProgress: engine.msSinceProgress(),
-      isTournament: engine.isTournament(),
-    }));
+    const tableLiveness = this.tableLivenessSnapshot();
     const stalledTables = tableLiveness
       .filter((t) => t.dealable >= 2 && t.msSinceProgress > 120_000)
       .map((t) => ({
@@ -352,10 +345,54 @@ export class GameServer {
         }
       }
     }
+    // ── FREEZE OBSERVABILITY (2026-08-15) ────────────────────────────────
+    // Before this, /metrics carried throughput (hands dealt, hands/hour) but
+    // NOTHING that distinguishes a dealing table from a frozen one — and the
+    // only alert that claimed to cover it, EngineDown, queried a job label
+    // (`engine_pm2`) that does not exist in any scrape config, so it could
+    // never fire. A table could sit dead for 18 minutes with every dashboard
+    // green. These four gauges are what make a freeze alertable from outside
+    // the process, independent of whether the engine can still report itself.
+    const liveness = this.tableLivenessSnapshot();
+    const stalled = liveness.filter((t) => t.dealable >= 2 && t.msSinceProgress > 120_000);
+    const freeze: string[] = [
+      '# HELP poker_stalled_tables Tables with 2+ dealable seats and no progress for 2 minutes',
+      '# TYPE poker_stalled_tables gauge',
+      `poker_stalled_tables ${stalled.length}`,
+      '# HELP poker_discovery_stale_ms Milliseconds since the cash-table discovery loop last completed',
+      '# TYPE poker_discovery_stale_ms gauge',
+      `poker_discovery_stale_ms ${Date.now() - this.lastDiscoveryOkAt}`,
+      '# HELP poker_engine_liveness 1 when no table is stalled and discovery is fresh, else 0',
+      '# TYPE poker_engine_liveness gauge',
+      `poker_engine_liveness ${stalled.length === 0 && Date.now() - this.lastDiscoveryOkAt <= 60_000 ? 1 : 0}`,
+      '# HELP poker_table_ms_since_progress Milliseconds since this table last made observable progress',
+      '# TYPE poker_table_ms_since_progress gauge',
+      ...liveness.map(
+        (t) => `poker_table_ms_since_progress{table_id="${t.tableId}"} ${t.msSinceProgress}`
+      ),
+      '# HELP poker_table_dealable_seats Seats able to be dealt into on this table',
+      '# TYPE poker_table_dealable_seats gauge',
+      ...liveness.map((t) => `poker_table_dealable_seats{table_id="${t.tableId}"} ${t.dealable}`),
+    ];
+
     if (allLines.length === 0) {
-      return '# No active table engines\n';
+      // Still emit freeze metrics: "no engines at all" is itself the loudest
+      // possible signal, and returning a bare comment hid it.
+      return freeze.join('\n') + '\n';
     }
-    return allLines.join('\n') + '\n';
+    return allLines.join('\n') + '\n' + freeze.join('\n') + '\n';
+  }
+
+  /** Per-table liveness, shared by /health and /metrics. */
+  private tableLivenessSnapshot() {
+    return [...this.tableEngines].map(([id, engine]) => ({
+      tableId: id,
+      seated: engine.seatedCount(),
+      dealable: engine.dealableCount(),
+      handCount: engine.getHandCount(),
+      msSinceProgress: engine.msSinceProgress(),
+      isTournament: engine.isTournament(),
+    }));
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

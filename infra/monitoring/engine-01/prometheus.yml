@@ -18,6 +18,9 @@ alerting:
 
 rule_files:
   - /etc/prometheus/alert-rules.yml
+  # 2026-08-15 — engine freeze detection. Every rule here is verified against
+  # metrics the engine actually emits (see the file header).
+  - /etc/prometheus/engine-freeze-rules.yml
   - /etc/prometheus/slo-rules.yml
   - /etc/prometheus/slo-alerts.yml
 

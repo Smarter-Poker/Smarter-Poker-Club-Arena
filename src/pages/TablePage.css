@@ -219,11 +219,25 @@
   transition: opacity 0.8s ease;
 }
 
-/* Dim the action panel during all-in */
+/* Dim the action panel during all-in — VISUAL ONLY.
+   2026-08-15 ROOT-CAUSE FIX (Dan: "facing an all-in, it would not let me
+   call — nothing happened when either button was clicked and I timed out").
+   This rule used to carry `pointer-events: none`. `isAllInMode` is set on
+   ANY player's all-in, not just hero's, so an opponent's shove made hero's
+   own Fold/Call/All-In buttons physically unclickable for the rest of the
+   hand. The browser never dispatched the click at all — which is why there
+   was no error toast: no handler ever ran. The JS auto-fold timer is not a
+   DOM path, so it still fired and folded hero. Production hand #1315 shows
+   exactly 30.1s between the river shove and Dan's forced fold.
+   NEVER reintroduce pointer-events on this selector. */
 .table-page--allin-mode .action-panel {
   opacity: 0.35;
   transition: opacity 0.5s ease;
-  pointer-events: none;
+}
+
+/* Hero still has live action -> panel is never dimmed and never inert. */
+.table-page--allin-mode.table-page--hero-turn .action-panel {
+  opacity: 1;
 }
 
 /* Dim seat stack labels */
@@ -798,11 +812,15 @@
 /* Hand Number Display — top-center of table felt. Tightened to be legible
    without stealing focus from the pot. JetBrains Mono keeps the casino-tote
    feel; slight letter-spacing prevents the hashmark and digits from crowding. */
+/* Dan 2026-08-15: "hand numbers should be in the upper right hand corner."
+   Was top:11%/left:50% — dead centre above the pot, colliding with the new
+   centre brand and with the board on wide hands. */
 .hand-number-display {
   position: absolute;
-  top: 11%;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 3.5%;
+  right: 4%;
+  left: auto;
+  transform: none;
   font-size: 0.68rem;
   font-weight: 600;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
@@ -814,6 +832,77 @@
   z-index: 2;
   pointer-events: none;
   user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TABLE CENTRE BRAND (Dan 2026-08-15)
+   smarter.poker letter logo in the middle of the felt, with the date, game,
+   blinds and club/union underneath. Painted BEHIND the pot and the community
+   cards and fully click-through: it is decoration, never a tap target.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.table-brand {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 62%;
+  max-width: 260px;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.table-brand__logo {
+  width: 100%;
+  height: auto;
+  /* Watermark weight: legible as branding, never competing with the cards. */
+  opacity: 0.3;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+
+.table-brand__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  text-align: center;
+}
+
+.table-brand__line {
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(198, 210, 228, 0.42);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+
+.table-brand__line--club {
+  color: rgba(255, 215, 0, 0.42);
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 380px) {
+  .table-brand {
+    width: 56%;
+    gap: 4px;
+  }
+
+  .table-brand__line {
+    font-size: 0.52rem;
+  }
+}
+
+/* Fade the brand out while the drama is on the pot, not the felt. */
+.table-page--allin-mode .table-brand {
+  opacity: 0.35;
+  transition: opacity 0.5s ease;
 }
 
 /* Center spotlight — premium light pooling effect like overhead casino light */
@@ -2182,7 +2271,6 @@
   }
 }
 
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    RABBIT HUNT SQUARE — mockup v3: small square button above the Fold button
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -2228,7 +2316,6 @@
   border-radius: 11px;
 }
 
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    TABLE EGG — clip-path defs + gold rim overlay (Dan-approved v10 mockup)
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -2244,4 +2331,63 @@
 .seat-wrapper--dim .seat:not(.seat--empty):not(.seat--folded) {
   opacity: 0.78;
   filter: brightness(0.85) saturate(0.9);
+}
+
+/* Dan 2026-08-15: "spotlight on the player's turn isn't working — that
+   functionality must always be ON AT ALL TIMES."
+   Dimming everyone else was the entire previous implementation, so on a table
+   where most seats had folded there was nothing left to dim and the effect
+   vanished exactly when it was needed. The acting seat is now LIT in its own
+   right, which is visible regardless of how many other seats are in the hand
+   and regardless of whether hero is still holding cards.
+   Deliberately NOT a disc behind the avatar: Dan has rejected that twice as
+   "a ring appearing behind players". This lifts and brightens the seat itself
+   plus a wide, soft, edgeless pool that has no perceivable boundary. */
+.seat-wrapper--spot .seat:not(.seat--empty) {
+  filter: brightness(1.18) saturate(1.08);
+  transform: scale(1.04);
+  transition:
+    filter 0.25s ease,
+    transform 0.25s ease;
+}
+
+.seat-wrapper--spot::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 260px;
+  height: 200px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 236, 170, 0.13) 0%,
+    rgba(255, 236, 170, 0.07) 32%,
+    rgba(255, 236, 170, 0.025) 55%,
+    rgba(255, 236, 170, 0) 74%
+  );
+  z-index: -1;
+  pointer-events: none;
+  animation: spotFadeIn 0.3s ease both;
+}
+
+@keyframes spotFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The spotlight is decoration; never let it grow a hard edge on low-DPI. */
+@media (prefers-reduced-motion: reduce) {
+  .seat-wrapper--spot .seat:not(.seat--empty) {
+    transform: none;
+  }
+
+  .seat-wrapper--spot::before {
+    animation: none;
+  }
 }

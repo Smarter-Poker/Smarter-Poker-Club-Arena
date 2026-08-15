@@ -38,6 +38,7 @@ import rabbitHuntIcon from '../assets/rabbit-hunt.png';
 // MUST be a Vite asset import: public/images/ is never refreshed by
 // sync-club-arena.sh, but dist/assets/ is copied wholesale.
 import tableArtVertical from '../assets/table-vertical-black-gold.png';
+import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 // Phase 1.1 PR-3: authoritative engine WS state. Mounted always; becomes the
@@ -415,25 +416,30 @@ interface TableState {
 // a = 39.6% of width, b = 44.4% of height), hero at bottom-centre travelling
 // counter-clockwise. y values are nudged for .seat-wrapper's translate(-50%,-50%),
 // which centres the whole avatar+box stack (~92px) rather than the avatar.
+// Dan 2026-08-15: "[the hero] needs to be lower, it's currently positioned too
+// high on the table." The hero slot is index 0 (bottom-centre) in both maps and
+// is the ONLY slot the rotation ever assigns to hero, so nudging it down here
+// moves hero alone and leaves all six villain positions untouched. 91 -> 95.5
+// also buys the 1.33x hero avatar the vertical room it needs.
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 91 },   // Seat 1 (Hero, bottom-center)
+  { x: 50, y: 95.5 }, // Seat 1 (Hero, bottom-center)
   { x: 10.4, y: 69 }, // Seat 2 (lower-left)
   { x: 10.4, y: 31 }, // Seat 3 (upper-left)
-  { x: 50, y: 8 },    // Seat 4 (top-center)
+  { x: 50, y: 8 }, // Seat 4 (top-center)
   { x: 89.6, y: 31 }, // Seat 5 (upper-right)
   { x: 89.6, y: 69 }, // Seat 6 (lower-right)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 91 },     // Seat 1 (Hero, bottom-center)
-  { x: 14, y: 80 },     // Seat 2 (lower-left)
+  { x: 50, y: 95.5 }, // Seat 1 (Hero, bottom-center) — see 6MAX note above
+  { x: 14, y: 80 }, // Seat 2 (lower-left)
   { x: 10.4, y: 56.3 }, // Seat 3 (left-low)
-  { x: 10.4, y: 31 },   // Seat 4 (left-high)
-  { x: 28.6, y: 11 },   // Seat 5 (top-left)
-  { x: 71.4, y: 11 },   // Seat 6 (top-right)
-  { x: 89.6, y: 31 },   // Seat 7 (right-high)
+  { x: 10.4, y: 31 }, // Seat 4 (left-high)
+  { x: 28.6, y: 11 }, // Seat 5 (top-left)
+  { x: 71.4, y: 11 }, // Seat 6 (top-right)
+  { x: 89.6, y: 31 }, // Seat 7 (right-high)
   { x: 89.6, y: 56.3 }, // Seat 8 (right-low)
-  { x: 86, y: 80 },     // Seat 9 (lower-right)
+  { x: 86, y: 80 }, // Seat 9 (lower-right)
 ];
 
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
@@ -1468,6 +1474,26 @@ export default function TablePage({
   const [showTipDealer, setShowTipDealer] = useState(false);
 
   // ─────────────────────────────────────────────────────────────────
+  // INSTANT SEATING (Dan 2026-08-15, verbatim: "the player needs to be shown
+  // 'sitting' as soon as they hit the sit button, then they choose how many
+  // chips they want; as soon as they confirm the chips need to appear in
+  // their seat").
+  //
+  // Previously the seat stayed visually empty through TWO sequential network
+  // round-trips — a duplicate-seat SELECT and the atomic_table_buyin RPC —
+  // and only painted after both resolved. That is the "very long delay", and
+  // on a slow link it read as a silent failure, which is why tapping Sit
+  // again appeared to do nothing (the re-entrancy guards were working
+  // correctly; there was simply no feedback that anything had started).
+  //
+  // pendingSeat is deliberately NOT merged into tableState.players: the
+  // realtime seat feed and the snapshot reconciler both rewrite that array
+  // wholesale and would wipe an optimistic entry mid-flight. Holding it in
+  // its own state lets the placeholder survive until real data replaces it.
+  // ─────────────────────────────────────────────────────────────────
+  const [pendingSeat, setPendingSeat] = useState<number | null>(null);
+
+  // ─────────────────────────────────────────────────────────────────
   // Bible V8 §1.16 Real-Time Law — chip-to-pot collection animation.
   // When the engine emits COMMUNITY_CARDS_DEALT or HAND_COMPLETE, every
   // seat with a non-zero bet enters a ~450ms "collecting" state during
@@ -2149,13 +2175,12 @@ export default function TablePage({
         // means the player genuinely holds no active seat (already left / double-tap),
         // NOT "mid-hand" (that path returns success:true with leave_pending set). So
         // the message no longer misleadingly blames an active hand.
-        console.warn(
-          '[Leave] leaveTable returned false — no active seat found for user',
-          { tableId, userId, heroSeat: tableState.heroSeat }
-        );
-        setLeaveNotice(
-          "You're no longer seated at this table — nothing to leave."
-        );
+        console.warn('[Leave] leaveTable returned false — no active seat found for user', {
+          tableId,
+          userId,
+          heroSeat: tableState.heroSeat,
+        });
+        setLeaveNotice("You're no longer seated at this table — nothing to leave.");
       }
     } catch (error) {
       reportError(error, 'TablePage.Exception');
@@ -4071,10 +4096,26 @@ export default function TablePage({
           else if (action === 'check') soundService.playCheck();
           else if (action === 'fold') soundService.playFold();
         }
-        // Bible V8 §5.2: All-in dramatic mode activates on ANY player all-in
-        // (not just hero). Vignette + slow board + pot glow kick in immediately.
+        // Bible V8 §5.2: All-in dramatic mode activates on ANY player all-in.
+        //
+        // 2026-08-15 ROOT-CAUSE FIX (Dan: "facing an all-in, it would not let
+        // me call"). Dramatic mode dims and (until today) DISABLED hero's own
+        // action panel — see the pointer-events note in TablePage.css. Firing
+        // it on an opponent's shove that hero still has to answer is wrong on
+        // its own terms: the drama belongs to a pot no one can act on any more.
+        // Gate it on hero having no live action left. The CSS fix makes this
+        // non-load-bearing, but both layers now have to fail to reproduce the
+        // bug, and multiway pots (short stack shoves, two deep stacks still to
+        // act) no longer black out the panel for players with real decisions.
         if (action === 'all_in' || action === 'allin') {
-          setIsAllInMode(true);
+          const st = tableStateRef.current;
+          const heroP = st.heroSeat > 0 ? st.players[st.heroSeat - 1] : null;
+          const heroStillHasAction =
+            actionSeat !== st.heroSeat &&
+            !!heroP &&
+            heroP.status !== 'folded' &&
+            (heroP.stack || 0) > 0;
+          if (!heroStillHasAction) setIsAllInMode(true);
         }
         if (
           (action === 'bet' ||
@@ -4210,6 +4251,12 @@ export default function TablePage({
           // Bible V8 §5.4: medium haptic when it's hero's turn
           const heroSeat = tableStateRef.current.heroSeat;
           if (newSeat === heroSeat) {
+            // 2026-08-15: hard reset of all-in dramatic mode whenever action
+            // reaches hero. isAllInMode was only ever cleared on HAND_STARTED
+            // and 3s after HAND_COMPLETE, so a shove earlier in the hand left
+            // hero's panel dimmed (and formerly inert) for every remaining
+            // street. If hero can act, the panel is fully lit and fully live.
+            setIsAllInMode(false);
             import('../services/HapticService').then(({ haptic }) => haptic.medium());
             // Bible V8 §5.3: turn alert sound for hero
             if (soundService.isEnabled()) soundService.playTurnAlert();
@@ -4778,7 +4825,13 @@ export default function TablePage({
       console.debug('[Seat] Buy-in modal already open — ignoring click');
       return;
     }
+    if (pendingSeat !== null) {
+      console.debug('[Seat] A seat reservation is already pending — ignoring click');
+      return;
+    }
     console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
+    // Paint the seat as taken THIS FRAME, before any network work starts.
+    setPendingSeat(seatNumber);
     setSelectedSeat(seatNumber);
     setShowBuyInModal(true);
     // Fire-and-forget: update presence (non-blocking — do NOT await)
@@ -4993,13 +5046,32 @@ export default function TablePage({
     action: 'fold' | 'check' | 'call' | 'raise' | 'allin' | 'bet',
     _amount?: number
   ) => {
-    if (!tableId) return false;
+    if (!tableId) {
+      setActionErrorData({ error: 'Table not ready — reconnecting' });
+      return false;
+    }
     // Auto-allow fold
     if (action === 'fold') return true;
-    // Basic client-side guard — real validation happens on server
-    const heroSeat = tableState.heroSeat;
-    const heroPlayer = tableState.players[heroSeat - 1];
-    if (!heroPlayer || heroPlayer.status === 'folded') return false;
+    // Basic client-side guard — real validation happens on server.
+    // 2026-08-15: read tableStateRef, not the captured `tableState`. This is a
+    // plain function re-created every render, but it is CALLED from inside
+    // useCallback handlers that captured an older render's closure, so it used
+    // to validate against a stale snapshot. And it must never return false
+    // silently: a dead button with no explanation is indistinguishable from a
+    // frozen client, which is exactly how the all-in bug presented.
+    const live = tableStateRef.current;
+    const heroPlayer = live.players[live.heroSeat - 1];
+    if (!heroPlayer || heroPlayer.status === 'folded') {
+      console.warn('[Table] client guard blocked action', action, {
+        heroSeat: live.heroSeat,
+        heroPlayer,
+      });
+      setActionErrorData({
+        error: 'Your seat is out of sync with the table — resyncing',
+        code: 'CLIENT_STATE_STALE',
+      });
+      return false;
+    }
     return true;
   };
 
@@ -5139,13 +5211,19 @@ export default function TablePage({
       setTimeout(() => {
         actionLockRef.current = false;
       }, 300);
-      const heroSeat = tableState.heroSeat;
-      const hero = getPlayerAtSeat(heroSeat);
+      // 2026-08-15: every read below comes from tableStateRef, never from the
+      // `tableState` this callback closed over. The dep array does not include
+      // players/boardStage/currentBet, so the captured snapshot can lag a
+      // stack update or a street change — which silently mis-clamped raises to
+      // a stale stack and mis-attributed VPIP.
+      const live = tableStateRef.current;
+      const heroSeat = live.heroSeat;
+      const hero = live.players[heroSeat - 1] ?? null;
       const heroStack = hero?.stack || 0;
 
       // Track VPIP: voluntary preflop action (call/raise/allin, NOT fold/check)
       if (
-        tableState.boardStage === 'preflop' &&
+        live.boardStage === 'preflop' &&
         (action === 'call' || action === 'raise' || action === 'allin')
       ) {
         vpipCountRef.current++;
@@ -5201,7 +5279,7 @@ export default function TablePage({
           if (!validateAndExecuteAction('call')) return;
           soundService.playChips();
           {
-            const callAmt = tableState.currentBet || 0;
+            const callAmt = live.currentBet || 0;
             const revert = applyOptimisticHeroAction('call', callAmt);
             if (tableId) {
               const ok = await submitActionWithToast(
@@ -5907,13 +5985,55 @@ export default function TablePage({
             />
             <div className="table-rail">
               <div className="table-surface">
-                {/* Hand Number Display — shown on table felt during active hands.
-                    AUDIT FIX 2026-07-19: drive from the authoritative
-                    tableState.handNumber (setDisplayHandNumber was never called,
-                    so this never rendered). */}
+                {/* Hand Number — Dan 2026-08-15: "hand numbers should be in the
+                    upper right hand corner." Was centred on the felt directly
+                    above the pot, competing with the board. Positioning lives
+                    in .hand-number-display. */}
                 {tableState.handNumber != null && tableState.handNumber > 0 && (
                   <div className="hand-number-display">Hand #{tableState.handNumber}</div>
                 )}
+
+                {/* ── TABLE CENTRE BRAND (Dan 2026-08-15) ──────────────────
+                    "Use the smarter.poker letter logo in the middle of the
+                    table, then under that it should say the date, game,
+                    blinds, and what club or union it's in."
+                    Sits behind the pot and community cards (z-index 1, the
+                    pot area is 2+) and is fully click-through so it can never
+                    intercept a seat or action tap. */}
+                <div className="table-brand" aria-hidden="true">
+                  <img
+                    className="table-brand__logo"
+                    src={smarterPokerLetterLogo}
+                    alt=""
+                    draggable={false}
+                  />
+                  <div className="table-brand__meta">
+                    <span className="table-brand__line">
+                      {new Date().toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
+                    <span className="table-brand__line">
+                      {(tableState.gameType === "No Limit Hold'em"
+                        ? 'NLH'
+                        : tableState.gameType === 'Pot Limit Omaha'
+                          ? 'PLO'
+                          : tableState.gameType === "Fixed Limit Hold'em"
+                            ? 'FLH'
+                            : tableState.gameType || 'NLH'
+                      ).toUpperCase()}
+                      {' \u00B7 '}
+                      {tableState.blinds || '1/2'}
+                    </span>
+                    {tableState.clubName && (
+                      <span className="table-brand__line table-brand__line--club">
+                        {tableState.clubName}
+                      </span>
+                    )}
+                  </div>
+                </div>
                 {/* Pot Display — click to toggle chips/BB */}
                 <div className="pot-area">
                   <PotDisplay
@@ -6074,15 +6194,25 @@ export default function TablePage({
             const seatNumber = idx + 1;
             const player = getPlayerAtSeat(seatNumber);
 
-            // SPOTLIGHT VIGNETTE (Dan 2026-08-15): while someone is acting,
-            // every OTHER occupied seat dims slightly so the acting player's
-            // light pool reads as a stage spotlight. Folded seats keep their
-            // own (deeper) dim; empty seats are untouched.
-            const someoneActing =
-              tableState.isHandInProgress &&
-              tableState.currentPlayerSeat > 0 &&
-              v8Settings.highlight_active_players;
-            const seatDimmed = someoneActing && seatNumber !== tableState.currentPlayerSeat;
+            // SPOTLIGHT (Dan 2026-08-15, verbatim: "spotlight on the player's
+            // turn isn't working, even if hero folds — that functionality must
+            // always be ON AT ALL TIMES").
+            //
+            // Two gates were suppressing it. `v8Settings.highlight_active_players`
+            // let a stale/absent user setting switch the whole effect off, and
+            // `isHandInProgress` is false during the snapshot races between
+            // streets — so the spotlight dropped out exactly when the action
+            // was moving, which is when it matters. currentPlayerSeat > 0 is
+            // the authoritative "someone is on the clock" signal and is the
+            // only condition kept. The effect now runs whether or not hero is
+            // still in the hand.
+            const someoneActing = tableState.currentPlayerSeat > 0;
+            const isActingSeat = someoneActing && seatNumber === tableState.currentPlayerSeat;
+            // Dan: hero is NEVER faded while holding a live hand, even when the
+            // action is elsewhere. A folded hero dims like anyone else.
+            const heroHasLiveHand =
+              !!player?.isHero && player.status !== 'folded' && player.status !== 'sitting_out';
+            const seatDimmed = someoneActing && !isActingSeat && !heroHasLiveHand;
 
             // FIX: Apply use_alias and table_alias from settings directly to the hero's rendered name
             let derivedHeroName = player?.name;
@@ -6104,12 +6234,26 @@ export default function TablePage({
                   heroProfile.display_name || heroProfile.username || derivedHeroName;
               }
             }
-            const displayPlayer = player
+            let displayPlayer = player
               ? {
                   ...player,
                   name: derivedHeroName!,
                 }
               : null;
+            // The seat hero just tapped: show them SITTING immediately, with a
+            // pending stack, while the buy-in modal is still open. Replaced by
+            // real server data the moment the buy-in lands.
+            if (!displayPlayer && pendingSeat === seatNumber) {
+              displayPlayer = {
+                id: userId,
+                name: username || 'You',
+                avatar: heroAvatarUrl || '',
+                stack: 0,
+                status: 'active',
+                isHero: true,
+                showCards: false,
+              } as any;
+            }
 
             // Compute bet-chip offset toward table center (50%, 50%).
             // Mockup v3 spec: bet/call/raise chip rests ~22% of the way from the
@@ -6131,7 +6275,9 @@ export default function TablePage({
             return (
               <div
                 key={seatNumber}
-                className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}`}
+                className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
+                  isActingSeat ? ' seat-wrapper--spot' : ''
+                }`}
                 style={
                   {
                     left: `${pos.x}%`,
@@ -6147,10 +6293,10 @@ export default function TablePage({
                   seatNumber={seatNumber}
                   player={displayPlayer}
                   position={tableState.positions[idx] || null}
-                  isActive={
-                    seatNumber === tableState.currentPlayerSeat &&
-                    v8Settings.highlight_active_players
-                  }
+                  /* Always on: the acting seat is always marked active. The
+                     v8Settings.highlight_active_players gate is gone — see the
+                     spotlight note above. */
+                  isActive={seatNumber === tableState.currentPlayerSeat}
                   lastAction={tableState.lastActions[idx] || null}
                   lastBetAmount={tableState.lastBetAmounts[idx] || 0}
                   isCollectingChips={collectingChipSeats[idx] || false}
@@ -6212,6 +6358,18 @@ export default function TablePage({
                       : null
                   }
                   onSit={() => handleSeatClick(seatNumber)}
+                  /* Dan 2026-08-15: "when a player is seated at the table, the
+                     open seats that were a + should now say EMPTY. A user
+                     should never be able to sit at multiple seats." Three
+                     independent signals, because each lands at a different
+                     moment: heroSeat (snapshot), a scan of the players array
+                     (realtime INSERT), and pendingSeat (this frame, before any
+                     network call). Any one of them means "already seated". */
+                  canSit={
+                    tableState.heroSeat <= 0 &&
+                    pendingSeat === null &&
+                    !tableState.players.some((pl) => pl && pl.id === userId)
+                  }
                   onAvatarClick={() => {
                     // Open throwable selector targeting this seat
                     setThrowTargetSeat(seatNumber);
@@ -6399,6 +6557,11 @@ export default function TablePage({
                         maxRaise={maxRaise}
                         pot={tableState.pot}
                         bigBlind={bb}
+                        /* Multiplier presets are multiples of the bet being
+                           faced, not of the blind — without this they all
+                           clamped to minRaise and 2X/3X/4X/5X produced the
+                           same number. See ActionPanel presets. */
+                        currentBet={serverCurrentBet}
                         onAction={handleActionPanelAction}
                         isMyTurn={true}
                         isPreflop={tableState.boardStage === 'preflop'}
@@ -6874,10 +7037,61 @@ export default function TablePage({
         showBuyInModal={showBuyInModal}
         selectedSeat={selectedSeat}
         heroAvatarUrl={heroAvatarUrl}
-        onCloseBuyInModal={() => setShowBuyInModal(false)}
+        onCloseBuyInModal={() => {
+          // Releasing the modal must release the optimistic seat too, or the
+          // player is locked out of every seat at the table by their own
+          // abandoned reservation.
+          setShowBuyInModal(false);
+          setPendingSeat(null);
+          setSelectedSeat(null);
+        }}
         onConfirmBuyIn={async (amount, autoRebuy) => {
           if (buyInProcessingRef.current) return;
           buyInProcessingRef.current = true;
+          // Dan 2026-08-15: chips land in the seat on CONFIRM, not on RPC
+          // completion. Close the modal and paint the stack in this frame; the
+          // duplicate-seat check and atomic_table_buyin RPC run behind it and
+          // roll the seat back if either rejects. `seatedOptimistically` gates
+          // that rollback so we never tear down a seat we never painted.
+          const optimisticSeat = selectedSeat;
+          let seatedOptimistically = false;
+          if (userId && userId !== 'guest' && tableId && optimisticSeat) {
+            setShowBuyInModal(false);
+            setTableState((prev) => {
+              const updatedPlayers = [...prev.players];
+              for (let j = 0; j < updatedPlayers.length; j++) {
+                if (updatedPlayers[j]?.id === userId && j !== optimisticSeat - 1) {
+                  updatedPlayers[j] = null as any;
+                }
+              }
+              updatedPlayers[optimisticSeat - 1] = {
+                id: userId,
+                name: username || 'Player',
+                avatar: heroAvatarUrl || '',
+                stack: amount,
+                status: 'active',
+                isHero: true,
+                showCards: false,
+              };
+              return { ...prev, players: updatedPlayers, heroSeat: optimisticSeat };
+            });
+            heroSeatRef.current = optimisticSeat;
+            setPendingSeat(null);
+            seatedOptimistically = true;
+          }
+          /** Undo the optimistic seat when the server refuses the buy-in. */
+          const revertSeat = () => {
+            if (!seatedOptimistically || !optimisticSeat) return;
+            setTableState((prev) => {
+              const players = [...prev.players];
+              if (players[optimisticSeat - 1]?.id === userId) {
+                players[optimisticSeat - 1] = null as any;
+              }
+              return { ...prev, players, heroSeat: 0 };
+            });
+            heroSeatRef.current = 0;
+            setPendingSeat(null);
+          };
           try {
             if (userId && userId !== 'guest' && tableId && selectedSeat) {
               try {
@@ -6890,6 +7104,7 @@ export default function TablePage({
                   .maybeSingle();
                 if (existingSeat) {
                   toast.error(`You're already seated at seat ${existingSeat.seat_number}.`);
+                  revertSeat();
                   setShowBuyInModal(false);
                   return;
                 }
@@ -6914,24 +7129,8 @@ export default function TablePage({
                 setAccountBalance((prev) => Math.max(0, prev - amount));
                 totalBuyInRef.current += amount;
                 if (amount > peakStackRef.current) peakStackRef.current = amount;
-                setTableState((prev) => {
-                  const updatedPlayers = [...prev.players];
-                  for (let j = 0; j < updatedPlayers.length; j++) {
-                    if (updatedPlayers[j]?.id === userId && j !== selectedSeat - 1) {
-                      updatedPlayers[j] = null as any;
-                    }
-                  }
-                  updatedPlayers[selectedSeat - 1] = {
-                    id: userId,
-                    name: username || 'Player',
-                    avatar: heroAvatarUrl || '',
-                    stack: amount,
-                    status: 'active',
-                    isHero: true,
-                    showCards: false,
-                  };
-                  return { ...prev, players: updatedPlayers, heroSeat: selectedSeat };
-                });
+                // The seat + stack were already painted above, before this RPC
+                // was even sent. Nothing to do here but confirm the ref.
                 heroSeatRef.current = selectedSeat;
                 HydraService.onRealPlayerJoined(tableId, userId);
                 await sendAction('player_seated', {
@@ -6950,6 +7149,7 @@ export default function TablePage({
                 });
               } catch (error) {
                 reportError(error, 'TablePage.Buyin_FAILED');
+                revertSeat();
                 toast.error('Buy-in failed. Please try again or check your balance.');
               }
             } else {
@@ -6962,6 +7162,7 @@ export default function TablePage({
             setShowBuyInModal(false);
           } catch (outerErr) {
             reportError(outerErr, 'TablePage.UNHANDLED_error_in_onConfirm');
+            revertSeat();
             toast.error('An unexpected error occurred. Please try again.');
             setShowBuyInModal(false);
           } finally {

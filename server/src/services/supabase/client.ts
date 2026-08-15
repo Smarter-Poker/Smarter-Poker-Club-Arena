@@ -46,10 +46,34 @@ const EFFECTIVE_SERVICE_ROLE_KEY =
 // SERVICE ROLE CLIENT — Full DB access, bypasses RLS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * 2026-08-15 FREEZE FIX. There was no fetch timeout anywhere in the server —
+ * no AbortController, no Promise.race, nothing. The dealing loop awaits several
+ * Supabase calls per hand (loadSeatedPlayers, refreshBlinds, postHandTasks,
+ * recoverBustedSeatedHorses), so ONE hung socket stalled that table forever with
+ * no error, no retry and nothing to observe. Ten tables dropping out inside a
+ * 48-second window on 2026-08-15 is the signature of a degrading shared
+ * transport, not ten independent logic bugs.
+ *
+ * A hard deadline turns a hung request into a rejection the loop's existing
+ * catch can back off and retry on.
+ */
+const DB_TIMEOUT_MS = Number(process.env.SUPABASE_TIMEOUT_MS ?? 15_000);
+
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
   auth: {
     autoRefreshToken: false,
     persistSession: false,
+  },
+  global: {
+    fetch: (input: any, init: any = {}) => {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(new Error('supabase_timeout')), DB_TIMEOUT_MS);
+      if (init.signal) {
+        init.signal.addEventListener('abort', () => ctl.abort(init.signal.reason));
+      }
+      return fetch(input, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t));
+    },
   },
 });
 

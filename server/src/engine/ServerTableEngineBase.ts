@@ -251,6 +251,29 @@ export abstract class ServerTableEngineBase {
   protected static readonly HEARTBEAT_INTERVAL_MS = 10_000;
   protected heartbeatActive: boolean = false;
 
+  /**
+   * 2026-08-15 FREEZE FIX (Dan: "the game keeps freezing and not auto playing
+   * after a while — get to the root cause and prevent it").
+   *
+   * Epoch ms of the last OBSERVABLE progress on this table: an accepted action,
+   * a turn change, a street dealt, a hand started or settled. `running` cannot
+   * serve this purpose — it is a boolean the dealing loop never clears when it
+   * dies, so a table whose loop has crashed still reports isRunning() === true
+   * forever. That is why ten production tables sat dead for 18+ minutes on
+   * 2026-08-15 while discoverCashTables refused to rebuild them: the engines
+   * were zombies claiming to be alive.
+   */
+  protected lastProgressAtMs: number = Date.now();
+
+  /** Consecutive watchdog trips without intervening progress. Escalation tier. */
+  protected watchdogTrips: number = 0;
+
+  /** 15s clock + 15s time bank + 2s grace + slack. */
+  protected static readonly WATCHDOG_STALL_MS = 45_000;
+
+  /** No hand started while the table is dealable. */
+  protected static readonly WATCHDOG_IDLE_MS = 90_000;
+
   // Real Player Turn Management
   // Phase 1.2: playerTurnTimer deleted — DeadlineScheduler via PreciseActionTimer is sole timer authority.
   protected playerTurnStartTime: number = 0;
@@ -535,8 +558,21 @@ export abstract class ServerTableEngineBase {
       // otherwise an orphaned row would wait for a next hand that never comes.
       await this.resolveOrphanedAddOns();
 
-      // Start dealing loop
-      this.dealingLoop();
+      // Start dealing loop.
+      //
+      // 2026-08-15 ROOT-CAUSE FIX. This promise used to be discarded. The loop
+      // is async and its own catch block contains awaits and a JSON.stringify
+      // over a possibly-circular error, so a throw from INSIDE the catch
+      // escapes the `while (this.running)` loop entirely. index.ts swallows the
+      // unhandled rejection ("don't crash — keep running"), `running` stays
+      // true, isRunning() keeps lying, GameServer never reaps the engine and
+      // discovery never replaces it. Result: a table that is permanently dead
+      // with funded seats. Attaching a catch that marks the engine dead turns
+      // that permanent freeze into a <5s automatic rebuild.
+      this.dealingLoop().catch((err) => {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.dealingLoop_died');
+        this.killForRestart('dealing_loop_threw');
+      });
     } catch (err) {
       reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
       this.running = false;
@@ -629,6 +665,14 @@ export abstract class ServerTableEngineBase {
           }
         }
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
+        // 2026-08-15: the table watchdog rides the existing heartbeat entry so
+        // it needs no new interval and no new scheduler. It must never throw —
+        // this callback is the only thing that re-arms the heartbeat.
+        try {
+          this.runTableWatchdog();
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.watchdog_threw');
+        }
         // Re-arm for the next interval. cancel() in stop() will purge any
         // entry queued here if a stop happens between scheduling and tick.
         if (this.running && this.heartbeatActive) {
@@ -636,6 +680,46 @@ export abstract class ServerTableEngineBase {
         }
       },
     });
+  }
+
+  /**
+   * Called from every path that PROVES the table is alive. Cheap by design —
+   * it is on the hot path of every action.
+   */
+  protected markProgress(): void {
+    this.lastProgressAtMs = Date.now();
+    this.watchdogTrips = 0;
+  }
+
+  /** Ms since this table last did anything observable. */
+  msSinceProgress(): number {
+    return Date.now() - this.lastProgressAtMs;
+  }
+
+  /**
+   * Overridden in ServerTableEngineTurns, which is the first subclass with
+   * access to the turn timer and the hand controller. No-op here so Base can
+   * drive it from the heartbeat without a circular dependency.
+   */
+  protected runTableWatchdog(): void {}
+
+  /**
+   * Mark the engine dead so GameServer's reaper deletes it and discovery
+   * rebuilds a fresh one on the next 5s cycle (crash recovery rehydrates from
+   * hand_state_snapshots). Leaving `running` true is what turned every
+   * transient stall into a permanent one.
+   */
+  protected killForRestart(reason: string): void {
+    reportError(
+      new Error('Engine self-terminating for restart: ' + reason),
+      'ServerTableEngine.' + this.tableId + '.watchdog_kill',
+      { handCount: this.handCount }
+    );
+    this.running = false;
+    this.heartbeatActive = false;
+    deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
+    this.preciseTimer.clearTable(this.tableId);
+    this.handController = null;
   }
 
   isRunning(): boolean {
@@ -889,13 +973,10 @@ export abstract class ServerTableEngineBase {
       return;
     }
     if (this.snapshotTimer) return; // a trailing write is already queued
-    this.snapshotTimer = setTimeout(
-      () => {
-        this.snapshotTimer = null;
-        void this.flushSnapshot();
-      },
-      ServerTableEngineBase.SNAPSHOT_MIN_INTERVAL_MS - since
-    );
+    this.snapshotTimer = setTimeout(() => {
+      this.snapshotTimer = null;
+      void this.flushSnapshot();
+    }, ServerTableEngineBase.SNAPSHOT_MIN_INTERVAL_MS - since);
     // Never hold the process open for a snapshot.
     this.snapshotTimer.unref?.();
   }

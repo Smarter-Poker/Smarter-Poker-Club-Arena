@@ -91,6 +91,13 @@ export interface SeatSlotProps {
   cardBack?: string; // Card back design ID (e.g. 'classic_red', 'black', 'clubs_gold')
   showStackInBB?: boolean;
   onSit?: () => void;
+  /**
+   * Dan 2026-08-15: "when a player is seated at the table, the open seats that
+   * were a + should now say EMPTY. A user should never be able to sit at
+   * multiple seats." False -> the empty seat renders an inert "EMPTY" plate
+   * with no click target at all (not merely a rejected click).
+   */
+  canSit?: boolean;
   onAction?: () => void;
   onAvatarClick?: () => void;
   /** Bible V8 §11.1: Show/hide player avatar images */
@@ -265,6 +272,7 @@ export const SeatSlot = memo(
       cardBack = 'black',
       showStackInBB = false,
       onSit,
+      canSit = true,
       onAction,
       onAvatarClick,
       showAvatar = true,
@@ -435,6 +443,20 @@ export const SeatSlot = memo(
       if (isTournament) {
         return <div className={containerClasses} aria-label={`Seat ${seatNumber}: empty`} />;
       }
+      // Hero already occupies a seat at this table -> every other open seat is
+      // a passive "EMPTY" marker. No onClick, no role="button", no tabIndex:
+      // the seat is removed from the interaction model entirely rather than
+      // accepting the click and rejecting it downstream.
+      if (!canSit) {
+        return (
+          <div
+            className={`${containerClasses} seat--empty-locked`}
+            aria-label={`Seat ${seatNumber}: empty`}
+          >
+            <span className="seat__empty-label">EMPTY</span>
+          </div>
+        );
+      }
       return (
         <div
           className={containerClasses}
@@ -478,8 +500,16 @@ export const SeatSlot = memo(
         ? Math.max(1000, turnDeadlineMs - turnStartTimeMs)
         : 15_000;
       const elapsedMs = turnStartTimeMs ? Math.max(0, Date.now() - turnStartTimeMs) : 0;
+      // Dan 2026-08-15: the yellow countdown is a full 15 seconds. On a normal
+      // 15s turn that is the entire clock (never goes red); when a time bank
+      // extends the turn, yellow still owns the first 15s and the borrowed
+      // seconds run red. Capped at the turn length so the colour animation can
+      // never outlive the ring it colours.
+      const YELLOW_MS = 15_000;
+      const yellowMs = Math.min(YELLOW_MS, durationMs);
       timerStyle = {
         '--sp-timer-duration': `${(durationMs / 1000).toFixed(3)}s`,
+        '--sp-timer-yellow-duration': `${(yellowMs / 1000).toFixed(3)}s`,
         '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
       } as React.CSSProperties;
       // React key so the .seat__info remounts (animation restarts) each
@@ -781,6 +811,7 @@ export const SeatSlot = memo(
     if (prev.seatNumber !== next.seatNumber) return false;
     if (prev.timerProgress !== next.timerProgress) return false;
     if (prev.isActive !== next.isActive) return false;
+    if (prev.canSit !== next.canSit) return false;
     if (prev.position !== next.position) return false;
     if (prev.isTournament !== next.isTournament) return false;
     if (prev.bigBlind !== next.bigBlind) return false;

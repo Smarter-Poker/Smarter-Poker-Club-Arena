@@ -1191,7 +1191,20 @@ export class HandController {
 
   private emitTurnChange(): void {
     const player = this.state.players.find((p) => p.seat === this.state.currentPlayerSeat);
-    if (!player) return;
+    if (!player) {
+      // 2026-08-15 FREEZE FIX. setNextPlayer/nextActionableSeat can return -1,
+      // and this silently returned — leaving the hand with no current player,
+      // no TURN_CHANGE event and therefore no clock, until the 10-minute hand
+      // safety void. start() already guards this exact case (AUDIT FIX
+      // 2026-07-19); the two mid-hand call sites (advanceGame, advanceStage)
+      // did not. If there is no actionable seat, the street is over — run it
+      // out rather than hang.
+      console.warn(
+        '[HandController] No actionable seat at stage ' + this.state.stage + ' — advancing stage'
+      );
+      this.advanceStage();
+      return;
+    }
     const availableActions = this.getAvailableActions(player);
     this.emit({ type: 'TURN_CHANGE', seat: this.state.currentPlayerSeat, availableActions });
   }

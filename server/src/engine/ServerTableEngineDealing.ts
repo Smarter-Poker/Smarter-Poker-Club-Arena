@@ -12,9 +12,7 @@ import { HandController } from './HandController.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { startHandSpan } from '../observability/Tracing.js';
-import {
-  getPlayerCountCaps,
-} from '../config/RakeConfig.js';
+import { getPlayerCountCaps } from '../config/RakeConfig.js';
 import {
   loadTable,
   loadSeatedPlayers,
@@ -22,18 +20,11 @@ import {
   autoRebuyHorse,
   markSeatAsLeft,
 } from '../services/supabase.js';
-import type {
-  SeatPlayer,
-  GameVariant,
-  HandConfig,
-  HandEvent,
-  SeatedPlayer,
-} from '../types.js';
+import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 
 export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
-
   // ═══════════════════════════════════════════════════════════════════════════════
   // DEALING LOOP — Millisecond-level performance
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -241,7 +232,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           errMsg.includes('Failed to fetch') ||
           errMsg.includes('fetch failed') ||
           errMsg.includes('ENOTFOUND') ||
-          errMsg.includes('socket hang up');
+          errMsg.includes('socket hang up') ||
+          // 2026-08-15: emitted by the new DB_TIMEOUT_MS abort in
+          // services/supabase/client.ts. A hung socket is by definition
+          // transient — it must back off and retry, not count toward the
+          // 10-error engine shutdown.
+          errMsg.includes('supabase_timeout') ||
+          errMsg.includes('This operation was aborted') ||
+          errMsg.includes('The operation was aborted');
 
         if (!isTransient) {
           this.consecutiveErrors++;
@@ -619,7 +617,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       }, HAND_SAFETY_TIMEOUT_MS);
 
       unsub = this.handController!.onEvent((event: HandEvent) => {
-        this.handleHandEvent(event, players);
+        // 2026-08-15: handleHandEvent is async and its promise was discarded,
+        // so ANY rejection inside it (broadcast, hub publish, settlement DB
+        // write) vanished into index.ts's unhandled-rejection swallow while the
+        // hand silently stopped advancing. Catch it here so at minimum it is
+        // reported and the watchdog can see the table stop making progress.
+        void this.handleHandEvent(event, players).catch((err) =>
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.handleHandEvent_rejected', {
+            eventType: event.type,
+            handNumber: this.handCount,
+          })
+        );
 
         if (event.type === 'HAND_COMPLETE') {
           clearTimeout(handTimeout);

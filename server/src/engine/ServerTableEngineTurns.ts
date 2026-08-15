@@ -16,18 +16,14 @@ import { TimeBankEngine } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import type { ValidationContext } from './ServerActionValidator.js';
-import {
-  supabase,
-} from '../services/supabase.js';
-import type {
-  HandEvent,
-  SeatedPlayer,
-} from '../types.js';
+import { supabase } from '../services/supabase.js';
+import type { HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
+// Static watchdog thresholds live on the Base class (single source of truth).
+import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
-
   // ═══════════════════════════════════════════════════════════════════════════════
   // TURN TIMER MANAGEMENT
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -105,7 +101,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       this.watchdogTrips++;
       reportError(
         new Error(
-          'Hand #' + this.handCount + ' stalled ' + Math.round(idleMs / 1000) + 's with no current seat'
+          'Hand #' +
+            this.handCount +
+            ' stalled ' +
+            Math.round(idleMs / 1000) +
+            's with no current seat'
         ),
         'ServerTableEngine.' + this.tableId + '.watchdog_no_seat'
       );
@@ -120,13 +120,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     const p = state.players.find((x: any) => x.seat === seat);
     if (!p) return;
-    const hasClock = this.preciseTimer.hasTimer(this.tableId, (p as any).id || (p as any).userId || '');
+    const hasClock = this.preciseTimer.hasTimer(
+      this.tableId,
+      (p as any).id || (p as any).userId || ''
+    );
     this.watchdogTrips++;
 
     reportError(
       new Error(
-        'Hand #' + this.handCount + ' stalled ' + Math.round(idleMs / 1000) + 's at seat ' + seat +
-          ' (clock=' + hasClock + ', stage=' + state.stage + ', trip=' + this.watchdogTrips + ')'
+        'Hand #' +
+          this.handCount +
+          ' stalled ' +
+          Math.round(idleMs / 1000) +
+          's at seat ' +
+          seat +
+          ' (clock=' +
+          hasClock +
+          ', stage=' +
+          state.stage +
+          ', trip=' +
+          this.watchdogTrips +
+          ')'
       ),
       'ServerTableEngine.' + this.tableId + '.watchdog_turn_stalled'
     );
@@ -1153,8 +1167,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
       if (!applied) {
         console.warn(
-          '[ServerTableEngine:' + this.tableId + '] Horse action ' + action +
-            ' rejected at seat ' + seat + ' — falling back to check/fold'
+          '[ServerTableEngine:' +
+            this.tableId +
+            '] Horse action ' +
+            action +
+            ' rejected at seat ' +
+            seat +
+            ' — falling back to check/fold'
         );
         try {
           // Bible V8 §1.7.4 preferCheckOverFold.

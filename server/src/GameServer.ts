@@ -48,6 +48,12 @@ export class GameServer {
    * dealing" and silently skipped its freeze recovery.
    */
   private tournamentOwnedTables: Set<string> = new Set();
+  /**
+   * Last time the cash-table discovery RPC completed successfully. Discovery is
+   * the only thing that starts engines AND the only thing that reaps zombies —
+   * if it stalls, the whole platform is frozen with nothing to notice.
+   */
+  private lastDiscoveryOkAt: number = Date.now();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
   private running: boolean = false;
   private startTime: number = Date.now();
@@ -223,6 +229,25 @@ export class GameServer {
   }
 
   getStatus() {
+    // Per-table liveness first — everything below is aggregate telemetry that
+    // cannot distinguish a dealing table from a frozen one.
+    const tableLiveness = [...this.tableEngines].map(([id, engine]) => ({
+      tableId: id,
+      seated: engine.seatedCount(),
+      dealable: engine.dealableCount(),
+      handCount: engine.getHandCount(),
+      msSinceProgress: engine.msSinceProgress(),
+      isTournament: engine.isTournament(),
+    }));
+    const stalledTables = tableLiveness
+      .filter((t) => t.dealable >= 2 && t.msSinceProgress > 120_000)
+      .map((t) => ({
+        tableId: t.tableId,
+        dealable: t.dealable,
+        secsIdle: Math.round(t.msSinceProgress / 1000),
+      }));
+    const discoveryStaleMs = Date.now() - this.lastDiscoveryOkAt;
+
     let totalHands = 0;
     // FIX 153: Aggregate telemetry from all table engines for health endpoint
     const tableMetrics: any[] = [];
@@ -266,6 +291,19 @@ export class GameServer {
       //   version: git SHA baked in at build time (GIT_COMMIT_SHA env var)
       //   uptime: seconds since process start
       //   activeTables: live count (also duplicated below for back-compat)
+      // ── LIVENESS (2026-08-15) ────────────────────────────────────────────
+      // `status` reflects only whether the process booted. A table freeze is
+      // invisible to it, which is why the 2026-08-15 incident was reported by a
+      // player rather than by monitoring. `liveness` is the hard signal: it goes
+      // 'dead' when any table with 2+ dealable seats has made no observable
+      // progress for 2 minutes, or when the discovery loop itself has stalled.
+      // The Docker HEALTHCHECK reads this field, so a wedged process restarts
+      // itself with no human involved.
+      liveness: stalledTables.length > 0 || discoveryStaleMs > 60_000 ? 'dead' : 'ok',
+      stalledTableCount: stalledTables.length,
+      stalledTables: stalledTables.slice(0, 20),
+      discoveryStaleMs,
+      tableLiveness,
       status: this.running ? 'ok' : 'degraded',
       version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
       // Existing fields preserved — clients reading `running` / aggregate
@@ -833,6 +871,11 @@ export class GameServer {
         const { data: ready, error } = await supabase.rpc('cash_tables_with_players', {
           p_min: 2,
         });
+
+        // Discovery liveness stamp. If this stops advancing, no engine can be
+        // started and no zombie can be reaped — a platform-wide freeze that
+        // nothing else would notice. Surfaced as `discoveryStaleMs` on /health.
+        if (!error) this.lastDiscoveryOkAt = Date.now();
 
         if (error) {
           const errMsg =

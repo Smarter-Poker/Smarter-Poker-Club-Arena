@@ -739,6 +739,30 @@ export abstract class ServerTableEngineBase {
     return this.handCount;
   }
 
+  /**
+   * 2026-08-15 observability. `/health` previously reported process-up only, so
+   * a process where every table was frozen still answered
+   * {"status":"ok","running":true} — which is also exactly what the deploy
+   * gate grepped for. These three accessors are what make a freeze detectable
+   * from outside without a human noticing.
+   */
+  seatedCount(): number {
+    return this.seatedPlayers.length;
+  }
+
+  dealableCount(): number {
+    return this.seatedPlayers.filter(
+      (p) =>
+        p.stack > 0 &&
+        !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+        !this.waitingForBB.has(p.user_id)
+    ).length;
+  }
+
+  isTournament(): boolean {
+    return this.isTournamentTable();
+  }
+
   // FIX 153: Expose telemetry snapshot for health endpoint
   getTelemetrySnapshot() {
     return this.engineTelemetry.getSnapshot();

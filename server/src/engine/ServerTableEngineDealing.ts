@@ -581,13 +581,34 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       const state = this.handController.getState();
       const dcPlayer = state.players.find((p) => p.user_id === disconnectAction.playerId);
       if (!dcPlayer) return;
+      // Stale deadline: the turn has already moved on. Acting here would be a
+      // phantom action attributed to a player who is not in the decision.
+      if (state.currentPlayerSeat !== dcPlayer.seat) return;
+
+      // This callback is the ONLY resolution path for a disconnected or
+      // sitting-out player's turn — handleTurnChange returns early for them
+      // WITHOUT arming a clock. performAction returns false on an illegal
+      // action (the countdown captures `canCheck` up to 30s earlier, so it goes
+      // stale), and the old try/catch never saw that: no action, no clock, no
+      // retry. Permanent freeze.
+      let applied = false;
       try {
-        this.handController.performAction(dcPlayer.seat, disconnectAction.action as any);
+        applied = this.handController.performAction(dcPlayer.seat, disconnectAction.action as any);
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_threw');
+      }
+      if (!applied) applied = this.forceResolveSeat(dcPlayer.seat, true);
+      if (applied) {
+        this.markProgress();
         console.log(
           `[ServerTableEngine:${this.tableId}] Disconnect auto-${disconnectAction.action} for ${disconnectAction.playerId} (${disconnectAction.reason})`
         );
-      } catch (err) {
-        reportError(err, 'ServerTableEnginethistableId.Disconnect_autoaction_failed');
+      } else {
+        reportError(
+          new Error('Disconnect auto-action rejected at seat ' + dcPlayer.seat),
+          'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_rejected'
+        );
+        this.forceArmTurnTimer(dcPlayer.seat, this.tableInfo?.action_time_seconds || 15);
       }
     });
 

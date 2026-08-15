@@ -16,16 +16,11 @@ import { getEquityPool } from './equity/EquityWorkerPool.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { insuranceEquity } from './InsuranceEquity.js';
 import { evaluateHand, evaluateOmahaHand, compareHands, determineWinners } from './PokerEngine.js';
-import type {
-  SeatPlayer,
-  HandEvent,
-  SeatedPlayer,
-} from '../types.js';
+import type { SeatPlayer, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
-
   /**
    * FIX 95: Bible V8 §4.20 + Dan's rules: Respond to a Run It Twice offer.
    *
@@ -194,13 +189,29 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       }, delay);
     }
 
-    // Start a single discard timer — when it expires, auto-discard for anyone remaining
+    // Start a single discard timer — when it expires, auto-discard for anyone remaining.
+    //
+    // 2026-08-15: this had no try/catch and no hand-identity guard. autoDiscard
+    // drives performDiscard -> checkPineappleDiscardsComplete -> advanceStage ->
+    // deck.deal -> the synchronous broadcast chain, so a throw on the FIRST seat
+    // aborted the loop: the remaining seats never discarded,
+    // pineappleDiscardsRemaining never emptied, and the hand was parked at
+    // pineapple_discard forever. Three pineapple tables run in production.
+    const discardControllerRef = this.handController;
     this.pineappleDiscardTimer = setTimeout(() => {
-      if (!this.handController) return;
+      if (!this.handController || this.handController !== discardControllerRef) return;
       for (const seat of seats) {
-        // Auto-discard last card for any player who hasn't responded
-        this.handController.autoDiscard(seat);
+        try {
+          // Auto-discard last card for any player who hasn't responded
+          this.handController.autoDiscard(seat);
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_autodiscard_threw', {
+            seat,
+          });
+          // Keep going — one bad seat must not strand the whole table.
+        }
       }
+      this.markProgress();
       // checkPineappleDiscardsComplete() inside autoDiscard will advance the game
     }, timeoutMs);
   }
@@ -233,7 +244,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     // If all discards are complete, the HandController will advance the game
     // and emit events that trigger broadcasting. Clear the discard timer.
-    if (hcState.stage !== 'pineapple_discard') {
+    //
+    // 2026-08-15: this used to re-test `hcState.stage`, a PRE-discard copy
+    // returned by getState() — proven equal to 'pineapple_discard' by the guard
+    // at the top of this method and unable to change, so the branch was dead
+    // and the timer was NEVER cleared. It always ran to full duration and fired
+    // autoDiscard into whatever hand happened to be live by then.
+    if (this.handController.getState().stage !== 'pineapple_discard') {
       // Stage already advanced — all discards are in
       if (this.pineappleDiscardTimer) {
         clearTimeout(this.pineappleDiscardTimer);
@@ -279,7 +296,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         holeCards: p.cards || [],
       }));
 
-      void this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot);
+      // runInsurancePerStreetFlow has no try/catch of its own and ends in
+      // finalizeRunout()/continueRunout(). An unhandled rejection therefore
+      // left the hand parked forever with no clock of any kind, because
+      // HandController.advanceStage returns without setting currentPlayerSeat
+      // while it waits for this callback to come back.
+      this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot).catch((err) => {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_flow_rejected');
+        this.safeContinueRunout('insurance_flow_rejected');
+      });
     } else {
       // ═══════════════════════════════════════════════════════════════════════
       // FIX 94: RIT (Run It Twice) offer — N-player support.
@@ -358,14 +383,47 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * Wait for both players to respond to RIT offer.
    * Similar to waitForInsuranceResponses but checks RIT state.
    */
+  /**
+   * Force a parked runout to finish. The terminal fallback on every path that
+   * would otherwise leave a hand waiting on a callback that died.
+   */
+  protected safeContinueRunout(reason: string): void {
+    try {
+      this.handController?.continueRunout();
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.forced_runout_failed', { reason });
+    }
+  }
+
   protected waitForRITResponse(onComplete: () => void): void {
     let completed = false;
+    // Identity anchors. Without them a wait that outlives its hand (watchdog
+    // force-completion, 10-minute void) resolves into the NEXT hand and runs
+    // out its board at preflop.
+    const controllerAtOffer = this.handController;
+    const handAtOffer = this.handCount;
     const finish = () => {
       if (completed) return;
       completed = true;
       clearInterval(checkInterval);
       clearTimeout(safetyTimeout);
-      onComplete();
+      if (!this.handController || this.handController !== controllerAtOffer) {
+        reportError(
+          new Error('RIT wait resolved into a different hand (#' + handAtOffer + ') — dropped'),
+          'ServerTableEngine.' + this.tableId + '.rit_wait_stale'
+        );
+        return;
+      }
+      // onComplete drives dealAndResolveRIT / continueRunout / finalizeRunout —
+      // the whole settlement cascade — inside a bare timer callback. A throw
+      // escaped to the process handler with the interval and timeout ALREADY
+      // cleared, so nothing would ever retry and the hand was dead.
+      try {
+        onComplete();
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.rit_oncomplete_threw');
+        this.safeContinueRunout('rit_oncomplete_threw');
+      }
     };
 
     const checkInterval = setInterval(() => {
@@ -855,7 +913,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           }
         } else {
           // At least one player eligible — continue per-street pause
-          void this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot);
+          // runInsurancePerStreetFlow has no try/catch of its own and ends in
+          // finalizeRunout()/continueRunout(). An unhandled rejection therefore
+          // left the hand parked forever with no clock of any kind, because
+          // HandController.advanceStage returns without setting currentPlayerSeat
+          // while it waits for this callback to come back.
+          this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot).catch((err) => {
+            reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_flow_rejected');
+            this.safeContinueRunout('insurance_flow_rejected');
+          });
         }
       });
     }
@@ -894,12 +960,29 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    */
   protected waitForInsuranceResponses(onComplete: () => void): void {
     let completed = false;
+    const controllerAtOffer = this.handController;
+    const handAtOffer = this.handCount;
     const finish = () => {
       if (completed) return; // Guard: exactly-once invocation
       completed = true;
       clearInterval(checkInterval);
       clearTimeout(safetyTimeout);
-      onComplete();
+      // A wait that outlives its hand must never touch the next hand's board.
+      if (!this.handController || this.handController !== controllerAtOffer) {
+        reportError(
+          new Error(
+            'Insurance wait resolved into a different hand (#' + handAtOffer + ') — dropped'
+          ),
+          'ServerTableEngine.' + this.tableId + '.insurance_wait_stale'
+        );
+        return;
+      }
+      try {
+        onComplete();
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.insurance_oncomplete_threw');
+        this.safeContinueRunout('insurance_oncomplete_threw');
+      }
     };
 
     const checkInterval = setInterval(() => {

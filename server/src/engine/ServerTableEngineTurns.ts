@@ -213,6 +213,30 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     this.killForRestart('turn_unrecoverable');
   }
 
+  /**
+   * Resolve a seat that MUST stop being on the clock, preferring check over
+   * fold (Bible V8 §1.7.4). Returns false only when the engine refuses both.
+   *
+   * 2026-08-15: HandController.performAction RETURNS FALSE on an illegal
+   * action — it does not throw. Every call site that wrapped it in try/catch
+   * and trusted the catch was silently doing nothing when the action was
+   * rejected, leaving a seat with no clock and no action: a permanent freeze.
+   * This helper is the single correct way to force a seat, so the bug cannot
+   * be reintroduced one call site at a time.
+   */
+  protected forceResolveSeat(seat: number, preferCheck: boolean): boolean {
+    if (!this.handController) return false;
+    const order: Array<'check' | 'fold'> = preferCheck ? ['check', 'fold'] : ['fold'];
+    for (const a of order) {
+      try {
+        if (this.handController.performAction(seat, a as any)) return true;
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.force_' + a + '_threw');
+      }
+    }
+    return false;
+  }
+
   protected startTurnTimer(userId: string, seat: number, durationSeconds: number): void {
     this.clearTurnTimer();
     // NOTE: Do NOT reset timeBankActivatedThisTurn here — this method is also called
@@ -402,29 +426,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       const amountToCall = player ? Math.max(0, state.currentBet - (player.bet ?? 0)) : 0;
       const canCheck = amountToCall === 0;
 
-      if (canCheck) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-checking (no bet to call).`
-        );
-        try {
-          this.handController.performAction(seat, 'check');
-        } catch (err) {
-          reportError(err, 'ServerTableEnginethistableId.Autocheck_failed');
-          try {
-            this.handController.performAction(seat, 'fold');
-          } catch (foldErr) {
-            reportError(foldErr, 'ServerTableEnginethistableId.Autofold_fallback_also_failed');
-          }
-        }
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. ` +
+          (canCheck ? 'Auto-checking (no bet to call).' : `Auto-folding (${amountToCall} to call).`)
+      );
+      // By the time this callback runs the PreciseActionTimer entry has already
+      // fired and been dropped. If the forced action is REJECTED the seat is
+      // left with no clock and no action while the FSM below records it as
+      // resolved — a terminal freeze. Re-arm rather than pretend it resolved.
+      if (this.forceResolveSeat(seat, canCheck)) {
+        this.markProgress();
       } else {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding (${amountToCall} to call).`
+        reportError(
+          new Error('Timeout auto-action rejected at seat ' + seat + ' — re-arming clock'),
+          'ServerTableEngine.' + this.tableId + '.auto_action_rejected'
         );
-        try {
-          this.handController.performAction(seat, 'fold');
-        } catch (err) {
-          reportError(err, 'ServerTableEnginethistableId.Autofold_failed');
-        }
+        this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
       }
 
       // Bible V8 §3.3: Turn FSM — processing → complete
@@ -1046,18 +1063,31 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       enginePlayer.stack
     );
     if (preResult.executed && preResult.action) {
+      // The `return` below skips Step 4 (startTurnTimer) entirely, so it may
+      // ONLY be taken when the action genuinely landed. performAction returns
+      // false on rejection (a pre-action resolved against a bet level the
+      // engine then re-validates is the reachable case) — the old try/catch
+      // never saw that and returned anyway, leaving the seat with no clock.
+      let preApplied = false;
       try {
-        this.handController!.performAction(seat, preResult.action as any, preResult.amount);
+        preApplied = this.handController!.performAction(
+          seat,
+          preResult.action as any,
+          preResult.amount
+        );
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.preaction_threw');
+      }
+      if (preApplied) {
         console.log(
           `[ServerTableEngine:${this.tableId}] Pre-action executed: ${player.user_id} → ${preResult.action}${preResult.amount ? ` ${preResult.amount}` : ''}`
         );
+        this.markProgress();
         return; // Pre-action handled the turn — no timer needed
-      } catch (err) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] Pre-action failed, falling through to timer:`,
-          err
-        );
       }
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] Pre-action ${preResult.action} REJECTED at seat ${seat} — falling through to the turn timer`
+      );
     }
 
     // Step 2: Check disconnect state before starting timer (applies to ALL players)

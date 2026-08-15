@@ -537,7 +537,7 @@ export default function TournamentPage() {
     channel
       .on('broadcast', { event: 'tournament_event' }, (payload) => {
         const eventType = payload.payload?.type;
-        const data = payload.payload?.data;
+        const data = payload.payload?.payload;
 
         switch (eventType) {
           case 'level_up':

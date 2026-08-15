@@ -80,6 +80,19 @@ export default function ChipAnimation({
   // setIsVisible(false) fires on an unmounted component.
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // CHIP-GLITCH FIX 2026-08-15: `onComplete` used to sit in the animation
+  // effect's dependency array, and ChipAnimationManager passes an inline
+  // arrow — a new identity on EVERY parent render. TablePage re-renders many
+  // times during an action (WS snapshots, action labels, pot updates), so
+  // each render cancelled the rAF loop and the 100ms hide timer and REPLAYED
+  // the flight from the start: chips visibly stuttered, looped seat-to-pot,
+  // and lingered mid-felt until the 5s safety sweep reaped them. Keep the
+  // latest callback in a ref so re-renders never restart a flight in the air.
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  });
+
   useEffect(() => {
     let startTime: number | null = null;
 
@@ -121,7 +134,7 @@ export default function ChipAnimation({
         hideTimerRef.current = setTimeout(() => {
           hideTimerRef.current = null;
           setIsVisible(false);
-          onComplete?.();
+          onCompleteRef.current?.();
         }, 100);
       }
     };
@@ -132,7 +145,9 @@ export default function ChipAnimation({
       if (animRef.current) cancelAnimationFrame(animRef.current);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
-  }, [from, to, duration, delay, onComplete, useArc, arcHeight]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onComplete is
+    // intentionally read through onCompleteRef; see CHIP-GLITCH FIX above.
+  }, [from, to, duration, delay, useArc, arcHeight]);
 
   if (!isVisible) return null;
 

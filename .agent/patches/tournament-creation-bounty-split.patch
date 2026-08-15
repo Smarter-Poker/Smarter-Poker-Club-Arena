@@ -1,0 +1,109 @@
+diff --git a/src/components/club/CreateTournamentModal.tsx b/src/components/club/CreateTournamentModal.tsx
+index 9118b2a..7e6f974 100644
+--- a/src/components/club/CreateTournamentModal.tsx
++++ b/src/components/club/CreateTournamentModal.tsx
+@@ -214,6 +214,20 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
+           setIsSubmitting(false);
+           return;
+         }
++        // The bounty is funded out of the buy-in, so bounty + 10% rake can
++        // never exceed it — otherwise the prize pool would go negative and
++        // registration would reject every entrant with 'misconfigured_bounty'.
++        {
++          const bi = parseFloat(buyIn) || 0;
++          const rk = Math.round(bi * 0.1 * 100) / 100;
++          if (ba + rk > bi) {
++            toast.error(
++              `Bounty ${ba} + ${rk} rake exceeds the ${bi} buy-in. Lower the bounty or raise the buy-in.`
++            );
++            setIsSubmitting(false);
++            return;
++          }
++        }
+         if (format === 'mystery_bounty') {
+           const min = parseFloat(mysteryBountyMin);
+           const max = parseFloat(mysteryBountyMax);
+@@ -377,10 +391,29 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
+     format === 'bounty' || format === 'progressive_bounty' || format === 'mystery_bounty';
+ 
+   // ── Validation: ALL fields required before tournament can be created ──
++  // DAN'S SPEC 2026-08-15: a bounty event's buy-in is the player's ALL-IN entry
++  // cost and splits three ways at registration —
++  //   rake (10%) + bounty pool (bounty x entrants) + prize pool (remainder).
++  // "A $50 bounty tournament with a $25 bounty: $25 to the bounty pool, $5
++  //  rake, $20 into the prize pool."
++  // The bounty is therefore FUNDED, not minted, which means the owner cannot
++  // configure a bounty that leaves nothing for the prize pool. Compute the
++  // split here so the form can both block it and show the owner the breakdown.
++  const bountySplit = (() => {
++    const buyInNum = parseFloat(buyIn);
++    if (!isBountyFormat || !buyInNum || buyInNum <= 0) return null;
++    const bountyNum = parseFloat(bountyAmount) || 0;
++    const rakeNum = Math.round(buyInNum * 0.1 * 100) / 100;
++    const prizeNum = Math.round((buyInNum - rakeNum - bountyNum) * 100) / 100;
++    return { buyIn: buyInNum, bounty: bountyNum, rake: rakeNum, prize: prizeNum };
++  })();
++
+   const bountyValid = (() => {
+     if (!isBountyFormat) return true;
+     const ba = parseFloat(bountyAmount);
+     if (!ba || ba <= 0) return false;
++    // The split must leave a non-negative prize pool.
++    if (bountySplit && bountySplit.prize < 0) return false;
+     if (format === 'mystery_bounty') {
+       const min = parseFloat(mysteryBountyMin);
+       const max = parseFloat(mysteryBountyMax);
+@@ -838,15 +871,50 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
+               )}
+               {format === 'mystery_bounty' && (
+                 <span className={styles.helperText}>
+-                  Mystery bounty is randomly assigned at registration between {mysteryBountyMin}x
+-                  and {mysteryBountyMax}x the base bounty, revealed on knockout
++                  Each head is sealed at registration from a jackpot ladder — 60% x0.5, 25% x1,
++                  10% x2, 4% x3, 1% x13 of the bounty amount — and revealed on knockout. The
++                  ladder averages exactly 1x, so the bounty pool always funds the heads.
+                 </span>
+               )}
++              {bountySplit && (
++                <div
++                  style={{
++                    marginTop: 8,
++                    padding: '8px 12px',
++                    borderRadius: 8,
++                    background: 'rgba(255,255,255,0.04)',
++                    border: '1px solid rgba(255,255,255,0.10)',
++                    fontSize: '0.75rem',
++                    lineHeight: 1.6,
++                  }}
++                >
++                  <strong style={{ color: '#ffd700' }}>Each {bountySplit.buyIn} entry splits:</strong>
++                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>
++                    <span>
++                      Bounty pool <strong>{bountySplit.bounty}</strong>
++                    </span>
++                    <span>
++                      Rake <strong>{bountySplit.rake}</strong>
++                    </span>
++                    <span
++                      style={{ color: bountySplit.prize < 0 ? '#ef4444' : undefined }}
++                    >
++                      Prize pool <strong>{bountySplit.prize}</strong>
++                    </span>
++                  </div>
++                  <span style={{ opacity: 0.65 }}>
++                    Bounty and prize pools are tracked separately; unclaimed bounty money goes to
++                    the champion.
++                  </span>
++                </div>
++              )}
+               {!bountyValid && (
+                 <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 6 }}>
+                   {!bountyAmount || parseFloat(bountyAmount) <= 0
+                     ? 'Bounty amount is required and must be greater than 0'
+-                    : 'Mystery max multiplier must be greater than min multiplier'}
++                    : bountySplit && bountySplit.prize < 0
++                      ? `Bounty ${bountySplit.bounty} + ${bountySplit.rake} rake exceeds the ${bountySplit.buyIn} buy-in — nothing left for the prize pool`
++                      : 'Mystery max multiplier must be greater than min multiplier'}
+                 </p>
+               )}
+             </div>

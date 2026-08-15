@@ -48,14 +48,22 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
   // Capture initialStack only on first mount — do NOT let stack updates restart session
   const initialStackRef = useRef(initialStack);
 
-  // ── Initialize session tracking ──
+  // ── Read the live session ──
+  // Dan 2026-08-15: this used to call startSession() on mount and
+  // endSession() on unmount, so simply OPENING this panel reset the session to
+  // zero and CLOSING it threw the history away — including the Supabase
+  // session_history write, which is gated on handsPlayed > 0. The session is
+  // now owned by TablePage for as long as hero is seated (see the Session
+  // Stats lifecycle block there); this component only reads and subscribes.
+  //
+  // startSession() is still called defensively when no session exists — e.g.
+  // the panel opened from an observer context that never seated hero — so the
+  // HUD renders honest zeros instead of a null.
   useEffect(() => {
-    sessionStatsService.startSession(tableId, userId, initialStackRef.current, bigBlind);
+    if (!sessionStatsService.getStats(tableId)) {
+      sessionStatsService.startSession(tableId, userId, initialStackRef.current, bigBlind);
+    }
     setStats(sessionStatsService.getStats(tableId));
-
-    return () => {
-      sessionStatsService.endSession(tableId);
-    };
   }, [tableId, userId, bigBlind]); // initialStack intentionally omitted — captured in ref
 
   // ── Listen for stats updates ──
@@ -75,7 +83,12 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
   // ── Session duration timer (updates every second) ──
   useEffect(() => {
     const formatDuration = () => {
-      const elapsed = Date.now() - sessionStartTime;
+      // Dan 2026-08-15: count from the REAL session start (when hero sat down)
+      // rather than when this panel was opened. Previously these were the same
+      // instant because the panel owned the session; now that TablePage owns
+      // it, using the local mount time would under-report every session.
+      const startedAt = sessionStatsService.getStats(tableId)?.sessionStartTime ?? sessionStartTime;
+      const elapsed = Date.now() - startedAt;
       const totalMinutes = Math.floor(elapsed / 60_000);
       const hours = Math.floor(totalMinutes / 60);
       const minutes = totalMinutes % 60;
@@ -85,7 +98,7 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
     setSessionDuration(formatDuration());
     const timer = setInterval(() => setSessionDuration(formatDuration()), 1000);
     return () => clearInterval(timer);
-  }, [sessionStartTime]);
+  }, [sessionStartTime, tableId]);
 
   const formatPL = (value: number): string => {
     const sign = value >= 0 ? '+' : '';

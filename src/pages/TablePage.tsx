@@ -88,6 +88,7 @@ import DisconnectToast from '../components/table/DisconnectToast';
 import FoldProtectionDialog from '../components/table/FoldProtectionDialog';
 // Phase 2 T2-02 (spec §5.7): Always-visible timebank counter (bottom-left).
 import TimebankCounter from '../components/table/TimebankCounter';
+import { sessionStatsService } from '../services/SessionStatsService';
 import { BBJService } from '../services/BBJService';
 import RabbitHunt from '../components/table/RabbitHunt';
 import LeaderboardPanel from '../components/table/LeaderboardPanel';
@@ -1008,6 +1009,12 @@ export default function TablePage({
 
   // VPIP count tracking for mini stats card
   const vpipCountRef = useRef(0);
+  // Dan 2026-08-15 (Session Stats fix): per-HAND voluntary-action flags.
+  // vpipCountRef above is cumulative and cannot answer "did hero VPIP THIS
+  // hand", which is what sessionStatsService.recordHand() needs. Set on the
+  // hero's own preflop action, cleared when the hand number advances.
+  const heroVpipThisHandRef = useRef(false);
+  const heroPfrThisHandRef = useRef(false);
   const triggerChipAnimationRef = useRef<
     ((fromSeat: number, toPot: boolean, amount: number) => void) | null
   >(null);
@@ -1629,6 +1636,9 @@ export default function TablePage({
       setAccountBalance((prev) => Math.max(0, prev - amount));
       totalBuyInRef.current += amount; // Track for session P/L
       totalRebuysRef.current += 1; // Track rebuy count for session summary
+      // Dan 2026-08-15: feed the top-up into SessionStatsService too, otherwise
+      // its buyInTotal never moves and P&L reads as pure profit after a rebuy.
+      sessionStatsService.recordRebuy(tableId, amount);
       // Update peak stack if rebuy pushes hero above previous peak
       const newPeakCandidate = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
       if (newPeakCandidate > peakStackRef.current) peakStackRef.current = newPeakCandidate;
@@ -4655,6 +4665,49 @@ export default function TablePage({
   const prevHandStackRef = useRef<number>(0);
   const heroFoldedInCurrentHandRef = useRef(false);
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Dan 2026-08-15 — Session Stats lifecycle.
+  //
+  // startSession()/endSession() used to live inside SessionHUD's mount
+  // effect, which meant the "session" began when you OPENED the stats panel
+  // and was torn down when you closed it. Opening the panel therefore always
+  // showed a freshly zeroed session, and closing it discarded the history.
+  // The session belongs to the SEAT, not to a modal, so it is owned here and
+  // runs for as long as hero is sitting. SessionHUD is now a pure reader.
+  // ═══════════════════════════════════════════════════════════════════════
+  const sessionStartedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!tableId || !userId || userId === 'guest') return;
+    const seated = tableState.heroSeat > 0;
+    const key = `${tableId}:${userId}`;
+
+    if (seated && sessionStartedForRef.current !== key) {
+      const heroStack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
+      // Guard against seeding the session with a 0 stack from a snapshot that
+      // has the seat but not yet the chips — buyInTotal would be wrong for the
+      // whole session and every P&L reading would be inflated by the buy-in.
+      if (heroStack > 0) {
+        sessionStatsService.startSession(tableId, userId, heroStack, safeBB(tableState.blinds));
+        sessionStartedForRef.current = key;
+        prevHandStackRef.current = heroStack;
+      }
+    } else if (!seated && sessionStartedForRef.current === key) {
+      sessionStatsService.endSession(tableId);
+      sessionStartedForRef.current = null;
+    }
+  }, [tableId, userId, tableState.heroSeat, tableState.players, tableState.blinds]);
+
+  // End the session on unmount too (navigating away, or MultiTablePage
+  // closing this tab) so the session_history row is written.
+  useEffect(() => {
+    return () => {
+      if (sessionStartedForRef.current && tableId) {
+        sessionStatsService.endSession(tableId);
+        sessionStartedForRef.current = null;
+      }
+    };
+  }, [tableId]);
+
   // Track if hero folds during the current hand (status changes mid-hand)
   useEffect(() => {
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
@@ -4683,7 +4736,26 @@ export default function TablePage({
         // Track hands played + wins for mini stats card
         handsPlayedRef.current++;
         if (heroDidWin) handsWonRef.current++;
+
+        // Dan 2026-08-15 — THE Session Stats fix. SessionStatsService had a
+        // complete, correct recordHand() that computed hands, VPIP%, PFR%,
+        // P&L, BB/100, hands/hr and the sparkline trajectory — and NOTHING in
+        // the entire app ever called it. Every field except the clock sat at
+        // its zeroed initial value forever, which is exactly why the panel
+        // "only recorded the time". This is that missing call.
+        if (tableId) {
+          sessionStatsService.recordHand(
+            tableId,
+            heroStack,
+            heroDidWin,
+            heroVpipThisHandRef.current,
+            heroPfrThisHandRef.current
+          );
+        }
       }
+      // Reset per-hand voluntary-action flags for the hand just starting.
+      heroVpipThisHandRef.current = false;
+      heroPfrThisHandRef.current = false;
       prevHandNumberRef.current = handNum;
       prevHandStackRef.current = heroStack;
       heroFoldedInCurrentHandRef.current = false; // Reset for new hand
@@ -5227,6 +5299,10 @@ export default function TablePage({
         (action === 'call' || action === 'raise' || action === 'allin')
       ) {
         vpipCountRef.current++;
+        // Dan 2026-08-15: also flag it for THIS hand so recordHand() can post
+        // a real VPIP%. Raise/all-in additionally counts as a preflop raise.
+        heroVpipThisHandRef.current = true;
+        if (action === 'raise' || action === 'allin') heroPfrThisHandRef.current = true;
       }
 
       //All local engine calls removed — server is authoritative
@@ -5695,7 +5771,12 @@ export default function TablePage({
           bottom-left. Only renders during an active hand so it doesn't clutter
           observer/idle views. Tapping it opens the existing TimeBank modal so
           the player can buy more charges. `low` state pulses when <= 1. */}
-      {tableState.isHandInProgress && tableState.heroSeat > 0 && (
+      {/* Dan 2026-08-15: gate relaxed from `isHandInProgress && heroSeat > 0`
+          to seated-only. Hiding it between hands meant the counter blinked out
+          every time a hand ended, so a player could never check how many banks
+          they had left before the next hand — precisely when you want to know.
+          Observers (heroSeat === 0) still see nothing. */}
+      {tableState.heroSeat > 0 && (
         <TimebankCounter
           count={timeBanksRemaining}
           low={timeBanksRemaining <= 1}

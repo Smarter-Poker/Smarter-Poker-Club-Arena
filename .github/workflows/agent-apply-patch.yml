@@ -40,7 +40,24 @@ jobs:
             echo "::group::Applying $p"
             # --index stages the result; a patch that does not apply cleanly
             # fails the job loudly instead of committing garbage.
-            git apply --index --whitespace=nowarn "$p"
+            #
+            # 2026-08-15: try three forms rather than one. Zero-context (-U0)
+            # diffs are the safest thing to hand across the agent bridge —
+            # they carry NO context lines, so a mis-transcribed character in a
+            # box-drawing comment can no longer break the apply — but git
+            # refuses them without --unidiff-zero. A 3-way merge is the last
+            # resort for a patch cut against a slightly older main.
+            if git apply --index --whitespace=nowarn "$p"; then
+              echo "applied (standard)"
+            elif git apply --index --unidiff-zero --whitespace=nowarn "$p"; then
+              echo "applied (unidiff-zero)"
+            elif git apply --index --3way --whitespace=nowarn "$p"; then
+              echo "applied (3-way)"
+            else
+              echo "::error::Patch $p did not apply. Reject detail follows."
+              git apply --check --verbose "$p" || true
+              exit 1
+            fi
             git rm -q "$p"
             git commit -m "agent-patch: apply $(basename "$p")"
             echo "::endgroup::"

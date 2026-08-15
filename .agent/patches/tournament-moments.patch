@@ -1,0 +1,336 @@
+diff --git a/server/src/engine/HandController.ts b/server/src/engine/HandController.ts
+index 6ec56a6..abc56c0 100644
+--- a/server/src/engine/HandController.ts
++++ b/server/src/engine/HandController.ts
+@@ -347,0 +348,8 @@ export class HandController {
++    // DEAD-WIRING FIX 2026-08-15: announce the bomb pot. Without this the only
++    // thing the client saw was a POT_UPDATE — an unexplained ante off every
++    // stack, then a hand that inexplicably began on the flop.
++    this.emit({
++      type: 'BOMB_POT_TRIGGERED',
++      anteAmount,
++      bbMultiplier: bombPot.anteMultiplier,
++    });
+diff --git a/server/src/engine/ServerTableEngineHandEvents.ts b/server/src/engine/ServerTableEngineHandEvents.ts
+index 5b57dc1..fa4419b 100644
+--- a/server/src/engine/ServerTableEngineHandEvents.ts
++++ b/server/src/engine/ServerTableEngineHandEvents.ts
+@@ -45,0 +46,14 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
++      case 'BOMB_POT_TRIGGERED' as any: {
++        // Fan the engine's bomb-pot announcement out to the table so
++        // BombPotOverlay can explain the forced ante before the flop lands.
++        this.hub?.emitEvent(this.tableId, {
++          type: 'bomb_pot_triggered',
++          table_id: this.tableId,
++          hand_number: this.handCount,
++          ante_amount: (event as any).anteAmount,
++          bb_multiplier: (event as any).bbMultiplier,
++          timestamp: Date.now(),
++        });
++        break;
++      }
++
+diff --git a/server/src/types.ts b/server/src/types.ts
+index b606178..e7050e5 100644
+--- a/server/src/types.ts
++++ b/server/src/types.ts
+@@ -282,0 +283,10 @@ export type HandEvent =
++  /**
++   * DEAD-WIRING FIX 2026-08-15. Bomb pot hands were running silently: the
++   * engine collected a forced ante from every seated player and dealt straight
++   * to the flop with no preflop betting, and the client was told nothing about
++   * it. BombPotOverlay is mounted (TableModalsLayer) and subscribes to the
++   * BOMB_POT_TRIGGERED bus event, which had no emitter anywhere. From the
++   * player's side chips just vanished from their stack and the hand started on
++   * the flop with no explanation.
++   */
++  | { type: 'BOMB_POT_TRIGGERED'; anteAmount: number; bbMultiplier: number }
+diff --git a/src/components/table/index.ts b/src/components/table/index.ts
+index ab3c76f..3f9daec 100644
+--- a/src/components/table/index.ts
++++ b/src/components/table/index.ts
+@@ -93,4 +92,0 @@ export type {
+-// Emote Panel
+-export { EmotePanel, DEFAULT_EMOTES, QUICK_TEXT_EMOTES } from './EmotePanel';
+-export type { EmotePanelProps, Emote } from './EmotePanel';
+-
+diff --git a/src/components/tournament/TournamentClock.css b/src/components/tournament/TournamentClock.css
+index 1c45620..dbef883 100644
+--- a/src/components/tournament/TournamentClock.css
++++ b/src/components/tournament/TournamentClock.css
+@@ -309,0 +310,8 @@
++/* "/ 48" after the remaining count — present but subordinate, so the number
++   that matters (players still in) stays the one the eye lands on. */
++.tc-stat-of {
++  font-size: 12px;
++  font-weight: 600;
++  color: rgba(255, 255, 255, 0.4);
++}
++
+diff --git a/src/components/tournament/TournamentClock.tsx b/src/components/tournament/TournamentClock.tsx
+index 97026e5..18df24d 100644
+--- a/src/components/tournament/TournamentClock.tsx
++++ b/src/components/tournament/TournamentClock.tsx
+@@ -19,0 +20,2 @@ import { tournamentService } from '../../services/TournamentService';
++import { supabase } from '../../lib/supabase';
++import { masterBus } from '../../core/MasterBus';
+@@ -46,0 +49,3 @@ interface ClockState {
++  /** Total entries. Shown next to the remaining count so "12 / 48" reads as
++   *  a real field, and so a busted field is visibly a busted field. */
++  entrants: number;
+@@ -74,0 +80 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
++    entrants: 0,
+@@ -95,4 +101,49 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
+-      // Calculate stats
+-      const playersRemaining = tournament.current_players || 0;
+-      const totalChips = (tournament.starting_chips || 0) * playersRemaining;
+-      const averageStack = playersRemaining > 0 ? Math.round(totalChips / playersRemaining) : 0;
++      // ── Live field stats ──────────────────────────────────────────────
++      // FIX 2026-08-15: every number in this footer was wrong once a single
++      // player busted.
++      //
++      //   playersRemaining = tournament.current_players
++      //
++      // `current_players` is the ENTRY count. It is incremented by
++      // fn_register_for_tournament and decremented only by UNregistration;
++      // no elimination path touches it (the server itself calls it
++      // `totalEntries` -- TournamentManagerEliminations.ts). So the clock
++      // showed the starting field for the whole tournament. Measured against
++      // production while writing this: "Union Mystery Bounty (PLO5)" was down
++      // to its last player and the clock read 21; "Late Night PKO" had 4 left
++      // and read 20.
++      //
++      // Worse, both other stats were derived from it:
++      //   totalChips   = starting_chips * playersRemaining   (ignores every
++      //                  chip won, lost, rebought or added on)
++      //   averageStack = totalChips / playersRemaining       (algebraically
++      //                  ALWAYS starting_chips -- a constant, displayed as if
++      //                  it were live. The same tournament above showed 8,000
++      //                  when the real average stack was 168,700.)
++      //
++      // Count and sum the actual seats instead. tournament_players is in the
++      // realtime publication, so the subscription below keeps this current
++      // between the 15s polls.
++      let playersRemaining = tournament.current_players || 0;
++      let entrants = tournament.current_players || 0;
++      let totalChips = (tournament.starting_chips || 0) * playersRemaining;
++      let averageStack = tournament.starting_chips || 0;
++
++      const { data: seatRows, error: seatErr } = await supabase
++        .from('tournament_players')
++        .select('chips, status')
++        .eq('tournament_id', tournamentId);
++
++      if (seatErr) {
++        // Fall back to the (stale) tournament row rather than showing zeros.
++        reportError(seatErr, 'TournamentClock.Seat_stats_failed');
++      } else if (seatRows) {
++        const alive = seatRows.filter((r: { status?: string }) => r.status === 'playing');
++        entrants = seatRows.length || entrants;
++        playersRemaining = alive.length;
++        totalChips = alive.reduce(
++          (sum: number, r: { chips?: number }) => sum + (Number(r.chips) || 0),
++          0
++        );
++        averageStack = playersRemaining > 0 ? Math.round(totalChips / playersRemaining) : 0;
++      }
+@@ -111,0 +163 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
++        entrants,
+@@ -160,0 +213,26 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
++    // Eliminations and chip movements must reach the clock immediately, not up
++    // to 30s later — the whole point of the fix above is that this footer
++    // tracks the live field. tournament_players is in the realtime publication.
++    const channelKey = `clock-players-${tournamentId}`;
++    const channel = masterBus.getOrCreateChannel(channelKey);
++    channel
++      .on(
++        'postgres_changes',
++        {
++          event: '*',
++          schema: 'public',
++          table: 'tournament_players',
++          filter: `tournament_id=eq.${tournamentId}`,
++        },
++        () => {
++          refreshState();
++        }
++      )
++      .subscribe((status: string, err?: Error) => {
++        // The 30s poll above is the backstop, so a dead channel degrades
++        // rather than breaks. Still report it.
++        if (status === 'CHANNEL_ERROR' && err) {
++          reportError(err?.message || err, 'TournamentClock.Realtime_channel_error');
++        }
++      });
++
+@@ -163,0 +242 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
++      masterBus.removeRegisteredChannel(channelKey);
+@@ -165 +244 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
+-  }, [refreshState]);
++  }, [refreshState, tournamentId]);
+@@ -326,2 +405,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
+-            <span className="tc-stat-value">{clock.playersRemaining}</span>
+-            <span className="tc-stat-label">Players</span>
++            <span className="tc-stat-value">
++              {clock.playersRemaining}
++              {clock.entrants > 0 && (
++                <span className="tc-stat-of"> / {clock.entrants}</span>
++              )}
++            </span>
++            <span className="tc-stat-label">Remaining</span>
+diff --git a/src/core/MasterBus.ts b/src/core/MasterBus.ts
+index 7bd6fc8..610b70b 100644
+--- a/src/core/MasterBus.ts
++++ b/src/core/MasterBus.ts
+@@ -55 +54,0 @@ export type BusEventType =
+-  | 'TABLE_EMOTE'
+@@ -359,7 +357,0 @@ export interface BusPayloadMap {
+-  TABLE_EMOTE: {
+-    tableId: string;
+-    userId: string;
+-    emoji: string;
+-    playerName: string;
+-    emoteId?: string;
+-  };
+diff --git a/src/pages/TablePage.tsx b/src/pages/TablePage.tsx
+index 60ae5db..6f1412f 100644
+--- a/src/pages/TablePage.tsx
++++ b/src/pages/TablePage.tsx
+@@ -213 +212,0 @@ import { playerPositionStatsService } from '../services/PlayerPositionStatsServi
+-import { EmoteBroadcast } from '../components/table/EmoteBroadcast';
+@@ -3199,0 +3199,65 @@ export default function TablePage({
++              } else if (data?.type === 'final_table') {
++                // DEAD-WIRING FIX 2026-08-15: the server has always broadcast
++                // `final_table` (TournamentManager: once, when <= 9 players are
++                // still 'playing'), and this switch had no case for it, so the
++                // signal was dropped on the floor. FinalTableOverlay IS mounted
++                // (TableModalsLayer) but listens for the bus event
++                // FINAL_TABLE_REACHED, whose only emitter is
++                // TournamentTimerService.checkTableSize -- a function with ZERO
++                // callers anywhere in the repo. So reaching the final table,
++                // the single biggest moment in a tournament, announced nothing.
++                //
++                // The broadcast carries only { playerCount }; the overlay wants
++                // the seated field, so fetch it. Non-blocking: a failed fetch
++                // must not swallow the announcement, so fall through to the
++                // toast either way.
++                {
++                  const tid = tableStateRef.current.tournamentId;
++                  const ftName = tableStateRef.current.tableName || 'Tournament';
++                  if (tid) {
++                    (async () => {
++                      let ftPlayers: Array<{
++                        userId: string;
++                        username: string;
++                        chips: number;
++                      }> = [];
++                      let prizePool = 0;
++                      try {
++                        const { data: rows } = await supabase
++                          .from('tournament_players')
++                          .select('user_id, username, chips')
++                          .eq('tournament_id', tid)
++                          .eq('status', 'playing')
++                          .order('chips', { ascending: false });
++                        ftPlayers = (rows || []).map(
++                          (r: { user_id: string; username?: string; chips?: number }) => ({
++                            userId: r.user_id,
++                            username: r.username || 'Player',
++                            chips: Number(r.chips) || 0,
++                          })
++                        );
++                        const { data: trow } = await supabase
++                          .from('tournaments')
++                          .select('prize_pool')
++                          .eq('id', tid)
++                          .maybeSingle();
++                        prizePool = Number(trow?.prize_pool) || 0;
++                      } catch (e) {
++                        reportError(e, 'TablePage.final_table_fetch');
++                      }
++                      try {
++                        masterBus.emit('FINAL_TABLE_REACHED', {
++                          tournamentId: tid,
++                          tournamentName: ftName,
++                          prizePool,
++                          players: ftPlayers,
++                        });
++                      } catch {
++                        /* bus publish is best-effort */
++                      }
++                    })();
++                  }
++                  toast?.success?.(
++                    `Final table! ${data.payload?.playerCount ?? 9} players remain.`
++                  );
++                }
+@@ -3215,0 +3280,40 @@ export default function TablePage({
++                // DEAD-WIRING FIX 2026-08-15: heads-up never announced either.
++                // HeadsUpOverlay is mounted in TableModalsLayer but listens for
++                // HEADS_UP_SWITCH, whose only emitter is
++                // TournamentTimerService.checkTableSize -- zero callers. Derive
++                // it here: `position` is the finishing place, so the player who
++                // busts in 3rd leaves exactly two behind.
++                if (Number(elimData.position) === 3 && tableStateRef.current.tournamentId) {
++                  const tid = tableStateRef.current.tournamentId;
++                  (async () => {
++                    try {
++                      const { data: rows } = await supabase
++                        .from('tournament_players')
++                        .select('user_id, username, chips')
++                        .eq('tournament_id', tid)
++                        .eq('status', 'playing')
++                        .order('chips', { ascending: false });
++                      // Only announce if the field really is two-handed; a
++                      // simultaneous double bust would make this a 3-way.
++                      if (rows && rows.length === 2) {
++                        const toP = (r: {
++                          user_id: string;
++                          username?: string;
++                          chips?: number;
++                        }) => ({
++                          userId: r.user_id,
++                          username: r.username || 'Player',
++                          chips: Number(r.chips) || 0,
++                        });
++                        masterBus.emit('HEADS_UP_SWITCH', {
++                          tournamentId: tid,
++                          player1: toP(rows[0]),
++                          player2: toP(rows[1]),
++                        });
++                      }
++                    } catch (e) {
++                      reportError(e, 'TablePage.heads_up_detect');
++                    }
++                  })();
++                }
++
+@@ -4469,0 +4574,28 @@ export default function TablePage({
++      case 'BOMB_POT_TRIGGERED': {
++        // DEAD-WIRING FIX 2026-08-15. BombPotOverlay is mounted and has always
++        // listened for this bus event; nothing has ever emitted it, and the
++        // engine sent no bomb-pot signal at all. A bomb pot therefore looked
++        // like a bug: an ante disappeared off every stack and the hand opened
++        // on the flop with no preflop action and no explanation.
++        //
++        // (Note for whoever turns this on: as of today 0 of 54,858 tables have
++        // bomb_pot_enabled set, so this path has never run in production. The
++        // toggle exists in CreateTableModal and TableConfigPage.)
++        {
++          const d = evt.data as any;
++          try {
++            masterBus.emit('BOMB_POT_TRIGGERED', {
++              tableId: tableId || '',
++              anteAmount: Number(d?.ante_amount) || 0,
++              // The engine has no double-board concept in its bomb-pot path;
++              // report it honestly rather than implying a second board.
++              doubleBoard: false,
++              bbMultiplier: Number(d?.bb_multiplier) || 0,
++            });
++          } catch {
++            /* bus publish is best-effort */
++          }
++        }
++        break;
++      }
++

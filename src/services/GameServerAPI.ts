@@ -151,18 +151,34 @@ export async function submitAction(
 ): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/action`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ tableId, action, amount }),
-    });
+    // LIVE E2E FIX 2026-08-15: the engine rate-limits /action to one request
+    // per 250ms per user. A pre-action auto-fire, an optimistic double-tap,
+    // or a fold racing a leave can land two posts inside that window — the
+    // second surfaced a raw "Server error (429)" toast and the action was
+    // silently DROPPED. A 429 means the request was NOT processed, so it is
+    // always safe to retry: wait out the window and retry exactly once
+    // before surfacing anything to the player.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const response = await fetch(`${GAME_SERVER_URL}/action`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ tableId, action, amount }),
+      });
 
-    if (!response.ok) {
+      if (response.ok) {
+        const result = await response.json();
+        return result as ActionResult;
+      }
+
+      if (response.status === 429 && attempt === 1) {
+        await new Promise((r) => setTimeout(r, 350));
+        continue;
+      }
+
       return { success: false, error: `Server error (${response.status})` };
     }
-
-    const result = await response.json();
-    return result as ActionResult;
+    // Unreachable (the loop always returns), but keeps TS + lint satisfied.
+    return { success: false, error: 'Server error (429)' };
   } catch (err: unknown) {
     reportError(err, 'GameServerAPI.submitAction');
     return { success: false, error: 'Server unreachable' };

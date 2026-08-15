@@ -41,34 +41,45 @@ vi.mock('@/hooks/useMasterBusSubscription', () => ({
 }));
 
 describe('GlobalHeader Component', () => {
-  it('renders the SMARTER.POKER brand text', () => {
+  it('renders the brand text image', () => {
     render(
       <MemoryRouter>
         <GlobalHeader pageDepth={1} />
       </MemoryRouter>
     );
-    expect(screen.getByText('SMARTER.POKER')).toBeInTheDocument();
+    const brandImage = screen.getByAltText('Smarter.Poker');
+    expect(brandImage).toBeInTheDocument();
+    expect(brandImage).toHaveAttribute('src', expect.stringContaining('brand-text-clean.png'));
   });
 
-  it('renders the BrainIcon button when on the lobby (pageDepth 1)', () => {
+  it('renders the Hub button image when on the lobby (pageDepth 1)', () => {
     render(
       <MemoryRouter>
         <GlobalHeader pageDepth={1} />
       </MemoryRouter>
     );
-    const btn = screen.getByRole('button', { name: /Back To Hub/i });
+    const btn = screen.getByRole('button', { name: /Return to Hub/i });
     expect(btn).toBeInTheDocument();
+
+    const img = screen.getByAltText('Hub');
+    expect(img).toBeInTheDocument();
+    expect(img).toHaveAttribute('src', expect.stringContaining('btn-hub-v4.png'));
+
     // Ensures we don't have the Go Back button
-    expect(screen.queryByRole('button', { name: /Go Back/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Go back/i })).not.toBeInTheDocument();
   });
 
-  it('renders the Back Arrow button when on a sub-page (pageDepth >= 2)', () => {
+  it('renders the Back button image when on a sub-page (pageDepth >= 2)', () => {
     render(
       <MemoryRouter>
         <GlobalHeader pageDepth={2} />
       </MemoryRouter>
     );
-    const btn = screen.getByRole('button', { name: /Go Back/i });
+    const btn = screen.getByRole('button', { name: /Go back/i });
     expect(btn).toBeInTheDocument();
+
+    const img = screen.getByAltText('Back');
+    expect(img).toBeInTheDocument();
+    expect(img).toHaveAttribute('src', expect.stringContaining('btn-back.png'));
   });
 });

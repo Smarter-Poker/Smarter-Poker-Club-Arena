@@ -2,51 +2,87 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * GLOBAL HEADER — Pixel-match to World Hub UniversalHeader
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * [HARD RULE]: DO NOT DEVIATE FROM THESE AESTHETICS.
- * This file is structurally locked. Any AI agent modifying this file MUST ensure
- * the visual aesthetics remain pixel-identical to the smarter.poker/hub WorldNavHeader.
- *
- * bg: black | border-bottom: 3px solid rgba(200,200,200,0.8)
- * Desktop right-side icons: 40x40px with 200% image overflow (World Hub standard)
- * Hamburger: 56x56px inline in header-left (World Hub standard)
- * Profile orb: 40px with cyan glow border matching World Hub
- * Mobile (≤1024px): 26x26px | Tiny (≤380px): 22x22px
  */
 
 .header {
-  background: linear-gradient(180deg, rgba(10, 22, 40, 0.98) 0%, rgba(10, 22, 40, 0.9) 100%);
-  padding: 0 16px;
+  background: #000000;
+  padding: 8px 12px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
-  position: fixed;
+  border-bottom: 3px solid rgba(200, 200, 200, 0.8);
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
-  width: 100%;
-  height: 60px;
-  z-index: 1000;
+  z-index: 100;
   gap: 8px;
   flex-wrap: nowrap;
-  box-sizing: border-box;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
-/* ─── LEFT Section ─── */
 .headerLeft {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
-/* #5: Hamburger button — inline in header, 56×56px World Hub standard */
+.headerCenter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  justify-content: flex-end;
+}
+
+.headerRight > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 40px;
+}
+
+.headerImgBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  height: 36px;
+  width: 36px;
+  flex-shrink: 0;
+  transition:
+    transform 0.1s ease,
+    opacity 0.15s ease;
+}
+
+.headerImgBtn:hover {
+  opacity: 0.85;
+  transform: scale(1.05);
+}
+
+.headerImgBtn:active {
+  transform: scale(0.95);
+}
+
+.headerNavBtn {
+  width: auto;
+  height: 32px;
+  overflow: visible;
+}
+
 .hamburgerBtn {
-  width: 56px;
-  height: 56px;
+  width: 40px;
+  height: 40px;
   background: transparent;
   border: none;
   display: flex;
@@ -71,104 +107,24 @@
   transform: scale(0.95);
 }
 
-.hamburgerImg {
-  width: 100%;
-  height: 100%;
+.brandTextImg {
+  flex-shrink: 0;
+  height: 32px;
   object-fit: contain;
-}
-
-/* Brain Icon Button */
-.brainBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  background: rgba(0, 212, 255, 0.1);
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-  padding: 0;
-}
-
-.brainBtn:hover {
-  background: rgba(0, 212, 255, 0.15);
-  transform: scale(1.05);
-}
-
-.brainBtn:active {
-  transform: scale(0.95);
-}
-
-/* Back Arrow Button */
-.backBtn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 13px;
-  font-family:
-    'Inter',
-    -apple-system,
-    sans-serif;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.backBtn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-}
-
-/* ─── CENTER Section ─── */
-.headerCenter {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none; /* Let clicks pass through to elements underneath if needed */
-}
-
-.brandText {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-/* ─── RIGHT Section ─── */
-.headerRight {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  justify-content: flex-end;
 }
 
 .orbBtn {
   width: 40px;
   height: 40px;
-  padding: 0;
-  border: none;
   background: transparent;
-  cursor: pointer;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  cursor: pointer;
   position: relative;
-  overflow: hidden;
+  flex-shrink: 0;
+  overflow: visible;
   transition:
     transform 0.1s ease,
     opacity 0.15s ease;
@@ -183,38 +139,6 @@
   transform: scale(0.95);
 }
 
-/* #2: VIP icon gold glow ring — makes VIP icon pop like World Hub */
-.orbBtnVip {
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  position: relative;
-  overflow: hidden;
-  transition:
-    transform 0.1s ease,
-    opacity 0.15s ease;
-  border-radius: 50%;
-  box-shadow:
-    0 0 8px rgba(255, 215, 0, 0.4),
-    0 0 16px rgba(255, 215, 0, 0.2);
-}
-
-.orbBtnVip:hover {
-  opacity: 0.8;
-  transform: scale(1.1);
-}
-
-.orbBtnVip:active {
-  transform: scale(0.95);
-}
-
 .orbLink {
   width: 40px;
   height: 40px;
@@ -223,7 +147,7 @@
   justify-content: center;
   flex-shrink: 0;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   text-decoration: none;
   transition:
     transform 0.1s ease,
@@ -250,39 +174,10 @@
   transform: translate(-50%, -50%);
 }
 
-/* #3: Profile orb — thicker cyan glow circle matching World Hub */
-.profileOrb {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 3px solid rgba(0, 245, 255, 0.6);
-  box-shadow:
-    0 0 10px rgba(0, 245, 255, 0.5),
-    0 0 20px rgba(0, 245, 255, 0.25),
-    0 0 30px rgba(0, 245, 255, 0.1);
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, rgba(0, 136, 255, 0.3) 0%, rgba(0, 245, 255, 0.15) 100%);
-}
-
-.profileImg {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.profilePlaceholder {
-  font-size: 18px;
-  line-height: 1;
-}
-
-/* Badge for notifications / messages — with pulse animation */
 .badge {
   position: absolute;
-  top: -2px;
-  right: -2px;
+  top: 0;
+  right: 0;
   background: #e41e3f;
   color: white;
   border-radius: 10px;
@@ -291,133 +186,146 @@
   font-weight: 700;
   min-width: 18px;
   text-align: center;
-  box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.3),
-    0 0 8px rgba(228, 30, 63, 0.4);
-  border: 2px solid #000;
-  line-height: 1.2;
-  z-index: 1;
-  animation: badgePulse 2s ease-in-out infinite;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  border: 2px solid #000000;
 }
 
-@keyframes badgePulse {
+.profileOrb {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 245, 255, 0.5);
+  box-shadow: 0 0 12px rgba(0, 245, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  background-size: cover;
+  background-position: center;
+  transition:
+    transform 0.1s ease,
+    opacity 0.15s ease;
+  cursor: pointer;
+  animation: pulse-orb 2s ease-in-out infinite;
+}
+
+.profileOrb:hover {
+  opacity: 0.85;
+  transform: scale(1.08);
+}
+
+.profileOrb:active {
+  transform: scale(0.92);
+}
+
+.profilePlaceholder {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.profileImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+@keyframes pulse-orb {
   0%,
   100% {
-    transform: scale(1);
+    box-shadow: 0 0 12px rgba(0, 245, 255, 0.3);
   }
   50% {
-    transform: scale(1.15);
+    box-shadow:
+      0 0 18px rgba(0, 245, 255, 0.6),
+      0 0 4px rgba(0, 245, 255, 0.2);
   }
 }
 
-/* ─── Mobile / Tablet Responsive (matches World Hub ≤1024px) ─── */
-@media (max-width: 1024px) {
+@media (max-width: 640px) {
   .header {
-    padding: 6px 6px;
-    gap: 2px;
-    height: 52px;
-  }
-
-  .headerRight {
+    padding: 4px 6px;
     gap: 2px;
   }
 
-  .orbBtn,
-  .orbBtnVip,
-  .orbLink {
-    width: 26px;
-    height: 26px;
-  }
-
-  .profileOrb {
-    width: 26px;
-    height: 26px;
-    border-width: 2px;
-  }
-
-  .hamburgerBtn {
-    width: 56px;
-    height: 56px;
-  }
-
-  .badge {
-    top: -3px;
-    right: -3px;
-    padding: 0 3px;
-    font-size: 7px;
-    min-width: 10px;
-  }
-
-  .profilePlaceholder {
-    font-size: 11px;
-  }
-}
-
-@media (max-width: 600px) {
-  .header {
-    padding: 4px 6px;
-    height: 48px;
-  }
-
-  .brainBtn {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-  }
-
-  .backBtn {
-    padding: 6px 8px;
-    font-size: 11px;
-  }
-
-  .hamburgerBtn {
-    width: 56px;
-    height: 56px;
-  }
-
-  /* Hide brand text on mobile like World Hub */
-  .brandText {
-    display: none;
-  }
-}
-
-@media (max-width: 380px) {
-  .header {
-    padding: 4px;
-    gap: 1px;
-  }
-
-  .brainBtn {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-  }
-
-  .backBtn {
-    padding: 4px 6px;
-    font-size: 10px;
+  .headerLeft {
     gap: 4px;
   }
 
-  .orbBtn,
-  .orbBtnVip,
-  .orbLink {
-    width: 22px;
-    height: 22px;
+  .headerCenter {
+    height: 24px;
   }
 
-  .profileOrb {
-    width: 22px;
-    height: 22px;
-    border-width: 1.5px;
+  .headerRight {
+    gap: 4px;
+  }
+
+  .headerRight > * {
+    height: 24px;
+  }
+
+  .brandTextImg {
+    display: none;
+  }
+
+  .headerImgBtn {
+    height: 24px;
+    width: 24px;
+    padding: 2px;
+  }
+
+  .headerNavBtn {
+    height: 24px;
+    width: auto;
+    max-width: 50px;
+    padding: 4px;
   }
 
   .hamburgerBtn {
-    width: 56px;
-    height: 56px;
+    width: 24px;
+    height: 24px;
+    padding: 4px;
   }
 
-  .profilePlaceholder {
+  .hideMobile {
+    display: none !important;
+  }
+
+  .orbBtn,
+  .orbLink,
+  .profileOrb {
+    width: 24px;
+    height: 24px;
     font-size: 10px;
+  }
+
+  .badge {
+    top: -2px;
+    right: -2px;
+    padding: 0 3px;
+    font-size: 8px;
+    min-width: 12px;
+  }
+}
+
+@media (min-width: 641px) {
+  .header {
+    padding: 8px 16px;
+    gap: 12px;
+  }
+
+  .orbBtn,
+  .orbLink,
+  .profileOrb {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
   }
 }

@@ -69,6 +69,13 @@ else
   bad "no supervisor heartbeat file — the supervisor is unobservable"
 fi
 
+head_ "Layer 3b — the supervisor cannot fight a deploy"
+if grep -q 'flock' "${UP_SCRIPT:-/opt/club-arena/server/scripts/engine-up.sh}" 2>/dev/null; then
+  ok "engine-up.sh takes the mutual-exclusion lock"
+else
+  bad "engine-up.sh has no flock — a supervisor tick can recreate the container a deploy just made, failing that deploy's verification"
+fi
+
 head_ "Layer 4 — rollback is actually possible"
 # A deploy pipeline with no rollback target is one bad build away from an
 # outage it cannot exit.
@@ -103,20 +110,40 @@ else
 fi
 
 head_ "Layer 6 — someone is watching, and alerts reach a human"
-for c in sp-prometheus sp-alertmanager; do
+# sp-node-exporter is included deliberately. Everything the supervisor
+# publishes reaches Prometheus ONLY through its textfile collector. If it dies,
+# the supervisor heartbeat goes stale in Prometheus while this script — which
+# reads the metric file straight off disk — keeps reporting Layer 3 green. The
+# supervisor becomes unobservable and the verifier says "intact".
+for c in sp-prometheus sp-alertmanager sp-node-exporter; do
   S=$(docker container inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo absent)
   [ "$S" = "running" ] && ok "$c is running" || bad "$c is '$S'"
 done
-RULES=$(curl -sf --max-time 5 localhost:9090/api/v1/rules 2>/dev/null || echo "")
-if echo "$RULES" | grep -q 'club-arena-supervisor'; then
-  ok "supervisor alert rules are loaded in Prometheus"
+if docker inspect sp-node-exporter -f '{{.Config.Cmd}}' 2>/dev/null | grep -q 'collector.textfile.directory'; then
+  ok "node-exporter has the textfile collector enabled (supervisor metrics are readable)"
 else
-  bad "supervisor alert rules are NOT loaded — supervisor failure would be silent"
+  bad "node-exporter is missing --collector.textfile.directory — supervisor metrics never reach Prometheus"
 fi
-if echo "$RULES" | grep -q '"health":"err"'; then
-  bad "at least one Prometheus rule is in an error state"
+
+RULES=$(curl -sf --max-time 5 localhost:9090/api/v1/rules 2>/dev/null || echo "")
+if [ -z "$RULES" ]; then
+  # Previously this produced ONE failure (rules not loaded) and one spurious
+  # PASS, because `grep -q '"health":"err"'` finds nothing in an empty string
+  # and the else-branch reported "no rule is erroring". An unreachable
+  # Prometheus is not evidence that its rules are fine.
+  bad "Prometheus API unreachable — cannot verify that any alert rule is loaded"
+  bad "rule health unknown (Prometheus unreachable)"
 else
-  ok "no Prometheus rule is erroring"
+  if echo "$RULES" | grep -q 'club-arena-supervisor'; then
+    ok "supervisor alert rules are loaded in Prometheus"
+  else
+    bad "supervisor alert rules are NOT loaded — supervisor failure would be silent"
+  fi
+  if echo "$RULES" | grep -q '"health":"err"'; then
+    bad "at least one Prometheus rule is in an error state"
+  else
+    ok "no Prometheus rule is erroring"
+  fi
 fi
 
 # Publish the result so the verification itself cannot rot unnoticed. A check

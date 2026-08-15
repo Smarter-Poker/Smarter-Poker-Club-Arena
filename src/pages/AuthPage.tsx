@@ -37,10 +37,17 @@ export default function AuthPage() {
     supabase.auth
       .getUser()
       .then(({ data: { user } }) => {
-        if (user) navigate('/', { replace: true });
+        if (user) {
+          navigate('/', { replace: true });
+        } else {
+          // HARDENED: Unauthenticated users should NEVER see this local page.
+          // Force them to the canonical World Hub login page.
+          window.location.href = '/auth/login?redirect=/hub/club-arena';
+        }
       })
       .catch(() => {
-        /* not logged in */
+        // HARDENED: Error fetching user -> force canonical login
+        window.location.href = '/auth/login?redirect=/hub/club-arena';
       });
   }, [navigate]);
 

@@ -44,11 +44,43 @@ Unit=club-arena-supervisor.service
 WantedBy=timers.target
 UNIT
 
+# ── Daily recovery-stack verification ────────────────────────────────────────
+# The recovery stack is entirely passive: every layer sits idle until something
+# breaks, so every layer can rot silently for months and only reveal itself
+# during the incident it existed to prevent. (Precedent: the Docker HEALTHCHECK
+# was believed to be self-healing for a full release cycle before anyone checked
+# that plain Docker never restarts an unhealthy container.) This asserts the
+# wiring daily and publishes the result for Prometheus to alert on.
+cat > /etc/systemd/system/club-arena-verify.service <<UNIT
+[Unit]
+Description=Verify the Club Arena recovery stack is still wired up
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=$REPO_DIR/server/scripts/verify-recovery-stack.sh
+UNIT
+
+cat > /etc/systemd/system/club-arena-verify.timer <<'UNIT'
+[Unit]
+Description=Daily Club Arena recovery-stack verification
+
+[Timer]
+OnCalendar=*-*-* 09:17:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+Unit=club-arena-verify.service
+
+[Install]
+WantedBy=timers.target
+UNIT
+
 systemctl daemon-reload
 systemctl enable --now club-arena-supervisor.timer
+systemctl enable --now club-arena-verify.timer
 # Also ensure Docker itself comes back after a host reboot — without this the
 # container restart policy never gets a chance to run.
 systemctl enable docker >/dev/null 2>&1 || true
 
-echo "installed. next run:"
-systemctl list-timers club-arena-supervisor.timer --no-pager | head -3
+echo "installed. next runs:"
+systemctl list-timers 'club-arena-*' --no-pager | head -4

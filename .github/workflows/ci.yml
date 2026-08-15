@@ -60,6 +60,15 @@ jobs:
       - name: Rake Invariant — client and server rake schedules must match
         run: node scripts/ci/check-rake-schedule-parity.mjs
 
+      # BLOCKING. On 2026-08-15 five of seven files in infra/monitoring/ had
+      # drifted from the running stack — the repo still held the versions where
+      # 27 alert rules referenced non-existent metrics and Alertmanager routed
+      # everything to null-receiver. Rebuilding the host from the repo would
+      # have silently restored decorative monitoring. This guards the wiring
+      # (loaded / mounted / routed somewhere real), not rule contents.
+      - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
+        run: node scripts/ci/check-monitoring-drift.mjs
+
       - name: Report Typecheck Time
         if: always()
         run: |

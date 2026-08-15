@@ -94,3 +94,38 @@ groups:
             The container exists but is stopped, or is missing entirely. Note
             that `--restart always` does NOT cover a manual `docker stop` — if
             this persists, the supervisor's recreate path is also failing.
+
+      # ── The verification itself must not rot ──────────────────────────────
+      # club-arena-verify.timer asserts the whole recovery stack daily. These
+      # two rules are what stop that check from becoming another passive layer
+      # nobody looks at.
+      - alert: RecoveryStackDegraded
+        expr: club_arena_recovery_stack_failures > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} recovery-stack assertion(s) failing"
+          description: >-
+            The daily verification found part of the never-down machinery
+            missing or misconfigured — a dropped autoheal label, a stopped
+            supervisor timer, a missing :previous rollback image, or an engine
+            that cannot report its own build. Nothing is broken YET; the point
+            is that the next real failure would not self-recover. Run
+            /opt/club-arena/server/scripts/verify-recovery-stack.sh for the
+            per-assertion breakdown.
+
+      - alert: RecoveryStackUnverified
+        expr: >-
+          absent(club_arena_recovery_stack_last_verified_timestamp_seconds)
+          or time() - club_arena_recovery_stack_last_verified_timestamp_seconds > 172800
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Recovery stack has not been verified in over 48h"
+          description: >-
+            club-arena-verify.timer runs daily. Either it stopped, or the
+            textfile collector is no longer publishing. The recovery stack may
+            be fine — but it is now unverified, which is how it silently rotted
+            the last time.

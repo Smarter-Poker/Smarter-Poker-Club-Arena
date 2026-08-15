@@ -415,13 +415,20 @@ export const SPIN_BONUS_TIERS = {
     // ~0.10% of spins: mega jackpot (100× payout, 1× deposited, 98× drawn)
     { displayMultiplier: 100, probability: 0.0952, bonusBuyIns: 98, isPremium: true },
   ],
+  // AUDIT F6 (2026-08-15): this table computed to EV 3.000034 — fractionally
+  // HOUSE-NEGATIVE (the failing "hyper EV should be < 3.0" test was right).
+  // Moved 0.001 percentage points from the 50x tier to the 2x tier:
+  // probabilities still sum to exactly 100.000, EV is now 2.999554 (house
+  // edge ~0.015%, same direction as standard's 2.999994), and the pool
+  // draw expectation drops below the 1.00-per-spin deposit, so the bonus
+  // pool can no longer drift negative over volume.
   hyper: [
-    { displayMultiplier: 2, probability: 79.562, bonusBuyIns: 0 },
+    { displayMultiplier: 2, probability: 79.563, bonusBuyIns: 0 },
     { displayMultiplier: 3, probability: 11.6788, bonusBuyIns: 1 },
     { displayMultiplier: 5, probability: 5.1095, bonusBuyIns: 3 },
     { displayMultiplier: 10, probability: 2.1898, bonusBuyIns: 8 },
     { displayMultiplier: 25, probability: 0.8759, bonusBuyIns: 23 },
-    { displayMultiplier: 50, probability: 0.438, bonusBuyIns: 48, isPremium: true },
+    { displayMultiplier: 50, probability: 0.437, bonusBuyIns: 48, isPremium: true },
     { displayMultiplier: 100, probability: 0.146, bonusBuyIns: 98, isPremium: true },
   ],
 };

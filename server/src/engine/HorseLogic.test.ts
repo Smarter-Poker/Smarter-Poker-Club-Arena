@@ -15,8 +15,9 @@
  *  5. PERFORMANCE — decisions stay inside the synchronous turn-handler budget.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
+import { seedFastRandom } from './HorseEval.js';
 import {
   validateAction,
   calculateBettingState,
@@ -28,6 +29,17 @@ import {
   RANKS,
 } from './PokerEngine.js';
 import type { Card, SeatPlayer, HorseStyle, HandStage } from '../types.js';
+
+// Q7 DE-FLAKE (2026-08-15): HorseEval pins its xorshift seed under vitest,
+// but the seed is per-worker MODULE state. When a worker is reused across
+// test files, the stream position this file starts at depends on how many
+// fastRandom() draws earlier files consumed — so the statistical A/B
+// assertions here (tolerances sized for one specific stream) flipped red
+// non-deterministically in full-suite runs while always passing in
+// isolation. This file-scope hook re-pins the stream before EVERY test in
+// every describe below, so each assertion always sees the exact same draw
+// sequence regardless of worker reuse or file ordering.
+beforeEach(() => seedFastRandom(0x5eed1e));
 
 // ───────────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -1671,9 +1683,14 @@ describe('HorseLogic V10 — strategy layer', () => {
     const n = 250;
     let on = 0;
     let off = 0;
+    // Q7: common random numbers — both arms of every iteration replay the
+    // SAME draw stream, so the on/off difference reflects ONLY the flag, not
+    // Monte-Carlo noise (which at n=250 dwarfed the +12 bar: ~0.85 sigma).
     for (let i = 0; i < n; i++) {
+      seedFastRandom(0x5eed1e + i * 7919);
       const a = mk();
       if (HorseLogic.decide(a.hero, a.gs, 'balanced', {}, NOMOOD).action === 'raise') on++;
+      seedFastRandom(0x5eed1e + i * 7919);
       const b = mk();
       if (
         HorseLogic.decide(b.hero, b.gs, 'balanced', {}, { v9Mood: false, v10Spr: false }).action ===
@@ -1751,10 +1768,14 @@ describe('HorseLogic V10 — strategy layer', () => {
     const n = 250;
     let on = 0;
     let off = 0;
+    // Q7: common random numbers — see the SPR test above. Same pairing, so the
+    // capped-range thin-value comparison is measured on identical draws.
     for (let i = 0; i < n; i++) {
+      seedFastRandom(0x5eed1e + i * 7919);
       const a = mk();
       if (['bet', 'all_in'].includes(HorseLogic.decide(a.hero, a.gs, 'balanced', {}, NOMOOD).action))
         on++;
+      seedFastRandom(0x5eed1e + i * 7919);
       const b = mk();
       if (
         ['bet', 'all_in'].includes(

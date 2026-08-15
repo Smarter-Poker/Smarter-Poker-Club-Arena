@@ -414,6 +414,13 @@ export class HandController {
   performAction(seat: number, action: ActionType, amount?: number): boolean {
     const player = this.state.players.find((p) => p.seat === seat);
     if (!player || seat !== this.state.currentPlayerSeat) return false;
+    // 2026-08-15 BACKSTOP: a folded, all-in or sitting-out seat can never act,
+    // whatever currentPlayerSeat claims. Without this, any stale turn pointer
+    // lets an automated path (watchdog force-action, disconnect auto-action, a
+    // late horse timer) push a legal-looking check/fold from a player who is
+    // not in the decision. This is the authoritative guard; every caller that
+    // trusts currentPlayerSeat is now safe by construction.
+    if (player.is_folded || player.is_all_in || player.is_sitting_out) return false;
 
     // Bible V8 §4.14: PLO variants use pot-limit betting
     const isPotLimit = this.config.gameVariant.startsWith('plo');
@@ -721,6 +728,15 @@ export class HandController {
 
     const activePlayers = this.getActivePlayers().filter((p) => !p.is_all_in);
     if (activePlayers.length < 2) {
+      // 2026-08-15: park the turn pointer. The hand is now waiting on an engine
+      // callback and NOBODY can act. Leaving currentPlayerSeat pointing at the
+      // last aggressor (who is all-in) made the table watchdog take its
+      // "stalled turn" branch instead of its "no actionable seat ->
+      // continueRunout()" branch: it armed a real action clock on an all-in
+      // player and then forced check/folds from them, advancing the runout one
+      // street per watchdog cycle and writing phantom actions into the hand
+      // history. It also published a live turn indicator on an all-in seat.
+      this.state.currentPlayerSeat = -1;
       // Bible V8 §4.19: Emit ALL_IN_RUNOUT so ServerTableEngine can pause
       // for insurance/RIT offers before dealing remaining cards.
       // ServerTableEngine calls continueRunout() after offers are resolved.
@@ -923,7 +939,39 @@ export class HandController {
     return uncalled;
   }
 
+  /**
+   * 2026-08-15: completeHand mutates before it can fail — returnUncalledBet()
+   * moves chips, SHOWDOWN is emitted, and only then does determineWinners()
+   * run (which evaluates every non-folded player, including any with an empty
+   * card array). A throw there left the pot refunded-but-undistributed with
+   * HAND_COMPLETE never emitted, so dealHand's promise hung for the full
+   * 10-minute safety timeout and the table stopped dealing.
+   *
+   * A hand that cannot be settled must still END. Emitting HAND_COMPLETE
+   * releases the dealing loop; the error is reported for manual reconciliation
+   * and players keep the chips they had going in (table_seats.stack is only
+   * written at settlement, so an aborted settlement is a no-op on balances).
+   */
   private completeHand(): void {
+    try {
+      this.completeHandInner();
+    } catch (err) {
+      console.error('[HandController] completeHand threw — force-ending hand:', err);
+      try {
+        this.emit({ type: 'WINNERS', winners: [] } as never);
+      } catch {
+        /* keep going — the HAND_COMPLETE below is the load-bearing emit */
+      }
+      this.emit({
+        type: 'HAND_COMPLETE',
+        handNumber: this.config.handNumber,
+        rake: 0,
+        bbjFee: 0,
+      } as never);
+    }
+  }
+
+  private completeHandInner(): void {
     // Return any uncalled bet to the bettor before rake / pot formation.
     this.returnUncalledBet();
 

@@ -128,7 +128,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
 
     const p = state.players.find((x) => x.seat === seat);
-    if (!p) return;
+    if (!p) {
+      // currentPlayerSeat points at a seat that is not in the hand state. There
+      // is nothing to re-arm and nothing to force — bailing silently here would
+      // make the watchdog a no-op forever. Escalate straight to a rebuild.
+      this.watchdogTrips++;
+      reportError(
+        new Error('Watchdog: currentPlayerSeat ' + seat + ' is not present in hand state'),
+        'ServerTableEngine.' + this.tableId + '.watchdog_seat_missing'
+      );
+      if (this.watchdogTrips >= 3) this.killForRestart('current_seat_not_in_state');
+      return;
+    }
     // PreciseActionTimer keys on user_id (SeatPlayer.user_id in types.ts) — an
     // `id`/`userId` guess would always miss and pin the watchdog at Tier 1.
     const hasClock = this.preciseTimer.hasTimer(this.tableId, p.user_id);
@@ -155,24 +166,75 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     if (this.watchdogTrips === 1 && !hasClock) {
       this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
+      // Handing the seat a clock IS the recovery — restart the stall window so
+      // the next heartbeat (10s away) does not force a fold 7s before the 15s
+      // clock we just granted would have expired. Deliberately NOT
+      // markProgress(): that zeroes watchdogTrips, which would let Tier 1
+      // re-arm forever and never escalate.
+      this.lastProgressAtMs = Date.now();
       return;
     }
 
     if (this.watchdogTrips <= 3) {
+      // Cancel any orphaned time-bank deadline for this seat first: forcing an
+      // action outside handlePlayerAction leaves `timebank:<uid>` armed, and a
+      // per-table turn FSM means that orphan can later steal a DIFFERENT seat's
+      // time-bank expiry and suppress its auto-fold.
+      try {
+        this.timeBankEngine.playerActed(this.tableId, p.user_id);
+      } catch {
+        /* best-effort */
+      }
       const toCall = Math.max(0, (state.currentBet || 0) - (p.bet || 0));
       const forced = toCall === 0 ? 'check' : 'fold';
+      let applied = false;
       try {
-        if (!this.handController.performAction(seat, forced as any)) {
-          this.handController.performAction(seat, 'fold' as any);
-        }
-        this.markProgress();
+        applied = this.handController.performAction(seat, forced as any);
+        if (!applied) applied = this.handController.performAction(seat, 'fold' as any);
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.watchdog_force_action_failed');
+      }
+      // CRITICAL: markProgress() also zeroes watchdogTrips. Calling it after a
+      // REJECTED force (the exact state a stale currentPlayerSeat produces)
+      // reset the escalation ladder every cycle, so Tier 3 — the kill-and-
+      // rebuild this whole watchdog exists to reach — was unreachable and the
+      // table stayed frozen forever while logging a stall every 45s.
+      if (applied) {
+        this.markProgress();
+      } else {
+        reportError(
+          new Error('Watchdog forced action REJECTED at seat ' + seat + ' — escalating to rebuild'),
+          'ServerTableEngine.' + this.tableId + '.watchdog_force_rejected'
+        );
       }
       return;
     }
 
     this.killForRestart('turn_unrecoverable');
+  }
+
+  /**
+   * Resolve a seat that MUST stop being on the clock, preferring check over
+   * fold (Bible V8 §1.7.4). Returns false only when the engine refuses both.
+   *
+   * 2026-08-15: HandController.performAction RETURNS FALSE on an illegal
+   * action — it does not throw. Every call site that wrapped it in try/catch
+   * and trusted the catch was silently doing nothing when the action was
+   * rejected, leaving a seat with no clock and no action: a permanent freeze.
+   * This helper is the single correct way to force a seat, so the bug cannot
+   * be reintroduced one call site at a time.
+   */
+  protected forceResolveSeat(seat: number, preferCheck: boolean): boolean {
+    if (!this.handController) return false;
+    const order: Array<'check' | 'fold'> = preferCheck ? ['check', 'fold'] : ['fold'];
+    for (const a of order) {
+      try {
+        if (this.handController.performAction(seat, a as any)) return true;
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.force_' + a + '_threw');
+      }
+    }
+    return false;
   }
 
   protected startTurnTimer(userId: string, seat: number, durationSeconds: number): void {
@@ -220,46 +282,45 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             // Time bank itself expired — auto-fold/check
             // Bible V8 §3.3: Turn FSM — time_bank_active → expired → processing → complete
             // Guard: only transition if we're still in time_bank_active
+            // 2026-08-15: turnFSM is PER TABLE, not per seat. An orphaned
+            // timebank deadline (left behind by a watchdog force-action, a
+            // disconnect auto-action or a reconnect re-arm) could fire while a
+            // DIFFERENT seat was legitimately in time_bank_active, consume that
+            // seat's FSM transitions and then bail — after which the real
+            // seat's own expiry failed this guard and never folded, leaving the
+            // pool-sized turn clock as the only enforcement.
+            //
+            // Seat identity is checked FIRST and is authoritative; the FSM is
+            // advisory. A seat that is still the current player when its time
+            // bank expires MUST be resolved, whatever the FSM says.
+            if (!this.running || !this.handController) return;
+            const tbState = this.handController.getState();
+            if (tbState.currentPlayerSeat !== seat) return;
             if (this.turnFSM.state === 'time_bank_active') {
               this.turnFSM.transition('expired');
               this.turnFSM.transition('processing');
             } else {
-              // Turn was already resolved (player acted during time bank delay) — bail silently
               console.warn(
-                `[ServerTableEngine:${this.tableId}] Time bank expiry skipped — FSM already in '${this.turnFSM.state}' (race condition: player acted)`
+                `[ServerTableEngine:${this.tableId}] Time bank expiry: FSM in '${this.turnFSM.state}' but seat ${seat} is still current — resolving anyway`
               );
-              return;
             }
-            if (!this.running || !this.handController) return;
-            const tbState = this.handController.getState();
-            if (tbState.currentPlayerSeat !== seat) return;
 
             const tbPlayer = tbState.players.find((p) => p.seat === seat);
             const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
             const tbCanCheck = tbToCall === 0;
 
-            if (tbCanCheck) {
-              console.warn(
-                `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`
-              );
-              try {
-                this.handController!.performAction(seat, 'check');
-              } catch {
-                try {
-                  this.handController!.performAction(seat, 'fold');
-                } catch {
-                  /* done */
-                }
-              }
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. ` +
+                (tbCanCheck ? 'Auto-checking.' : 'Auto-folding.')
+            );
+            if (this.forceResolveSeat(seat, tbCanCheck)) {
+              this.markProgress();
             } else {
-              console.warn(
-                `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`
+              reportError(
+                new Error('Time bank auto-action rejected at seat ' + seat + ' — re-arming clock'),
+                'ServerTableEngine.' + this.tableId + '.timebank_auto_action_rejected'
               );
-              try {
-                this.handController!.performAction(seat, 'fold');
-              } catch {
-                /* done */
-              }
+              this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
             }
 
             // Bible V8 §3.3: Turn FSM — processing → complete
@@ -301,13 +362,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             timestamp: Date.now(),
             timeBankUsed: true,
           });
-          const bankSeconds = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+          // 2026-08-15: this used getRemainingSeconds() — the whole remaining
+          // POOL (max_uses x 15s, i.e. 60s on every production table today, and
+          // 1800s on the engine's own default config), not the 15s that
+          // TimeBankEngine.activate() just armed. Two consequences: the
+          // enforcement deadline (15s) disagreed with the turn timer, and
+          // startTurnTimer stamps playerTurnDuration, which is what
+          // turn_deadline_ms broadcasts — so the CLIENT was told it had 60
+          // seconds and then auto-folded at 15. The manual activateTimeBank
+          // path already reads currentUseSeconds correctly; this was the outlier.
+          const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+          const grantedSeconds = bank?.currentUseSeconds ?? 15;
           const usesAfterActivation = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
           console.log(
-            `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${bankSeconds}s remaining, ${usesAfterActivation} uses left)`
+            `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${grantedSeconds}s granted, ${usesAfterActivation} uses left)`
           );
-          // Restart turn timer with time bank duration
-          this.startTurnTimer(userId, seat, bankSeconds);
+          // Restart turn timer with the granted time bank duration
+          this.startTurnTimer(userId, seat, grantedSeconds);
 
           // Broadcast time bank activation to other players
           try {
@@ -319,7 +390,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 payload: {
                   player_id: userId,
                   table_id: this.tableId,
-                  additional_seconds: bankSeconds,
+                  // The seconds actually granted for THIS use, matching the
+                  // enforcement deadline. Broadcasting the whole pool told the
+                  // client it had far longer than the clock would allow.
+                  additional_seconds: grantedSeconds,
                   auto_activated: true,
                   uses_remaining: usesAfterActivation,
                 },
@@ -364,29 +438,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       const amountToCall = player ? Math.max(0, state.currentBet - (player.bet ?? 0)) : 0;
       const canCheck = amountToCall === 0;
 
-      if (canCheck) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-checking (no bet to call).`
-        );
-        try {
-          this.handController.performAction(seat, 'check');
-        } catch (err) {
-          reportError(err, 'ServerTableEnginethistableId.Autocheck_failed');
-          try {
-            this.handController.performAction(seat, 'fold');
-          } catch (foldErr) {
-            reportError(foldErr, 'ServerTableEnginethistableId.Autofold_fallback_also_failed');
-          }
-        }
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. ` +
+          (canCheck ? 'Auto-checking (no bet to call).' : `Auto-folding (${amountToCall} to call).`)
+      );
+      // By the time this callback runs the PreciseActionTimer entry has already
+      // fired and been dropped. If the forced action is REJECTED the seat is
+      // left with no clock and no action while the FSM below records it as
+      // resolved — a terminal freeze. Re-arm rather than pretend it resolved.
+      if (this.forceResolveSeat(seat, canCheck)) {
+        this.markProgress();
       } else {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding (${amountToCall} to call).`
+        reportError(
+          new Error('Timeout auto-action rejected at seat ' + seat + ' — re-arming clock'),
+          'ServerTableEngine.' + this.tableId + '.auto_action_rejected'
         );
-        try {
-          this.handController.performAction(seat, 'fold');
-        } catch (err) {
-          reportError(err, 'ServerTableEnginethistableId.Autofold_failed');
-        }
+        this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
       }
 
       // Bible V8 §3.3: Turn FSM — processing → complete
@@ -1008,18 +1075,31 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       enginePlayer.stack
     );
     if (preResult.executed && preResult.action) {
+      // The `return` below skips Step 4 (startTurnTimer) entirely, so it may
+      // ONLY be taken when the action genuinely landed. performAction returns
+      // false on rejection (a pre-action resolved against a bet level the
+      // engine then re-validates is the reachable case) — the old try/catch
+      // never saw that and returned anyway, leaving the seat with no clock.
+      let preApplied = false;
       try {
-        this.handController!.performAction(seat, preResult.action as any, preResult.amount);
+        preApplied = this.handController!.performAction(
+          seat,
+          preResult.action as any,
+          preResult.amount
+        );
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.preaction_threw');
+      }
+      if (preApplied) {
         console.log(
           `[ServerTableEngine:${this.tableId}] Pre-action executed: ${player.user_id} → ${preResult.action}${preResult.amount ? ` ${preResult.amount}` : ''}`
         );
+        this.markProgress();
         return; // Pre-action handled the turn — no timer needed
-      } catch (err) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] Pre-action failed, falling through to timer:`,
-          err
-        );
       }
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] Pre-action ${preResult.action} REJECTED at seat ${seat} — falling through to the turn timer`
+      );
     }
 
     // Step 2: Check disconnect state before starting timer (applies to ALL players)
@@ -1185,14 +1265,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         );
         try {
           // Bible V8 §1.7.4 preferCheckOverFold.
-          if (!handControllerRef.performAction(seat, 'check' as any)) {
+          applied =
+            handControllerRef.performAction(seat, 'check' as any) ||
             handControllerRef.performAction(seat, 'fold' as any);
-          }
         } catch {
           /* Hand already resolved. */
         }
       }
-      this.markProgress();
+      // Unconditional markProgress() here reset watchdogTrips even when all
+      // three actions were rejected, hiding a genuine stall for a full window.
+      if (applied) {
+        this.markProgress();
+      } else {
+        reportError(
+          new Error(
+            'Horse seat ' + seat + ' could not be acted — leaving stall visible to watchdog'
+          ),
+          'ServerTableEngine.' + this.tableId + '.horse_seat_unactable'
+        );
+      }
     }, thinkTimeMs);
   }
 }

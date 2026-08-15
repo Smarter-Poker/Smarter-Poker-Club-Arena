@@ -221,8 +221,42 @@ export class TableStateHub {
   /**
    * Drop all state for a table. Call when the engine shuts down a table.
    */
+  /**
+   * 2026-08-15 CRITICAL FIX. This used to `rooms.delete(tableId)` outright.
+   *
+   * It is called on every engine teardown — watchdog kill, zombie rebuild,
+   * failed start, tournament table break — all of which happen while players
+   * are still connected. Deleting the room destroyed its subscriber Set, and
+   * there is exactly ONE `hub.subscribe` call site in the server: a NEW
+   * WebSocket upgrade. Nothing re-subscribes an existing socket. So the rebuilt
+   * engine published into a fresh, empty room while every player's socket
+   * stayed open and perfectly healthy — the server PINGs, the client PONGs, and
+   * the client receives no SNAPSHOT, no DELTA and no EVENT ever again.
+   *
+   * That is why a table could look frozen to players even after the server had
+   * fully recovered. Keep the room and its subscribers; reset only the sequence
+   * state so the next publish is a full SNAPSHOT rather than a DELTA against a
+   * pre-restart baseline, and tell the clients why they are about to see a
+   * sequence reset.
+   */
   dropTable(tableId: string): void {
-    this.rooms.delete(tableId);
+    const room = this.rooms.get(tableId);
+    if (!room) return;
+    if (room.subscribers.size === 0) {
+      this.rooms.delete(tableId);
+      return;
+    }
+    room.lastSnapshot = null;
+    room.lastSeq = 0;
+    try {
+      this.broadcast(room, {
+        type: 'EVENT',
+        tableId,
+        payload: { type: 'engine_restarting' },
+      } as HubMessage);
+    } catch {
+      /* delivery is best-effort; the room reset is the point */
+    }
   }
 
   // ─── Metrics helpers — used by /health and tests ───────────────────────────
@@ -262,6 +296,12 @@ export class TableStateHub {
     return room;
   }
 
+  /**
+   * 2026-08-15: JSON.stringify is done ONCE for the whole room (C16 perf opt),
+   * so a throw here took down delivery for every subscriber AND propagated
+   * synchronously into broadcastCurrentState's ~16 mostly-unguarded call sites.
+   * Delivery is best-effort; the engine is not.
+   */
   private broadcast(room: TableRoom, message: HubMessage): void {
     // C16: serialize ONCE for the whole room. This used to sit inside safeSend,
     // i.e. inside the per-subscriber loop, so a table with a dozen spectators

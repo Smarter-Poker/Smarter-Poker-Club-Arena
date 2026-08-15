@@ -335,6 +335,36 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     );
 
     // Convert to SeatPlayer format
+    // ── DECK CAPACITY GUARD (2026-08-15) ─────────────────────────────────
+    // Deck.deal throws 'Not enough cards in deck' when hole cards exhaust the
+    // deck. HAND_START is emitted BEFORE dealHoleCards, and HAND_START marks
+    // watchdog progress — so a table that cannot physically be dealt looped
+    // "deal -> throw -> sleep 2s -> deal" forever with a perfectly green
+    // watchdog. Refuse the deal instead, loudly and slowly.
+    const CARDS_PER_PLAYER: Record<string, number> = {
+      plo4: 4,
+      plo5: 5,
+      plo6: 6,
+      plo8: 4,
+      pineapple: 3,
+    };
+    const variantKey = (this.tableInfo?.game_variant || 'nlh').toLowerCase();
+    const cardsPerPlayer = CARDS_PER_PLAYER[variantKey] ?? 2;
+    const deckSize = variantKey.includes('short') ? 36 : 52;
+    const maxSeatable = Math.floor((deckSize - 5) / cardsPerPlayer);
+    if (players.length > maxSeatable) {
+      reportError(
+        new Error(
+          `Deck cannot serve ${players.length} seats of ${variantKey} ` +
+            `(${cardsPerPlayer}/player, ${deckSize}-card deck, max ${maxSeatable})`
+        ),
+        'ServerTableEngine.' + this.tableId + '.deck_capacity_exceeded'
+      );
+      this.handCount--; // this hand never happened
+      await this.sleep(30000); // do NOT hot-loop
+      return;
+    }
+
     const hcPlayers: SeatPlayer[] = players.map((p) => ({
       seat: p.seat_number,
       user_id: p.user_id,
@@ -581,13 +611,34 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       const state = this.handController.getState();
       const dcPlayer = state.players.find((p) => p.user_id === disconnectAction.playerId);
       if (!dcPlayer) return;
+      // Stale deadline: the turn has already moved on. Acting here would be a
+      // phantom action attributed to a player who is not in the decision.
+      if (state.currentPlayerSeat !== dcPlayer.seat) return;
+
+      // This callback is the ONLY resolution path for a disconnected or
+      // sitting-out player's turn — handleTurnChange returns early for them
+      // WITHOUT arming a clock. performAction returns false on an illegal
+      // action (the countdown captures `canCheck` up to 30s earlier, so it goes
+      // stale), and the old try/catch never saw that: no action, no clock, no
+      // retry. Permanent freeze.
+      let applied = false;
       try {
-        this.handController.performAction(dcPlayer.seat, disconnectAction.action as any);
+        applied = this.handController.performAction(dcPlayer.seat, disconnectAction.action as any);
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_threw');
+      }
+      if (!applied) applied = this.forceResolveSeat(dcPlayer.seat, true);
+      if (applied) {
+        this.markProgress();
         console.log(
           `[ServerTableEngine:${this.tableId}] Disconnect auto-${disconnectAction.action} for ${disconnectAction.playerId} (${disconnectAction.reason})`
         );
-      } catch (err) {
-        reportError(err, 'ServerTableEnginethistableId.Disconnect_autoaction_failed');
+      } else {
+        reportError(
+          new Error('Disconnect auto-action rejected at seat ' + dcPlayer.seat),
+          'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_rejected'
+        );
+        this.forceArmTurnTimer(dcPlayer.seat, this.tableInfo?.action_time_seconds || 15);
       }
     });
 

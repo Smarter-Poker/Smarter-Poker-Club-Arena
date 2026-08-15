@@ -200,14 +200,51 @@ describe('TableStateHub', () => {
   });
 
   describe('dropTable', () => {
-    it('removes all state for a table', () => {
-      const sub = makeSub('s1');
-      hub.subscribe(TABLE, sub);
+    it('removes the room entirely when nobody is watching', () => {
+      const gone = makeSub('s1');
+      hub.subscribe(TABLE, gone);
       hub.publish(TABLE, { pot: 10 });
+      hub.unsubscribe(TABLE, gone);
       hub.dropTable(TABLE);
       expect(hub.subscriberCount(TABLE)).toBe(0);
       expect(hub.hasSnapshot(TABLE)).toBe(false);
       expect(hub.lastSeq(TABLE)).toBe(0);
+    });
+
+    // 2026-08-15 REGRESSION GUARD. dropTable is called on every engine teardown
+    // (watchdog kill, zombie rebuild, failed start, tournament table break) —
+    // all of which happen while players are still connected. It used to delete
+    // the room outright, destroying the subscriber Set. Since the ONLY
+    // hub.subscribe call site is a new WebSocket upgrade, nothing re-subscribed
+    // those sockets: the rebuilt engine published into an empty room while every
+    // player's socket stayed open and healthy (server PINGs, client PONGs) and
+    // received nothing ever again. A table could be fully recovered server-side
+    // and still be frozen forever on every screen.
+    it('keeps live subscribers and resets sequence state so the next publish is a full SNAPSHOT', () => {
+      const sub = makeSub('s1');
+      hub.subscribe(TABLE, sub);
+      hub.publish(TABLE, { pot: 10 });
+      sub.outbox.length = 0;
+
+      hub.dropTable(TABLE);
+
+      // The viewer survives the engine rebuild...
+      expect(hub.subscriberCount(TABLE)).toBe(1);
+      // ...is told why the sequence is about to reset...
+      const notice = sub.outbox.map((m) => JSON.parse(m)).find((m) => m.type === 'EVENT');
+      expect(notice?.payload?.type).toBe('engine_restarting');
+      // ...and the room is reset so the next publish cannot be a DELTA against
+      // a pre-restart baseline the new engine never produced.
+      expect(hub.hasSnapshot(TABLE)).toBe(false);
+      expect(hub.lastSeq(TABLE)).toBe(0);
+
+      const seq = hub.publish(TABLE, { pot: 99 });
+      expect(seq).toBe(1);
+      const first = sub.outbox
+        .map((m) => JSON.parse(m))
+        .filter((m) => m.type === 'SNAPSHOT')
+        .pop();
+      expect(first?.state).toEqual({ pot: 99 });
     });
   });
 
@@ -314,7 +351,14 @@ describe('TableStateHub', () => {
     });
 
     it('treats a subscriber with no bufferedAmount as healthy', () => {
-      const plain = { id: 'plain', readyState: 1, sent: [] as string[], send(d: string) { this.sent.push(d); } };
+      const plain = {
+        id: 'plain',
+        readyState: 1,
+        sent: [] as string[],
+        send(d: string) {
+          this.sent.push(d);
+        },
+      };
       hub.subscribe(TABLE, plain as unknown as HubSubscriber);
       hub.publish(TABLE, { pot: 1 });
       hub.publish(TABLE, { pot: 2 });

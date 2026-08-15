@@ -82,11 +82,8 @@ const SimPage: React.FC = () => {
 
   return (
     <div className="sim-page">
-      <header className="sim-page__header">
+      <div className="sim-page__header">
         <div className="sim-page__title-row">
-          <Link to="/" className="sim-page__back">
-            ← Home
-          </Link>
           <h1 className="sim-page__title">Club Arena — Sim</h1>
         </div>
         <p className="sim-page__subtitle">
@@ -136,7 +133,7 @@ const SimPage: React.FC = () => {
           <div className="sim-page__bug-badge">REGRESSION: {scenario.bug}</div>
         ) : null}
         <p className="sim-page__description">{scenario.description}</p>
-      </header>
+      </div>
 
       {/* ─────────────────────────────────────────────────────────
           The felt — oval table with 6 seat positions, center pot,

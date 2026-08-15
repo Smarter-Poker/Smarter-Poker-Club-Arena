@@ -681,9 +681,9 @@ export default function CreateClubPage() {
     <div className={styles.page}>
       <div className={styles.container}>
         {/* Header */}
-        <header className={styles.header}>
+        <div className={styles.header}>
           <h1>Create Your Club</h1>
-        </header>
+        </div>
 
         {/* Progress */}
         <div className={styles.progress}>

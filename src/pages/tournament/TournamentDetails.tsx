@@ -665,13 +665,9 @@ export default function TournamentDetails() {
     <PageErrorBoundary pageName="TournamentDetails">
       <div className="tournament-details">
         {/* Header */}
-        <header className="details-header">
-          <button className="back-btn" onClick={() => navigate(-1)}>
-            ‹‹
-          </button>
+        <div className="details-header">
           <h1>Game Details</h1>
-          <div className="header-spacer" />
-        </header>
+        </div>
 
         {/* Tabs */}
         <div className="details-tabs">

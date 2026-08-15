@@ -742,9 +742,6 @@ export default function TournamentPage() {
       <div className="tournament-page">
         <div className="tournament-header">
           <div className="header-left">
-            <Link to={`/clubs/${clubId}`} className="back-link">
-              ← Back to Club
-            </Link>
             <h1> Tournaments</h1>
           </div>
         </div>
@@ -771,9 +768,6 @@ export default function TournamentPage() {
       {/* Header */}
       <div className="tournament-header">
         <div className="header-left">
-          <Link to={`/clubs/${clubId}`} className="back-link">
-            ← Back to Club
-          </Link>
           <h1> Tournaments</h1>
         </div>
         {isOwner && !isInUnion && (

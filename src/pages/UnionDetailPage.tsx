@@ -614,16 +614,13 @@ export default function UnionDetailPage() {
     return (
       <div className={styles.error}>
         <h2>Union Not Found</h2>
-        <Link to="/unions" className={styles.backLink}>
-          ← Back to Unions
-        </Link>
       </div>
     );
   }
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
+      <div className={styles.header}>
         <div className={styles.unionAvatar}>{union.avatarUrl || union.name.charAt(0)}</div>
         <div className={styles.unionInfo}>
           <h1>{union.name}</h1>
@@ -634,7 +631,7 @@ export default function UnionDetailPage() {
             {applying ? 'Applying...' : 'Apply to Join'}
           </button>
         </div>
-      </header>
+      </div>
 
       {/* Club Selector Modal */}
       {showClubSelector && (

@@ -593,10 +593,7 @@ export default function AgentManagementPage() {
   return (
     <div className={styles.page}>
       {/* Header */}
-      <header className={styles.header}>
-        <button className={styles.backButton} onClick={() => navigate(-1)}>
-          ← Back
-        </button>
+      <div className={styles.header}>
         <div>
           <h1>Agent Management</h1>
           <p className={styles.subtitle}>Manage agents, commissions, and credit lines</p>
@@ -644,7 +641,7 @@ export default function AgentManagementPage() {
             📥 Export
           </button>
         )}
-      </header>
+      </div>
 
       {/* Summary Cards */}
       <div className={styles.summaryGrid}>

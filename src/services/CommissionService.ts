@@ -278,7 +278,8 @@ export const CommissionService = {
 
   /**
    * Attribute rake to players after hand completion
-   * Called by RakeService after pot drops
+   * Called after pot drops. (Previously by client RakeService, deleted
+   * 2026-08-15; rake distribution is server-authoritative.)
    */
   async attributeRake(handId: string, attributions: RakeAttribution[]): Promise<void> {
     if (attributions.length === 0) return;

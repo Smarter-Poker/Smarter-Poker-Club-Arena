@@ -1395,3 +1395,98 @@ function LegacyCreateTournamentModal({ clubId, onClose, onCreate }: CreateModalP
     </div>
   );
 }
+// LOBBY FIX 2026-08-15: the detail pane below showed a STATIC blind chart and
+// a payout list and nothing else — no clock, no standings, no tables. Every one
+// of these three components already existed and was fully working; two of them
+// were rendered nowhere in the app at all. See the block near "Live pane".
+import { TournamentClock } from '../components/tournament/TournamentClock';
+import TournamentStandings from '../components/tournament/TournamentStandings';
+  /** Tables in the selected RUNNING tournament — see the "Live pane" block. */
+  const [tourneyTables, setTourneyTables] = useState<
+    Array<{
+      id: string;
+      name: string | null;
+      current_players: number | null;
+      max_players: number | null;
+      small_blind: number | null;
+      big_blind: number | null;
+    }>
+  >([]);
+  // ─── Live pane: tables in the selected running tournament ──────────
+  // Only fetched while a RUNNING tournament is selected, so the lobby costs
+  // nothing extra when you are just browsing upcoming events.
+  useEffect(() => {
+    const t = selectedTournament;
+    if (!t || t.status !== 'RUNNING') {
+      setTourneyTables([]);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('tables')
+          .select('id, name, current_players, max_players, small_blind, big_blind')
+          .eq('tournament_id', t.id)
+          .order('name', { ascending: true });
+        if (error) throw error;
+        if (!cancelled) setTourneyTables(data || []);
+      } catch (e) {
+        if (!cancelled) reportError(e, 'TournamentPage.loadTournamentTables');
+      }
+    };
+    load();
+    // Tables merge and break as the field shrinks; 20s is frequent enough to
+    // track that without hammering the lobby.
+    const iv = setInterval(load, 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [selectedTournament]);
+
+              {/* ── Live pane (RUNNING only) ────────────────────────────────
+                  LOBBY FIX 2026-08-15. Until now, opening a tournament that
+                  was actually in progress showed exactly what an unstarted one
+                  showed: a static blind chart and a payout list. No clock, no
+                  standings, no idea which tables were running or how many
+                  players were left. The three components below were ALREADY
+                  BUILT and working — TournamentClock was rendered only on the
+                  separate mobile details route, and TournamentStandings only
+                  behind a tab there — so the lobby was the one place you could
+                  not see the tournament you were in. */}
+              {selectedTournament.status === 'RUNNING' && (
+                <div className="tourney-live-pane">
+                  <TournamentClock tournamentId={selectedTournament.id} compact />
+
+                  <div className="tourney-live-section">
+                    <h3>Chip Counts</h3>
+                    <TournamentStandings
+                      tournamentId={selectedTournament.id}
+                      totalPlayers={selectedTournament.current_players || 0}
+                    />
+                  </div>
+
+                  <div className="tourney-live-section">
+                    <h3>Tables ({tourneyTables.length})</h3>
+                    {tourneyTables.length === 0 ? (
+                      <p className="tourney-live-empty">No tables running yet.</p>
+                    ) : (
+                      <div className="tourney-table-list">
+                        {tourneyTables.map((tb) => (
+                          <div key={tb.id} className="tourney-table-row">
+                            <span className="tourney-table-name">{tb.name || 'Table'}</span>
+                            <span className="tourney-table-blinds">
+                              {tb.small_blind ?? 0}/{tb.big_blind ?? 0}
+                            </span>
+                            <span className="tourney-table-seats">
+                              {tb.current_players ?? 0}/{tb.max_players ?? 9}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+

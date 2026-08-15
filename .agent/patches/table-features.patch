@@ -2,31 +2,21 @@ diff --git a/src/App.tsx b/src/App.tsx
 index bd42f71..4fdc86d 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
-@@ -131,6 +131,9 @@ const NewConversationPage = lazy(() => import('./pages/NewConversationPage'));
- 
- // Shared/Public Pages
+@@ -133,2 +133,5 @@ const NewConversationPage = lazy(() => import('./pages/NewConversationPage'));
  const HandReplayerPage = lazy(() => import('./pages/share/HandReplayerPage'));
 +// VISIBLE FIX 2026-08-15: ShareHand emits /replay?h=<payload> for every share
 +// channel, and no such route existed — every shared link 404'd.
 +const SharedHandReplayPage = lazy(() => import('./pages/share/SharedHandReplayPage'));
  const SimPage = lazy(() => import('./pages/SimPage'));
- 
- // System Pages
-@@ -348,6 +351,7 @@ export default function App() {
- 
-               {/* Public Hand Replay — shareable link, no auth required */}
+@@ -350,2 +353,3 @@ export default function App() {
                <Route path="/share/hand/:handId" element={<HandReplayerPage />} />
 +              <Route path="/replay" element={<SharedHandReplayPage />} />
  
-               {/* Scenario Sim — deterministic UI regression playback, no auth */}
-               <Route path="/sim" element={<SimPage />} />
 diff --git a/src/components/table/RabbitHunt.tsx b/src/components/table/RabbitHunt.tsx
 index e4d3a5c..77f9fde 100644
 --- a/src/components/table/RabbitHunt.tsx
 +++ b/src/components/table/RabbitHunt.tsx
-@@ -96,7 +96,19 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
- 
-     setIsRevealing(true);
+@@ -98,3 +98,15 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
      try {
 -      // Check access and charge if needed
 +      // VISIBLE FIX 2026-08-15: this used to charge BEFORE revealing. If the
@@ -43,25 +33,17 @@ index e4d3a5c..77f9fde 100644
 +
 +      // Check access and charge — only now that the reveal is guaranteed.
        const result = await vipService.useFeature(user.id, 'rabbit_hunt');
- 
-       if (!result.success) {
-@@ -110,9 +122,6 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
-         toast.info(` ${result.charged} diamonds charged`);
-       }
+@@ -112,5 +124,2 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
  
 -      // Reveal the cards
 -      const cards = await onReveal();
 -
        // Reveal cards one by one with delay
-       for (let i = 0; i < cards.length; i++) {
-         await new Promise((resolve) => setTimeout(resolve, 500));
 diff --git a/src/hooks/useTableAnimations.ts b/src/hooks/useTableAnimations.ts
 index 501f12b..d13b897 100644
 --- a/src/hooks/useTableAnimations.ts
 +++ b/src/hooks/useTableAnimations.ts
-@@ -8,11 +8,15 @@
-  * and confetti trigger state.
-  */
+@@ -10,7 +10,11 @@
  
 -import { useState, useCallback } from 'react';
 +import { useState, useCallback, useRef } from 'react';
@@ -74,27 +56,15 @@ index 501f12b..d13b897 100644
 +const THROW_RATE_LIMIT_MS = 1500;
 +
  export interface UseTableAnimationsReturn {
-   // Throwables
-   showThrowableSelector: boolean;
-@@ -22,6 +26,7 @@ export interface UseTableAnimationsReturn {
-   activeThrows: ThrowEvent[];
-   handleThrowableSelect: (throwable: Throwable) => void;
+@@ -24,2 +28,3 @@ export interface UseTableAnimationsReturn {
    handleThrowComplete: (eventId: string) => void;
 +  receiveThrow: (fromSeat: number, toSeat: number, throwableId: string) => void;
    getSeatPositions: (maxPlayers: number) => Map<number, { x: number; y: number }>;
-   // Chip animations
-   chipAnimations: ChipAnimationEvent[];
-@@ -37,6 +42,7 @@ export function useTableAnimations(
-   heroSeat: number
- ): UseTableAnimationsReturn {
+@@ -39,2 +44,3 @@ export function useTableAnimations(
    // Throwable state
 +  const lastThrowAtRef = useRef(0);
    const [showThrowableSelector, setShowThrowableSelector] = useState(false);
-   const [throwTargetSeat, setThrowTargetSeat] = useState<number | null>(null);
-   const [activeThrows, setActiveThrows] = useState<ThrowEvent[]>([]);
-@@ -51,10 +57,21 @@ export function useTableAnimations(
-     async (throwable: Throwable) => {
-       if (!tableId || !userId || throwTargetSeat === null) return;
+@@ -53,2 +59,8 @@ export function useTableAnimations(
  
 +      // Rate limit: this path bypassed the chat limiter entirely, so a held
 +      // tap could emit unbounded broadcasts (and diamond charges).
@@ -103,8 +73,7 @@ index 501f12b..d13b897 100644
 +      lastThrowAtRef.current = now;
 +
        const event = throwableService.createThrowEvent(heroSeat, throwTargetSeat, throwable.id);
- 
-       if (event) {
+@@ -57,2 +69,7 @@ export function useTableAnimations(
          setActiveThrows((prev) => [...prev, event]);
 +        try {
 +          soundService.playThrowableImpact();
@@ -112,11 +81,7 @@ index 501f12b..d13b897 100644
 +          /* audio is best-effort */
 +        }
          roomService.sendChat(tableId, userId, `[THROW:${throwable.id}:${throwTargetSeat}]`);
-       }
- 
-@@ -64,6 +81,25 @@ export function useTableAnimations(
-     [tableId, userId, heroSeat, throwTargetSeat]
-   );
+@@ -66,2 +83,21 @@ export function useTableAnimations(
  
 +  /**
 +   * Render a throw sent by ANOTHER player. Wired from useTableChat, which
@@ -138,32 +103,20 @@ index 501f12b..d13b897 100644
 +  );
 +
    const handleThrowComplete = useCallback((eventId: string) => {
-     setActiveThrows((prev) => prev.filter((e) => e.id !== eventId));
-   }, []);
-@@ -106,6 +142,7 @@ export function useTableAnimations(
-     activeThrows,
-     handleThrowableSelect,
+@@ -108,2 +144,3 @@ export function useTableAnimations(
      handleThrowComplete,
 +    receiveThrow,
      getSeatPositions,
-     chipAnimations,
-     setChipAnimations,
 diff --git a/src/hooks/useTableChat.ts b/src/hooks/useTableChat.ts
 index 54db13f..9ca53cb 100644
 --- a/src/hooks/useTableChat.ts
 +++ b/src/hooks/useTableChat.ts
-@@ -25,7 +25,7 @@ export interface ReactionEvent {
- }
- 
+@@ -27,3 +27,3 @@ export interface ReactionEvent {
  const REACTION_MSG_REGEX = /^\[REACTION:(.+):(\d+)\]$/;
 -const THROW_MSG_REGEX = /^\[THROW:.+:\d+\]$/;
 +const THROW_MSG_REGEX = /^\[THROW:(.+):(\d+)\]$/;
  const REACTION_LIFETIME_MS = 2500;
- const RATE_LIMIT_MS = 1000; // 1 message per second
- 
-@@ -69,7 +69,13 @@ export interface UseTableChatReturn {
- export function useTableChat(
-   tableId: string | undefined,
+@@ -71,3 +71,9 @@ export function useTableChat(
    userId: string,
 -  players: any[]
 +  players: any[],
@@ -174,31 +127,19 @@ index 54db13f..9ca53cb 100644
 +  // to the animation layer.
 +  onThrowReceived?: (fromSeat: number, toSeat: number, throwableId: string) => void
  ): UseTableChatReturn {
-   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-   const [isChatCollapsed, setIsChatCollapsed] = useState(true);
-@@ -79,6 +85,10 @@ export function useTableChat(
-   const reactionIdRef = useRef(0);
-   const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+@@ -81,2 +87,6 @@ export function useTableChat(
    const lastSendTimestampRef = useRef(0);
 +  const onThrowReceivedRef = useRef(onThrowReceived);
 +  useEffect(() => {
 +    onThrowReceivedRef.current = onThrowReceived;
 +  }, [onThrowReceived]);
    const isChatCollapsedRef = useRef(isChatCollapsed);
-   const isChatMutedRef = useRef(isChatMuted);
- 
-@@ -332,7 +342,7 @@ export function useTableChat(
-   }, [tableId]);
- 
+@@ -334,3 +344,3 @@ export function useTableChat(
    // Parse incoming messages — returns true if message was a special command (reaction/throw)
 -  const parseIncomingMessage = useCallback((content: string, _senderId: string): boolean => {
 +  const parseIncomingMessage = useCallback((content: string, senderId: string): boolean => {
      // Check for reaction messages
-     const reactionMatch = content.match(REACTION_MSG_REGEX);
-     if (reactionMatch) {
-@@ -358,13 +368,31 @@ export function useTableChat(
-       return true; // Don't add to chat
-     }
+@@ -360,4 +370,20 @@ export function useTableChat(
  
 -    // Check for throw messages (already handled by throwable system)
 -    if (THROW_MSG_REGEX.test(content)) {
@@ -221,31 +162,22 @@ index 54db13f..9ca53cb 100644
 +        }
 +      }
        return true; // Don't add to chat
-     }
- 
+@@ -366,3 +392,5 @@ export function useTableChat(
      return false; // Normal message — add to chat
 -  }, []);
 +    // players/userId are read through refs where they must stay fresh.
 +    // eslint-disable-next-line react-hooks/exhaustive-deps
 +  }, [players, userId]);
  
-   const handleSendChatMessage = useCallback(
-     async (message: string) => {
 diff --git a/src/pages/TablePage.tsx b/src/pages/TablePage.tsx
 index 7a244fb..2534295 100644
 --- a/src/pages/TablePage.tsx
 +++ b/src/pages/TablePage.tsx
-@@ -32,7 +32,6 @@ import type { BoardStage } from '../components/table/CommunityCards';
- // public/hub/club-arena/images/. A new file dropped in images/ would never
- // reach production, and git-safe-push.sh's `git clean` sweeps untracked files
+@@ -34,3 +34,2 @@ import type { BoardStage } from '../components/table/CommunityCards';
  // there — assets/ is explicitly excluded from that clean.
 -import rabbitHuntIcon from '../assets/rabbit-hunt.png';
  // Vertical black-and-gold table artwork — the same design used by the
- // Commander /commander/table-tablets table, rotated to portrait.
- // MUST be a Vite asset import: public/images/ is never refreshed by
-@@ -1139,6 +1138,12 @@ export default function TablePage({
-   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
- 
+@@ -1141,2 +1140,8 @@ export default function TablePage({
    // Chat — extracted to useTableChat hook
 +  // VISIBLE FIX 2026-08-15: throws are broadcast over chat, but useTableChat
 +  // is declared before useTableAnimations. Bridge them through a ref so an
@@ -254,37 +186,22 @@ index 7a244fb..2534295 100644
 +    ((fromSeat: number, toSeat: number, throwableId: string) => void) | null
 +  >(null);
    const {
-     chatMessages,
-     setChatMessages,
-@@ -1151,7 +1156,9 @@ export default function TablePage({
-     parseIncomingMessage,
-     unreadCount,
+@@ -1153,3 +1158,5 @@ export default function TablePage({
      clearUnread,
 -  } = useTableChat(tableId, userId, tableState.players);
 +  } = useTableChat(tableId, userId, tableState.players, (fromSeat, toSeat, throwableId) =>
 +    receiveThrowRef.current?.(fromSeat, toSeat, throwableId)
 +  );
  
-   // ══════════════════════════════════════════════════════════════════════
-   // Observer chat permission — Admin/Owner roles can chat even when observing
-@@ -1470,12 +1477,14 @@ export default function TablePage({
-     activeThrows,
-     handleThrowableSelect,
+@@ -1472,2 +1479,3 @@ export default function TablePage({
      handleThrowComplete,
 +    receiveThrow,
      getSeatPositions,
-     chipAnimations,
-     setChipAnimations,
-     showConfetti,
-     setShowConfetti,
+@@ -1478,2 +1486,3 @@ export default function TablePage({
    } = useTableAnimations(tableId, userId, tableState.heroSeat);
 +  receiveThrowRef.current = receiveThrow;
  
-   // Tip Dealer state
-   const [showTipDealer, setShowTipDealer] = useState(false);
-@@ -6641,21 +6650,13 @@ export default function TablePage({
- 
-                   return (
+@@ -6643,17 +6652,9 @@ export default function TablePage({
                      <>
 -                      {/* Rabbit Hunt square — mockup v3: small square button
 -                          ABOVE the Fold button. Wired to the existing
@@ -309,5 +226,3 @@ index 7a244fb..2534295 100644
 +                          and revealed an empty board. The RabbitHunt component
 +                          in TableModalsLayer is the single entry point. */}
                        <ActionPanel
-                         canFold={true}
-                         canCheck={callAmount === 0}

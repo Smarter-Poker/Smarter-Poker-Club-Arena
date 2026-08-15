@@ -1,0 +1,48 @@
+name: Agent Apply Patch
+
+# Applies queued unified diffs pushed to patch/** branches. Purpose: the
+# agent-side GitHub bridge caps a single pushed file at ~65KB, so large files
+# (TablePage.tsx at 307KB) could never be edited remotely. A patch file is a
+# few KB regardless of target size. Flow:
+#   1. agent creates branch patch/<name> from main
+#   2. agent pushes .agent/patches/<name>.patch (unified diff, -p1 paths)
+#   3. this workflow applies it, removes the patch file, commits, pushes
+#   4. agent opens a normal PR from the branch — build gate runs as usual
+# Pushes made with GITHUB_TOKEN do not trigger workflows, so the apply
+# commit cannot recurse.
+
+on:
+  push:
+    branches:
+      - 'patch/**'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply queued patches
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          patches=(.agent/patches/*.patch)
+          if [ ${#patches[@]} -eq 0 ]; then
+            echo "No queued patches — nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          for p in "${patches[@]}"; do
+            echo "::group::Applying $p"
+            # --index stages the result; a patch that does not apply cleanly
+            # fails the job loudly instead of committing garbage.
+            git apply --index --whitespace=nowarn "$p"
+            git rm -q "$p"
+            git commit -m "agent-patch: apply $(basename "$p")"
+            echo "::endgroup::"
+          done
+          git push

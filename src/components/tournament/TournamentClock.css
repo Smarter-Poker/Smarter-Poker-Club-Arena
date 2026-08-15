@@ -307,6 +307,14 @@
   color: #f0f0f5;
 }
 
+/* "/ 48" after the remaining count — present but subordinate, so the number
+   that matters (players still in) stays the one the eye lands on. */
+.tc-stat-of {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .tc-stat-label {
   font-size: 10px;
   color: rgba(255, 255, 255, 0.35);

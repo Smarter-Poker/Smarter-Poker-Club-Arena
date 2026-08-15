@@ -17,6 +17,8 @@ import { formatDuration as formatTime } from '@/lib/date';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { tournamentTimerService } from '../../services/TournamentTimerService';
 import { tournamentService } from '../../services/TournamentService';
+import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import './TournamentClock.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -44,6 +46,9 @@ interface ClockState {
   isBreak: boolean;
   breakTimeRemaining: number;
   playersRemaining: number;
+  /** Total entries. Shown next to the remaining count so "12 / 48" reads as
+   *  a real field, and so a busted field is visibly a busted field. */
+  entrants: number;
   averageStack: number;
   totalChips: number;
   tournamentName: string;
@@ -72,6 +77,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     isBreak: false,
     breakTimeRemaining: 0,
     playersRemaining: 0,
+    entrants: 0,
     averageStack: 0,
     totalChips: 0,
     tournamentName: '',
@@ -92,10 +98,55 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       const levelState = tournamentService.getCurrentLevelState(tournament);
       const timerState = tournamentTimerService.getTimerState(tournamentId);
 
-      // Calculate stats
-      const playersRemaining = tournament.current_players || 0;
-      const totalChips = (tournament.starting_chips || 0) * playersRemaining;
-      const averageStack = playersRemaining > 0 ? Math.round(totalChips / playersRemaining) : 0;
+      // ── Live field stats ──────────────────────────────────────────────
+      // FIX 2026-08-15: every number in this footer was wrong once a single
+      // player busted.
+      //
+      //   playersRemaining = tournament.current_players
+      //
+      // `current_players` is the ENTRY count. It is incremented by
+      // fn_register_for_tournament and decremented only by UNregistration;
+      // no elimination path touches it (the server itself calls it
+      // `totalEntries` -- TournamentManagerEliminations.ts). So the clock
+      // showed the starting field for the whole tournament. Measured against
+      // production while writing this: "Union Mystery Bounty (PLO5)" was down
+      // to its last player and the clock read 21; "Late Night PKO" had 4 left
+      // and read 20.
+      //
+      // Worse, both other stats were derived from it:
+      //   totalChips   = starting_chips * playersRemaining   (ignores every
+      //                  chip won, lost, rebought or added on)
+      //   averageStack = totalChips / playersRemaining       (algebraically
+      //                  ALWAYS starting_chips -- a constant, displayed as if
+      //                  it were live. The same tournament above showed 8,000
+      //                  when the real average stack was 168,700.)
+      //
+      // Count and sum the actual seats instead. tournament_players is in the
+      // realtime publication, so the subscription below keeps this current
+      // between the 15s polls.
+      let playersRemaining = tournament.current_players || 0;
+      let entrants = tournament.current_players || 0;
+      let totalChips = (tournament.starting_chips || 0) * playersRemaining;
+      let averageStack = tournament.starting_chips || 0;
+
+      const { data: seatRows, error: seatErr } = await supabase
+        .from('tournament_players')
+        .select('chips, status')
+        .eq('tournament_id', tournamentId);
+
+      if (seatErr) {
+        // Fall back to the (stale) tournament row rather than showing zeros.
+        reportError(seatErr, 'TournamentClock.Seat_stats_failed');
+      } else if (seatRows) {
+        const alive = seatRows.filter((r: { status?: string }) => r.status === 'playing');
+        entrants = seatRows.length || entrants;
+        playersRemaining = alive.length;
+        totalChips = alive.reduce(
+          (sum: number, r: { chips?: number }) => sum + (Number(r.chips) || 0),
+          0
+        );
+        averageStack = playersRemaining > 0 ? Math.round(totalChips / playersRemaining) : 0;
+      }
 
       setClock({
         currentLevel: levelState.levelIndex + 1,
@@ -109,6 +160,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         isBreak: false, // Will be updated via BREAK_START event
         breakTimeRemaining: 0,
         playersRemaining,
+        entrants,
         averageStack,
         totalChips,
         tournamentName: tournament.name || 'Tournament',
@@ -158,11 +210,38 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     // Full refresh from DB every 30s
     const refreshInterval = setInterval(refreshState, 30_000);
 
+    // Eliminations and chip movements must reach the clock immediately, not up
+    // to 30s later — the whole point of the fix above is that this footer
+    // tracks the live field. tournament_players is in the realtime publication.
+    const channelKey = `clock-players-${tournamentId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tournament_players',
+          filter: `tournament_id=eq.${tournamentId}`,
+        },
+        () => {
+          refreshState();
+        }
+      )
+      .subscribe((status: string, err?: Error) => {
+        // The 30s poll above is the backstop, so a dead channel degrades
+        // rather than breaks. Still report it.
+        if (status === 'CHANNEL_ERROR' && err) {
+          reportError(err?.message || err, 'TournamentClock.Realtime_channel_error');
+        }
+      });
+
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
       clearInterval(refreshInterval);
+      masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [refreshState]);
+  }, [refreshState, tournamentId]);
 
   // ── Listen for tournament update bus events ──
   useMasterBusSubscription('TOURNAMENT_UPDATED', (payload: any) => {
@@ -323,8 +402,13 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         <div className="tc-stats">
           <div className="tc-stat">
             <span className="tc-stat-icon">👥</span>
-            <span className="tc-stat-value">{clock.playersRemaining}</span>
-            <span className="tc-stat-label">Players</span>
+            <span className="tc-stat-value">
+              {clock.playersRemaining}
+              {clock.entrants > 0 && (
+                <span className="tc-stat-of"> / {clock.entrants}</span>
+              )}
+            </span>
+            <span className="tc-stat-label">Remaining</span>
           </div>
           <div className="tc-stat">
             <span className="tc-stat-icon">📊</span>

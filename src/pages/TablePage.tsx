@@ -210,7 +210,6 @@ import { HoleCardReveal } from '../components/tournament/HoleCardReveal';
 import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
 import { playerPositionStatsService } from '../services/PlayerPositionStatsService';
 // Phase 9: Previously unwired table components
-import { EmoteBroadcast } from '../components/table/EmoteBroadcast';
 import { StreamerMode } from '../components/table/StreamerMode';
 import { SitOutToggle } from '../components/table/SitOutToggle';
 import { BankrollWidget } from '../components/table/BankrollWidget';
@@ -3197,6 +3196,71 @@ export default function TablePage({
                   setAnnouncement({ type: 'hand_for_hand', data: data.payload });
                   toast?.info?.('Hand-for-hand play activated — bubble approaching');
                 }
+              } else if (data?.type === 'final_table') {
+                // DEAD-WIRING FIX 2026-08-15: the server has always broadcast
+                // `final_table` (TournamentManager: once, when <= 9 players are
+                // still 'playing'), and this switch had no case for it, so the
+                // signal was dropped on the floor. FinalTableOverlay IS mounted
+                // (TableModalsLayer) but listens for the bus event
+                // FINAL_TABLE_REACHED, whose only emitter is
+                // TournamentTimerService.checkTableSize -- a function with ZERO
+                // callers anywhere in the repo. So reaching the final table,
+                // the single biggest moment in a tournament, announced nothing.
+                //
+                // The broadcast carries only { playerCount }; the overlay wants
+                // the seated field, so fetch it. Non-blocking: a failed fetch
+                // must not swallow the announcement, so fall through to the
+                // toast either way.
+                {
+                  const tid = tableStateRef.current.tournamentId;
+                  const ftName = tableStateRef.current.tableName || 'Tournament';
+                  if (tid) {
+                    (async () => {
+                      let ftPlayers: Array<{
+                        userId: string;
+                        username: string;
+                        chips: number;
+                      }> = [];
+                      let prizePool = 0;
+                      try {
+                        const { data: rows } = await supabase
+                          .from('tournament_players')
+                          .select('user_id, username, chips')
+                          .eq('tournament_id', tid)
+                          .eq('status', 'playing')
+                          .order('chips', { ascending: false });
+                        ftPlayers = (rows || []).map(
+                          (r: { user_id: string; username?: string; chips?: number }) => ({
+                            userId: r.user_id,
+                            username: r.username || 'Player',
+                            chips: Number(r.chips) || 0,
+                          })
+                        );
+                        const { data: trow } = await supabase
+                          .from('tournaments')
+                          .select('prize_pool')
+                          .eq('id', tid)
+                          .maybeSingle();
+                        prizePool = Number(trow?.prize_pool) || 0;
+                      } catch (e) {
+                        reportError(e, 'TablePage.final_table_fetch');
+                      }
+                      try {
+                        masterBus.emit('FINAL_TABLE_REACHED', {
+                          tournamentId: tid,
+                          tournamentName: ftName,
+                          prizePool,
+                          players: ftPlayers,
+                        });
+                      } catch {
+                        /* bus publish is best-effort */
+                      }
+                    })();
+                  }
+                  toast?.success?.(
+                    `Final table! ${data.payload?.playerCount ?? 9} players remain.`
+                  );
+                }
               } else if (data?.type === 'bubble_burst') {
                 // Bubble burst — players are now in the money
                 setTableState((prev) => ({
@@ -3212,6 +3276,46 @@ export default function TablePage({
                 console.debug(
                   `[TablePage] Player eliminated: ${elimData.userId?.slice(0, 8)} at position ${elimData.position}`
                 );
+
+                // DEAD-WIRING FIX 2026-08-15: heads-up never announced either.
+                // HeadsUpOverlay is mounted in TableModalsLayer but listens for
+                // HEADS_UP_SWITCH, whose only emitter is
+                // TournamentTimerService.checkTableSize -- zero callers. Derive
+                // it here: `position` is the finishing place, so the player who
+                // busts in 3rd leaves exactly two behind.
+                if (Number(elimData.position) === 3 && tableStateRef.current.tournamentId) {
+                  const tid = tableStateRef.current.tournamentId;
+                  (async () => {
+                    try {
+                      const { data: rows } = await supabase
+                        .from('tournament_players')
+                        .select('user_id, username, chips')
+                        .eq('tournament_id', tid)
+                        .eq('status', 'playing')
+                        .order('chips', { ascending: false });
+                      // Only announce if the field really is two-handed; a
+                      // simultaneous double bust would make this a 3-way.
+                      if (rows && rows.length === 2) {
+                        const toP = (r: {
+                          user_id: string;
+                          username?: string;
+                          chips?: number;
+                        }) => ({
+                          userId: r.user_id,
+                          username: r.username || 'Player',
+                          chips: Number(r.chips) || 0,
+                        });
+                        masterBus.emit('HEADS_UP_SWITCH', {
+                          tournamentId: tid,
+                          player1: toP(rows[0]),
+                          player2: toP(rows[1]),
+                        });
+                      }
+                    } catch (e) {
+                      reportError(e, 'TablePage.heads_up_detect');
+                    }
+                  })();
+                }
 
                 // Check if the current user was eliminated
                 if (elimData.userId === userId) {
@@ -4467,6 +4571,34 @@ export default function TablePage({
         }
         break;
       }
+      case 'BOMB_POT_TRIGGERED': {
+        // DEAD-WIRING FIX 2026-08-15. BombPotOverlay is mounted and has always
+        // listened for this bus event; nothing has ever emitted it, and the
+        // engine sent no bomb-pot signal at all. A bomb pot therefore looked
+        // like a bug: an ante disappeared off every stack and the hand opened
+        // on the flop with no preflop action and no explanation.
+        //
+        // (Note for whoever turns this on: as of today 0 of 54,858 tables have
+        // bomb_pot_enabled set, so this path has never run in production. The
+        // toggle exists in CreateTableModal and TableConfigPage.)
+        {
+          const d = evt.data as any;
+          try {
+            masterBus.emit('BOMB_POT_TRIGGERED', {
+              tableId: tableId || '',
+              anteAmount: Number(d?.ante_amount) || 0,
+              // The engine has no double-board concept in its bomb-pot path;
+              // report it honestly rather than implying a second board.
+              doubleBoard: false,
+              bbMultiplier: Number(d?.bb_multiplier) || 0,
+            });
+          } catch {
+            /* bus publish is best-effort */
+          }
+        }
+        break;
+      }
+
       case 'BLINDS_POSTED': {
         // Animate SB + BB chips from each blind seat into the pot.
         // 2026-04-16 fix: Use direct setChipAnimations instead of the

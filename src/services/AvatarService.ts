@@ -70,6 +70,8 @@ class AvatarServiceClass {
    * Get the Hub avatar page URL for embedding or navigation
    */
   getHubAvatarUrl(): string {
+    // /hub/avatars is the live avatar page (avatars-complete was removed;
+    // the Hub keeps a redirect for old builds, but link directly here)
     return 'https://smarter.poker/hub/avatars';
   }
 

@@ -781,14 +781,61 @@
 
 /* ─── ACTIVE PLAYER (avatar pulses with golden ring) ─────────────────── */
 
+/* Downward light-pool spotlight behind the acting player (replaces the disc halo) */
+.seat--active::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 230px;
+  height: 190px;
+  transform: translate(-50%, -48%);
+  background: radial-gradient(
+    ellipse 58% 62% at 50% 34%,
+    rgba(255, 228, 156, 0.34) 0%,
+    rgba(255, 212, 120, 0.18) 36%,
+    rgba(255, 198, 92, 0.07) 60%,
+    transparent 78%
+  );
+  z-index: -3;
+  pointer-events: none;
+  filter: blur(3px);
+  animation: spotlightBreathe 3.4s ease-in-out infinite;
+}
+@keyframes spotlightBreathe {
+  0%,
+  100% {
+    opacity: 0.82;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.seat--timer-urgent.seat--active::before {
+  background: radial-gradient(
+    ellipse 58% 62% at 50% 34%,
+    rgba(255, 150, 90, 0.34) 0%,
+    rgba(255, 120, 60, 0.17) 40%,
+    transparent 78%
+  );
+}
+.seat--timer-critical.seat--active::before {
+  background: radial-gradient(
+    ellipse 58% 62% at 50% 34%,
+    rgba(255, 96, 96, 0.36) 0%,
+    rgba(239, 68, 68, 0.18) 40%,
+    transparent 78%
+  );
+}
+
+/* Active avatar: thin gold rim only — the pool is the highlight, not a disc */
 .seat--active .seat__avatar {
   border-color: var(--timer-color, #ffd700);
   box-shadow:
-    0 0 20px rgba(255, 215, 0, 0.5),
-    0 0 40px rgba(255, 215, 0, 0.2),
+    0 0 8px rgba(255, 215, 0, 0.3),
     0 4px 16px rgba(0, 0, 0, 0.5);
-  animation: activeAvatarPulse 2s ease-in-out infinite;
   transform: scale(1.04);
+  animation: none;
 }
 
 @keyframes activeAvatarPulse {

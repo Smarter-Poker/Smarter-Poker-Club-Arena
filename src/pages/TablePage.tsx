@@ -139,7 +139,6 @@ import {
 } from '../components/table/TableMenuIcons';
 import LeaveTableConfirm from '../components/table/LeaveTableConfirm';
 import PresenceIndicator from '../components/social/PresenceIndicator';
-import { useTableStore } from '../stores/useTableStore';
 import { useToast } from '../components/common/Toast';
 import TournamentBreakScreen from '../components/table/TournamentBreakScreen';
 import AddOnModal from '../components/table/AddOnModal';
@@ -476,7 +475,11 @@ interface TablePageProps {
     name?: string;
     stakes?: string;
     isMyTurn?: boolean;
-    timeRemaining?: number;
+    /** Absolute epoch-ms deadline of the hero's turn (server-authoritative).
+     *  The container derives the ticking seconds itself — a snapshot number
+     *  here was the bug (it froze at a constant and the urgent auto-switch
+     *  could never fire). */
+    turnDeadlineMs?: number;
     pot?: number;
   }) => void;
   /** Whether this table is part of a multi-table session (hides own header if tab bar is shown) */
@@ -1272,7 +1275,10 @@ export default function TablePage({
           : undefined,
       stakes: tableState.blinds && tableState.blinds !== '?/?' ? tableState.blinds : undefined,
       isMyTurn: isHeroTurn,
-      timeRemaining: isHeroTurn ? 15 : undefined,
+      // MULTI-TABLE FIX (2026-08-15): report the server-authoritative absolute
+      // deadline. The previous hardcoded `timeRemaining: 15` froze the tab
+      // countdown and made the container's urgent auto-switch (< 5s) dead code.
+      turnDeadlineMs: isHeroTurn ? tableState.actionTimerDeadline : undefined,
       pot: tableState.pot,
     });
   }, [
@@ -1283,6 +1289,7 @@ export default function TablePage({
     tableState.currentPlayerSeat,
     tableState.heroSeat,
     tableState.isHandInProgress,
+    tableState.actionTimerDeadline,
     onTableInfoUpdate,
   ]);
 
@@ -3597,10 +3604,10 @@ export default function TablePage({
     }
     if (!isConnected && prevConnectedRef.current) {
       toast?.warning?.('Connection lost — reconnecting…');
-      if (soundService.isEnabled()) soundService.playDisconnect();
+      if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDisconnect();
     } else if (isConnected && !prevConnectedRef.current) {
       toast?.success?.('Reconnected');
-      if (soundService.isEnabled()) soundService.playReconnect();
+      if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playReconnect();
     }
     prevConnectedRef.current = isConnected;
   }, [isConnected]);

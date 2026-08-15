@@ -18,6 +18,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { supabase } from '../lib/supabase';
 import './MultiTablePage.css';
 
 // Lazy-load TablePage for code splitting
@@ -32,7 +33,8 @@ interface TableInstance {
   name: string;
   stakes: string;
   isMyTurn: boolean;
-  timeRemaining?: number;
+  /** Absolute epoch-ms deadline of the hero's turn on this table. */
+  turnDeadlineMs?: number;
   pot: number;
 }
 
@@ -114,6 +116,61 @@ export default function MultiTablePage() {
     pot?: number;
   }
 
+  // ─── Rebuild tabs from SERVER TRUTH (2026-08-15 multi-table fix) ─────
+  // The add-table flow used to dead-end: the "+" button navigated to the
+  // lobby, which unmounted this page and dropped every open tab (the old
+  // sessionStorage persistence was removed for causing zombie tabs, and the
+  // `returnToMulti` query param it navigated with was read by nothing). The
+  // durable source of truth for "which tables am I playing" is the server:
+  // every ACTIVE SEAT (table_seats.left_at IS NULL) becomes a tab, additively
+  // merged so observer-only tabs (open via URL, not seated) are never
+  // removed. Seat at a 2nd/3rd/4th table in the lobby, come back, and every
+  // seat is a tab again — the PokerBros flow.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data: seatRows, error: seatErr } = await supabase
+        .from('table_seats')
+        .select('table_id')
+        .eq('user_id', user.id)
+        .is('left_at', null);
+      if (cancelled || seatErr || !seatRows || seatRows.length === 0) return;
+      const ids = seatRows.map((r) => r.table_id as string).filter(Boolean);
+      if (ids.length === 0) return;
+      const { data: tblRows } = await supabase
+        .from('tables')
+        .select('id, name, game_variant, small_blind, big_blind')
+        .in('id', ids);
+      if (cancelled) return;
+      setTables((prev) => {
+        const known = new Set(prev.map((t) => t.id));
+        const room = Math.max(0, MAX_TABLES - prev.length);
+        const additions = ids
+          .filter((id) => !known.has(id))
+          .slice(0, room)
+          .map((id, i) => {
+            const row = tblRows?.find((r) => r.id === id);
+            const stakes =
+              row && row.small_blind != null && row.big_blind != null
+                ? `${row.small_blind}/${row.big_blind}`
+                : '';
+            return {
+              id,
+              name: (row?.name as string) || `Table ${prev.length + i + 1}`,
+              stakes,
+              isMyTurn: false,
+              pot: 0,
+            };
+          });
+        return additions.length > 0 ? [...prev, ...additions] : prev;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;
     if (!e.tableId) return;
@@ -185,6 +242,23 @@ export default function MultiTablePage() {
   // ─── Derived state ───────────────────────────────────────────────────
   const activeTableId = tables[activeIndex]?.id || '';
 
+  // 2026-08-15 multi-table fix: the tab countdown ticks off the server
+  // deadline. One 1s clock runs only while some table has a live turn.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const anyTurnLive = tables.some((t) => t.isMyTurn && t.turnDeadlineMs !== undefined);
+  useEffect(() => {
+    if (!anyTurnLive) return;
+    const iv = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [anyTurnLive]);
+  const secondsLeft = useCallback(
+    (t: TableInstance): number | undefined =>
+      t.isMyTurn && t.turnDeadlineMs !== undefined
+        ? Math.max(0, Math.ceil((t.turnDeadlineMs - nowMs) / 1000))
+        : undefined,
+    [nowMs]
+  );
+
   const tabInfos: TabInfo[] = useMemo(
     () =>
       tables.map((t) => ({
@@ -192,10 +266,10 @@ export default function MultiTablePage() {
         name: t.name,
         stakes: t.stakes,
         isMyTurn: t.isMyTurn,
-        timeRemaining: t.timeRemaining,
+        timeRemaining: secondsLeft(t),
         pot: t.pot,
       })),
-    [tables]
+    [tables, secondsLeft]
   );
 
   // ─── Table Management ────────────────────────────────────────────────
@@ -259,11 +333,14 @@ export default function MultiTablePage() {
   );
 
   // ─── Auto-switch on urgent timer ─────────────────────────────────────
+  // 2026-08-15 fix: this compared against a hardcoded timeRemaining of 15,
+  // so it could never fire. Now derived from the real server deadline.
   useEffect(() => {
-    const urgentTable = tables.find(
-      (t, idx) =>
-        idx !== activeIndex && t.isMyTurn && t.timeRemaining !== undefined && t.timeRemaining < 5
-    );
+    const urgentTable = tables.find((t, idx) => {
+      if (idx === activeIndex) return false;
+      const left = secondsLeft(t);
+      return left !== undefined && left < 5;
+    });
     if (urgentTable) {
       const idx = tables.findIndex((t) => t.id === urgentTable.id);
       if (idx !== -1) {
@@ -272,7 +349,7 @@ export default function MultiTablePage() {
         setTimeout(() => setIsTransitioning(false), 320);
       }
     }
-  }, [tables, activeIndex]);
+  }, [tables, activeIndex, secondsLeft]);
 
   // ─── Keyboard shortcuts for table switching ───────────────────────────
   useEffect(() => {

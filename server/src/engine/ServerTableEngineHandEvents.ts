@@ -237,67 +237,72 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         this.broadcastCurrentState();
         break;
 
-      case 'COMMUNITY_CARDS': {
-        if (event.stage === 'flop') this.currentHandWentToFlop = true;
-        if (event.cards) {
-          // Round 39 audit Pass 3 fix: HandController.dealCommunityCards()
-          // emits ONLY the new cards for the current stage (3 for flop, 1 for
-          // turn, 1 for river — see HandController.ts:597/622/629). Previously
-          // we REPLACED currentHandCommunityCards with event.cards, so a hand
-          // that went to the river persisted only the 1 river card to
-          // hand_history.community_cards (verified live: hand 268 had 19
-          // actions ending on the river but only ["6spades"] stored). Fix:
-          // flop resets, turn/river APPEND. This now mirrors HandController's
-          // own state.communityCards which already accumulates correctly.
-          const newCards = event.cards.map((c: any) =>
-            typeof c === 'string' ? c : `${c.rank}${c.suit}`
-          );
-          if (event.stage === 'flop') {
-            this.currentHandCommunityCards = newCards;
-          } else {
-            this.currentHandCommunityCards = [...this.currentHandCommunityCards, ...newCards];
+      case 'COMMUNITY_CARDS':
+        // Watchdog liveness: dealing a street is proof of life. Without this
+        // an insurance/RIT window (up to 3 x 20s + 18s) exceeds
+        // WATCHDOG_STALL_MS and the watchdog attacks a HEALTHY hand.
+        this.markProgress();
+        {
+          if (event.stage === 'flop') this.currentHandWentToFlop = true;
+          if (event.cards) {
+            // Round 39 audit Pass 3 fix: HandController.dealCommunityCards()
+            // emits ONLY the new cards for the current stage (3 for flop, 1 for
+            // turn, 1 for river — see HandController.ts:597/622/629). Previously
+            // we REPLACED currentHandCommunityCards with event.cards, so a hand
+            // that went to the river persisted only the 1 river card to
+            // hand_history.community_cards (verified live: hand 268 had 19
+            // actions ending on the river but only ["6spades"] stored). Fix:
+            // flop resets, turn/river APPEND. This now mirrors HandController's
+            // own state.communityCards which already accumulates correctly.
+            const newCards = event.cards.map((c: any) =>
+              typeof c === 'string' ? c : `${c.rank}${c.suit}`
+            );
+            if (event.stage === 'flop') {
+              this.currentHandCommunityCards = newCards;
+            } else {
+              this.currentHandCommunityCards = [...this.currentHandCommunityCards, ...newCards];
+            }
           }
+          // Bible V8 §1.16 (Real-Time Law): emit discrete community_cards_dealt
+          // so the client slides the flop/turn/river cards onto the board with
+          // the spec animation (§6 community cards dealing) the millisecond the
+          // engine flips them — not whenever the next snapshot arrives.
+          this.hub?.emitEvent(this.tableId, {
+            type: 'community_cards_dealt',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            stage: event.stage,
+            // Send only the NEW cards for this stage so the client can animate
+            // just the additions (3 for flop, 1 each for turn/river).
+            new_cards: event.cards ?? [],
+            // Full board too, for clients that want to render the complete
+            // state without diffing.
+            board: this.currentHandCommunityCards,
+            timestamp: Date.now(),
+          });
+          // ── ADDITIVE event-sourcing shadow (#1): record StreetAdvanced ──
+          if (this.shadowRecorder && event.stage) {
+            this.shadowRecorder.recordStreetAdvanced(event.stage as ShadowStreet);
+          }
+          // A7 FIX (2026-08-08): verify chip conservation AT EVERY STREET, while
+          // the pot still exists.
+          //
+          // The verifier previously ran only at HAND_COMPLETE and only summed
+          // stacks, which made in-street chip creation structurally invisible: the
+          // extra chips sat in the pot, and by the time the check ran the pot had
+          // been distributed, so the drift was already folded into a winner's
+          // stack where it looked like a legitimate win. Checking here — flop,
+          // turn and river — is what actually closes that hole, and it also
+          // catches a pot that has drifted from the sum of what players paid in.
+          //
+          // Safe to assert exact conservation mid-hand: withdrawChips is rejected
+          // outright while a hand is live, and a mid-hand add-on is queued rather
+          // than applied to the live stack, so nothing legitimately moves chips
+          // in or out between the deal and settlement.
+          this.verifyStreetIntegrity();
+          this.broadcastCurrentState();
+          break;
         }
-        // Bible V8 §1.16 (Real-Time Law): emit discrete community_cards_dealt
-        // so the client slides the flop/turn/river cards onto the board with
-        // the spec animation (§6 community cards dealing) the millisecond the
-        // engine flips them — not whenever the next snapshot arrives.
-        this.hub?.emitEvent(this.tableId, {
-          type: 'community_cards_dealt',
-          table_id: this.tableId,
-          hand_number: this.handCount,
-          stage: event.stage,
-          // Send only the NEW cards for this stage so the client can animate
-          // just the additions (3 for flop, 1 each for turn/river).
-          new_cards: event.cards ?? [],
-          // Full board too, for clients that want to render the complete
-          // state without diffing.
-          board: this.currentHandCommunityCards,
-          timestamp: Date.now(),
-        });
-        // ── ADDITIVE event-sourcing shadow (#1): record StreetAdvanced ──
-        if (this.shadowRecorder && event.stage) {
-          this.shadowRecorder.recordStreetAdvanced(event.stage as ShadowStreet);
-        }
-        // A7 FIX (2026-08-08): verify chip conservation AT EVERY STREET, while
-        // the pot still exists.
-        //
-        // The verifier previously ran only at HAND_COMPLETE and only summed
-        // stacks, which made in-street chip creation structurally invisible: the
-        // extra chips sat in the pot, and by the time the check ran the pot had
-        // been distributed, so the drift was already folded into a winner's
-        // stack where it looked like a legitimate win. Checking here — flop,
-        // turn and river — is what actually closes that hole, and it also
-        // catches a pot that has drifted from the sum of what players paid in.
-        //
-        // Safe to assert exact conservation mid-hand: withdrawChips is rejected
-        // outright while a hand is live, and a mid-hand add-on is queued rather
-        // than applied to the live stack, so nothing legitimately moves chips
-        // in or out between the deal and settlement.
-        this.verifyStreetIntegrity();
-        this.broadcastCurrentState();
-        break;
-      }
 
       case 'PINEAPPLE_DISCARD_REQUIRED':
         // FIX 120: Crazy Pineapple — broadcast discard requirement to all players
@@ -308,6 +313,8 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         break;
 
       case 'ALL_IN_RUNOUT':
+        // A parked runout is a legitimate wait, not a stall.
+        this.markProgress();
         // Bible V8 §4.19: All players are all-in with cards to come.
         // Pause for insurance/RIT offers before dealing remaining community cards.
         this.handleAllInRunout(event, players);

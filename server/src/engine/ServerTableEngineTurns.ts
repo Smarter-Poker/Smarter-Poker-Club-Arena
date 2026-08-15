@@ -128,7 +128,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
 
     const p = state.players.find((x) => x.seat === seat);
-    if (!p) return;
+    if (!p) {
+      // currentPlayerSeat points at a seat that is not in the hand state. There
+      // is nothing to re-arm and nothing to force — bailing silently here would
+      // make the watchdog a no-op forever. Escalate straight to a rebuild.
+      this.watchdogTrips++;
+      reportError(
+        new Error('Watchdog: currentPlayerSeat ' + seat + ' is not present in hand state'),
+        'ServerTableEngine.' + this.tableId + '.watchdog_seat_missing'
+      );
+      if (this.watchdogTrips >= 3) this.killForRestart('current_seat_not_in_state');
+      return;
+    }
     // PreciseActionTimer keys on user_id (SeatPlayer.user_id in types.ts) — an
     // `id`/`userId` guess would always miss and pin the watchdog at Tier 1.
     const hasClock = this.preciseTimer.hasTimer(this.tableId, p.user_id);
@@ -155,19 +166,46 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     if (this.watchdogTrips === 1 && !hasClock) {
       this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
+      // Handing the seat a clock IS the recovery — restart the stall window so
+      // the next heartbeat (10s away) does not force a fold 7s before the 15s
+      // clock we just granted would have expired. Deliberately NOT
+      // markProgress(): that zeroes watchdogTrips, which would let Tier 1
+      // re-arm forever and never escalate.
+      this.lastProgressAtMs = Date.now();
       return;
     }
 
     if (this.watchdogTrips <= 3) {
+      // Cancel any orphaned time-bank deadline for this seat first: forcing an
+      // action outside handlePlayerAction leaves `timebank:<uid>` armed, and a
+      // per-table turn FSM means that orphan can later steal a DIFFERENT seat's
+      // time-bank expiry and suppress its auto-fold.
+      try {
+        this.timeBankEngine.playerActed(this.tableId, p.user_id);
+      } catch {
+        /* best-effort */
+      }
       const toCall = Math.max(0, (state.currentBet || 0) - (p.bet || 0));
       const forced = toCall === 0 ? 'check' : 'fold';
+      let applied = false;
       try {
-        if (!this.handController.performAction(seat, forced as any)) {
-          this.handController.performAction(seat, 'fold' as any);
-        }
-        this.markProgress();
+        applied = this.handController.performAction(seat, forced as any);
+        if (!applied) applied = this.handController.performAction(seat, 'fold' as any);
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.watchdog_force_action_failed');
+      }
+      // CRITICAL: markProgress() also zeroes watchdogTrips. Calling it after a
+      // REJECTED force (the exact state a stale currentPlayerSeat produces)
+      // reset the escalation ladder every cycle, so Tier 3 — the kill-and-
+      // rebuild this whole watchdog exists to reach — was unreachable and the
+      // table stayed frozen forever while logging a stall every 45s.
+      if (applied) {
+        this.markProgress();
+      } else {
+        reportError(
+          new Error('Watchdog forced action REJECTED at seat ' + seat + ' — escalating to rebuild'),
+          'ServerTableEngine.' + this.tableId + '.watchdog_force_rejected'
+        );
       }
       return;
     }
@@ -1185,14 +1223,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         );
         try {
           // Bible V8 §1.7.4 preferCheckOverFold.
-          if (!handControllerRef.performAction(seat, 'check' as any)) {
+          applied =
+            handControllerRef.performAction(seat, 'check' as any) ||
             handControllerRef.performAction(seat, 'fold' as any);
-          }
         } catch {
           /* Hand already resolved. */
         }
       }
-      this.markProgress();
+      // Unconditional markProgress() here reset watchdogTrips even when all
+      // three actions were rejected, hiding a genuine stall for a full window.
+      if (applied) {
+        this.markProgress();
+      } else {
+        reportError(
+          new Error(
+            'Horse seat ' + seat + ' could not be acted — leaving stall visible to watchdog'
+          ),
+          'ServerTableEngine.' + this.tableId + '.horse_seat_unactable'
+        );
+      }
     }, thinkTimeMs);
   }
 }

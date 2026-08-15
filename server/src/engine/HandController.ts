@@ -414,6 +414,13 @@ export class HandController {
   performAction(seat: number, action: ActionType, amount?: number): boolean {
     const player = this.state.players.find((p) => p.seat === seat);
     if (!player || seat !== this.state.currentPlayerSeat) return false;
+    // 2026-08-15 BACKSTOP: a folded, all-in or sitting-out seat can never act,
+    // whatever currentPlayerSeat claims. Without this, any stale turn pointer
+    // lets an automated path (watchdog force-action, disconnect auto-action, a
+    // late horse timer) push a legal-looking check/fold from a player who is
+    // not in the decision. This is the authoritative guard; every caller that
+    // trusts currentPlayerSeat is now safe by construction.
+    if (player.is_folded || player.is_all_in || player.is_sitting_out) return false;
 
     // Bible V8 §4.14: PLO variants use pot-limit betting
     const isPotLimit = this.config.gameVariant.startsWith('plo');
@@ -721,6 +728,15 @@ export class HandController {
 
     const activePlayers = this.getActivePlayers().filter((p) => !p.is_all_in);
     if (activePlayers.length < 2) {
+      // 2026-08-15: park the turn pointer. The hand is now waiting on an engine
+      // callback and NOBODY can act. Leaving currentPlayerSeat pointing at the
+      // last aggressor (who is all-in) made the table watchdog take its
+      // "stalled turn" branch instead of its "no actionable seat ->
+      // continueRunout()" branch: it armed a real action clock on an all-in
+      // player and then forced check/folds from them, advancing the runout one
+      // street per watchdog cycle and writing phantom actions into the hand
+      // history. It also published a live turn indicator on an all-in seat.
+      this.state.currentPlayerSeat = -1;
       // Bible V8 §4.19: Emit ALL_IN_RUNOUT so ServerTableEngine can pause
       // for insurance/RIT offers before dealing remaining cards.
       // ServerTableEngine calls continueRunout() after offers are resolved.

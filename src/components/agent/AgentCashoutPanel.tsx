@@ -127,8 +127,10 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     }
 
     try {
+      // approveCashout is atomic and terminal (server route moves the chips to the
+      // club treasury and sets status='approved' in one transaction). The old
+      // follow-up completeCashout() call is gone -- it is now a deprecated no-op.
       await cashoutService.approveCashout(cashout.id, user.id);
-      await cashoutService.completeCashout(cashout.id, user.id);
       loadCashouts();
       onCashoutProcessed?.();
       // Emit bus event so DynamicWallet and CashierPage refresh

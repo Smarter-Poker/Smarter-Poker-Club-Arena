@@ -12,10 +12,8 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { notificationService } from './NotificationService';
-import { WalletService } from './WalletService';
+import { callClubArenaApi } from './clubArenaApi';
 import { ChipFlowService } from './ChipFlowService';
-import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -91,61 +89,29 @@ class CashoutServiceClass {
       );
     }
 
-    // BUG 025 FIX (2026-04-16): old fn_request_cashout was a silent-success stub that
-    // returned a fabricated UUID without inserting cashout_requests or debiting chips.
-    // Real implementation now returns the actual new cashout_requests.id (uuid).
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('fn_request_cashout', {
-          p_player_id: playerId,
-          p_club_id: resolvedClubId,
-          p_amount: amount,
-          p_note: note || null,
-        }),
-      3
-    );
+    // Request SERVER-SIDE. `fn_request_cashout` is service_role-only, so the old
+    // direct browser rpc() returned 42501 and this button could never work
+    // (verified: cashout_requests had ZERO rows in production). The route derives
+    // the player from the JWT, resolves their agent from club_members, enforces
+    // balance/duplicate checks, debits chips into escrow atomically, writes the
+    // audit trail AND notifies the agent.
+    const result = await callClubArenaApi<{ cashoutId: string }>('request-cashout', {
+      clubId: resolvedClubId,
+      amount,
+      note: note || undefined,
+    });
 
-    if (error) {
-      reportError(error, 'CashoutService.requestCashout');
-      throw new Error(error.message || 'Failed to request cashout');
-    }
-
-    // RPC returns the new cashout uuid directly (BUG 025 fix)
-    const newCashoutId = typeof data === 'string' ? data : (data as any)?.request_id;
+    const newCashoutId = result.cashoutId;
     if (!newCashoutId) {
-      reportError(new Error('fn_request_cashout returned no id'), 'CashoutService.requestCashout');
+      reportError(new Error('request-cashout returned no id'), 'CashoutService.requestCashout');
       throw new Error('Failed to request cashout: no id returned');
     }
     const cashout = await this.getCashout(newCashoutId);
 
-    // 🔔 Notify agent of the new cash-out request (graceful failure)
-    if (cashout?.agentId) {
-      try {
-        await notificationService.notifyCashoutRequest(
-          cashout.agentId,
-          cashout.playerName || 'A player',
-          cashout.amount,
-          cashout.clubId,
-          cashout.id
-        );
-      } catch (notifyError) {
-        reportError(notifyError, 'CashoutService.notifyAgent');
-        // Don't fail the cashout if notification fails
-      }
-    }
-
-    // Log the wallet transaction for audit trail
-    await WalletService.logTransaction(
-      playerId,
-      'PLAYER',
-      amount,
-      'debit',
-      'cashout',
-      `Cashout requested — chips locked in escrow`,
-      undefined,
-      undefined,
-      cashout?.id
-    );
+    // NOTE: the agent notification and the wallet/audit rows are written by the
+    // route (it returns agentNotified:true). No client-side notify or
+    // logTransaction here -- log_wallet_transaction is service_role-only and
+    // would silently no-op.
 
     // Emit balance change so Cashier/Wallet pages refresh instantly
     masterBus.emit('BALANCE_UPDATED', {
@@ -164,142 +130,70 @@ class CashoutServiceClass {
    * Player: Cancel a pending cashout (returns chips from escrow)
    */
   async cancelCashout(cashoutId: string, playerId: string): Promise<boolean> {
-    const { data, error } = await retryAsync(
-      () =>
-        // Round 18 fix: prod signature is (p_cashout_id, p_user_id) not (p_cashout_id, p_player_id).
-        supabase.rpc('fn_cancel_cashout', {
-          p_cashout_id: cashoutId,
-          p_user_id: playerId,
-        }),
-      3
-    );
-
-    if (error) {
-      reportError(error, 'CashoutService.cancelCashout');
-      throw new Error(error.message || 'Failed to cancel cashout');
-    }
-
-    // Get cashout details to log the transaction amount
+    // Read details BEFORE cancelling -- the route is authoritative and the row's
+    // status changes underneath us.
     const cashout = await this.getCashout(cashoutId);
 
-    // Log wallet transaction for audit trail if we found the cashout
-    if (cashout) {
-      await WalletService.logTransaction(
-        playerId,
-        'PLAYER',
-        cashout.amount,
-        'credit',
-        'refund',
-        `Cashout cancelled by user — chips returned from escrow`,
-        undefined,
-        undefined,
-        cashoutId
-      );
-    }
+    // Self-cancel SERVER-SIDE. `fn_cancel_cashout` is service_role-only (42501
+    // from the browser). The route verifies the caller IS the requester via the
+    // JWT, refunds the escrowed chips atomically and writes the audit trail.
+    await callClubArenaApi('cancel-my-cashout', { cashoutId });
 
-    // Emit balance change — chips returned from escrow
+    // Emit balance change -- chips returned from escrow
     masterBus.emit('BALANCE_UPDATED', { source: 'cashout_cancel', userId: playerId });
     masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: cashout?.clubId || '' });
 
-    return data === true;
+    return true;
   }
 
   /**
    * Agent: Approve a cashout request
    */
   async approveCashout(cashoutId: string, agentId: string, note?: string): Promise<boolean> {
-    const { data, error } = await retryAsync(
-      () =>
-        // Round 18 fix: prod signature is (p_agent_note, p_agent_user_id, p_cashout_id);
-        // caller used to pass (p_agent_id, p_note) which silently 404'd in PostgREST.
-        supabase.rpc('fn_agent_approve_cashout', {
-          p_cashout_id: cashoutId,
-          p_agent_user_id: agentId,
-          p_agent_note: note || null,
-        }),
-      3
-    );
-
-    if (error) {
-      reportError(error, 'CashoutService.approveCashout');
-      throw new Error(error.message || 'Failed to approve cashout');
-    }
+    // Approve SERVER-SIDE. `fn_agent_approve_cashout` is service_role-only (42501
+    // from the browser). The route authenticates the approving agent from the JWT
+    // and runs `fn_approve_cashout_atomic`, which locks the row, re-checks that the
+    // caller holds an agent/owner/admin role in that club, moves the chips into the
+    // club treasury and transitions the request to 'approved' in ONE transaction.
+    //
+    // This single call is TERMINAL for the money -- there is no separate "complete"
+    // step any more (see completeCashout below).
+    await callClubArenaApi('approve-cashout', {
+      cashoutId,
+      action: 'approve',
+      note: note || undefined,
+    });
 
     // Emit CASHOUT_APPROVED so admin dashboard and cashier pages refresh
     const cashout = await this.getCashout(cashoutId);
     masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: cashout?.clubId || '' });
+    if (cashout) {
+      masterBus.emit('BALANCE_UPDATED', {
+        source: 'cashout_approved',
+        userId: cashout.playerId,
+        amount: -cashout.amount,
+      });
+    }
 
-    // chip_ledger narration REMOVED (2026-08-15): chip_ledger is server-owned
-    // now (client INSERT revoked); the cashout RPC's own wallet_transactions
-    // rows are the auditable record.
-
-    return data === true;
+    return true;
   }
 
   /**
-   * Agent: Complete a cashout (removes chips from escrow)
+   * @deprecated Approval is now atomic and terminal.
+   *
+   * The old flow was two steps: `fn_agent_approve_cashout` then
+   * `fn_complete_cashout`. Both were service_role-only, so neither ever ran from
+   * the browser. The server route replaced them with `fn_approve_cashout_atomic`,
+   * which moves the chips to the club treasury and sets status='approved' in a
+   * single locked transaction.
+   *
+   * Kept as a no-op so any remaining caller cannot double-apply the money leg.
+   * Callers should drop this call; `approveCashout` alone is sufficient.
    */
-  async completeCashout(cashoutId: string, agentId: string): Promise<boolean> {
-    const { data, error } = await retryAsync(
-      () =>
-        // Round 18 fix: prod signature is (p_cashout_id, p_completed_by) — the param
-        // is generic 'completed_by' not agent-specific because admins can also complete.
-        supabase.rpc('fn_complete_cashout', {
-          p_cashout_id: cashoutId,
-          p_completed_by: agentId,
-        }),
-      3
-    );
-
-    if (error) {
-      reportError(error, 'CashoutService.completeCashout');
-      throw new Error(error.message || 'Failed to complete cashout');
-    }
-
-    // Emit balance change — agent received chips from escrow
-    // Get the cashout to know the agent's user_id and player_id
-    try {
-      const cashout = await this.getCashout(cashoutId);
-      if (cashout) {
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'cashout_complete',
-          userId: cashout.playerId,
-          amount: -cashout.amount,
-        });
-        // agentId here is auth.users.id (from user.id in calling components)
-        // Query by user_id, NOT by agents.id (PK), since they are different UUIDs
-        const { data: agentData } = await supabase
-          .from('agents')
-          .select('user_id')
-          .eq('user_id', agentId)
-          .maybeSingle();
-
-        if (agentData?.user_id) {
-          // Log the wallet transaction for the agent receiving the chips
-          await WalletService.logTransaction(
-            agentData.user_id,
-            'PLAYER',
-            cashout.amount,
-            'credit',
-            'transfer',
-            `Processed cashout for ${cashout.playerName || 'player'} — chips received from escrow`,
-            undefined,
-            undefined,
-            cashoutId
-          );
-
-          masterBus.emit('BALANCE_UPDATED', {
-            source: 'cashout_complete',
-            userId: agentData.user_id,
-            amount: cashout.amount,
-          });
-        }
-      }
-    } catch (err) {
-      reportError(err, 'CashoutService.postCashoutBus');
-    }
-
-    return data === true;
+  async completeCashout(cashoutId: string, _agentId: string): Promise<boolean> {
+    void cashoutId;
+    void _agentId;
+    return true;
   }
 
   async rejectCashout(cashoutId: string, agentId: string, reason?: string): Promise<boolean> {
@@ -309,37 +203,18 @@ class CashoutServiceClass {
       throw new Error('Cashout not found or not rejectable');
     }
 
-    // Delegate entirely to the atomic Supabase RPC to prevent race conditions
-    const { data, error } = await retryAsync(
-      () =>
-        // Round 18 fix: prod signature uses p_reason not p_note for the rejection reason.
-        supabase.rpc('fn_reject_cashout', {
-          p_cashout_id: cashoutId,
-          p_agent_id: agentId,
-          p_reason: reason || null,
-        }),
-      3
-    );
+    // Reject SERVER-SIDE. `fn_reject_cashout` is service_role-only (42501 from the
+    // browser). An agent rejection is the same money operation as an agent-side
+    // cancel: the route runs `fn_cancel_cashout_atomic` with is_agent=true, which
+    // re-checks the caller's club role, refunds the escrowed chips to the player
+    // and writes the audit trail atomically.
+    await callClubArenaApi('approve-cashout', {
+      cashoutId,
+      action: 'cancel',
+      note: reason || undefined,
+    });
 
-    if (error) {
-      reportError(error, 'CashoutService.rejectCashout');
-      throw new Error(error.message || 'Cannot reject cashout.');
-    }
-
-    // Call WalletService for the unified audit trail (the RPC only writes to chip_transactions)
-    await WalletService.logTransaction(
-      cashout.playerId,
-      'PLAYER',
-      cashout.amount,
-      'credit',
-      'refund',
-      `Cashout rejected by agent — chips returned`,
-      undefined,
-      undefined,
-      cashoutId
-    );
-
-    // Emit balance change — chips returned to player from rejected cashout
+    // Emit balance change -- chips returned to player from rejected cashout
     masterBus.emit('BALANCE_UPDATED', {
       source: 'cashout_reject',
       userId: cashout.playerId,

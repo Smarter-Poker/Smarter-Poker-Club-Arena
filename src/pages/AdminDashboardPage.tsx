@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { callClubArenaApi } from '../services/clubArenaApi';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -2362,15 +2363,15 @@ function MintChipsTab({ clubId }: { clubId: string }) {
                   setProcessing(false);
                   return;
                 }
-                // BUG 025 FIX (2026-04-16): old RPC was silent-success stub; unified signature
-                // now requires p_minted_by for authorization check.
-                const { error } = await supabase.rpc('mint_club_chips', {
-                  p_club_id: uuid,
-                  p_amount: mintAmount,
-                  p_minted_by: user?.id || null,
-                  p_notes: notes || null,
+                // Mint SERVER-SIDE. `mint_club_chips` is service_role-only, so this
+                // direct browser rpc() returned 42501 and the admin Mint button
+                // could never work. The route derives the minter from the JWT and
+                // enforces authorization, economy caps, settlement lock and audit.
+                await callClubArenaApi('mint-chips', {
+                  clubId: uuid,
+                  amount: mintAmount,
+                  notes: notes || undefined,
                 });
-                if (error) throw error;
                 setMsg(`Minted ${fmtChips(mintAmount)} chips to treasury!`);
                 masterBus.emit('CHIPS_DISTRIBUTED', { clubId });
                 setAmount('');

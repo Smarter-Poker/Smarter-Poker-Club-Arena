@@ -17,12 +17,16 @@ import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspens
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
+import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { supabase } from '../lib/supabase';
 import './MultiTablePage.css';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazy(() => import('./TablePage'));
+// Dan 2026-08-15: the lobby rendered INSIDE a tab, so the in-table "+" can
+// show it without navigating away and unmounting the running games.
+const HomePage = lazy(() => import('./HomePage'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -36,7 +40,23 @@ interface TableInstance {
   /** Absolute epoch-ms deadline of the hero's turn on this table. */
   turnDeadlineMs?: number;
   pot: number;
+  /**
+   * Dan 2026-08-15: a tab is either a live table or a LOBBY placeholder.
+   *
+   * The in-table "+" opens a `kind: 'lobby'` tab so the player can browse for
+   * a second game while their current table keeps dealing in its own tab.
+   * When they sit down, TABLE_SEATED converts this tab in place into a
+   * `kind: 'table'` tab rather than appending a new one — otherwise picking a
+   * game would strand a dead lobby tab and burn one of the 4 slots.
+   *
+   * Absent means 'table', so every pre-existing construction site stays valid.
+   */
+  kind?: 'table' | 'lobby';
 }
+
+/** Lobby tabs carry a synthetic id so they can share the tabs array. */
+const LOBBY_TAB_PREFIX = 'lobby:';
+const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(LOBBY_TAB_PREFIX);
 
 const MAX_TABLES = 4;
 
@@ -182,15 +202,76 @@ export default function MultiTablePage() {
 
     // Functional updater handles dedup check via prev.find — no closure dep needed
     setTables((prev) => {
-      if (prev.length >= MAX_TABLES || prev.find((t) => t.id === e.tableId)) return prev;
+      if (prev.find((t) => t.id === e.tableId)) return prev;
+
+      const seatedTab: TableInstance = {
+        id: e.tableId,
+        name: e.tableName || `Table ${prev.length + 1}`,
+        stakes: '',
+        isMyTurn: false,
+        pot: 0,
+        kind: 'table',
+      };
+
+      // Dan 2026-08-15: if the player reached this table from a lobby tab
+      // opened by the in-table "+", replace that lobby tab IN PLACE. Appending
+      // instead would leave a dead lobby tab behind and consume one of the
+      // four slots. Oldest lobby tab wins, which is the one they just used.
+      const lobbyIdx = prev.findIndex(isLobbyTab);
+      if (lobbyIdx !== -1) {
+        const next = [...prev];
+        next[lobbyIdx] = { ...seatedTab, name: seatedTab.name };
+        return next;
+      }
+
+      if (prev.length >= MAX_TABLES) return prev;
+      return [...prev, seatedTab];
+    });
+  });
+
+  // ─── Dan 2026-08-15: in-table "+" → open a lobby tab ──────────────────
+  // The old handleAddTable did `navigate('/?returnToMulti=true')`, and nothing
+  // in the app ever read `returnToMulti`, so the whole multi-table container
+  // unmounted and every open game was torn down. Instead we add a lobby tab
+  // beside the running tables and switch to it; the other TablePage instances
+  // stay mounted (hidden, not unmounted) and keep their engine sockets alive.
+  // A lobby tab has no TablePage behind it, so the tab bar's X — which emits
+  // TABLE_MENU_ACTION/FORCE_LEAVE_TABLE for the secure cashout path — has
+  // nobody listening and the tab would be unclosable. There are no chips on a
+  // lobby tab, so close it directly.
+  useMasterBusSubscription(
+    'TABLE_MENU_ACTION',
+    (payload: { tableId?: string; action?: string }) => {
+      if (!payload?.tableId || !payload.tableId.startsWith(LOBBY_TAB_PREFIX)) return;
+      if (payload.action !== 'FORCE_LEAVE_TABLE' && payload.action !== 'LEAVE_TABLE') return;
+      setTables((prev) => {
+        const idx = prev.findIndex((t) => t.id === payload.tableId);
+        if (idx === -1) return prev;
+        setActiveIndex((cur) => (cur >= idx && cur > 0 ? cur - 1 : cur));
+        return prev.filter((t) => t.id !== payload.tableId);
+      });
+    }
+  );
+
+  useMasterBusSubscription('OPEN_LOBBY_TAB', () => {
+    setTables((prev) => {
+      const existingLobby = prev.findIndex(isLobbyTab);
+      if (existingLobby !== -1) {
+        // Already have one — just focus it rather than stacking duplicates.
+        setActiveIndex(existingLobby);
+        return prev;
+      }
+      if (prev.length >= MAX_TABLES) return prev;
+      setActiveIndex(prev.length);
       return [
         ...prev,
         {
-          id: e.tableId,
-          name: e.tableName || `Table ${prev.length + 1}`,
+          id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
+          name: 'Lobby',
           stakes: '',
           isMyTurn: false,
           pot: 0,
+          kind: 'lobby',
         },
       ];
     });
@@ -287,10 +368,12 @@ export default function MultiTablePage() {
 
   const handleAddTable = useCallback(() => {
     if (tables.length >= MAX_TABLES) return;
-    // Navigate to lobby to pick a table
-    // The lobby will redirect back here with the new table ID
-    navigate('/?returnToMulti=true');
-  }, [tables.length, navigate]);
+    // Dan 2026-08-15: was `navigate('/?returnToMulti=true')`. Nothing in the
+    // app ever read `returnToMulti`, so this unmounted MultiTablePage and tore
+    // down every open game just to browse the lobby. Route it through the same
+    // bus event the in-table "+" uses so both entry points behave identically.
+    masterBus.emit('OPEN_LOBBY_TAB', {});
+  }, [tables.length]);
 
   // ─── Update table info (called by child TablePage instances) ─────────
   // P1-2 FIX: bail out when nothing actually changed so setTables returns the
@@ -600,13 +683,19 @@ export default function MultiTablePage() {
               }}
             >
               <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
-                <TablePage
-                  key={table.id}
-                  embeddedTableId={table.id}
-                  onTableInfoUpdate={getTableInfoCb(table.id)}
-                  isMultiTable={true}
-                  isActive={idx === activeIndex}
-                />
+                {isLobbyTab(table) ? (
+                  <div className="multi-table-page__lobby-tab">
+                    <HomePage />
+                  </div>
+                ) : (
+                  <TablePage
+                    key={table.id}
+                    embeddedTableId={table.id}
+                    onTableInfoUpdate={getTableInfoCb(table.id)}
+                    isMultiTable={true}
+                    isActive={idx === activeIndex}
+                  />
+                )}
               </Suspense>
             </div>
           ))}
@@ -657,13 +746,19 @@ export default function MultiTablePage() {
                     </div>
                   }
                 >
-                  <TablePage
-                    key={table.id}
-                    embeddedTableId={table.id}
-                    onTableInfoUpdate={getTableInfoCb(table.id)}
-                    isMultiTable={tables.length > 1}
-                    isActive={idx === activeIndex}
-                  />
+                  {isLobbyTab(table) ? (
+                    <div className="multi-table-page__lobby-tab">
+                      <HomePage />
+                    </div>
+                  ) : (
+                    <TablePage
+                      key={table.id}
+                      embeddedTableId={table.id}
+                      onTableInfoUpdate={getTableInfoCb(table.id)}
+                      isMultiTable={tables.length > 1}
+                      isActive={idx === activeIndex}
+                    />
+                  )}
                 </Suspense>
               </div>
             );

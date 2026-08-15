@@ -1,26 +1,44 @@
 name: Auto-Deploy Hetzner Engine (on server/ changes)
 
-# Automatically redeploys the Hetzner engine whenever server/** files change
-# on the main branch. No manual confirmation required — this is CI/CD.
+# Automatically redeploys the Hetzner engine whenever server/** files change on
+# main. No manual confirmation — this is CI/CD.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# DESIGN NOTES — every one of these was learned from a production failure.
+# Read before changing anything below.
+#
+#  1. IMMUTABLE TAGS + ROLLBACK. The old pipeline built straight over the bare
+#     `club-arena-engine` tag and then ran `docker image prune -f`. That deleted
+#     the only copy of the previously-working image, so a bad deploy could not
+#     be rolled back at all — the sole path back was a revert commit plus a
+#     fresh 3-5 minute build, and if the build itself was broken, there was no
+#     path back. Builds now go to `club-arena-engine:<sha>`, the last-known-good
+#     is pinned as `:previous`, and the container always runs `:current`.
+#
+#  2. --label autoheal=true IS LOAD-BEARING. Docker's HEALTHCHECK only sets
+#     .State.Health.Status. Plain Docker NEVER restarts an unhealthy container
+#     (only Swarm/Kubernetes do). The sp-autoheal sidecar watches for the label.
+#     Drop it and the healthcheck becomes a status light wired to nothing.
+#
+#  3. --restart always DOES NOT FIRE after `docker stop`/`docker kill`. Docker
+#     records those as manual stops. So an operator stop, or a job cancelled
+#     between stop and run, used to leave the engine dead with no automatic
+#     recovery. Two things now close that hole: the `if: always()` guarantee
+#     step at the bottom of this job, and club-arena-supervisor.timer on the
+#     host (which does not depend on GitHub being reachable at all).
+#
+#  4. THE RUN-SPEC LIVES IN server/scripts/engine-up.sh, NOT HERE. The deploy
+#     and the host supervisor must start the container identically; duplicating
+#     the flag list in two places guarantees they eventually diverge.
+#
+#  5. HEALTH != DEPLOYED. `running:true` is true of the OLD container too. The
+#     gate below asserts /health reports the SHA we just built, so a no-op or
+#     stale-image deploy fails loudly instead of reporting success.
 #
 # Required repo secrets:
-# SELF-HEALING NOTES (2026-08-15, learned from a production drill):
-#
-#   1. `--label autoheal=true` is LOAD-BEARING. Docker's HEALTHCHECK only sets
-#      .State.Health.Status — plain Docker NEVER restarts an unhealthy
-#      container (only Swarm/Kubernetes do). The sp-autoheal sidecar
-#      (/opt/smarter-poker-monitoring/autoheal-compose.yml) watches for this
-#      label and performs the restart. Drop the label and the healthcheck
-#      becomes a status light wired to nothing.
-#
-#   2. `--restart always` does NOT fire after `docker stop` or `docker kill`.
-#      Docker treats those as manual stops and leaves the container down until
-#      the daemon restarts or someone starts it by hand. So an operator stop,
-#      or a deploy that halts between stop and run, leaves the engine dead with
-#      no automatic recovery. Deploys must always reach the `docker run` below.
-#
 #   HETZNER_SSH_KEY  — full contents of the deploy private key
-#   HETZNER_HOST     — Hetzner VPS IP (e.g. 178.156.160.206)
+#   HETZNER_HOST     — Hetzner VPS IP
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
   push:
@@ -32,6 +50,12 @@ on:
       # must NOT trigger a live-engine restart (a restart voids in-flight hands).
       - '!server/**/*.test.ts'
       - '!server/sim/**'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Restart even while humans are seated in live hands'
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-hetzner
@@ -41,14 +65,16 @@ jobs:
   deploy:
     name: Deploy to Hetzner
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     env:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
       SSH_USER: root
       CONTAINER: club-arena-engine
+      IMAGE_REPO: club-arena-engine
       REPO_DIR: /opt/club-arena
       ENGINE_URL: https://engine.smarter.poker
+      SHA: ${{ github.sha }}
 
     steps:
       - name: Checkout (for audit trail)
@@ -61,87 +87,193 @@ jobs:
           chmod 600 ~/.ssh/id_deploy
           ssh-keyscan -H "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null
+          # One reusable alias. `-o BatchMode=yes` so a prompt can never hang
+          # the job holding the deploy-hetzner concurrency lock.
+          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
+            "$SSH_USER" "$HETZNER_HOST" > ~/hssh
+          chmod +x ~/hssh
 
-      - name: Capture pre-deploy state
+      - name: Capture pre-deploy state (this is the rollback target)
         id: pre
         run: |
-          BEFORE_SHA=$(ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "cd $REPO_DIR && git rev-parse HEAD" 2>&1 || echo "unknown")
+          BEFORE_SHA=$(~/hssh "cd $REPO_DIR && git rev-parse HEAD" 2>&1 || echo unknown)
+          # Whatever :current points at right now is, by definition, the image
+          # that was serving traffic. Pin it as :previous BEFORE we touch
+          # anything, so the rollback target exists even if every later step
+          # fails. Falls back to the legacy bare tag on the first run after this
+          # workflow lands, when :current does not exist yet.
+          ~/hssh '
+            set -e
+            if docker image inspect club-arena-engine:current >/dev/null 2>&1; then
+              docker tag club-arena-engine:current club-arena-engine:previous
+              echo "rollback target pinned: $(docker image inspect -f "{{.Id}}" club-arena-engine:previous | cut -c8-19)"
+            elif docker image inspect club-arena-engine >/dev/null 2>&1; then
+              docker tag club-arena-engine club-arena-engine:previous
+              docker tag club-arena-engine club-arena-engine:current
+              echo "bootstrapped :previous/:current from legacy bare tag"
+            else
+              echo "no existing image — first deploy, no rollback target"
+            fi'
           echo "before_sha=$BEFORE_SHA" >> $GITHUB_OUTPUT
           echo "Pre-deploy commit on host: $BEFORE_SHA"
 
-      - name: Pre-flight Sentry check
+      - name: Pre-flight checks
         run: |
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "grep -q '^SENTRY_DSN=..' /opt/club-arena/server/.env 2>/dev/null \
-              && echo '   ✅ SENTRY_DSN present' \
-              || echo '   ⚠️  SENTRY_DSN missing — non-blocking'"
+          # An empty/missing .env produces a container that boots and then fails
+          # every query — worse than not deploying, because it looks alive.
+          ~/hssh "test -s $REPO_DIR/server/.env" \
+            || { echo "::error::$REPO_DIR/server/.env is missing or empty — refusing to deploy"; exit 1; }
+          ~/hssh "grep -q '^SENTRY_DSN=..' $REPO_DIR/server/.env 2>/dev/null \
+            && echo '   OK SENTRY_DSN present' || echo '   WARN SENTRY_DSN missing — non-blocking'"
+          # Disk: a build on a full disk fails halfway and can wedge the daemon.
+          AVAIL=$(~/hssh "df --output=avail -BG / | tail -1 | tr -dc '0-9'")
+          echo "   root disk free: ${AVAIL}G"
+          [ "${AVAIL:-0}" -ge 5 ] || { echo "::error::only ${AVAIL}G free on / — refusing to build"; exit 1; }
+
+      - name: Drain gate — do not void live hands
+        id: drain
+        run: |
+          FORCE="${{ github.event.inputs.force }}"
+          if [ "$FORCE" = "true" ]; then
+            echo "force=true — skipping drain gate"; exit 0
+          fi
+          # Wait up to 8 minutes for real people to finish. Horses are ignored:
+          # they have no session to lose. If humans are still seated after that
+          # we proceed anyway — an indefinitely blocked deploy is its own
+          # outage, and the engine drains + flushes snapshots on SIGTERM.
+          for i in $(seq 1 16); do
+            HUMANS=$(curl -sf --max-time 10 "$ENGINE_URL/health" \
+              | python3 -c "import json,sys; print(json.load(sys.stdin).get('humansSeatedTotal', 0))" 2>/dev/null || echo 0)
+            if [ "${HUMANS:-0}" -eq 0 ]; then
+              echo "no humans seated — safe to restart"; exit 0
+            fi
+            echo "attempt $i/16: $HUMANS human(s) seated, waiting 30s..."
+            sleep 30
+          done
+          echo "::warning::Humans still seated after 8min — proceeding (SIGTERM drain will flush state)"
 
       - name: Pull latest code on host
-        run: |
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "cd $REPO_DIR && git fetch origin && git reset --hard origin/main"
+        run: ~/hssh "cd $REPO_DIR && git fetch origin && git reset --hard origin/main && git rev-parse HEAD"
 
-      - name: Rebuild Docker image
+      - name: Build immutable image
         run: |
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "cd $REPO_DIR/server && docker build -t $CONTAINER ."
+          # Tagged by SHA, never over the bare name. The SHA is baked in as a
+          # build ARG so the running container can prove which commit it is.
+          ~/hssh "cd $REPO_DIR/server && docker build \
+            --build-arg GIT_COMMIT_SHA=$SHA \
+            -t $IMAGE_REPO:$SHA ."
+          ~/hssh "docker image inspect $IMAGE_REPO:$SHA >/dev/null"
 
-      - name: Stop and remove old container
+      - name: Install/refresh host supervisor
         run: |
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "docker stop -t 45 $CONTAINER 2>/dev/null || true && docker rm $CONTAINER 2>/dev/null || true"  # -t 45: the engine drains engines + flushes snapshots on SIGTERM; the 10s default SIGKILLed it mid-flush
+          # Re-run every deploy so the systemd unit can never drift away from
+          # what is in the repo, and so a rebuilt host self-heals on first deploy.
+          ~/hssh "chmod +x $REPO_DIR/server/scripts/*.sh && REPO_DIR=$REPO_DIR $REPO_DIR/server/scripts/install-engine-supervisor.sh"
 
-      - name: Start new container
+      - name: Cut over to the new image
         run: |
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "docker run -d \
-              --name $CONTAINER \
-              --restart always \
-              --health-start-period=90s \
-              --label autoheal=true \
-              -p 8080:8080 \
-              --env-file $REPO_DIR/server/.env \
-              $CONTAINER"
+          ~/hssh "docker tag $IMAGE_REPO:$SHA $IMAGE_REPO:current"
+          # Single source of truth for the run-spec — see engine-up.sh.
+          ~/hssh "IMAGE=$IMAGE_REPO:current CONTAINER=$CONTAINER ENV_FILE=$REPO_DIR/server/.env $REPO_DIR/server/scripts/engine-up.sh"
 
-      - name: Health check (retry 6×5s)
+      - name: Verify — liveness AND that the running build is the one we shipped
         id: health
         run: |
-          sleep 5
-          for i in 1 2 3 4 5 6; do
-            HEALTH=$(curl -sf "$ENGINE_URL/health" || echo "FAILED")
-            if echo "$HEALTH" | grep -q '"running":true'; then
-              echo "✅ Engine healthy on attempt $i"
-              echo "$HEALTH" | python3 -m json.tool
-              UPTIME=$(echo "$HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('uptime', -1))")
+          SHORT="${SHA:0:8}"
+          for i in $(seq 1 12); do
+            sleep 5
+            BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" || echo "")
+            [ -z "$BODY" ] && { echo "attempt $i: no response"; continue; }
+            RUNNING=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('running'))" 2>/dev/null || echo "")
+            VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+            LIVE=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('liveness',''))" 2>/dev/null || echo "")
+            echo "attempt $i: running=$RUNNING version=$VER (want $SHORT) liveness=$LIVE"
+            if [ "$RUNNING" = "True" ] && [ "$VER" = "$SHORT" ]; then
+              UPTIME=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('uptime',-1))")
               echo "uptime=$UPTIME" >> $GITHUB_OUTPUT
+              echo "verified=true" >> $GITHUB_OUTPUT
+              echo "Engine healthy AND serving $SHORT"
               exit 0
             fi
-            echo "Attempt $i: not ready, waiting 5s..."
-            sleep 5
           done
-          echo "::error::Health check failed after 6 attempts"
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "docker logs --tail 80 $CONTAINER" || true
+          echo "::error::Verification failed after 12 attempts — engine is not serving $SHORT"
+          ~/hssh "docker logs --tail 120 $CONTAINER" || true
           exit 1
 
-      - name: Post-deploy summary
-        id: post
+      - name: ROLLBACK — restore the last known-good image
+        if: failure() && steps.health.outcome == 'failure'
         run: |
-          AFTER_SHA=$(ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "cd $REPO_DIR && git rev-parse HEAD")
-          echo "## Auto-deploy summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Trigger: push to main (server/ files changed)" >> $GITHUB_STEP_SUMMARY
-          echo "- Before: \`${{ steps.pre.outputs.before_sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- After:  \`$AFTER_SHA\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Engine uptime: ${{ steps.health.outputs.uptime }}s" >> $GITHUB_STEP_SUMMARY
-          echo "- URL: $ENGINE_URL" >> $GITHUB_STEP_SUMMARY
+          echo "::warning::Deploy verification failed — rolling back to :previous"
+          if ! ~/hssh "docker image inspect $IMAGE_REPO:previous >/dev/null 2>&1"; then
+            echo "::error::No :previous image to roll back to. Engine is running the failed build."
+            exit 1
+          fi
+          ~/hssh "docker tag $IMAGE_REPO:previous $IMAGE_REPO:current"
+          ~/hssh "IMAGE=$IMAGE_REPO:current CONTAINER=$CONTAINER ENV_FILE=$REPO_DIR/server/.env $REPO_DIR/server/scripts/engine-up.sh"
+          # Also rewind the host checkout, or the next supervisor run installs
+          # units from the bad commit.
+          ~/hssh "cd $REPO_DIR && git reset --hard ${{ steps.pre.outputs.before_sha }}" || true
+          for i in $(seq 1 12); do
+            sleep 5
+            if curl -sf --max-time 10 "$ENGINE_URL/health" | grep -q '"running":true'; then
+              echo "Rollback verified healthy on attempt $i"; exit 0
+            fi
+          done
+          echo "::error::ROLLBACK ALSO FAILED — engine is down. Page a human."
+          exit 1
 
-      - name: Prune old Docker images
+      - name: GUARANTEE the engine is running (runs even if the job failed)
+        if: always()
         run: |
-          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "docker image prune -f" || true
+          # Closes the stop -> run window. If this job died, was cancelled, or
+          # the runner vanished mid-cutover, the container may not exist or may
+          # be stopped — and `--restart always` does not cover a manual stop.
+          # The host supervisor would catch this within 60s anyway; this makes
+          # it immediate and visible in the job log.
+          ~/hssh '
+            set +e
+            STATE=$(docker container inspect -f "{{.State.Status}}" club-arena-engine 2>/dev/null)
+            if [ -z "$STATE" ]; then
+              echo "container absent — recreating"
+              IMAGE=club-arena-engine:current CONTAINER=club-arena-engine \
+                ENV_FILE=/opt/club-arena/server/.env /opt/club-arena/server/scripts/engine-up.sh
+            elif [ "$STATE" != "running" ]; then
+              echo "container state=$STATE — starting"
+              docker start club-arena-engine
+            else
+              echo "container running"
+            fi' || true
+
+      - name: Retention — keep the last 5 images, never the rollback target
+        if: success()
+        run: |
+          # The old `docker image prune -f` deleted the previous image the
+          # instant the bare tag moved, which is what made rollback impossible.
+          # Keep :current and :previous pinned, plus the 5 newest SHA tags.
+          ~/hssh '
+            KEEP=$(docker images club-arena-engine --format "{{.Tag}}" \
+              | grep -Ev "^(current|previous|latest|<none>)$" | head -5)
+            for t in $(docker images club-arena-engine --format "{{.Tag}}" \
+              | grep -Ev "^(current|previous|latest|<none>)$"); do
+              echo "$KEEP" | grep -qx "$t" || { echo "removing club-arena-engine:$t"; docker rmi "club-arena-engine:$t" >/dev/null 2>&1; }
+            done
+            docker image prune -f --filter "dangling=true" >/dev/null 2>&1
+            echo "images retained:"; docker images club-arena-engine --format "  {{.Tag}}  {{.CreatedSince}}"' || true
+
+      - name: Post-deploy summary
+        if: always()
+        run: |
+          AFTER_SHA=$(~/hssh "cd $REPO_DIR && git rev-parse HEAD" 2>/dev/null || echo unknown)
+          {
+            echo "## Auto-deploy summary"
+            echo "- Trigger: ${{ github.event_name }}"
+            echo "- Before: \`${{ steps.pre.outputs.before_sha }}\`"
+            echo "- After:  \`$AFTER_SHA\`"
+            echo "- Verified serving commit: \`${{ steps.health.outputs.verified || 'NO — see rollback step' }}\`"
+            echo "- Engine uptime: ${{ steps.health.outputs.uptime || 'n/a' }}s"
+            echo "- URL: $ENGINE_URL"
+          } >> $GITHUB_STEP_SUMMARY
 
       - name: Cleanup SSH key
         if: always()
-        run: rm -f ~/.ssh/id_deploy
+        run: rm -f ~/.ssh/id_deploy ~/hssh

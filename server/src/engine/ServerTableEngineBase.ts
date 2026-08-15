@@ -763,6 +763,17 @@ export abstract class ServerTableEngineBase {
     return this.isTournamentTable();
   }
 
+  /**
+   * Humans (not horses) currently seated with chips. Drives the deploy drain
+   * gate: restarting the engine voids whatever hand is in flight, which is
+   * invisible in aggregate metrics but very visible to the person it happens
+   * to. A deploy consults this so a routine server/ push can't blow up a live
+   * pot at a table with real people at it.
+   */
+  humansSeated(): number {
+    return this.seatedPlayers.filter((p) => !p.is_horse && p.stack > 0).length;
+  }
+
   /** Drill-only public wrapper over the protected killForRestart path. */
   killForRestartPublic(reason: string): void {
     this.killForRestart(reason);

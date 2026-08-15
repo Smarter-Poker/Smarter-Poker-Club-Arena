@@ -38,6 +38,9 @@ export type BusEventType =
   | 'CLUB_LEFT'
   | 'TABLE_SEATED'
   | 'TABLE_LEFT'
+  // Dan 2026-08-15: the in-table "+" asks MultiTablePage to open a LOBBY tab
+  // alongside the running game, instead of navigating the whole app away.
+  | 'OPEN_LOBBY_TAB'
   | 'BALANCE_UPDATED'
   | 'VIP_POINTS_UPDATED'
   | 'WALLET_REFRESHED'
@@ -339,6 +342,8 @@ export interface BusPayloadMap {
   CLUB_LEFT: ClubEventPayload;
   TABLE_SEATED: TableEventPayload;
   TABLE_LEFT: TableEventPayload;
+  /** Request that MultiTablePage open a lobby tab beside the running game. */
+  OPEN_LOBBY_TAB: { requestedBy?: string };
   BALANCE_UPDATED: { source: string; [key: string]: unknown };
   TRANSACTION_LOGGED: { entry: Record<string, unknown>; direction: 'in' | 'out' };
   VIP_POINTS_UPDATED: { userId: string; added: number; source: string; [key: string]: unknown };

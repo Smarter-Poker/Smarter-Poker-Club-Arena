@@ -6035,13 +6035,23 @@ export default function TablePage({
               tableName={tableState.tableName}
               connectionStatus={isConnected ? 'connected' : 'disconnected'}
             />
+            {/* Dan 2026-08-15 — this "+" is ADD TABLE, not Add Chips.
+                It used to open CashierModal, which duplicated the wallet entry
+                already on the table menu and left no way to start a second
+                game without abandoning the current one.
+                It now asks MultiTablePage to open a LOBBY tab beside the
+                running table: the current game keeps dealing in its own tab on
+                its own live engine socket, and picking a cash game or
+                tournament from that lobby converts the lobby tab into the new
+                table tab in place. Add Chips lives on in the table menu. */}
             <button
               className="add-chips-icon-btn"
               onClick={() => {
                 soundService.playButtonClick();
-                if (tableState.heroSeat > 0) setShowCashier(true);
+                masterBus.emit('OPEN_LOBBY_TAB', { requestedBy: userId });
               }}
-              title="Add Chips"
+              title="Open another table"
+              aria-label="Open another table"
             >
               <svg width="20" height="20" viewBox="0 0 18 18" fill="none">
                 <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />

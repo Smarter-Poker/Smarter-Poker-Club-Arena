@@ -36,6 +36,8 @@ const STALE_SEAT_TABLE_IDLE_MINUTES = 30;
 export class HorseLifecycleManager {
   private isRunning = false;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
+  /** Prevents overlapping maintenance cycles when the DB is slow. */
+  private cycleRunning: boolean = false;
 
   // ─────────────────────────────────────────────────────────────────────────
   // START / STOP
@@ -54,8 +56,17 @@ export class HorseLifecycleManager {
     this.performMaintenanceCycle();
 
     // Recurring checks
+    // 2026-08-15: async setInterval callbacks with no overlap guard stack up
+    // under DB slowness — each cycle issues hundreds of queries, which slows
+    // the DB further. Classic amplification, and it fires precisely during a
+    // freeze event. (This module's own comment at the double-refund fix
+    // records the same hazard.)
     this.intervalHandle = setInterval(() => {
-      this.performMaintenanceCycle();
+      if (this.cycleRunning) return;
+      this.cycleRunning = true;
+      void Promise.resolve(this.performMaintenanceCycle()).finally(() => {
+        this.cycleRunning = false;
+      });
     }, MONITORING_INTERVAL);
   }
 

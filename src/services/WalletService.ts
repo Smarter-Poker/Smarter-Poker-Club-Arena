@@ -201,22 +201,37 @@ export const WalletService = {
     // 3. Calculate diamond cost
     const diamondCost = Math.ceil((chipAmount / 100) * 38);
 
-    // BUG 025 FIX (2026-04-16): old RPC stub returned silent-success AND the call used
-    // mismatched param names (p_chips/p_diamonds) that would have 404'd against PostgREST
-    // anyway once the stub was replaced. Aligning to the unified signature
-    // (p_club_id, p_amount, p_minted_by, p_diamonds_cost, p_notes).
-    const { data, error } = await retryAsync(async () => {
-      const res = await supabase.rpc('mint_club_chips', {
-        p_club_id: resolvedClubId,
-        p_amount: chipAmount,
-        p_minted_by: minterId,
-        p_diamonds_cost: diamondCost,
-        p_notes: club.union_id ? 'Union mint' : 'Standalone club mint',
-      });
-      return res;
-    });
+    // Mint SERVER-SIDE via the World Hub API route. mint_club_chips is
+    // service_role-only, so a direct browser supabase.rpc() returns 42501 -- that
+    // was the dead "Mint" button this replaces. The route derives the minter from
+    // the JWT (no client-supplied minter to spoof), enforces owner/union-admin
+    // authorization, per-request + daily economy caps, settlement lock,
+    // idempotency, and writes the chip_transactions mint row + audit log.
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('Authentication required to mint chips');
 
-    if (error) throw error;
+    const mintResp = await fetch('/api/club-arena/mint-chips', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': crypto.randomUUID(),
+      },
+      body: JSON.stringify({
+        clubId: resolvedClubId,
+        amount: chipAmount,
+        notes: club.union_id ? 'Union mint' : 'Standalone club mint',
+      }),
+    });
+    const mintData = await mintResp
+      .json()
+      .catch(() => ({ success: false, error: `HTTP ${mintResp.status}` }));
+    if (!mintData.success) {
+      throw new Error(mintData.error || `Mint failed (HTTP ${mintResp.status})`);
+    }
 
     // 4. Determine who receives the minted chips
     const mintRecipientId = club.union_id
@@ -252,7 +267,7 @@ export const WalletService = {
       success: true,
       chipsAdded: chipAmount,
       diamondsSpent: diamondCost,
-      newBalance: data?.new_balance || 0,
+      newBalance: mintData.treasuryAfter ?? 0,
     };
   },
 

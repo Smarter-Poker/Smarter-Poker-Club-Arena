@@ -54,7 +54,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
 
     const maxBuyIn = this.getMaxBuyIn();
-    const { supabase } = require('../services/supabase.js');
     const midHand = !!this.handController;
 
     // Effective current chips for the cap: mid-hand include already-queued
@@ -129,7 +128,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     if (!player) return { success: false, error: 'Player not seated' };
     if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
 
-    const { supabase } = require('../services/supabase.js');
     const midHand = !!this.handController;
 
     // Mid-hand cash-out is not allowed (do NOT queue).
@@ -192,7 +190,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
     if (!this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0) return;
 
-    const { supabase } = require('../services/supabase.js');
     const maxBuyIn = this.getMaxBuyIn();
 
     const { data: rows, error: readErr } = await supabase
@@ -293,7 +290,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   ): Promise<void> {
     if (amount <= 0) return;
     try {
-      const { supabase } = require('../services/supabase.js');
       const { error } = await supabase.rpc('atomic_credit_wallet_and_log', {
         p_user_id: userId,
         p_amount: amount,

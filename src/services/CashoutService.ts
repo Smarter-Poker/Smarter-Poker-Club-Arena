@@ -310,31 +310,26 @@ class CashoutServiceClass {
   }
 
   /**
-   * Agent: Check if chips can be removed (within 10 min window)
+   * POLICY (Dan, 2026-08-15, binding): an AGENT may NEVER remove chips from a
+   * downline player's account. The only way chips leave a player's balance
+   * toward an agent is a player-initiated cashout: the player requests, the
+   * chips are escrowed immediately, and on the agent's acceptance they move to
+   * the agent's wallet. A club OWNER/ADMIN may remove chips at any time via
+   * `adminRemovePlayerChips` below.
+   *
+   * The old 10-minute "reversal window" was an agent-initiated removal and is
+   * therefore forbidden. It is kept only as an explicit refusal so that this
+   * path can never be silently re-enabled. (It was already impossible in
+   * practice: `atomic_chip_transfer` requires the caller to BE the sender, so
+   * an agent pulling from a player raised UNAUTHORIZED.)
    */
   async canRemoveChips(
-    agentId: string,
-    playerId: string,
-    clubId: string,
-    amount: number
+    _agentId: string,
+    _playerId: string,
+    _clubId: string,
+    _amount: number
   ): Promise<boolean> {
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('fn_can_agent_remove_chips', {
-          p_agent_id: agentId,
-          p_player_id: playerId,
-          p_club_id: clubId,
-          p_amount: amount,
-        }),
-      3
-    );
-
-    if (error) {
-      reportError(error, 'CashoutService.checkRemovePermission');
-      return false;
-    }
-
-    return data === true;
+    return false;
   }
 
   /**
@@ -382,81 +377,51 @@ class CashoutServiceClass {
   }
 
   /**
-   * Agent: Remove chips from player (only within 10-min window)
-   * Reverses the transfer: deducts from player, credits back to agent.
+   * FORBIDDEN by the chip-removal authority policy. Agents take chips only
+   * through the player-initiated cashout flow (requestCashout -> approveCashout).
+   * Club owners/admins use `adminRemovePlayerChips`.
    */
   async removeChipsFromPlayer(
-    agentId: string,
-    playerId: string,
-    clubId: string,
-    amount: number,
-    notes?: string
+    _agentId: string,
+    _playerId: string,
+    _clubId: string,
+    _amount: number,
+    _notes?: string
   ): Promise<boolean> {
-    // Check if within reversal window
-    const canRemove = await this.canRemoveChips(agentId, playerId, clubId, amount);
-    if (!canRemove) {
-      throw new Error(
-        'Cannot remove chips: Outside 10-minute window or insufficient reversible amount'
-      );
-    }
-
-    // Use ChipFlowService for proper atomic transfer (deducts from player, credits agent)
-    await ChipFlowService.transfer(
-      playerId,
-      agentId,
-      amount,
-      'refund',
-      notes || 'Agent reversed chip send within 10-minute window'
+    throw new Error(
+      'Agents cannot remove chips from a player. The player must request a cashout; ' +
+        'the chips are held in escrow immediately and transfer to you when you accept it.'
     );
+  }
 
-    // Mark original transaction as reversed via BOTH the dedicated column AND metadata.
-    // First SELECT the most recent unreversed 'send' within the reversal window,
-    // then UPDATE by ID. PostgREST .limit() on UPDATE is unreliable — use 2-step approach.
-    const resolvedClubForReversal = await resolveClubUUID(clubId);
-    const { data: reversibleTx } = await supabase
-      .from('chip_transactions')
-      .select('id')
-      .eq('from_user_id', agentId)
-      .eq('to_user_id', playerId)
-      .eq('club_id', resolvedClubForReversal)
-      .eq('transaction_type', 'send')
-      .eq('is_reversed', false)
-      .gte('reversible_until', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (reversibleTx?.id) {
-      const { error: reverseError } = await supabase
-        .from('chip_transactions')
-        .update({
-          is_reversed: true,
-          metadata: { is_reversed: true },
-        })
-        .eq('id', reversibleTx.id);
-
-      if (reverseError) {
-        reportError(reverseError, 'CashoutService.markReversal');
-      }
-    } else {
-      console.warn('[Cashout] No reversible transaction found to mark — reversal metadata skipped');
-    }
-
-    // Record removal in chip_transactions for reversal tracking
-    const { error: txError } = await supabase.from('chip_transactions').insert({
-      club_id: clubId,
-      from_user_id: playerId,
-      to_user_id: agentId,
-      amount,
-      transaction_type: 'remove',
-      notes: notes || 'Agent removed chips within 10-minute window',
+  /**
+   * Club OWNER/ADMIN only: pull chips from any member at any time.
+   * Enforced server-side by fn_admin_remove_player_chips, which derives the
+   * actor from auth.uid(), refuses agents, row-locks the member, returns the
+   * chips to the club pool and writes a chip_transactions audit row.
+   */
+  async adminRemovePlayerChips(
+    clubId: string,
+    playerId: string,
+    amount: number,
+    reason?: string
+  ): Promise<{ removed: number; balanceAfter: number }> {
+    const resolvedClubId = await resolveClubUUID(clubId);
+    const { data, error } = await supabase.rpc('fn_admin_remove_player_chips', {
+      p_club_id: resolvedClubId,
+      p_player_id: playerId,
+      p_amount: amount,
+      p_reason: reason || null,
     });
-
-    if (txError) {
-      reportError(txError, 'CashoutService.removalMetadata');
+    if (error) {
+      reportError(error, 'CashoutService.adminRemovePlayerChips');
+      throw new Error(error.message || 'Failed to remove chips');
     }
+    const res = data as { success?: boolean; error?: string; removed?: number; balance_after?: number };
+    if (!res?.success) throw new Error(res?.error || 'Failed to remove chips');
 
-    return true;
+    masterBus.emit('BALANCE_UPDATED', { source: 'admin_removal', userId: playerId });
+    return { removed: Number(res.removed || 0), balanceAfter: Number(res.balance_after || 0) };
   }
 
   /**

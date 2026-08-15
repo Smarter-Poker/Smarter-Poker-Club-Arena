@@ -123,3 +123,46 @@ its own restarted 3 times in 50s under `--restart always`. So the
 - `/api/alerts/engine` (World Hub) + the `engine_alerts` table give a durable
   "did we know?" audit trail, but need `ALERT_WEBHOOK_SECRET` set in Vercel to
   activate. Email works without it.
+
+---
+
+## ADDENDUM — the watchdog was proven on a live production table (21:26 UTC)
+
+The first drill was inconclusive and it was worth understanding why: injecting a
+"turn stall" that only removed the enforcement clock did NOT freeze the table.
+The horse's pending think-time `setTimeout` still fired, the horse acted, and
+play continued. **Removing the clock is not a freeze.** A freeze is "nobody is
+going to act AND no clock will force it" — both halves are required.
+
+Fixed by tracking the horse think-timer (`horseActionTimer`, which is worth
+having anyway — an untracked timer cannot be cleared on teardown) and having the
+injection cancel it too. Re-drilled on table `57799263`, horses only, buy-in
+untouched:
+
+```
+T-0   inject: seat 2, hadClock=true, hadHorseTimer=true, hand #62
+t+9s   idle 13.7s   hand 62   <- frozen
+t+18s  idle 22.7s   hand 62   <- frozen
+t+27s  idle 31.7s   hand 62   <- frozen
+t+36s  idle  0.5s   hand 63   <- RECOVERED
+t+45s  idle  2.2s   hand 63   <- dealing normally
+```
+
+Engine log, the decisive line:
+
+```
+[ServerTableEngine.57799263....watchdog_turn_stalled]
+  Error: Hand #62 stalled 55s at seat 2 (clock=false, stage=turn, trip=1)
+```
+
+`clock=false` confirms the clock was genuinely absent — this was a real stall,
+not a simulated log line. The watchdog tripped ONCE, Tier 1 armed a replacement
+clock (`TIMER_STARTED`), that clock expired into an auto-fold (`TIMER_EXPIRED`),
+the hand completed through settlement, and the table dealt hands #63 and #64.
+
+No escalation to Tier 2 or Tier 3 was needed, which is the correct outcome:
+Tier 1 is the cheapest recovery and it was sufficient.
+
+**Status: the table watchdog is now field-proven, not just unit-proven.** It
+detected and recovered a genuinely frozen production table without human
+intervention and without disturbing any other table.

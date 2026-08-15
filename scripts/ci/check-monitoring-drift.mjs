@@ -2,36 +2,42 @@
 /**
  * check-monitoring-drift.mjs
  *
- * BLOCKING CI GUARD — monitoring config must not drift from what is running.
+ * BLOCKING CI GUARD — monitoring wiring must not silently break.
  *
  * Why
  * ───
  * On 2026-08-15 five of the seven files in infra/monitoring/ had drifted from
- * the live stack on the Hetzner box, several by hundreds of lines. The repo
- * still held the PRE-FIX versions: the ones where 27 alert rules referenced
- * metrics that do not exist and Alertmanager routed every alert to
- * null-receiver. Rebuilding the host from this repo would have quietly
- * restored decorative monitoring — and nobody would have noticed until the
- * next freeze went unreported.
+ * the stack actually running on the Hetzner box, several by hundreds of lines.
+ * The repo still held the PRE-FIX versions: 27 alert rules referencing metrics
+ * that do not exist, and an Alertmanager whose default route was
+ * `null-receiver`. Rebuilding the host from this repo would have quietly
+ * restored decorative monitoring, and nobody would have noticed until the next
+ * freeze went unreported.
  *
- * This check cannot reach the production host from CI, so it does not try to
- * diff against it. Instead it enforces the structural invariants that made the
- * drift dangerous, all of which are checkable from the repo alone:
+ * CI cannot reach production, so this does not diff against the host. It
+ * enforces the structural invariants that made the drift dangerous — all
+ * checkable from the repo alone, and all of them things that fail SILENTLY:
  *
- *   1. Every *-rules.yml / *-alerts.yml file in infra/monitoring is listed in
- *      prometheus.yml rule_files. A rules file that exists but is never loaded
- *      is the most common way an alert silently stops existing.
- *   2. Every rule_files entry has a corresponding file on disk. A dangling
- *      entry makes Prometheus refuse to start — an outage in the thing that
- *      detects outages.
- *   3. Every file referenced by rule_files is mounted into the Prometheus
- *      container by docker-compose.yml. This is the failure that is invisible
- *      locally and fatal in production: the path is valid in the repo and
- *      missing inside the container.
- *   4. Alertmanager's default route must not be a null/blackhole receiver.
+ *   1. Every rules file in infra/monitoring is listed in prometheus.yml
+ *      rule_files. A rules file that exists but is never loaded is the most
+ *      common way an alert stops existing.
+ *   2. Every rule_files entry resolves to a file on disk. A dangling entry
+ *      makes Prometheus refuse to start — an outage in the outage detector.
+ *   3. Every rule_files entry is mounted into the Prometheus container at THAT
+ *      EXACT CONTAINER PATH. This is the failure that is invisible locally and
+ *      fatal in production. Comparing basenames (the first version of this
+ *      check) passed a compose file mounting to /etc/prometheus/rules/x.yml
+ *      while prometheus.yml looked for /etc/prometheus/x.yml.
+ *   4. Every loaded rules file actually declares rules. `groups: []` loads
+ *      cleanly and alerts on nothing — the same end state as the 27 broken
+ *      rules, reached by a different route. A file may opt out by saying
+ *      DISABLED in a leading comment, which is how slo-rules.yml records that
+ *      it needs blackbox-exporter first.
+ *   5. Alertmanager's default route must not discard alerts: not a
+ *      null/blackhole-style name, and not a receiver with no delivery
+ *      configured at all.
  *
- * Deliberately NOT checked: rule contents. This guards the wiring, which is
- * what silently breaks.
+ * Deliberately NOT checked: rule expressions. This guards the wiring.
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -50,76 +56,132 @@ const read = (f) => readFileSync(resolve(DIR, f), 'utf8');
 const prom = read('prometheus.yml');
 const compose = read('docker-compose.yml');
 
-// ── rule_files block ─────────────────────────────────────────────────────────
-// Parsed line-by-line rather than with one regex: comment lines inside the
-// block contain hyphens (dates, prose) and a naive `-\s*(\S+)` happily reads
-// "2026-08-15" as a filename.
-const loaded = [];
+// ── Parse rule_files ─────────────────────────────────────────────────────────
+// Line-by-line, not one regex: comment lines inside the block contain hyphens
+// (dates, prose) and a naive `-\s*(\S+)` reads "2026-08-15" as a filename.
+const loaded = []; // container paths, verbatim
 {
   const lines = prom.split('\n');
   const start = lines.findIndex((l) => /^\s*rule_files:\s*$/.test(l));
   if (start === -1) {
-    errors.push('prometheus.yml has no rule_files: block — no alert rules are loaded at all.');
+    if (/^\s*rule_files:\s*\[/m.test(prom)) {
+      errors.push(
+        'prometheus.yml uses flow-style rule_files ([a, b]). Use block style (one "- path" per line) so this check can verify each entry.'
+      );
+    } else {
+      errors.push('prometheus.yml has no rule_files: block — no alert rules are loaded at all.');
+    }
   } else {
     for (let i = start + 1; i < lines.length; i++) {
       const line = lines[i];
-      if (/^\s*$/.test(line)) continue;              // blank — keep scanning
-      if (/^\s*#/.test(line)) continue;              // comment — skip
-      const item = /^\s+-\s*(\S+)\s*$/.exec(line); // "  - /etc/prometheus/x.yml"
-      if (!item) break;                              // dedent: block is over
-      loaded.push(basename(item[1]));
+      if (/^\s*$/.test(line)) continue;
+      if (/^\s*#/.test(line)) continue;
+      const item = /^\s+-\s*(.+?)\s*$/.exec(line);
+      if (!item) break; // dedent — block is over
+      loaded.push(item[1].replace(/^['"]|['"]$/g, '')); // tolerate quoting
     }
   }
 }
 
+for (const p of loaded) {
+  if (p.includes('*') || p.includes('?')) {
+    errors.push(
+      `prometheus.yml rule_files entry "${p}" is a glob. Globs are valid Prometheus config but make it impossible to verify statically that each rules file is mounted — list files explicitly.`
+    );
+  }
+}
+
+const explicit = loaded.filter((p) => !p.includes('*') && !p.includes('?'));
+const loadedNames = explicit.map((p) => basename(p));
+
 // ── 1. every rules file on disk is loaded ────────────────────────────────────
 const onDisk = readdirSync(DIR).filter(
-  (f) =>
-    /(-rules|-alerts)\.ya?ml$/.test(f) &&
-    // QUARANTINED files are intentionally parked, not loaded.
-    !f.includes('QUARANTINED')
+  (f) => /(-rules|-alerts)\.ya?ml$/.test(f) && !f.includes('QUARANTINED')
 );
 for (const f of onDisk) {
-  if (!loaded.includes(f)) {
+  if (!loadedNames.includes(f)) {
     errors.push(
-      `infra/monitoring/${f} exists but is NOT in prometheus.yml rule_files — ` +
-        `its alerts do not exist in production.`
+      `infra/monitoring/${f} exists but is NOT in prometheus.yml rule_files — its alerts do not exist in production.`
     );
   }
 }
 
-// ── 2. every loaded file exists ──────────────────────────────────────────────
-for (const f of loaded) {
+// ── 2. every loaded file exists, and 3. is mounted at that exact path ────────
+for (const p of explicit) {
+  const f = basename(p);
   if (!existsSync(resolve(DIR, f))) {
     errors.push(
-      `prometheus.yml rule_files references ${f}, which is not in infra/monitoring/ — ` +
-        `Prometheus will refuse to start.`
+      `prometheus.yml rule_files references ${p}, but ${f} is not in infra/monitoring/ — Prometheus will refuse to start.`
     );
+    continue;
   }
-}
-
-// ── 3. every loaded file is mounted into the container ───────────────────────
-for (const f of loaded) {
-  if (!compose.includes(`/${f}:`)) {
+  // Match the full container path, not just the basename.
+  const mounted = new RegExp(
+    `^\\s*-\\s*['"]?[^'":]+:${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(:[a-z,]+)?['"]?\\s*$`,
+    'm'
+  ).test(compose);
+  if (!mounted) {
     errors.push(
-      `${f} is loaded by prometheus.yml but never mounted in docker-compose.yml — ` +
-        `valid in the repo, missing inside the container.`
+      `${f} is loaded by prometheus.yml as ${p}, but docker-compose.yml does not mount anything to that exact container path — valid in the repo, missing inside the container.`
     );
   }
 }
 
-// ── 4. alerts must actually go somewhere ─────────────────────────────────────
+// ── 4. loaded rules files must actually declare rules ────────────────────────
+for (const p of explicit) {
+  const f = basename(p);
+  if (!existsSync(resolve(DIR, f))) continue;
+  const body = read(f);
+  const head = body.split('\n').slice(0, 12).join('\n');
+  if (/DISABLED|INTENTIONALLY EMPTY/i.test(head)) continue; // documented opt-out
+  if (/^\s*groups:\s*\[\s*\]\s*$/m.test(body) || !/^\s*groups:\s*$/m.test(body)) {
+    errors.push(
+      `${f} is loaded but declares no rule groups. It will load cleanly and alert on nothing. If that is intentional, say DISABLED in a comment at the top of the file (see slo-rules.yml).`
+    );
+    continue;
+  }
+  if (!/^\s*-\s*alert:\s*\S/m.test(body) && !/^\s*-\s*record:\s*\S/m.test(body)) {
+    errors.push(`${f} declares groups but contains no alert: or record: rules.`);
+  }
+}
+
+// ── 5. alerts must reach somewhere real ──────────────────────────────────────
 if (existsSync(resolve(DIR, 'alertmanager.yml'))) {
   const am = read('alertmanager.yml');
-  const defaultReceiver = /route:\s*[\s\S]*?receiver:\s*['"]?([\w.-]+)/.exec(am);
+  // The TOP-LEVEL route's receiver: the first `receiver:` at exactly two-space
+  // depth under `route:`. Grabbing the first `receiver:` anywhere after
+  // `route:` reads a child route's receiver if `routes:` is listed first.
+  let defaultReceiver = null;
+  {
+    const lines = am.split('\n');
+    const rIdx = lines.findIndex((l) => /^route:\s*$/.test(l));
+    if (rIdx !== -1) {
+      for (let i = rIdx + 1; i < lines.length; i++) {
+        if (/^\S/.test(lines[i])) break; // dedent to a new top-level key
+        const m = /^ {1,2}receiver:\s*['"]?([\w.-]+)/.exec(lines[i]);
+        if (m) { defaultReceiver = m[1]; break; }
+      }
+    }
+  }
   if (!defaultReceiver) {
-    errors.push('alertmanager.yml has no default route receiver.');
-  } else if (/null|blackhole|devnull|noop/i.test(defaultReceiver[1])) {
+    errors.push('alertmanager.yml has no default route receiver — could not determine where alerts go.');
+  } else if (/null|blackhole|devnull|noop|void|discard|drop/i.test(defaultReceiver)) {
     errors.push(
-      `alertmanager.yml default route sends everything to '${defaultReceiver[1]}' — ` +
-        `alerts fire into a void. This is the exact state the stack was found in ` +
-        `on 2026-08-15.`
+      `alertmanager.yml default route sends everything to '${defaultReceiver}' — alerts fire into a void. This is the exact state the stack was found in on 2026-08-15.`
     );
+  } else {
+    // A receiver can also discard by being defined with no delivery config.
+    const block = new RegExp(
+      `^\\s*-\\s*name:\\s*['"]?${defaultReceiver}['"]?\\s*$([\\s\\S]*?)(?=^\\s*-\\s*name:|^\\S|$(?![\\s\\S]))`,
+      'm'
+    ).exec(am);
+    if (!block) {
+      errors.push(`alertmanager.yml default receiver '${defaultReceiver}' is routed to but never defined.`);
+    } else if (!/_configs:/.test(block[1])) {
+      errors.push(
+        `alertmanager.yml default receiver '${defaultReceiver}' has no *_configs: block — it is defined but delivers nothing, which discards every alert just as effectively as null-receiver.`
+      );
+    }
   }
 }
 
@@ -131,5 +193,5 @@ if (errors.length) {
 }
 
 console.log(
-  `OK: ${loaded.length} rule file(s) loaded, mounted, and present; alerts route to a real receiver`
+  `OK: ${explicit.length} rule file(s) loaded, mounted at matching paths, non-empty; alerts route to a receiver that delivers`
 );

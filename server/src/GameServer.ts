@@ -41,6 +41,13 @@ const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 sec
 
 export class GameServer {
   private tableEngines: Map<string, ServerTableEngine> = new Map();
+  /**
+   * Table ids whose engine is owned and rebuilt by a TournamentManager rather
+   * than by discoverCashTables. Discovery's RPC is cash-only, so without this
+   * set the reaper treated every tournament table as "not supposed to be
+   * dealing" and silently skipped its freeze recovery.
+   */
+  private tournamentOwnedTables: Set<string> = new Set();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
   private running: boolean = false;
   private startTime: number = Date.now();
@@ -869,10 +876,23 @@ export class GameServer {
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
             this.tableEngines.delete(id);
-            tableStateHub.dropTable(id); // Phase 1.1 PR-2: release hub room
+            // Leave the hub room alone for tournament tables: their
+            // TournamentManager rebuilds the engine and the same players stay
+            // connected throughout. dropTable() now preserves subscribers
+            // anyway, but skipping it avoids a spurious sequence reset.
+            if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
             continue;
           }
-          if (readyIds.has(id) && engine.msSinceProgress() > 180_000) {
+          // 2026-08-15: `readyIds` comes from `cash_tables_with_players`, whose
+          // WHERE clause includes `t.tournament_id IS NULL`. Gating the rebuild
+          // on it meant TOURNAMENT tables had no freeze recovery at all: when
+          // one died, the `!isRunning()` branch above deleted it and nothing
+          // anywhere recreated it, so every seated player was frozen
+          // permanently. Tournament tables are rebuilt by their own
+          // TournamentManager sweep, so here we only need to stop treating a
+          // cash-only list as the definition of "should be dealing".
+          const shouldBeDealing = readyIds.has(id) || this.tournamentOwnedTables.has(id);
+          if (shouldBeDealing && engine.msSinceProgress() > 180_000) {
             reportError(
               new Error(
                 'Engine for ' +
@@ -1044,6 +1064,15 @@ export class GameServer {
    * Register a table engine (used by TournamentManager for tournament tables)
    */
   registerTableEngine(tableId: string, engine: ServerTableEngine): void {
+    // 2026-08-15: overwriting the map slot without stopping the previous engine
+    // left TWO live engines dealing the same table against the same DB rows —
+    // reachable when a TournamentManager is re-resumed after being dropped from
+    // tournamentEngines while its table engines were never stopped.
+    const prev = this.tableEngines.get(tableId);
+    if (prev && prev !== engine) {
+      void prev.stop().catch(() => {});
+    }
+    this.tournamentOwnedTables.add(tableId);
     this.tableEngines.set(tableId, engine);
   }
 

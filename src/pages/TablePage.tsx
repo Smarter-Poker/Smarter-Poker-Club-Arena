@@ -6048,6 +6048,16 @@ export default function TablePage({
             const seatNumber = idx + 1;
             const player = getPlayerAtSeat(seatNumber);
 
+            // SPOTLIGHT VIGNETTE (Dan 2026-08-15): while someone is acting,
+            // every OTHER occupied seat dims slightly so the acting player's
+            // light pool reads as a stage spotlight. Folded seats keep their
+            // own (deeper) dim; empty seats are untouched.
+            const someoneActing =
+              tableState.isHandInProgress &&
+              tableState.currentPlayerSeat > 0 &&
+              v8Settings.highlight_active_players;
+            const seatDimmed = someoneActing && seatNumber !== tableState.currentPlayerSeat;
+
             // FIX: Apply use_alias and table_alias from settings directly to the hero's rendered name
             let derivedHeroName = player?.name;
             if (player?.isHero) {
@@ -6095,7 +6105,7 @@ export default function TablePage({
             return (
               <div
                 key={seatNumber}
-                className="seat-wrapper"
+                className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}`}
                 style={
                   {
                     left: `${pos.x}%`,

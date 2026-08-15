@@ -28,11 +28,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   // TURN TIMER MANAGEMENT
   // ═══════════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Cancel every turn deadline this table owns.
+   *
+   * 2026-08-15: this was an EMPTY FUNCTION with a comment explaining that the
+   * work happened elsewhere. Four call sites believed it cancelled timers and
+   * none of them did anything:
+   *   - ServerTableEngineBase.stop()            (engine teardown)
+   *   - ServerTableEngineDealing HAND_COMPLETE  (hand cleanup)
+   *   - ServerTableEngineRunout                 ("pause all timers during the
+   *                                              insurance/RIT decision window")
+   *   - ServerTableEngineTurns handlePlayerAction
+   * The runout case is the one that bit: the engine believed it had paused the
+   * clock for an insurance offer and had not, so a seat could be auto-folded
+   * mid-offer by a timer nobody thought was still armed.
+   *
+   * preciseTimer.clearTable cancels only the `turn:<playerId>` entries this
+   * class owns — it deliberately leaves the heartbeat and the TimeBankEngine's
+   * separate `timebank:<playerId>` deadlines alone.
+   */
   protected clearTurnTimer(): void {
-    // Phase 1.2: Cancel the PreciseActionTimer for the current player.
-    // The old setTimeout-based playerTurnTimer has been deleted.
-    // PreciseActionTimer.cancelTimer is called per-player in handleTurnChange,
-    // and clearTable is used for full hand cleanup.
+    this.preciseTimer.clearTable(this.tableId);
   }
 
   /**
@@ -238,7 +254,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   }
 
   protected startTurnTimer(userId: string, seat: number, durationSeconds: number): void {
-    this.clearTurnTimer();
+    // Deliberately does NOT call clearTurnTimer(). Now that clearTurnTimer
+    // actually cancels every turn deadline on the table, calling it on each
+    // re-arm would wipe the deadline this method is about to set — and
+    // startTurnTimer is re-entered by the time-bank auto-activation path
+    // moments after a timer is armed. PreciseActionTimer.startTimer already
+    // cancels any existing deadline for the same (table, player) key, so the
+    // re-arm is idempotent without it.
     // NOTE: Do NOT reset timeBankActivatedThisTurn here — this method is also called
     // from activateTimeBank() to extend the timer. The flag is reset in handleTurnChange()
     // when a genuinely new turn begins.

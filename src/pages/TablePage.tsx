@@ -4356,6 +4356,23 @@ export default function TablePage({
         if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playCommunityCard();
         break;
       }
+      case 'HOLE_CARDS_UNAVAILABLE': {
+        // DEAD-WIRING FIX 2026-08-15: the engine emits this as a last resort
+        // after insert_hole_cards fails three times
+        // (ServerTableEngineDealing.ts). No client handler existed, so the
+        // hero sat dealt-in with no visible cards while the server turn timer
+        // ran down and auto-folded them -- a real-money outcome from a
+        // transient DB error, with no feedback. Tell the player, and drive the
+        // SAME re-fetch path the reconnect flow already uses.
+        reportError(
+          new Error(`[TablePage] Engine reported hole cards unavailable (table ${tableId})`),
+          'TablePage.hole_cards_unavailable'
+        );
+        toast?.error?.('Could not load your cards - retrying. Use your time bank if needed.');
+        heroCardFetchRef.current?.();
+        setTimeout(() => heroCardFetchRef.current?.(), 1200);
+        break;
+      }
       case 'HAND_COMPLETE_EVENT':
       case 'HAND_COMPLETE': {
         // ── Achievement / daily-challenge progress ──────────────────────────
@@ -4373,6 +4390,22 @@ export default function TablePage({
             achievementFiredHandRef.current !== hn
           ) {
             achievementFiredHandRef.current = hn;
+            // DEAD-WIRING FIX 2026-08-15: MasterBus 'HAND_COMPLETED' has 23
+            // subscribers across the app -- SessionHUD profit, Daily
+            // Challenges, the Rakeback dashboard, Bankroll / Position / Stake
+            // stats, Hand History, the Cashier balance and the BBJ page -- and
+            // NOT ONE EMITTER anywhere in the repo. Every one of those
+            // surfaces sat stale until a manual reload. Emit it inside the
+            // existing once-per-hand guard so a duplicated or re-emitted
+            // HAND_COMPLETE cannot double-fire it.
+            try {
+              masterBus.emit('HAND_COMPLETED', {
+                handId: String(tableStateRef.current.handNumber ?? hn),
+                tableId: tableId || '',
+              });
+            } catch {
+              /* bus publish is best-effort -- never block the table reset */
+            }
             achievementTriggerService
               .onHandComplete(userId, {
                 won: outcome.won,

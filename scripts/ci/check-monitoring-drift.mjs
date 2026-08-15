@@ -185,6 +185,38 @@ if (existsSync(resolve(DIR, 'alertmanager.yml'))) {
   }
 }
 
+// ── 6. bind-mounted secret files must be recoverable ─────────────────────────
+// Docker creates a DIRECTORY when a bind-mount source is missing, so a rebuilt
+// host silently gets /etc/alertmanager/resend_key as a directory and
+// Alertmanager fails to authenticate to SMTP — every alert generated, none
+// delivered, with an error that does not mention the real cause. These files
+// cannot live in git, so require a .example sibling and a README mention so
+// the rebuild path is discoverable.
+{
+  const MOUNT = /^\s*-\s*['"]?\.\/([^:'"]+):([^:'"]+)(:[a-z,]+)?['"]?\s*$/gm;
+  let m;
+  const readme = existsSync(resolve(DIR, 'README.md')) ? read('README.md') : '';
+  while ((m = MOUNT.exec(compose)) !== null) {
+    const hostPath = m[1];
+    if (/\.(ya?ml)$/.test(hostPath)) continue;          // covered by checks 1-3
+    if (existsSync(resolve(DIR, hostPath))) continue;    // present in the repo
+    // Only flag plain single filenames. Directory mounts (grafana-dashboards,
+    // grafana-provisioning) are created by compose and are not secrets.
+    if (!/^[\w.-]+$/.test(hostPath)) continue;
+    const hasExample = existsSync(resolve(DIR, `${hostPath}.example`)) ||
+                       existsSync(resolve(DIR, `${hostPath}.sample`));
+    const inReadme = readme.includes(hostPath);
+    if (!hasExample || !inReadme) {
+      errors.push(
+        `docker-compose.yml bind-mounts ./${hostPath}, which is not in the repo` +
+          (hasExample ? '' : ', has no .example sibling') +
+          (inReadme ? '' : ', and is not mentioned in README.md') +
+          `. On a rebuilt host Docker will create a DIRECTORY there and the container will fail in a way that does not name the cause.`
+      );
+    }
+  }
+}
+
 if (errors.length) {
   console.error('\nFAIL: monitoring wiring is broken.\n');
   for (const e of errors) console.error(`  - ${e}`);

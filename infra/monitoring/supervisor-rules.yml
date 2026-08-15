@@ -77,7 +77,11 @@ groups:
       # serving gauge was asserted as 1 without asking. These two counters are
       # what make that state visible.
       - alert: EngineBootChurn
-        expr: club_arena_engine_boot_churn >= 2
+        # >= 3 to match CHURN_THRESHOLD in engine-supervisor.sh, which is the
+        # point at which the supervisor itself escalates. At >= 2 this fired on
+        # two ordinary deploys landing inside three minutes of each other, which
+        # is not a crash loop.
+        expr: club_arena_engine_boot_churn >= 3
         for: 2m
         labels:
           severity: critical

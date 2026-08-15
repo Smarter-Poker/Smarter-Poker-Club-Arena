@@ -617,6 +617,29 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         });
         v_handHistoryId = result.handId;
 
+        // ── Dan 2026-08-15 (item 3): tell the clients the hand's row id ──
+        //
+        // The discrete `hand_complete` event fires earlier in this file, and
+        // at that moment the hand_history row does not exist yet — the insert
+        // happens right here, in postHandTasks. So `hand_complete` could never
+        // carry an id, and the client had nothing to open a replay with.
+        //
+        // The client's workaround was to lazily query "my most recent hand"
+        // when the replay panel opened. That RACES this insert: tap Replay
+        // quickly after a hand and the query returns the PREVIOUS hand, so the
+        // player is shown the wrong one. Emitting the real id at the moment it
+        // exists removes the race; the lazy lookup stays only as a cold-start
+        // fallback for players who joined mid-session.
+        if (v_handHistoryId) {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'hand_history_saved',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            hand_id: v_handHistoryId,
+            timestamp: Date.now(),
+          });
+        }
+
         // ── ADDITIVE anti-cheat feed (#5): observe-only, fire-and-forget, flag-gated (default OFF) ──
         if (this.integrityFeedEnabled) {
           try {

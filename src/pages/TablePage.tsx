@@ -127,11 +127,7 @@ import PreActionBar from '../components/table/PreActionBar';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
 // payload, so it needs the types.
-import type {
-  ShareableHand,
-  ShareableCard,
-  ShareableAction,
-} from '../components/table/ShareHand';
+import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
 import SettingsPanel from '../components/table/SettingsPanel';
 import TableMenu from '../components/table/TableMenu';
 import {
@@ -2653,6 +2649,21 @@ export default function TablePage({
       // - all_in_equity: equity percentages for all-in display
       // ═══════════════════════════════════════════════════════════════════════
       const eventType = handState.type as string | undefined;
+
+      // Dan 2026-08-15 (item 3): the server now emits the hand_history row id
+      // at the instant the row is written (ServerTableEngineSettlement,
+      // postHandTasks). Capture it so Replay opens THIS hand.
+      //
+      // The lazy "fetch my most recent hand when the panel opens" fallback
+      // below still exists for players who joined mid-session and have not
+      // seen a hand finish yet, but it races the insert — tapping Replay
+      // straight after a hand could return the PREVIOUS hand. This event is
+      // authoritative and arrives before the player can realistically tap.
+      if (eventType === 'hand_history_saved') {
+        const savedId = handState.hand_id as string | undefined;
+        if (savedId) setLastHandId(savedId);
+        return;
+      }
 
       if (eventType === 'insurance_offers') {
         // Server insurance offers — show InsuranceModal with server-calculated data

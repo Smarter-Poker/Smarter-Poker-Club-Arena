@@ -113,3 +113,19 @@ Prometheus keeps 15 days locally in the `prometheus-data` volume. If we ever
 need long-term metrics for capacity planning, point a Thanos sidecar at the
 same volume and ship to R2 — don't increase local retention, disk I/O on
 cron-01 is more valuable for other cron work.
+
+## Secret files (not in git, and the stack will not start without them)
+
+`docker-compose.yml` bind-mounts these by path. Docker's behaviour when a
+bind-mount source is missing is to silently create a **directory** at that path,
+so the container starts and then fails to read its own credentials — or refuses
+to start at all — with an error that does not mention the real problem. On a
+rebuilt host, create them before `docker compose up`:
+
+| file | what it is | how to create |
+|---|---|---|
+| `resend_key` | Resend SMTP API key, read by Alertmanager via `smtp_auth_password_file`. Without it every alert is generated and then fails to send. | `printf '%s' "$RESEND_API_KEY" > resend_key && chmod 600 resend_key` (see `resend_key.example`) |
+| `.env` | Grafana admin password and friends | `cp .env.example .env && $EDITOR .env` |
+
+There is no newline in `resend_key` on purpose — Alertmanager sends the file
+contents verbatim as the SMTP password, and a trailing newline fails auth.

@@ -1094,3 +1094,61 @@
   color: #ffd700;
   text-shadow: 0 0 6px rgba(255, 215, 0, 0.3);
 }
+
+/* Live pane (2026-08-15): clock + chip counts + table list for a tournament
+   that is actually running. The detail pane used to show the same static
+   blind chart whether the event had started or not. */
+.tourney-live-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.tourney-live-section h3 {
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin: 0 0 8px;
+}
+
+.tourney-live-empty {
+  font-size: 13px;
+  opacity: 0.6;
+  margin: 0;
+}
+
+.tourney-table-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tourney-table-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 13px;
+}
+
+.tourney-table-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.tourney-table-blinds {
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+.tourney-table-seats {
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #ffd700;
+}

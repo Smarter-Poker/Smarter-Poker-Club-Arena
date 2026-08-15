@@ -10,21 +10,17 @@
 
 import { HandController } from './HandController.js';
 import type { Street as ShadowStreet } from './eventlog/events.js';
-import {
-  logHandHistory,
-} from '../services/supabase.js';
-import type {
-  HandEvent,
-  SeatedPlayer,
-} from '../types.js';
+import { logHandHistory } from '../services/supabase.js';
+import type { HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSettlement } from './ServerTableEngineSettlement.js';
 
 export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettlement {
-
   protected async handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
+        // Watchdog liveness: a dealt hand is proof the table is alive.
+        this.markProgress();
         // FIX 2 (2026-07-24): start a fresh per-hand hole-card cache used for
         // reliable re-push to reconnecting players.
         this.currentHandHoleCards.clear();
@@ -137,31 +133,58 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         this.playerTurnDuration = effectiveActionSec;
         this.timeBankActivatedThisTurn = false;
 
-        // FIX-217 + Bible V8 §1.2.3/§1.2.4: Await broadcast delivery BEFORE
-        // arming the enforcement timer. Broadcast confirms before next turn.
-        await this.broadcastCurrentState();
+        // 2026-08-15 ROOT-CAUSE FIX (freeze at preflop, first actor never acts).
+        //
+        // The old order was: await broadcastCurrentState() -> hub.emitEvent()
+        // -> handleTurnChange(). handleTurnChange is the ONLY line that arms a
+        // clock and the only line that schedules a horse's action. Neither of
+        // the two calls above it was wrapped: broadcastCurrentState does a bare
+        // hub.publish (structuredClone + JSON-patch diff + a send() per socket),
+        // and this emitEvent was the one hub.emitEvent call site in the engine
+        // WITHOUT a try/catch. A throw from either — one bad subscriber socket
+        // is enough — skipped handleTurnChange entirely. No clock, no horse
+        // action, no auto-fold, and the rejection swallowed by index.ts. The
+        // hand sat at preflop forever.
+        //
+        // The shot clock is not best-effort; delivery is. Arm first, deliver
+        // after, and let neither failure mode reach the other. The deadline
+        // fields were stamped moments ago, so the snapshot that follows still
+        // carries the correct turn_deadline_ms — no drift versus the old order.
+        this.markProgress();
+        try {
+          this.handleTurnChange(event, players);
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.handleTurnChange_threw');
+          this.forceArmTurnTimer(event.seat, effectiveActionSec);
+        }
+
+        try {
+          await this.broadcastCurrentState();
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.broadcast_threw');
+        }
 
         // Bible V8 §1.16 (Real-Time Law): discrete turn_change event. Now
         // carries the correct absolute deadline for the CURRENT player.
-        this.hub?.emitEvent(this.tableId, {
-          type: 'turn_change',
-          table_id: this.tableId,
-          hand_number: this.handCount,
-          seat: event.seat,
-          user_id: tcSeatedPlayer?.user_id ?? '',
-          deadline_ms: this.playerTurnStartTime + this.playerTurnDuration * 1000,
-          timestamp: Date.now(),
-        });
-
-        // Finally: arm the enforcement timer + run pre-action / horse logic.
-        // handleTurnChange will call startTurnTimer which refreshes the
-        // fields; because we set them moments ago the deadline drifts only
-        // by the broadcast RTT (a few ms), well within §6.1 tolerances.
-        this.handleTurnChange(event, players);
+        try {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'turn_change',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            seat: event.seat,
+            user_id: tcSeatedPlayer?.user_id ?? '',
+            deadline_ms: this.playerTurnStartTime + this.playerTurnDuration * 1000,
+            timestamp: Date.now(),
+          });
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.turn_change_emit_threw');
+        }
         break;
       }
 
       case 'PLAYER_ACTION':
+        // Watchdog liveness: an accepted action is the strongest proof of life.
+        this.markProgress();
         // Track action for hand history
         if (event.seat !== undefined && event.action) {
           const hcState = this.handController?.getState();

@@ -16,18 +16,14 @@ import { TimeBankEngine } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import type { ValidationContext } from './ServerActionValidator.js';
-import {
-  supabase,
-} from '../services/supabase.js';
-import type {
-  HandEvent,
-  SeatedPlayer,
-} from '../types.js';
+import { supabase } from '../services/supabase.js';
+import type { HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
+// Static watchdog thresholds live on the Base class (single source of truth).
+import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
-
   // ═══════════════════════════════════════════════════════════════════════════════
   // TURN TIMER MANAGEMENT
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -75,7 +71,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     // Case B: no live hand, but the table is dealable and nothing is starting.
     if (!this.handController) {
-      const dealable = this.seatedPlayers.filter((p) => (p.stack || 0) > 0).length;
+      // Mirror dealingLoop's own activePlayers predicate exactly, so the
+      // watchdog's idea of "this table should be dealing" cannot disagree
+      // with the loop's. A table where everyone is sitting out is idle by
+      // design and must not be restarted.
+      const dealable = this.seatedPlayers.filter(
+        (p) =>
+          p.stack > 0 &&
+          !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+          !this.waitingForBB.has(p.user_id)
+      ).length;
       if (dealable >= 2 && idleMs > ServerTableEngineBase.WATCHDOG_IDLE_MS) {
         this.watchdogTrips++;
         reportError(
@@ -105,7 +110,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       this.watchdogTrips++;
       reportError(
         new Error(
-          'Hand #' + this.handCount + ' stalled ' + Math.round(idleMs / 1000) + 's with no current seat'
+          'Hand #' +
+            this.handCount +
+            ' stalled ' +
+            Math.round(idleMs / 1000) +
+            's with no current seat'
         ),
         'ServerTableEngine.' + this.tableId + '.watchdog_no_seat'
       );
@@ -118,15 +127,28 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       return;
     }
 
-    const p = state.players.find((x: any) => x.seat === seat);
+    const p = state.players.find((x) => x.seat === seat);
     if (!p) return;
-    const hasClock = this.preciseTimer.hasTimer(this.tableId, (p as any).id || (p as any).userId || '');
+    // PreciseActionTimer keys on user_id (SeatPlayer.user_id in types.ts) — an
+    // `id`/`userId` guess would always miss and pin the watchdog at Tier 1.
+    const hasClock = this.preciseTimer.hasTimer(this.tableId, p.user_id);
     this.watchdogTrips++;
 
     reportError(
       new Error(
-        'Hand #' + this.handCount + ' stalled ' + Math.round(idleMs / 1000) + 's at seat ' + seat +
-          ' (clock=' + hasClock + ', stage=' + state.stage + ', trip=' + this.watchdogTrips + ')'
+        'Hand #' +
+          this.handCount +
+          ' stalled ' +
+          Math.round(idleMs / 1000) +
+          's at seat ' +
+          seat +
+          ' (clock=' +
+          hasClock +
+          ', stage=' +
+          state.stage +
+          ', trip=' +
+          this.watchdogTrips +
+          ')'
       ),
       'ServerTableEngine.' + this.tableId + '.watchdog_turn_stalled'
     );
@@ -137,7 +159,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
 
     if (this.watchdogTrips <= 3) {
-      const toCall = Math.max(0, (state.currentBet || 0) - ((p as any).bet || 0));
+      const toCall = Math.max(0, (state.currentBet || 0) - (p.bet || 0));
       const forced = toCall === 0 ? 'check' : 'fold';
       try {
         if (!this.handController.performAction(seat, forced as any)) {
@@ -1153,8 +1175,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
       if (!applied) {
         console.warn(
-          '[ServerTableEngine:' + this.tableId + '] Horse action ' + action +
-            ' rejected at seat ' + seat + ' — falling back to check/fold'
+          '[ServerTableEngine:' +
+            this.tableId +
+            '] Horse action ' +
+            action +
+            ' rejected at seat ' +
+            seat +
+            ' — falling back to check/fold'
         );
         try {
           // Bible V8 §1.7.4 preferCheckOverFold.

@@ -16,13 +16,10 @@ import { AutoRebuyService } from './services/AutoRebuyService.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
 import { RakebackSettlerService } from './services/RakebackSettlerService.js';
 import { reconcilePendingFees, auditBBJDrift } from './services/FeeReconciler.js';
-import {
-  reportError,
-  initSentry,
-  flushSentry,
-} from './services/errorReporter.js';
+import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
+
 import {
   refundAndCloseCancelledTournament,
   recoverStuckCompletingTournaments,
@@ -855,11 +852,40 @@ export class GameServer {
           });
         }
 
-        // Clean up engines for tables that stopped
+        // Clean up engines for tables that stopped — AND engines that are
+        // lying about being alive.
+        //
+        // 2026-08-15: isRunning() only reflects a boolean the dealing loop
+        // never clears when it dies, so a crashed engine stays in this map
+        // forever and the `if (this.tableEngines.has(...)) continue;` guard
+        // above then prevents discovery from ever rebuilding the table. Ten
+        // production tables sat dead for 18+ minutes this way. Cross-check
+        // against observable progress: if the discovery RPC still lists the
+        // table as ready to deal but its engine has done nothing for three
+        // minutes, its loop is gone — drop it so the next cycle rebuilds it.
+        const readyIds = new Set(
+          ((ready || []) as Array<{ table_id: string }>).map((r) => r.table_id)
+        );
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
             this.tableEngines.delete(id);
             tableStateHub.dropTable(id); // Phase 1.1 PR-2: release hub room
+            continue;
+          }
+          if (readyIds.has(id) && engine.msSinceProgress() > 180_000) {
+            reportError(
+              new Error(
+                'Engine for ' +
+                  id +
+                  ' shows no progress for ' +
+                  Math.round(engine.msSinceProgress() / 1000) +
+                  's — rebuilding'
+              ),
+              'GameServer.zombie_engine_rebuilt'
+            );
+            void engine.stop().catch(() => {});
+            this.tableEngines.delete(id);
+            tableStateHub.dropTable(id);
           }
         }
       } catch (err) {

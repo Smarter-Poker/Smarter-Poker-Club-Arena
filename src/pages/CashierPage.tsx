@@ -1024,25 +1024,11 @@ export default function CashierPage() {
           if (isMounted.current) setIsProcessing(false);
           return;
         }
-        // Log mint to chip_ledger
-        const resolvedMintClub = await resolveClubUUID(clubId!);
-        supabase
-          .from('chip_ledger')
-          .insert({
-            performed_by: user.id,
-            from_type: 'system_mint',
-            from_label: 'Chip Mint',
-            to_type: 'player_wallet',
-            to_entity_id: user.id,
-            to_label: 'Club Owner',
-            amount: value,
-            category: 'mint',
-            description: `Minted ${value.toLocaleString()} chips via Cashier`,
-            club_id: resolvedMintClub,
-          })
-          .then(({ error: le }) => {
-            if (le) console.warn('[Cashier] Ledger write failed:', le.message);
-          });
+        // chip_ledger narration REMOVED (2026-08-15): chip_ledger is the
+        // legacy ledger and is now server-owned (client INSERT revoked, the
+        // open forge policy dropped). mintChips' server RPC writes the
+        // authoritative wallet_transactions row; a client-authored audit row
+        // was forgeable narration, not a record.
 
         if (isMounted.current)
           setMessage({ type: 'success', text: `Minted ${value.toLocaleString()} chips` });
@@ -1646,25 +1632,8 @@ export default function CashierPage() {
                     userId: selectedRecipient,
                   });
 
-                  // Log to chip_ledger
-                  supabase
-                    .from('chip_ledger')
-                    .insert({
-                      performed_by: user.id,
-                      from_type: 'agent_wallet',
-                      from_entity_id: user.id,
-                      from_label: user.username || 'Agent',
-                      to_type: 'player_wallet',
-                      to_entity_id: selectedRecipient,
-                      to_label: recipient?.username || 'Player',
-                      amount: value,
-                      category: 'distribute',
-                      description: `Distributed ${value.toLocaleString()} chips to ${recipient?.username || 'player'}`,
-                      club_id: resolvedClub,
-                    })
-                    .then(({ error: le }) => {
-                      if (le) console.warn('[Cashier] Ledger write failed:', le.message);
-                    });
+                  // chip_ledger narration REMOVED (2026-08-15): server-owned
+                  // now; the distribution RPC writes wallet_transactions.
                   setAmount('');
                   setSelectedRecipient('');
                   loadBalances(user.id);

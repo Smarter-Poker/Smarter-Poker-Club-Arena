@@ -250,3 +250,32 @@ describe('table watchdog — a parked runout is not a stall', () => {
     expect(h.calls.killed).toEqual(['current_seat_not_in_state']);
   });
 });
+
+describe('clearTurnTimer actually cancels (was an empty function)', () => {
+  it("cancels the table's turn deadlines, and startTurnTimer does not wipe its own", () => {
+    const cancelled: string[] = [];
+    const started: string[] = [];
+    const engine = new ServerTableEngine(TABLE) as any;
+    engine.running = true;
+    engine.tableInfo = { action_time_seconds: 15 };
+    engine.currentHandTimerLog = [];
+    engine.preciseTimer = {
+      clearTable: (t: string) => cancelled.push(t),
+      startTimer: (_t: string, uid: string) => started.push(uid),
+      cancelTimer: () => {},
+      hasTimer: () => false,
+    };
+
+    // The runout path believed this paused the clock. For four months it did nothing.
+    engine.clearTurnTimer();
+    expect(cancelled).toEqual([TABLE]);
+
+    // Arming a timer must NOT cancel the table's deadlines — the time-bank
+    // auto-activation path re-enters startTurnTimer moments after arming, and
+    // a self-cancel there would silently drop the clock it just set.
+    cancelled.length = 0;
+    engine.startTurnTimer('u1', 1, 15);
+    expect(started).toEqual(['u1']);
+    expect(cancelled).toEqual([]);
+  });
+});

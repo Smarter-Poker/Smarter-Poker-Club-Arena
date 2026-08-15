@@ -32,11 +32,11 @@ import type { BoardStage } from '../components/table/CommunityCards';
 // public/hub/club-arena/images/. A new file dropped in images/ would never
 // reach production, and git-safe-push.sh's `git clean` sweeps untracked files
 // there — assets/ is explicitly excluded from that clean.
-// Vertical black-and-gold table artwork — the same design used by the
-// Commander /commander/table-tablets table, rotated to portrait.
-// MUST be a Vite asset import: public/images/ is never refreshed by
-// sync-club-arena.sh, but dist/assets/ is copied wholesale.
-import tableArtVertical from '../assets/table-vertical-black-gold.png';
+import skinClassicGreen from '../assets/tables/skin_classic_green.jpg';
+import skinOceanBlue from '../assets/tables/skin_ocean_blue.jpg';
+import skinCrimson from '../assets/tables/skin_crimson.jpg';
+import skinElectricPurple from '../assets/tables/skin_electric_purple.jpg';
+import skinGoldenSand from '../assets/tables/skin_golden_sand.jpg';
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -6292,6 +6292,32 @@ export default function TablePage({
   return (
     <div
       className={`table-page${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
+      style={{
+        backgroundImage: `url(${(() => {
+          const tid = v8Theme.table_id || v8Theme.theme_id || userSettings.theme || '';
+          switch (tid) {
+            case 'ocean_blue':
+            case 'royal-blue':
+              return skinOceanBlue;
+            case 'crimson':
+            case 'wine-red':
+              return skinCrimson;
+            case 'electric_purple':
+            case 'purple-haze':
+              return skinElectricPurple;
+            case 'golden_sand':
+            case 'emerald':
+              return skinGoldenSand;
+            case 'classic_green':
+            case 'classic-green':
+            default:
+              return skinClassicGreen;
+          }
+        })()})`,
+        backgroundSize: '100% 100%',
+        backgroundPosition: 'top left',
+        backgroundRepeat: 'no-repeat',
+      }}
       data-felt-theme={v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'}
       data-background-theme={v8Theme.background_id || 'diamond-pattern'}
       data-button-theme={v8Theme.button_id || 'classic-white'}
@@ -6670,24 +6696,12 @@ export default function TablePage({
         <div className="table-scaler" ref={tableScalerRef}>
           {/* Table Felt */}
           <div className="table-felt">
-            {/* Vertical black-and-gold table artwork (Commander table-tablets
-                design, rotated to portrait). Supplies rail + gold rim. */}
-            <img
-              className="table-art"
-              src={tableArtVertical}
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-            />
             <div className="table-rail">
               <div className="table-surface">
-                {/* Hand Number — Dan 2026-08-15: "hand numbers should be in the
-                    upper right hand corner." Was centred on the felt directly
-                    above the pot, competing with the board. Positioning lives
-                    in .hand-number-display. */}
-                {tableState.handNumber != null && tableState.handNumber > 0 && (
-                  <div className="hand-number-display">Hand #{tableState.handNumber}</div>
-                )}
+                {/* Hand Number — Dan 2026-08-15 (second revision): moved OFF
+                    the upper-right corner and into the felt masthead as line 2,
+                    centred under the date/club/game row. It renders inside
+                    .table-brand now; nothing draws it here. */}
 
                 {/* ── TABLE CENTRE BRAND (Dan 2026-08-15) ──────────────────
                     "Use the smarter.poker letter logo in the middle of the
@@ -6703,6 +6717,13 @@ export default function TablePage({
                     alt=""
                     draggable={false}
                   />
+                  {/* Dan 2026-08-15 \u2014 felt masthead, two centered lines.
+                      Was three stacked lines (date / game+blinds / club) plus a
+                      separate .table-game-info strip further down that repeated
+                      the same stakes twice ("NLH 2.00/5.00" and "2/5 NLH").
+                      Now line 1 is date, club and game on one centered row
+                      under the wordmark, and line 2 is the hand number, which
+                      used to float alone in the top-right corner. */}
                   <div className="table-brand__meta">
                     <span className="table-brand__line">
                       {new Date().toLocaleDateString(undefined, {
@@ -6710,8 +6731,13 @@ export default function TablePage({
                         day: 'numeric',
                         year: 'numeric',
                       })}
-                    </span>
-                    <span className="table-brand__line">
+                      {tableState.clubName && (
+                        <>
+                          {' \u00B7 '}
+                          <span className="table-brand__club">{tableState.clubName}</span>
+                        </>
+                      )}
+                      {' \u00B7 '}
                       {(tableState.gameType === "No Limit Hold'em"
                         ? 'NLH'
                         : tableState.gameType === 'Pot Limit Omaha'
@@ -6719,13 +6745,12 @@ export default function TablePage({
                           : tableState.gameType === "Fixed Limit Hold'em"
                             ? 'FLH'
                             : tableState.gameType || 'NLH'
-                      ).toUpperCase()}
-                      {' \u00B7 '}
+                      ).toUpperCase()}{' '}
                       {tableState.blinds || '1/2'}
                     </span>
-                    {tableState.clubName && (
-                      <span className="table-brand__line table-brand__line--club">
-                        {tableState.clubName}
+                    {(tableState.handNumber ?? 0) > 0 && (
+                      <span className="table-brand__line table-brand__line--hand">
+                        Hand #{tableState.handNumber}
                       </span>
                     )}
                   </div>
@@ -6772,27 +6797,11 @@ export default function TablePage({
                   />
                 </div>
 
-                {/* Game Info Strip — PokerBros-style: table name on top, stakes
-                    below. Name sits just under the community cards so both lines
-                    stay anchored to the center pot/board axis. */}
-                <div className="table-game-info">
-                  {tableState.tableName && (
-                    <span className="table-game-info__name">
-                      {tableState.tableName.toUpperCase()}
-                    </span>
-                  )}
-                  <span className="table-game-info__stakes">
-                    {(tableState.blinds || '1/2').toUpperCase()}{' '}
-                    {(tableState.gameType === "No Limit Hold'em"
-                      ? 'NLH'
-                      : tableState.gameType === 'Pot Limit Omaha'
-                        ? 'PLO'
-                        : tableState.gameType === "Fixed Limit Hold'em"
-                          ? 'FLH'
-                          : tableState.gameType || 'NLH'
-                    ).toUpperCase()}
-                  </span>
-                </div>
+                {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
+                    gone. It printed the stakes a second and third time
+                    ("NLH 2.00/5.00", then "2/5 NLH" in yellow) right under the
+                    masthead that already states them. Date, club and game now
+                    appear once, on one centered line in .table-brand. */}
 
                 {/* Spectator Badge + Overlay REMOVED from table surface.
                     Observer count belongs inside the chat panel, not on the felt.

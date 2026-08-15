@@ -52,7 +52,6 @@ export type BusEventType =
   | 'WAITLIST_POSITION_CHANGED'
   | 'WAITLIST_PROMOTED'
   | 'SESSION_SUMMARY_DISMISSED'
-  | 'TABLE_EMOTE'
   | 'ACHIEVEMENT_UNLOCKED'
   | 'MISSION_PROGRESS'
   | 'STREAK_UPDATE'
@@ -356,13 +355,6 @@ export interface BusPayloadMap {
   WAITLIST_POSITION_CHANGED: { tableId: string; position: number; tableName: string };
   WAITLIST_PROMOTED: { tableId: string; userId: string; tableName: string };
   SESSION_SUMMARY_DISMISSED: { tableId: string };
-  TABLE_EMOTE: {
-    tableId: string;
-    userId: string;
-    emoji: string;
-    playerName: string;
-    emoteId?: string;
-  };
   ACHIEVEMENT_UNLOCKED: {
     userId: string;
     achievementId: string;

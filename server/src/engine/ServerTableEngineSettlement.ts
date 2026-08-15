@@ -16,10 +16,7 @@ import { StraddleEngine } from './StraddleEngine.js';
 import { integrityFeed } from '../integrity/IntegrityFeed.js';
 import type { HandHistoryRow } from '../integrity/HandEventAdapter.js';
 import { computeSevenDeuceBounties } from './SevenDeuceBounty.js';
-import {
-  getFullRakeConfig,
-  detectBBJHit,
-} from '../config/RakeConfig.js';
+import { getFullRakeConfig, detectBBJHit } from '../config/RakeConfig.js';
 import {
   loadTable,
   syncStacks,
@@ -35,17 +32,13 @@ import {
   completeHandSnapshot,
   supabase,
 } from '../services/supabase.js';
-import type {
-  HandEvent,
-  SeatedPlayer,
-} from '../types.js';
+import type { HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
-
   /**
    * Bible V8 §1.9 settlement pipeline. Extracted verbatim (2026-08-08 file
    * split) from the `HAND_COMPLETE` case of `handleHandEvent`. The body is
@@ -53,7 +46,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    * (re-indent it and you get the monolith back line-for-line); the trailing
    * `break;` became the caller’s own `break;`.
    */
-  protected async handleHandCompleteEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
+  protected async handleHandCompleteEvent(
+    event: HandEvent,
+    players: SeatedPlayer[]
+  ): Promise<void> {
     // ═══════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE — 15-step mandatory order
     //
@@ -198,9 +194,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       for (const settlement of this.currentHandInsuranceSettlements) {
         const seatedPlayer = this.seatedPlayers.find((p) => p.user_id === settlement.playerId);
         const enginePlayer = this.handController
-          ? this.handController
-              .getState()
-              .players.find((p) => p.user_id === settlement.playerId)
+          ? this.handController.getState().players.find((p) => p.user_id === settlement.playerId)
           : null;
 
         if (settlement.payout > 0) {
@@ -230,8 +224,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               ? enginePlayer.stack
               : 0;
           if (settlement.premium > premiumStack) {
-            const shortfall =
-              Math.round((settlement.premium - premiumStack) * 100) / 100;
+            const shortfall = Math.round((settlement.premium - premiumStack) * 100) / 100;
             await raiseFinancialAlert(
               'critical',
               'ServerTableEngine.insurance_premium_exceeds_stack',
@@ -323,10 +316,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             );
             const pay = Math.min(payer.amount, liveStack);
             if (pay <= 0) continue;
-            if (seatedPayer)
-              seatedPayer.stack = Math.round((seatedPayer.stack - pay) * 100) / 100;
-            if (enginePayer)
-              enginePayer.stack = Math.round((enginePayer.stack - pay) * 100) / 100;
+            if (seatedPayer) seatedPayer.stack = Math.round((seatedPayer.stack - pay) * 100) / 100;
+            if (enginePayer) enginePayer.stack = Math.round((enginePayer.stack - pay) * 100) / 100;
             applied = Math.round((applied + pay) * 100) / 100;
             appliedPayers.push({ userId: payer.userId, amount: pay });
           }
@@ -334,9 +325,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (applied <= 0) continue;
           sdAnyApplied = true;
 
-          const seatedWinner = this.seatedPlayers.find(
-            (p) => p.user_id === transfer.winnerUserId
-          );
+          const seatedWinner = this.seatedPlayers.find((p) => p.user_id === transfer.winnerUserId);
           const engineWinner = sdState.players.find((p) => p.user_id === transfer.winnerUserId);
           if (seatedWinner)
             seatedWinner.stack = Math.round((seatedWinner.stack + applied) * 100) / 100;
@@ -377,10 +366,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             )
               .then(({ error }: { error: unknown }) => {
                 if (error)
-                  console.warn(
-                    '[Engine] seven_deuce_bounties insert failed (non-fatal):',
-                    error
-                  );
+                  console.warn('[Engine] seven_deuce_bounties insert failed (non-fatal):', error);
               })
               .catch((sdErr: unknown) =>
                 console.warn('[Engine] seven_deuce_bounties insert threw (non-fatal):', sdErr)
@@ -550,15 +536,53 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // Steps 1-7 completed in HAND_COMPLETE handler above
     // ═══════════════════════════════════════════════════════════════════════
 
-    // SETTLEMENT STEP 8: Persist results to database (atomic transaction)
-    await syncStacks(
-      this.tableId,
-      players.map((p) => ({
-        user_id: p.user_id,
-        stack: p.stack,
-        time_bank_uses_remaining: p.time_bank_uses_remaining,
-      }))
-    );
+    // AUDIT E8 (2026-08-15): the settlement pipeline below used to be one
+    // straight-line sequence with a single catch at the CALLER. Any step that
+    // threw aborted every step after it: a hand-history transport error could
+    // skip rake distribution (leaving raked chips with no unbanked-fee queue
+    // entry), BBJ banking, pending add-ons, leave processing, and the STEP 15
+    // unlock. Every step now runs in its own guard: a failure is reported
+    // (and, for money steps, raised as a durable CRITICAL financial alert)
+    // and the remaining steps still run. Order is unchanged; steps still run
+    // sequentially because later steps read state earlier steps produce.
+    const runStep = async (
+      stepName: string,
+      moneyCritical: boolean,
+      fn: () => Promise<void>
+    ): Promise<void> => {
+      try {
+        await fn();
+      } catch (err) {
+        reportError(err, `postHandTasks.step_failed.${stepName}`, {
+          tableId: this.tableId,
+          handNumber: this.handCount,
+        });
+        if (moneyCritical) {
+          await raiseFinancialAlert(
+            'critical',
+            `postHandTasks.${stepName}_failed`,
+            `Post-hand step ${stepName} threw for hand #${this.handCount}; later steps continued`,
+            {
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              error: err instanceof Error ? err.message : String(err),
+            }
+          );
+        }
+      }
+    };
+
+    await runStep('sync_stacks', true, async () => {
+      // SETTLEMENT STEP 8: Persist results to database (atomic transaction)
+      await syncStacks(
+        this.tableId,
+        players.map((p) => ({
+          user_id: p.user_id,
+          stack: p.stack,
+          time_bank_uses_remaining: p.time_bank_uses_remaining,
+        }))
+      );
+    });
 
     // ─── ROUND 38 + 43 FIX: REORDERED — hand_history FIRST, then rake/BBJ ───
     // Round 38: rake_records.hand_id needed the v_handHistoryId.
@@ -566,61 +590,63 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // needs the hand UUID to link the audit ledger to the source hand. So
     // logHandHistory must precede logRakeCollection / logBBJCollection.
     let v_handHistoryId: string | null = null;
-    if (this.tableInfo) {
-      const result = await logHandHistory({
-        tableId: this.tableId,
-        tournamentId: this.tableInfo.tournament_id || undefined,
-        handNumber: this.handCount,
-        gameVariant: this.tableInfo.game_variant || 'nlh',
-        smallBlind: this.tableInfo.small_blind,
-        bigBlind: this.tableInfo.big_blind,
-        potSize: this.currentHandPotSize,
-        rakeAmount: this.currentHandRake,
-        bbjAmount: this.currentHandBBJFee,
-        communityCards: this.currentHandCommunityCards,
-        startedAt: this.currentHandStartedAt || Date.now(),
-        endedAt: Date.now(),
-        winners: this.currentHandWinners,
-        players: players.map((p) => ({
-          userId: p.user_id,
-          username: p.username,
-          seat: p.seat_number,
-          stack: p.stack,
-          cards: [],
-        })),
-        actions: this.currentHandActions,
-      });
-      v_handHistoryId = result.handId;
+    await runStep('hand_history', true, async () => {
+      if (this.tableInfo) {
+        const result = await logHandHistory({
+          tableId: this.tableId,
+          tournamentId: this.tableInfo.tournament_id || undefined,
+          handNumber: this.handCount,
+          gameVariant: this.tableInfo.game_variant || 'nlh',
+          smallBlind: this.tableInfo.small_blind,
+          bigBlind: this.tableInfo.big_blind,
+          potSize: this.currentHandPotSize,
+          rakeAmount: this.currentHandRake,
+          bbjAmount: this.currentHandBBJFee,
+          communityCards: this.currentHandCommunityCards,
+          startedAt: this.currentHandStartedAt || Date.now(),
+          endedAt: Date.now(),
+          winners: this.currentHandWinners,
+          players: players.map((p) => ({
+            userId: p.user_id,
+            username: p.username,
+            seat: p.seat_number,
+            stack: p.stack,
+            cards: [],
+          })),
+          actions: this.currentHandActions,
+        });
+        v_handHistoryId = result.handId;
 
-      // ── ADDITIVE anti-cheat feed (#5): observe-only, fire-and-forget, flag-gated (default OFF) ──
-      if (this.integrityFeedEnabled) {
-        try {
-          const feedRow: HandHistoryRow = {
-            id: v_handHistoryId,
-            table_id: this.tableId,
-            hand_number: this.handCount,
-            game_variant: this.tableInfo.game_variant || 'nlh',
-            small_blind: this.tableInfo.small_blind,
-            big_blind: this.tableInfo.big_blind,
-            pot_size: this.currentHandPotSize,
-            rake_amount: this.currentHandRake,
-            community_cards: this.currentHandCommunityCards,
-            started_at: this.currentHandStartedAt || Date.now(),
-            ended_at: Date.now(),
-            winners: this.currentHandWinners.map((w) => ({ userId: w.userId, amount: w.amount })),
-            players: players.map((pp) => ({
-              userId: pp.user_id,
-              seat: pp.seat_number,
-              stack: pp.stack,
-            })),
-            actions: this.currentHandActions,
-          };
-          integrityFeed.ingestRow(feedRow);
-        } catch {
-          /* observe-only: never affect settlement */
+        // ── ADDITIVE anti-cheat feed (#5): observe-only, fire-and-forget, flag-gated (default OFF) ──
+        if (this.integrityFeedEnabled) {
+          try {
+            const feedRow: HandHistoryRow = {
+              id: v_handHistoryId,
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              game_variant: this.tableInfo.game_variant || 'nlh',
+              small_blind: this.tableInfo.small_blind,
+              big_blind: this.tableInfo.big_blind,
+              pot_size: this.currentHandPotSize,
+              rake_amount: this.currentHandRake,
+              community_cards: this.currentHandCommunityCards,
+              started_at: this.currentHandStartedAt || Date.now(),
+              ended_at: Date.now(),
+              winners: this.currentHandWinners.map((w) => ({ userId: w.userId, amount: w.amount })),
+              players: players.map((pp) => ({
+                userId: pp.user_id,
+                seat: pp.seat_number,
+                stack: pp.stack,
+              })),
+              actions: this.currentHandActions,
+            };
+            integrityFeed.ingestRow(feedRow);
+          } catch {
+            /* observe-only: never affect settlement */
+          }
         }
       }
-    }
+    });
 
     // SETTLEMENT STEP 8b: Distribute rake — ATOMIC + IDEMPOTENT + RECOVERABLE.
     // RAKE-AUDIT 2026-07-24 [money]: replaced the separate, non-atomic
@@ -633,99 +659,103 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // per-leg claim ledger, so a missing leg is re-driven WITHOUT double-crediting.
     // UNION MODEL UNCHANGED: the union still holds 100% of cash rake; the weekly
     // settlement still returns 90% to clubs (nets 10%).
-    if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
-      const contribsObj: Record<string, number> = {};
-      for (const [uid, amt] of this.currentHandContributions.entries()) {
-        contribsObj[uid] = amt;
+    await runStep('rake_distribution', true, async () => {
+      if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
+        const contribsObj: Record<string, number> = {};
+        for (const [uid, amt] of this.currentHandContributions.entries()) {
+          contribsObj[uid] = amt;
+        }
+        let rakeDistributed = false;
+        for (let attempt = 0; attempt < 3 && !rakeDistributed; attempt++) {
+          const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
+            p_table_id: this.tableId,
+            p_club_id: this.tableInfo.club_id,
+            p_hand_id: v_handHistoryId,
+            p_hand_number: this.handCount,
+            p_rake: this.currentHandRake,
+            p_bbj: this.currentHandBBJFee,
+            p_pot: this.currentHandPotSize,
+            p_num_players: this.currentHandContributions.size,
+            p_contributions: contribsObj,
+            p_tournament_id: this.tableInfo.tournament_id || null,
+          });
+          if (!rdErr) {
+            rakeDistributed = true;
+          } else if (attempt === 2) {
+            reportError(
+              new Error(`[atomic_distribute_rake] failed after retries: ${rdErr.message}`),
+              'postHandTasks.atomic_distribute_rake_failed'
+            );
+            // A5 FIX (2026-08-08): the retries are exhausted, but the rake is
+            // ALREADY out of the pot. Reporting an error and moving on destroyed
+            // those chips — nothing on disk said they were owed. Queue the exact
+            // arguments so the FeeReconciler can re-drive them. Re-driving is
+            // safe: atomic_distribute_rake is gated on the hand
+            // (uq_rake_records_hand_id), so an entry that actually did land is a
+            // no-op rather than a double-bank.
+            await queueUnbankedFee('rake', {
+              tableId: this.tableId,
+              clubId: this.tableInfo?.club_id,
+              handId: v_handHistoryId,
+              handNumber: this.handCount,
+              rake: this.currentHandRake,
+              bbj: this.currentHandBBJFee,
+              pot: this.currentHandPotSize,
+              numPlayers: this.currentHandContributions.size,
+              contributions: contribsObj,
+              tournamentId: this.tableInfo?.tournament_id || null,
+              bigBlind: this.tableInfo?.big_blind ?? null,
+              lastError: rdErr.message,
+            });
+          } else {
+            await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+          }
+        }
       }
-      let rakeDistributed = false;
-      for (let attempt = 0; attempt < 3 && !rakeDistributed; attempt++) {
-        const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
-          p_table_id: this.tableId,
-          p_club_id: this.tableInfo.club_id,
-          p_hand_id: v_handHistoryId,
-          p_hand_number: this.handCount,
-          p_rake: this.currentHandRake,
-          p_bbj: this.currentHandBBJFee,
-          p_pot: this.currentHandPotSize,
-          p_num_players: this.currentHandContributions.size,
-          p_contributions: contribsObj,
-          p_tournament_id: this.tableInfo.tournament_id || null,
-        });
-        if (!rdErr) {
-          rakeDistributed = true;
-        } else if (attempt === 2) {
-          reportError(
-            new Error(`[atomic_distribute_rake] failed after retries: ${rdErr.message}`),
-            'postHandTasks.atomic_distribute_rake_failed'
-          );
-          // A5 FIX (2026-08-08): the retries are exhausted, but the rake is
-          // ALREADY out of the pot. Reporting an error and moving on destroyed
-          // those chips — nothing on disk said they were owed. Queue the exact
-          // arguments so the FeeReconciler can re-drive them. Re-driving is
-          // safe: atomic_distribute_rake is gated on the hand
-          // (uq_rake_records_hand_id), so an entry that actually did land is a
-          // no-op rather than a double-bank.
-          await queueUnbankedFee('rake', {
+    });
+
+    // SETTLEMENT STEP 8c: Log BBJ contribution
+    // Round 44: pass v_handHistoryId so bbj_contributions.hand_id links to
+    // hand_history (consistent with rake_records and club_wallet_transactions).
+    await runStep('bbj_contribution', true, async () => {
+      if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
+        // A5 FIX (2026-08-08): this return value used to be discarded, and
+        // logBBJCollection swallowed every failure while logging 1 hand in 100.
+        // That was not cosmetic. atomic_distribute_rake computes
+        // `v_net := p_rake - v_bbj` and credits the club wallet only v_net,
+        // deliberately excluding the BBJ slice because bbj_record_contribution is
+        // what puts it into the jackpot pool. So a failure here left the chips in
+        // NEITHER place — out of the pot and out of existence. An audit of the
+        // 20,000 most recent raked hands (joined on hand_id) found zero actually
+        // lost, so this is a hole being closed before it bites rather than a bleed
+        // being stopped — but it was a hole nobody could have SEEN bite, which is
+        // the part that had to change.
+        const bbjBanked = await logBBJCollection(
+          this.tableId,
+          this.tableInfo.club_id,
+          this.handCount,
+          this.currentHandBBJFee,
+          this.tableInfo.big_blind,
+          v_handHistoryId
+        );
+        if (!bbjBanked) {
+          await queueUnbankedFee('bbj_contribution', {
             tableId: this.tableId,
-            clubId: this.tableInfo?.club_id,
+            clubId: this.tableInfo.club_id,
             handId: v_handHistoryId,
             handNumber: this.handCount,
             rake: this.currentHandRake,
             bbj: this.currentHandBBJFee,
             pot: this.currentHandPotSize,
             numPlayers: this.currentHandContributions.size,
-            contributions: contribsObj,
+            contributions: {},
             tournamentId: this.tableInfo?.tournament_id || null,
             bigBlind: this.tableInfo?.big_blind ?? null,
-            lastError: rdErr.message,
+            lastError: 'logBBJCollection returned false',
           });
-        } else {
-          await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
         }
       }
-    }
-
-    // SETTLEMENT STEP 8c: Log BBJ contribution
-    // Round 44: pass v_handHistoryId so bbj_contributions.hand_id links to
-    // hand_history (consistent with rake_records and club_wallet_transactions).
-    if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
-      // A5 FIX (2026-08-08): this return value used to be discarded, and
-      // logBBJCollection swallowed every failure while logging 1 hand in 100.
-      // That was not cosmetic. atomic_distribute_rake computes
-      // `v_net := p_rake - v_bbj` and credits the club wallet only v_net,
-      // deliberately excluding the BBJ slice because bbj_record_contribution is
-      // what puts it into the jackpot pool. So a failure here left the chips in
-      // NEITHER place — out of the pot and out of existence. An audit of the
-      // 20,000 most recent raked hands (joined on hand_id) found zero actually
-      // lost, so this is a hole being closed before it bites rather than a bleed
-      // being stopped — but it was a hole nobody could have SEEN bite, which is
-      // the part that had to change.
-      const bbjBanked = await logBBJCollection(
-        this.tableId,
-        this.tableInfo.club_id,
-        this.handCount,
-        this.currentHandBBJFee,
-        this.tableInfo.big_blind,
-        v_handHistoryId
-      );
-      if (!bbjBanked) {
-        await queueUnbankedFee('bbj_contribution', {
-          tableId: this.tableId,
-          clubId: this.tableInfo.club_id,
-          handId: v_handHistoryId,
-          handNumber: this.handCount,
-          rake: this.currentHandRake,
-          bbj: this.currentHandBBJFee,
-          pot: this.currentHandPotSize,
-          numPlayers: this.currentHandContributions.size,
-          contributions: {},
-          tournamentId: this.tableInfo?.tournament_id || null,
-          bigBlind: this.tableInfo?.big_blind ?? null,
-          lastError: 'logBBJCollection returned false',
-        });
-      }
-    }
+    });
 
     // SETTLEMENT STEP 12: rakeback input (durable rake_records) is now written
     // INSIDE atomic_distribute_rake (STEP 8b) — one atomic, idempotent,
@@ -743,196 +773,258 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // Fire-and-forget per player: non-blocking to gameplay, failures are logged
     // but never surface to the table (the wager is durably in rake_records above,
     // and the next hand's accrual is additive so nothing is lost permanently).
-    if (!this.isTournamentTable() && this.tableInfo?.club_id) {
-      const promoClubId = this.tableInfo.club_id;
-      for (const [uid, amt] of this.currentHandContributions.entries()) {
-        if (!uid || amt <= 0) continue;
-        Promise.resolve(
-          supabase.rpc('promo_apply_playthrough', {
-            p_club_id: promoClubId,
-            p_user_id: uid,
-            p_wagered: amt,
-          })
-        )
-          .then(({ error }: { error: unknown }) => {
-            if (error) {
-              console.warn('[Engine] promo_apply_playthrough failed (non-fatal):', error);
-            }
-          })
-          .catch((ppErr: unknown) => {
-            console.warn('[Engine] promo_apply_playthrough threw (non-fatal):', ppErr);
-          });
+    await runStep('promo_playthrough', false, async () => {
+      if (!this.isTournamentTable() && this.tableInfo?.club_id) {
+        const promoClubId = this.tableInfo.club_id;
+        for (const [uid, amt] of this.currentHandContributions.entries()) {
+          if (!uid || amt <= 0) continue;
+          Promise.resolve(
+            supabase.rpc('promo_apply_playthrough', {
+              p_club_id: promoClubId,
+              p_user_id: uid,
+              p_wagered: amt,
+            })
+          )
+            .then(({ error }: { error: unknown }) => {
+              if (error) {
+                console.warn('[Engine] promo_apply_playthrough failed (non-fatal):', error);
+              }
+            })
+            .catch((ppErr: unknown) => {
+              console.warn('[Engine] promo_apply_playthrough threw (non-fatal):', ppErr);
+            });
+        }
       }
-    }
+    });
 
     // 3b. Bible V8 §4.19: Log insurance settlements (settled in HAND_COMPLETE handler)
     // Insurance premiums → union bank (or club bank for standalone)
     // Insurance payouts → from union bank (or club bank) to player
-    if (
-      !this.isTournamentTable() &&
-      this.tableInfo?.club_id &&
-      this.currentHandInsuranceSettlements.length > 0
-    ) {
-      for (const settlement of this.currentHandInsuranceSettlements) {
-        await logInsuranceSettlement({
-          tableId: this.tableId,
-          clubId: this.tableInfo.club_id,
-          handNumber: this.handCount,
-          playerId: settlement.playerId,
-          equityPercent: settlement.equity, // FIX-A12: real equity the premium was priced on
-          premium: settlement.premium,
-          insuredAmount: settlement.insuredAmount,
-          payout: settlement.payout,
-          playerWon: !settlement.won, // settlement.won = insurance paid out = player lost the hand
-        });
+    await runStep('insurance_ledger', true, async () => {
+      if (
+        !this.isTournamentTable() &&
+        this.tableInfo?.club_id &&
+        this.currentHandInsuranceSettlements.length > 0
+      ) {
+        for (const settlement of this.currentHandInsuranceSettlements) {
+          await logInsuranceSettlement({
+            tableId: this.tableId,
+            clubId: this.tableInfo.club_id,
+            handNumber: this.handCount,
+            playerId: settlement.playerId,
+            equityPercent: settlement.equity, // FIX-A12: real equity the premium was priced on
+            premium: settlement.premium,
+            insuredAmount: settlement.insuredAmount,
+            payout: settlement.payout,
+            playerWon: !settlement.won, // settlement.won = insurance paid out = player lost the hand
+          });
+        }
       }
-    }
+    });
 
     // 3c. BBJ Payout — if a BBJ hit was detected in HAND_COMPLETE, process the actual payout
     // Chips credited directly to players' table balances from union/club BBJ pool
-    if (
-      !this.isTournamentTable() &&
-      this.tableInfo?.club_id &&
-      this.currentHandBBJHit?.hit &&
-      this.currentHandBBJPayoutConfig
-    ) {
-      const bbjHit = this.currentHandBBJHit;
-      const payoutConfig = this.currentHandBBJPayoutConfig;
-      const result = await processBBJPayout({
-        tableId: this.tableId,
-        clubId: this.tableInfo.club_id,
-        handNumber: this.handCount,
-        loserUserId: bbjHit.loserUserId!,
-        winnerUserId: bbjHit.winnerUserId!,
-        loserHandName: bbjHit.loserHand?.name || 'Unknown',
-        winnerHandName: bbjHit.winnerHand?.name || 'Unknown',
-        dealtInPlayerIds: bbjHit.dealtInPlayerIds || [],
-        // FIX P0-2: pass the currently-seated user_ids (engine memory = seat
-        // authority) so the payout RPC credits seats for these and credits the
-        // wallet directly for any dealt-in recipient who has since left the
-        // table (their share is no longer silently dropped).
-        seatedUserIds: players.map((p) => p.user_id),
-        payoutTotalPercent: payoutConfig.bbjPayoutTotalPercent,
-      });
-
-      if (result) {
-        // Credit chips directly to players' table stacks
-        // LOSER (bad beat holder) gets 50% of total payout
-        const loserSeat = players.find((p) => p.user_id === bbjHit.loserUserId);
-        if (loserSeat) {
-          loserSeat.stack += result.loserShare;
-          console.log(
-            `[ServerTableEngine:${this.tableId}] BBJ → Loser ${bbjHit.loserUserId} +$${result.loserShare}`
-          );
-        }
-
-        // WINNER (hand winner) gets 25% of total payout
-        const winnerSeat = players.find((p) => p.user_id === bbjHit.winnerUserId);
-        if (winnerSeat) {
-          winnerSeat.stack += result.winnerShare;
-          console.log(
-            `[ServerTableEngine:${this.tableId}] BBJ → Winner ${bbjHit.winnerUserId} +$${result.winnerShare}`
-          );
-        }
-
-        // TABLE SHARE: remaining 25% split equally among dealt-in players (excluding loser/winner)
-        const tableOnlyPlayers = (bbjHit.dealtInPlayerIds || []).filter(
-          (id) => id !== bbjHit.loserUserId && id !== bbjHit.winnerUserId
-        );
-        for (const playerId of tableOnlyPlayers) {
-          const seat = players.find((p) => p.user_id === playerId);
-          if (seat) {
-            seat.stack += result.perPlayerShare;
-            console.log(
-              `[ServerTableEngine:${this.tableId}] BBJ → Table player ${playerId} +$${result.perPlayerShare}`
-            );
-          }
-        }
-
-        // Re-sync stacks to database with BBJ payouts included
-        await syncStacks(
-          this.tableId,
-          players.map((p) => ({
-            user_id: p.user_id,
-            stack: p.stack,
-            time_bank_uses_remaining: p.time_bank_uses_remaining,
-          }))
-        );
-
-        // Broadcast updated stacks + BBJ payout details so clients show the celebration
-        this.hub?.emitEvent(this.tableId, {
-          type: 'bbj_payout_complete',
-          table_id: this.tableId,
-          hand_number: this.handCount,
-          totalPayout: result.totalPayout,
-          loser: { userId: bbjHit.loserUserId, share: result.loserShare },
-          winner: { userId: bbjHit.winnerUserId, share: result.winnerShare },
-          tableShare: result.tableShare,
-          perPlayerShare: result.perPlayerShare,
-          tablePlayerIds: tableOnlyPlayers,
-          // Include updated stacks for all players
-          updatedStacks: players.map((p) => ({ userId: p.user_id, stack: p.stack })),
+    await runStep('bbj_payout', true, async () => {
+      if (
+        !this.isTournamentTable() &&
+        this.tableInfo?.club_id &&
+        this.currentHandBBJHit?.hit &&
+        this.currentHandBBJPayoutConfig
+      ) {
+        const bbjHit = this.currentHandBBJHit;
+        const payoutConfig = this.currentHandBBJPayoutConfig;
+        const result = await processBBJPayout({
+          tableId: this.tableId,
+          clubId: this.tableInfo.club_id,
+          handNumber: this.handCount,
+          loserUserId: bbjHit.loserUserId!,
+          winnerUserId: bbjHit.winnerUserId!,
+          loserHandName: bbjHit.loserHand?.name || 'Unknown',
+          winnerHandName: bbjHit.winnerHand?.name || 'Unknown',
+          dealtInPlayerIds: bbjHit.dealtInPlayerIds || [],
+          // FIX P0-2: pass the currently-seated user_ids (engine memory = seat
+          // authority) so the payout RPC credits seats for these and credits the
+          // wallet directly for any dealt-in recipient who has since left the
+          // table (their share is no longer silently dropped).
+          seatedUserIds: players.map((p) => p.user_id),
+          payoutTotalPercent: payoutConfig.bbjPayoutTotalPercent,
         });
 
-        console.log(
-          `[ServerTableEngine:${this.tableId}] BBJ payout complete: $${result.totalPayout} distributed to ${players.length} players`
-        );
+        if (result) {
+          // Credit chips directly to players' table stacks
+          // LOSER (bad beat holder) gets 50% of total payout
+          const loserSeat = players.find((p) => p.user_id === bbjHit.loserUserId);
+          if (loserSeat) {
+            loserSeat.stack += result.loserShare;
+            console.log(
+              `[ServerTableEngine:${this.tableId}] BBJ → Loser ${bbjHit.loserUserId} +$${result.loserShare}`
+            );
+          }
+
+          // WINNER (hand winner) gets 25% of total payout
+          const winnerSeat = players.find((p) => p.user_id === bbjHit.winnerUserId);
+          if (winnerSeat) {
+            winnerSeat.stack += result.winnerShare;
+            console.log(
+              `[ServerTableEngine:${this.tableId}] BBJ → Winner ${bbjHit.winnerUserId} +$${result.winnerShare}`
+            );
+          }
+
+          // TABLE SHARE: remaining 25% split equally among dealt-in players (excluding loser/winner)
+          const tableOnlyPlayers = (bbjHit.dealtInPlayerIds || []).filter(
+            (id) => id !== bbjHit.loserUserId && id !== bbjHit.winnerUserId
+          );
+          for (const playerId of tableOnlyPlayers) {
+            const seat = players.find((p) => p.user_id === playerId);
+            if (seat) {
+              seat.stack += result.perPlayerShare;
+              console.log(
+                `[ServerTableEngine:${this.tableId}] BBJ → Table player ${playerId} +$${result.perPlayerShare}`
+              );
+            }
+          }
+
+          // Re-sync stacks to database with BBJ payouts included
+          await syncStacks(
+            this.tableId,
+            players.map((p) => ({
+              user_id: p.user_id,
+              stack: p.stack,
+              time_bank_uses_remaining: p.time_bank_uses_remaining,
+            }))
+          );
+
+          // Broadcast updated stacks + BBJ payout details so clients show the celebration
+          this.hub?.emitEvent(this.tableId, {
+            type: 'bbj_payout_complete',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            totalPayout: result.totalPayout,
+            loser: { userId: bbjHit.loserUserId, share: result.loserShare },
+            winner: { userId: bbjHit.winnerUserId, share: result.winnerShare },
+            tableShare: result.tableShare,
+            perPlayerShare: result.perPlayerShare,
+            tablePlayerIds: tableOnlyPlayers,
+            // Include updated stacks for all players
+            updatedStacks: players.map((p) => ({ userId: p.user_id, stack: p.stack })),
+          });
+
+          console.log(
+            `[ServerTableEngine:${this.tableId}] BBJ payout complete: $${result.totalPayout} distributed to ${players.length} players`
+          );
+        }
       }
-    }
+    });
 
     // SETTLEMENT STEP 8d: Tournament chip sync
-    if (this.isTournamentTable() && this.tableInfo?.tournament_id) {
-      await syncTournamentChips(this.tableId, this.tableInfo.tournament_id);
-    }
+    await runStep('tournament_chip_sync', true, async () => {
+      if (this.isTournamentTable() && this.tableInfo?.tournament_id) {
+        await syncTournamentChips(this.tableId, this.tableInfo.tournament_id);
+      }
+    });
 
     // SETTLEMENT STEP 8e: Process pending add-ons (queued during the hand).
     // Must run AFTER pot distribution + BBJ payouts so we know each player's
     // final stack. Add-ons are capped so stack + add-on <= max buy-in.
     // Any excess is refunded to the player's club wallet.
-    if (!this.isTournamentTable()) {
-      await this.processPendingAddOns(players);
-    }
+    await runStep('pending_addons', true, async () => {
+      if (!this.isTournamentTable()) {
+        await this.processPendingAddOns(players);
+      }
+    });
 
     // 5. Auto-rebuy busted horses (cash games only)
-    if (!this.isTournamentTable()) {
-      const bustHorses = players.filter((p) => p.is_horse && p.stack === 0);
-      for (const horse of bustHorses) {
-        const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
+    await runStep('horse_rebuys', false, async () => {
+      if (!this.isTournamentTable()) {
+        const bustHorses = players.filter((p) => p.is_horse && p.stack === 0);
+        for (const horse of bustHorses) {
+          const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
 
-        // Stop-Loss Bankroll logic: if they have rebought twice already (lost 3 buy-ins total), they leave
-        if (currentRebuys >= 2) {
-          await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
-          // Round 57: clear FSM tracking so the horse doesn't leave a ghost
-          // entry in disconnect_states.
-          this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-          // Round 64: same for TimeBankEngine.
-          this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-          // Round 66: same for StraddleEngine — symmetric cleanup.
-          this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-          this.preActionEngine.removePlayer(this.tableId, horse.user_id);
-          this.horseRebuys.delete(horse.user_id);
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Stop-Loss: Horse ${horse.username} lost 3 buy-ins and has been removed.`
+          // Stop-Loss Bankroll logic: if they have rebought twice already (lost 3 buy-ins total), they leave
+          if (currentRebuys >= 2) {
+            await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            // Round 57: clear FSM tracking so the horse doesn't leave a ghost
+            // entry in disconnect_states.
+            this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
+            // Round 64: same for TimeBankEngine.
+            this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+            // Round 66: same for StraddleEngine — symmetric cleanup.
+            this.straddleEngine.removePlayer(this.tableId, horse.user_id);
+            this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+            this.horseRebuys.delete(horse.user_id);
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Stop-Loss: Horse ${horse.username} lost 3 buy-ins and has been removed.`
+            );
+            continue;
+          }
+
+          const rebuyAmount = this.tableInfo?.big_blind ? this.tableInfo.big_blind * 100 : 200;
+          const success = await autoRebuyHorse(
+            this.tableId,
+            horse.user_id,
+            rebuyAmount,
+            this.tableInfo?.club_id || ''
           );
-          continue;
+          if (success) {
+            horse.stack = rebuyAmount;
+            this.horseRebuys.set(horse.user_id, currentRebuys + 1);
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Auto-rebuy: ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
+            );
+          } else {
+            await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            // Round 57: clear FSM tracking on insufficient-funds leave too.
+            this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
+            // Round 64: same for TimeBankEngine.
+            this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
+            // Round 66: same for StraddleEngine.
+            this.straddleEngine.removePlayer(this.tableId, horse.user_id);
+            this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+            this.horseRebuys.delete(horse.user_id);
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left — insufficient funds`
+            );
+          }
         }
+      }
+    });
 
-        const rebuyAmount = this.tableInfo?.big_blind ? this.tableInfo.big_blind * 100 : 200;
-        const success = await autoRebuyHorse(
-          this.tableId,
-          horse.user_id,
-          rebuyAmount,
-          this.tableInfo?.club_id || ''
-        );
-        if (success) {
-          horse.stack = rebuyAmount;
-          this.horseRebuys.set(horse.user_id, currentRebuys + 1);
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Auto-rebuy: ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
-          );
-        } else {
+    // 5.5 Auto-Cashout successful horses (Hit-and-Run Bankroll Management)
+    // Always wait until right before they are the Big Blind to leave.
+    await runStep('horse_cashouts', false, async () => {
+      if (!this.isTournamentTable() && players.length >= 2) {
+        const maxBuyIn = this.tableInfo?.max_buy_in
+          ? Number(this.tableInfo.max_buy_in)
+          : (this.tableInfo?.big_blind || 2) * 200;
+
+        // Calculate who will be the next Big Blind — AUDIT FIX 2026-07-19:
+        // seat-based from the current button. Next hand's button is the next
+        // occupied seat clockwise from lastButtonSeat; BB is one seat past SB
+        // (HU: BB is the non-button, i.e. one seat past the button).
+        const nextButtonSeat = this.getNextSeat(this.lastButtonSeat, players);
+        const nextSbSeat =
+          players.length === 2 ? nextButtonSeat : this.getNextSeat(nextButtonSeat, players);
+        const nextBbSeat = this.getNextSeat(nextSbSeat, players);
+        const nextBbPlayer = players.find((p) => p.seat_number === nextBbSeat);
+
+        const cashedOutHorses = players.filter((p) => {
+          if (!p.is_horse) return false;
+
+          // Target is dynamically between 2.5x and 3.5x max buy-in
+          // We use their user_id to deterministically seed their target, so they don't randomly flip-flop
+          const idInt = parseInt(p.user_id.replace(/-/g, '').substring(0, 8), 16) || 0;
+          const targetMultiplier = 2.5 + idInt / 0xffffffff;
+          const cashOutTarget = maxBuyIn * targetMultiplier;
+
+          // Only depart if they hit the target AND their NEXT hand is the Big Blind
+          const isNextBb = p.user_id === nextBbPlayer?.user_id;
+
+          return p.stack >= cashOutTarget && isNextBb;
+        });
+
+        for (const horse of cashedOutHorses) {
           await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
-          // Round 57: clear FSM tracking on insufficient-funds leave too.
+          // Round 57: clear FSM tracking on profit-target cashout too.
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
           // Round 64: same for TimeBankEngine.
           this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
@@ -941,104 +1033,62 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.preActionEngine.removePlayer(this.tableId, horse.user_id);
           this.horseRebuys.delete(horse.user_id);
           console.log(
-            `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left — insufficient funds`
+            `[ServerTableEngine:${this.tableId}] Bankroll Management: Horse ${horse.username} hit profit target (${Math.floor(horse.stack)} chips) and cashed out before posting the Big Blind.`
           );
         }
       }
-    }
-
-    // 5.5 Auto-Cashout successful horses (Hit-and-Run Bankroll Management)
-    // Always wait until right before they are the Big Blind to leave.
-    if (!this.isTournamentTable() && players.length >= 2) {
-      const maxBuyIn = this.tableInfo?.max_buy_in
-        ? Number(this.tableInfo.max_buy_in)
-        : (this.tableInfo?.big_blind || 2) * 200;
-
-      // Calculate who will be the next Big Blind — AUDIT FIX 2026-07-19:
-      // seat-based from the current button. Next hand's button is the next
-      // occupied seat clockwise from lastButtonSeat; BB is one seat past SB
-      // (HU: BB is the non-button, i.e. one seat past the button).
-      const nextButtonSeat = this.getNextSeat(this.lastButtonSeat, players);
-      const nextSbSeat =
-        players.length === 2 ? nextButtonSeat : this.getNextSeat(nextButtonSeat, players);
-      const nextBbSeat = this.getNextSeat(nextSbSeat, players);
-      const nextBbPlayer = players.find((p) => p.seat_number === nextBbSeat);
-
-      const cashedOutHorses = players.filter((p) => {
-        if (!p.is_horse) return false;
-
-        // Target is dynamically between 2.5x and 3.5x max buy-in
-        // We use their user_id to deterministically seed their target, so they don't randomly flip-flop
-        const idInt = parseInt(p.user_id.replace(/-/g, '').substring(0, 8), 16) || 0;
-        const targetMultiplier = 2.5 + idInt / 0xffffffff;
-        const cashOutTarget = maxBuyIn * targetMultiplier;
-
-        // Only depart if they hit the target AND their NEXT hand is the Big Blind
-        const isNextBb = p.user_id === nextBbPlayer?.user_id;
-
-        return p.stack >= cashOutTarget && isNextBb;
-      });
-
-      for (const horse of cashedOutHorses) {
-        await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
-        // Round 57: clear FSM tracking on profit-target cashout too.
-        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-        // Round 64: same for TimeBankEngine.
-        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-        // Round 66: same for StraddleEngine.
-        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
-        this.horseRebuys.delete(horse.user_id);
-        console.log(
-          `[ServerTableEngine:${this.tableId}] Bankroll Management: Horse ${horse.username} hit profit target (${Math.floor(horse.stack)} chips) and cashed out before posting the Big Blind.`
-        );
-      }
-    }
+    });
 
     // 5.9 FIX 143: Bible V8 §7.12 — Apply deferred sit-outs now that the hand is over
-    if (this.pendingSitOut.size > 0) {
-      for (const userId of this.pendingSitOut) {
-        this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
-        console.log(`[ServerTableEngine:${this.tableId}] Deferred sit-out applied: ${userId}`);
+    await runStep('deferred_sitouts', false, async () => {
+      if (this.pendingSitOut.size > 0) {
+        for (const userId of this.pendingSitOut) {
+          this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+          console.log(`[ServerTableEngine:${this.tableId}] Deferred sit-out applied: ${userId}`);
+        }
+        this.pendingSitOut.clear();
       }
-      this.pendingSitOut.clear();
-    }
+    });
 
     // 6. Process leave-pending players (cash games only)
-    if (!this.isTournamentTable()) {
-      // Round 57: processLeavePending now returns the user_ids it cashed out;
-      // we use that to unregister DisconnectEngine tracking so player states
-      // don't leak. Without this every leaver leaves a ghost FSM entry that
-      // persists in hand_state_snapshots.disconnect_states forever.
-      // Round 64: extended to also call timeBankEngine.removePlayer so the
-      // playerBanks Map sheds its entry too — same architectural fix.
-      const cashedOutIds = await processLeavePending(this.tableId, this.tableInfo?.club_id || '');
-      for (const userId of cashedOutIds) {
-        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-        this.timeBankEngine.removePlayer(this.tableId, userId);
-        this.straddleEngine.removePlayer(this.tableId, userId);
-        this.preActionEngine.removePlayer(this.tableId, userId);
+    await runStep('leave_pending', true, async () => {
+      if (!this.isTournamentTable()) {
+        // Round 57: processLeavePending now returns the user_ids it cashed out;
+        // we use that to unregister DisconnectEngine tracking so player states
+        // don't leak. Without this every leaver leaves a ghost FSM entry that
+        // persists in hand_state_snapshots.disconnect_states forever.
+        // Round 64: extended to also call timeBankEngine.removePlayer so the
+        // playerBanks Map sheds its entry too — same architectural fix.
+        const cashedOutIds = await processLeavePending(this.tableId, this.tableInfo?.club_id || '');
+        for (const userId of cashedOutIds) {
+          this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+          this.timeBankEngine.removePlayer(this.tableId, userId);
+          this.straddleEngine.removePlayer(this.tableId, userId);
+          this.preActionEngine.removePlayer(this.tableId, userId);
+        }
       }
-    }
+    });
 
     // SETTLEMENT STEP 15: Unlock table — authoritative recount, ready for next hand
-    const { count: dbPlayerCount } = await supabase
-      .from('table_seats')
-      .select('*', { count: 'exact', head: true })
-      .eq('table_id', this.tableId)
-      .is('left_at', null);
-    const finalCount = dbPlayerCount ?? 0;
-    await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+    await runStep('table_unlock', true, async () => {
+      const { count: dbPlayerCount } = await supabase
+        .from('table_seats')
+        .select('*', { count: 'exact', head: true })
+        .eq('table_id', this.tableId)
+        .is('left_at', null);
+      const finalCount = dbPlayerCount ?? 0;
+      await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
 
-    // Phase X5 (2026-04-28): emit table_unlocked event paired with the
-    // table_locked emitted at the start of settlement. Bible V8 §1.16.
-    this.hub?.emitEvent(this.tableId, {
-      type: 'table_unlocked',
-      table_id: this.tableId,
-      hand_number: this.handCount,
-      seated_count: finalCount,
-      next_state: finalCount >= 2 ? 'running' : 'waiting',
-      timestamp: Date.now(),
+      // Phase X5 (2026-04-28): emit table_unlocked event paired with the
+      // table_locked emitted at the start of settlement. Bible V8 §1.16.
+      this.hub?.emitEvent(this.tableId, {
+        type: 'table_unlocked',
+        table_id: this.tableId,
+        hand_number: this.handCount,
+        seated_count: finalCount,
+        next_state: finalCount >= 2 ? 'running' : 'waiting',
+        timestamp: Date.now(),
+      });
     });
 
     // Settlement pipeline complete — table unlocked for next hand

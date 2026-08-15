@@ -174,6 +174,8 @@ export class HorseFleetManager {
       });
 
     // Recurring check: every 30 seconds, ensure horses are seated
+    // Overlap guard — see HorseLifecycleManager. seedAllTables has its own
+    // `seeding` flag, so this is belt-and-braces for the wrapper.
     this.seedInterval = setInterval(() => {
       this.seedAllTables().catch((err) => reportError(err, 'HorseFleet.Seed_cycle_error'));
     }, 30000);
@@ -274,7 +276,9 @@ export class HorseFleetManager {
       // tables once per table inside the seeding loop (N+1) just to read it.
       const { data: tables, error: tablesError } = await supabase
         .from('tables')
-        .select('id, name, max_players, small_blind, big_blind, game_variant, club_id, min_buy_in, max_buy_in, current_players')
+        .select(
+          'id, name, max_players, small_blind, big_blind, game_variant, club_id, min_buy_in, max_buy_in, current_players'
+        )
         .is('tournament_id', null)
         .in('status', ['waiting', 'running']);
 
@@ -312,7 +316,10 @@ export class HorseFleetManager {
 
       // V8: full horse-id set (any status) so we can tell HUMAN seats from
       // horse seats — humans get rescue priority below.
-      const { data: allHorseIds } = await supabase.from('profiles').select('id').eq('is_horse', true);
+      const { data: allHorseIds } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('is_horse', true);
       const horseIdSet = new Set((allHorseIds || []).map((h) => h.id));
       const hourUTC = new Date().getUTCHours();
 
@@ -327,7 +334,9 @@ export class HorseFleetManager {
         const seats = (allActiveSeats || []).filter((x) => x.table_id === t.id);
         return seats.some((x) => !horseIdSet.has(x.user_id)) && seats.length < 4;
       };
-      const orderedTables = [...tables].sort((a, b) => Number(humanShort(b)) - Number(humanShort(a)));
+      const orderedTables = [...tables].sort(
+        (a, b) => Number(humanShort(b)) - Number(humanShort(a))
+      );
 
       for (const table of orderedTables) {
         try {
@@ -416,8 +425,7 @@ export class HorseFleetManager {
             const step = table.big_blind * 5;
             const raw = table.big_blind * buyInBBFor(horse.id);
             const buyIn =
-              Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) /
-              100;
+              Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
 
             const success = await this.seatHorse(
               table.id,

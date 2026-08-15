@@ -17,6 +17,27 @@ import * as Sentry from '@sentry/node';
 // SENTRY INITIALIZATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Supabase/PostgREST connectivity failures. These are transient, but they are
+ * ALSO the direct cause of table freezes (a stalled dealing-loop await), so
+ * they are rate-limited to one report per message per minute rather than
+ * dropped entirely — silencing them is what made the 2026-08-15 incident
+ * invisible to monitoring.
+ */
+const SUPABASE_TRANSIENT = [
+  'ECONNRESET',
+  'socket hang up',
+  'Project not specified',
+  'FetchError',
+  'Failed to fetch',
+  'fetch failed',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'supabase_timeout',
+  'schema cache',
+];
+const transientLastSeen = new Map<string, number>();
+
 let initialized = false;
 
 export function initSentry(): void {
@@ -45,20 +66,25 @@ export function initSentry(): void {
       beforeSend(event, hint) {
         const error = hint.originalException as Error | undefined;
         const msg = error?.message ?? '';
-        // Standard Node.js network transients
-        if (msg.includes('ECONNRESET')) return null;
+        // 2026-08-15: this filter used to drop EVERY Supabase connectivity
+        // error. The freeze incident that day was caused by exactly that error
+        // class — a degrading transport stalling the dealing loop — and Sentry
+        // showed nothing throughout, which is why it was found by a player
+        // hours later.
+        //
+        // Only genuinely uninteresting local-pipe noise is dropped now.
+        // Supabase failures are rate-limited rather than hidden, so they stay
+        // visible without flooding: one report per distinct message per minute.
         if (msg.includes('EPIPE')) return null;
-        if (msg.includes('socket hang up')) return null;
-        // Supabase/PostgREST connectivity errors — fired when the Supabase API
-        // gateway is temporarily unreachable or the connection is unauthenticated
-        // at the HTTP level (e.g. "Project not specified" from PostgREST).
-        // These are transient infrastructure blips, not code bugs.
-        if (msg.includes('Project not specified')) return null;
-        if (msg.includes('FetchError') && msg.includes('supabase')) return null;
-        if (msg.includes('Failed to fetch') && msg.includes('supabase')) return null;
-        if (msg.includes('ETIMEDOUT') && msg.includes('supabase')) return null;
-        if (msg.includes('Could not query the database for the schema cache')) return null;
-        if (msg.includes('schema cache')) return null;
+        if (SUPABASE_TRANSIENT.some((m) => msg.includes(m))) {
+          const now = Date.now();
+          const key = msg.slice(0, 80);
+          const last = transientLastSeen.get(key) ?? 0;
+          if (now - last < 60_000) return null;
+          transientLastSeen.set(key, now);
+          if (transientLastSeen.size > 200) transientLastSeen.clear();
+          event.level = 'warning';
+        }
         return event;
       },
     });
@@ -92,7 +118,11 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
     if (error instanceof Error) {
       err = error;
     } else if (typeof error === 'object' && error !== null) {
-      const msg = (error as any).message || (error as any).error_description || (error as any).details || JSON.stringify(error);
+      const msg =
+        (error as any).message ||
+        (error as any).error_description ||
+        (error as any).details ||
+        JSON.stringify(error);
       err = new Error(msg);
     } else {
       err = new Error(String(error));

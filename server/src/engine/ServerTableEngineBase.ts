@@ -658,25 +658,31 @@ export abstract class ServerTableEngineBase {
       deadlineMs: Date.now() + ServerTableEngineBase.HEARTBEAT_INTERVAL_MS,
       callback: () => {
         if (!this.running || !this.heartbeatActive) return;
-        // Keep horses alive — server-side bots have no real client to heartbeat.
-        for (const p of this.seatedPlayers) {
-          if (p.is_horse) {
-            this.disconnectEngine.heartbeat(this.tableId, p.user_id);
-          }
-        }
-        this.disconnectEngine.checkStaleHeartbeats(this.tableId);
-        // 2026-08-15: the table watchdog rides the existing heartbeat entry so
-        // it needs no new interval and no new scheduler. It must never throw —
-        // this callback is the only thing that re-arms the heartbeat.
+        // 2026-08-15: this callback is the ONLY thing that re-arms the
+        // heartbeat, and the heartbeat is what drives horse liveness, stale
+        // disconnect detection AND the table watchdog. Previously only
+        // runTableWatchdog() was wrapped, so a throw from the horse heartbeat
+        // loop or checkStaleHeartbeats permanently killed all three for that
+        // table — including the freeze recovery. Everything is inside the try,
+        // and the re-arm is in a finally so it survives any of them throwing.
         try {
+          // Keep horses alive — server-driven seats have no real client to
+          // heartbeat, so the engine synthesises one for each.
+          for (const p of this.seatedPlayers ?? []) {
+            if (p.is_horse) {
+              this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+            }
+          }
+          this.disconnectEngine.checkStaleHeartbeats(this.tableId);
           this.runTableWatchdog();
         } catch (err) {
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.watchdog_threw');
-        }
-        // Re-arm for the next interval. cancel() in stop() will purge any
-        // entry queued here if a stop happens between scheduling and tick.
-        if (this.running && this.heartbeatActive) {
-          this.scheduleHeartbeatCheck();
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.heartbeat_tick_threw');
+        } finally {
+          // cancel() in stop() will purge any entry queued here if a stop
+          // happens between scheduling and tick.
+          if (this.running && this.heartbeatActive) {
+            this.scheduleHeartbeatCheck();
+          }
         }
       },
     });
@@ -719,6 +725,10 @@ export abstract class ServerTableEngineBase {
     this.heartbeatActive = false;
     deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
     this.preciseTimer.clearTable(this.tableId);
+    // preciseTimer.clearTable only covers `turn:*`. insurance_offer:*, rit_offer
+    // and table_break:* live on the same shared scheduler under this tableId and
+    // would otherwise fire callbacks bound to this dead engine instance forever.
+    deadlineScheduler.cancelAll(this.tableId);
     this.handController = null;
   }
 
@@ -727,6 +737,30 @@ export abstract class ServerTableEngineBase {
   }
   getHandCount(): number {
     return this.handCount;
+  }
+
+  /**
+   * 2026-08-15 observability. `/health` previously reported process-up only, so
+   * a process where every table was frozen still answered
+   * {"status":"ok","running":true} — which is also exactly what the deploy
+   * gate grepped for. These three accessors are what make a freeze detectable
+   * from outside without a human noticing.
+   */
+  seatedCount(): number {
+    return this.seatedPlayers.length;
+  }
+
+  dealableCount(): number {
+    return this.seatedPlayers.filter(
+      (p) =>
+        p.stack > 0 &&
+        !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+        !this.waitingForBB.has(p.user_id)
+    ).length;
+  }
+
+  isTournament(): boolean {
+    return this.isTournamentTable();
   }
 
   // FIX 153: Expose telemetry snapshot for health endpoint

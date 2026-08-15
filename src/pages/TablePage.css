@@ -860,9 +860,12 @@
 .table-brand__logo {
   width: 100%;
   height: auto;
-  /* Watermark weight: legible as branding, never competing with the cards. */
-  opacity: 0.3;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+  /* Dan's metallic Smarter.Poker lettermark, matted to transparency so the
+     chrome bevels sit on the felt instead of on a black plate. Chrome reads
+     far more subtly than the old blue mark, so it carries more opacity while
+     still staying behind the cards. */
+  opacity: 0.55;
+  filter: drop-shadow(0 2px 7px rgba(0, 0, 0, 0.7));
 }
 
 .table-brand__meta {

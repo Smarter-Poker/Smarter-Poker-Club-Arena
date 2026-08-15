@@ -21,6 +21,10 @@ import type { GameServer } from '../GameServer.js';
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
   protected gameServer: GameServer;
+  /** Guard so two revival sweeps never overlap. */
+  private revivingTables: boolean = false;
+  /** Drives reviveDeadTableEngines — the tournament-side freeze recovery. */
+  protected tableLivenessInterval: NodeJS.Timeout | null = null;
   protected running: boolean = false;
   protected blindTimer: NodeJS.Timeout | null = null;
   protected eliminationTimer: NodeJS.Timeout | null = null;
@@ -443,6 +447,9 @@ export abstract class TournamentManagerBase {
           .start()
           .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Table_engine_error'));
       }
+      // Tournament tables are invisible to the cash-side zombie reaper — this
+      // sweep is their only freeze recovery.
+      this.startTableLivenessSweep();
 
       // Start blind timer
       this.startBlindTimer(tournament.blind_structure || []);
@@ -554,6 +561,9 @@ export abstract class TournamentManagerBase {
         this.startBlindTimer(tournament.blind_structure || [], remainingMs);
       }
       this.startEliminationChecker();
+      // Same contract on the resume path as on the start path: a resumed
+      // tournament's tables must be rebuildable when their engine dies.
+      this.startTableLivenessSweep();
 
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed — ${this.tableEngines.size} tables, level ${this.currentLevel}`
@@ -575,6 +585,7 @@ export abstract class TournamentManagerBase {
       this.eliminationTimer = null;
     }
     this.running = false;
+    this.stopTableLivenessSweep();
     for (const engine of this.tableEngines.values()) {
       engine.stop();
     }
@@ -695,6 +706,81 @@ export abstract class TournamentManagerBase {
    * every crash/restart granted a brand-new full level at the current blinds —
    * restart-heavy windows nearly froze blind escalation.
    */
+  /**
+   * 2026-08-15 CRITICAL FIX — tournament tables had NO freeze recovery.
+   *
+   * GameServer.discoverCashTables is the only thing that rebuilds a dead engine,
+   * and its readiness RPC (`cash_tables_with_players`) filters on
+   * `tournament_id IS NULL`. So when a tournament table's engine died — its own
+   * watchdog escalating to killForRestart, or a crashed dealing loop — the
+   * reaper deleted it from the map and NOTHING recreated it. `getTableEngine`
+   * then returned undefined, so POST /action answered 404 and reconnecting
+   * clients were refused at the WS upgrade gate. Every seated player was frozen
+   * permanently, with a RUNNING tournament above them.
+   *
+   * This sweep gives tournament tables the same liveness contract the cash side
+   * has. It runs on the hand-for-hand interval that already ticks every cycle.
+   */
+  /** Start the tournament-side table liveness sweep (idempotent). */
+  protected startTableLivenessSweep(): void {
+    if (this.tableLivenessInterval) return;
+    this.tableLivenessInterval = setInterval(() => {
+      if (!this.running) {
+        this.stopTableLivenessSweep();
+        return;
+      }
+      void this.reviveDeadTableEngines();
+    }, 20_000);
+  }
+
+  protected stopTableLivenessSweep(): void {
+    if (this.tableLivenessInterval) {
+      clearInterval(this.tableLivenessInterval);
+      this.tableLivenessInterval = null;
+    }
+  }
+
+  protected async reviveDeadTableEngines(): Promise<void> {
+    if (this.revivingTables) return;
+    this.revivingTables = true;
+    try {
+      for (const [tableId, engine] of this.tableEngines) {
+        const dead = !engine.isRunning() || engine.msSinceProgress() > 180_000;
+        if (!dead) continue;
+        reportError(
+          new Error(
+            'Tournament table engine dead for ' +
+              Math.round(engine.msSinceProgress() / 1000) +
+              's (running=' +
+              engine.isRunning() +
+              ') — rebuilding'
+          ),
+          'Tournament.' + this.tournamentId.slice(0, 8) + '.table_engine_rebuilt',
+          { tableId }
+        );
+        try {
+          // Await the stop: its tail cancels scheduler entries keyed by
+          // (tableId, eventId), which the replacement engine reuses. Letting it
+          // run late would cancel the NEW engine's heartbeat and turn timer.
+          await engine.stop();
+        } catch {
+          /* already dead */
+        }
+        const fresh = new ServerTableEngine(tableId);
+        fresh.setHub(tableStateHub);
+        this.tableEngines.set(tableId, fresh);
+        this.gameServer.registerTableEngine(tableId, fresh);
+        fresh
+          .start()
+          .catch((err) => reportError(err, 'Tournament.table_engine_restart_failed', { tableId }));
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.revive_sweep_threw');
+    } finally {
+      this.revivingTables = false;
+    }
+  }
+
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
     if (blindStructure.length === 0) return;
     const currentLevelData = blindStructure[this.currentLevel] || blindStructure[0];

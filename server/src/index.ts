@@ -86,21 +86,48 @@ httpServer.listen(PORT, () => {
 // GRACEFUL SHUTDOWN
 // ═══════════════════════════════════════════════════════════════════════════════
 
+let shuttingDown = false;
 const shutdown = async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log('\n[GameServer] Received shutdown signal...');
-  await gameServer.stop();
-  await channelWs.close();
+  // Refuse new actions immediately, then drain. GameServer.stop() stops engines
+  // sequentially and each awaits a snapshot flush, so with 25-40 tables it
+  // cannot finish inside Docker's default 10s grace — bound it so we exit
+  // cleanly on our own terms instead of being SIGKILLed mid-flush.
   httpServer.close();
+  await Promise.race([
+    Promise.allSettled([gameServer.stop(), channelWs.close()]),
+    new Promise((r) => setTimeout(r, 20_000)),
+  ]);
   process.exit(0);
 };
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-process.on('uncaughtException', (err) => {
-  reportError(err, 'GameServer.Uncaught_exception');
-  // Don't crash — keep running
-});
-process.on('unhandledRejection', (err) => {
-  reportError(err, 'GameServer.Unhandled_rejection');
-  // Don't crash — keep running
-});
+/**
+ * 2026-08-15: these handlers used to swallow and keep running.
+ *
+ * After an uncaughtException V8 has unwound a stack mid-operation. In this
+ * codebase that concretely means a hand where chips left stacks but the pot was
+ * never awarded, a postHandTasksPromise that will never resolve (the dealing
+ * loop awaits it forever), or an actionLock stuck true. The process then kept
+ * serving /action and kept answering "running":true while every table under it
+ * was dead — strictly worse than crashing, because the supervisor was already
+ * there and unused.
+ *
+ * Exiting costs ONE hand: `docker run --restart always` is back in ~2s,
+ * cleanupStaleData cashes seats out idempotently, and discovery rebuilds every
+ * table within a 5s cycle. Staying up costs every table, indefinitely.
+ */
+let exiting = false;
+const fatal = (err: unknown, kind: string) => {
+  reportError(err, kind);
+  if (exiting) return;
+  exiting = true;
+  console.error(`[GameServer] FATAL (${kind}) — exiting for supervisor restart`);
+  // Give Sentry a moment, but never hang on it.
+  setTimeout(() => process.exit(1), 2000).unref();
+};
+process.on('uncaughtException', (err) => fatal(err, 'GameServer.Uncaught_exception'));
+process.on('unhandledRejection', (err) => fatal(err, 'GameServer.Unhandled_rejection'));

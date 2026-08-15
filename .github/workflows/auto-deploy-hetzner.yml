@@ -75,7 +75,7 @@ jobs:
       - name: Stop and remove old container
         run: |
           ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$HETZNER_HOST" \
-            "docker stop $CONTAINER 2>/dev/null || true && docker rm $CONTAINER 2>/dev/null || true"
+            "docker stop -t 45 $CONTAINER 2>/dev/null || true && docker rm $CONTAINER 2>/dev/null || true"  # -t 45: the engine drains engines + flushes snapshots on SIGTERM; the 10s default SIGKILLed it mid-flush
 
       - name: Start new container
         run: |
@@ -83,6 +83,7 @@ jobs:
             "docker run -d \
               --name $CONTAINER \
               --restart always \
+              --health-start-period=90s \
               -p 8080:8080 \
               --env-file $REPO_DIR/server/.env \
               $CONTAINER"

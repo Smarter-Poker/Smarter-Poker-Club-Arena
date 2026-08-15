@@ -449,23 +449,20 @@ export const BBJService = {
    * - 25% to "winner" (holder of the hand that beat the qualifier)
    * - 25% split among all dealt-in players at the table
    */
-  async executePayout(params: BBJPayoutParams): Promise<BBJPayout | null> {
-    // RAKE-AUDIT 2026-07-24: DEPRECATED / DEAD PATH — BBJ payouts are
-    // SERVER-AUTHORITATIVE (ServerTableEngine → processBBJPayout →
-    // bbj_atomic_payout, which locks the pool, dedupes per hand, rolls the
-    // backup bank into main, records bbj_payouts + bbj_winners, and credits
-    // stacks). This client path could NEVER succeed anyway: it passed
-    // p_dealt_in_player_ids, which award_bbj's signature does not accept
-    // (PostgREST function-resolution error), and award_bbj is REVOKEd from
-    // authenticated/anon (service_role only). Running two independent payout
-    // paths with different idempotency keys risks paying the same hand twice,
-    // so the client path refuses immediately. The old body was removed.
-    reportError(
-      `BBJService.executePayout is deprecated (pool ${params.poolId}) — BBJ payouts are server-authoritative (bbj_atomic_payout)`,
-      'BBJService.executePayout.deprecated'
-    );
-    return null;
-  },
+  // Dan 2026-08-15: executePayout DELETED (zero callers).
+  //
+  // It had been an inert stub since the 2026-07-24 rake audit. BBJ payouts are
+  // server-authoritative: ServerTableEngine -> processBBJPayout ->
+  // bbj_atomic_payout_v2, which locks the pool row, dedupes per hand, rolls the
+  // backup bank into main, records bbj_payouts + bbj_winners and credits stacks
+  // inside one transaction. The client path could never have succeeded anyway —
+  // it passed p_dealt_in_player_ids, which award_bbj's signature does not
+  // accept, and award_bbj is REVOKEd from authenticated/anon.
+  //
+  // Removed rather than left deprecated: a second payout entry point, even an
+  // inert one, is a standing invitation for someone to "repair" it and start
+  // paying the same hand twice under a different idempotency key. The server
+  // RPC is now the only way BBJ money moves.
 
   /**
    * Get BBJ history for a pool

@@ -27,7 +27,6 @@
 import { supabase } from '../lib/supabase';
 import { HydraService } from './HydraService';
 import { tournamentService } from './TournamentService';
-import { RakeService } from './RakeService';
 import { QUERY_LIMITS } from '../lib/constants';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -1323,9 +1322,7 @@ class HorseOrchestrator {
       .select('tournament_id')
       .eq('id', tableId)
       .maybeSingle();
-    const tableType = (tableData?.tournament_id ? 'tournament' : 'cash') as
-      | 'cash'
-      | 'tournament';
+    const tableType = (tableData?.tournament_id ? 'tournament' : 'cash') as 'cash' | 'tournament';
 
     for (const horse of horses) {
       try {
@@ -1344,12 +1341,15 @@ class HorseOrchestrator {
         // debit chip_treasury in one transaction). Horses no longer mint their
         // starting stack from nothing; if the treasury is short the horse is not
         // seated (correct conservation behavior).
-        const { data: seatRes, error: seatError } = await supabase.rpc('fn_horse_seat_from_treasury', {
-          p_table_id: tableId,
-          p_user_id: horse.id,
-          p_seat_number: seated + 1,
-          p_amount: buyIn,
-        });
+        const { data: seatRes, error: seatError } = await supabase.rpc(
+          'fn_horse_seat_from_treasury',
+          {
+            p_table_id: tableId,
+            p_user_id: horse.id,
+            p_seat_number: seated + 1,
+            p_amount: buyIn,
+          }
+        );
 
         if (seatError || !seatRes?.success) {
           console.error(

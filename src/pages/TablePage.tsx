@@ -119,7 +119,7 @@ import { useTableAnimations } from '../hooks/useTableAnimations';
 import { useTableSound } from '../hooks/useTableSound';
 import { useTableSession } from '../hooks/useTableSession';
 import { GTOQueryService, type GTOSolution } from '../services/GTOQueryService';
-import { RakeService, type RakeCalculation } from '../services/RakeService';
+import type { RakeCalculation } from '../services/RakeService';
 import { tableService } from '../services/TableService';
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
@@ -159,6 +159,9 @@ import PlayerCard from '../components/table/PlayerCard';
 // [MIGRATION] All engine imports removed — server-authoritative (Steps 1-7 complete)
 import { handPersistenceService } from '../services/HandPersistenceService';
 import { handHistoryService } from '../services/HandHistoryService';
+// Dan 2026-08-15: the real rake schedule (byte-identical mirror of the
+// server's), used so the Game Rules modal states the rake actually taken.
+import { getRakeConfig } from '../config/RakeConfig';
 // Dan 2026-08-15: two distinct HandRecord shapes exist — the snake_case
 // Supabase row from the service, and the camelCase view-model the panel
 // renders. Alias both so adaptServiceHandToPanel below reads unambiguously.
@@ -232,44 +235,6 @@ import { TableModalsLayer } from '../components/table/TableModalsLayer';
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CONFIG HELPER — Derives rake config from official chart
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/** Official rake chart caps by blind level (mirrors RakeService.RAKE_CHART) */
-function getRakeConfigForBlinds(
-  sb: number,
-  bb: number
-): { percent: number; cap: number; noFlop: boolean } {
-  // Official chart: 10% rake, tier-based cap, no flop no drop
-  const CAPS: [number, number, number][] = [
-    // [sb, bb, cap]
-    [0.1, 0.2, 3],
-    [0.2, 0.4, 3],
-    [0.25, 0.5, 3],
-    [0.3, 0.6, 5],
-    [0.5, 1.0, 5],
-    [1.0, 2.0, 5],
-    [2.0, 4.0, 7.5],
-    [2.0, 5.0, 7.5],
-    [5.0, 5.0, 7.5],
-    [3.0, 6.0, 8],
-    [4.0, 8.0, 10],
-    [5.0, 10.0, 12.5],
-    [10.0, 20.0, 15],
-    [10.0, 25.0, 15],
-  ];
-  const exact = CAPS.find(([s, b]) => s === sb && b === bb);
-  if (exact) return { percent: 10, cap: exact[2], noFlop: true };
-  // Fallback: closest by BB
-  let closest = CAPS[0];
-  let minDiff = Math.abs(bb - closest[1]);
-  for (const tier of CAPS) {
-    const diff = Math.abs(bb - tier[1]);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = tier;
-    }
-  }
-  return { percent: 10, cap: closest[2], noFlop: true };
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ENGINE SUIT MAP — Shared constant eliminates 7 duplicate inline declarations
@@ -5265,6 +5230,42 @@ export default function TablePage({
   }, [baseSeatPositions, tableState.heroSeat]);
 
   // Expose the flat positions array for legacy references (same length, rotated)
+  // ═══════════════════════════════════════════════════════════════════════
+  // Dan 2026-08-15 — THE GAME RULES MODAL WAS MISSTATING THE RAKE.
+  //
+  // TableModalsLayer renders `rakePercentage={rakePercent ?? 5}` and
+  // `rakeCap={rakeCap ?? 3}`. Those props were fed from
+  // `tableState.rakePercent` / `tableState.rakeCap` — fields that are DECLARED
+  // on the state interface and passed through, but never assigned anywhere.
+  // The engine snapshot carries no rake data at all (mapEngineSnapshot has
+  // zero rake references), so both were permanently undefined and the modal
+  // always fell through to its placeholders.
+  //
+  // Net effect: every player, at every stake, was told "Rake 5% (Cap $3)".
+  // The server actually takes 10% with tier caps from $3 up to $15
+  // (server/src/config/RakeConfig.ts RAKE_SCHEDULE). At 10/25 we displayed a
+  // $3 cap against a real $15 one — a five-fold understatement of the rake.
+  //
+  // src/config/RakeConfig.ts already holds a byte-identical copy of the
+  // server's RAKE_SCHEDULE and exports getRakeConfig(). Use it, so the number
+  // shown to players is the number actually taken. A CI guard keeps the two
+  // schedules from drifting (scripts/ci/check-rake-schedule-parity.mjs).
+  //
+  // Display only — all money movement remains server-authoritative.
+  // ═══════════════════════════════════════════════════════════════════════
+  const displayRakeConfig = useMemo(() => {
+    const parts = (tableState.blinds || '').split('/');
+    const sb = parseFloat(parts[0]);
+    const bb = parseFloat(parts[1]);
+    if (!Number.isFinite(bb) || bb <= 0) {
+      // Blinds not loaded yet — send undefined rather than a wrong number, so
+      // the modal shows its placeholder instead of asserting a false rake.
+      return { rakePercent: undefined, rakeCap: undefined };
+    }
+    const cfg = getRakeConfig(bb, tableState.gameType || 'nlh', Number.isFinite(sb) ? sb : null);
+    return { rakePercent: cfg.rakePercent, rakeCap: cfg.rakeCap };
+  }, [tableState.blinds, tableState.gameType]);
+
   const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -7492,8 +7493,8 @@ export default function TablePage({
         maxPlayers={tableState.maxPlayers}
         players={tableState.players}
         heroStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-        rakePercent={tableState.rakePercent}
-        rakeCap={tableState.rakeCap}
+        rakePercent={displayRakeConfig.rakePercent}
+        rakeCap={displayRakeConfig.rakeCap}
         runItTwice={tableState.runItTwice}
         isHandInProgress={tableState.isHandInProgress}
         boardStage={tableState.boardStage}

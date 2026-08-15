@@ -266,7 +266,17 @@ export function mapEngineSnapshot(
   // never rendered. Resolve each user_id to its seat number here.
   const seatByUserId = new Map<string, number>();
   for (const p of s.players) seatByUserId.set(p.user_id, p.seat);
-  const sidePots = (s.pots ?? []).map((p) => ({
+  // LIVE E2E FIX 2026-08-15: `pots[]` on the snapshot is the engine's FULL
+  // settlement partition — pots[0] IS the main pot; only pots[1..] are true
+  // side pots. Mapping every entry into `sidePots` double-rendered the main
+  // pot whenever the partition existed: a single-pot hand displayed
+  // "POT 2,745 / SIDE POT 1: 2,745 / TOTAL 5,490", and the artifact carried
+  // into the next hand's first snapshots as a phantom side pot. Render only
+  // pots[1..] as side pots, and when the partition exists use pots[0] as the
+  // displayed main pot (s.pot is the whole-hand total, which already
+  // includes every side pot — using it alongside side pots double-counts).
+  const rawPots = s.pots ?? [];
+  const sidePots = rawPots.slice(1).map((p) => ({
     amount: p.amount,
     eligibleSeats: ((p.eligible ?? []) as unknown[])
       .map((e) => (typeof e === 'string' ? (seatByUserId.get(e) ?? -1) : (e as number)))
@@ -286,7 +296,9 @@ export function mapEngineSnapshot(
   }
 
   return {
-    pot: s.pot ?? 0,
+    // See LIVE E2E FIX above: with a settlement partition present, the main
+    // pot is pots[0]; otherwise the running total s.pot is the main pot.
+    pot: rawPots.length > 0 ? rawPots[0].amount : (s.pot ?? 0),
     communityCards: s.community_cards ?? [],
     boardStage: s.stage ?? 'preflop',
     dealerSeat: s.dealer_seat ?? 0,

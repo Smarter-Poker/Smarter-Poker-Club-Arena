@@ -1,9 +1,0 @@
-diff --git a/server/src/services/TournamentRecurringService.ts b/server/src/services/TournamentRecurringService.ts
-index 9ff081e..7c26529 100644
---- a/server/src/services/TournamentRecurringService.ts
-+++ b/server/src/services/TournamentRecurringService.ts
-@@ -416,2 +416,4 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
-         payoutStructure: PAYOUT_STRUCTURES.NINE,
-+        rebuy: true,
-+        addOn: true,
-       },

@@ -385,6 +385,14 @@ export abstract class TournamentManagerBase {
         .eq('id', this.tournamentId)
         .eq('status', 'REGISTERING');
 
+      // LIVE E2E FIX 2026-08-15: tournamentCache was captured while status was
+      // still REGISTERING and never refreshed after this transition — so
+      // ensureLateRegSeated's `status !== 'RUNNING'` guard made the every-5s
+      // seat self-heal a permanent no-op for every tournament started (not
+      // resumed) by this process. Live evidence: 3 RUNNING tournaments frozen
+      // for hours with 'playing' players holding chips but no active seat.
+      if (this.tournamentCache) this.tournamentCache.status = 'RUNNING';
+
       // Validate payout structure sums to 100% (or close enough to prevent chip leak)
       if (this.tournamentCache?.payout_structure) {
         let payouts = this.tournamentCache.payout_structure;

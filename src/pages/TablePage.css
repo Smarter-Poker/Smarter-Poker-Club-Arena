@@ -2235,3 +2235,13 @@
 
 /* Egg clip-path + gold-rim SVG styles removed 2026-07-28 — the portrait
    black-and-gold artwork (.table-art) supplies the rail and rim. */
+
+/* ─── SPOTLIGHT VIGNETTE (Dan 2026-08-15) ────────────────────────────────
+   While a player is acting, every other occupied, un-folded seat dims a
+   touch so the actor's light pool reads as a stage spotlight. The base
+   .seat already transitions opacity/filter (0.3s), so this fades smoothly.
+   Folded seats are excluded — their own 0.4 dim must stay the deepest. */
+.seat-wrapper--dim .seat:not(.seat--empty):not(.seat--folded) {
+  opacity: 0.78;
+  filter: brightness(0.85) saturate(0.9);
+}

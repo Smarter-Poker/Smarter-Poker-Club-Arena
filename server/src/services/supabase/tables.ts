@@ -50,13 +50,29 @@ export async function loadSeatedPlayers(tableId: string) {
     .is('left_at', null)
     .order('seat_number', { ascending: true });
 
-  if (error || !seats || seats.length === 0) return [];
+  // 2026-08-15: returning [] on ERROR made a transient DB failure
+  // indistinguishable from "the table is empty". The engine then assigned []
+  // to seatedPlayers, which (a) stopped the synthetic horse heartbeats so every
+  // horse went stale and disconnected 30s later, (b) made the table watchdog
+  // read the table as idle-by-design so it never tripped, and (c) reported
+  // seated_count: 0 to clients. Throwing keeps the engine's last-known-good
+  // roster and routes into the dealing loop's transient-error backoff, which
+  // already classifies fetch/timeout failures correctly.
+  if (error) {
+    throw new Error('loadSeatedPlayers failed for ' + tableId + ': ' + error.message);
+  }
+  if (!seats || seats.length === 0) return [];
 
   const userIds = seats.map((d) => d.user_id);
-  const { data: profiles } = await supabase
+  const { data: profiles, error: profileErr } = await supabase
     .from('profiles')
     .select('id, display_name, username, is_horse, horse_profile, avatar_url, use_real_name')
     .in('id', userIds);
+  if (profileErr) {
+    // The filter below drops every seat whose profile is missing, so a silent
+    // profiles failure emptied the table just as thoroughly as a seats failure.
+    throw new Error('loadSeatedPlayers profiles failed for ' + tableId + ': ' + profileErr.message);
+  }
 
   const profileMap = new Map(profiles?.map((p) => [p.id, p]) || []);
 

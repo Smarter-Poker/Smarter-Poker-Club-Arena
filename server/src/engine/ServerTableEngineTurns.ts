@@ -282,46 +282,45 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             // Time bank itself expired — auto-fold/check
             // Bible V8 §3.3: Turn FSM — time_bank_active → expired → processing → complete
             // Guard: only transition if we're still in time_bank_active
+            // 2026-08-15: turnFSM is PER TABLE, not per seat. An orphaned
+            // timebank deadline (left behind by a watchdog force-action, a
+            // disconnect auto-action or a reconnect re-arm) could fire while a
+            // DIFFERENT seat was legitimately in time_bank_active, consume that
+            // seat's FSM transitions and then bail — after which the real
+            // seat's own expiry failed this guard and never folded, leaving the
+            // pool-sized turn clock as the only enforcement.
+            //
+            // Seat identity is checked FIRST and is authoritative; the FSM is
+            // advisory. A seat that is still the current player when its time
+            // bank expires MUST be resolved, whatever the FSM says.
+            if (!this.running || !this.handController) return;
+            const tbState = this.handController.getState();
+            if (tbState.currentPlayerSeat !== seat) return;
             if (this.turnFSM.state === 'time_bank_active') {
               this.turnFSM.transition('expired');
               this.turnFSM.transition('processing');
             } else {
-              // Turn was already resolved (player acted during time bank delay) — bail silently
               console.warn(
-                `[ServerTableEngine:${this.tableId}] Time bank expiry skipped — FSM already in '${this.turnFSM.state}' (race condition: player acted)`
+                `[ServerTableEngine:${this.tableId}] Time bank expiry: FSM in '${this.turnFSM.state}' but seat ${seat} is still current — resolving anyway`
               );
-              return;
             }
-            if (!this.running || !this.handController) return;
-            const tbState = this.handController.getState();
-            if (tbState.currentPlayerSeat !== seat) return;
 
             const tbPlayer = tbState.players.find((p) => p.seat === seat);
             const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
             const tbCanCheck = tbToCall === 0;
 
-            if (tbCanCheck) {
-              console.warn(
-                `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`
-              );
-              try {
-                this.handController!.performAction(seat, 'check');
-              } catch {
-                try {
-                  this.handController!.performAction(seat, 'fold');
-                } catch {
-                  /* done */
-                }
-              }
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. ` +
+                (tbCanCheck ? 'Auto-checking.' : 'Auto-folding.')
+            );
+            if (this.forceResolveSeat(seat, tbCanCheck)) {
+              this.markProgress();
             } else {
-              console.warn(
-                `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`
+              reportError(
+                new Error('Time bank auto-action rejected at seat ' + seat + ' — re-arming clock'),
+                'ServerTableEngine.' + this.tableId + '.timebank_auto_action_rejected'
               );
-              try {
-                this.handController!.performAction(seat, 'fold');
-              } catch {
-                /* done */
-              }
+              this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
             }
 
             // Bible V8 §3.3: Turn FSM — processing → complete
@@ -363,13 +362,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             timestamp: Date.now(),
             timeBankUsed: true,
           });
-          const bankSeconds = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+          // 2026-08-15: this used getRemainingSeconds() — the whole remaining
+          // POOL (max_uses x 15s, i.e. 60s on every production table today, and
+          // 1800s on the engine's own default config), not the 15s that
+          // TimeBankEngine.activate() just armed. Two consequences: the
+          // enforcement deadline (15s) disagreed with the turn timer, and
+          // startTurnTimer stamps playerTurnDuration, which is what
+          // turn_deadline_ms broadcasts — so the CLIENT was told it had 60
+          // seconds and then auto-folded at 15. The manual activateTimeBank
+          // path already reads currentUseSeconds correctly; this was the outlier.
+          const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+          const grantedSeconds = bank?.currentUseSeconds ?? 15;
           const usesAfterActivation = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
           console.log(
-            `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${bankSeconds}s remaining, ${usesAfterActivation} uses left)`
+            `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${grantedSeconds}s granted, ${usesAfterActivation} uses left)`
           );
-          // Restart turn timer with time bank duration
-          this.startTurnTimer(userId, seat, bankSeconds);
+          // Restart turn timer with the granted time bank duration
+          this.startTurnTimer(userId, seat, grantedSeconds);
 
           // Broadcast time bank activation to other players
           try {
@@ -381,7 +390,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 payload: {
                   player_id: userId,
                   table_id: this.tableId,
-                  additional_seconds: bankSeconds,
+                  // The seconds actually granted for THIS use, matching the
+                  // enforcement deadline. Broadcasting the whole pool told the
+                  // client it had far longer than the clock would allow.
+                  additional_seconds: grantedSeconds,
                   auto_activated: true,
                   uses_remaining: usesAfterActivation,
                 },

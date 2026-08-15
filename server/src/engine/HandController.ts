@@ -939,7 +939,39 @@ export class HandController {
     return uncalled;
   }
 
+  /**
+   * 2026-08-15: completeHand mutates before it can fail — returnUncalledBet()
+   * moves chips, SHOWDOWN is emitted, and only then does determineWinners()
+   * run (which evaluates every non-folded player, including any with an empty
+   * card array). A throw there left the pot refunded-but-undistributed with
+   * HAND_COMPLETE never emitted, so dealHand's promise hung for the full
+   * 10-minute safety timeout and the table stopped dealing.
+   *
+   * A hand that cannot be settled must still END. Emitting HAND_COMPLETE
+   * releases the dealing loop; the error is reported for manual reconciliation
+   * and players keep the chips they had going in (table_seats.stack is only
+   * written at settlement, so an aborted settlement is a no-op on balances).
+   */
   private completeHand(): void {
+    try {
+      this.completeHandInner();
+    } catch (err) {
+      console.error('[HandController] completeHand threw — force-ending hand:', err);
+      try {
+        this.emit({ type: 'WINNERS', winners: [] } as never);
+      } catch {
+        /* keep going — the HAND_COMPLETE below is the load-bearing emit */
+      }
+      this.emit({
+        type: 'HAND_COMPLETE',
+        handNumber: this.config.handNumber,
+        rake: 0,
+        bbjFee: 0,
+      } as never);
+    }
+  }
+
+  private completeHandInner(): void {
     // Return any uncalled bet to the bettor before rake / pot formation.
     this.returnUncalledBet();
 

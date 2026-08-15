@@ -19,13 +19,14 @@ cat > /etc/systemd/system/club-arena-supervisor.service <<UNIT
 Description=Club Arena engine supervisor (guarantees the engine is up and serving)
 After=docker.service
 Requires=docker.service
+# The supervisor is the recovery mechanism — it must not be rate-limited into
+# uselessness by systemd if it has to act several times in a row. This key
+# belongs in [Unit], not [Service]; systemd 255 warns and ignores it there.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 ExecStart=$SUPERVISOR
-# The supervisor is the recovery mechanism — it must not be rate-limited into
-# uselessness by systemd if it has to act several times in a row.
-StartLimitIntervalSec=0
 UNIT
 
 cat > /etc/systemd/system/club-arena-supervisor.timer <<'UNIT'

@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ═════════════════════════════════════════════════════════════════════════════
  *  COMPREHENSIVE CASH GAME & TOURNAMENT PROVISIONING
  *  Under Midway Union — All Variants, All Stakes, 7-Day Auto-Run Tournaments
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ═════════════════════════════════════════════════════════════════════════════
  */
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1a2xmbmFwYmttYWN2d3hrdGJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzczMDg0NCwiZXhwIjoyMDgzMzA2ODQ0fQ.bbDqj-me78PID99npWCZ5qUuINSC1-eCBb1BVhgiSRs';
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
@@ -16,9 +16,9 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
 
 const UNION_ID = 'fade0000-0000-0000-0000-a00000000001';
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 // BLIND STRUCTURES
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 const BLINDS_REGULAR = JSON.stringify([
   { level: 1, sb: 25, bb: 50, ante: 0, duration_min: 12 },
   { level: 2, sb: 50, bb: 100, ante: 10, duration_min: 12 },
@@ -75,9 +75,9 @@ const PAYOUT_10 = JSON.stringify([
   { place: 10, percentage: 2 },
 ]);
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 // CASH GAME DEFINITIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 function buildCashTables() {
   const tables = [];
 
@@ -165,9 +165,9 @@ function buildCashTables() {
   return tables;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT DEFINITIONS — 7-Day Auto-Run Schedule
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 function buildTournaments() {
   // Base date: today = Tuesday March 18, 2026. Build Mon-Sun schedule.
   const today = new Date();
@@ -374,13 +374,13 @@ function buildTournaments() {
   return tournaments;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 // EXECUTION
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 async function run() {
-  console.log('═══════════════════════════════════════════════════════════════');
+  console.log('════════════════════════════════════════════════════════════');
   console.log('  MIDWAY UNION — COMPREHENSIVE TABLE & TOURNAMENT PROVISIONING');
-  console.log('═══════════════════════════════════════════════════════════════\n');
+  console.log('════════════════════════════════════════════════════════════\n');
 
   // ── Step 1: Delete existing tables under union ──
   console.log('═══ Step 1: Clear existing union tables ═══');

@@ -518,6 +518,26 @@ export abstract class ServerTableEngineBase {
         });
       }
 
+      // ── Dan 2026-08-16 — SEED handCount FROM PERSISTED HISTORY ──
+      //
+      // handCount is declared `= 0` and was previously only ever restored by
+      // checkCrashRecovery(), which requires an incomplete-hand snapshot. On
+      // any clean restart (deploy, reboot, table reactivation) there is no
+      // snapshot, so the counter silently restarted at 1 and a long-lived
+      // table accumulated several distinct hands all numbered #1, #2, #3 ...
+      //
+      // Money was never affected: settlement keys off rake_records.hand_id and
+      // Replay keys off hand_history.id, both unique. But
+      // (table_id, hand_number) was NOT unique, so every hand-number lookup,
+      // support query, and "hand #N" reference on a restarted table was
+      // ambiguous.
+      //
+      // Seeding from MAX(hand_number) makes the sequence monotonic across
+      // restarts. Deliberately runs BEFORE checkCrashRecovery() so a crash
+      // snapshot still wins — recovery resumes an in-flight hand and must be
+      // able to reuse that hand's exact number.
+      await this.seedHandCountFromHistory();
+
       // FIX 137: Bible V8 §7.17 — Check for interrupted hand from a server crash
       const recovered = await this.checkCrashRecovery();
       if (recovered) {
@@ -1135,6 +1155,55 @@ export abstract class ServerTableEngineBase {
         pendingDeadlines,
         disconnectStates,
       });
+    }
+  }
+
+  /**
+   * Continue hand numbering from where this table left off.
+   *
+   * handCount defaults to 0, and before this existed the ONLY thing that ever
+   * restored it was checkCrashRecovery(), which needs an incomplete-hand
+   * snapshot. A clean restart (deploy, reboot, table reactivation) has no
+   * snapshot, so numbering silently began again at 1 and (table_id,
+   * hand_number) stopped being unique for the table.
+   *
+   * Failure is non-fatal by design: if the lookup errors we leave handCount at
+   * its current value and carry on. A duplicated hand number is an annoyance;
+   * refusing to start the table would be an outage.
+   */
+  private async seedHandCountFromHistory(): Promise<void> {
+    try {
+      // .maybeSingle() not .single() — a table that has never dealt a hand
+      // returns zero rows, and .single() throws PGRST116 on zero rows.
+      const { data, error } = await supabase
+        .from('hand_history')
+        .select('hand_number')
+        .eq('table_id', this.tableId)
+        .order('hand_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Could not seed hand counter (${error.message}) — ` +
+            `continuing from #${this.handCount}. Hand numbers may repeat for this table.`
+        );
+        return;
+      }
+
+      const last = Number((data as { hand_number?: number } | null)?.hand_number ?? 0);
+      // Never move the counter backwards.
+      if (Number.isFinite(last) && last > this.handCount) {
+        this.handCount = last;
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Hand counter resumed at #${this.handCount} (next hand: #${this.handCount + 1})`
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] Hand counter seed threw (${(err as Error)?.message}) — ` +
+          `continuing from #${this.handCount}.`
+      );
     }
   }
 

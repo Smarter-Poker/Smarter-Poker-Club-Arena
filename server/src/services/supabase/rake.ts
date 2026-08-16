@@ -122,12 +122,18 @@ export async function logRakeCollection(
       }
     } else {
       // Standalone club — the rake chips settle into the club's OPERATIONAL BANK,
-      // clubs.chip_treasury. NOTE the naming trap: increment_club_chip_pool writes
-      // chip_treasury (+ total_rake), NOT chip_pool (chip_pool is the separate
-      // mint-and-distribute ledger). The club_wallets accounting counter was already
-      // credited above (credit_club_wallet_rake) for every club regardless of where
-      // the chips settle. See .agent/architecture/CLUB-MONEY-LEDGERS-CANONICAL.md.
-      const { error: cpErr } = await supabase.rpc('increment_club_chip_pool', {
+      // clubs.chip_treasury (+ total_rake). This is NOT clubs.chip_pool, which is
+      // the separate mint-and-distribute ledger. The club_wallets accounting counter
+      // was already credited above (credit_club_wallet_rake) for every club
+      // regardless of where the chips settle.
+      // See .agent/architecture/CLUB-MONEY-LEDGERS-CANONICAL.md.
+      //
+      // 2026-08-15: renamed from increment_club_chip_pool, whose name claimed
+      // chip_pool while its body wrote chip_treasury. That naming trap caused the
+      // two ledgers to be read as duplicates and 174.89 of rake income to be folded
+      // into the mint ledger (reversed same day). The old name still exists as a
+      // deprecated delegate; do not use it.
+      const { error: cpErr } = await supabase.rpc('credit_club_rake_to_treasury', {
         p_club_id: clubId,
         p_amount: rakeAmount,
       });

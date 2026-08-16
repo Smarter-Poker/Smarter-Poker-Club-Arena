@@ -940,6 +940,7 @@
     "create_venue_post",
     "credit_agent_commission",
     "credit_agent_commission_from_rake",
+    "credit_club_rake_to_treasury",
     "credit_club_wallet_rake",
     "credit_player_rakeback",
     "credit_player_wallet",

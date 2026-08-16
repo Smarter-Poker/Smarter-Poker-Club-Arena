@@ -1045,18 +1045,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             );
           }
         } else {
-          // Standalone club — rake goes to CLUB wallet (not owner's personal wallet)
+          // Standalone club — rake goes to the club's OPERATIONAL BANK
+          // (clubs.chip_treasury + total_rake), not the owner's personal wallet.
           // BUG 016 FIX (2026-04-15): club_wallets doesn't exist; remove dead probe
-          // and go straight to clubs.chip_pool atomic RPC. Also swap read-then-write
-          // for atomic increment to eliminate the race condition the old code had.
-          const { error: cpErr } = await supabase.rpc('increment_club_chip_pool', {
+          // and use the atomic RPC. Atomic increment also eliminates the
+          // read-then-write race the old code had.
+          //
+          // 2026-08-15: renamed from increment_club_chip_pool. Despite its name (and
+          // the previous comment here) it writes chip_TREASURY, never chip_pool —
+          // chip_pool is the separate mint-and-distribute ledger.
+          const { error: cpErr } = await supabase.rpc('credit_club_rake_to_treasury', {
             p_club_id: tournament.club_id,
             p_amount: totalRake,
           });
           if (cpErr) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_pool credit failed: ${cpErr.message}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_treasury credit failed: ${cpErr.message}`
               ),
               'Tournament.Club_chip_pool_credit_failed'
             );

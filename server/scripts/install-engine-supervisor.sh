@@ -75,6 +75,44 @@ Unit=club-arena-verify.service
 WantedBy=timers.target
 UNIT
 
+# ── fail2ban: stop banning our own operators ────────────────────────────────
+# The sshd jail was installed with `mode = aggressive`, which counts pre-auth
+# disconnects as failures. That is what banned the GitHub Actions runners on
+# 2026-08-15 (ssh-keyscan opens five parallel probes) and what banned the
+# operator's own workstation twice on 2026-08-16 during normal admin work —
+# port 22 goes from "Permission denied" to "Connection refused" and stays that
+# way for 24h.
+#
+# PasswordAuthentication is off on this host, so brute force cannot succeed
+# regardless. `mode = normal` still catches real failed authentications; it just
+# stops counting the benign preauth chatter that legitimate tooling produces.
+# ADMIN_ALLOW_IPS (space-separated, optional) is unbanned and permanently
+# allowlisted on every deploy so an operator can never lock themselves out.
+if command -v fail2ban-client >/dev/null 2>&1; then
+  if [ -f /etc/fail2ban/jail.local ] && grep -q '^mode *= *aggressive' /etc/fail2ban/jail.local; then
+    sed -i 's/^mode *= *aggressive/mode     = normal/' /etc/fail2ban/jail.local
+    echo "  fail2ban: sshd jail aggressive -> normal (password auth is off; aggressive only banned us)"
+  fi
+  # Self-configuring safety net: any address that has COMPLETED public-key
+  # authentication in the last 24h is, by definition, not a brute-forcer. This
+  # needs no secret, no repo variable, and no operator action — it simply undoes
+  # bans against people who have already proven they hold a valid key. It is what
+  # stops an operator being locked out of the box they are trying to fix.
+  journalctl -u ssh --since '-24 hours' --no-pager 2>/dev/null \
+    | grep -oE 'Accepted publickey for [^ ]+ from [0-9.]+' \
+    | awk '{print $NF}' | sort -u | while read -r ip; do
+        fail2ban-client set sshd unbanip "$ip" >/dev/null 2>&1 && echo "  fail2ban: unbanned $ip (has completed key auth)"
+      done
+
+  if [ -n "${ADMIN_ALLOW_IPS:-}" ]; then
+    mkdir -p /etc/fail2ban/jail.d
+    printf '[DEFAULT]\nignoreip = 127.0.0.1/8 ::1 %s\n' "$ADMIN_ALLOW_IPS" > /etc/fail2ban/jail.d/01-admin-allowlist.local
+    for ip in $ADMIN_ALLOW_IPS; do fail2ban-client set sshd unbanip "$ip" >/dev/null 2>&1 || true; done
+    echo "  fail2ban: admin IPs allowlisted and unbanned: $ADMIN_ALLOW_IPS"
+  fi
+  fail2ban-client reload >/dev/null 2>&1 || systemctl reload fail2ban >/dev/null 2>&1 || true
+fi
+
 # ── Let Prometheus actually reach node-exporter ──────────────────────────────
 # UFW defaults to DROP on INPUT. node-exporter runs with host networking, so a
 # scrape from the docker bridge hits INPUT and is dropped — while the engine on

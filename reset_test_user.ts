@@ -8,7 +8,7 @@ async function run() {
   console.log('Signing in...');
   const { data, error } = await supabase.auth.signInWithPassword({
     email: 'daniel@bekavactrading.com',
-    password: 'Bek454545!!',
+    password: process.env.TEST_USER_PASSWORD,
   });
 
   if (error) {

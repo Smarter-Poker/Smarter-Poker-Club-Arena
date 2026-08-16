@@ -496,7 +496,7 @@ export const HydraService = {
             auto_rebuy: true,
           })
           .select('id')
-          .single(),
+          .maybeSingle(), // FIX 168
       3
     );
 

@@ -535,7 +535,7 @@ export class HorseFleetManager {
             .from('tables')
             .select('club_id')
             .eq('id', table.id)
-            .single();
+            .maybeSingle(); // FIX 168
           const clubId = tableData?.club_id || SHARK_CLUB_ID;
 
           // Seat each horse at an ACTUAL empty seat

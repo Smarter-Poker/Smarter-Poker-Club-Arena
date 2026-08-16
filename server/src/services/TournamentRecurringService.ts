@@ -922,7 +922,7 @@ export class TournamentRecurringService {
             mystery_bounty_max: mysteryMax,
           })
           .select()
-          .single();
+          .maybeSingle(); // FIX 168
         if (!error && data) {
           tournament = data;
           break;
@@ -1057,7 +1057,7 @@ export class TournamentRecurringService {
             mystery_bounty_max: mysteryMax,
           })
           .select()
-          .single();
+          .maybeSingle(); // FIX 168
         if (!error && data) {
           tournament = data;
           break;
@@ -1133,7 +1133,7 @@ export class TournamentRecurringService {
           late_reg_mins: 0,
         })
         .select()
-        .single();
+        .maybeSingle(); // FIX 168
 
       if (error || !sng) {
         console.error(`[TournamentRecurring] SNG creation failed: ${error?.message}`);
@@ -1197,7 +1197,7 @@ export class TournamentRecurringService {
           late_reg_mins: 0,
         })
         .select()
-        .single();
+        .maybeSingle(); // FIX 168
 
       if (error || !spin) {
         console.error(`[TournamentRecurring] Spin creation failed: ${error?.message}`);

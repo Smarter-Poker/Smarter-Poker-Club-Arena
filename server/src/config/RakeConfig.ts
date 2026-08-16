@@ -106,6 +106,18 @@ export const RAKE_SCHEDULE: RakeScheduleEntry[] = [
   { sb: 10, bb: 25, rakePercent: 10, rakeCap: 15, bbjFeeBB: 0.06 },
 ];
 
+// FIX 166: Bible V8 §7.19 / §2.9 — Player-count-based rake caps.
+// Standard poker rule: heads-up and short-handed games get lower rake caps.
+// Each entry defines a player threshold and its corresponding cap MULTIPLIER.
+// The engine finds the highest tier where playerCount >= players, then applies: cap × multiplier.
+export function getPlayerCountCaps(fullCap: number): { players: number; cap: number }[] {
+  return [
+    { players: 2, cap: Math.round(fullCap * 0.5 * 100) / 100 },  // Heads-up: 50% of cap
+    { players: 3, cap: Math.round(fullCap * 0.67 * 100) / 100 },  // 3-handed: 67% of cap
+    { players: 4, cap: fullCap },                                    // 4+ players: full cap
+  ];
+}
+
 // BBJ Pool Allocation — uniform across all stakes
 export const BBJ_POOL_ALLOCATION = {
   mainBBJ: 0.4, // 40% of BBJ rake goes to Main BBJ pool

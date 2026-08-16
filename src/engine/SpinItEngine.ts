@@ -391,7 +391,7 @@ class SpinItEngineClass {
         .from('tournaments')
         .select('club_id')
         .eq('id', lobbyId)
-        .single();
+        .maybeSingle(); // FIX 168
       return data?.club_id ?? null;
     } catch {
       return null;

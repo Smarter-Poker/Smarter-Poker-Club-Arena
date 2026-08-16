@@ -61,39 +61,47 @@ class GameServer {
 
   async start(): Promise<void> {
     this.running = true;
+    const maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
+
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(' SMARTER POKER GAME SERVER — Starting...');
-    console.log(' All game logic runs HERE — no browser needed');
+    console.log(maintenanceMode
+      ? ' ⚠️  MAINTENANCE MODE — No tables, tournaments, or horses will be created'
+      : ' All game logic runs HERE — no browser needed');
     console.log('═══════════════════════════════════════════════════════════════');
 
     // Step 1: Clean up stale data from previous runs
     await this.cleanupStaleData();
 
-    // Step 2: Start horse fleet manager (creates tables, seats horses)
-    await this.horseFleet.start();
+    if (!maintenanceMode) {
+      // Step 2: Start horse fleet manager (creates tables, seats horses)
+      await this.horseFleet.start();
 
-    // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
-    this.tournamentRecurring.start();
+      // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
+      this.tournamentRecurring.start();
 
-    // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
-    this.lifecycle.start();
+      // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
+      this.lifecycle.start();
 
-    // Step 5: Start server-side auto-rebuy wallet funder
-    this.autoRebuy.start();
+      // Step 5: Start server-side auto-rebuy wallet funder
+      this.autoRebuy.start();
 
-    // Step 6: Start discovery loops (finds tables with players, starts engines)
-    // These are infinite while-loops — fire-and-forget with error handling
-    this.discoverCashTables().catch((err) =>
-      console.error('[GameServer] Cash table discovery fatal error:', err)
-    );
-    this.discoverTournaments().catch((err) =>
-      console.error('[GameServer] Tournament discovery fatal error:', err)
-    );
+      // Step 6: Start discovery loops (finds tables with players, starts engines)
+      // These are infinite while-loops — fire-and-forget with error handling
+      this.discoverCashTables().catch((err) =>
+        console.error('[GameServer] Cash table discovery fatal error:', err)
+      );
+      this.discoverTournaments().catch((err) =>
+        console.error('[GameServer] Tournament discovery fatal error:', err)
+      );
 
-    // Step 7: Start synchronized break timer (top of every hour, 5 min duration)
-    this.scheduleSynchronizedBreaks();
+      // Step 7: Start synchronized break timer (top of every hour, 5 min duration)
+      this.scheduleSynchronizedBreaks();
 
-    console.log('[GameServer] Running. All services started.');
+      console.log('[GameServer] Running. All services started.');
+    } else {
+      console.log('[GameServer] Running in MAINTENANCE MODE — only /health and /action endpoints active.');
+    }
   }
 
   async stop(): Promise<void> {
@@ -832,7 +840,7 @@ class TournamentManager {
         .from('tournaments')
         .select('*')
         .eq('id', this.tournamentId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (!tournament) throw new Error('Tournament not found');
       this.tournamentCache = tournament;
@@ -1050,7 +1058,7 @@ class TournamentManager {
         .from('tournaments')
         .select('*')
         .eq('id', this.tournamentId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (!tournament) throw new Error('Tournament not found');
       this.tournamentCache = tournament;
@@ -1169,7 +1177,7 @@ class TournamentManager {
           status: 'running',
         })
         .select()
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (error || !table) {
         console.error(
@@ -1358,7 +1366,7 @@ class TournamentManager {
               .from('tournaments')
               .select('prize_pool')
               .eq('id', this.tournamentId)
-              .single();
+              .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
             if (freshT) {
               await supabase
                 .from('tournaments')
@@ -1454,7 +1462,7 @@ class TournamentManager {
       .from('tournaments')
       .select('prize_pool')
       .eq('id', this.tournamentId)
-      .single();
+      .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
     if (freshT) {
       await supabase
         .from('tournaments')
@@ -1682,7 +1690,7 @@ class TournamentManager {
         'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max'
       )
       .eq('id', this.tournamentId)
-      .single();
+      .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     let prize = 0;
     if (tournament?.payout_structure) {
@@ -1853,7 +1861,7 @@ class TournamentManager {
       .select('current_bounty')
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', eliminatedUserId)
-      .single();
+      .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     const bountyValue = eliminatedPlayer?.current_bounty || baseBounty;
 
@@ -1871,7 +1879,7 @@ class TournamentManager {
         .select('current_bounty, bounties_collected, bounty_winnings')
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', knockerUserId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       const newKnockerBounty = (knocker?.current_bounty || baseBounty) + addedToHead;
 
@@ -1939,7 +1947,7 @@ class TournamentManager {
         .select('bounties_collected, bounty_winnings')
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', knockerUserId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       await supabase
         .from('tournament_players')
@@ -1972,7 +1980,7 @@ class TournamentManager {
         .select('bounties_collected, bounty_winnings')
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', knockerUserId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       await supabase
         .from('tournament_players')
@@ -2153,7 +2161,7 @@ class TournamentManager {
       .from('tournaments')
       .select('payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status')
       .eq('id', this.tournamentId)
-      .single();
+      .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     if (!tournament || tourneyLoadErr) {
       console.error(
@@ -2257,7 +2265,7 @@ class TournamentManager {
         .from('clubs')
         .select('owner_id, name, union_id')
         .eq('id', tournament.club_id)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (club) {
         let rakeRecipientId: string | null = null;
@@ -2269,7 +2277,7 @@ class TournamentManager {
             .from('unions')
             .select('owner_id, name')
             .eq('id', club.union_id)
-            .single();
+            .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
           if (union?.owner_id) {
             rakeRecipientId = union.owner_id;
@@ -2644,7 +2652,7 @@ class TournamentManager {
           status: 'running',
         })
         .select()
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (createErr || !newTable) {
         console.error(
@@ -2757,10 +2765,20 @@ async function authenticateRequest(
   }
 }
 
+// FIX 175: Body size limit to prevent memory exhaustion from malicious clients
+const MAX_BODY_SIZE = 16 * 1024; // 16KB — more than enough for any action payload
+
 function readBody(req: import('http').IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
+    let size = 0;
     req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error('Request body too large'));
+        return;
+      }
       body += chunk.toString();
     });
     req.on('end', () => resolve(body));

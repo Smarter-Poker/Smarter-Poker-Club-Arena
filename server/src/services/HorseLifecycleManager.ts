@@ -464,7 +464,7 @@ export class HorseLifecycleManager {
             .from('profiles')
             .select('is_horse')
             .eq('id', seat.user_id)
-            .single();
+            .maybeSingle(); // FIX 168
 
           if (profile?.is_horse) {
             await this.evaluateHorseStatus(seat.user_id);

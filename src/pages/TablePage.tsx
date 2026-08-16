@@ -2115,6 +2115,16 @@ export default function TablePage({
       const serverActionHistory = (handState.action_history as any[]) || [];
       const handNumber = (handState.hand_number as number) || 0;
 
+      // FIX 172: Play new-hand sound when hand number increases (Bible V8 §5.1)
+      if (handNumber > 0 && soundService.isEnabled()) {
+        setTableState((prevCheck) => {
+          if (handNumber > (prevCheck.handNumber || 0)) {
+            soundService.playNewHand();
+          }
+          return prevCheck; // Don't modify state — just peeking
+        });
+      }
+
       setTableState((prev) => {
         const updatedPlayers = [...prev.players];
 
@@ -2949,6 +2959,9 @@ export default function TablePage({
     const seconds =
       payload.secondsGranted ?? payload.additionalSeconds ?? payload.secondsAdded ?? 15;
 
+    // FIX 172: Play time bank activation sound (Bible V8 §5.3)
+    if (soundService.isEnabled()) soundService.playTimeBankActivated();
+
     // For OPPONENTS: extend the visual timer from the WebSocket broadcast
     // For HERO: the local TimeBankEngine.activate() already extended the timer,
     // so only extend from server echoes (payload._fromServer) to avoid double-counting.
@@ -3247,6 +3260,9 @@ export default function TablePage({
           if (newSeat.user_id === userId) return;
 
           console.debug('[RealtimeSeats] New seat INSERT:', newSeat.seat_number, newSeat.user_id);
+
+          // FIX 172: Play seat-taken sound when new player sits (Bible V8 §5.1)
+          if (soundService.isEnabled()) soundService.playSeatTaken();
 
           // Fetch the player's profile
           const { data: profile } = await supabase

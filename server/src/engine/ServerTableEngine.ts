@@ -38,6 +38,7 @@ import {
   getFullRakeConfig,
   calculateBBJFee,
   detectBBJHit,
+  getPlayerCountCaps,
   type BBJDetectionResult,
   type ServerRakeConfigResult,
 } from '../config/RakeConfig.js';
@@ -1343,12 +1344,14 @@ export class ServerTableEngine {
     const minRaiseTo = state.currentBet > 0 ? state.currentBet + state.minRaise : state.minRaise;
     let maxRaiseTo = player.stack + player.bet;
 
-    // Bible V8 §4.14: Cap maxRaise for pot-limit games (PLO variants)
+    // FIX 176: Bible V8 §4.14: Cap maxRaise for pot-limit games (PLO variants)
+    // Pot-limit max raise SIZE = pot + toCall (the pot after you call).
+    // Raise TO = currentBet + (pot + toCall). The old formula had an extra toCall
+    // which allowed raises ~toCall higher than legal pot-limit max.
     const isPotLimit = this.tableInfo?.game_variant?.startsWith('plo');
     if (isPotLimit) {
-      // Pot-limit max raise = current pot + call + call (same formula as calculateBettingState)
-      const potLimitMax = state.pot + toCall + toCall;
-      const potLimitRaiseTo = state.currentBet + potLimitMax;
+      const potLimitMaxBet = state.pot + toCall;
+      const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
       maxRaiseTo = Math.min(maxRaiseTo, potLimitRaiseTo);
     }
 
@@ -1568,6 +1571,8 @@ export class ServerTableEngine {
         percent: fullRakeConfig.rakePercent,
         cap: fullRakeConfig.rakeCap,
         noFlopNoDrop: true,
+        // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
+        playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
       },
       bbjConfig: {
         enabled: fullRakeConfig.bbjEnabled,
@@ -1617,11 +1622,16 @@ export class ServerTableEngine {
 
     // Wait for hand to complete
     return new Promise<void>((resolve) => {
+      // FIX 178: Bible V8 §6.1 — Hand safety timeout must accommodate full multi-player hands.
+      // A 9-player hand with 15s action timers × 4 betting rounds = 540s worst case.
+      // With time banks + insurance/RIT pauses, 10 minutes is a safe ceiling.
+      // The old 60s timeout was killing hands prematurely mid-action.
+      const HAND_SAFETY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
       const handTimeout = setTimeout(() => {
-        console.warn(`[ServerTableEngine:${this.tableId}] Hand ${handNumber} timed out after 60s`);
+        console.warn(`[ServerTableEngine:${this.tableId}] Hand ${handNumber} timed out after 10 minutes`);
         this.handController = null;
         resolve();
-      }, 60_000);
+      }, HAND_SAFETY_TIMEOUT_MS);
 
       const unsub = this.handController!.onEvent((event: HandEvent) => {
         this.handleHandEvent(event, players);
@@ -3215,13 +3225,15 @@ export class ServerTableEngine {
     }
 
     if (n === 2) {
-      // Heads-up: dealer=SB/BTN, other=BB
+      // FIX 177: Bible V8 §4.2 + Appendix B: Heads-up → dealer=BTN (is also SB), other=BB
       labels.set(seats[dealerIdx], 'BTN');
       labels.set(seats[(dealerIdx + 1) % n], 'BB');
     } else if (n === 3) {
+      // FIX 177: Bible V8 Appendix B: 3 players → BTN/SB, BB, UTG
+      // BTN IS the SB in 3-player (no separate SB position). Third player is UTG.
       labels.set(seats[dealerIdx], 'BTN');
-      labels.set(seats[(dealerIdx + 1) % n], 'SB');
-      labels.set(seats[(dealerIdx + 2) % n], 'BB');
+      labels.set(seats[(dealerIdx + 1) % n], 'BB');
+      labels.set(seats[(dealerIdx + 2) % n], 'UTG');
     } else {
       // 4+ players — BTN, SB, BB, then positional names
       labels.set(seats[dealerIdx], 'BTN');
@@ -3273,6 +3285,8 @@ export class ServerTableEngine {
       percent: fullConfig.rakePercent,
       cap: fullConfig.rakeCap,
       noFlopNoDrop: true,
+      // FIX 166: Bible V8 §7.19 — player-count-based rake caps
+      playerCountCaps: getPlayerCountCaps(fullConfig.rakeCap),
     };
   }
 
@@ -3325,6 +3339,8 @@ export class ServerTableEngine {
         percent: fullRakeConfig.rakePercent,
         cap: fullRakeConfig.rakeCap,
         noFlopNoDrop: true,
+        // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
+        playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
       },
       bbjConfig: {
         enabled: fullRakeConfig.bbjEnabled,

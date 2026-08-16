@@ -201,7 +201,9 @@ export class RunItTwiceEngine {
     const state = this.activeOffers.get(tableId);
     if (!state || state.status !== 'accepted') return null;
 
-    const runs = state.maxRuns || 2;
+    // FIX 171: Use chosenRuns (set by chooser in FIX 96) instead of maxRuns.
+    // If chooser picked 2 runs but maxRuns is 3, we should deal 2 boards, not 3.
+    const runs = state.chosenRuns || state.maxRuns || 2;
     const cardsNeeded = 5 - existingBoard.length;
     if (remainingDeck.length < cardsNeeded * runs) {
       console.error(`[RunItTwiceEngine] Not enough cards for ${runs} runouts at ${tableId}`);
@@ -257,7 +259,8 @@ export class RunItTwiceEngine {
     state.status = 'resolved';
 
     const distribution = new Map<string, number>();
-    const runs = state.maxRuns || 2;
+    // FIX 171: Use chosenRuns for consistency with dealDualBoards
+    const runs = state.chosenRuns || state.maxRuns || 2;
 
     if (runs === 3 && board3Winner) {
       const third = Math.trunc((state.pot / 3) * 100) / 100;

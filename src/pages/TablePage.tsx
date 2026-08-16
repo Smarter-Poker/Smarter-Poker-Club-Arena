@@ -1011,8 +1011,26 @@ export default function TablePage({
 
   const [showSitOut, setShowSitOut] = useState(false);
   const [sitOutNextHand, setSitOutNextHand] = useState(false);
-  const [sitOutTimeRemaining, setSitOutTimeRemaining] = useState(300); // 5 min default
+  // HONESTY FIX 2026-08-16: was `sitOutTimeRemaining = 300`, a countdown to a
+  // deadline that does not exist. setSitOutTimeRemaining had zero call sites,
+  // so it never moved, and SitOutModal warned the player they would be removed
+  // from a table they were never at risk of losing. Track when sit-out started
+  // instead and report elapsed time.
+  const [sitOutSince, setSitOutSince] = useState<number | null>(null);
   const [showWaitList, setShowWaitList] = useState(false);
+  // Stamp the clock off the SERVER's view of the hero's seat, not off any
+  // local button press — a player can be put into sit-out by the engine
+  // (repeated action timeouts) without ever touching the menu, and the
+  // reconnect path re-derives it from the snapshot too.
+  const heroIsSittingOut =
+    tableState.heroSeat > 0 &&
+    tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out';
+  useEffect(() => {
+    setSitOutSince((prev) => {
+      if (heroIsSittingOut) return prev ?? Date.now();
+      return null;
+    });
+  }, [heroIsSittingOut]);
 
   // Session tracking for end-of-session summary
   const [showSessionSummary, setShowSessionSummary] = useState(false);
@@ -7659,7 +7677,7 @@ export default function TablePage({
         onAnimationComplete={handleAnimationComplete}
         // Sit Out
         showSitOut={showSitOut}
-        sitOutTimeRemaining={sitOutTimeRemaining}
+        sitOutSince={sitOutSince}
         onCloseSitOut={() => setShowSitOut(false)}
         onReturnFromSitOut={() => {
           setShowSitOut(false);

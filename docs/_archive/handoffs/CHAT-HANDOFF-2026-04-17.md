@@ -44,7 +44,7 @@ Fixed 14 animation bugs that made ALL table animations non-functional. Root caus
 ### Prerequisites
 
 - Authenticated user session (Supabase JWT)
-- Test account: `daniel@bekavactrading.com` / `Bek454545!!` (all features unlocked)
+- Test account: `daniel@bekavactrading.com` / `<TEST_USER_PASSWORD — see .env.local, never commit>` (all features unlocked)
 - Game server running (either locally on port 8080, or production at `engine.smarter.poker`)
 
 ### Architecture: How Tables Come Alive
@@ -63,7 +63,7 @@ The table lifecycle works like this:
 
 ```
 1. Go to https://smarter.poker/hub/club-arena/
-2. Log in with test account (daniel@bekavactrading.com / Bek454545!!)
+2. Log in with test account (daniel@bekavactrading.com / <TEST_USER_PASSWORD — see .env.local, never commit>)
 3. Navigate to a club (JAQK Club is the seed club: a0000000-0000-0000-0000-000000000001)
 4. Open any table from the club's table list
 5. Click an empty seat -> Buy-In Modal opens (defaults to MAX) -> Confirm
@@ -413,7 +413,7 @@ curl -s https://engine.smarter.poker/health | head -5
 
 ```
 Email:    daniel@bekavactrading.com
-Password: Bek454545!!
+Password: <TEST_USER_PASSWORD — see .env.local, never commit>
 ```
 
 All features unlocked. Works on localhost and production.

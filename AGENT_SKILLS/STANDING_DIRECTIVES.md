@@ -37,7 +37,7 @@ These directives are PERMANENT and must be followed in every session.
 - Vercel project: `club-arena` (prj_oaCq8RYhExLRUYizLG93li0uX468)
 - Supabase URL: https://kuklfnapbkmacvwxktbh.supabase.co
 - BrowserRouter basename: `/hub/club-arena`
-- Login: DANIEL@BEKAVACTRADING.COM / Bek454545!!
+- Login: DANIEL@BEKAVACTRADING.COM / <TEST_USER_PASSWORD — see .env.local, never commit>
 - User ID (KingFish): 47965354-0e56-43ef-931c-ddaab82af765
 - Shark Club ID: a41434bb-8d0c-400a-8f0d-e8b3d65afed4 (club_id: 25450)
 - JAQK Club ID: a0000000-0000-0000-0000-000000000001 (club_id: 77777)

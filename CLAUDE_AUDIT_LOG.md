@@ -38,10 +38,10 @@
 - Vercel Project (World Hub): hub-vanguard (prj_op66GkZyZcygXQKm76iyycfVFAQx)
 - SPA URL: club-arena.vercel.app (direct) / smarter.poker/hub/club-arena (via iframe)
 - Supabase: kuklfnapbkmacvwxktbh.supabase.co
-- Supabase Service Role: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1a2xmbmFwYmttYWN2d3hrdGJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzczMDg0NCwiZXhwIjoyMDgzMzA2ODQ0fQ.bbDqj-me78PID99npWCZ5qUuINSC1-eCBb1BVhgiSRs
+- Supabase Service Role: <REDACTED-service_role-key>
 - Supabase Anon: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1a2xmbmFwYmttYWN2d3hrdGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MzA4NDQsImV4cCI6MjA4MzMwNjg0NH0.ZGFrUYq7yAbkveFdudh4q_Xk0AZ-jnu4FkX9YKjo
-- DB Password: Bek454545!!
-- Login: DANIEL@BEKAVACTRADING.COM / Bek454545!!
+- DB Password: <TEST_USER_PASSWORD — see .env.local, never commit>
+- Login: DANIEL@BEKAVACTRADING.COM / <TEST_USER_PASSWORD — see .env.local, never commit>
 - KingFish User: 47965354-0e56-43ef-931c-ddaab82af765
 - BrowserRouter basename: /hub/club-arena
 - Shark Club: a41434bb-8d0c-400a-8f0d-e8b3d65afed4 (club_id: 25450)

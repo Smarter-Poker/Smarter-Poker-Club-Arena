@@ -318,48 +318,84 @@ class ProfileServiceClass {
   }
 
   /**
-   * Check if user has accepted Club Arena TOS
+   * Whether this user has accepted the Club Arena Terms of Service.
+   *
+   * 2026-08-16: THIS READ WAS LOOKING IN THE WRONG PLACE.
+   *
+   * It read `preferences.club_arena_tos_accepted`, a JSONB flag that only
+   * `acceptTOS()` below ever wrote. The real, canonical record of acceptance is
+   * the `profiles.club_arena_tos_accepted_at` COLUMN — that is what the World
+   * Hub acceptance endpoint (`/api/club-arena/accept-tos`) writes and what the
+   * seat gate reads. The stale comment claiming the column "doesn't exist in
+   * profiles yet" had outlived the column by some margin: it is a
+   * `timestamptz` and has been there all along.
+   *
+   * So Club Arena and World Hub each kept their own private answer to the same
+   * legal question, in different places, and neither could see the other's.
+   *
+   * Returns a tri-state rather than a boolean because "we asked and they have
+   * not accepted" and "we could not ask" are different facts, and the right
+   * response to each is a caller's decision, not this function's. Collapsing
+   * them is how the previous version ended up treating a network blip as
+   * consent.
    */
-  async hasTOSAccepted(userId: string): Promise<boolean> {
+  async getTOSStatus(userId: string): Promise<'accepted' | 'not_accepted' | 'unknown'> {
     try {
-      // club_arena_tos_accepted_at column doesn't exist in profiles yet.
-      // Check preferences JSONB field as fallback, or default to true to avoid blocking users.
       const { data, error } = await supabase
         .from('profiles')
-        .select('preferences')
+        .select('club_arena_tos_accepted_at')
         .eq('id', userId)
         .maybeSingle();
 
-      if (error || !data) return true; // Default to accepted if query fails
-      const prefs = data.preferences as Record<string, unknown> | null;
-      return !!prefs?.club_arena_tos_accepted; // FIX: was returning true in both branches
+      if (error) {
+        reportError(error, 'ProfileService.getTOSStatus', { userId });
+        return 'unknown';
+      }
+      // A missing profile row is not an error and not consent. It is a user we
+      // have no acceptance on file for.
+      return data?.club_arena_tos_accepted_at ? 'accepted' : 'not_accepted';
     } catch (err: unknown) {
-      reportError(err, 'ProfileService.hasTOSAccepted', { userId });
-      return true; // Default to accepted to avoid blocking
+      reportError(err, 'ProfileService.getTOSStatus', { userId });
+      return 'unknown';
     }
   }
 
   /**
-   * Accept Club Arena TOS
+   * Convenience wrapper over {@link getTOSStatus}.
+   *
+   * FAILS CLOSED: only a recorded acceptance returns true. The previous version
+   * returned `true` on a missing row AND on a query failure — "default to
+   * accepted to avoid blocking" — which meant an RLS change, a dropped
+   * connection or a typo'd column silently waved every user past the consent
+   * gate. A legal consent check is the one place a convenient default is not
+   * available to us.
+   *
+   * Callers that would rather degrade than block on a transient failure should
+   * call `getTOSStatus()` and handle 'unknown' deliberately.
+   */
+  async hasTOSAccepted(userId: string): Promise<boolean> {
+    return (await this.getTOSStatus(userId)) === 'accepted';
+  }
+
+  /**
+   * Record this user's acceptance of the Club Arena Terms of Service.
+   *
+   * 2026-08-16: writes the CANONICAL column, not a private JSONB flag.
+   *
+   * This used to merge `club_arena_tos_accepted: true` into `preferences`,
+   * which no other system reads. World Hub's `/api/club-arena/accept-tos`
+   * stamps `profiles.club_arena_tos_accepted_at`, and the seat gate reads that
+   * column — so an acceptance recorded here was invisible to the only place
+   * that enforces it. Both writers now agree.
+   *
+   * The read-then-merge of `preferences` is gone with it: it was only there to
+   * avoid clobbering the JSONB, and a plain column write cannot clobber
+   * anything.
    */
   async acceptTOS(userId: string): Promise<boolean> {
-    // club_arena_tos_accepted_at column doesn't exist yet — store in preferences JSONB
-    // FIX: Merge with existing preferences instead of overwriting the entire JSONB field
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('preferences')
-      .eq('id', userId)
-      .maybeSingle();
-    const currentPrefs = (existing?.preferences as Record<string, unknown>) || {};
     const { error } = await supabase
       .from('profiles')
-      .update({
-        preferences: {
-          ...currentPrefs,
-          club_arena_tos_accepted: true,
-          tos_accepted_at: new Date().toISOString(),
-        },
-      })
+      .update({ club_arena_tos_accepted_at: new Date().toISOString() })
       .eq('id', userId);
 
     if (error) {

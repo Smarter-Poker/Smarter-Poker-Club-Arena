@@ -138,36 +138,55 @@ describe('ProfileService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('hasTOSAccepted', () => {
-    // 2026-08-15: the old expectation (no data => false) contradicted the
-    // service. hasTOSAccepted FAILS OPEN by design (ProfileService.ts:333,338:
-    // "Default to accepted if query fails" / "to avoid blocking") — a missing
-    // row or a failed query must not lock a user out of Club Arena. The real
-    // false case is a profile that exists without the preferences flag, which
-    // the old mock could never produce; it is now covered explicitly below.
-    it('should fail open (true) when the profile row is missing', async () => {
-      const result = await profileService.hasTOSAccepted('user-1');
-      expect(result).toBe(true);
+    // 2026-08-16: this now FAILS CLOSED, and reads the canonical
+    // `profiles.club_arena_tos_accepted_at` column rather than a private
+    // `preferences` flag that nothing else in the platform could see.
+    //
+    // The previous version returned true on a missing row AND on a query
+    // error — "default to accepted to avoid blocking" — so an RLS change or a
+    // dropped connection silently waved every user past a legal consent gate.
+    // A consent check is the one place a convenient default is unavailable.
+    it('returns false when there is no acceptance on file', async () => {
+      rowState.single = { data: { club_arena_tos_accepted_at: null }, error: null };
+      expect(await profileService.hasTOSAccepted('user-1')).toBe(false);
     });
 
-    it('should fail open (true) when the query errors', async () => {
+    it('returns false when the profile row is missing entirely', async () => {
+      expect(await profileService.hasTOSAccepted('user-1')).toBe(false);
+    });
+
+    it('FAILS CLOSED when the query errors — a blip is not consent', async () => {
       rowState.single = { data: null, error: { message: 'boom' } };
-      const result = await profileService.hasTOSAccepted('user-1');
-      expect(result).toBe(true);
+      expect(await profileService.hasTOSAccepted('user-1')).toBe(false);
     });
 
-    it('should return false when the profile has no TOS flag in preferences', async () => {
-      rowState.single = { data: { preferences: { theme: 'dark' } }, error: null };
-      const result = await profileService.hasTOSAccepted('user-1');
-      expect(result).toBe(false);
-    });
-
-    it('should return true when preferences carry club_arena_tos_accepted', async () => {
+    it('returns true only for a recorded acceptance timestamp', async () => {
       rowState.single = {
-        data: { preferences: { club_arena_tos_accepted: true } },
+        data: { club_arena_tos_accepted_at: '2026-08-16T01:00:00.000Z' },
         error: null,
       };
-      const result = await profileService.hasTOSAccepted('user-1');
-      expect(result).toBe(true);
+      expect(await profileService.hasTOSAccepted('user-1')).toBe(true);
+    });
+  });
+
+  describe('getTOSStatus', () => {
+    // The tri-state exists so callers can tell "they have not accepted" from
+    // "we could not find out". Collapsing those two is what produced the
+    // fail-open bug above.
+    it('distinguishes not_accepted from unknown', async () => {
+      rowState.single = { data: { club_arena_tos_accepted_at: null }, error: null };
+      expect(await profileService.getTOSStatus('user-1')).toBe('not_accepted');
+
+      rowState.single = { data: null, error: { message: 'network' } };
+      expect(await profileService.getTOSStatus('user-1')).toBe('unknown');
+    });
+
+    it('reports accepted for a stamped profile', async () => {
+      rowState.single = {
+        data: { club_arena_tos_accepted_at: '2026-08-16T01:00:00.000Z' },
+        error: null,
+      };
+      expect(await profileService.getTOSStatus('user-1')).toBe('accepted');
     });
   });
 

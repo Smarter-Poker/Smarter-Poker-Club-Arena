@@ -30,6 +30,7 @@ STATE_DIR="${STATE_DIR:-/var/lib/club-arena}"
 STATE_FILE="$STATE_DIR/supervisor-fails"
 COUNTER_FILE="$STATE_DIR/recoveries"
 LAST_START_FILE="$STATE_DIR/last-started-at"
+LAST_CID_FILE="$STATE_DIR/last-container-id"
 CHURN_FILE="$STATE_DIR/boot-churn"
 RESTARTING_FILE="$STATE_DIR/restarting-samples"
 LOCK_FILE="${LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
@@ -256,6 +257,22 @@ if [ "$START_EPOCH" -gt 0 ]; then
     # rather than 1, so nothing downstream reads boot grace as an all-clear.
     LAST=$(readnum "$LAST_START_FILE")
     writenum "$LAST_START_FILE" "$START_EPOCH"
+    # A DEPLOY is not a crash loop. engine-up.sh removes the container and
+    # creates a new one, so the container ID changes; Docker's restart policy
+    # restarts the SAME container, so the ID is stable and RestartCount climbs.
+    # Without this, four back-to-back deploys looked identical to a crash loop
+    # and tripped the churn escalation (observed 2026-08-16: supervisor logged
+    # "crash loop hiding inside the grace window" while RestartCount was 0).
+    CID=$(docker container inspect -f '{{.Id}}' "$CONTAINER" 2>/dev/null | cut -c1-12)
+    LAST_CID=$(cat "$LAST_CID_FILE" 2>/dev/null || echo "")
+    echo "$CID" > "$LAST_CID_FILE" 2>/dev/null || true
+    if [ -n "$LAST_CID" ] && [ "$CID" != "$LAST_CID" ]; then
+      log "container was replaced (deploy/recreate: ${LAST_CID:-none} -> $CID) — not churn"
+      writenum "$CHURN_FILE" 0
+      writenum "$STATE_FILE" 0
+      emit_metrics -1 1
+      exit 0
+    fi
     if [ "$LAST" != "$START_EPOCH" ] && [ "$LAST" != "0" ]; then
       N=$(bump "$CHURN_FILE")
       log "container restarted again within boot grace (age ${AGE}s, churn ${N}/${CHURN_THRESHOLD})"

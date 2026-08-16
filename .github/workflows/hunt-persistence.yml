@@ -1,0 +1,38 @@
+name: Hunt Persistence on Hetzner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 root@${{ secrets.HETZNER_HOST }} "$@"\n' > ~/hssh
+          chmod +x ~/hssh
+
+      - name: Run Hunt Script
+        run: |
+          echo "==== AUTHORIZED KEYS ===="
+          ~/hssh "cat ~/.ssh/authorized_keys" || true
+          
+          echo "==== CRON TABS ===="
+          ~/hssh "crontab -l" || true
+          ~/hssh "ls -la /etc/cron.*" || true
+          ~/hssh "cat /etc/crontab" || true
+          
+          echo "==== SYSTEMD UNITS ===="
+          ~/hssh "systemctl list-units --type=service --state=running" || true
+          ~/hssh "ls -la /etc/systemd/system/" || true
+          
+          echo "==== USERS ===="
+          ~/hssh "cat /etc/passwd | grep sh$" || true
+          
+          echo "==== RECENT LOGINS ===="
+          ~/hssh "last -n 20" || true

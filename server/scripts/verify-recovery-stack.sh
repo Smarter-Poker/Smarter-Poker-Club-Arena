@@ -159,6 +159,27 @@ case "$HB" in
      fi ;;
 esac
 
+# Grafana ships with admin/admin and GF_SECURITY_ADMIN_PASSWORD only applies on
+# FIRST initialisation — setting it later does nothing, because the password is
+# already stored in Grafana's database. On 2026-08-16 the rebuilt box ran for 15
+# hours on the default credential: the compose file interpolates
+# ${GRAFANA_ADMIN_PASSWORD}, and the runtime .env had been written with the
+# variable named GF_SECURITY_ADMIN_PASSWORD instead, so it resolved to empty.
+# Nothing else in the stack notices, because Grafana is perfectly healthy with a
+# default password.
+GRAF_PORT="${GRAF_PORT:-3001}"
+if curl -sf --max-time 5 "localhost:${GRAF_PORT}/api/health" >/dev/null 2>&1; then
+  ok "grafana is reachable on :${GRAF_PORT}"
+  GCODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -u admin:admin "localhost:${GRAF_PORT}/api/org" 2>/dev/null)
+  if [ "$GCODE" = "200" ]; then
+    bad "grafana still accepts the DEFAULT admin:admin credential"
+  else
+    ok "grafana rejects the default admin:admin credential (HTTP $GCODE)"
+  fi
+else
+  bad "grafana is not answering on :${GRAF_PORT}"
+fi
+
 RULES=$(curl -sf --max-time 5 localhost:9090/api/v1/rules 2>/dev/null || echo "")
 if [ -z "$RULES" ]; then
   # Previously this produced ONE failure (rules not loaded) and one spurious

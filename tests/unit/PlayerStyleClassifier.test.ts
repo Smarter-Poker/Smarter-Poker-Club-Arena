@@ -113,8 +113,9 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 10, // AF = 1.0
       });
       expect(result.style).toBe('fish');
-      // Fish + Shark still carry emoji icons in STYLE_MAP (letter migration 2026-08 left them).
-      expect(result.icon).toBe('🐟');
+      // 2026-08-16: Fish and Shark were the last two emoji icons; the letter
+      // migration had skipped them. Every badge is a letter now.
+      expect(result.icon).toBe('F');
     });
 
     it('should classify Shark (VPIP 18-28, PFR 15-25, AF >= 2.5)', () => {
@@ -127,8 +128,7 @@ describe('PlayerStyleClassifier', () => {
         passiveActions: 10, // AF = 3.0
       });
       expect(result.style).toBe('shark');
-      // Fish + Shark still carry emoji icons in STYLE_MAP (letter migration 2026-08 left them).
-      expect(result.icon).toBe('🦈');
+      expect(result.icon).toBe('S');
     });
 
     it('should classify LAG (VPIP > 28, PFR > 18, AF >= 2.0)', () => {
@@ -242,7 +242,7 @@ describe('PlayerStyleClassifier', () => {
         aggressiveActions: 30,
         passiveActions: 10,
       });
-      expect(label).toBe('🦈 Shark');
+      expect(label).toBe('S Shark');
     });
 
     it('should return "? ?" for insufficient data', () => {
@@ -260,9 +260,11 @@ describe('PlayerStyleClassifier', () => {
     it('should return all 9 style definitions', () => {
       const defs = playerStyleClassifier.getStyleDefinitions();
       expect(Object.keys(defs).length).toBe(9);
-      // Shark/Fish kept their emoji; unknown moved '❓' → '?' in the 2026-08 letter migration.
-      expect(defs.shark.icon).toBe('🦈');
-      expect(defs.fish.icon).toBe('🐟');
+      // 2026-08-16: every icon is now a letter. Shark and Fish were the last
+      // two emoji left over from the 2026-08 migration; unknown had already
+      // moved from the emoji question mark to a plain '?'.
+      expect(defs.shark.icon).toBe('S');
+      expect(defs.fish.icon).toBe('F');
       expect(defs.unknown.icon).toBe('?');
       expect(defs.rock.icon).toBe('R');
       expect(defs.maniac.icon).toBe('M');

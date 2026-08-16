@@ -75,6 +75,22 @@ Unit=club-arena-verify.service
 WantedBy=timers.target
 UNIT
 
+# ── Let Prometheus actually reach node-exporter ──────────────────────────────
+# UFW defaults to DROP on INPUT. node-exporter runs with host networking, so a
+# scrape from the docker bridge hits INPUT and is dropped — while the engine on
+# :8080 stays reachable, because Docker publishes that through FORWARD. The
+# result is a monitoring stack that looks entirely healthy and receives nothing.
+# Scoped to the docker monitoring subnet; :9100 is never exposed to the internet.
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | head -1 | grep -q active; then
+  SUB=$(docker network ls --format '{{.Name}}' 2>/dev/null | grep -i monitoring | head -1 \
+        | xargs -r -I{} docker network inspect {} -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null)
+  if [ -n "$SUB" ] && ! ufw status 2>/dev/null | grep -q "9100/tcp.*$SUB"; then
+    ufw allow from "$SUB" to any port 9100 proto tcp \
+      comment 'prometheus -> node-exporter (docker bridge only)' >/dev/null 2>&1 \
+      && echo "  ufw: allowed $SUB -> :9100"
+  fi
+fi
+
 systemctl daemon-reload
 systemctl enable --now club-arena-supervisor.timer
 systemctl enable --now club-arena-verify.timer

@@ -24,7 +24,7 @@ description: How to test features in the browser — ALL testing on smarter.poke
 ## Test Account Credentials
 
 - **Email:** `daniel@bekavactrading.com`
-- **Password:** `Bek454545!!`
+- **Password:** `<TEST_USER_PASSWORD — see .env.local, never commit>`
 
 ## Login Steps
 

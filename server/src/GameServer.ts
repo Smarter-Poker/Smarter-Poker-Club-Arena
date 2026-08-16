@@ -25,6 +25,15 @@ import {
   recoverStuckCompletingTournaments,
 } from './tournament/tournamentRecovery.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
+// 2026-08-16: single-owner table leases + per-process identity. See
+// services/tableLease.ts for the dual-container incident that motivated them.
+import {
+  INSTANCE_ID,
+  claimTable,
+  heartbeatTables,
+  releaseTables,
+  leaseDiagnostics,
+} from './services/tableLease.js';
 
 export { TournamentManager };
 
@@ -206,6 +215,12 @@ export class GameServer {
       this.breakResumeTimer = null;
     }
 
+    // Hand the leases back BEFORE the engines are torn down. A rolling deploy
+    // otherwise makes the incoming container wait out the full 30s stale window
+    // on every table, which is 30s of a live platform not dealing. Best-effort:
+    // releaseTables never throws and never blocks shutdown.
+    await releaseTables();
+
     // Stop all table engines
     for (const [id, engine] of this.tableEngines) {
       await engine.stop();
@@ -303,6 +318,19 @@ export class GameServer {
       tableLiveness,
       status: this.running ? 'ok' : 'degraded',
       version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      // ── PROCESS IDENTITY (2026-08-16) ───────────────────────────────
+      // On 2026-08-16 two engine containers served this hostname at once and
+      // every field below `version` was ambiguous between them: /health said 15
+      // tables, / said 0, /metrics said 0, and the database said 91. There was
+      // no way to tell whether that was one flapping process or several, which
+      // is why the incident took an hour to characterise. `instanceId` is
+      // regenerated on every boot, so two answers carrying different ids prove
+      // two processes, immediately and without host access.
+      instanceId: INSTANCE_ID,
+      pid: process.pid,
+      // Split-brain evidence: tables this instance was refused, and who holds
+      // them. Empty is the healthy state.
+      lease: leaseDiagnostics(),
       // Existing fields preserved — clients reading `running` / aggregate
       // metrics keep working without change.
       running: this.running,
@@ -377,6 +405,19 @@ export class GameServer {
       '# HELP poker_table_dealable_seats Seats able to be dealt into on this table',
       '# TYPE poker_table_dealable_seats gauge',
       ...liveness.map((t) => `poker_table_dealable_seats{table_id="${t.tableId}"} ${t.dealable}`),
+      // ── SPLIT-BRAIN (2026-08-16) ─────────────────────────────────
+      // Every gauge above is per-process, so with two containers behind one
+      // hostname Prometheus scrapes whichever the proxy picks and silently
+      // averages two different realities. The instance label makes the series
+      // distinct: two live `instance_id` values on this job IS the alert.
+      '# HELP poker_engine_info Always 1. Labels identify the process answering this scrape.',
+      '# TYPE poker_engine_info gauge',
+      `poker_engine_info{instance_id="${INSTANCE_ID}",pid="${process.pid}",version="${
+        process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local'
+      }"} 1`,
+      '# HELP poker_lease_conflicts Tables this instance was refused because another engine holds them',
+      '# TYPE poker_lease_conflicts gauge',
+      `poker_lease_conflicts ${leaseDiagnostics().conflictCount}`,
     ];
 
     if (allLines.length === 0) {
@@ -927,9 +968,35 @@ export class GameServer {
           continue;
         }
 
+        // ── Lease renewal (2026-08-16) ──────────────────────────────────
+        // Runs before the start loop so a table we have just lost is torn down
+        // in the same tick that another instance takes it, rather than dealing
+        // one more hand against a table someone else now owns.
+        //
+        // heartbeatTables() returns [] on any error and [] whenever
+        // ENGINE_LEASE_ENFORCE is off, so this loop is inert until the
+        // conflict logs say the claim path behaves.
+        const lostTables = await heartbeatTables([...this.tableEngines.keys()]);
+        for (const id of lostTables) {
+          const engine = this.tableEngines.get(id);
+          if (!engine) continue;
+          reportError(
+            new Error(`Lost the deal-lease on table ${id} to another engine instance`),
+            'GameServer.table_lease_lost'
+          );
+          void engine.stop().catch(() => {});
+          this.tableEngines.delete(id);
+          if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
+        }
+
         for (const row of (ready || []) as Array<{ table_id: string; player_count: number }>) {
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
+
+          // Single-owner check. Returns true on any RPC failure and whenever
+          // enforcement is off — a lease problem must never be the reason a
+          // table fails to start.
+          if (!(await claimTable(row.table_id))) continue;
 
           console.log(
             `[GameServer] Starting engine for cash table ${row.table_id} (${row.player_count} players)`

@@ -367,3 +367,19 @@
     justify-content: center;
   }
 }
+
+/* Replaces .sitout-modal__warning (2026-08-16). That warned "You will be
+   removed from the table if you don't return", which was false — there is no
+   sit-out deadline anywhere in the system. This states what is actually true,
+   so it is informational rather than alarming. */
+.sitout-modal__note {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}

@@ -120,7 +120,9 @@ export interface TableModalsLayerProps {
 
   // Sit Out Modal
   showSitOut: boolean;
-  sitOutTimeRemaining: number;
+  /** Epoch ms when sit-out began, or null. See SitOutModal for why this is
+   *  no longer a countdown. */
+  sitOutSince: number | null;
   onCloseSitOut: () => void;
   onReturnFromSitOut: () => void;
 
@@ -389,7 +391,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     onAnimationComplete,
     // Sit Out
     showSitOut,
-    sitOutTimeRemaining,
+    sitOutSince,
     onCloseSitOut,
     onReturnFromSitOut,
     // Wait List
@@ -603,8 +605,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           }
         }}
         onLeaveTable={() => navigate('/')}
-        timeRemaining={sitOutTimeRemaining}
-        maxSitOutTime={300}
+        sitOutSince={sitOutSince}
         tableName={tableName}
       />
 

@@ -24,8 +24,28 @@ export interface SitOutModalProps {
   onReturn: () => void;
   onLeaveTable: () => void;
   onAutoPostChange?: (enabled: boolean) => void;
-  timeRemaining: number; // seconds until auto-kicked
-  maxSitOutTime: number; // total allowed sit-out time
+  /**
+   * HONESTY FIX 2026-08-16: this used to be `timeRemaining` — "seconds until
+   * auto-kicked" — counting down from 300, alongside the warning "You will be
+   * removed from the table if you don't return".
+   *
+   * None of that was true. There is NO sit-out deadline anywhere in the
+   * system: no server timer, no sweeper, no cron, no seat-reclaim rule. A
+   * player may sit out indefinitely and keeps their seat and their stack. The
+   * only real rule is the opposite direction — repeated action timeouts PUT
+   * you into sit-out (DisconnectEngine.recordConnectedTimeout, capped by
+   * maxConsecutiveTimeouts) — and it never removes you afterwards.
+   *
+   * Worse, `timeRemaining` was hard-wired to 300 and never updated: the state
+   * behind it had no setter call anywhere in the repo. So the modal invented a
+   * countdown, reset it every time you reopened it, threatened the player with
+   * losing a seat that was never at risk, and did it about a table their money
+   * was sitting on.
+   *
+   * Now it reports the truth: how long you have actually been sitting out.
+   * Epoch ms of when sit-out began, or null if that is not known.
+   */
+  sitOutSince: number | null;
   autoPostBlinds?: boolean;
   tableName?: string;
 }
@@ -50,32 +70,24 @@ export function SitOutModal({
   onReturn,
   onLeaveTable,
   onAutoPostChange,
-  timeRemaining,
-  maxSitOutTime,
+  sitOutSince,
   autoPostBlinds = true,
   tableName,
 }: SitOutModalProps) {
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-  const [displayTime, setDisplayTime] = useState(timeRemaining);
+  const [elapsed, setElapsed] = useState(0);
 
-  // Update countdown
+  // Count UP from when sit-out began. One interval for the lifetime of the
+  // open modal — the old countdown listed `displayTime` in its own dependency
+  // array, so it tore down and recreated the interval on every single tick.
   useEffect(() => {
-    setDisplayTime(timeRemaining);
-  }, [timeRemaining]);
-
-  useEffect(() => {
-    if (!isOpen || displayTime <= 0) return;
-
-    const timer = setInterval(() => {
-      setDisplayTime((t) => Math.max(0, t - 1));
-    }, 1000);
-
+    if (!isOpen) return;
+    const since = sitOutSince ?? Date.now();
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - since) / 1000)));
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [isOpen, displayTime]);
-
-  // Progress percentage
-  const progress = (displayTime / maxSitOutTime) * 100;
-  const isUrgent = displayTime <= 60;
+  }, [isOpen, sitOutSince]);
 
   // Handle return
   const handleReturn = useCallback(() => {
@@ -135,8 +147,9 @@ export function SitOutModal({
           {tableName && <span className="sitout-modal__table">{tableName}</span>}
         </div>
 
-        {/* Timer Circle */}
-        <div className={`sitout-modal__timer ${isUrgent ? 'sitout-modal__timer--urgent' : ''}`}>
+        {/* Elapsed sit-out time. The ring is a full, static ring now: there is
+            no deadline for it to deplete towards. */}
+        <div className="sitout-modal__timer">
           <svg className="sitout-modal__progress" viewBox="0 0 100 100">
             <circle className="sitout-modal__progress-bg" cx="50" cy="50" r="45" />
             <circle
@@ -144,21 +157,20 @@ export function SitOutModal({
               cx="50"
               cy="50"
               r="45"
-              strokeDasharray={`${progress * 2.83} 283`}
+              strokeDasharray="283 283"
             />
           </svg>
           <div className="sitout-modal__timer-content">
-            <span className="sitout-modal__time">{formatTime(displayTime)}</span>
-            <span className="sitout-modal__time-label">remaining</span>
+            <span className="sitout-modal__time">{formatTime(elapsed)}</span>
+            <span className="sitout-modal__time-label">sitting out</span>
           </div>
         </div>
 
-        {/* Warning */}
-        {isUrgent && (
-          <div className="sitout-modal__warning">
-            You will be removed from the table if you don't return
-          </div>
-        )}
+        {/* What is actually true: the seat and the stack are held. */}
+        <div className="sitout-modal__note">
+          Your seat and chips are held while you are sitting out. Return whenever
+          you are ready.
+        </div>
 
         {/* Auto-Post Toggle */}
         {onAutoPostChange && (

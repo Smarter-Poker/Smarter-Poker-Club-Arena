@@ -62,6 +62,16 @@ export async function logHandHistory(params: {
     kickers: number[];
     holeCards: { rank: string; suit: string }[];
   }[];
+  /**
+   * ASSISTANT FIX 2026-08-16: dealer/button seat for this hand.
+   *
+   * Without it no positional analysis is possible at all — seat 3 is UTG in
+   * one hand and the cutoff two hands later, so "you open too wide from early
+   * position", the most common leak in low-stakes poker, was uncomputable.
+   * The engine has always tracked this (currentHandDealerSeat); it was simply
+   * never persisted.
+   */
+  buttonSeat?: number;
 }): Promise<{ handId: string | null }> {
   // ── Tier 1: Raw Events ──────────────────────────────────────────────
   const rawEvents = params.actions.map((a, idx) => ({
@@ -130,6 +140,27 @@ export async function logHandHistory(params: {
     ? new Date(params.endedAt).toISOString()
     : new Date().toISOString();
 
+  // ── Personal-assistant inputs (ASSISTANT FIX 2026-08-16) ────────────
+  // `hand_history.hole_cards` and `.board` have existed as columns for a long
+  // time and NOTHING has ever written to them: 0 populated rows out of 56,594
+  // hands a day. Meanwhile the leak detector selects exactly those two columns
+  // (`hero_cards:hole_cards, board`) to attach a worked example to every leak
+  // it reports — so every example it produced showed the player a leak with no
+  // hand and no board attached.
+  //
+  // Only SHOWDOWN-revealed holdings go in. That is information the whole table
+  // already saw face-up, so a hand participant reading this column learns
+  // nothing new. Mucked cards are deliberately never stored: persisting them
+  // would let anyone who played the hand mine their opponents' mucked ranges
+  // afterwards, which is a game-integrity problem, not a feature.
+  const holeCardsByUser: Record<string, { rank: string; suit: string }[]> = {};
+  for (const sd of params.showdownResults ?? []) {
+    if (sd.userId && sd.holeCards?.length) holeCardsByUser[sd.userId] = sd.holeCards;
+  }
+  const holeCardsPayload =
+    Object.keys(holeCardsByUser).length > 0 ? holeCardsByUser : null;
+  const boardPayload = params.communityCards?.length ? params.communityCards : null;
+
   const { data, error } = await supabase
     .from('hand_history')
     .insert({
@@ -148,6 +179,9 @@ export async function logHandHistory(params: {
       winners: params.winners,
       players: params.players,
       actions: params.actions,
+      hole_cards: holeCardsPayload,
+      board: boardPayload,
+      button_seat: params.buttonSeat ?? null,
       // Bible V8 §2.18: 4-tier hand history layers (stored as JSONB)
       raw_events: rawEvents,
       audit_log: auditLog,
@@ -178,6 +212,12 @@ export async function logHandHistory(params: {
           winners: params.winners,
           players: params.players,
           actions: params.actions,
+          // The assistant inputs travel on the fallback too — this branch only
+          // exists to drop the 4-tier JSONB columns, and losing the leak
+          // detector's inputs here would make the degradation silent.
+          hole_cards: holeCardsPayload,
+          board: boardPayload,
+          button_seat: params.buttonSeat ?? null,
         })
         .select('id')
         .maybeSingle();

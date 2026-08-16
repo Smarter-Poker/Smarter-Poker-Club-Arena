@@ -232,7 +232,10 @@ jobs:
         run: |
           # Re-run every deploy so the systemd units can never drift from the
           # repo, and a rebuilt host self-heals on its first deploy.
-          ~/hssh "REPO_DIR=$REPO_DIR $REPO_DIR/server/scripts/install-engine-supervisor.sh"
+          # ADMIN_ALLOW_IPS keeps fail2ban from locking operators out of their own
+          # box. Not a secret — it is an allowlist, and it is only useful to
+          # someone who already holds the deploy key.
+          ~/hssh "REPO_DIR=$REPO_DIR ADMIN_ALLOW_IPS='${{ vars.ADMIN_ALLOW_IPS }}' $REPO_DIR/server/scripts/install-engine-supervisor.sh"
 
       - name: Cut over to the new image
         run: |

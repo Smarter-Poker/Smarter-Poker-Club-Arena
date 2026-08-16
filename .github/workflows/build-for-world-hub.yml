@@ -53,7 +53,7 @@ jobs:
           NODE_ENV: production
           VITE_ANTIGRAVITY_ENABLED: 'true'
           VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
-          VITE_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1a2xmbmFwYmttYWN2d3hrdGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MzA4NDQsImV4cCI6MjA4MzMwNjg0NH0.ZGFrUYq7yAbkveFdudh4q_Xk0qN0AZ-jnu4FkX9YKjo'
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
         run: npm run build

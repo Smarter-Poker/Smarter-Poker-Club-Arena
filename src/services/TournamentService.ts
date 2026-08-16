@@ -8,6 +8,7 @@ import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1308,10 +1309,13 @@ class TournamentService {
     if (!tournament) throw new Error('Tournament not found');
 
     // Validate tournament has required configuration
-    if (!tournament.blind_structure?.length) {
+    // NOTE: blind_structure and payout_structure may arrive as JSON strings from Supabase REST
+    const parsedBlinds = parseBlindStructure(tournament.blind_structure);
+    const parsedPayouts = parsePayoutStructure(tournament.payout_structure);
+    if (!parsedBlinds.length) {
       throw new Error('Tournament has no blind structure defined');
     }
-    if (!tournament.payout_structure?.length) {
+    if (!parsedPayouts.length) {
       throw new Error('Tournament has no payout structure defined');
     }
     if ((tournament.starting_chips || 0) <= 0) {
@@ -1358,8 +1362,8 @@ class TournamentService {
           game_type: 'tournament',
           game_variant: 'nlh',
           stakes: 'Tournament',
-          small_blind: tournament.blind_structure[0].smallBlind,
-          big_blind: tournament.blind_structure[0].bigBlind,
+          small_blind: parsedBlinds[0].smallBlind,
+          big_blind: parsedBlinds[0].bigBlind,
           min_buy_in: 0,
           max_buy_in: 0,
           max_players: 9,
@@ -2206,11 +2210,9 @@ class TournamentService {
       const tournament = await this.getTournament(tournamentId);
       if (!tournament) return { finalTableId: null };
 
-      // Safe access: blind_structure may be null/empty for misconfigured tournaments
-      const blinds =
-        Array.isArray(tournament.blind_structure) && tournament.blind_structure.length > 0
-          ? tournament.blind_structure[0]
-          : { smallBlind: 10, bigBlind: 20 }; // Fallback defaults
+      // Safe access: blind_structure may be null/empty/string for misconfigured tournaments
+      const resolvedBlinds = parseBlindStructure(tournament.blind_structure);
+      const blinds = resolvedBlinds[0];
 
       const { data: newTable } = await supabase
         .from('tables')

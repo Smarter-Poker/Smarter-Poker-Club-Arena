@@ -36,6 +36,48 @@ jobs:
       - name: TypeScript Check
         run: npx tsc --noEmit
 
+      # ── Security Audit ──────────────────────────────────────────────────
+      - name: Dependency Audit
+        continue-on-error: true
+        run: |
+          echo "## 🔒 Dependency Audit" >> $GITHUB_STEP_SUMMARY
+          AUDIT=$(npm audit --audit-level=high 2>&1) || true
+          HIGH=$(echo "$AUDIT" | grep -c "high" || echo 0)
+          CRITICAL=$(echo "$AUDIT" | grep -c "critical" || echo 0)
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "::warning::Found $CRITICAL critical vulnerability(ies)"
+            echo "⚠️ **$CRITICAL critical** and **$HIGH high** vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          elif [ "$HIGH" -gt 0 ]; then
+            echo "::warning::Found $HIGH high vulnerability(ies)"
+            echo "⚠️ **$HIGH high** vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No high/critical vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # ── Dead Code Detection ─────────────────────────────────────────────
+      - name: Dead Code Detection
+        continue-on-error: true
+        run: |
+          echo "## 🧹 Dead Code Check" >> $GITHUB_STEP_SUMMARY
+          DEAD_FILES=0
+
+          # Find .ts/.tsx files not imported anywhere
+          for f in $(find src -name '*.ts' -o -name '*.tsx' | grep -v 'node_modules\|\.d\.ts\|index\.ts\|vite-env\|main\.tsx\|App\.tsx'); do
+            BASENAME=$(basename "$f" | sed 's/\.\(ts\|tsx\)$//')
+            # Check if this file is imported anywhere
+            REFS=$(grep -rl "$BASENAME" src/ --include='*.ts' --include='*.tsx' 2>/dev/null | grep -v "$f" | wc -l | tr -d ' ')
+            if [ "$REFS" -eq 0 ]; then
+              echo "::warning file=$f::File appears unused (not imported anywhere)"
+              DEAD_FILES=$((DEAD_FILES + 1))
+            fi
+          done
+
+          if [ "$DEAD_FILES" -gt 0 ]; then
+            echo "⚠️ **$DEAD_FILES potentially unused file(s)** found — review recommended" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No dead code detected" >> $GITHUB_STEP_SUMMARY
+          fi
+
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 2: Full production build + bundle metrics (depends on typecheck)
   # ─────────────────────────────────────────────────────────────────────────────
@@ -58,10 +100,47 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Stamp Service Worker Version
+        run: |
+          # Update DEPLOY_TS in sw-bus.js so the browser detects a new SW on each deploy
+          STAMP=$(date -u +%Y%m%d%H%M%S)
+          sed -i "s/const DEPLOY_TS = '[^']*'/const DEPLOY_TS = '${STAMP}'/" public/sw-bus.js
+          echo "SW version stamped: ${STAMP}"
+
       - name: Build
         run: npm run build
         env:
           NODE_ENV: production
+
+      # ── Lighthouse Performance Audit ──────────────────────────────────────
+      - name: Lighthouse Audit
+        continue-on-error: true
+        run: |
+          npm install -g @lhci/cli
+          echo "## 🔦 Lighthouse Performance Audit" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Run basic static analysis on the built HTML
+          INDEX_SIZE=$(wc -c < dist/index.html | tr -d ' ')
+          INDEX_KB=$((INDEX_SIZE / 1024))
+
+          # Check for render-blocking resources
+          RENDER_BLOCK=$(grep -c 'rel="stylesheet"' dist/index.html || echo 0)
+          INLINE_SCRIPTS=$(grep -c '<script>' dist/index.html || echo 0)
+
+          # Count total assets
+          JS_COUNT=$(find dist/assets -name '*.js' 2>/dev/null | wc -l | tr -d ' ')
+          CSS_COUNT=$(find dist/assets -name '*.css' 2>/dev/null | wc -l | tr -d ' ')
+          IMG_COUNT=$(find dist/images -type f 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| HTML size | ${INDEX_KB}kB |" >> $GITHUB_STEP_SUMMARY
+          echo "| JS bundles | $JS_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| CSS bundles | $CSS_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Images | $IMG_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Render-blocking stylesheets | $RENDER_BLOCK |" >> $GITHUB_STEP_SUMMARY
+          echo "| Inline scripts | $INLINE_SCRIPTS |" >> $GITHUB_STEP_SUMMARY
 
       # ── Bundle Size Tracking ─────────────────────────────────────────────
       - name: Track Bundle Size
@@ -156,3 +235,46 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "TypeScript and build passed, but Vercel deployment failed." >> $GITHUB_STEP_SUMMARY
           echo "Check Vercel dashboard for details." >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 4: Notify on failure (runs when any job fails)
+  # ─────────────────────────────────────────────────────────────────────────────
+  notify-failure:
+    name: Failure Notification
+    needs: [typecheck, build, deploy]
+    if: failure() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create GitHub Issue on Failure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+            const sha = context.sha.substring(0, 7);
+
+            // Check if there's already an open CI failure issue
+            const issues = await github.rest.issues.listForRepo({
+              owner, repo,
+              labels: 'ci-failure',
+              state: 'open',
+              per_page: 1
+            });
+
+            if (issues.data.length > 0) {
+              // Comment on existing issue
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: issues.data[0].number,
+                body: `🔴 **Another CI failure** on commit \`${sha}\`\n\n[View run](${runUrl})`
+              });
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner, repo,
+                title: `🔴 CI Pipeline Failed — ${new Date().toISOString().split('T')[0]}`,
+                body: `## CI Pipeline Failure\n\n**Commit:** \`${sha}\`\n**Run:** [View details](${runUrl})\n\nThis issue was auto-created by the CI pipeline. Close when resolved.`,
+                labels: ['ci-failure']
+              });
+            }

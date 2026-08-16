@@ -22,6 +22,7 @@ import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { ClubsService } from '../../services/ClubsService';
 import { tableService } from '../../services/TableService';
 import { tournamentService } from '../../services/TournamentService';
+import { parseBlindStructure } from '../../utils/parseBlindStructure';
 import { WalletService } from '../../services/WalletService';
 import { supabase } from '../../lib/supabase';
 import {
@@ -701,7 +702,7 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
 
   // Fix #9: Dynamic level duration
   const levelDuration =
-    tournament.blind_structure?.[0]?.durationMinutes ||
+    parseBlindStructure(tournament.blind_structure)[0]?.durationMinutes ||
     tournament.settings?.level_duration_minutes ||
     10;
 

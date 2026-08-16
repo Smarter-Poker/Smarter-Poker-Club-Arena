@@ -319,11 +319,47 @@ export abstract class ServerTableEngineBase {
       );
     });
     this.stateVerifier = new StateVerifier((event) => {
+      // The ViolationEvent carries `violations: { type, message, severity }[]`.
+      // This used to report only `violationCount`, so every alert read
+      // "N issue(s) in hand #X" and threw away the type, the message and the
+      // severity. Measured on production: 44 of these per hour against 1,688
+      // hands (2.6%), every one of them indistinguishable from the next.
+      //
+      // That is not a noisy alarm, it is an unreadable one — you cannot tell a
+      // CHIP_CONSERVATION (chips created or destroyed) from a POT_ACCOUNTING
+      // rounding artifact, nor a `critical` from an `info`. It also blocks the
+      // open question of whether conservation violations should halt
+      // settlement, because nobody can characterise what is actually firing.
+      const bySeverity = event.violations.reduce<Record<string, number>>((acc, v) => {
+        acc[v.severity] = (acc[v.severity] || 0) + 1;
+        return acc;
+      }, {});
+      const worst = event.violations.some((v) => v.severity === 'critical')
+        ? 'critical'
+        : event.violations.some((v) => v.severity === 'warning')
+          ? 'warning'
+          : 'info';
+      const detail = event.violations
+        .map((v) => `${v.type}(${v.severity}): ${v.message}`)
+        .join(' | ');
+
       reportError(
         new Error(
-          `[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`
+          `[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION [${worst}]: ` +
+            `${event.violationCount} issue(s) in hand #${event.handNumber} — ${detail}`
         ),
-        'ServerTableEnginetableId.STATE_INTEGRITY_VIOLATION'
+        // Group by worst severity and by the set of violation types, so Sentry
+        // stops collapsing every distinct defect into one opaque bucket.
+        `ServerTableEngine.STATE_INTEGRITY_VIOLATION.${worst}.` +
+          [...new Set(event.violations.map((v) => v.type))].sort().join('+'),
+        {
+          tableId,
+          handNumber: event.handNumber,
+          violationCount: event.violationCount,
+          bySeverity,
+          types: [...new Set(event.violations.map((v) => v.type))],
+          violations: event.violations,
+        }
       );
     });
 

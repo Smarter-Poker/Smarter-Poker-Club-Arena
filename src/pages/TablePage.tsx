@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { SeatSlot, PotDisplay, CommunityCards, DealerButton } from '../components/table';
+import { SeatSlot, PotDisplay, CommunityCards } from '../components/table';
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
@@ -4821,12 +4821,7 @@ export default function TablePage({
             </div>
           </div>
 
-          {/* Dealer Button — Animated "D" chip */}
-          <DealerButton
-            dealerVisualIndex={dealerVisualIndex}
-            seatPositions={seatPositions}
-            isVisible={tableState.isHandInProgress && dealerVisualIndex >= 0}
-          />
+          {/* Dealer Button — Animated "D" chip (component not yet implemented) */}
 
           {/* Player Seats */}
           {seatPositions.map((pos, idx) => {
@@ -5355,8 +5350,6 @@ export default function TablePage({
           onDecline={handleInsuranceDecline}
           offer={insuranceOffer}
           timeRemaining={15}
-          tableId={tableId || ''}
-          playerId={userId || ''}
         />
       )}
 

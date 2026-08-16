@@ -389,7 +389,7 @@ class SpinItEngineClass {
         .from('tournaments')
         .select('club_id')
         .eq('id', lobbyId)
-        .single();
+        .maybeSingle();
       return data?.club_id ?? null;
     } catch {
       return null;
@@ -454,7 +454,7 @@ class SpinItEngineClass {
       .from('spin_bonus_pools')
       .select('balance')
       .eq('club_id', clubId)
-      .single();
+      .maybeSingle();
 
     if (existing) {
       await supabase
@@ -476,7 +476,7 @@ class SpinItEngineClass {
       .from('spin_bonus_pools')
       .select('balance')
       .eq('club_id', clubId)
-      .single();
+      .maybeSingle();
 
     if (!existing || existing.balance <= 0) return 0;
 

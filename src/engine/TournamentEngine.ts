@@ -278,7 +278,7 @@ export class TournamentEngine {
               .from('spin_bonus_pools')
               .select('balance')
               .eq('club_id', clubId)
-              .single();
+              .maybeSingle();
 
             const available = poolBalance?.balance ?? 0;
             actualBonus = Math.min(requestedBonus, available);
@@ -305,7 +305,7 @@ export class TournamentEngine {
               .from('spin_bonus_pools')
               .select('balance')
               .eq('club_id', clubId)
-              .single();
+              .maybeSingle();
 
             if (existing) {
               await this.supabase

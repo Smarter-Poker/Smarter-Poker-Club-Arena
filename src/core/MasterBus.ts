@@ -628,6 +628,8 @@ export interface BusPayloadMap {
     prizePool: number;
     label: string;
     color: string;
+    bonusFromPool?: number;
+    poolContribution?: number;
   };
   SPIN_GAME_STARTED: {
     lobbyId: string;

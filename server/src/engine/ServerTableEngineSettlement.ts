@@ -614,6 +614,17 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             cards: [],
           })),
           actions: this.currentHandActions,
+          // ASSISTANT FIX 2026-08-16: both of these were already computed on
+          // the engine for this hand and then thrown away at the write.
+          //
+          // showdownResults carries the revealed holdings (captured in
+          // ServerTableEngineHandEvents on SHOWDOWN, used until now only for
+          // bad-beat-jackpot detection). buttonSeat is currentHandDealerSeat.
+          // Without the first, the personal assistant can show a leak but not
+          // the hand that proves it; without the second, it cannot compute a
+          // positional leak at all.
+          showdownResults: this.currentHandShowdownResults,
+          buttonSeat: this.currentHandDealerSeat,
         });
         v_handHistoryId = result.handId;
 

@@ -111,23 +111,6 @@
   stroke: #3fb950;
   stroke-width: 8;
   stroke-linecap: round;
-  transition: stroke-dasharray 0.5s ease;
-}
-
-.sitout-modal__timer--urgent .sitout-modal__progress-fill {
-  stroke: #f85149;
-  animation: pulse-stroke 1s ease-in-out infinite;
-}
-
-@keyframes pulse-stroke {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.5;
-  }
 }
 
 .sitout-modal__timer-content {
@@ -146,10 +129,6 @@
   color: #e4e6eb;
 }
 
-.sitout-modal__timer--urgent .sitout-modal__time {
-  color: #f85149;
-}
-
 .sitout-modal__time-label {
   font-size: 0.75rem;
   color: #6e7681;
@@ -158,17 +137,23 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   WARNING
+   NOTE
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.sitout-modal__warning {
-  padding: 12px 20px;
-  margin: 0 20px 20px;
-  font-size: 0.8125rem;
-  background: rgba(248, 81, 73, 0.15);
-  border: 1px solid rgba(248, 81, 73, 0.3);
+/* Replaces .sitout-modal__warning (2026-08-16). That warned "You will be
+   removed from the table if you don't return", which was false — there is no
+   sit-out deadline anywhere in the system. This states what is actually true,
+   so it is informational rather than alarming. */
+.sitout-modal__note {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
   border-radius: 8px;
-  color: #f85149;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -336,8 +321,8 @@
     font-size: 2rem;
   }
 
-  .sitout-modal__warning {
-    margin: 0 16px 16px;
+  .sitout-modal__note {
+    margin: 12px 12px 0;
     font-size: 0.75rem;
   }
 
@@ -366,20 +351,4 @@
     align-items: center;
     justify-content: center;
   }
-}
-
-/* Replaces .sitout-modal__warning (2026-08-16). That warned "You will be
-   removed from the table if you don't return", which was false — there is no
-   sit-out deadline anywhere in the system. This states what is actually true,
-   so it is informational rather than alarming. */
-.sitout-modal__note {
-  margin: 12px 16px 0;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 13px;
-  line-height: 1.45;
-  text-align: center;
 }

@@ -4,14 +4,20 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Automatically classifies players into archetypes based on live VPIP/PFR/AF:
- *   🦈 Shark — Selective + Aggressive (TAG with edge)
- *   🐟 Fish  — Loose + Passive (high VPIP, low PFR)
- *   🪨 Rock  — Ultra-tight + Passive (low VPIP, low PFR)
- *   🔥 Maniac — Hyper-aggressive + Loose
- *   🏷️ TAG  — Tight-Aggressive (standard solid)
- *   💥 LAG  — Loose-Aggressive
- *   🧊 Nit  — Extremely tight (even tighter than Rock)
- *   📞 Calling Station — Calls everything, never raises
+ *   S   Shark  — Selective + Aggressive (TAG with edge)
+ *   F   Fish   — Loose + Passive (high VPIP, low PFR)
+ *   R   Rock   — Ultra-tight + Passive (low VPIP, low PFR)
+ *   M   Maniac — Hyper-aggressive + Loose
+ *   T   TAG    — Tight-Aggressive (standard solid)
+ *   L   LAG    — Loose-Aggressive
+ *   N   Nit    — Extremely tight (even tighter than Rock)
+ *   CS  Calling Station — Calls everything, never raises
+ *
+ * Badge icons are single letters (CS is the one two-letter case). The set was
+ * migrated off emoji in 2026-08 because CLAUDE.md forbids emoji in code and
+ * because emoji render at wildly different sizes across platforms, which made
+ * the badge jitter on mobile. Shark and Fish were missed by that migration and
+ * are brought into line here.
  *
  * Classification is based on real poker statistics:
  * - VPIP: Voluntarily Put $ In Pot (measures looseness)
@@ -64,14 +70,14 @@ export interface ClassifyInput {
 const STYLE_MAP: Record<PlayerStyle, Omit<PlayerStyleResult, 'style' | 'confidence'>> = {
   shark: {
     label: 'Shark',
-    icon: '🦈',
+    icon: 'S',
     color: '#60A5FA',
     bgColor: 'rgba(96, 165, 250, 0.2)',
     tooltip: 'Selective & aggressive — plays few hands but attacks',
   },
   fish: {
     label: 'Fish',
-    icon: '🐟',
+    icon: 'F',
     color: '#34D399',
     bgColor: 'rgba(52, 211, 153, 0.2)',
     tooltip: 'Plays too many hands passively — vulnerable to aggression',

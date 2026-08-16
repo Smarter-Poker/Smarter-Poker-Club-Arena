@@ -107,7 +107,14 @@ groups:
       # ── The watchdog escalating repeatedly means something is wrong that
       #    recovery is only papering over.
       - alert: EngineTableRebuildChurn
-        expr: changes(poker_uptime_seconds[30m]) > 3
+        # resets(), NOT changes(). poker_uptime_seconds is a monotonically
+        # increasing counter, so changes() counts EVERY scrape — it measured 118
+        # on a perfectly healthy engine and fired permanently, which is worse
+        # than no alert because it trains you to ignore the one signal that
+        # says the engine is restart-looping. resets() counts counter resets,
+        # i.e. actual process restarts, which is what this rule always meant.
+        # (Measured 2026-08-16: changes()=118, resets()=3, uptime=170s.)
+        expr: resets(poker_uptime_seconds[30m]) > 3
         for: 5m
         labels:
           severity: warning

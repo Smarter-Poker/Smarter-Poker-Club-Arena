@@ -1,0 +1,51 @@
+name: Agent Diagnostic
+on:
+  workflow_dispatch:
+
+jobs:
+  run-diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+      - name: Run diagnostic
+        env:
+          HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+          ssh -o StrictHostKeyChecking=no root@$HOST 'bash -s' <<'EOSSH'
+          set -u
+          echo "── containers ─────────────────────────────────────────"
+          docker ps -a --format '{{.Names}}\t{{.Image}}\t{{.CreatedAt}}\t{{.Status}}\t{{.Ports}}'
+          echo
+          echo "── what :current points at ────────────────────────────"
+          docker image inspect -f '{{.Id}}' club-arena-engine:current 2>/dev/null
+          echo
+          echo "── running container env (the smoking gun) ────────────"
+          docker inspect club-arena-engine \
+            --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+            | grep -iE 'MAINTENANCE_MODE|GIT_COMMIT_SHA|TEST_TABLE_ID' || echo "  (container not found under that name)"
+          echo
+          echo "── .env on disk ───────────────────────────────────────"
+          grep -inE '^[^#]*MAINTENANCE_MODE|^[^#]*TEST_TABLE_ID' /opt/club-arena/server/.env || echo "  no maintenance flag set in .env"
+          echo
+          echo "── FIX (only runs if .env has it enabled) ─────────────"
+          if grep -qiE '^[[:space:]]*MAINTENANCE_MODE[[:space:]]*=[[:space:]]*(true|1|on)' /opt/club-arena/server/.env; then
+            cp /opt/club-arena/server/.env /opt/club-arena/server/.env.bak.$(date +%s)
+            sed -i -E 's/^([[:space:]]*MAINTENANCE_MODE[[:space:]]*=.*)$/# disabled 2026-08-16 — \1/I' /opt/club-arena/server/.env
+            echo "  MAINTENANCE_MODE disabled, .env backed up. Restarting via engine-up.sh:"
+            IMAGE=club-arena-engine:current CONTAINER=club-arena-engine \
+              ENV_FILE=/opt/club-arena/server/.env \
+              /opt/club-arena/server/scripts/engine-up.sh
+          else
+            echo "  not the cause — do NOT hand-roll docker run; report the output above"
+          fi
+          echo
+          echo "── verify ─────────────────────────────────────────────"
+          sleep 25
+          curl -s --max-time 10 https://engine.smarter.poker/health \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print("  version:",d.get("version"),"| uptime:",d.get("uptime"),"| tables:",d.get("activeTables"),"| liveness:",d.get("liveness"))'
+          EOSSH

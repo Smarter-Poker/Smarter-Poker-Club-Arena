@@ -1,0 +1,76 @@
+name: Break-glass — restore admin SSH key on the engine host
+
+# Why this exists
+# ---------------
+# On 2026-08-16 every operator key stopped authenticating against the engine
+# host: port 22 was open, the host key was unchanged (so not a rebuild), and
+# sshd answered `Permission denied (publickey)` — i.e. root's authorized_keys
+# no longer contained the admin key. The engine itself stayed healthy and kept
+# dealing throughout; only human access was lost.
+#
+# At that moment there was no non-destructive way back in. The Hetzner API
+# cannot run commands, `gh` had lost Actions access in the token rotation, and
+# the remaining option was rescue-mode + reboot, which restarts live poker to
+# fix what is only an access problem.
+#
+# GitHub Actions still had a working path to the host, so this is that path,
+# made explicit and auditable. It runs ONLY when .ops/restore-admin-key.pub
+# changes, appends the public key in that file if it is missing, and prints
+# the resulting fingerprints. It never removes a key and never touches the
+# engine, the container, or any service.
+#
+# The key material here is a PUBLIC key. Nothing secret is committed.
+
+on:
+  push:
+    paths:
+      - '.ops/restore-admin-key.pub'
+  workflow_dispatch:
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Report what is currently authorised
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 \
+            root@${{ secrets.HETZNER_HOST }} \
+            'echo "host=$(hostname)"; echo "--- current keys ---"; ssh-keygen -lf /root/.ssh/authorized_keys 2>/dev/null || echo "(none readable)"'
+
+      - name: Append the admin key if absent
+        run: |
+          PUB="$(cat .ops/restore-admin-key.pub)"
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 \
+            root@${{ secrets.HETZNER_HOST }} "PUB='$PUB' bash -s" <<'REMOTE'
+          set -e
+          mkdir -p /root/.ssh && chmod 700 /root/.ssh
+          touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
+          KEYPART=$(printf '%s' "$PUB" | awk '{print $2}')
+          if grep -qF "$KEYPART" /root/.ssh/authorized_keys; then
+            echo "already present — no change"
+          else
+            cp -a /root/.ssh/authorized_keys "/root/.ssh/authorized_keys.bak-$(date +%Y%m%dT%H%M%S)"
+            printf '%s\n' "$PUB" >> /root/.ssh/authorized_keys
+            echo "appended"
+          fi
+          echo "--- keys now ---"
+          ssh-keygen -lf /root/.ssh/authorized_keys
+          REMOTE
+
+      - name: Show recent auth history for context
+        if: always()
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 \
+            root@${{ secrets.HETZNER_HOST }} \
+            'echo "--- authorized_keys mtime ---"; stat -c "%y" /root/.ssh/authorized_keys; echo "--- last 10 accepted logins ---"; zcat -f /var/log/auth.log* 2>/dev/null | grep "Accepted publickey" | tail -10' || true

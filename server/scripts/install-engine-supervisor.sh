@@ -93,6 +93,17 @@ if command -v fail2ban-client >/dev/null 2>&1; then
     sed -i 's/^mode *= *aggressive/mode     = normal/' /etc/fail2ban/jail.local
     echo "  fail2ban: sshd jail aggressive -> normal (password auth is off; aggressive only banned us)"
   fi
+  # Self-configuring safety net: any address that has COMPLETED public-key
+  # authentication in the last 24h is, by definition, not a brute-forcer. This
+  # needs no secret, no repo variable, and no operator action — it simply undoes
+  # bans against people who have already proven they hold a valid key. It is what
+  # stops an operator being locked out of the box they are trying to fix.
+  journalctl -u ssh --since '-24 hours' --no-pager 2>/dev/null \
+    | grep -oE 'Accepted publickey for [^ ]+ from [0-9.]+' \
+    | awk '{print $NF}' | sort -u | while read -r ip; do
+        fail2ban-client set sshd unbanip "$ip" >/dev/null 2>&1 && echo "  fail2ban: unbanned $ip (has completed key auth)"
+      done
+
   if [ -n "${ADMIN_ALLOW_IPS:-}" ]; then
     mkdir -p /etc/fail2ban/jail.d
     printf '[DEFAULT]\nignoreip = 127.0.0.1/8 ::1 %s\n' "$ADMIN_ALLOW_IPS" > /etc/fail2ban/jail.d/01-admin-allowlist.local

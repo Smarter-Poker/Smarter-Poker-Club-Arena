@@ -6,8 +6,8 @@
 
 | Key                   | Value                                    | Notes                             |
 | --------------------- | ---------------------------------------- | --------------------------------- |
-| GitHub PAT            | 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 | Full access, never expires        |
-| Vercel Token          | lRnRVWnwQFWcFV2ny1i5XHsa                 | Team deployment token             |
+| GitHub PAT            | <REDACTED_GH_PAT> | Full access, never expires        |
+| Vercel Token          | <REDACTED_VERCEL_TOKEN>                 | Team deployment token             |
 | Vercel Org ID         | team_SVD8r7AOPH065G3usBxVvrBc            | Team ID                           |
 | Hub-Vanguard Project  | prj_op66GkZyZcygXQKm76iyycfVFAQx         | WH — owns smarter.poker           |
 | Club Arena Project    | prj_oaCq8RYhExLRUYizLG93li0uX468         | CA Vite SPA                       |
@@ -17,7 +17,7 @@
 
 ## EXPIRED/REVOKED TOKENS
 
-- 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 — REVOKED 2026-03-24
+- <REDACTED_GH_PAT> — REVOKED 2026-03-24
 - ghp_9HwqeUZtAO... — EXPIRED earlier
 
 ## ARCHITECTURE

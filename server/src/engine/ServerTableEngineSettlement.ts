@@ -592,6 +592,36 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     let v_handHistoryId: string | null = null;
     await runStep('hand_history', true, async () => {
       if (this.tableInfo) {
+        // ── SECURITY 2026-08-17: apply the auto-muck gate to the WRITE ──
+        //
+        // `currentHandShowdownResults` is built in ServerTableEngineHandEvents
+        // on the SHOWDOWN event, from EVERY participant, before the winners are
+        // known. It is a full evaluation set, not a reveal set — the comment at
+        // that site (AUDIT FIX 2026-07-19) says so explicitly, which is why the
+        // `showdown_cards_revealed` broadcast was moved to the WINNERS handler
+        // and gated there.
+        //
+        // The persistence path never got that gate. logHandHistory fans this
+        // array into three columns of one row — `hole_cards`, `dispute_review`
+        // and `player_summaries` — and `hand_history_authenticated_select`
+        // lets ANY participant of a hand read that whole row. So every player
+        // could mine every opponent's mucked holdings for any hand they were
+        // dealt into. Measured on 2026-08-17: 2,706 rows carrying 3,953 losing
+        // players' hole cards in a single hour.
+        //
+        // handHistory.ts already documents the intended policy above its own
+        // loop — "Mucked cards are deliberately never stored ... a game
+        // integrity problem, not a feature". This restores that intent. The
+        // in-memory array is deliberately NOT filtered: bad-beat-jackpot
+        // detection needs the losing hand.
+        const autoMuckEnabled = this.tableInfo.auto_muck_enabled ?? true;
+        const revealedShowdownResults = this.currentHandShowdownResults.filter((r) => {
+          if (!autoMuckEnabled) return true;
+          if (this.currentHandWinnerIds.includes(r.userId)) return true;
+          if (this.showHandPlayers?.has(r.userId)) return true;
+          return false;
+        });
+
         const result = await logHandHistory({
           tableId: this.tableId,
           tournamentId: this.tableInfo.tournament_id || undefined,
@@ -623,7 +653,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // Without the first, the personal assistant can show a leak but not
           // the hand that proves it; without the second, it cannot compute a
           // positional leak at all.
-          showdownResults: this.currentHandShowdownResults,
+          showdownResults: revealedShowdownResults,
           buttonSeat: this.currentHandDealerSeat,
         });
         v_handHistoryId = result.handId;

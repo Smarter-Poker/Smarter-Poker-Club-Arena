@@ -98,7 +98,7 @@ export const FEATURE_PRICING: Record<
   time_bank_seconds: { cost: 5, usageType: 'per_use', description: 'Extra time bank extension' },
   throwable: { cost: 1, usageType: 'per_use', description: 'Throw item at table' },
   theme_unlock: { cost: 25, usageType: 'permanent', description: 'Unlock table theme' },
-  club_creation: { cost: 0, usageType: 'permanent', description: 'Create club (FREE)' },
+  club_creation: { cost: 100, usageType: 'permanent', description: 'Create club' },
   emoji_pack: { cost: 1, usageType: 'permanent', description: 'Unlock 50 emojis' },
   tag_pack: { cost: 1, usageType: 'per_use', description: 'Player tag' },
 };
@@ -257,24 +257,22 @@ class VIPServiceClass {
    */
   private async getMonthlyUsage(userId: string): Promise<VIPMonthlyLimits> {
     try {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
+      // vip_feature_usage_monthly is the month-scoped per-feature ledger,
+      // written atomically by fn_increment_vip_usage (2026-08-17). Before it
+      // existed this method deliberately read nothing, so VIP quotas never
+      // depleted and the diamond top-up path could never trigger.
+      const month = new Date().toISOString().slice(0, 7); // 'YYYY-MM' UTC
       const { data, error } = await supabase
-        .from('vip_monthly_usage')
-        // vip_monthly_usage tracks aggregate monthly metrics, not per-feature
-        // usage counts; there is no feature/usage_count/period_start. Until a
-        // per-feature usage table exists, degrade to no rows -> lenient defaults.
-        .select('id')
+        .from('vip_feature_usage_monthly')
+        .select('feature, usage_count')
         .eq('user_id', userId)
-        .limit(0);
+        .eq('month', month);
       if (error) console.warn('[VIPService] getMonthlyUsage error:', error.message);
 
-      // No per-feature usage table yet (see select note above); `data` is always
-      // empty here, so usage stays zeroed and all features fall back to limits.
-      void data;
       const usage: Record<string, number> = {};
+      for (const row of data || []) {
+        usage[(row as any).feature] = (row as any).usage_count || 0;
+      }
 
       return {
         rabbitHunts: { used: usage['rabbit_hunt'] || 0, limit: VIP_GOLD_LIMITS.rabbitHunts },
@@ -339,28 +337,13 @@ class VIPServiceClass {
         3
       );
       if (rpcErr) {
-        // If the RPC fails (e.g., row doesn't exist yet), fall back to upsert
-        console.warn(
-          '[VIPService] fn_increment_vip_usage error, falling back to upsert:',
-          rpcErr.message
-        );
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        const { error: upsertErr } = await supabase.from('vip_monthly_usage').upsert(
-          {
-            user_id: userId,
-            feature,
-            period_start: startOfMonth.toISOString(),
-            usage_count: 1,
-          },
-          {
-            onConflict: 'user_id,feature,period_start',
-            ignoreDuplicates: false,
-          }
-        );
-        if (upsertErr) reportError(upsertErr, 'VIPService.upsertQuota');
+        // The old fallback upserted vip_monthly_usage with columns that table
+        // does not have (feature/period_start/usage_count) and could never
+        // succeed. fn_increment_vip_usage has a real body since 2026-08-17
+        // and writes both the lifetime/daily and monthly ledgers atomically,
+        // so an error here is a genuine failure worth reporting, not a
+        // missing-RPC condition to paper over.
+        reportError(rpcErr, 'VIPService.fn_increment_vip_usage_failed');
       }
     } catch (err) {
       console.warn('[VIPService] consumeVIPQuota unexpected error:', err);

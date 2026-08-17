@@ -596,11 +596,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // Step 5: Initialize atomic stacks, time banks, and disconnect tracking for each player
     // Bible V8 §6.2: Reset per-hand time bank activation counters
     this.timeBankEngine.resetHandActivations(this.tableId);
+    // VIP time banks 2026-08-17: new players get the free session base PLUS
+    // their DB-backed extras (VIP monthly remaining + purchased extensions),
+    // batch-fetched in one RPC. Before this, EVERY player got the table
+    // default (120 uses = 1800s) in memory, VIP or not - the perk was
+    // meaningless and the monthly quota never depleted.
+    const tbNewPlayers = hcPlayers.filter(
+      (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
+    );
+    const tbExtras = await this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id));
     for (const p of hcPlayers) {
       this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
       // Only initialize time bank if player is NEW (don't reset existing pool per session)
       if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
-        this.timeBankEngine.initializePlayer(this.tableId, p.user_id);
+        const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
+        this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
+          remainingSeconds: tbTotal,
+          usesRemaining: Math.ceil(tbTotal / 15),
+        });
+        this.timeBankMeta.set(p.user_id, {
+          initialSeconds: tbTotal,
+          baseSeconds: this.timeBankBaseSeconds,
+          dbConsumedSeconds: 0,
+        });
       }
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
     }

@@ -12,7 +12,7 @@ import { HandController } from './HandController.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
 import { StateVerifier } from './StateVerifier.js';
-import { TimeBankEngine } from './TimeBankEngine.js';
+import { TimeBankEngine, type TimeBankEvent } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
 import { AtomicStackService } from './AtomicStackService.js';
@@ -297,6 +297,19 @@ export abstract class ServerTableEngineBase {
 
   // ── Step 5: Ported Supporting Modules ──
   protected timeBankEngine: TimeBankEngine;
+  /**
+   * VIP time banks 2026-08-17: per-player session accounting. Every player
+   * gets a free session base (Bible V8 6.2: 30s); VIP monthly quota
+   * (120s/month) and diamond-purchased extensions come from the DB via
+   * fn_time_bank_allowance and are consumed via fn_consume_time_bank.
+   * initialSeconds/baseSeconds/dbConsumedSeconds let the accounting hook
+   * compute exactly how much of each use is DB-backed.
+   */
+  protected timeBankMeta: Map<
+    string,
+    { initialSeconds: number; baseSeconds: number; dbConsumedSeconds: number }
+  > = new Map();
+  protected readonly timeBankBaseSeconds = 30;
   protected disconnectEngine: DisconnectEngine;
   protected preActionEngine: PreActionEngine;
   protected atomicStackService: AtomicStackService;
@@ -360,6 +373,7 @@ export abstract class ServerTableEngineBase {
       console.log(
         `[ServerTableEngine:${tableId}] TimeBank: ${event.type} player=${event.playerId}`
       );
+      this.onTimeBankAccounting(event);
     });
     this.disconnectEngine = new DisconnectEngine(this.preciseTimer, (event) => {
       console.log(
@@ -916,6 +930,85 @@ export abstract class ServerTableEngineBase {
   /** Ms spent in the current by-design pause; 0 when not paused. */
   msPaused(): number {
     return this.pausedSinceMs === 0 ? 0 : Date.now() - this.pausedSinceMs;
+  }
+
+  /**
+   * VIP time banks 2026-08-17: batch-fetch each player's EXTRA seconds
+   * (VIP monthly remaining + purchased extensions) on top of the free
+   * session base. Fail-open to base-only: an allowance outage must never
+   * block dealing.
+   */
+  protected async fetchTimeBankExtras(userIds: string[]): Promise<Map<string, number>> {
+    const extras = new Map<string, number>();
+    if (userIds.length === 0) return extras;
+    try {
+      const { data, error } = await supabase.rpc('fn_time_bank_allowance', {
+        p_user_ids: userIds,
+      });
+      if (error) throw new Error(error.message);
+      for (const row of (data as Array<{ user_id: string; extra_seconds: number }>) ?? []) {
+        extras.set(row.user_id, Math.max(0, Number(row.extra_seconds) || 0));
+      }
+    } catch (err) {
+      reportError(err, 'TimeBank.allowance_fetch_failed');
+    }
+    return extras;
+  }
+
+  /**
+   * VIP time banks 2026-08-17: commit DB-backed consumption when a time
+   * bank use finishes (player acted, expired, or depleted). The free
+   * session base is spent first; only the excess hits the DB. Best-effort:
+   * accounting must never break gameplay.
+   */
+  private onTimeBankAccounting(event: TimeBankEvent): void {
+    if (
+      event.type !== 'TIME_BANK_STOPPED' &&
+      event.type !== 'TIME_BANK_EXPIRED' &&
+      event.type !== 'TIME_BANK_DEPLETED'
+    ) {
+      return;
+    }
+    try {
+      const meta = this.timeBankMeta.get(event.playerId);
+      if (!meta) return;
+      const remaining = this.timeBankEngine.getRemainingSeconds(this.tableId, event.playerId);
+      const usedTotal = Math.max(0, meta.initialSeconds - remaining);
+      const owed = Math.max(0, usedTotal - meta.baseSeconds) - meta.dbConsumedSeconds;
+      if (owed <= 0) return;
+      meta.dbConsumedSeconds += owed;
+      void supabase
+        .rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
+        .then(({ error }) => {
+          if (error) console.warn('[TimeBank] consume failed:', error.message);
+        });
+    } catch {
+      /* accounting must never break gameplay */
+    }
+  }
+
+  /**
+   * VIP time banks 2026-08-17: mid-session refresh. A diamond top-up (or
+   * VIP renewal) after session init lives only in the DB - rebase the
+   * in-memory bank to base-residue + fresh DB extras so the purchase is
+   * usable without re-seating. Returns false if nothing could be refreshed.
+   */
+  protected async refreshTimeBankFromDb(userId: string): Promise<boolean> {
+    const meta = this.timeBankMeta.get(userId);
+    const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+    if (!meta || !bank || bank.isActive) return false;
+    const extras = await this.fetchTimeBankExtras([userId]);
+    if (!extras.has(userId)) return false;
+    const usedTotal = Math.max(0, meta.initialSeconds - bank.remainingSeconds);
+    const baseLeft = Math.max(0, meta.baseSeconds - Math.min(usedTotal, meta.baseSeconds));
+    const newRemaining = baseLeft + (extras.get(userId) ?? 0);
+    if (!this.timeBankEngine.rebase(this.tableId, userId, newRemaining)) return false;
+    this.timeBankMeta.set(userId, {
+      initialSeconds: newRemaining,
+      baseSeconds: baseLeft,
+      dbConsumedSeconds: 0,
+    });
+    return true;
   }
 
   /**

@@ -304,7 +304,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (applied) {
         this.recordRecoveryEvent(
           'watchdog_forced_action',
-          'forced ' + forced + ' at seat ' + seat + ' after ' + Math.round(idleMs / 1000) + 's stall'
+          'forced ' +
+            forced +
+            ' at seat ' +
+            seat +
+            ' after ' +
+            Math.round(idleMs / 1000) +
+            's stall'
         );
         this.markProgress();
       } else {
@@ -597,7 +603,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * Activate Time Bank triggered by the client HTTP POST to `/timebank`
    * Bible V8 §6.2: Manual activate — delegates to TimeBankEngine (single source of truth)
    */
-  public activateTimeBank(userId: string): { success: boolean; error?: string } {
+  public async activateTimeBank(userId: string): Promise<{ success: boolean; error?: string }> {
     if (!this.handController || !this.tableInfo) {
       return { success: false, error: 'No active hand or table info missing' };
     }
@@ -615,7 +621,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     // Bible V8 §6.2: Check via TimeBankEngine (single source of truth for pool + per-hand limits)
     if (!this.timeBankEngine.hasTimeBank(this.tableId, userId)) {
-      return { success: false, error: 'No time bank uses remaining' };
+      // VIP time banks 2026-08-17: a diamond top-up purchased mid-session
+      // lives only in the DB. Refresh once before rejecting, then re-validate
+      // the turn - the await may have raced the action.
+      const refreshed = await this.refreshTimeBankFromDb(userId);
+      if (!refreshed || !this.timeBankEngine.hasTimeBank(this.tableId, userId)) {
+        return { success: false, error: 'No time bank uses remaining' };
+      }
+      const stateAfter = this.handController?.getState();
+      if (!stateAfter || stateAfter.currentPlayerSeat !== player.seat) {
+        return { success: false, error: 'Not your turn' };
+      }
+      if (this.timeBankActivatedThisTurn) {
+        return { success: false, error: 'Time bank already activated this turn' };
+      }
     }
 
     // Activate via TimeBankEngine — it handles pool depletion, per-hand limit, and event emission

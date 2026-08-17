@@ -13,10 +13,10 @@ import { reportError } from '../services/errorReporter.js';
 
 export interface TimebankDeps {
   gameServer: {
-    getTableEngine(
-      tableId: string
-    ):
-      | { activateTimeBank(userId: string): { success: boolean; [k: string]: unknown } }
+    getTableEngine(tableId: string):
+      | {
+          activateTimeBank(userId: string): Promise<{ success: boolean; [k: string]: unknown }>;
+        }
       | null
       | undefined;
   };
@@ -46,7 +46,7 @@ export async function handleTimebank(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    const result = engine.activateTimeBank(userId);
+    const result = await engine.activateTimeBank(userId);
     return sendJSON(res, result.success ? 200 : 400, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.timebank_error');

@@ -279,6 +279,20 @@ export class TimeBankEngine {
     return this.getPlayerBank(tableId, playerId)?.usesRemaining ?? 0;
   }
 
+  /**
+   * VIP wiring 2026-08-17: rebase a player's bank to a fresh DB-derived
+   * total mid-session (e.g. after a diamond top-up purchase). No-op while
+   * a time bank is actively counting down.
+   */
+  rebase(tableId: string, playerId: string, remainingSeconds: number): boolean {
+    const bank = this.playerBanks.get(`${tableId}:${playerId}`);
+    if (!bank || bank.isActive) return false;
+    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+    bank.remainingSeconds = Math.max(0, remainingSeconds);
+    bank.usesRemaining = Math.ceil(bank.remainingSeconds / config.secondsPerUse);
+    return true;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // CLEANUP
   // ═══════════════════════════════════════════════════════════════════════════

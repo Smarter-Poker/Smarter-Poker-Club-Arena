@@ -453,7 +453,18 @@ class MessagingServiceClass {
       return false;
     }
 
-    return data as boolean; // true = added, false = removed
+    // fn_toggle_message_reaction returns jsonb { success, added } -- NOT a bare
+    // boolean. `data as boolean` on an object is always truthy, so every removal
+    // was reported to the caller as an add.
+    const result = data as { success?: boolean; added?: boolean } | null;
+    if (!result?.success) {
+      reportError(
+        new Error('[Messaging] toggle reaction rejected by the server'),
+        'MessagingService.Failed_to_toggle_reaction'
+      );
+      return false;
+    }
+    return result.added === true; // true = added, false = removed
   }
 
   /**

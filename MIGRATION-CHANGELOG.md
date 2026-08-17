@@ -7781,3 +7781,15 @@ Fixes shipped from what the live session exposed:
 - Raw game-variant enums (OFC_PINEAPPLE) printed verbatim on the felt
   masthead; underscores now formatted out (bug pattern 9).
 - Test seats removed from live tables after verification.
+
+## 2026-08-17 (final) — 100% verification close-out
+
+Production /api/health served WH SHA 39136a66 (sync build of CA db1132ce7,
+which contains every table commit through e09b3d634). Deployed assets
+grep-verified for each fix (backdrop, 38px chip clamp, -18px delta float,
+168px HUD stack). Final live screenshots: full river hand renders with
+board/pot/watermark/tags/chips all clear, seats and + SIT on the rail,
+spectator footer correct. Test seats removed; test session state cleaned.
+Deploy note: the CA repo's build-for-world-hub GitHub Action auto-syncs
+every CA main push into WH — manual WH sync commits race it and lose;
+prefer letting the bot land the build and verifying via /api/health.

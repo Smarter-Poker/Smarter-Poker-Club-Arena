@@ -255,6 +255,7 @@
     "direct_messages",
     "disputes",
     "endless_high_scores",
+    "engine_recovery_events",
     "engine_state_snapshot",
     "execution_audit_logs",
     "fct_portfolio",

@@ -207,7 +207,6 @@ import { useTableKeyboard } from '../hooks/useTableKeyboard';
 import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
 import { HoleCardReveal } from '../components/tournament/HoleCardReveal';
 import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
-import { playerPositionStatsService } from '../services/PlayerPositionStatsService';
 // Phase 9: Previously unwired table components
 import { StreamerMode } from '../components/table/StreamerMode';
 import { SitOutToggle } from '../components/table/SitOutToggle';

@@ -1227,45 +1227,37 @@ export abstract class ServerTableEngineBase {
    */
   private async seedHandCountFromHistory(): Promise<void> {
     try {
-      // ── 2026-08-17: ordered by created_at, NOT hand_number ──
+      // ── 2026-08-17: why this query, and what it survived ──
       //
-      // The first version ordered by hand_number DESC LIMIT 1. That is the
-      // exact answer, but there is no index on (table_id, hand_number) — only
-      // (table_id) and (table_id, created_at DESC) — so Postgres index-scanned
-      // the whole partition and SORTED it (cost 14218). hand_history is 10 GB
-      // and ~1.58M rows, so that blew the statement timeout on precisely the
-      // tables this fix matters most for. Observed in production:
+      // The first version ordered by hand_number DESC LIMIT 1 with NO index on
+      // (table_id, hand_number) — only (table_id) and (table_id, created_at).
+      // Postgres index-scanned the whole partition and SORTED it (cost 14218)
+      // against a 10 GB / ~1.58M-row table, so it blew the statement timeout on
+      // exactly the tables this seed matters most for. Seen in production:
       //
       //   [ServerTableEngine:87fc21ed-...] Could not seed hand counter
       //   (canceling statement due to statement timeout) - continuing from #0
       //
-      // That table had 12,919 prior hands and restarted at #1 regardless.
+      // That table had 12,919 prior hands and restarted at #1 regardless. A
+      // bounded 500-row read through the created_at index shipped as a stopgap
+      // (113 ms, an approximation of MAX rather than MAX).
       //
-      // The durable fix is CREATE INDEX CONCURRENTLY on
-      // (table_id, hand_number DESC), which turns the exact MAX into a Limit-1
-      // index scan. It could not be built from here: the API session has a
-      // 2-minute statement_timeout, dblink requires a DB password that
-      // non-superusers must supply, and pg_cron wraps each job in a
-      // transaction which CONCURRENTLY forbids. A non-concurrent build would
-      // hold a write lock while live tables were dealing 181 hands/minute.
-      //
-      // So: read the most recent 500 hands through the EXISTING
-      // (table_id, created_at DESC) index and take the max. Measured on the
-      // table that timed out: 113 ms, exactly 500 rows.
-      //
-      // Why 500 suffices: hand numbers rise monotonically within a run, so the
-      // newest hand already carries that run's maximum; the window only has to
-      // span recent restart cycles. This is a bounded approximation of MAX,
-      // not MAX — if an OLD run reached higher than the last 500 hands show,
-      // this seeds below it. Still strictly better than restarting at #0, and
-      // it self-corrects once numbering is monotonic. Restore the exact MAX
-      // the day the index exists.
+      // 2026-08-17, later the same day: THE INDEX NOW EXISTS, so this is the
+      // exact MAX again rather than the bounded approximation described above.
+      //   idx_hand_history_table_handnum (table_id, hand_number DESC), 55 MB
+      // Re-measured on 87fc21ed, the table that used to time out:
+      //   Index Only Scan, Heap Fetches: 1, Execution Time 3.481 ms
+      // (previously: index scan of the whole partition + Sort, cost 14218,
+      // cancelled by the statement timeout).
+      // .maybeSingle() not .single(): a table that has never dealt a hand
+      // returns zero rows, and .single() raises PGRST116 on zero rows.
       const { data, error } = await supabase
         .from('hand_history')
         .select('hand_number')
         .eq('table_id', this.tableId)
-        .order('created_at', { ascending: false })
-        .limit(500);
+        .order('hand_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       if (error) {
         console.warn(
@@ -1275,11 +1267,7 @@ export abstract class ServerTableEngineBase {
         return;
       }
 
-      const rows = (data ?? []) as Array<{ hand_number?: number | null }>;
-      const last = rows.reduce((mx, r) => {
-        const n = Number(r?.hand_number ?? 0);
-        return Number.isFinite(n) && n > mx ? n : mx;
-      }, 0);
+      const last = Number((data as { hand_number?: number } | null)?.hand_number ?? 0);
       // Never move the counter backwards.
       if (Number.isFinite(last) && last > this.handCount) {
         this.handCount = last;

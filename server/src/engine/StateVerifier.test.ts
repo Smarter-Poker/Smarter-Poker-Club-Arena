@@ -50,6 +50,58 @@ function midHand(betA: number, betB: number) {
   ];
 }
 
+/**
+ * COMMUNITY_CARD_COUNT — direction matters, and only one direction is a fault.
+ *
+ * Added 2026-08-17 after production showed this check firing on 236 DISTINCT
+ * HANDS PER HOUR, every observed instance being a board that had run AHEAD of
+ * its stage label ("Stage flop expects 3 community cards, got 5"). That is an
+ * all-in runout: the board is dealt to completion while `stage` still reads
+ * flop. The cards are correct; the label lags.
+ *
+ * The genuine fault — a board BEHIND its street, i.e. a river played on four
+ * cards — was indistinguishable from that flood, so the whole signal was
+ * ignored. These cases pin the asymmetry so it cannot regress back into noise.
+ */
+function boardOf(n: number) {
+  const ranks = ['2', '3', '4', '5', '6', '7'] as const;
+  return ranks.slice(0, n).map((rank) => ({ rank, suit: 'hearts' as const }));
+}
+
+describe('StateVerifier — COMMUNITY_CARD_COUNT direction', () => {
+  const cardCountViolations = (stage: string, n: number) =>
+    new StateVerifier()
+      .verify(ctx({ stage, communityCards: boardOf(n) }))
+      .violations.filter((v) => v.type === 'COMMUNITY_CARD_COUNT');
+
+  it('does NOT flag a board that has run ahead of its stage (all-in runout)', () => {
+    // The exact production shape that fired 236x/hour.
+    expect(cardCountViolations('flop', 5)).toHaveLength(0);
+    expect(cardCountViolations('turn', 5)).toHaveLength(0);
+    expect(cardCountViolations('flop', 4)).toHaveLength(0);
+  });
+
+  it('DOES flag a board behind its stage — cards are missing', () => {
+    const v = cardCountViolations('river', 4);
+    expect(v).toHaveLength(1);
+    expect(v[0].details).toMatchObject({ reason: 'board_behind_stage', expected: 5, actual: 4 });
+  });
+
+  it('DOES flag a board larger than five cards as critical', () => {
+    const v = cardCountViolations('river', 6);
+    expect(v).toHaveLength(1);
+    expect(v[0].severity).toBe('critical');
+    expect(v[0].details).toMatchObject({ reason: 'board_overflow', actual: 6 });
+  });
+
+  it('stays silent when the board exactly matches the street', () => {
+    expect(cardCountViolations('preflop', 0)).toHaveLength(0);
+    expect(cardCountViolations('flop', 3)).toHaveLength(0);
+    expect(cardCountViolations('turn', 4)).toHaveLength(0);
+    expect(cardCountViolations('river', 5)).toHaveLength(0);
+  });
+});
+
 describe('StateVerifier — A7 in-hand chip conservation', () => {
   it('passes on an honest mid-hand state', () => {
     const v = new StateVerifier();
@@ -150,9 +202,7 @@ describe('StateVerifier — A7 pot accounting (pot === Σ contributions)', () =>
     const v = new StateVerifier();
     const players = midHand(150, 150);
     // pot inflated by 50 with no contributor behind it
-    const res = v.verify(
-      ctx({ players, pot: 350, phase: 'in_hand', initialChipTotal: 2050 })
-    );
+    const res = v.verify(ctx({ players, pot: 350, phase: 'in_hand', initialChipTotal: 2050 }));
 
     const potIssue = res.violations.find((x) => x.type === 'POT_ACCOUNTING');
     expect(potIssue).toBeDefined();
@@ -164,9 +214,7 @@ describe('StateVerifier — A7 pot accounting (pot === Σ contributions)', () =>
     const v = new StateVerifier();
     const players = midHand(150, 150);
     players[0].totalInvested = 200; // paid 200, only 150 landed in the pot
-    const res = v.verify(
-      ctx({ players, pot: 300, phase: 'in_hand', initialChipTotal: 2000 })
-    );
+    const res = v.verify(ctx({ players, pot: 300, phase: 'in_hand', initialChipTotal: 2000 }));
     const potIssue = res.violations.find((x) => x.type === 'POT_ACCOUNTING');
     expect(potIssue).toBeDefined();
     expect(potIssue!.details!.diff).toBe(-50);
@@ -211,10 +259,7 @@ describe('StateVerifier — hand_complete behaviour is unchanged (FIX 204)', () 
     v.deductRake('t1', 15);
     expect(v.getExpectedChipTotal('t1')).toBe(1985);
 
-    const players = [
-      player({ user_id: 'a', stack: 1285 }),
-      player({ user_id: 'b', stack: 700 }),
-    ];
+    const players = [player({ user_id: 'a', stack: 1285 }), player({ user_id: 'b', stack: 700 })];
     expect(v.verify(ctx({ players, pot: 0 })).violations).toEqual([]);
   });
 });

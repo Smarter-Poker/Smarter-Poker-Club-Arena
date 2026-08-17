@@ -516,18 +516,56 @@ export class StateVerifier {
     };
 
     const expected = expectedCount[context.stage];
-    if (expected !== undefined && context.communityCards.length !== expected) {
+    if (expected === undefined) return;
+
+    const actual = context.communityCards.length;
+    if (actual === expected) return;
+
+    // ── 2026-08-17: direction matters, and only one direction is a fault ──
+    //
+    // This was a strict inequality and it fired on 236 DISTINCT HANDS PER HOUR
+    // in production — every observed instance being `actual > expected` with
+    // actual <= 5, e.g. "Stage flop expects 3 community cards, got 5".
+    //
+    // That is an all-in runout (also run-it-twice / rabbit hunt): the board is
+    // dealt to completion while `stage` still reads flop or turn. The cards are
+    // right, the LABEL lags. Nothing about it is a fairness or money problem.
+    //
+    // Meanwhile the direction that IS a fault — a board with FEWER cards than
+    // the street requires, i.e. a river played on four cards — was
+    // indistinguishable from that flood. At 236/hour the warning was pure
+    // noise, and noise is what buries a real CHIP_CONSERVATION or
+    // DUPLICATE_CARD event. An integrity monitor nobody can act on is worse
+    // than none: it manufactures the feeling of coverage.
+    //
+    // So flag a board that is BEHIND its street (cards missing), or one that
+    // exceeds five cards (impossible in any variant dealt here). A board that
+    // has merely run AHEAD of its stage label is expected during a runout and
+    // is no longer reported. Deliberately a rule about direction rather than an
+    // inference about all-in state: it cannot be wrong about what it suppresses.
+    const MAX_BOARD = 5;
+
+    if (actual > MAX_BOARD) {
       violations.push({
         type: 'COMMUNITY_CARD_COUNT',
-        message: `Stage ${context.stage} expects ${expected} community cards, got ${context.communityCards.length}`,
+        message: `Stage ${context.stage} has ${actual} community cards — more than a full board (${MAX_BOARD})`,
+        severity: 'critical',
+        details: { stage: context.stage, expected, actual, reason: 'board_overflow' },
+      });
+      return;
+    }
+
+    if (actual < expected) {
+      violations.push({
+        type: 'COMMUNITY_CARD_COUNT',
+        message: `Stage ${context.stage} expects ${expected} community cards, got only ${actual} — cards are missing`,
         severity: 'warning',
-        details: {
-          stage: context.stage,
-          expected,
-          actual: context.communityCards.length,
-        },
+        details: { stage: context.stage, expected, actual, reason: 'board_behind_stage' },
       });
     }
+
+    // actual > expected && actual <= MAX_BOARD: board ahead of the stage label.
+    // Benign runout artefact — deliberately not reported.
   }
 
   private verifyPlayerCounts(context: VerificationContext, violations: IntegrityViolation[]): void {

@@ -7227,10 +7227,20 @@ export default function TablePage({
       <div className="action-panel-wrapper">
         {/* POKERBROS-spec: persistent footer bar — NEVER empty. Dan rule
             2026-04-17: action bar fixed to footer at all times, every state. */}
-        {!tableState.players.some((p) => p?.isHero) ? (
+        {!tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (
           <div className="spectator-footer-bar">
             <span className="spectator-footer-bar__label">
               Spectating — tap an open seat to join
+            </span>
+          </div>
+        ) : !tableState.players.some((p) => p?.isHero) ? (
+          /* Dan 2026-08-17 (audit): heroSeat is reserved but the server hasn't
+             dealt the hero in yet (waiting on next hand / BB post). The old
+             branch fell through to "Spectating - tap an open seat" which
+             contradicted the reserved seat + "Post BB to Enter" CTA on felt. */
+          <div className="spectator-footer-bar" data-state="reserved">
+            <span className="spectator-footer-bar__label">
+              Seat reserved — you'll be dealt in next hand
             </span>
           </div>
         ) : !tableState.isHandInProgress && !isRabbitAvailable ? (

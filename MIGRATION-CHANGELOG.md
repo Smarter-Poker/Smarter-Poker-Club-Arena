@@ -7677,3 +7677,86 @@ plus more skins in the same style.
   ids alias across. Default table skin: neon_city.
 - Deployed: CA 2ce022b24 -> WH 300e21e742; production /api/health served
   version 300e21e7 at 14:19 UTC; skin assets return 200 with exact sizes.
+
+---
+
+## 2026-08-17 — Correction: U3/U4/U5 status was wrong in this file
+
+### What was wrong
+
+The Phase U1 entry (2026-04-23) closed with a "Not executed (next phases)"
+list naming U1.3/U1.4, U3, U4 and U5 as outstanding. That list was accurate
+when written and has been wrong for months. No later entry corrected it, so
+both this changelog and
+`Smarter-Poker-World-Hub/CLUB-ARENA-OFFICIAL-UPGRADE-INTEGRATION.md` have been
+directing agents to redo finished work.
+
+### Verified status, 2026-08-17
+
+Checked against the code, not against any changelog:
+
+| Phase | Real status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| U2    | **done**    | no client engine directory under `src/`; no client file declares a `TableEngine` / `HandController` / `PotManager` class                                                                                                                                                                                                                                                                                                                             |
+| U3    | **done**    | `server/src/index.ts` is 133 lines — 58 code, 75 comment/blank — and contains **zero** handler code. 20 files in `server/src/handlers/` (action, health, addchips, discard, insurance, leave, postbb, preaction, rit, showhand, sitout, state, straddle, timebank, withdrawchips, heartbeat, admin, faultInjection). `router.ts` present. `action.test.ts`, `handlers.test.ts`, `health.test.ts`, `_testHelpers.ts` present. U3.1–U3.5 all satisfied |
+| U4    | **done**    | U4.1 `check-stranded-writers.mjs`, U4.2 `check-phantom-tables.mjs`, U4.3 `check-cron-liveness.mjs` (added 2026-08-17)                                                                                                                                                                                                                                                                                                                                |
+| U5.1  | **done**    | Sentry in `vite.config.ts`; sourcemap upload runs in `sync-club-arena.sh`                                                                                                                                                                                                                                                                                                                                                                            |
+| U5.2  | **done**    | `check-ca-bundle-size.mjs` + `club-arena-budget.yml`, added 2026-08-17, blocking and green                                                                                                                                                                                                                                                                                                                                                           |
+| U5.4  | **done**    | single entrypoint `scripts/sync-club-arena.sh`                                                                                                                                                                                                                                                                                                                                                                                                       |
+| U6    | **done**    | superseded plans in `docs/_archive/`                                                                                                                                                                                                                                                                                                                                                                                                                 |
+
+### Still outstanding across the whole U1–U6 plan
+
+Two items only:
+
+- **U1.3 / U1.4** — archive the `club-engine` repo on GitHub. Needs repo
+  access; unverifiable from a sandboxed session.
+- **U5.3** — move `public/hub/club-arena/` static media to Cloudflare R2.
+  The directory is 85.7 MB, of which ~67 MB is images (cards 26.4, images
+  25.9, game-card-icons 7.9, club-logos 4.0). Needs an R2 bucket, which is new
+  infrastructure and an owner decision under RULE 12.
+
+### Note on U5.2's stated gate
+
+The plan specified "fail build if main bundle > 5 MB". That is not
+implementable as written — "main bundle" resolves to three different numbers:
+
+    initial load   0.81 MB   what a user downloads before first paint
+    all JS/CSS     5.47 MB   including lazy chunks
+    full payload  85.73 MB   the entire deployed directory
+
+A 5 MB gate against the middle number is red on day one while the number users
+actually feel is healthy, and a permanently red gate stops being read. Shipped
+as three independent budgets set ~25% above measured. Reasoning in the header
+of `scripts/ci/check-ca-bundle-size.mjs`.
+
+### One thing that looks like a bug and is not
+
+`public/hub/club-arena/assets/` contains 75 logical chunks with more than one
+hashed copy — three `TournamentDetails`, two `TablePage`, and so on. That looks
+exactly like stale residue from an incomplete wipe. It is not: verified by
+scanning `index.html` plus every emitted JS/CSS file for each filename — all
+261 files are referenced, zero orphans. Deleting the "duplicates" would break
+lazy-loaded routes.
+
+## 2026-08-17 (later) — Live-table audit round: backdrop, sizing, badges, board
+
+Full production audit at 375px with the real horse tables (Dan: "no bugs,
+gaps, stubs or visual obstructions").
+
+- Backdrop bug: the darkened page background still showed a cover-scaled
+  copy of the skin's own table, which read as THE table while the scaler art
+  was nearly invisible. Replaced with .table-backdrop (blur 26px,
+  brightness 0.42, scale 1.18) — ambiance only.
+- Scaler 320 -> 360px (rail now spans the phone width, PokerBros-style);
+  hero 95.5 -> 93.5.
+- Action tags: -42px floated them into the scene sky; now -26px, clear of
+  the position badge (was printing FOLD over MP+1).
+- Board width 68% (was 92% — river card sat on the right rail under a
+  seat); pot 19%; watermark + date/club/hand line moved below the board.
+- Footer state bug: reserved-seat-awaiting-BB showed "Spectating"; now
+  "Seat reserved — you'll be dealt in next hand".
+- Verified live: spectator + reserved-seat states, theme switch to
+  arctic_white via user_theme_settings, all 13 skins overlay-checked against
+  the locked seat ring. Test-account password re-synced to the documented
+  TEST_USER_PASSWORD (auth.users hash update); stale test seats cleared.

@@ -1,0 +1,27 @@
+--- a/server/src/engine/ServerTableEngineSettlement.ts
++++ b/server/src/engine/ServerTableEngineSettlement.ts
+@@ -614,10 +614,23 @@
+         // integrity problem, not a feature". This restores that intent. The
+         // in-memory array is deliberately NOT filtered: bad-beat-jackpot
+         // detection needs the losing hand.
++        //
++        // FOLLOW-UP 2026-08-17: derive the winners from `currentHandWinners`,
++        // NOT `currentHandWinnerIds`. postHandTasks() is fired WITHOUT await
++        // (see FIX 211, ~40 lines above) and the very next synchronous line is
++        // `this.currentHandWinnerIds = []`. So by the time this code runs
++        // inside postHandTasks, that array is always empty — gating on it
++        // filtered out EVERY holding including the winners', which silently
++        // emptied hand_history.hole_cards (verified: 0 of 611 hands stored any
++        // cards). `currentHandWinners` is reset only when the NEXT hand starts
++        // dealing, and dealingLoop awaits postHandTasksPromise first, so it is
++        // still populated here — it is passed to this same logHandHistory call
++        // as `winners` a few lines below.
+         const autoMuckEnabled = this.tableInfo.auto_muck_enabled ?? true;
++        const winnerIds = new Set(this.currentHandWinners.map((w) => w.userId));
+         const revealedShowdownResults = this.currentHandShowdownResults.filter((r) => {
+           if (!autoMuckEnabled) return true;
+-          if (this.currentHandWinnerIds.includes(r.userId)) return true;
++          if (winnerIds.has(r.userId)) return true;
+           if (this.showHandPlayers?.has(r.userId)) return true;
+           return false;
+         });

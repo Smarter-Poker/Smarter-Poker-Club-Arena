@@ -869,7 +869,10 @@
 
 .table-brand {
   position: absolute;
-  top: 38%;
+  /* Dan 2026-08-17 (audit round 2): at 38% the wordmark + date/club line sat
+     BEHIND the board cards (text peeked between cards). 58% parks the whole
+     masthead in the clear felt below the board, PokerBros-watermark style. */
+  top: 58%;
   left: 50%;
   transform: translate(-50%, -50%);
   display: flex;
@@ -1037,7 +1040,10 @@
    92% of the felt and every card takes an equal share of it, so five cards fit
    exactly at any screen size. aspect-ratio keeps the 64x92 card proportion. */
 .table-surface .community-area {
-  width: 92%;
+  /* Dan 2026-08-17 (audit round 2): 92% ran the board edge-to-edge across
+     the felt — the river card sat ON the right rail and under the SB seat.
+     Commercial rooms hold the board to ~60-70% of felt width. */
+  width: 68%;
 }
 
 .table-surface .community-cards,

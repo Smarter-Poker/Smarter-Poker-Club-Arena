@@ -248,7 +248,7 @@ export class GameServer {
     // cannot distinguish a dealing table from a frozen one.
     const tableLiveness = this.tableLivenessSnapshot();
     const stalledTables = tableLiveness
-      .filter((t) => t.dealable >= 2 && t.msSinceProgress > 120_000)
+      .filter((t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000)
       .map((t) => ({
         tableId: t.tableId,
         dealable: t.dealable,
@@ -386,11 +386,17 @@ export class GameServer {
     // green. These four gauges are what make a freeze alertable from outside
     // the process, independent of whether the engine can still report itself.
     const liveness = this.tableLivenessSnapshot();
-    const stalled = liveness.filter((t) => t.dealable >= 2 && t.msSinceProgress > 120_000);
+    const stalled = liveness.filter(
+      (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000
+    );
+    const pausedCount = liveness.filter((t) => t.paused).length;
     const freeze: string[] = [
-      '# HELP poker_stalled_tables Tables with 2+ dealable seats and no progress for 2 minutes',
+      '# HELP poker_stalled_tables Tables with 2+ dealable seats, not paused by design, and no progress for 2 minutes',
       '# TYPE poker_stalled_tables gauge',
       `poker_stalled_tables ${stalled.length}`,
+      '# HELP poker_paused_tables Tables paused on purpose (hand-for-hand/break) — excluded from stall detection',
+      '# TYPE poker_paused_tables gauge',
+      `poker_paused_tables ${pausedCount}`,
       '# HELP poker_discovery_stale_ms Milliseconds since the cash-table discovery loop last completed',
       '# TYPE poker_discovery_stale_ms gauge',
       `poker_discovery_stale_ms ${Date.now() - this.lastDiscoveryOkAt}`,
@@ -437,6 +443,7 @@ export class GameServer {
       humans: engine.humansSeated(),
       handCount: engine.getHandCount(),
       msSinceProgress: engine.msSinceProgress(),
+      paused: engine.isPausedByDesign(),
       isTournament: engine.isTournament(),
     }));
   }

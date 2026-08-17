@@ -232,6 +232,10 @@ export abstract class ServerTableEngineBase {
     | null = null;
   // Hand-for-hand pause: set by tournament manager, checked between hands
   protected handForHandPaused: boolean = false;
+  /** Wall-clock when the current by-design pause began; 0 when not paused. */
+  protected pausedSinceMs: number = 0;
+  /** Last time the paused-too-long alarm fired, so it reports once per window. */
+  protected lastPauseAlarmAtMs: number = 0;
   protected handForHandResolve: (() => void) | null = null;
 
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
@@ -273,6 +277,11 @@ export abstract class ServerTableEngineBase {
 
   /** No hand started while the table is dealable. */
   protected static readonly WATCHDOG_IDLE_MS = 90_000;
+  /**
+   * A by-design pause older than this is reported (never killed): 15 min
+   * exceeds any plausible hand-for-hand or break coordination window.
+   */
+  protected static readonly PAUSE_ALARM_MS = 15 * 60_000;
 
   // Real Player Turn Management
   // Phase 1.2: playerTurnTimer deleted — DeadlineScheduler via PreciseActionTimer is sole timer authority.
@@ -721,6 +730,7 @@ export abstract class ServerTableEngineBase {
       'ServerTableEngine.' + this.tableId + '.watchdog_kill',
       { handCount: this.handCount }
     );
+    this.recordRecoveryEvent('watchdog_kill_rebuild', reason);
     this.running = false;
     this.heartbeatActive = false;
     deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
@@ -827,11 +837,14 @@ export abstract class ServerTableEngineBase {
   /** Pause dealing after current hand finishes (for hand-for-hand) */
   pauseAfterHand(): void {
     this.handForHandPaused = true;
+    if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
   /** Resume dealing (all tables finished their hand-for-hand hand) */
   resumeDealing(): void {
     this.handForHandPaused = false;
+    this.pausedSinceMs = 0;
+    this.lastPauseAlarmAtMs = 0;
     // Bible V8 §3.1: Table FSM — paused → running
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');
@@ -845,6 +858,47 @@ export abstract class ServerTableEngineBase {
   /** Check if engine is currently waiting for hand-for-hand resume */
   isWaitingForHandForHand(): boolean {
     return this.handForHandPaused && this.handForHandResolve !== null;
+  }
+
+  /**
+   * True while this table is stopped ON PURPOSE (hand-for-hand pause, or the
+   * table FSM parked in 'paused'). The watchdog and the /health stall
+   * detector must treat this as healthy: before this existed, a hand-for-hand
+   * pause longer than the stall window read as a frozen table — the engine
+   * killed and rebuilt it (losing the pause, so it dealt into hand-for-hand),
+   * and /health flipped liveness to 'dead', which after three failed Docker
+   * health probes restarted the ENTIRE engine over one legitimately paused
+   * final-table bubble.
+   */
+  isPausedByDesign(): boolean {
+    return this.handForHandPaused || this.tableFSM.state === 'paused';
+  }
+
+  /** Ms spent in the current by-design pause; 0 when not paused. */
+  msPaused(): number {
+    return this.pausedSinceMs === 0 ? 0 : Date.now() - this.pausedSinceMs;
+  }
+
+  /**
+   * Durable, DB-visible record of an automatic recovery action. Best-effort
+   * by design: recovery must never depend on the insert succeeding.
+   */
+  protected recordRecoveryEvent(event: string, detail: string): void {
+    try {
+      void supabase
+        .from('engine_recovery_events')
+        .insert({
+          table_id: this.tableId,
+          event,
+          detail: detail.slice(0, 500),
+          hand_count: this.handCount,
+        })
+        .then(({ error }) => {
+          if (error) console.warn('[RecoveryEvent] insert failed:', error.message);
+        });
+    } catch {
+      /* never let telemetry break recovery */
+    }
   }
 
   protected isTournamentTable(): boolean {

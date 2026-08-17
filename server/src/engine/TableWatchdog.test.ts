@@ -135,6 +135,36 @@ const trips = (h: Harness) => (h.engine as any).watchdogTrips;
 describe('table watchdog — when it must stay out of the way', () => {
   beforeEach(() => vi.restoreAllMocks());
 
+  it('never kills a table paused by design, no matter how stale (hand-for-hand)', () => {
+    // Regression: a hand-for-hand pause longer than the idle window used to
+    // read as "dealing loop dead" — the engine was killed, the rebuild lost
+    // the pause flag, and the table dealt a hand INTO hand-for-hand.
+    const h = harness({ noHand: true });
+    (h.engine as any).handForHandPaused = true;
+    (h.engine as any).pausedSinceMs = Date.now() - 10 * 60_000;
+    h.setStale(10 * 60_000);
+    run(h);
+    run(h);
+    run(h);
+    expect(h.calls.killed).toEqual([]);
+    expect(trips(h)).toBe(0);
+    expect((h.engine as any).isRunning()).toBe(true);
+  });
+
+  it('resumeDealing clears the pause so the watchdog re-engages', () => {
+    const h = harness({ noHand: true });
+    (h.engine as any).handForHandPaused = true;
+    (h.engine as any).pausedSinceMs = Date.now() - 10 * 60_000;
+    h.setStale(10 * 60_000);
+    run(h);
+    expect(trips(h)).toBe(0);
+    (h.engine as any).handForHandResolve = null;
+    h.engine.resumeDealing();
+    expect((h.engine as any).isPausedByDesign()).toBe(false);
+    run(h); // idle + dealable + unpaused -> Case B counts a trip again
+    expect(trips(h)).toBe(1);
+  });
+
   it('does nothing to a table that is making progress', () => {
     const h = harness({});
     h.setStale(5_000);

@@ -137,6 +137,36 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   protected override runTableWatchdog(): void {
     const idleMs = this.msSinceProgress();
 
+    // A table paused ON PURPOSE (hand-for-hand / FSM 'paused') is healthy no
+    // matter how long it has been idle. Killing it here is what used to deal
+    // a hand INTO hand-for-hand after the rebuild lost the pause flag. If the
+    // pause outlives any plausible coordination window, report it loudly —
+    // once per window, never a kill: forcing play during a legitimate pause
+    // is a tournament-integrity failure, a long pause is only an incident.
+    if (this.isPausedByDesign()) {
+      const pausedMs = this.msPaused();
+      if (
+        pausedMs > ServerTableEngineBase.PAUSE_ALARM_MS &&
+        Date.now() - this.lastPauseAlarmAtMs > ServerTableEngineBase.PAUSE_ALARM_MS
+      ) {
+        this.lastPauseAlarmAtMs = Date.now();
+        reportError(
+          new Error(
+            'Table paused-by-design for ' +
+              Math.round(pausedMs / 60000) +
+              'min — hand-for-hand/break coordinator may have lost the resume signal'
+          ),
+          'ServerTableEngine.' + this.tableId + '.paused_too_long',
+          { handCount: this.handCount }
+        );
+        this.recordRecoveryEvent(
+          'paused_too_long',
+          'paused ' + Math.round(pausedMs / 1000) + 's without resume'
+        );
+      }
+      return;
+    }
+
     // Case B: no live hand, but the table is dealable and nothing is starting.
     if (!this.handController) {
       // Mirror dealingLoop's own activePlayers predicate exactly, so the
@@ -234,6 +264,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     if (this.watchdogTrips === 1 && !hasClock) {
       this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
+      this.recordRecoveryEvent(
+        'watchdog_rearm_clock',
+        'seat ' + seat + ' had no clock after ' + Math.round(idleMs / 1000) + 's; re-armed'
+      );
       // Handing the seat a clock IS the recovery — restart the stall window so
       // the next heartbeat (10s away) does not force a fold 7s before the 15s
       // clock we just granted would have expired. Deliberately NOT
@@ -268,6 +302,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // rebuild this whole watchdog exists to reach — was unreachable and the
       // table stayed frozen forever while logging a stall every 45s.
       if (applied) {
+        this.recordRecoveryEvent(
+          'watchdog_forced_action',
+          'forced ' + forced + ' at seat ' + seat + ' after ' + Math.round(idleMs / 1000) + 's stall'
+        );
         this.markProgress();
       } else {
         reportError(

@@ -226,3 +226,46 @@ export async function releaseTables(tableIds?: string[]): Promise<void> {
     // Shutdown path — a failure here costs at most 30s of stale lease.
   }
 }
+
+/**
+ * Re-attempt every claim this instance was refused, and forget the ones it
+ * now holds.
+ *
+ * Why this exists (2026-08-17). `conflicts` is only ever written, never
+ * cleared — there is no other `conflicts.delete` in this file. So a table
+ * refused once stayed refused for the life of the process:
+ *
+ *   - With enforcement OFF, claimTable() still returns true, so GameServer
+ *     starts the table anyway and puts it in `tableEngines`. The discovery
+ *     loop then skips it forever (`if (this.tableEngines.has(id)) continue`),
+ *     the claim is never retried, and the table deals with no lease row.
+ *   - `conflictCount` on /health therefore latches. Observed right after the
+ *     2026-08-17 cutover: 4 tables dealing with no lease and a conflict count
+ *     pinned at 4 for the life of the container. That number is exactly the
+ *     signal used to decide whether ENGINE_LEASE_ENFORCE can be switched on,
+ *     so latching it makes the decision impossible to make.
+ *
+ * The refusals are almost always a cutover race — the outgoing container
+ * still held a fresh lease when the incoming one asked, and released it
+ * moments later. Asking again a few seconds on simply succeeds.
+ *
+ * Grant is detected by side effect: claimTable() rewrites the conflicts entry
+ * (new `at`) when it is refused again, and leaves it untouched when granted.
+ * An RPC error also leaves it untouched, so a hard DB outage can retire a
+ * conflict record early; it reappears on the next genuine refusal, and
+ * `claimErrors` already counts that case separately.
+ *
+ * @returns how many tables were reclaimed on this pass.
+ */
+export async function retryRefusedClaims(): Promise<number> {
+  let reclaimed = 0;
+  for (const [tableId, before] of [...conflicts.entries()]) {
+    await claimTable(tableId);
+    const after = conflicts.get(tableId);
+    if (after && after.at === before.at) {
+      conflicts.delete(tableId);
+      reclaimed++;
+    }
+  }
+  return reclaimed;
+}

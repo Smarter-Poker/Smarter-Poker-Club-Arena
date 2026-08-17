@@ -31,6 +31,7 @@ import {
   INSTANCE_ID,
   claimTable,
   heartbeatTables,
+  retryRefusedClaims,
   releaseTables,
   leaseDiagnostics,
 } from './services/tableLease.js';
@@ -974,6 +975,14 @@ export class GameServer {
           await this.sleep(TABLE_DISCOVERY_INTERVAL);
           continue;
         }
+
+        // ── Reclaim tables refused during a cutover (2026-08-17) ───────
+        // A claim refused while the outgoing container still held the
+        // lease used to latch for the life of the process: the table
+        // starts anyway (enforcement is off) and the loop below skips
+        // anything already in `tableEngines`. Retrying here converges
+        // ownership within one discovery tick and unlatches conflictCount.
+        await retryRefusedClaims();
 
         // ── Lease renewal (2026-08-16) ──────────────────────────────────
         // Runs before the start loop so a table we have just lost is torn down

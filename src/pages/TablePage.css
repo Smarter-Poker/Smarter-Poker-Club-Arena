@@ -183,6 +183,29 @@
   overscroll-behavior: none;
 }
 
+/* Dan 2026-08-17 (audit fix) — blurred scene ambiance behind the table.
+   The active skin composite, cover-scaled, blurred hard and darkened so the
+   scene's mood carries but its painted table can NEVER read as the game
+   surface (that was the live bug: seats appeared to float on a giant
+   backdrop table). scale(1.18) hides the blur's soft edges. */
+.table-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: blur(26px) brightness(0.42) saturate(1.15);
+  transform: scale(1.18);
+  pointer-events: none;
+}
+
+/* The table column stacks above the backdrop. */
+.table-container {
+  position: relative;
+  z-index: 1;
+}
+
 /* ─── Hero Turn Indicator — subtle border glow when it's your turn ─── */
 .table-page--hero-turn {
   animation: heroTurnPulse 2s ease-in-out infinite;
@@ -513,7 +536,10 @@
    hero cards, and action bar. */
 .table-scaler {
   width: 100%;
-  max-width: min(calc(100% - 16px), 320px);
+  /* Dan 2026-08-17 (audit): 320px read small once the backdrop stopped
+     faking a giant table. 360px lets the painted rail span nearly the full
+     375px viewport, PokerBros-style. */
+  max-width: min(calc(100% - 8px), 360px);
   /* Dan 2026-08-17: 605/1000 — the canonical 896x1200 skin composites shown
      with object-fit: cover crop to x [9.5%, 90.5%] at this aspect, which is
      the rail plus a small scene margin. The seat ring percentages in
@@ -1557,7 +1583,7 @@
   }
 
   .table-scaler {
-    max-width: min(calc(100% - 12px), 320px);
+    max-width: min(calc(100% - 8px), 360px);
     /* Dan 2026-08-17: must stay locked to the skin crop's 605/1000 aspect at
        every breakpoint, or the painted felt window drifts out from under
        .table-surface and the seat ring leaves the rail. */

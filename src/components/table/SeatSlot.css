@@ -1287,13 +1287,13 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__action {
-  /* PokerBros: action tag floats clearly ABOVE the avatar, never overlapping.
-   * Seat is ~80px wide, avatar is 56px with some vertical padding. Pushing
-   * the badge 42px above the seat's top ensures a clear gap over the
-   * avatar crown and a comfortable visual spacing from the name box below.
-   * Dan's UX rule 2026-04-14. */
+  /* Dan 2026-08-17 (audit): -42px pushed the tag so far above the seat that
+   * on the rail-locked layout it floated over the scene/header (live
+   * screenshot showed four FOLD tags hovering in the city sky). PokerBros
+   * overlaps the tag with the avatar's crown; -14px reads attached while
+   * still clearing the face. */
   position: absolute;
-  top: -42px;
+  top: -14px;
   left: 50%;
   transform: translateX(-50%);
   padding: 4px 12px;

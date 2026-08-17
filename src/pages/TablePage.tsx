@@ -541,7 +541,7 @@ function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): PanelHan
    Hero (slot 0) is the ONLY exception: bottom-center, nudged below the rail
    (Dan 2026-08-15: hero avatar is 1.33x and needs the vertical room). */
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 95.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
+  { x: 50, y: 93.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
   { x: 10.5, y: 66 }, // Seat 2 (lower-left, on rail side)
   { x: 10.5, y: 33 }, // Seat 3 (upper-left, on rail side)
   { x: 50, y: 8.5 }, // Seat 4 (top-center, on rail cap)
@@ -550,7 +550,7 @@ const SEAT_POSITIONS_6MAX = [
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 95.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
+  { x: 50, y: 93.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
   { x: 19, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
   { x: 10.5, y: 58 }, // Seat 3 (left-low, on rail side)
   { x: 10.5, y: 36 }, // Seat 4 (left-high, on rail side)
@@ -6373,26 +6373,29 @@ export default function TablePage({
   return (
     <div
       className={`table-page${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
-      style={{
-        // Dan 2026-08-17 — the skin no longer paints the table via a page-
-        // stretch (seats could never reliably track the painted rail that
-        // way). The page shows the SAME skin as a darkened, blurred-feel
-        // ambiance layer (cover, centered); the actual table is .table-art
-        // inside the aspect-locked scaler below, so the seat ring is pixel-
-        // true on every viewport.
-        backgroundImage: `linear-gradient(rgba(5, 8, 14, 0.78), rgba(5, 8, 14, 0.9)), url(${resolveSkin(
-          v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
-        )})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      }}
+      /* Dan 2026-08-17 (audit fix) — the skin no longer paints the page
+         directly: a cover-scaled copy of the composite read as a SECOND,
+         giant table behind the real one (live screenshot showed seats
+         apparently floating on the backdrop's felt). Ambiance is now the
+         .table-backdrop child below — same image, heavily blurred and
+         darkened via CSS filter so it can never read as a table — while the
+         actual table is .table-art inside the aspect-locked scaler. */
       data-felt-theme={v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'}
       data-background-theme={v8Theme.background_id || 'diamond-pattern'}
       data-button-theme={v8Theme.button_id || 'classic-white'}
       data-cards-theme={v8Theme.cards_id || 'standard-red'}
       data-theme-preset={v8Theme.theme_id || 'default-dark'}
     >
+      {/* Blurred scene ambiance — see the comment on .table-page above. */}
+      <div
+        className="table-backdrop"
+        aria-hidden="true"
+        style={{
+          backgroundImage: `url(${resolveSkin(
+            v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
+          )})`,
+        }}
+      />
       <style>{`
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
                 @keyframes boardFade { from { opacity: 0.7; } to { opacity: 1; } }

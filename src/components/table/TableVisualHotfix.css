@@ -51,7 +51,7 @@
 }
 
 /* ── 2. Clip the baked gold nameplate off table-variant bust art ────────── */
-.table-page .seat__avatar--bust .seat__avatar-img[src*="/avatars/table/"] {
+.table-page .seat__avatar--bust .seat__avatar-img[src*='/avatars/table/'] {
   clip-path: inset(0 0 24.5% 0);
 }
 
@@ -140,7 +140,10 @@
 
 /* ── 6. Pot column clear of the community cards ─────────────────────────── */
 .table-page .pot-area {
-  top: 24% !important;
+  /* Dan 2026-08-17 (audit): 24% left the pot box kissing the board cards'
+     top edge on the live table. 19% restores clear air between pot and
+     board while staying under the felt masthead. */
+  top: 19% !important;
 }
 .table-page .pot-display__side-pots {
   margin-top: 2px !important;
@@ -236,5 +239,7 @@
 .table-page .seat .card-image--back .card-back {
   background: linear-gradient(135deg, #35598f 0%, #1c3560 100%) !important;
   border: 2px solid #7aa7dd !important;
-  box-shadow: inset 0 0 0 2.5px rgba(255, 255, 255, 0.18), 0 1px 4px rgba(0, 0, 0, 0.5) !important;
+  box-shadow:
+    inset 0 0 0 2.5px rgba(255, 255, 255, 0.18),
+    0 1px 4px rgba(0, 0, 0, 0.5) !important;
 }

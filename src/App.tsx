@@ -7,6 +7,7 @@
  */
 
 import { Routes, Route, Link } from 'react-router-dom';
+import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
 import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
@@ -292,7 +293,7 @@ export default function App() {
         {showIntro && (
           <Suspense fallback={null}>
             <IntroVideo
-              videoSrc={`${import.meta.env.BASE_URL}videos/club-arena-intro.mp4`}
+              videoSrc={`${MEDIA_BASE}videos/club-arena-intro.mp4`}
               minDuration={3000}
               maxDuration={10000}
               onComplete={handleIntroComplete}

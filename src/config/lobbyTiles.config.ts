@@ -6,7 +6,9 @@
  * Keyboard shortcuts map numbers 1-5 to these tiles.
  */
 
-const BASE = import.meta.env.BASE_URL;
+import { MEDIA_BASE } from '../utils/mediaBase';
+
+const BASE = MEDIA_BASE;
 
 export interface LobbyTile {
   img: string;

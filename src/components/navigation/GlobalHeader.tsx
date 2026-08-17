@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import { MEDIA_BASE } from '../../utils/mediaBase';
 const HamburgerMenu = lazy(() => import('./HamburgerMenu'));
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { masterBus } from '../../core/MasterBus';
@@ -16,7 +17,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './GlobalHeader.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
-const BASE = import.meta.env.BASE_URL;
+const BASE = MEDIA_BASE;
 
 interface GlobalHeaderProps {
   pageDepth?: number;
@@ -206,11 +207,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
               />
             </button>
           )}
-          <button
-            onClick={handleMenuToggle}
-            className={styles.hamburgerBtn}
-            aria-label="Open Menu"
-          >
+          <button onClick={handleMenuToggle} className={styles.hamburgerBtn} aria-label="Open Menu">
             <img
               src={`${BASE}images/btn-hamburger-v4.png`}
               alt="Menu"

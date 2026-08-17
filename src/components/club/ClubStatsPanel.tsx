@@ -8,6 +8,7 @@
  */
 
 import { type FC } from 'react';
+import { MEDIA_BASE } from '../../utils/mediaBase';
 import './ClubStatsPanel.css';
 
 interface ClubStatsPanelProps {
@@ -25,7 +26,7 @@ export const ClubStatsPanel: FC<ClubStatsPanelProps> = ({
     <div className="club-stats-panel">
       {/* Background SVG/JPG loaded as image (browser caches) */}
       <img
-        src={`${import.meta.env.BASE_URL || '/'}images/shark-club-card-v25.jpg`}
+        src={`${MEDIA_BASE}images/shark-club-card-v25.jpg`}
         alt="Shark Club Card"
         className="club-stats-bg"
         loading="lazy"

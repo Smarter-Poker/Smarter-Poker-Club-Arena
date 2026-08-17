@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { MEDIA_BASE } from '../utils/mediaBase';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -41,7 +42,7 @@ import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 
 // Shark Club fallback logo — used when DB logo_url is null
-const SHARK_CLUB_FALLBACK_LOGO = `${import.meta.env.BASE_URL || '/'}images/shark-club-card-v25.jpg`;
+const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-card-v25.jpg`;
 
 // SWR cache helpers for instant club data display
 function getClubHomeCache(clubId: string) {

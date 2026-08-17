@@ -10,6 +10,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { MEDIA_BASE } from '../../utils/mediaBase';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -28,7 +29,7 @@ interface CreateClubModalProps {
 }
 
 // High-fidelity modal frame
-const MODAL_FRAME_URL = `${import.meta.env.BASE_URL}images/modals/create-club-modal-frame.png`;
+const MODAL_FRAME_URL = `${MEDIA_BASE}images/modals/create-club-modal-frame.png`;
 
 // All new clubs start at Level 1 — server-side trigger will recompute
 // after the owner membership row is inserted into club_members.

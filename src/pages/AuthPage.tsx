@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { MEDIA_BASE } from '../utils/mediaBase';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -282,7 +283,7 @@ export default function AuthPage() {
         {/* Logo */}
         <div className={styles.logo}>
           <img
-            src={`${import.meta.env.BASE_URL}images/smarter-poker-logo.jpg`}
+            src={`${MEDIA_BASE}images/smarter-poker-logo.jpg`}
             alt="Smarter.Poker"
             className={styles.logoImage}
           />

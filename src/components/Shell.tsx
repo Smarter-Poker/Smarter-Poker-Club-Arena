@@ -4,6 +4,7 @@
  */
 
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { MEDIA_BASE } from '../utils/mediaBase';
 import { useState, useEffect } from 'react';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useUserStore } from '../stores/useUserStore';
@@ -129,7 +130,7 @@ function ShellContent() {
               aria-label="Menu"
             >
               <img
-                src={`${import.meta.env.BASE_URL}images/btn-hamburger.png`}
+                src={`${MEDIA_BASE}images/btn-hamburger.png`}
                 alt="Menu"
                 style={{ height: '100%', width: '100%', objectFit: 'contain' }}
               />
@@ -248,7 +249,7 @@ function ShellContent() {
               '✕'
             ) : (
               <img
-                src={`${import.meta.env.BASE_URL}images/btn-hamburger.png`}
+                src={`${MEDIA_BASE}images/btn-hamburger.png`}
                 alt="Menu"
                 style={{ height: 20, width: 20, objectFit: 'contain' }}
               />

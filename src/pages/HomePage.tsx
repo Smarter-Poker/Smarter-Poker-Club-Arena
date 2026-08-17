@@ -9,6 +9,7 @@
  * - Accessibility: ARIA, focus traps, keyboard nav, offline indicator
  */
 
+import { MEDIA_BASE } from '../utils/mediaBase';
 import {
   useState,
   useEffect,
@@ -59,7 +60,7 @@ interface UserPreferences {
 }
 
 // Action button images
-const ACTION_BAR_HORIZONTAL = `${import.meta.env.BASE_URL}images/icons/action-bar-horizontal.png`;
+const ACTION_BAR_HORIZONTAL = `${MEDIA_BASE}images/icons/action-bar-horizontal.png`;
 
 // #12: Seasonal theme detection
 function getSeasonalTheme(): string {

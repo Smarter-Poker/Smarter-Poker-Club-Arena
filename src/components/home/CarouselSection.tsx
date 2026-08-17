@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
+import { MEDIA_BASE } from '../../utils/mediaBase';
 import { supabase } from '../../lib/supabase';
 import type { useToast } from '../common/Toast';
 import haptic from '../../services/HapticService';
@@ -302,7 +303,7 @@ export default function CarouselSection({
                 cardImageUrl={
                   club.card_image_url ||
                   (Number(club.club_id) === SHARK_CLUB_ID
-                    ? `${import.meta.env.BASE_URL || '/'}images/shark-club-card-v25.jpg`
+                    ? `${MEDIA_BASE}images/shark-club-card-v25.jpg`
                     : undefined)
                 }
                 logoUrl={club.logo_url}

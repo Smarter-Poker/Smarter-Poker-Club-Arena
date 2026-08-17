@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { MEDIA_BASE } from '../../utils/mediaBase';
 import { getCardImagePath } from './CardImage';
 import type { Card as CardImageCard } from './CardImage';
 import './PremiumCard.css';
@@ -20,7 +21,7 @@ export type DeckTheme = 'classic' | 'burgundy' | 'navy' | 'gold';
 
 // Build base path for card-back images
 function getBackBase(): string {
-  return import.meta.env.BASE_URL || '/hub/club-arena/';
+  return MEDIA_BASE;
 }
 
 export const DECK_THEMES: Record<DeckTheme, { name: string; image: string }> = {

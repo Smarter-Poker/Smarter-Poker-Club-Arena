@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { MEDIA_BASE } from '../utils/mediaBase';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -323,7 +324,7 @@ export default function VIPPage() {
                    production. The real asset is images/vip-card.png, which is
                    what GlobalHeader already uses; BASE_URL keeps it correct
                    under the /hub/club-arena/ base path. */
-                src={`${import.meta.env.BASE_URL}images/vip-card.png`}
+                src={`${MEDIA_BASE}images/vip-card.png`}
                 alt="VIP Card"
                 style={{
                   width: '100%',

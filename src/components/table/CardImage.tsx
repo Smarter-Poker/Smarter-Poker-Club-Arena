@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { MEDIA_BASE } from '../../utils/mediaBase';
 import './CardImage.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -82,12 +83,12 @@ export function getCardImagePath(card: Card, deckStyle: DeckStyle = '4color'): s
     console.warn(`[CardImage] Unknown card format: rank="${card.rank}" suit="${card.suit}"`);
     const safeSuit = suitName || 'spades';
     const safeRank = rankName || 'a';
-    const base = import.meta.env.BASE_URL || '/hub/club-arena/';
+    const base = MEDIA_BASE;
     return `${base}cards/${deckStyle}/${safeSuit}_${safeRank}.png`;
   }
 
   // Serve card images from the same origin via proxy rewrites
-  const base = import.meta.env.BASE_URL || '/hub/club-arena/';
+  const base = MEDIA_BASE;
   return `${base}cards/${deckStyle}/${suitName}_${rankName}.png`;
 }
 

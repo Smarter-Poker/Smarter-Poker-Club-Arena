@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { MEDIA_BASE } from '../utils/mediaBase';
 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -61,11 +62,11 @@ interface UserProfile {
 // Frame images for club cards (randomly assigned per club)
 // Use BASE_URL for correct path resolution with Vite base path
 const FRAME_IMAGES = [
-  `${import.meta.env.BASE_URL}images/frames/frame-1.jpg`,
-  `${import.meta.env.BASE_URL}images/frames/frame-2.jpg`,
-  `${import.meta.env.BASE_URL}images/frames/frame-3.jpg`,
-  `${import.meta.env.BASE_URL}images/frames/frame-4.jpg`,
-  `${import.meta.env.BASE_URL}images/frames/frame-5.jpg`,
+  `${MEDIA_BASE}images/frames/frame-1.jpg`,
+  `${MEDIA_BASE}images/frames/frame-2.jpg`,
+  `${MEDIA_BASE}images/frames/frame-3.jpg`,
+  `${MEDIA_BASE}images/frames/frame-4.jpg`,
+  `${MEDIA_BASE}images/frames/frame-5.jpg`,
 ];
 
 // Get consistent frame for a club based on its ID

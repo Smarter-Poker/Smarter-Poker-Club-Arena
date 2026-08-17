@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { MEDIA_BASE } from '../utils/mediaBase';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import styles from './CreateClubPage.module.css';
@@ -21,7 +22,7 @@ import { reportError } from '../utils/errorReporter';
 // TYPES & CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const BASE = import.meta.env.BASE_URL;
+const BASE = MEDIA_BASE;
 
 interface ClubFormData {
   name: string;

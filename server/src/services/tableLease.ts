@@ -1,0 +1,228 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * tableLease — one engine instance per table, arbitrated by the database
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * WHY (2026-08-16 incident, 00:38:45 -> 01:09:11 UTC)
+ *
+ * Two engine containers served engine.smarter.poker simultaneously: the build
+ * from PR #72 and a rolled-back `13a90cf4` image that the host's recovery paths
+ * kept resurrecting from `club-arena-engine:current`. Every table stopped
+ * dealing for thirty minutes.
+ *
+ * Two separate holes made that possible and this module closes both:
+ *
+ *   1. NOTHING IDENTIFIED A PROCESS. `/health`, `/` and `/metrics` returned
+ *      wildly different table counts and uptimes and there was no field that
+ *      said which container answered. Diagnosing it took an hour of inference
+ *      from hand-history side effects. `instanceId` fixes that.
+ *
+ *   2. NOTHING OWNED A TABLE. Both containers ran the same discovery query, so
+ *      both were entitled to start an engine for the same table id. Two engines
+ *      on one table means two decks, two dealers and two settlements against
+ *      the same seats — a correctness failure far worse than an outage.
+ *
+ * ── FAIL-OPEN, DELIBERATELY ─────────────────────────────────────────────────
+ *
+ * A lease check sits directly in front of "may I deal this table", so a bug
+ * here could freeze the entire platform — the exact outcome it exists to
+ * prevent. Two rules keep that from happening:
+ *
+ *   - Enforcement is OFF unless ENGINE_LEASE_ENFORCE === 'on'. Until then the
+ *     module claims, heartbeats and LOGS conflicts, but `claimTable()` still
+ *     answers true and `heartbeatTables()` still reports nothing lost. We get
+ *     the evidence before we get the behaviour.
+ *
+ *   - Every RPC failure resolves to "carry on". A database blip must never be
+ *     the reason a table stops dealing. We decline to START a table only on a
+ *     definite `granted: false` from the database, and we STOP dealing one only
+ *     on a definite report that someone else took it.
+ */
+
+import { randomUUID } from 'node:crypto';
+// Straight from the client module, never the `supabase.js` barrel: the barrel
+// re-exports every submodule, so importing it from here would pull the whole
+// data layer into the module graph for one rpc() call.
+import { supabase } from './supabase/client.js';
+
+/**
+ * Per-process identity. Regenerated on every boot on purpose: a restarted
+ * engine must not inherit the lease rows its own previous incarnation left
+ * behind, or a crash-looping container would keep handing tables back to
+ * itself and the stale-lease timeout would never do its job.
+ */
+export const INSTANCE_ID: string = `${process.pid}-${randomUUID().slice(0, 8)}`;
+
+/** The build this process is running, for humans reading the lease table. */
+export const INSTANCE_VERSION: string =
+  process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local';
+
+/**
+ * How long a lease survives without a heartbeat. Must comfortably exceed the
+ * discovery interval (5s) so an ordinary slow tick never looks like death, and
+ * stay well under the time a human would notice a table not starting.
+ */
+export const LEASE_STALE_SECONDS = 30;
+
+/** Enforcement is opt-in. See the fail-open note above. */
+export const LEASE_ENFORCED: boolean = process.env.ENGINE_LEASE_ENFORCE === 'on';
+
+export interface LeaseConflict {
+  tableId: string;
+  holder: string | null;
+  holderAgeSeconds: number | null;
+  at: number;
+}
+
+/**
+ * Conflicts seen since boot. Surfaced on /health so a split-brain is visible
+ * from outside the box without reading container logs — the thing we did not
+ * have on 2026-08-16.
+ */
+const conflicts = new Map<string, LeaseConflict>();
+let claimErrors = 0;
+let heartbeatErrors = 0;
+
+export function recentLeaseConflicts(limit = 20): LeaseConflict[] {
+  return [...conflicts.values()].sort((a, b) => b.at - a.at).slice(0, limit);
+}
+
+export function leaseDiagnostics() {
+  return {
+    instanceId: INSTANCE_ID,
+    enforced: LEASE_ENFORCED,
+    conflictCount: conflicts.size,
+    claimErrors,
+    heartbeatErrors,
+    conflicts: recentLeaseConflicts(),
+  };
+}
+
+/** Test seam — the suite needs a clean slate between cases. */
+export function _resetLeaseState(): void {
+  conflicts.clear();
+  claimErrors = 0;
+  heartbeatErrors = 0;
+}
+
+/**
+ * Try to take (or renew) the lease on one table.
+ *
+ * @returns true when this instance may deal the table. A transport/RPC error
+ *          also returns true — see the fail-open note. Only an explicit
+ *          `granted: false` from the database, WITH enforcement switched on,
+ *          returns false.
+ */
+export async function claimTable(tableId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('claim_table_lease', {
+      p_table_id: tableId,
+      p_instance_id: INSTANCE_ID,
+      p_version: INSTANCE_VERSION,
+      p_stale_seconds: LEASE_STALE_SECONDS,
+    });
+
+    if (error) {
+      claimErrors++;
+      // Log once per table rather than every 5s tick — a missing function or a
+      // permissions problem would otherwise bury the log at 12 lines/minute
+      // per table.
+      if (claimErrors <= 3) {
+        console.warn(
+          `[lease] claim_table_lease failed for ${tableId} (${error.message}) — proceeding without a lease`
+        );
+      }
+      return true;
+    }
+
+    // The RPC RETURNS TABLE, so PostgREST hands back an array of one row.
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || row.granted !== false) return true;
+
+    const conflict: LeaseConflict = {
+      tableId,
+      holder: row.holder ?? null,
+      holderAgeSeconds:
+        row.holder_age_seconds === null || row.holder_age_seconds === undefined
+          ? null
+          : Number(row.holder_age_seconds),
+      at: Date.now(),
+    };
+    conflicts.set(tableId, conflict);
+    console.warn(
+      `[lease] SPLIT-BRAIN: table ${tableId} is held by instance ${conflict.holder} ` +
+        `(last heartbeat ${conflict.holderAgeSeconds}s ago). This instance is ${INSTANCE_ID}. ` +
+        (LEASE_ENFORCED
+          ? 'Refusing to deal it.'
+          : 'ENGINE_LEASE_ENFORCE is off, so dealing anyway — set it to "on" once these logs look right.')
+    );
+    return !LEASE_ENFORCED;
+  } catch (err) {
+    claimErrors++;
+    if (claimErrors <= 3) {
+      console.warn(
+        `[lease] claim threw for ${tableId} (${(err as Error)?.message}) — proceeding without a lease`
+      );
+    }
+    return true;
+  }
+}
+
+/**
+ * Renew every lease this instance believes it holds.
+ *
+ * @returns the subset of `tableIds` this instance has LOST — tables another
+ *          engine has taken over, which must be torn down here. Empty on any
+ *          error, because "we could not ask" must never be read as "we lost
+ *          everything"; that inversion is how a fail-safe becomes an outage.
+ */
+export async function heartbeatTables(tableIds: string[]): Promise<string[]> {
+  if (tableIds.length === 0) return [];
+  try {
+    const { data, error } = await supabase.rpc('heartbeat_table_leases', {
+      p_instance_id: INSTANCE_ID,
+      p_table_ids: tableIds,
+    });
+    if (error) {
+      heartbeatErrors++;
+      if (heartbeatErrors <= 3) {
+        console.warn(`[lease] heartbeat failed (${error.message}) — keeping every table`);
+      }
+      return [];
+    }
+    const kept = new Set(
+      ((data ?? []) as Array<{ table_id: string }>).map((r) => r.table_id)
+    );
+    const lost = tableIds.filter((id) => !kept.has(id));
+    for (const id of lost) {
+      conflicts.set(id, { tableId: id, holder: null, holderAgeSeconds: null, at: Date.now() });
+      console.warn(
+        `[lease] lost the lease on table ${id} — another engine instance has taken it over` +
+          (LEASE_ENFORCED ? '. Stopping it here.' : ' (enforcement off; still dealing).')
+      );
+    }
+    return LEASE_ENFORCED ? lost : [];
+  } catch (err) {
+    heartbeatErrors++;
+    if (heartbeatErrors <= 3) {
+      console.warn(`[lease] heartbeat threw (${(err as Error)?.message}) — keeping every table`);
+    }
+    return [];
+  }
+}
+
+/**
+ * Hand back leases on the way out. Purely an optimisation: without it the
+ * incoming container waits out LEASE_STALE_SECONDS on every table during a
+ * rolling deploy. Never allowed to delay or fail a shutdown.
+ */
+export async function releaseTables(tableIds?: string[]): Promise<void> {
+  try {
+    await supabase.rpc('release_table_leases', {
+      p_instance_id: INSTANCE_ID,
+      p_table_ids: tableIds ?? null,
+    });
+  } catch {
+    // Shutdown path — a failure here costs at most 30s of stale lease.
+  }
+}

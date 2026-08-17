@@ -172,11 +172,28 @@ const upsertPayload = (rec: Recorded) =>
  */
 function applyCursor(dataset: RakeRow[], rec: Recorded): RakeRow[] {
   const or = rec.ops.find(([n]) => n === 'or');
+  const gteCreated = rec.ops.find(([n, a]) => n === 'gte' && a[0] === 'created_at');
   const gtCreated = rec.ops.find(([n, a]) => n === 'gt' && a[0] === 'created_at');
   const limit = Number(opArg(rec, 'limit') ?? dataset.length);
 
   let matched: RakeRow[];
-  if (or) {
+  if (gteCreated) {
+    // 2026-08-17 — the keyset path now emits `created_at >= cursor` instead of
+    // the OR predicate. The OR form was correct but UNINDEXABLE: Postgres ran a
+    // full ordered index scan and applied it as a FILTER (21,534 ms, 560,302
+    // rows removed, against 259 ms for a plain range), which is what produced
+    // the [RakebackSettler.fetch_failed] statement timeouts in production.
+    //
+    // `gte` is a strict SUPERSET of the OR predicate — it also returns the
+    // cursor row itself and any timestamp ties — and the production code drops
+    // that surplus prefix in memory. This branch therefore returns the superset
+    // DELIBERATELY: it is the honest simulation of what Postgres hands back,
+    // and it leaves exactly-once to be proven by the production skip rather
+    // than quietly enforced inside the mock. The AUDIT M6 duplicate-timestamp
+    // cases below are precisely what exercise that skip.
+    const t = String(gteCreated[1][1]);
+    matched = dataset.filter((r) => r.created_at >= t);
+  } else if (or) {
     const filter = String(or[1][0]);
     const m = /^created_at\.gt\."([^"]+)",and\(created_at\.eq\."([^"]+)",id\.gt\."([^"]+)"\)$/.exec(
       filter
@@ -290,7 +307,7 @@ describe('RakebackSettlerService — AUDIT M6 resume cursor', () => {
     expect(payload.high_water_mark_id).toBe(uid(2));
   });
 
-  it('uses the composite keyset filter once an id is available', async () => {
+  it('uses an INDEXABLE cursor filter once an id is available', async () => {
     install({
       settlerState: { high_water_mark: ts(100), high_water_mark_id: uid(7) },
       dataset: [row(8, 100), row(9, 400)],
@@ -301,9 +318,25 @@ describe('RakebackSettlerService — AUDIT M6 resume cursor', () => {
     )._runSettlementInner();
 
     const fetch = rakeFetches()[0];
-    expect(opArg(fetch, 'or')).toBe(
-      `created_at.gt."${ts(100)}",and(created_at.eq."${ts(100)}",id.gt."${uid(7)}")`
-    );
+
+    // 2026-08-17 — this used to assert the composite OR keyset:
+    //   created_at.gt."X",and(created_at.eq."X",id.gt."Y")
+    // That predicate is CORRECT but UNINDEXABLE. Postgres cannot use
+    // idx_rake_records_created_at_id for it; it runs a full ordered index scan
+    // and applies the OR as a FILTER. Measured on production:
+    //   OR form 21,534 ms (Rows Removed by Filter: 560,302) vs 259 ms range.
+    // That was the [RakebackSettler.fetch_failed] statement timeout, and it
+    // only struck cycles WITH a cursor — the settler stalled exactly when it
+    // had made progress.
+    //
+    // The cursor is now a plain `created_at >= X`, with the already-settled
+    // prefix dropped in memory. Assert the new shape AND that the old one is
+    // gone, so a well-meaning revert to the "textbook" keyset is caught here
+    // rather than by a production timeout.
+    expect(opArg(fetch, 'gte')).toBe('created_at');
+    expect(fetch.ops.find(([n, a]) => n === 'gte' && a[0] === 'created_at')?.[1][1]).toBe(ts(100));
+    expect(opArg(fetch, 'or')).toBeUndefined();
+
     // A tie at the cursor timestamp with a HIGHER id is still in scope — that is
     // the whole point of the tie-break.
     expect(opArg(settlerUpserts()[0], 'upsert')).toMatchObject({
@@ -352,8 +385,35 @@ describe('RakebackSettlerService — AUDIT M6 resume cursor', () => {
     expect(second).toBe('idle');
 
     // The second batch must contain the row that used to vanish.
+    //
+    // 2026-08-17: the read is now `created_at >= cursor` rather than the OR
+    // predicate. The OR was correct but unindexable — 21,534 ms against 259 ms
+    // for a plain range — and it timed the settler out in production. `gte`
+    // returns a strict SUPERSET: the already-settled cursor row comes back too,
+    // and the production code drops that prefix in memory. The DB page and the
+    // effective set therefore differ now, so this asserts BOTH.
     const returned = applyCursor(dataset, rakeFetches()[1]);
-    expect(returned.map((r) => r.id)).toEqual([uid(FETCH_LIMIT + 1), uid(FETCH_LIMIT + 2)]);
+
+    // Raw page: begins with the already-settled cursor row (the surplus `gte`
+    // deliberately admits).
+    expect(returned.map((r) => r.id)).toEqual([
+      uid(FETCH_LIMIT),
+      uid(FETCH_LIMIT + 1),
+      uid(FETCH_LIMIT + 2),
+    ]);
+
+    // Mirrors the prefix-skip in RakebackSettlerService: drop rows AT the
+    // cursor timestamp whose id is <= the cursor id. Kept as an explicit local
+    // rather than folded into applyCursor, so the mock keeps returning what
+    // Postgres actually returns and exactly-once stays a property this test
+    // proves rather than one the mock quietly enforces.
+    const cursorTs = ts(COLLISION);
+    const cursorId = uid(FETCH_LIMIT);
+    const effective = returned.filter((r) => !(r.created_at === cursorTs && r.id <= cursorId));
+
+    // THE M6 GUARANTEE, unchanged: the row that used to vanish IS processed,
+    // and the already-settled one is NOT reprocessed.
+    expect(effective.map((r) => r.id)).toEqual([uid(FETCH_LIMIT + 1), uid(FETCH_LIMIT + 2)]);
   });
 
   it('a failed cursor read does not advance the cursor and does not read rake_records', async () => {

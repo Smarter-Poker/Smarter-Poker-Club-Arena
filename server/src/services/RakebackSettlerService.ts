@@ -676,9 +676,29 @@ export class RakebackSettlerService {
     const base = supabase
       .from('rake_records')
       .select('id, is_tournament, hand_id, club_id, rake_amount, player_contributions, created_at');
-    const filtered = useKeyset
-      ? base.or(keysetFilter(sinceIso, this.cursor!.id as string))
-      : base.gt('created_at', sinceIso);
+    // ── 2026-08-17: the OR keyset predicate WAS the timeout ──
+    //
+    // `or=(created_at.gt."X",and(created_at.eq."X",id.gt."Y"))` is the textbook
+    // composite keyset, and Postgres cannot use idx_rake_records_created_at_id
+    // for it. It runs a full ordered index scan and applies the OR as a FILTER.
+    // Measured against production:
+    //
+    //   OR keyset form   21,534 ms   Rows Removed by Filter: 560,302
+    //   plain range         259 ms   same table, same LIMIT
+    //
+    // That is the [RakebackSettler.fetch_failed] "canceling statement due to
+    // statement timeout" of 2026-08-17, and it explains why the failure looked
+    // intermittent: the cold-start path (useKeyset false) already used the fast
+    // form, so only cycles WITH a cursor died — the daemon that pays players
+    // stalled precisely when it had made progress.
+    //
+    // Fix: ask for `created_at >= cursor` — sargable, index-friendly — then drop
+    // the already-processed head of the page in memory (see the skip below).
+    // Exactly-once is preserved: `gte` is a strict SUPERSET of the OR predicate
+    // (it additionally returns the cursor row itself and any timestamp ties),
+    // and the skip removes precisely that surplus. Ties on a timestamptz are
+    // rare, so the overlap is a handful of rows per cycle.
+    const filtered = useKeyset ? base.gte('created_at', sinceIso) : base.gt('created_at', sinceIso);
     const { data: rows, error: fetchErr } = await filtered
       .gt('rake_amount', 0)
       .not('player_contributions', 'is', null)
@@ -697,6 +717,39 @@ export class RakebackSettlerService {
       return 'halted';
     }
 
+    // Remove the surplus the `gte` widening introduced. On the keyset path the
+    // page can begin with the cursor row itself plus any rows sharing its exact
+    // timestamp that were already settled. Dropping them restores the old OR
+    // predicate's semantics EXACTLY — strictly after (created_at, id) — without
+    // asking Postgres for a filter it cannot index. Rows arrive ordered by
+    // (created_at, id) ascending, so the already-seen entries are always a
+    // contiguous prefix.
+    // Page size AS POSTGRES RETURNED IT, captured before the skip below.
+    //
+    // `hitLimit` (further down) decides 'more' vs 'idle', i.e. whether the
+    // drain loop goes round again. It must be judged on the RAW page: if the
+    // skip removes even one row, a genuinely full 10,000-row page reads as
+    // 9,999 and the settler concludes it is caught up while backlog remains.
+    // The AUDIT M6 drain test caught exactly that.
+    const rawPageSize = rows?.length ?? 0;
+
+    if (useKeyset && rows && rows.length > 0) {
+      const cursorId = this.cursor!.id as string;
+      const before = rows.length;
+      let drop = 0;
+      while (drop < rows.length) {
+        const r = rows[drop] as { created_at: string; id: string };
+        if (r.created_at === sinceIso && r.id <= cursorId) drop++;
+        else break;
+      }
+      if (drop > 0) {
+        rows.splice(0, drop);
+        console.log(
+          `[RakebackSettler] keyset: skipped ${drop} already-settled row(s) at the cursor timestamp (page was ${before})`
+        );
+      }
+    }
+
     if (!rows || rows.length === 0) {
       console.log(`[RakebackSettler] No new rake_records since ${sinceIso}`);
       // Nothing processed — leave the cursor untouched so any late-arriving
@@ -713,7 +766,10 @@ export class RakebackSettlerService {
       id: lastRow.id ?? null,
     };
     // A full batch means there is almost certainly more behind it.
-    const hitLimit = rows.length >= FETCH_LIMIT;
+    // rawPageSize, not rows.length — see the note where it is captured. The
+    // keyset skip can shorten `rows`, and judging fullness on the shortened
+    // array would end the drain one page early and leave backlog unsettled.
+    const hitLimit = rawPageSize >= FETCH_LIMIT;
 
     // 2. Aggregate per (user_id, club_id, week)
     type Bucket = {

@@ -125,6 +125,61 @@ else
   bad "node-exporter is missing --collector.textfile.directory — supervisor metrics never reach Prometheus"
 fi
 
+# Every Prometheus scrape target must be healthy. On 2026-08-16 the rebuilt box
+# had node-exporter running, with the textfile collector flag set, writing a
+# fresh heartbeat to disk — and Prometheus was not scraping it at all. UFW
+# defaults to DROP on INPUT, and node-exporter uses host networking, so traffic
+# from the docker bridge to :9100 was dropped. (Port 8080 worked because Docker
+# publishes it through FORWARD, bypassing INPUT.) Every check below passed while
+# the supervisor was completely unobservable, which is the exact failure this
+# whole script exists to prevent. Checking the plumbing is not the same as
+# checking the metric arrived.
+TARGETS=$(curl -sf --max-time 5 localhost:9090/api/v1/targets 2>/dev/null || echo "")
+if [ -z "$TARGETS" ]; then
+  bad "cannot read Prometheus targets — scrape health unknown"
+else
+  DOWN=$(echo "$TARGETS" | grep -o '"health":"[a-z]*"' | grep -cv '"health":"up"' || true)
+  if [ "${DOWN:-0}" -eq 0 ]; then
+    ok "all Prometheus scrape targets are up"
+  else
+    bad "$DOWN Prometheus scrape target(s) are DOWN — some metrics never arrive"
+  fi
+fi
+
+# The supervisor heartbeat must exist IN PROMETHEUS, not merely on disk.
+HB=$(curl -sf --max-time 5 \
+  'localhost:9090/api/v1/query?query=time()-club_arena_supervisor_last_run_timestamp_seconds' 2>/dev/null \
+  | grep -o '"value":\[[^]]*\]' | sed 's/.*,"//;s/".*//' | head -1)
+case "$HB" in
+  ''|*[!0-9.-]*) bad "supervisor heartbeat is ABSENT from Prometheus (on-disk file is not enough)" ;;
+  *) if [ "${HB%%.*}" -lt 300 ] 2>/dev/null; then
+       ok "supervisor heartbeat reached Prometheus (${HB%%.*}s old)"
+     else
+       bad "supervisor heartbeat in Prometheus is stale (${HB%%.*}s old)"
+     fi ;;
+esac
+
+# Grafana ships with admin/admin and GF_SECURITY_ADMIN_PASSWORD only applies on
+# FIRST initialisation — setting it later does nothing, because the password is
+# already stored in Grafana's database. On 2026-08-16 the rebuilt box ran for 15
+# hours on the default credential: the compose file interpolates
+# ${GRAFANA_ADMIN_PASSWORD}, and the runtime .env had been written with the
+# variable named GF_SECURITY_ADMIN_PASSWORD instead, so it resolved to empty.
+# Nothing else in the stack notices, because Grafana is perfectly healthy with a
+# default password.
+GRAF_PORT="${GRAF_PORT:-3001}"
+if curl -sf --max-time 5 "localhost:${GRAF_PORT}/api/health" >/dev/null 2>&1; then
+  ok "grafana is reachable on :${GRAF_PORT}"
+  GCODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -u admin:admin "localhost:${GRAF_PORT}/api/org" 2>/dev/null)
+  if [ "$GCODE" = "200" ]; then
+    bad "grafana still accepts the DEFAULT admin:admin credential"
+  else
+    ok "grafana rejects the default admin:admin credential (HTTP $GCODE)"
+  fi
+else
+  bad "grafana is not answering on :${GRAF_PORT}"
+fi
+
 RULES=$(curl -sf --max-time 5 localhost:9090/api/v1/rules 2>/dev/null || echo "")
 if [ -z "$RULES" ]; then
   # Previously this produced ONE failure (rules not loaded) and one spurious

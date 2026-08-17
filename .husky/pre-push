@@ -31,6 +31,25 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     FILES=$(git diff --name-only "$REMOTE_SHA" "$LOCAL_SHA")
   fi
 
+  # 0. Repo-wide invariants. These normally run in CI as blocking checks, but
+  #    branch protection is UNAVAILABLE on a private repo without GitHub Pro —
+  #    making the repos private (correctly, after keys leaked into history) also
+  #    silently disabled required status checks and rulesets. CI still runs and
+  #    still goes red; nothing enforces it server-side any more. Running the two
+  #    fast guards here is the only enforcement left. Both are ~100ms.
+  if [ -f scripts/ci/check-allin-pointer-events.mjs ]; then
+    if ! node scripts/ci/check-allin-pointer-events.mjs; then
+      echo "[club-arena pre-push] BLOCKED: all-in action panel would lose pointer events"
+      FAIL=1
+    fi
+  fi
+  if [ -f scripts/ci/check-monitoring-drift.mjs ]; then
+    if ! node scripts/ci/check-monitoring-drift.mjs; then
+      echo "[club-arena pre-push] BLOCKED: monitoring wiring is broken"
+      FAIL=1
+    fi
+  fi
+
   # 1. Merge conflict markers
   for f in $FILES; do
     if [ -f "$f" ]; then

@@ -7814,3 +7814,22 @@ gaps found by auditing what each user_theme_settings field actually DOES:
   (classic-brown moved to stone-concrete for that reason).
 - Section 11.1 toggles (card_slide, show_stack_in_bb, ...) were already
   live via useUserTableSettings.
+
+## 2026-08-17 — STEP 8 CLOSED: verified live on production
+
+Production /api/health served WH SHA cf4d3ff0 (lineage contains sync build
+bb939e072c of CA c87149371). Live verification with the test account on a
+running 9-max fleet table, themed via user_theme_settings
+(classic-brown / mahogany_red / red-d-gear / galaxy-nebula / premium-gold):
+galaxy background rendered around the mahogany table with the red dealer
+button — three categories visually confirmed in one frame; the card-back
+consumer rule was grep-verified in the served TablePage css (note: prettier
+wraps `var(` so the minified selector reads `var( --card-back-gradient` —
+valid CSS, but exact-string greps must allow the space). Test account theme
+reset to defaults afterward.
+
+MIGRATION STATUS: Steps 1-8 ALL COMPLETE. The server-authoritative
+migration phase order defined in MASTER-MIGRATION-DOCUMENT §8 is finished.
+Remaining platform work continues under
+Smarter-Poker-World-Hub/CLUB-ARENA-OFFICIAL-UPGRADE-INTEGRATION.md (Phase
+U-series) and the smarter-poker-optimization-plan, not this migration.

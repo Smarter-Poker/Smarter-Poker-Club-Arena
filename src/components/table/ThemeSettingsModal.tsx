@@ -311,6 +311,48 @@ const DEFAULT_SELECTION: ThemeSelection = {
   cards_id: 'standard-red',
 };
 
+/**
+ * Dan 2026-08-17 (STEP 8) — Tab 1 preset bundles. Picking a Theme fills the
+ * other four categories with a coordinated set (each tab can still be
+ * overridden before Confirm). Free presets bundle only free assets; the two
+ * VIP presets may bundle VIP assets because the preset tile itself is
+ * VIP-gated by canAccessAsset before the bundle is applied.
+ */
+const THEME_PRESET_BUNDLES: Record<string, Partial<ThemeSelection>> = {
+  'default-dark': {
+    table_id: 'neon_city',
+    button_id: 'classic-white',
+    background_id: 'diamond-pattern',
+    cards_id: 'standard-red',
+  },
+  'classic-brown': {
+    table_id: 'mahogany_red',
+    button_id: 'gray-d-gear',
+    // stone-concrete, not hardwood-floor: classic-brown is a FREE preset and
+    // hardwood-floor is VIP-only — a free preset must not smuggle VIP assets.
+    background_id: 'stone-concrete',
+    cards_id: 'standard-red',
+  },
+  'neon-blue': {
+    table_id: 'ice_cavern',
+    button_id: 'blue-crystal',
+    background_id: 'galaxy-nebula',
+    cards_id: 'standard-blue',
+  },
+  'rustic-wood': {
+    table_id: 'classic_green',
+    button_id: 'gold-star',
+    background_id: 'hardwood-floor',
+    cards_id: 'premium-gold',
+  },
+  'casino-green': {
+    table_id: 'jade_city',
+    button_id: 'gold-star',
+    background_id: 'teal-tile',
+    cards_id: 'premium-black',
+  },
+};
+
 // Binary VIP access check: user is either VIP or not
 function canAccessAsset(isVip: boolean, vipOnly: boolean): boolean {
   if (!vipOnly) return true; // Free items always accessible
@@ -401,6 +443,16 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         return;
       }
       const field = TAB_TO_FIELD[tab];
+      // Dan 2026-08-17 (STEP 8): Tab 1 presets are coordinated BUNDLES, not a
+      // fifth independent knob. Before this, theme_id saved but nothing read
+      // it, so the Themes tab was inert. Picking a preset now pre-fills the
+      // other four categories (the user can still override any tab before
+      // Confirm; non-VIP presets only bundle non-VIP assets).
+      if (tab === 'themes') {
+        const bundle = THEME_PRESET_BUNDLES[assetId];
+        setSelection((prev) => ({ ...prev, [field]: assetId, ...(bundle || {}) }));
+        return;
+      }
       setSelection((prev) => ({ ...prev, [field]: assetId }));
     },
     [isVip]

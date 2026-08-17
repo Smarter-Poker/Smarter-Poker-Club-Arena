@@ -6386,16 +6386,23 @@ export default function TablePage({
       data-cards-theme={v8Theme.cards_id || 'standard-red'}
       data-theme-preset={v8Theme.theme_id || 'default-dark'}
     >
-      {/* Blurred scene ambiance — see the comment on .table-page above. */}
-      <div
-        className="table-backdrop"
-        aria-hidden="true"
-        style={{
-          backgroundImage: `url(${resolveSkin(
-            v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
-          )})`,
-        }}
-      />
+      {/* Blurred scene ambiance — see the comment on .table-page above.
+          STEP 8 (Bible V8 §11.2 Tab 4): only the DEFAULT background shows the
+          skin's own blurred scene. Any other saved background_id suppresses
+          this layer so the FIX 222 page background (diamond/stone/galaxy/
+          hardwood/teal) is actually visible — before this gate, the Tab 4
+          picker saved correctly but changed nothing on screen. */}
+      {(v8Theme.background_id || 'diamond-pattern') === 'diamond-pattern' && (
+        <div
+          className="table-backdrop"
+          aria-hidden="true"
+          style={{
+            backgroundImage: `url(${resolveSkin(
+              v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
+            )})`,
+          }}
+        />
+      )}
       <style>{`
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
                 @keyframes boardFade { from { opacity: 0.7; } to { opacity: 1; } }

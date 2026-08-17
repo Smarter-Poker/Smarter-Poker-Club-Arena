@@ -7793,3 +7793,24 @@ spectator footer correct. Test seats removed; test session state cleaned.
 Deploy note: the CA repo's build-for-world-hub GitHub Action auto-syncs
 every CA main push into WH — manual WH sync commits race it and lose;
 prefer letting the bot land the build and verifying via /api/health.
+
+## 2026-08-17 — STEP 8: Table Settings & Theme Customization (Bible V8 Ch. 11)
+
+Steps 1-7 of the migration were already complete; this closes the STEP 8
+gaps found by auditing what each user_theme_settings field actually DOES:
+
+- table_id: done earlier today (13 canonical skins, rail-locked layout).
+- button_id: already wired (dealer button consumes --dealer-btn-bg/color).
+- cards_id: tokens existed but nothing consumed them - opponents' card backs
+  were hard-forced blue by the hotfix and deal-animation cards were stock
+  navy. Both now consume --card-back-gradient / --card-accent with the old
+  values as fallback.
+- background_id: FIX 222 page backgrounds were saved but invisible behind
+  the new blurred-skin backdrop. The backdrop now renders only for the
+  default diamond-pattern; any other pick reveals its themed background.
+- theme_id: was inert (saved, read by nothing). Tab 1 presets now apply
+  coordinated bundles (table+button+background+cards) that the user can
+  still override per-tab; free presets bundle only free assets
+  (classic-brown moved to stone-concrete for that reason).
+- Section 11.1 toggles (card_slide, show_stack_in_bb, ...) were already
+  live via useUserTableSettings.

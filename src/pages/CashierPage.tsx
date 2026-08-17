@@ -41,6 +41,7 @@ import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import { ChipPurchaseModal } from '../components/wallet/ChipPurchaseModal';
 import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
@@ -215,6 +216,10 @@ export default function CashierPage() {
 
   // Transaction history state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // Buy Chips entry point (audit s21/s34: the server-priced purchase flow
+  // worked end-to-end but nothing in the UI could reach it).
+  const [buyChipsOpen, setBuyChipsOpen] = useState(false);
+  const [diamondBalance, setDiamondBalance] = useState(0);
   const [loadingTx, setLoadingTx] = useState(false);
   const [txFilter, setTxFilter] = useState('all');
   const [txPage, setTxPage] = useState(1);
@@ -1263,6 +1268,32 @@ export default function CashierPage() {
             onBuyDiamonds={() => navigate(`/vip`)}
             onMintChips={() => setAction('mint')}
             onOpenBBJ={() => clubId && navigate(`/clubs/${clubId}/jackpot`)}
+          />
+          <button
+            type="button"
+            className={styles.tab}
+            style={{ width: '100%', marginTop: 8 }}
+            onClick={async () => {
+              if (!user?.id) return;
+              const { data } = await supabase
+                .from('profiles')
+                .select('diamonds')
+                .eq('id', user.id)
+                .maybeSingle();
+              setDiamondBalance(Number(data?.diamonds) || 0);
+              setBuyChipsOpen(true);
+            }}
+            aria-haspopup="dialog"
+          >
+            Get Chips
+          </button>
+          <ChipPurchaseModal
+            isOpen={buyChipsOpen}
+            onClose={() => setBuyChipsOpen(false)}
+            currentDiamonds={diamondBalance}
+            onPurchase={(chips) => {
+              if (user?.id) notifyWalletChange(user.id, chips);
+            }}
           />
         </div>
       )}

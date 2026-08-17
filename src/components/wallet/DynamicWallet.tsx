@@ -74,6 +74,7 @@ interface WalletData {
   bbjPool: number;
   chipBalance: number;
   clubBank: number;
+  clubTreasury: number;
   agentBalance: number;
   promoBalance: number;
   unionBank: number;
@@ -145,6 +146,7 @@ export default function DynamicWallet({
     bbjPool: 0,
     chipBalance: 0,
     clubBank: 0,
+    clubTreasury: 0,
     agentBalance: 0,
     promoBalance: 0,
     unionBank: 0,
@@ -200,6 +202,7 @@ export default function DynamicWallet({
   );
   const animRow3 = useAnimatedCounter(data.promoBalance);
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
+  const animTreasury = useAnimatedCounter(data.clubTreasury);
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
   const fetchData = useCallback(async () => {
@@ -228,8 +231,17 @@ export default function DynamicWallet({
           .eq('club_id', resolvedId)
           .eq('user_id', userId)
           .maybeSingle(),
-        // Club treasury for owner variant
-        supabase.from('clubs').select('chip_treasury, union_id').eq('id', resolvedId).maybeSingle(),
+        // Club balances for owner variant. TWO DISTINCT ACCOUNTS (audit s24's
+        // naming trap): chip_pool is the distributable club bank that
+        // mint_club_chips/distribute_chips move; chip_treasury is the rake
+        // treasury credit_club_rake_to_treasury feeds. This widget used to
+        // show ONLY chip_treasury while the Mint button moved chip_pool -- an
+        // owner minted and watched nothing change.
+        supabase
+          .from('clubs')
+          .select('chip_pool, chip_treasury, union_id')
+          .eq('id', resolvedId)
+          .maybeSingle(),
       ]);
 
       // Discard stale response if a newer fetch has started
@@ -260,7 +272,8 @@ export default function DynamicWallet({
         bbjPool: Number(bbjRes.data?.main_balance) || 0,
         backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
         agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
-        clubBank: Number(clubRes.data?.chip_treasury) || 0,
+        clubBank: Number(clubRes.data?.chip_pool) || 0,
+        clubTreasury: Number(clubRes.data?.chip_treasury) || 0,
         unionBank: unionBankBalance,
       });
       // Auto-detect union membership from clubs.union_id
@@ -419,10 +432,15 @@ export default function DynamicWallet({
         (p) => {
           if (!isMounted.current) return;
           // Update club bank immediately from RT payload
-          if (p.new?.chip_treasury !== undefined) {
+          if (p.new?.chip_pool !== undefined || p.new?.chip_treasury !== undefined) {
             setData((prev) => ({
               ...prev,
-              clubBank: Number(p.new.chip_treasury) || 0,
+              clubBank:
+                p.new.chip_pool !== undefined ? Number(p.new.chip_pool) || 0 : prev.clubBank,
+              clubTreasury:
+                p.new.chip_treasury !== undefined
+                  ? Number(p.new.chip_treasury) || 0
+                  : prev.clubTreasury,
             }));
           }
           // If union_id changed (club joined or left a union), do a full refetch
@@ -478,11 +496,13 @@ export default function DynamicWallet({
     ],
     owner: [
       { label: 'Club Bank', icon: '🏦', value: animRow1 },
+      { label: 'Rake Treasury', icon: '🪙', value: animTreasury },
       { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
       { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
     ],
     union: [
       { label: 'Union Bank', icon: '🏦', value: animRow1 },
+      { label: 'Rake Treasury', icon: '🪙', value: animTreasury },
       { label: 'Clubs Wallet', icon: '🅰️', value: animRow2 },
       { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
     ],

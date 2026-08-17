@@ -77,6 +77,9 @@
 
   .table-hud__lower {
     padding: 4px 2px;
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 110px);
+    /* Dan 2026-08-17 (audit round 3): 110px put the PreviousHandCard's green
+       result figure UNDER the TimebankCounter pill (fixed at bottom 124px,
+       ~36px tall, same left edge). 168px stacks the card clear above it. */
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 168px);
   }
 }

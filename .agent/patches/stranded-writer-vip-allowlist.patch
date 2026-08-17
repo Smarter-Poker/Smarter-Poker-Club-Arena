@@ -1,0 +1,15 @@
+--- a/scripts/ci/check-stranded-writers.mjs
++++ b/scripts/ci/check-stranded-writers.mjs
+@@ -40,6 +40,11 @@
+ const ALLOWLIST = new Set([
+   // Client-authoritative
+   'arena_sessions', // client-side session tracker
+   'bus_event_log', // client-side telemetry
++  // Writer lives in the DATABASE, which this repo-scanning check cannot see.
++  // `vip_feature_usage_monthly` is written by the SECURITY DEFINER function
++  // `fn_increment_vip_usage` (also referenced by `fn_platform_invariants_health`).
++  // Verified against production 2026-08-17. Read from src/services/VIPService.ts:266.
++  'vip_feature_usage_monthly',
+   // Cross-orb tables (tracked in ~/Documents/Smarter-Poker-World-Hub/supabase/migrations)
+   'diamond_ledger', // Diamond Arena orb
+   'user_avatars', // Identity DNA Engine

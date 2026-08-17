@@ -188,7 +188,10 @@
 
 @media (max-width: 480px) {
   .bankroll-widget {
-    bottom: 140px;
+    /* Dan 2026-08-17 (audit round 3): 140px overlapped the TimebankCounter
+       pill (fixed at bottom 124px, ~36px tall, same left edge) — the green
+       session figure printed under the pill. 170px stacks it clear above. */
+    bottom: 170px;
     left: 8px;
     min-width: 120px;
   }

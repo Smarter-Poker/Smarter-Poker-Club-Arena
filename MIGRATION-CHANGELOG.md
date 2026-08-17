@@ -7760,3 +7760,24 @@ gaps, stubs or visual obstructions").
   arctic_white via user_theme_settings, all 13 skins overlay-checked against
   the locked seat ring. Test-account password re-synced to the documented
   TEST_USER_PASSWORD (auth.users hash update); stale test seats cleared.
+
+## 2026-08-17 (round 3) — Seated-hero verification + final overlap fixes
+
+Played a full hero session with the test account on a live 9-max fleet
+table: sit -> buy-in -> post BB -> dealt in (A-J, then A-2) -> pre-action
+panel -> live FOLD/CALL/RAISE turn with timer. Hero renders bottom-center
+with rotation; villains + SIT stay on the rail; 6-max and 1024px desktop
+verified; ThemeSettingsModal shows the 13 skins and legacy id aliasing
+works (saved neon-blue-felt renders Ocean Blue).
+
+Fixes shipped from what the live session exposed:
+
+- seat\_\_stack-delta floated UP through the stack number; now floats DOWN
+  below the plate into rail space.
+- Mobile bet-chip x-clamp 26 -> 38px (chips sat on the name text; 68%
+  board leaves the felt margin free).
+- BankrollWidget mobile anchor 140 -> 170px (green session figure printed
+  under the TimebankCounter pill).
+- Raw game-variant enums (OFC_PINEAPPLE) printed verbatim on the felt
+  masthead; underscores now formatted out (bug pattern 9).
+- Test seats removed from live tables after verification.

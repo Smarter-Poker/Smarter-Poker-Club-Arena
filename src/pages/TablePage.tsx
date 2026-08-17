@@ -6827,7 +6827,10 @@ export default function TablePage({
                           ? 'PLO'
                           : tableState.gameType === "Fixed Limit Hold'em"
                             ? 'FLH'
-                            : tableState.gameType || 'NLH'
+                            : // Dan 2026-08-17 (audit): raw DB enums like
+                              // OFC_PINEAPPLE printed verbatim on the felt.
+                              // Known bug pattern 9: format enums for display.
+                              (tableState.gameType || 'NLH').replace(/_/g, ' ')
                       ).toUpperCase()}{' '}
                       {tableState.blinds || '1/2'}
                     </span>

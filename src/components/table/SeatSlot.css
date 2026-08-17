@@ -536,10 +536,14 @@
   }
 }
 
-/* Stack Change Delta — floating +/- indicator */
+/* Stack Change Delta — floating +/- indicator.
+   Dan 2026-08-17 (audit round 3): it used to start at the plate bottom and
+   float UP straight through the stack number (live shot: a red digit printed
+   over the stack). It now starts below the plate and floats DOWN into the
+   clear rail area, never crossing the plate text. */
 .seat__stack-delta {
   position: absolute;
-  bottom: -2px;
+  bottom: -18px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 0.5625rem;
@@ -568,11 +572,11 @@
   }
   70% {
     opacity: 1;
-    transform: translateX(-50%) translateY(-16px);
+    transform: translateX(-50%) translateY(14px);
   }
   100% {
     opacity: 0;
-    transform: translateX(-50%) translateY(-24px);
+    transform: translateX(-50%) translateY(22px);
   }
 }
 

@@ -78,8 +78,12 @@
 }
 @media (max-width: 640px) {
   .table-page .seat__bet-chips {
+    /* Dan 2026-08-17 (audit round 3): 26px parked side-seat chips ON the
+       name text. 38px clears the plate onto its corner; the 68%-wide board
+       (round 2) leaves ~66px of felt margin, so 38px cannot reach the
+       cards. */
     transform: translate(
-      calc(-50% + clamp(-26px, var(--bet-offset-x, 0px) * 1.82, 26px)),
+      calc(-50% + clamp(-38px, var(--bet-offset-x, 0px) * 1.82, 38px)),
       calc(-50% + var(--bet-offset-y, 0px) * 1.82)
     ) !important;
   }

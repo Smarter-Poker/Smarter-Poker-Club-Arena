@@ -21,7 +21,9 @@ export interface UserThemeSelection {
 
 const DEFAULT_THEME: UserThemeSelection = {
   theme_id: 'default-dark',
-  table_id: 'dark-felt',
+  // Dan 2026-08-17: default table skin is the Neon City composite ('dark-felt'
+  // still resolves to it via the TABLE_SKINS legacy alias in TablePage).
+  table_id: 'neon_city',
   button_id: 'classic-white',
   background_id: 'diamond-pattern',
   cards_id: 'standard-red',

@@ -514,9 +514,12 @@
 .table-scaler {
   width: 100%;
   max-width: min(calc(100% - 16px), 320px);
-  /* Dan 2026-07-28: exact aspect of table-vertical-black-gold.png (341x609)
-     so the artwork is never distorted and the felt window stays true. */
-  aspect-ratio: 341 / 609;
+  /* Dan 2026-08-17: 605/1000 — the canonical 896x1200 skin composites shown
+     with object-fit: cover crop to x [9.5%, 90.5%] at this aspect, which is
+     the rail plus a small scene margin. The seat ring percentages in
+     TablePage.tsx are derived from THIS box; changing the aspect moves every
+     seat off the painted rail. */
+  aspect-ratio: 605 / 1000;
   position: relative;
   transform-origin: center center;
   max-height: 100%;
@@ -531,16 +534,22 @@
   overflow: visible;
 }
 
-/* Table artwork — the Commander black-and-gold table rotated to portrait.
-   object-fit: fill is deliberate: .table-scaler is locked to the PNG's own
-   341/609 aspect, so "fill" is pixel-exact and guarantees the felt-window
-   percentages below always line up with the painted felt. */
+/* Table artwork — the active skin composite (scene + painted table).
+   Dan 2026-08-17: object-fit: cover inside the 605/1000 scaler crops the
+   896x1200 frame to x [9.5%, 90.5%] — the rail plus a thin scene margin.
+   The stadium border-radius + elliptical mask feather the cropped scene
+   into the darkened page backdrop (the same image), so there is no hard
+   rectangle edge, and the rail stays fully opaque (its farthest point is
+   ~87% of the mask ellipse; the fade starts at 88%). */
 .table-art {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: cover;
+  border-radius: 9999px;
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 88%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 88%, transparent 100%);
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
@@ -773,10 +782,13 @@
 
 .table-surface {
   position: absolute;
-  left: 18.8%;
-  top: 10.5%;
-  width: 63.3%;
-  height: 79.2%;
+  /* Dan 2026-08-17: the felt window of the canonical skin composites after
+     the scaler's cover-crop (source felt x 20.3-79.6% / y 8.9-89.2%, crop
+     x [9.5%, 90.5%]): left (20.3-9.5)/81 = 13.3%, width 73.2%. */
+  left: 13.3%;
+  top: 8.9%;
+  width: 73.2%;
+  height: 80.3%;
   z-index: 1;
   /* Premium felt with real fabric texture — theme-aware */
   background: none;
@@ -1546,10 +1558,10 @@
 
   .table-scaler {
     max-width: min(calc(100% - 12px), 320px);
-    /* Dan 2026-07-28: must stay locked to the artwork's 341/609 aspect at every
-       breakpoint, or the painted felt window drifts out from under
-       .table-surface. */
-    aspect-ratio: 341 / 609;
+    /* Dan 2026-08-17: must stay locked to the skin crop's 605/1000 aspect at
+       every breakpoint, or the painted felt window drifts out from under
+       .table-surface and the seat ring leaves the rail. */
+    aspect-ratio: 605 / 1000;
   }
 
   .table-rail {

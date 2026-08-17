@@ -37,6 +37,59 @@ import skinOceanBlue from '../assets/tables/skin_ocean_blue.jpg';
 import skinCrimson from '../assets/tables/skin_crimson.jpg';
 import skinElectricPurple from '../assets/tables/skin_electric_purple.jpg';
 import skinGoldenSand from '../assets/tables/skin_golden_sand.jpg';
+// Dan 2026-08-17 — five new composite skins (his renders) + three derived
+// colorways, all sharing the SAME canonical geometry as the original five
+// (felt window 20.3-79.6% x 8.9-89.2% of the 896x1200 frame, measured by
+// felt-edge scan). One asset per skin serves BOTH the darkened page backdrop
+// and the in-scaler table art, so seats always land on the painted rail.
+import skinNeonCity from '../assets/tables/skin_neon_city.jpg';
+import skinIceCavern from '../assets/tables/skin_ice_cavern.jpg';
+import skinCarbonRed from '../assets/tables/skin_carbon_red.jpg';
+import skinArcticWhite from '../assets/tables/skin_arctic_white.jpg';
+import skinMahoganyRed from '../assets/tables/skin_mahogany_red.jpg';
+import skinAmethystCavern from '../assets/tables/skin_amethyst_cavern.jpg';
+import skinCarbonIon from '../assets/tables/skin_carbon_ion.jpg';
+import skinJadeCity from '../assets/tables/skin_jade_city.jpg';
+
+/**
+ * Canonical skin registry. Every entry is a 896x1200 composite (scene +
+ * painted table) with the table oval in the SAME position, so one seat map
+ * and one felt window work for all of them. Aliases keep older stored
+ * table_id values working.
+ */
+const TABLE_SKINS: Record<string, string> = {
+  classic_green: skinClassicGreen,
+  'classic-green': skinClassicGreen,
+  ocean_blue: skinOceanBlue,
+  'royal-blue': skinOceanBlue,
+  crimson: skinCrimson,
+  'wine-red': skinCrimson,
+  electric_purple: skinElectricPurple,
+  'purple-haze': skinElectricPurple,
+  golden_sand: skinGoldenSand,
+  emerald: skinGoldenSand,
+  neon_city: skinNeonCity,
+  ice_cavern: skinIceCavern,
+  carbon_red: skinCarbonRed,
+  arctic_white: skinArcticWhite,
+  mahogany_red: skinMahoganyRed,
+  amethyst_cavern: skinAmethystCavern,
+  carbon_ion: skinCarbonIon,
+  jade_city: skinJadeCity,
+  // Legacy ThemeSettingsModal ids (pre-2026-08-17 the modal's table list
+  // never matched the skin switch, so these all silently fell back to
+  // green). Map each to the closest real skin so old saved rows upgrade.
+  'brown-felt': skinMahoganyRed,
+  'neon-blue-felt': skinOceanBlue,
+  'red-leather': skinCrimson,
+  'green-casino': skinClassicGreen,
+  'dark-felt': skinNeonCity,
+};
+
+/** Resolve a stored table/theme id to a skin asset; default stays green. */
+function resolveSkin(tid: string): string {
+  return TABLE_SKINS[tid] || skinClassicGreen;
+}
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -476,25 +529,36 @@ function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): PanelHan
   };
 }
 
+/* Dan 2026-08-17 — RAIL-LOCKED SEAT RING.
+   The skin composites share one canonical geometry (896x1200 frame, felt
+   window x 20.3-79.6% / y 8.9-89.2%, rail ~7% of width thick). The scaler is
+   aspect-locked to 605/1000 and shows the skin with object-fit:cover, which
+   crops the frame to x [9.5%, 90.5%] — so in SCALER coordinates the rail
+   band runs x ~10.5 / ~89.5 at the sides and y ~8.5 at the top cap (verified
+   by overlaying this ring on the neon_city, mahogany_red and ice_cavern
+   composites). Every seat below sits ON that band — villains and the + SIT
+   buttons ride the rail, never the felt.
+   Hero (slot 0) is the ONLY exception: bottom-center, nudged below the rail
+   (Dan 2026-08-15: hero avatar is 1.33x and needs the vertical room). */
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 95.5 }, // Seat 1 (Hero, bottom-center)
-  { x: 10.4, y: 69 }, // Seat 2 (lower-left)
-  { x: 10.4, y: 31 }, // Seat 3 (upper-left)
-  { x: 50, y: 8 }, // Seat 4 (top-center)
-  { x: 89.6, y: 31 }, // Seat 5 (upper-right)
-  { x: 89.6, y: 69 }, // Seat 6 (lower-right)
+  { x: 50, y: 95.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
+  { x: 10.5, y: 66 }, // Seat 2 (lower-left, on rail side)
+  { x: 10.5, y: 33 }, // Seat 3 (upper-left, on rail side)
+  { x: 50, y: 8.5 }, // Seat 4 (top-center, on rail cap)
+  { x: 89.5, y: 33 }, // Seat 5 (upper-right, on rail side)
+  { x: 89.5, y: 66 }, // Seat 6 (lower-right, on rail side)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 95.5 }, // Seat 1 (Hero, bottom-center) — see 6MAX note above
-  { x: 14, y: 80 }, // Seat 2 (lower-left)
-  { x: 10.4, y: 56.3 }, // Seat 3 (left-low)
-  { x: 10.4, y: 31 }, // Seat 4 (left-high)
-  { x: 28.6, y: 11 }, // Seat 5 (top-left)
-  { x: 71.4, y: 11 }, // Seat 6 (top-right)
-  { x: 89.6, y: 31 }, // Seat 7 (right-high)
-  { x: 89.6, y: 56.3 }, // Seat 8 (right-low)
-  { x: 86, y: 80 }, // Seat 9 (lower-right)
+  { x: 50, y: 95.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
+  { x: 19, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
+  { x: 10.5, y: 58 }, // Seat 3 (left-low, on rail side)
+  { x: 10.5, y: 36 }, // Seat 4 (left-high, on rail side)
+  { x: 27, y: 13 }, // Seat 5 (top-left, top cap)
+  { x: 73, y: 13 }, // Seat 6 (top-right, top cap)
+  { x: 89.5, y: 36 }, // Seat 7 (right-high, on rail side)
+  { x: 89.5, y: 58 }, // Seat 8 (right-low, on rail side)
+  { x: 81, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
 ];
 
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
@@ -6310,29 +6374,17 @@ export default function TablePage({
     <div
       className={`table-page${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
       style={{
-        backgroundImage: `url(${(() => {
-          const tid = v8Theme.table_id || v8Theme.theme_id || userSettings.theme || '';
-          switch (tid) {
-            case 'ocean_blue':
-            case 'royal-blue':
-              return skinOceanBlue;
-            case 'crimson':
-            case 'wine-red':
-              return skinCrimson;
-            case 'electric_purple':
-            case 'purple-haze':
-              return skinElectricPurple;
-            case 'golden_sand':
-            case 'emerald':
-              return skinGoldenSand;
-            case 'classic_green':
-            case 'classic-green':
-            default:
-              return skinClassicGreen;
-          }
-        })()})`,
-        backgroundSize: '100% 100%',
-        backgroundPosition: 'top left',
+        // Dan 2026-08-17 — the skin no longer paints the table via a page-
+        // stretch (seats could never reliably track the painted rail that
+        // way). The page shows the SAME skin as a darkened, blurred-feel
+        // ambiance layer (cover, centered); the actual table is .table-art
+        // inside the aspect-locked scaler below, so the seat ring is pixel-
+        // true on every viewport.
+        backgroundImage: `linear-gradient(rgba(5, 8, 14, 0.78), rgba(5, 8, 14, 0.9)), url(${resolveSkin(
+          v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
+        )})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
       }}
       data-felt-theme={v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'}
@@ -6713,6 +6765,17 @@ export default function TablePage({
         <div className="table-scaler" ref={tableScalerRef}>
           {/* Table Felt */}
           <div className="table-felt">
+            {/* Dan 2026-08-17 — the painted table itself. object-fit: cover
+                inside the 605/1000 scaler crops the 896x1200 composite to
+                x [9.5%, 90.5%], putting the rail centerline exactly where
+                SEAT_POSITIONS_* expect it. This is what guarantees villains
+                and + SIT buttons sit ON the rail at every breakpoint. */}
+            <img
+              className="table-art"
+              src={resolveSkin(v8Theme.table_id || v8Theme.theme_id || userSettings.theme || '')}
+              alt=""
+              draggable={false}
+            />
             <div className="table-rail">
               <div className="table-surface">
                 {/* Hand Number — Dan 2026-08-15 (second revision): moved OFF

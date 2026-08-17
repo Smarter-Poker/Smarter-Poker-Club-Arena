@@ -36,6 +36,7 @@ import type { HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
+import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
@@ -628,12 +629,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // as `winners` a few lines below.
         const autoMuckEnabled = this.tableInfo.auto_muck_enabled ?? true;
         const winnerIds = new Set(this.currentHandWinners.map((w) => w.userId));
-        const revealedShowdownResults = this.currentHandShowdownResults.filter((r) => {
-          if (!autoMuckEnabled) return true;
-          if (winnerIds.has(r.userId)) return true;
-          if (this.showHandPlayers?.has(r.userId)) return true;
-          return false;
-        });
+        const revealedShowdownResults = selectRevealedShowdownResults(
+          this.currentHandShowdownResults,
+          winnerIds,
+          this.showHandPlayers,
+          autoMuckEnabled
+        );
 
         const result = await logHandHistory({
           tableId: this.tableId,

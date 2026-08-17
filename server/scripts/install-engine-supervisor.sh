@@ -75,6 +75,30 @@ Unit=club-arena-verify.service
 WantedBy=timers.target
 UNIT
 
+# ── Operator SSH keys, declaratively ────────────────────────────────────────
+# The host's authorized_keys was rewritten three times on 2026-08-16 by different
+# automation, twice locking the operator out mid-incident while CI kept working,
+# so the lockout stayed invisible until someone tried to inspect the box. Keys in
+# infra/security/operator_keys.pub are ensured present on every deploy.
+#
+# APPEND-ONLY BY DESIGN: it never removes a line, so it cannot lock out CI or
+# anyone else, and it is not authoritative for revocation. These are public keys;
+# the private halves never leave the operator's machine.
+KEYFILE="$REPO_DIR/infra/security/operator_keys.pub"
+if [ -f "$KEYFILE" ]; then
+  mkdir -p /root/.ssh && chmod 700 /root/.ssh
+  touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
+  ADDED=0
+  while IFS= read -r key; do
+    case "$key" in ''|\#*) continue ;; esac
+    if ! grep -qxF "$key" /root/.ssh/authorized_keys 2>/dev/null; then
+      printf '%s\n' "$key" >> /root/.ssh/authorized_keys
+      ADDED=$((ADDED + 1))
+    fi
+  done < "$KEYFILE"
+  if [ "$ADDED" -gt 0 ]; then echo "  authorized_keys: added $ADDED operator key(s)"; else echo "  authorized_keys: all operator keys present"; fi
+fi
+
 # ── fail2ban: stop banning our own operators ────────────────────────────────
 # The sshd jail was installed with `mode = aggressive`, which counts pre-auth
 # disconnects as failures. That is what banned the GitHub Actions runners on

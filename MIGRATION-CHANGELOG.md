@@ -7559,12 +7559,14 @@ First A/B runs were noise (±10 bb/100); built a duplicate-poker harness (each d
 Tenth phase. Decision-making per variant plus a full humanization pass on how horses join and leave games.
 
 **Decision logic (HorseEval.ts / HorseLogic.ts, all behind v8 flag with v8HiLo/v8Draws/v8Nlh ablation hooks)**
+
 - PLO8 scoop/quarter awareness: simulateEquity now fills a HiLoSplit (hi/lo/scoop/quarter) in the same MC loop. Scoopy hands (scoop>=0.30) loosen thresholds -0.04; quarter-danger hands (observed quarters >=0.20, or one-way-low multiway: lo>0.4 & hi<0.18) tighten +0.08, cut bluffs x0.6, and never raise. A23 counterfeit backup bonus in omahaPreflopScore.
 - Omaha nut-consciousness: omahaDrawQuality classifies nut vs dominated flush draws and counts straight outs by enumeration (wraps >=9 outs). Semi-bluffs scale x1.15 nutty / x0.35 dominated-no-backup / x0.7 middling. River raises with cat<6 and equity<0.85 downgrade to calls. Omaha multiway tightening 0.045/opp vs NLH 0.03.
 - NLH: OOP check-raise bluffs on blocker scare cards; river blocker raise-bluffs; multiway OOP call discipline (posEdge x(1+0.3/opp)).
 - Per-variant style overlays: PLO bluff x0.8, slowplay x0.8, tightness x1.03; short deck bluff x0.9; 'balanced' slowplay capped at 0.14 (telemetry-driven).
 
 **Fleet humanization (HorseBehavior.ts NEW, HorseFleetManager.ts, HorseSessionRotator.ts)**
+
 - Buy-in variance: deterministic per-horse profiles (15% short 40-60bb / 60% standard 80-120bb / 25% deep 140-200bb) jittered per sitting, clamped to table min/max — replaces the exact-100bb tell.
 - Staggered arrivals (1-2/table/cycle), weighted-random selection, hash-derived daily activity windows (~55% of stable active per hour).
 - Human priority: short-handed tables WITH a human seed first and bypass stagger; rotator never thins a human table below 5 and halves its rotation pressure there.
@@ -7581,6 +7583,7 @@ Tenth phase. Decision-making per variant plus a full humanization pass on how ho
 PR #27 (squash 5ebf94a5) → main → Hetzner auto-deploy. Final humanization pass on top of V8; neutral-or-positive EV by design (disguise, not new edge).
 
 **Engine — `server/src/engine/HorseLogic.ts`**
+
 - Bet-size families: postflop bet fractions snap to a human ladder [0.33, 0.5, 0.66, 0.8, 1.0, 1.3] with +/-0.04 jitter (0.25-1.4 band only; geometric jams pass through). `snapFraction()`; `betSize()` gains a `snap` param, all 7 call sites pass `useSizing`.
 - Difficulty-aware tank timing: `decidePostflop` records the distance of MC equity to the nearest threshold [0.3, 0.42, 0.52, 0.62, 0.8] into module-level `difficultyHint`; `computeThinkTime` stretches think time up to ~70% on razor-thin spots and resets the hint each read.
 - Hourly mood gear-shifts: `moodOf(userId|hour)` (0..1, stable within the hour) nudges bluffFreq x0.88-1.12 and aggression x0.96-1.04, zero-mean across the fleet.
@@ -7588,20 +7591,24 @@ PR #27 (squash 5ebf94a5) → main → Hetzner auto-deploy. Final humanization pa
 - New `v9`/`v9Sizing`/`v9Timing`/`v9Mood` ablation flags (each defaults to the v9 master, default on); `moodOf`/`snapFraction` exposed via `__testables`.
 
 **Fleet — `HorseFleetManager.ts` / `HorseSessionRotator.ts`**
+
 - Round-number buy-ins: seat buy-in snaps to a 5bb step then clamps to table min/max (clean $100/$150/$240, never $227.40).
 - Round-number top-ups: reload target snaps to a 10bb step before the delta is computed; engine caps at table max on its side.
 
 **Tests — `HorseLogic.test.ts`**
+
 - 58/58 passing; tsc clean; 2100-hand handsim regression 0 errors; latency unchanged.
 - New V9 suite (section 12): size-family snapping + on-family clustering of real bets, tank-timing gap vs timing-off, mood stability/bounds/variance.
 - V8 river raise-bluff test rewritten as a structural river-only assertion (no live semi-bluff path, so only the V8 blocker raise-bluff can raise).
 - Duplicate-deal A/B vs V8 stack: NLH +4.6, PLO4 +2.9 bb/100 (positive; humanization is neutral-or-positive by design).
 
 **Ship notes**
+
 - Test-only paths (`server/**/*.test.ts`) are excluded from the auto-deploy trigger; restart is driven by the `HorseLogic.ts` + fleet changes.
 - Blob-SHA parity confirmed on all 4 files (HorseLogic.ts ecfc9c49, HorseLogic.test.ts 21d97e73, HorseFleetManager.ts b07df96c, HorseSessionRotator.ts b42afc75). Test-file remote differs from prior local only by comment-divider length (code byte-identical).
 
 **Live verification (in-session, PokerIQ-Production kuklfnapbkmacvwxktbh)**
+
 - 0 sentry errors since deploy.
 - All 7 variants dealing post-restart: nlh, pineapple, plo4, plo5, plo6, plo8, short_deck.
 - Restart fingerprint at ~06:44-06:45 UTC (fresh seeding burst).
@@ -7614,29 +7621,59 @@ PR #27 (squash 5ebf94a5) → main → Hetzner auto-deploy. Final humanization pa
 PR #28 (squash 6b11f395) -> main -> Hetzner auto-deploy. Files: HorseLogic.ts, HorsePreflop.ts. A full engine audit found the remaining strategic gaps; each candidate was built behind an ablation flag and proven with the variance-cancelled duplicate-deal A/B (rake-matched environment) before shipping.
 
 **Shipped (HorseLogic.ts)**
+
 - Range-advantage c-bets (NLH): on a high-card, dry, unpaired board the betting aggressor's range is favored, so it c-bets its whole range at higher frequency (x1.35) and smaller size (~0.28-0.33) instead of a flat 0.33. Gated off in Omaha.
 - SPR pot control: valueRaiseThresh scales with SPR - at an awkward mid SPR (2-4) medium made hands raise a +0.03 higher bar (flat instead of stacking off); at low SPR (<1.5) strong-not-nut hands commit (-0.03).
 - Rake-aware pot odds: marginal calls in small (under-cap) pots priced against the raked pot (rakeDrag: ~10%, cap ~2.5bb, no-flop-no-drop); above the cap this reduces to honest pot odds.
 - Capped-range thin value (NLH): when hero held the initiative and the river checks to us, the opponent's range is capped, so thin-value at 0.72 instead of the V5 0.25 suppression. No-history rivers left as the V5 polarization spot. Gated off in Omaha (V8 nut-consciousness governs there).
 
 **Shipped (HorsePreflop.ts)**
+
 - Limp isolation (NLH): widen the iso-raise floor vs limpers in position (isoWiden 0.06) to attack weak limps, instead of only tightening.
 
 **Dropped, NOT shipped**
+
 - River blocker-aware bluff-catch: leaked -17 bb/100 in isolation in BOTH directions (loosen and tighten) - the V4/V7 river logic is already well-calibrated. Removed rather than damped.
 
 All behind v10 + per-feature ablation flags (v10Cbet/v10Spr/v10Rake/v10ThinValue/v10Iso), default on.
 
 **Verification**
+
 - 65/65 unit tests (V10 suite section 13); tsc clean; 2100-hand handsim regression across all 7 variants with 0 rejected actions / 0 exceptions / 0 conservation errors; latency unchanged.
 - Duplicate-deal A/B (ON-OFF head-to-head, rake-matched), net positive on every variant: NLH ~+3..+16, PLO4 +8.1, PLO8 +5.9 bb/100. Isolated features: c-bet +14.6, iso +8.2, rake +7.9, thin +5.9 (all positive); SPR -2.6 (neutral, within noise); block -17 (dropped).
 - Omaha regression fixed: PLO4 went from -7.5 (pre-gating) to +8.1 after gating the three NLH-shaped features off in Omaha.
 
 **Ship notes**
+
 - HorseLogic.ts pushed byte-perfect (remote SHA 0e6b446c == local); HorsePreflop.ts byte-perfect (795a8b1d).
-- The V10 unit-test additions (HorseLogic.test.ts) are test-only - excluded from the auto-deploy trigger (server/**/*.test.ts) and delivered to the working tree here rather than pushed to the branch; the existing suite compiles cleanly against V10 (purely additive exports). It shows as a local modification in git status, ready to commit.
+- The V10 unit-test additions (HorseLogic.test.ts) are test-only - excluded from the auto-deploy trigger (server/\*_/_.test.ts) and delivered to the working tree here rather than pushed to the branch; the existing suite compiles cleanly against V10 (purely additive exports). It shows as a local modification in git status, ready to commit.
 
 **Live verification (in-session, PokerIQ-Production kuklfnapbkmacvwxktbh)**
+
 - 0 sentry errors since deploy.
 - All 7 variants dealing post-restart: nlh, pineapple, plo4, plo5, plo6, plo8, short_deck.
 - Restart confirmed: fleet reseeding across all 7 tables; 110 hands completed post-deploy with the most recent seconds before the check (engine live and processing).
+
+## 2026-08-17 — Rail-locked table layout + 13 canonical skins (Cowork/Claude)
+
+Dan supplied 5 new composite table renders and asked for: hero always
+bottom-center, villains always ON the rail, + SIT buttons on the rails only,
+plus more skins in the same style.
+
+- Root cause of seats drifting off the rail: the skin painted the table via a
+  full-page background stretch while seats lived in a separately-positioned
+  fixed-width scaler; alignment was coincidental per viewport. Fixed by
+  rendering the composite INSIDE the aspect-locked scaler (.table-art,
+  605/1000, object-fit: cover -> crop x [9.5%,90.5%]) with the page bg now a
+  darkened ambiance layer of the same image.
+- All 10 prior+new composites share one measured canonical geometry (felt
+  x 20.3-79.6%, y 8.9-89.2% of 896x1200). Seat rings re-derived on the rail
+  band (sides x 10.5/89.5, top cap y 8.5) and verified by overlay renders.
+- .table-surface felt window updated to 13.3%/8.9%/73.2%/80.3%.
+- New skins: neon_city, ice_cavern, carbon_red, arctic_white, mahogany_red
+  (Dan's renders) + amethyst_cavern, carbon_ion, jade_city (derived
+  colorways). ThemeSettingsModal table ids now match TABLE_SKINS (old ids
+  never matched the switch - every pick silently fell back to green); legacy
+  ids alias across. Default table skin: neon_city.
+- Deployed: CA 2ce022b24 -> WH 300e21e742; production /api/health served
+  version 300e21e7 at 14:19 UTC; skin assets return 200 with exact sizes.

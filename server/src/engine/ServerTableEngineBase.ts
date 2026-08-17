@@ -328,11 +328,30 @@ export abstract class ServerTableEngineBase {
       );
     });
     this.stateVerifier = new StateVerifier((event) => {
+      // 2026-08-17: SAY WHICH CHECK FIRED.
+      //
+      // This used to report only the COUNT — "1 issue(s) in hand #58" — and
+      // discard event.violations entirely. Production is emitting these on 236
+      // distinct hands per hour, and from the message alone it was impossible
+      // to tell whether that was a benign COMMUNITY_CARD_COUNT blip or a
+      // CHIP_CONSERVATION / DUPLICATE_CARD event, which are money- and
+      // dealing-integrity failures. A verifier that fires but will not say what
+      // it found cannot be triaged, so in practice it was ignored.
+      //
+      // The Sentry fingerprint is now per violation TYPE rather than one bucket
+      // for everything, so a rare DUPLICATE_CARD cannot stay buried under
+      // thousands of routine events. It is also greppable per class:
+      //   grep 'STATE INTEGRITY' | grep CHIP_CONSERVATION
+      const detail = event.violations
+        .map((v) => `${v.severity.toUpperCase()} ${v.type}: ${v.message}`)
+        .join(' | ');
+      const types = [...new Set(event.violations.map((v) => v.type))].sort().join(',');
       reportError(
         new Error(
-          `[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`
+          `[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION in hand #${event.handNumber} ` +
+            `(${event.violationCount} issue(s)) [${types}] ${detail}`
         ),
-        'ServerTableEnginetableId.STATE_INTEGRITY_VIOLATION'
+        `ServerTableEngine.STATE_INTEGRITY_VIOLATION.${types || 'UNKNOWN'}`
       );
     });
 

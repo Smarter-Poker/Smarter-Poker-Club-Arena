@@ -11,9 +11,70 @@
 - VERIFIED = Confirmed working correctly per Bible specification
 - N/A = Not applicable to current scope
 
-**Last Updated:** 2026-03-31
-**Updated By:** Claude (Round 47 — deep engine audit, FIX-226 odd chip allocation)
+**Last Updated:** 2026-08-17
+**Updated By:** Claude (citation re-verification after the U2/U3 refactor)
 **Total Fixes:** 226
+
+> ## ⚠️ READ THIS BEFORE TRUSTING THE PERCENTAGE BELOW
+>
+> The summary table at the bottom of this file was measured on **2026-03-31**,
+> against a codebase that no longer exists. Phase U3 then split
+> `ServerTableEngine.ts` from ~2,900 lines to **286**, into
+> `ServerTableEngineBase / Turns / Settlement / Runout / Dealing / Seating /
+> HandEvents`.
+>
+> A mechanical check of all 30 file citations on 2026-08-17 found **8 pointing
+> past end-of-file** — every one of them in Chapter 1, the Master Laws. Their
+> evidence had silently evaporated.
+>
+> ### What was re-verified on 2026-08-17
+>
+> | Row | Was | Now | Note |
+> |---|---|---|---|
+> | 1.1.2 | VERIFIED (stale cite) | VERIFIED | behaviour intact, re-cite needed |
+> | 1.2.3 | VERIFIED (stale cite) | **DEVIATION** | see below |
+> | 1.2.4 | VERIFIED (stale cite) | **DEVIATION** | see below |
+> | 1.5.3 | VERIFIED (stale cite) | VERIFIED | behaviour intact |
+> | 1.5.5 | VERIFIED (stale cite) | **FIXED** | real card leak, PR #88 + #89 |
+> | 1.5.6 | VERIFIED (stale cite) | VERIFIED | behaviour intact |
+> | 1.7.2 | VERIFIED (stale cite) | VERIFIED | behaviour intact |
+> | 1.7.5 | VERIFIED (stale cite) | **IMPROVED** | time-bank farm closed, PR #95 |
+> | 2.10-2.18 | PARTIAL | **VERIFIED** | all 4 tiers exist as real columns |
+> | 11.1.1 gestures_enabled | NEEDS-VERIFY | **VERIFIED** | wired end-to-end |
+> | 11.1.1 card_slide | NEEDS-VERIFY | **VERIFIED** | wired end-to-end |
+>
+> **1.5.5 was a live defect.** `hand_history` stored the hole cards of players
+> who mucked at showdown, in a row every hand participant can read
+> (`hand_history_authenticated_select`). Measured: 3,953 losing holdings in one
+> hour. Fixed and verified in production — non-winner holdings now 0.
+>
+> **2.10-2.18, gestures_enabled and card_slide were never defects** — the
+> tracker was simply stale. All four hand-history tiers exist as columns
+> (`raw_events`, `audit_log`, `player_summaries`, `dispute_review`).
+> `gestures_enabled` gates the peek handlers in `SeatSlot.tsx` through to
+> `.seat__cards--peeking` in `SeatSlot.css`; `card_slide` gates `<DealAnimation>`
+> in `TablePage.tsx`.
+>
+> ### The one genuinely open item: 1.2.3 / 1.2.4
+>
+> The Bible says the broadcast is awaited before the turn timer arms. The code
+> deliberately inverted this ("Arm first, deliver after") **and**
+> `broadcastCurrentState()` returns `Promise.resolve()` over a synchronous
+> `hub.publish` — so FIX-217's "Supabase acknowledged" guarantee is void. The
+> `await` yields one microtask and confirms nothing.
+>
+> This is code-versus-spec on live turn timing. It needs a decision, not a
+> patch: either amend the Bible to match the code (and delete the misleading
+> `await` and FIX-217 comments), or restore the ordering and make the broadcast
+> genuinely awaitable. **Do not mark these rows VERIFIED until that is settled.**
+>
+> ### Still unproven
+>
+> The other **107 rows have NOT been re-verified.** They cite files without line
+> numbers, so they resolve trivially and prove nothing. Treat the headline
+> percentage as unproven until that sweep is done.
+>
+> Full detail: `docs/V8-AUDIT-2026-08-17.md`.
 
 ---
 

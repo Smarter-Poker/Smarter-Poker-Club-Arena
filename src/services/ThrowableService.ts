@@ -164,6 +164,23 @@ class ThrowableServiceClass {
     }
 
     try {
+      // ── Atomic server path (2026-08-17) ──────────────────────────────────
+      // fn_use_throwable serialises the free-allowance check per user
+      // (advisory xact lock) and does charge+record in ONE transaction,
+      // closing two defects of the old client flow: a two-tab race that
+      // could double-spend the last free throw, and a paid path where a
+      // failure between deduct_diamonds and the usage insert charged a
+      // diamond and recorded nothing. Allowance and price are
+      // server-authoritative there.
+      const { data: atomic, error: atomicErr } = await supabase.rpc('fn_use_throwable', {
+        p_throwable_id: throwableId,
+      });
+      if (!atomicErr && atomic) {
+        if ((atomic as any).success === true) return { success: true };
+        return { success: false, error: (atomic as any).error || 'Throw failed' };
+      }
+      // RPC missing (deploy skew) — fall through to the legacy client flow.
+
       const allowance = await this.getThrowAllowance(userId);
 
       // If VIP with free throws remaining, just record usage

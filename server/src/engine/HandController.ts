@@ -814,6 +814,9 @@ export class HandController {
     const stage = currentLength < 3 ? 'flop' : currentLength < 4 ? 'turn' : 'river';
     const count = stage === 'flop' ? 3 - currentLength : 1;
     const cards = deck.deal(count);
+    // RAKE LEAK FIX 2026-08-18: same as runOutCommunityCards - the insurance
+    // per-street path deals the flop without marking it seen.
+    if (stage === 'flop') this.state.sawFlop = true;
     this.state.communityCards.push(...cards);
     this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards });
 
@@ -881,6 +884,17 @@ export class HandController {
    * CORRECT number instead of clobbering it, so there is exactly one place
    * that owns the stack and one place that copies it outward.
    */
+  /**
+   * RAKE LEAK FIX 2026-08-18: the RIT path builds its boards OUTSIDE this
+   * controller's state (dealAndResolveRIT), so no code path here ever marks
+   * the flop as seen for a preflop all-in that runs it twice - rake and the
+   * BBJ fee computed as 0 under noFlopNoDrop despite 2-3 full boards being
+   * dealt. The engine calls this before computing rake for a RIT hand.
+   */
+  public markFlopSeen(): void {
+    this.state.sawFlop = true;
+  }
+
   public creditRunoutWinnings(distribution: Map<string, number>): void {
     for (const [userId, amount] of distribution) {
       const player = this.state.players.find((p) => p.user_id === userId);
@@ -902,6 +916,13 @@ export class HandController {
             : 'river';
       const count = stage === 'flop' ? 3 - this.state.communityCards.length : 1;
       const cards = deck.deal(count);
+      // RAKE LEAK FIX 2026-08-18: only advanceStage() ever set sawFlop, so a
+      // PREFLOP all-in runout dealt a full board with sawFlop still false -
+      // and with noFlopNoDrop always true on live tables, calculateRake()
+      // and the BBJ fee both returned 0. Every preflop all-in hand paid no
+      // rake and funded no jackpot. "No flop, no drop" means no rake when
+      // the hand ENDS preflop - a runout that deals the flop IS a flop.
+      if (stage === 'flop') this.state.sawFlop = true;
       this.state.communityCards.push(...cards);
       this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards });
       // AUDIT V2 (2026-07-23): Crazy Pineapple all-in runout — the discard

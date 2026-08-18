@@ -46,6 +46,13 @@ export interface RITState {
   maxRuns: 2 | 3;
   /** FIX 96: Chosen number of runs (set by chooser in phase 1) */
   chosenRuns: 1 | 2 | 3;
+  /**
+   * CONSENT-RACE FIX 2026-08-18: consent is to "run it N times", so the
+   * offer cannot complete until the chooser has actually picked N. Before
+   * this flag, responders accepting quickly flipped the offer to 'accepted'
+   * with the DEFAULT run count, silently discarding the chooser's pick.
+   */
+  chooserDecided: boolean;
   board1: string[];
   board2: string[];
   board3: string[];
@@ -144,6 +151,7 @@ export class RunItTwiceEngine {
       pot,
       maxRuns: config.maxRuns || 2,
       chosenRuns: config.maxRuns || 2,
+      chooserDecided: false,
       board1: [],
       board2: [],
       board3: [],
@@ -190,21 +198,31 @@ export class RunItTwiceEngine {
     // board twice against the other all-in player(s) without their agreement.
     // acceptedBy is pre-seeded with the chooser, so this reduces to the original
     // behavior for the heads-up (2-player) case.
+    // CONSENT-RACE FIX 2026-08-18: completion additionally requires the
+    // chooser to have picked the run count - accepting a number you have
+    // not been told is not consent. Early accepts are recorded and the
+    // offer completes the moment the chooser decides (see chooserDecides).
+    return this.tryCompleteAcceptance(state);
+  }
+
+  /**
+   * Complete the offer iff every all-in player has accepted AND the chooser
+   * has decided the run count. Called from both accept() and chooserDecides()
+   * so the completing action can arrive in either order.
+   */
+  private tryCompleteAcceptance(state: RITState): boolean {
+    if (state.status !== 'offered' || !state.chooserDecided) return false;
     const everyoneAccepted = state.allPlayerIds.every((id) => state.acceptedBy.has(id));
-    if (everyoneAccepted) {
-      state.status = 'accepted';
-      // Phase 1.2 PR-G-real: cancel pending expiry deadline.
-      this.scheduler.cancel(tableId, RunItTwiceEngine.OFFER_EVENT_ID);
-
-      this.emitEvent({
-        type: 'RIT_ACCEPTED',
-        tableId,
-        handId: state.handId,
-      });
-      return true;
-    }
-
-    return false;
+    if (!everyoneAccepted) return false;
+    state.status = 'accepted';
+    // Phase 1.2 PR-G-real: cancel pending expiry deadline.
+    this.scheduler.cancel(state.tableId, RunItTwiceEngine.OFFER_EVENT_ID);
+    this.emitEvent({
+      type: 'RIT_ACCEPTED',
+      tableId: state.tableId,
+      handId: state.handId,
+    });
+    return true;
   }
 
   decline(tableId: string, playerId: string): void {
@@ -378,12 +396,22 @@ export class RunItTwiceEngine {
   chooserDecides(tableId: string, userId: string, runs: 1 | 2 | 3): void {
     const state = this.activeOffers.get(tableId);
     if (!state || state.chooserPlayerId !== userId) return;
-    state.chosenRuns = runs;
+    // CONSENT-RACE FIX 2026-08-18: a settled offer (declined/accepted/
+    // resolved) cannot be mutated by a late pick.
+    if (state.status !== 'offered') return;
+    // Clamp to the table's configured maximum - a forged /rit body cannot
+    // demand more boards than the table allows.
+    state.chosenRuns = (runs > state.maxRuns ? state.maxRuns : runs) as 1 | 2 | 3;
+    state.chooserDecided = true;
     if (runs === 1) {
       state.status = 'declined';
       // Phase 1.2 PR-G-real: cancel pending expiry deadline.
       this.scheduler.cancel(tableId, RunItTwiceEngine.OFFER_EVENT_ID);
+      return;
     }
+    // If every responder had already accepted while waiting on the chooser,
+    // the chooser's pick is the completing action.
+    this.tryCompleteAcceptance(state);
   }
 
   private clearOffer(tableId: string): void {

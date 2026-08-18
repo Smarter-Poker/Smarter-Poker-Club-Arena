@@ -356,6 +356,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           timeoutSeconds: 10,
         });
 
+        // HORSE RIT RESPONSES 2026-08-18: horses never answered rit_offer,
+        // so ANY horse in the all-in set let the offer expire and the hand
+        // always ran once - zero RIT hands in 24h of live traffic, and a
+        // human could never actually run it twice at a table with horses.
+        // Horses now respond like players, with human-like delays.
+        this.scheduleHorseRITResponses(chooserPlayerId, allPlayerIds);
+
         // Wait for all players to respond.
         // Chooser picks 1/2/3 → others accept/decline → engine resolves.
         this.waitForRITResponse(() => {
@@ -392,6 +399,47 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       this.handController?.continueRunout();
     } catch (err) {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.forced_runout_failed', { reason });
+    }
+  }
+
+  /**
+   * HORSE RIT RESPONSES 2026-08-18: schedule horse answers to a live offer.
+   *
+   * - A horse CHOOSER picks the board count after ~1.2-2.4s: mostly 2, a
+   *   third of hands 3 (varied deterministically by hand number - no
+   *   Math.random in the engine's decision paths).
+   * - Horse RESPONDERS accept after ~2.5-4s. Accepting before the chooser
+   *   has decided is safe: the consent-race fix in RunItTwiceEngine records
+   *   the accept and completes only once the chooser picks.
+   * - Every callback re-checks the offer is still pending and the hand is
+   *   still the same one (watchdog force-completion, 10-minute void).
+   */
+  protected scheduleHorseRITResponses(chooserPlayerId: string, allPlayerIds: string[]): void {
+    const handAtOffer = this.handCount;
+    const horseIds = new Set(this.seatedPlayers.filter((p) => p.is_horse).map((p) => p.user_id));
+    const respond = (delayMs: number, fn: () => void) => {
+      setTimeout(() => {
+        if (!this.running || this.handCount !== handAtOffer) return;
+        if (!this.runItTwiceEngine.hasPendingOffer(this.tableId)) return;
+        try {
+          fn();
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_rit_response');
+        }
+      }, delayMs);
+    };
+
+    if (horseIds.has(chooserPlayerId)) {
+      const runs = (this.handCount % 3 === 0 ? 3 : 2) as 2 | 3;
+      respond(1200 + (this.handCount % 5) * 240, () => {
+        this.respondToRIT(chooserPlayerId, undefined, runs);
+      });
+    }
+    for (const pid of allPlayerIds) {
+      if (pid === chooserPlayerId || !horseIds.has(pid)) continue;
+      respond(2500 + ((pid.charCodeAt(0) + this.handCount) % 4) * 400, () => {
+        this.respondToRIT(pid, 'accept');
+      });
     }
   }
 
@@ -495,6 +543,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     //      short-deck, and PLO8 hi-lo — the old ad-hoc evaluator ignored all of
     //      these), taking each board's 1/runs share,
     //   4. deduct rake + BBJ ONCE (Bible V8 §4.20) before crediting stacks.
+    // RAKE LEAK FIX 2026-08-18: every RIT board is dealt to 5 cards, so the
+    // flop is definitionally seen - but state.sawFlop is only set by the
+    // normal street flow, which RIT bypasses. Without this, a preflop all-in
+    // that ran it twice paid no rake and no BBJ fee (noFlopNoDrop short-
+    // circuit), while the identical hand run once... also leaked, fixed the
+    // same day in runOutCommunityCards. Idempotent when the all-in came
+    // postflop.
+    this.handController.markFlopSeen();
     this.handController.settleUncalledBet();
     const pots = this.handController.computeLivePots();
     const variant = this.handController.getVariant();

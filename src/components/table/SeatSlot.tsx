@@ -481,7 +481,12 @@ export const SeatSlot = memo(
           tabIndex={0}
           aria-label={`Seat ${seatNumber}: open - click to sit`}
         >
-          <span className="seat__empty-label">+ SIT</span>
+          {/* Dan 2026-08-18: "+" stacked ABOVE "SIT" and centered, not
+              inline where it read as left-offset. */}
+          <span className="seat__empty-label">
+            <span className="seat__empty-plus">+</span>
+            <span className="seat__empty-word">SIT</span>
+          </span>
         </div>
       );
     }

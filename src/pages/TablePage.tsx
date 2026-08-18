@@ -4623,7 +4623,7 @@ export default function TablePage({
           // BUGFIX 2026-07-24: this recovery snapshot rebuilt `players` with isHero
           // but never updated `heroSeat`. When heroSeat had drifted (snapshot race,
           // reconnect), players[heroSeat-1] became null → the footer showed
-          // "Spectating — tap an open seat to join" and the leave path used the wrong
+          // "Spectating, Tap An Open Seat To Join" and the leave path used the wrong
           // seat, even though the hero was clearly seated. Reconcile heroSeat from the
           // authoritative snapshot here so the two never disagree.
           let syncedHeroSeat = 0;
@@ -6609,6 +6609,10 @@ export default function TablePage({
       data-button-theme={v8Theme.button_id || 'classic-white'}
       data-cards-theme={v8Theme.cards_id || 'standard-red'}
       data-theme-preset={v8Theme.theme_id || 'default-dark'}
+      /* Dan 2026-08-18: 2 or 3 when the hand is run multiple times — CSS
+         shifts the felt masthead down by one board height per extra run so
+         the stacked boards never cover it. */
+      data-boards={(ritResult?.boards?.length ?? 1) > 1 ? ritResult!.boards.length : undefined}
       style={{
         // Dan 2026-08-18: the blurred-skin backdrop is GONE ("remove the
         // weird images around the table"). The page shows one of the ten
@@ -7095,7 +7099,13 @@ export default function TablePage({
                   )}
                 </div>
 
-                {/* Community Cards */}
+                {/* Community Cards.
+                    Dan 2026-08-18: when the hand is run twice or three times,
+                    the extra boards render HERE, stacked directly under the
+                    first one, instead of only inside the RIT modal. The
+                    felt masthead shifts down via data-boards (see
+                    .table-page[data-boards] in TablePage.css) so the cards
+                    can never cover the date / club / game / hand line. */}
                 <div className="community-area" key={`board-${boardStageKey}`}>
                   <CommunityCards
                     cards={tableState.communityCards}
@@ -7104,6 +7114,17 @@ export default function TablePage({
                     winningHandName={winnerInfo.handName}
                     deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                   />
+                  {(ritResult?.boards?.length ?? 0) >= 2 &&
+                    ritResult!.boards.slice(1).map((board, bi) => (
+                      <div className="community-area__run" key={`run-${bi + 2}`}>
+                        <span className="community-area__run-label">Run {bi + 2}</span>
+                        <CommunityCards
+                          cards={normalizeCards(board) as Card[]}
+                          stage="river"
+                          deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
+                        />
+                      </div>
+                    ))}
                 </div>
 
                 {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
@@ -7457,7 +7478,7 @@ export default function TablePage({
         {!tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (
           <div className="spectator-footer-bar">
             <span className="spectator-footer-bar__label">
-              Spectating — tap an open seat to join
+              Spectating, Tap An Open Seat To Join
             </span>
           </div>
         ) : !tableState.players.some((p) => p?.isHero) ? (
@@ -7467,18 +7488,18 @@ export default function TablePage({
              contradicted the reserved seat + "Post BB to Enter" CTA on felt. */
           <div className="spectator-footer-bar" data-state="reserved">
             <span className="spectator-footer-bar__label">
-              Seat reserved — you'll be dealt in next hand
+              Seat Reserved, You'll Be Dealt In Next Hand
             </span>
           </div>
         ) : !tableState.isHandInProgress && !isRabbitAvailable ? (
           <div className="spectator-footer-bar" data-state="waiting">
-            <span className="spectator-footer-bar__label">Waiting for next hand…</span>
+            <span className="spectator-footer-bar__label">Waiting For Next Hand…</span>
           </div>
         ) : tableState.isHandInProgress &&
           (getPlayerAtSeat(tableState.heroSeat)?.status === 'folded' ||
             getPlayerAtSeat(tableState.heroSeat)?.status === 'away') ? (
           <div className="spectator-footer-bar" data-state="folded">
-            <span className="spectator-footer-bar__label">Folded — waiting for next hand…</span>
+            <span className="spectator-footer-bar__label">Folded, Waiting For Next Hand…</span>
           </div>
         ) : (
           <>

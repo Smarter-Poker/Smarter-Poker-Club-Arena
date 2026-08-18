@@ -214,12 +214,15 @@
 .table-page .seat--empty {
   opacity: 0.9 !important;
 }
+/* Dan 2026-08-18: the dashed pill that used to live HERE, on the label, was
+   the second frame stacked over the container's dashed shape ("we don't need
+   the duplicated square over the circle"). The container is now the one
+   dotted circle (SeatSlot.css); the label just carries type. */
 .table-page .seat__empty-label {
-  border: 1.5px dashed rgba(255, 255, 255, 0.35) !important;
-  border-radius: 999px !important;
-  padding: 6px 14px !important;
-  color: rgba(255, 255, 255, 0.75) !important;
-  background: rgba(0, 0, 0, 0.35) !important;
+  border: none !important;
+  padding: 0 !important;
+  background: none !important;
+  color: rgba(255, 255, 255, 0.78) !important;
   font-weight: 700 !important;
 }
 

@@ -1020,6 +1020,40 @@
   transform: translate(-50%, -50%);
 }
 
+/* ── Run it twice / three times (Dan 2026-08-18) ─────────────────────────
+   Extra boards stack directly UNDER the original, and the felt masthead
+   (.table-brand) shifts down one board-height per extra run so the cards
+   never cover the date / club / game / hand line. The stack is anchored
+   from its top so board 1 keeps its usual position. */
+.table-page[data-boards] .community-area {
+  top: 42%;
+  transform: translate(-50%, -42%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.community-area__run {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+.community-area__run-label {
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+.table-page[data-boards='2'] .table-brand {
+  top: 72%;
+}
+.table-page[data-boards='3'] .table-brand {
+  top: 84%;
+}
+
 /* ── BOARD SIZING ON THE PORTRAIT TABLE (Dan 2026-07-28) ────────────────────
    The artwork's painted felt window is only 63.3% of the table's width, so the
    viewport-breakpoint card sizes in CommunityCards.css (40-64px) overflow onto

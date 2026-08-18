@@ -48,16 +48,22 @@
   letter-spacing: 0.14em;
 }
 
+/* Dan 2026-08-18: ONE dotted circle, no square. The container used to be a
+   60x42 dashed rounded-RECT while the label carried its own dashed pill
+   (TableVisualHotfix rule 11) — that stacked "a square over the circle".
+   The container is now the single circular target; the label is bare. */
 .seat--empty {
-  width: 60px;
-  height: 42px;
+  width: 56px;
+  height: 56px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
   cursor: pointer;
-  border-radius: var(--radius-lg);
-  border: 2px dashed rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.02);
+  border-radius: 50%;
+  border: 2px dashed rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.35);
   transition: all 0.25s var(--ease-spring);
   position: relative;
   overflow: visible;
@@ -68,7 +74,7 @@
   content: '';
   position: absolute;
   inset: -4px;
-  border-radius: calc(var(--radius-lg) + 4px);
+  border-radius: 50%;
   border: 1.5px solid rgba(34, 197, 94, 0);
   animation: emptyPulse 3s ease-in-out infinite;
   pointer-events: none;
@@ -106,9 +112,13 @@
 }
 
 .seat__empty-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
   font-size: 0.625rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.75);
   text-transform: uppercase;
   letter-spacing: 0.12em;
   transition:
@@ -119,6 +129,22 @@
 .seat--empty:hover .seat__empty-label {
   color: rgba(34, 197, 94, 0.9);
   transform: scale(1.05);
+}
+
+/* Dan 2026-08-18: the "+" is its own centered line above SIT. The trailing
+   letter-spacing on an uppercase run pushes the glyph off-centre, so it is
+   cancelled here (and on the word, whose own tracking is applied evenly). */
+.seat__empty-plus {
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.seat__empty-word {
+  line-height: 1;
+  /* even tracking: half the gap lands after the last letter, so pad-left
+     the same amount to keep the word optically centred */
+  padding-left: 0.12em;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

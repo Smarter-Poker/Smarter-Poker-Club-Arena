@@ -615,6 +615,31 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         };
       });
     this.currentHandWinnerIds = boardWinners[0] ? [boardWinners[0]] : [];
+    // E1 FIX 2026-08-18 (Master Gap Ledger): `currentHandWinners` was never
+    // pre-set on the RIT path, so finalizeRunout(true)'s empty WINNERS event
+    // left it [] - hand_history recorded no winners, and pot_win /
+    // pot_distributed carried empty per-winner data for EVERY run-it-twice
+    // hand (stacks were correct; the record and animations were blank).
+    // Populate both from the actual net distribution. Order matters on the
+    // ids: index 0 must stay the board-0 winner because detectBBJHit reads
+    // currentHandWinnerIds[0] (board 0 is the only BBJ-eligible board per
+    // Dan's 2026-07-21 rule); other paid players are appended after it.
+    for (const [playerId, amount] of totalDistribution) {
+      if (amount > 0 && !this.currentHandWinnerIds.includes(playerId)) {
+        this.currentHandWinnerIds.push(playerId);
+      }
+    }
+    this.currentHandWinners = [...totalDistribution.entries()]
+      .filter(([, amount]) => amount > 0)
+      .map(([playerId, amount]) => {
+        const sd = this.currentHandShowdownResults.find((r) => r.userId === playerId);
+        return {
+          userId: playerId,
+          amount,
+          potIndex: 0,
+          hand: sd ? { name: sd.handName, ranking: sd.handRanking } : undefined,
+        };
+      });
     this.currentHandPotSize = totalPot;
 
     // FIX 117: skipDistribution=true — RIT already distributed pots per-board above.

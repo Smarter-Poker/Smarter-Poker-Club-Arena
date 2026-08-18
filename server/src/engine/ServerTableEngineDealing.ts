@@ -594,8 +594,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.stateVerifier.recordInitialChipTotal(this.tableId, hcPlayers);
 
     // Step 5: Initialize atomic stacks, time banks, and disconnect tracking for each player
-    // Bible V8 §6.2: Reset per-hand time bank activation counters
-    this.timeBankEngine.resetHandActivations(this.tableId);
+    // Bible V8 §6.2: clear the per-street time bank allowance for the new hand.
+    // The same reset runs again on every flop/turn/river (see the
+    // COMMUNITY_CARDS handler) because the limit is 2 per STREET, not per hand.
+    this.timeBankEngine.resetStreetActivations(this.tableId);
     // VIP time banks 2026-08-17: new players get the free session base PLUS
     // their DB-backed extras (VIP monthly remaining + purchased extensions),
     // batch-fetched in one RPC. Before this, EVERY player got the table
@@ -612,7 +614,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
         this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
           remainingSeconds: tbTotal,
-          usesRemaining: Math.ceil(tbTotal / 15),
+          usesRemaining: Math.ceil(tbTotal / 20),
         });
         this.timeBankMeta.set(p.user_id, {
           initialSeconds: tbTotal,

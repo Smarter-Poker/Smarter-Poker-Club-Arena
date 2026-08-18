@@ -175,7 +175,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // Step 5: Clean up supporting modules between hands
     this.preActionEngine.dispose(this.tableId);
     // Note: timeBankEngine persists across hands (pool model — depletes per session, not per hand)
-    //       Per-hand activation counter is reset in dealHand() via resetHandActivations()
+    //       Per-street activation counter is reset in dealHand() and on every
+    //       new street via resetStreetActivations()
     // Note: disconnectEngine persists across hands (tracks connection state)
     // Note: atomicStackService persists across hands (tracks stack versions via FIX 150)
 

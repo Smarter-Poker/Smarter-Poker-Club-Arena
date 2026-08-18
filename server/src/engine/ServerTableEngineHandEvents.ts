@@ -257,6 +257,10 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // WATCHDOG_STALL_MS and the watchdog attacks a HEALTHY hand.
         this.markProgress();
         {
+          // Bible V8 §6.2: 2 time bank activations PER STREET. A new street is
+          // dealt here, so the allowance refreshes. Without this the limit
+          // silently degrades to 2 per hand, which is what it used to be.
+          this.timeBankEngine.resetStreetActivations(this.tableId);
           if (event.stage === 'flop') this.currentHandWentToFlop = true;
           if (event.cards) {
             // Round 39 audit Pass 3 fix: HandController.dealCommunityCards()

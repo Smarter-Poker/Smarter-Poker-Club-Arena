@@ -309,7 +309,13 @@ export abstract class ServerTableEngineBase {
     string,
     { initialSeconds: number; baseSeconds: number; dbConsumedSeconds: number }
   > = new Map();
-  protected readonly timeBankBaseSeconds = 30;
+  /**
+   * Free time-bank seconds every player starts a session with, before any VIP
+   * allowance or purchased extension. 2 banks × 20s (Dan 2026-08-18). Was 30
+   * (2 × the old 15s grant); it moves with secondsPerUse so a player keeps
+   * getting two WHOLE extensions rather than one and a stub.
+   */
+  protected readonly timeBankBaseSeconds = 40;
   protected disconnectEngine: DisconnectEngine;
   protected preActionEngine: PreActionEngine;
   protected atomicStackService: AtomicStackService;
@@ -488,12 +494,16 @@ export abstract class ServerTableEngineBase {
       //   2. Player has time banks available (checked in TimeBankEngine.activate())
       // If disabled or depleted → player gets folded on timeout, then client shows buy-more popup.
       const timeBankEnabled = this.tableInfo.time_bank_enabled ?? true;
-      // FIX 200: Bible V8 §6.2 — Each time bank adds exactly 15 seconds (was incorrectly 20).
-      // TimeBankEngine DEFAULT_CONFIG already has secondsPerUse: 15 — this override must match.
+      // Bible V8 §6.2: each time bank adds exactly 20 seconds. The standard
+      // decision clock is 15s (action_time_seconds) — these are two different
+      // numbers and conflating them is what produced FIX 200, which set the
+      // grant to 15 "was incorrectly 20". 20 is correct: 15 to decide, +20 if
+      // you spend a bank. Owner ruling, 2026-08-18; §6.2 updated to match.
+      // TimeBankEngine DEFAULT_CONFIG has secondsPerUse: 20 — keep in step.
       this.timeBankEngine.configure(this.tableId, {
-        totalBankSeconds: (this.tableInfo.time_bank_max_uses ?? 120) * 15, // uses × 15s each (Bible V8 §6.2)
+        totalBankSeconds: (this.tableInfo.time_bank_max_uses ?? 120) * 20, // uses × 20s each
         maxUses: this.tableInfo.time_bank_max_uses ?? 120,
-        secondsPerUse: 15, // Bible V8 §6.2: Each time bank adds exactly 15 seconds
+        secondsPerUse: 20, // Bible V8 §6.2: each time bank adds exactly 20 seconds
         autoActivate: timeBankEnabled, // FIX 123: Respect table setting — false means no auto-extend
       });
 

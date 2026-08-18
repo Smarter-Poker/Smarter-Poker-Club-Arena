@@ -9,7 +9,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { retryAsync } from '../utils/retryAsync';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -179,56 +178,32 @@ class ThrowableServiceClass {
         if ((atomic as any).success === true) return { success: true };
         return { success: false, error: (atomic as any).error || 'Throw failed' };
       }
-      // RPC missing (deploy skew) — fall through to the legacy client flow.
-
-      const allowance = await this.getThrowAllowance(userId);
-
-      // If VIP with free throws remaining, just record usage
-      if (allowance.isVip && allowance.freeThrowsRemaining > 0) {
-        const { error: usageErr } = await supabase
-          .from('throw_usage')
-          .insert({ user_id: userId, throwable_id: throwableId });
-        if (usageErr) {
-          reportError(usageErr, 'ThrowableService.Failed_to_record_VIP_throw_usage');
-          return { success: false, error: 'Failed to record throw usage' };
-        }
-        return { success: true };
+      // The legacy client-side fallback that used to live here is GONE.
+      //
+      // It called deduct_diamonds(p_user_id, p_amount, ...) straight from the
+      // browser, and was the only reason `authenticated` still held EXECUTE on
+      // that RPC. deduct_diamonds does self-check auth.uid() = p_user_id, so it
+      // could never drain another player - but a browser could still bypass the
+      // /api/diamonds/spend ALLOWED_SOURCES validation to write arbitrary
+      // source/type/description rows into diamond_transactions, and replay a
+      // known p_reference_id to get {success:true, idempotent:true} back with
+      // no new deduction.
+      //
+      // The fallback was also wrong on its own terms: it checked only
+      // `deductError` and never the returned `success` flag, and an
+      // insufficient-funds result comes back as data.success=false with NO
+      // postgres error - so it fell through and recorded a free throw.
+      //
+      // Safe to delete outright: fn_use_throwable is live in production
+      // (SECURITY DEFINER, derives the user from auth.uid(), takes no user_id
+      // or amount parameter, advisory-locked), and diamond_transactions holds
+      // 0 rows with transaction_type='throwable' all-time - this paid path
+      // never once charged a real player. Keeping it would also have left a
+      // path that cannot work at all once the EXECUTE grant is revoked.
+      if (atomicErr) {
+        reportError(atomicErr, 'ThrowableService.fn_use_throwable_failed');
       }
-
-      // Otherwise charge 1 diamond
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('diamonds')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (!profile || (profile.diamonds || 0) < DIAMOND_COST_PER_THROW) {
-        return { success: false, error: `Need ${DIAMOND_COST_PER_THROW} Diamonds` };
-      }
-
-      // Deduct diamonds atomically via RPC
-      const { error: deductError } = await retryAsync(
-        () =>
-          supabase.rpc('deduct_diamonds', {
-            p_user_id: userId,
-            p_amount: DIAMOND_COST_PER_THROW,
-            p_description: `Throwable: ${throwable.name}`,
-            p_transaction_type: 'throwable',
-          }),
-        3
-      );
-
-      if (deductError) {
-        return { success: false, error: 'Failed to deduct diamonds' };
-      }
-
-      // Record usage
-      const { error: usageErr2 } = await supabase
-        .from('throw_usage')
-        .insert({ user_id: userId, throwable_id: throwableId, paid_diamonds: true });
-      if (usageErr2) reportError(usageErr2, 'ThrowableService.Paid_throw_usage_record_failed');
-
-      return { success: true };
+      return { success: false, error: 'Throw unavailable, please try again' };
     } catch (err) {
       reportError(err, 'ThrowableService.Error');
       return { success: false, error: 'Unexpected error' };

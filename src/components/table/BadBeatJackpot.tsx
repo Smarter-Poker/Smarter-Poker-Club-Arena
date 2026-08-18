@@ -20,6 +20,8 @@ export interface BadBeatJackpotProps {
   /** Stakes-tiered payout percent (15-85) — this table's actual slice of the pool. */
   payoutPercent?: number;
   isHit?: boolean; // Trigger for the hit animation
+  /** Tap handler — opens the last-5-jackpots view (Dan, 2026-08-18). */
+  onOpenDetails?: () => void;
   onClaimed?: () => void;
 }
 
@@ -30,6 +32,7 @@ export function BadBeatJackpot({
   subText = 'Both hole cards must play.',
   payoutPercent,
   isHit = false,
+  onOpenDetails,
 }: BadBeatJackpotProps) {
   const [showInfo, setShowInfo] = useState(false);
   const [displayAmount, setDisplayAmount] = useState(amount);
@@ -59,13 +62,32 @@ export function BadBeatJackpot({
   return (
     <>
       {/* Table Widget */}
-      {/* BBJ-UX 2026-08-18: hover-only popover was unreachable on touch
-          devices (the primary client at 375px). Tap now toggles it too. */}
+      {/* BBJ-UX 2026-08-18: hover shows the quick rule on desktop; a TAP opens
+          the full jackpot view (last 5 hits + what this table pays), which is
+          what players actually want from the banner. Falls back to toggling
+          the popover when no handler is wired. */}
       <div
         className="bbj-widget"
+        role="button"
+        tabIndex={0}
+        aria-label="Bad Beat Jackpot — view recent jackpots"
         onMouseEnter={() => setShowInfo(true)}
         onMouseLeave={() => setShowInfo(false)}
-        onClick={() => setShowInfo((v) => !v)}
+        onClick={() => {
+          if (onOpenDetails) {
+            setShowInfo(false);
+            onOpenDetails();
+          } else {
+            setShowInfo((v) => !v);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (onOpenDetails) onOpenDetails();
+            else setShowInfo((v) => !v);
+          }
+        }}
       >
         <div className="bbj-widget__label">BAD BEAT JACKPOT</div>
         <div className="bbj-widget__amount">

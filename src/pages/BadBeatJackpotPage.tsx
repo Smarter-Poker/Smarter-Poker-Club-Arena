@@ -633,16 +633,22 @@ export default function BadBeatJackpotPage() {
               >
                 <div className="hit-info">
                   <span className="hit-date">{formatDate(hit.awarded_at)}</span>
-                  {/* 2026-08-18: names were selected but never shown — a hit
-                      list without people reads like test data. */}
-                  {(hit.loser_display_name || hit.winner_display_name) && (
+                  {/* 2026-08-18 (corrected): in bbj_winners, "winner" means
+                      winner OF THE JACKPOT — the bad-beat holder, who LOST the
+                      hand — and "loser" is the player who won the pot. Verified
+                      against bbj_payout_recipients: winner_user_id receives the
+                      50% share, and on every hit where the hand names differ,
+                      loser_hand is the STRONGER hand. The old line read
+                      "{loser_hand} beat by {winner_hand}", which rendered
+                      "Royal Flush beat by Four of a Kind" — exactly backwards. */}
+                  {(hit.winner_display_name || hit.loser_display_name) && (
                     <span className="hit-players">
-                      {hit.loser_display_name || 'Player'}
-                      {hit.winner_display_name ? ` vs ${hit.winner_display_name}` : ''}
+                      {hit.winner_display_name || 'Player'}
+                      {hit.loser_display_name ? ` beaten by ${hit.loser_display_name}` : ''}
                     </span>
                   )}
                   <span className="hit-hands">
-                    {hit.loser_hand} beat by {hit.winner_hand}
+                    {hit.winner_hand} lost to {hit.loser_hand}
                   </span>
                 </div>
                 <div className="hit-amount">{hit.total_payout.toLocaleString()}</div>

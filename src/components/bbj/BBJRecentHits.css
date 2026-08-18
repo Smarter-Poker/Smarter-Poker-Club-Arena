@@ -1,0 +1,228 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   BBJ RECENT HITS — mobile-first (375px) list of the last jackpots
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.bbj-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bbj-hits__card {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 215, 0, 0.22);
+  background: rgba(255, 255, 255, 0.035);
+  overflow: hidden;
+}
+
+.bbj-hits__card.is-open {
+  border-color: rgba(255, 215, 0, 0.45);
+  background: rgba(255, 215, 0, 0.05);
+}
+
+.bbj-hits__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  /* 44px min touch target */
+  min-height: 56px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.bbj-hits__head-left {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 74px;
+}
+
+.bbj-hits__total {
+  font-size: 17px;
+  font-weight: 900;
+  color: #ffd700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.bbj-hits__when {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.bbj-hits__head-right {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.bbj-hits__matchup {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.bbj-hits__matchup strong {
+  color: #fff;
+  font-weight: 800;
+}
+
+.bbj-hits__names {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.bbj-hits__chev {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 20px;
+  text-align: center;
+}
+
+.bbj-hits__body {
+  padding: 0 12px 12px;
+}
+
+.bbj-hits__payouts {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.bbj-hits__row {
+  display: grid;
+  /* name | role | amount — role hides on the narrowest screens */
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  align-items: baseline;
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.bbj-hits__row--bad_beat {
+  background: rgba(255, 215, 0, 0.1);
+}
+
+.bbj-hits__row--hand_winner {
+  background: rgba(110, 168, 254, 0.08);
+}
+
+.bbj-hits__row.is-you {
+  box-shadow: inset 0 0 0 1px rgba(52, 199, 89, 0.6);
+}
+
+.bbj-hits__who {
+  font-weight: 700;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.bbj-hits__you {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #34c759;
+  color: #06240f;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+
+.bbj-hits__role {
+  grid-column: 1;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.bbj-hits__amt {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-weight: 800;
+  color: #ffd700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bbj-hits__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.45;
+}
+
+.bbj-hits__hand-no {
+  flex-shrink: 0;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.bbj-hits__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 22px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.bbj-hits__empty-sub {
+  font-size: 11px;
+  color: rgba(255, 215, 0, 0.7);
+}
+
+.bbj-hits__skeleton {
+  height: 56px;
+  border-radius: 12px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 37%,
+    rgba(255, 255, 255, 0.04) 63%
+  );
+  background-size: 400% 100%;
+  animation: bbj-hits-shimmer 1.4s ease infinite;
+}
+
+@keyframes bbj-hits-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bbj-hits__skeleton {
+    animation: none;
+  }
+}

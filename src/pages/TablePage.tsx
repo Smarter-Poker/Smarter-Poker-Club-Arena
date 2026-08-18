@@ -1560,6 +1560,8 @@ export default function TablePage({
   // Bad Beat Jackpot state
   const [showBBJ, setShowBBJ] = useState(false);
   const [bbjAmount, setBbjAmount] = useState(0);
+  // Resolved pool id — the last-5-jackpots modal reads its history from this.
+  const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
 
   // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
   const [showBBJCelebration, setShowBBJCelebration] = useState(false);
@@ -2000,6 +2002,7 @@ export default function TablePage({
         if (!pool || cancelled || !isMounted.current) return;
 
         setBbjAmount(Number(pool.main_balance) || 0);
+        setBbjPoolId(pool.id);
 
         channel = supabase
           .channel(`bbj-pool-${pool.id}-${tableId}`)
@@ -8051,6 +8054,8 @@ export default function TablePage({
         // BBJ
         showBBJ={showBBJ}
         bbjAmount={bbjAmount}
+        bbjPoolId={bbjPoolId}
+        bbjHeroName={tableState.players.find((p) => p && p.id === userId)?.name || null}
         showBBJCelebration={showBBJCelebration}
         bbjCelebrationData={bbjCelebrationData}
         onBBJCelebrationComplete={() => {

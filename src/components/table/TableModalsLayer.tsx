@@ -19,6 +19,7 @@ import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
 import { RunItTwicePrompt, RunItTwiceResult, type RitResultData } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
+import BBJInfoModal from './BBJInfoModal';
 import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
 import type { ThrowEvent } from '../../services/ThrowableService';
@@ -167,6 +168,10 @@ export interface TableModalsLayerProps {
   // Bad Beat Jackpot
   showBBJ: boolean;
   bbjAmount: number;
+  /** Resolved BBJ pool id (union pool for union clubs) — for the details modal. */
+  bbjPoolId?: string | null;
+  /** Hero's display name, so their own payout row is highlighted. */
+  bbjHeroName?: string | null;
   showBBJCelebration: boolean;
   bbjCelebrationData: {
     totalPayout: number;
@@ -436,6 +441,8 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     // BBJ
     showBBJ,
     bbjAmount,
+    bbjPoolId,
+    bbjHeroName,
     showBBJCelebration,
     bbjCelebrationData,
     onBBJCelebrationComplete,
@@ -545,6 +552,8 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
 
   // Per-variant BBJ qualifying rule for the table widget (2026-08-18).
   const bbjInfo = getBBJQualifyingInfo(gameType);
+  // Tapping the jackpot banner opens the last-5-jackpots view (Dan, 2026-08-18).
+  const [showBBJDetails, setShowBBJDetails] = React.useState(false);
 
   return (
     <>
@@ -699,8 +708,20 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           subText={bbjInfo.subLabel}
           payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
           isHit={showBBJ}
+          onOpenDetails={() => setShowBBJDetails(true)}
         />
       )}
+
+      {/* Last 5 jackpots + what this table pays */}
+      <BBJInfoModal
+        isOpen={showBBJDetails}
+        onClose={() => setShowBBJDetails(false)}
+        poolId={bbjPoolId ?? null}
+        poolAmount={bbjAmount}
+        gameType={gameType}
+        bigBlind={safeBB(blinds)}
+        currentUserName={bbjHeroName}
+      />
 
       {/* BBJ Celebration Overlay */}
       {bbjCelebrationData && (

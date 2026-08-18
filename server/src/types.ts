@@ -115,6 +115,8 @@ export interface TableInfo {
   time_bank_max_uses?: number;
   /** Bible V8 §6.2: Whether time bank feature is enabled */
   time_bank_enabled?: boolean;
+  run_it_twice?: boolean;
+  allow_run_it_twice?: boolean;
   /** Bible V8 §4.3: Whether ante is enabled */
   ante_enabled?: boolean;
   /** Bible V8 §4.22: Whether bomb pots are enabled */

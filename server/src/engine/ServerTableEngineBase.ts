@@ -511,7 +511,19 @@ export abstract class ServerTableEngineBase {
       // THE SAME TABLE." If both are enabled in DB, insurance takes priority
       // (it's the more complex feature). RIT is disabled.
       // ═══════════════════════════════════════════════════════════════════════
-      const ritEnabled = this.tableInfo.run_it_twice_enabled ?? false;
+      // RIT INTENT FIX 2026-08-18: the engine read `run_it_twice_enabled`,
+      // a column NOTHING in the product ever writes (39 of 710 open tables
+      // true, likely a one-off script). The creation surfaces write
+      // `run_it_twice` (CreateTableModal) and `allow_run_it_twice`
+      // (TableCreationPage) - each defaulting the OTHER to true - and the
+      // lobby advertises the feature off `run_it_twice`. So the lobby said
+      // "run it twice" on ~every table while the engine had it off on 94%
+      // of them, and no offer ever fired in live traffic. Owner intent:
+      // OFF means at least one user-written column is false; the legacy
+      // engine column is honored as an additional ON override.
+      const ritEnabled =
+        ((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
+        (this.tableInfo.run_it_twice_enabled ?? false);
       const insuranceEnabled = this.tableInfo.insurance_enabled ?? false;
       const ritEffective = ritEnabled && !insuranceEnabled; // Insurance takes priority
 

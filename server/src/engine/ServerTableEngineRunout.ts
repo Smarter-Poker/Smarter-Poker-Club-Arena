@@ -323,14 +323,65 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         const isOmaha = variant.startsWith('plo');
         const evaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
 
+        // CHOOSER FIX 2026-08-18: on a PREFLOP all-in the board is empty (the
+        // parity fix parks before any street is dealt) and evaluateHand
+        // cannot rank a bare 2-card holding - it picked KK over AA. Preflop,
+        // the best ACTUAL hand is hole-card strength: a pair beats unpaired,
+        // higher pair beats lower, then high cards in order. Postflop
+        // (board >= 3 -> 5+ cards available) the full evaluator rules.
+        const RANK_VALUE: Record<string, number> = {
+          '2': 2,
+          '3': 3,
+          '4': 4,
+          '5': 5,
+          '6': 6,
+          '7': 7,
+          '8': 8,
+          '9': 9,
+          T: 10,
+          '10': 10,
+          J: 11,
+          Q: 12,
+          K: 13,
+          A: 14,
+        };
+        const preflopStrength = (cards: import('../types.js').Card[]): number[] => {
+          const vals = cards.map((cd) => RANK_VALUE[cd.rank] ?? 0).sort((x, y) => y - x);
+          const counts = new Map<number, number>();
+          for (const v of vals) counts.set(v, (counts.get(v) ?? 0) + 1);
+          const pairs = [...counts.entries()]
+            .filter(([, n]) => n >= 2)
+            .map(([v]) => v)
+            .sort((x, y) => y - x);
+          // [best pair rank (0 if none), then kickers high-to-low]
+          return [pairs[0] ?? 0, ...vals];
+        };
+        const cmpPreflop = (a: number[], b: number[]): number => {
+          for (let k = 0; k < Math.max(a.length, b.length); k++) {
+            const d = (a[k] ?? 0) - (b[k] ?? 0);
+            if (d !== 0) return d;
+          }
+          return 0;
+        };
+        const preflop = board.length < 3;
+
         let chooserPlayerId = allInPlayers[0].user_id;
-        let bestEval = evaluator(allInPlayers[0].cards || [], board);
+        let bestEval = preflop ? null : evaluator(allInPlayers[0].cards || [], board);
+        let bestPre = preflop ? preflopStrength(allInPlayers[0].cards || []) : null;
 
         for (let i = 1; i < allInPlayers.length; i++) {
-          const playerEval = evaluator(allInPlayers[i].cards || [], board);
-          if (compareHands(playerEval, bestEval) > 0) {
-            bestEval = playerEval;
-            chooserPlayerId = allInPlayers[i].user_id;
+          if (preflop) {
+            const pre = preflopStrength(allInPlayers[i].cards || []);
+            if (cmpPreflop(pre, bestPre as number[]) > 0) {
+              bestPre = pre;
+              chooserPlayerId = allInPlayers[i].user_id;
+            }
+          } else {
+            const playerEval = evaluator(allInPlayers[i].cards || [], board);
+            if (compareHands(playerEval, bestEval as NonNullable<typeof bestEval>) > 0) {
+              bestEval = playerEval;
+              chooserPlayerId = allInPlayers[i].user_id;
+            }
           }
         }
 
@@ -576,10 +627,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     // Distribution: playerId → total chips won across all boards (pre-rake).
     const rawDistribution = new Map<string, number>();
+    // MULTIWAY DISPLAY 2026-08-18: exact winner set per board (side pots and
+    // splits included), so the client can label each run with who took it.
+    const perBoardWinners: string[][] = [];
     for (let boardIdx = 0; boardIdx < runs; boardIdx++) {
       const board = boards[boardIdx];
       // determineWinners handles hi-lo split, short-deck, ties/odd-chip.
       const boardWinnersFull = determineWinners(state.players, board, pots, variant, dealerSeat);
+      perBoardWinners.push([...new Set(boardWinnersFull.map((w) => w.userId))]);
       for (const w of boardWinnersFull) {
         rawDistribution.set(w.userId, (rawDistribution.get(w.userId) || 0) + w.amount / runs);
       }
@@ -634,6 +689,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       runs,
       boards: boards.map((b) => b.map((c) => `${c.rank}${c.suit}`)),
       distribution: Object.fromEntries(totalDistribution),
+      // Exact winners of each run (splits/side pots included) for the
+      // client's per-board "won by" labels.
+      per_board_winners: perBoardWinners,
       pots: pots.map((p) => ({ amount: p.amount, eligiblePlayers: p.eligiblePlayers })),
     });
 

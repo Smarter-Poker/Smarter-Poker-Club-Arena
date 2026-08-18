@@ -319,6 +319,8 @@ export interface RitResultData {
   boards: string[][];
   /** userId → net amount won (post rake/BBJ). */
   distribution: Record<string, number>;
+  /** Exact winner userIds per board (splits/side pots included). */
+  perBoardWinners?: string[][];
   potTotal: number;
 }
 
@@ -359,6 +361,11 @@ export function RunItTwiceResult({
         {data.boards.map((board, bi) => (
           <div key={`b-${bi}`} className="rit-board__run">
             <span className="rit-board__run-label">Run {bi + 1}</span>
+            {data.perBoardWinners?.[bi] && data.perBoardWinners[bi].length > 0 && (
+              <span className="rit-result__board-winner">
+                {data.perBoardWinners[bi].map(resolveName).join(' & ')}
+              </span>
+            )}
             <div className="rit-board__cards">
               {board.map((raw, ci) => {
                 const card = parseRitCard(raw);

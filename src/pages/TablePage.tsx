@@ -2773,7 +2773,12 @@ export default function TablePage({
 
         setRitIsChooser(false);
         setRitChosenRuns((chosenRuns === 3 ? 3 : 2) as 2 | 3);
-        setRitOpponent(chooserId); // Will resolve to username via player list
+        // 2026-08-18: resolve to a display name HERE - this string renders
+        // verbatim in the responder prompt, and passing the raw chooserId
+        // showed players a UUID instead of who is asking to run it twice.
+        setRitOpponent(
+          tableStateRef.current?.players?.find((pp) => pp?.id === chooserId)?.name || 'Player'
+        );
         setRitTimer(10); // Others get 10 seconds
         setShowRIT(true);
         return;
@@ -2794,6 +2799,7 @@ export default function TablePage({
             runs: (handState.runs as number) || boards.length,
             boards,
             distribution,
+            perBoardWinners: (handState.per_board_winners as string[][]) || undefined,
             potTotal: pots.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
           });
           if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);

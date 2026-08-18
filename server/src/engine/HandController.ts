@@ -706,6 +706,30 @@ export class HandController {
 
     const deck = this.state.deck as unknown as Deck;
 
+    // RIT/INSURANCE PARITY FIX 2026-08-18: park BEFORE dealing the next
+    // street. This check used to run AFTER the switch below, so one street
+    // was already locked in by the time offers went out: a TURN all-in had
+    // the river dealt (board=5) and could never be offered RIT or insurance
+    // at all - the single most common RIT spot in real poker - and a FLOP
+    // all-in ran only the river twice instead of turn+river. Live proof:
+    // 48 eligible all-in runouts in one 20-minute window, all turn shoves,
+    // zero offers. The ALL_IN_RUNOUT comment always said "pause before
+    // dealing remaining community cards"; now the code agrees. A river
+    // round completing has nothing to come and proceeds to showdown below.
+    if (this.state.stage !== 'river') {
+      const canStillAct = this.getActivePlayers().filter((p) => !p.is_all_in);
+      if (canStillAct.length < 2) {
+        this.state.currentPlayerSeat = -1;
+        this.emit({
+          type: 'ALL_IN_RUNOUT',
+          board: [...this.state.communityCards],
+          pot: this.state.pot,
+          players: this.getActivePlayers().map((p) => ({ ...p })),
+        });
+        return;
+      }
+    }
+
     switch (this.state.stage) {
       case 'preflop': {
         this.transitionStage('flop');
@@ -753,29 +777,10 @@ export class HandController {
         return;
     }
 
-    const activePlayers = this.getActivePlayers().filter((p) => !p.is_all_in);
-    if (activePlayers.length < 2) {
-      // 2026-08-15: park the turn pointer. The hand is now waiting on an engine
-      // callback and NOBODY can act. Leaving currentPlayerSeat pointing at the
-      // last aggressor (who is all-in) made the table watchdog take its
-      // "stalled turn" branch instead of its "no actionable seat ->
-      // continueRunout()" branch: it armed a real action clock on an all-in
-      // player and then forced check/folds from them, advancing the runout one
-      // street per watchdog cycle and writing phantom actions into the hand
-      // history. It also published a live turn indicator on an all-in seat.
-      this.state.currentPlayerSeat = -1;
-      // Bible V8 §4.19: Emit ALL_IN_RUNOUT so ServerTableEngine can pause
-      // for insurance/RIT offers before dealing remaining cards.
-      // ServerTableEngine calls continueRunout() after offers are resolved.
-      this.emit({
-        type: 'ALL_IN_RUNOUT',
-        board: [...this.state.communityCards],
-        pot: this.state.pot,
-        players: this.getActivePlayers().map((p) => ({ ...p })),
-      });
-      return;
-    }
-
+    // (2026-08-18) The all-in-runout park moved ABOVE the switch - see the
+    // parity fix comment there. Reaching this point means at least two
+    // players can still act on the newly dealt street. The 2026-08-15
+    // parked-turn-pointer fix lives on in the pre-deal block.
     this.state.currentPlayerSeat = this.getFirstPostflopPlayer();
     this.emitTurnChange();
   }

@@ -165,6 +165,14 @@ describe('HandController — RIT settlement helpers (AUDIT FIX)', () => {
     expect(livePots[0].eligiblePlayers.length).toBe(2);
 
     // Rake is computed once on the contested $1000 pot (5% = $50, under cap).
+    // 2026-08-18 parity fix: the runout now parks BEFORE any street is dealt,
+    // so at this exact point sawFlop is still false and noFlopNoDrop zeroes
+    // the rake - correctly, because the hand COULD still end preflop only in
+    // theory; in practice the runout always deals the flop, and the engine
+    // marks it seen before computing rake (markFlopSeen in dealAndResolveRIT,
+    // runOutCommunityCards for single-run). Mirror that sequence here.
+    expect(hc.computeRakeAndBBJ().rake).toBe(0); // pre-deal: no flop yet
+    hc.markFlopSeen();
     const { rake } = hc.computeRakeAndBBJ();
     expect(rake).toBe(50);
   });

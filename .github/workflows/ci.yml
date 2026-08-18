@@ -427,8 +427,37 @@ jobs:
 
       - name: Wait for Production Deploy
         run: |
-          echo "Waiting 60s for Vercel deploy to propagate..."
-          sleep 60
+          # A blind `sleep 60` tested the site mid-build. Vercel Next.js builds
+          # take 3-5 min (World Hub CLAUDE.md 1.4) and rapid pushes queue, so
+          # E2E routinely navigated into an in-flight deploy and failed with
+          # `page.goto: Test timeout` and transient 413s -- red CI, healthy site.
+          # Poll for readiness instead, and require CONSECUTIVE healthy
+          # responses so we never start testing during a swap.
+          # No trailing slash: that path 308-redirects. -L follows anyway, so a
+          # future redirect change cannot silently make this gate unpassable.
+          URL="https://smarter.poker/hub/club-arena"
+          NEED=3; STREAK=0; CODE=000
+          DEADLINE=$(( $(date +%s) + 600 ))
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            # curl already prints 000 on connection failure; do NOT `|| echo 000`
+            # as well or the reported code becomes "000000".
+            CODE=$(curl -sL -o /dev/null -w '%{http_code}' --max-time 20 "$URL" 2>/dev/null) || true
+            [ -z "$CODE" ] && CODE=000
+            if [ "$CODE" = "200" ]; then
+              STREAK=$((STREAK + 1))
+              echo "healthy ${STREAK}/${NEED} (HTTP ${CODE})"
+              if [ "$STREAK" -ge "$NEED" ]; then
+                echo "Production is serving cleanly - starting E2E."
+                exit 0
+              fi
+            else
+              [ "$STREAK" -ne 0 ] && echo "streak reset (HTTP ${CODE})"
+              STREAK=0
+            fi
+            sleep 10
+          done
+          echo "::error::Production never returned ${NEED} consecutive 200s in 10 min (last HTTP ${CODE})."
+          exit 1
 
       - name: Run E2E Tests (Production)
         run: npx playwright test --project=chromium

@@ -901,7 +901,30 @@ export class HandController {
   }
 
   public creditRunoutWinnings(distribution: Map<string, number>): void {
-    for (const [userId, amount] of distribution) {
+    this.applyStackDeltas(distribution);
+  }
+
+  /**
+   * Apply signed stack deltas to the ENGINE'S OWN players.
+   *
+   * Exists because getState() hands out copies:
+   *
+   *   players: this.state.players.map((p) => ({ ...p, cards: [...p.cards] }))
+   *
+   * so `getState().players.find(...).stack += x` mutates a throwaway object
+   * and the authoritative state never moves. Every settlement adjustment that
+   * lands AFTER the WINNERS event — run-it-twice payouts (PR #97), insurance
+   * payouts and premiums, the 7-2 bounty transfer — has to come back through
+   * here, or the engine keeps broadcasting the pre-adjustment stacks until the
+   * next hand reloads seats from the database.
+   *
+   * Deltas are signed: positive credits, negative debits. Callers pass the
+   * amount they ACTUALLY applied to the persisted seat row, so the engine and
+   * the database move by the same number and cannot drift apart.
+   */
+  public applyStackDeltas(deltas: Map<string, number>): void {
+    for (const [userId, amount] of deltas) {
+      if (!amount) continue;
       const player = this.state.players.find((p) => p.user_id === userId);
       if (player) player.stack += amount;
     }

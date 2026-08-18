@@ -631,6 +631,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
     }
 
+    // How much ordinary turn clock is still on the board. The bank is granted
+    // ON TOP of this, so the TimeBankEngine countdown has to cover both — else
+    // it fires first and folds a player whose clock is visibly still running.
+    //
+    // Captured BEFORE activate() so the engine countdown and the turn timer
+    // armed further down are derived from the same instant. Recomputing it
+    // later left the two milliseconds apart; they have to agree exactly.
+    const remainingBeforeBank = Math.max(
+      0,
+      this.playerTurnDuration - (Date.now() - this.playerTurnStartTime) / 1000
+    );
+
     // Activate via TimeBankEngine — it handles pool depletion, per-hand limit, and event emission
     const activated = this.timeBankEngine.activate(this.tableId, userId, () => {
       // This callback fires when the manual time bank expires
@@ -677,7 +689,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       } catch {
         /* broadcast failure is non-fatal */
       }
-    });
+    }, remainingBeforeBank);
 
     if (!activated) {
       return { success: false, error: 'Time bank activation failed (per-hand limit or depleted)' };
@@ -689,9 +701,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
     const bankSeconds = bank ? bank.currentUseSeconds : 15;
 
-    // Calculate remaining normal time and add bank time
-    const elapsed = (Date.now() - this.playerTurnStartTime) / 1000;
-    const remainingBeforeBank = Math.max(0, this.playerTurnDuration - elapsed);
+    // Same remainingBeforeBank the TimeBankEngine countdown was armed with.
     const newDuration = remainingBeforeBank + bankSeconds;
 
     console.log(

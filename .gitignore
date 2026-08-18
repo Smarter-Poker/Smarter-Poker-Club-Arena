@@ -53,6 +53,10 @@ dist.dead.*/
 # Round 19 — local-only artifacts that shouldn't ship
 .agent/openclaw-dispatcher-live-*.py
 playwright-report/
+# Playwright failure artifacts: screenshots, videos, trace zips. 4.2 MB after a
+# single failing run, and only playwright-report/ was ignored - so any blanket
+# `git add -A` (git-safe-push.sh does this) would have committed them.
+test-results/
 
 # Scratch/quarantine dir. device_bash on the mounted volume cannot unlink,
 # so stale locks and old build dirs get parked here instead of deleted.

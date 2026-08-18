@@ -60,9 +60,18 @@ test.describe('Club Arena — Smoke Tests', () => {
 
     const criticalPages = ['/', '/profile', '/notifications'];
 
+    // NOT `networkidle`: Club Arena holds Supabase Realtime websockets open and
+    // polls, so the network never reliably goes idle and this wait is at the
+    // mercy of background traffic. It made this the only flaky test in the
+    // suite -- it does three sequential navigations inside one 30s test, so it
+    // carried 3x the exposure and timed out here on CI run 32082571389, then
+    // came back "1 flaky" on run 32084070511.
+    // This test asserts nothing about rendered content; it only needs the app
+    // to boot and run long enough to emit console errors. domcontentloaded plus
+    // a fixed settle does that deterministically.
     for (const path of criticalPages) {
-      await page.goto(`${BASE_URL}${path}`, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(1000);
+      await page.goto(`${BASE_URL}${path}`, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(1500);
     }
 
     // Filter out known non-critical errors (not app bugs):

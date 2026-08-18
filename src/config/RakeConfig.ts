@@ -327,6 +327,26 @@ const BBJ_SHORT_LABELS: Record<string, string> = {
   plo5: '8-high Straight Flush or better must lose',
 };
 
+/**
+ * BBJ payout percent for a table's big blind — SYNCED TO THE SERVER (2026-08-18).
+ *
+ * The server pays a stakes-tiered slice of the main pool (nano 15% ... nosebleeds
+ * 85%); the client's own STAKES_TIERS carry no payout percent and its tier
+ * boundaries have drifted from the server's, so this helper mirrors the server's
+ * getTierForBB boundaries EXACTLY (server/src/config/RakeConfig.ts) rather than
+ * reusing the local tier table. If the widget preview ever disagrees with a real
+ * payout, fix it HERE by re-syncing with the server file.
+ */
+export function getBBJPayoutPercentForBB(bigBlind: number | string): number {
+  const bb = parseFloat(String(bigBlind)) || 0;
+  if (bb <= 0.2) return 15; // Nano
+  if (bb <= 0.8) return 25; // Micro
+  if (bb <= 3) return 40; // Small
+  if (bb <= 8) return 55; // Mid
+  if (bb <= 40) return 70; // High
+  return 85; // Nosebleeds
+}
+
 /** Per-variant info for the on-table BBJ widget. */
 export function getBBJQualifyingInfo(gameType: string | null | undefined): BBJWidgetInfo {
   const key = normalizeVariantKey(gameType);

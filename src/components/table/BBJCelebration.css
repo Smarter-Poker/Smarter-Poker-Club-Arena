@@ -378,3 +378,14 @@
     font-size: 16px;
   }
 }
+
+/* Personalized winnings line (2026-08-18) */
+.bbj-hero-share {
+  display: inline-block;
+  font-size: 22px;
+  font-weight: 800;
+  color: #ffd700;
+  text-shadow: 0 0 18px rgba(255, 215, 0, 0.75);
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}

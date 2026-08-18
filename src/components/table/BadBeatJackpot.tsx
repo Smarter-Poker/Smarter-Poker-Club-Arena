@@ -17,6 +17,8 @@ export interface BadBeatJackpotProps {
   currency?: string;
   qualifyingHand: string; // per-variant rule, e.g. "Aces full of Jacks or better must lose to Quads or better"
   subText?: string; // hole-card requirement line, per variant
+  /** Stakes-tiered payout percent (15-85) — this table's actual slice of the pool. */
+  payoutPercent?: number;
   isHit?: boolean; // Trigger for the hit animation
   onClaimed?: () => void;
 }
@@ -26,6 +28,7 @@ export function BadBeatJackpot({
   currency = '',
   qualifyingHand,
   subText = 'Both hole cards must play.',
+  payoutPercent,
   isHit = false,
 }: BadBeatJackpotProps) {
   const [showInfo, setShowInfo] = useState(false);
@@ -86,6 +89,23 @@ export function BadBeatJackpot({
             <h4 className="bbj-info__title">Qualifying Hand</h4>
             <p className="bbj-info__rule">{qualifyingHand}</p>
             {subText && <p className="bbj-info__sub">{subText}</p>}
+            {/* PAYOUT-TRUTH 2026-08-18: the banner shows the FULL pool, but a
+                table only pays its stakes-tiered slice (nano 15% ... 85%).
+                Showing the real number here beats a six-figure tease that a
+                nano table can never pay. */}
+            {typeof payoutPercent === 'number' && payoutPercent > 0 && (
+              <p className="bbj-info__payout">
+                This table hits for {payoutPercent}% of the pool
+                {amount > 0 && (
+                  <>
+                    {' '}
+                    (&asymp; {currency}
+                    {Math.trunc((amount * payoutPercent) / 100).toLocaleString('en-US')})
+                  </>
+                )}
+                &nbsp;&mdash; 50% bad beat / 25% winner / 25% table
+              </p>
+            )}
           </div>
         )}
       </div>

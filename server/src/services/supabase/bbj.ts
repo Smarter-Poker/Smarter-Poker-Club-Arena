@@ -387,6 +387,58 @@ export async function processBBJPayout(params: {
         `(loser=$${loserShare}, winner=$${winnerShare}, table=$${tableShareTotal} / ${tableOnlyPlayers.length} players)`
     );
 
+    // DEPARTED-RECIPIENT NOTIFICATIONS (2026-08-18): players who left the
+    // table before the payout landed get their share credited straight to
+    // their wallet by the RPC — silently. Without a notification they would
+    // never know a jackpot paid them. Seated players see the celebration
+    // overlay, so only the departed set is notified. Non-fatal: the money is
+    // already durably placed by the RPC; a failed insert only costs the note.
+    try {
+      const departed = params.dealtInPlayerIds.filter((id) => !params.seatedUserIds.includes(id));
+      if (departed.length > 0) {
+        const shareFor = (id: string): number =>
+          id === params.loserUserId
+            ? loserShare
+            : id === params.winnerUserId
+              ? winnerShare
+              : perPlayerShare;
+        const rows = departed
+          .map((id) => ({ id, share: shareFor(id) }))
+          .filter((r) => r.share > 0)
+          .map((r) => ({
+            user_id: r.id,
+            type: 'bonus',
+            title: 'Bad Beat Jackpot — you got paid!',
+            message:
+              `A Bad Beat Jackpot hit on a hand you were dealt into after you left the table. ` +
+              `Your share of $${r.share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +
+              `was credited to your wallet.`,
+            metadata: {
+              tableId: params.tableId,
+              handNumber: params.handNumber,
+              amount: r.share,
+              poolId: pool.id,
+            },
+            read: false,
+          }));
+        if (rows.length > 0) {
+          const { error: notifyErr } = await supabase.from('notifications').insert(rows);
+          if (notifyErr) {
+            console.warn(
+              `[processBBJPayout] departed-recipient notifications failed (money already placed):`,
+              notifyErr.message
+            );
+          } else {
+            console.log(
+              `[processBBJPayout] Notified ${rows.length} departed recipient(s) of their wallet credit`
+            );
+          }
+        }
+      }
+    } catch (notifyEx) {
+      console.warn('[processBBJPayout] departed-recipient notification error:', notifyEx);
+    }
+
     return {
       totalPayout,
       loserShare,

@@ -35,6 +35,8 @@ export interface BBJCelebrationProps {
   tablePlayerCount: number;
   /** Per-variant qualifying rule from the server bbj_hit event (2026-08-18). */
   qualifyingLabel?: string;
+  /** The viewing player's own share — personalizes the celebration (2026-08-18). */
+  heroShare?: number;
   onComplete?: () => void;
 }
 
@@ -108,6 +110,7 @@ export function BBJCelebration({
   perPlayerShare,
   tablePlayerCount,
   qualifyingLabel,
+  heroShare = 0,
   onComplete,
 }: BBJCelebrationProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -433,9 +436,23 @@ export function BBJCelebration({
           </div>
         </div>
 
-        {/* Chips added to balance message */}
+        {/* Chips added to balance message — personalized when the viewer got a share */}
         <div className={`bbj-chips-message ${phase === 'breakdown' ? 'bbj-chips-visible' : ''}`}>
-          Chips added directly to your table balance!
+          {heroShare > 0 ? (
+            <>
+              <span className="bbj-hero-share">
+                YOU WON +$
+                {heroShare.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+              <br />
+              Chips added directly to your table balance!
+            </>
+          ) : (
+            'Chips added directly to the players\u2019 table balances!'
+          )}
         </div>
       </div>
     </div>

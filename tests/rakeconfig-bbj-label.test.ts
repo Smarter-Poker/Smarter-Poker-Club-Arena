@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizeVariantKey,
   getBBJQualifyingInfo,
+  getBBJPayoutPercentForBB,
   BBJ_QUALIFYING_HANDS,
 } from '../src/config/RakeConfig';
 
@@ -77,5 +78,33 @@ describe('getBBJQualifyingInfo', () => {
     expect(getBBJQualifyingInfo('short_deck').eligible).toBe(false);
     expect(BBJ_QUALIFYING_HANDS.plo6.eligible).toBe(false);
     expect(BBJ_QUALIFYING_HANDS.short_deck.eligible).toBe(false);
+  });
+});
+
+describe('getBBJPayoutPercentForBB', () => {
+  it('mirrors the server tier boundaries exactly (server/src/config/RakeConfig.ts getTierForBB)', () => {
+    // boundary, expected percent — from the server file, NOT the client tier table
+    const cases: Array<[number, number]> = [
+      [0.1, 15],
+      [0.2, 15], // nano top edge
+      [0.4, 25],
+      [0.8, 25], // micro top edge
+      [1, 40],
+      [3, 40], // small top edge
+      [4, 55],
+      [8, 55], // mid top edge
+      [10, 70],
+      [40, 70], // high top edge
+      [50, 85],
+      [500, 85],
+    ];
+    for (const [bb, pct] of cases) {
+      expect(getBBJPayoutPercentForBB(bb)).toBe(pct);
+    }
+  });
+
+  it('handles string blinds and garbage input', () => {
+    expect(getBBJPayoutPercentForBB('2')).toBe(40);
+    expect(getBBJPayoutPercentForBB('not-a-number')).toBe(15);
   });
 });

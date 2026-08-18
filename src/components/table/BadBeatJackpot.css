@@ -304,3 +304,13 @@
   --ty: -30vh;
   background: #ff00ff;
 }
+
+/* Stakes-tiered payout preview line (2026-08-18) */
+.bbj-info__payout {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 215, 0, 0.25);
+  font-size: 11px;
+  color: #ffd700;
+  line-height: 1.4;
+}

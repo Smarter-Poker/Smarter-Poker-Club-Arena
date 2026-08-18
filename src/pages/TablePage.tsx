@@ -1539,6 +1539,7 @@ export default function TablePage({
     perPlayerShare: number;
     tablePlayerCount: number;
     qualifyingLabel: string;
+    heroShare: number;
   } | null>(null);
 
   // Q3: Auto-set "Playing At" status for friends to see
@@ -3054,6 +3055,16 @@ export default function TablePage({
             // Per-variant qualifying rule from the server bbj_hit event —
             // shown in the celebration so players see WHAT hit (2026-08-18).
             qualifyingLabel: hitData?.qualifyingHandLabel || '',
+            // Personalized line: what YOU just won (2026-08-18). Zero for
+            // observers who weren't dealt in.
+            heroShare:
+              userId === (loserPayout?.userId || hitData?.loserUserId)
+                ? loserPayout?.share || 0
+                : userId === (winnerPayout?.userId || hitData?.winnerUserId)
+                  ? winnerPayout?.share || 0
+                  : userId && tablePlayerIds.includes(userId)
+                    ? perPlayer
+                    : 0,
           });
 
           // NOW trigger the HUD hit animation + full celebration overlay

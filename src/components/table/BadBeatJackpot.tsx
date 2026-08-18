@@ -9,7 +9,7 @@
  * - "Jackpot Hit" celebration animation
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './BadBeatJackpot.css';
 
 export interface BadBeatJackpotProps {
@@ -36,6 +36,20 @@ export function BadBeatJackpot({
 }: BadBeatJackpotProps) {
   const [showInfo, setShowInfo] = useState(false);
   const [displayAmount, setDisplayAmount] = useState(amount);
+  // Brief scale/glow whenever the jackpot GROWS (2026-08-18) — a live pool
+  // that only changes digits reads as static; a bump reads as money landing.
+  const [bump, setBump] = useState(false);
+  const prevAmountRef = useRef(amount);
+
+  useEffect(() => {
+    if (amount > prevAmountRef.current) {
+      setBump(true);
+      const t = setTimeout(() => setBump(false), 470);
+      prevAmountRef.current = amount;
+      return () => clearTimeout(t);
+    }
+    prevAmountRef.current = amount;
+  }, [amount]);
 
   // Smooth ticker effect for amount changes
   useEffect(() => {
@@ -90,7 +104,7 @@ export function BadBeatJackpot({
         }}
       >
         <div className="bbj-widget__label">BAD BEAT JACKPOT</div>
-        <div className="bbj-widget__amount">
+        <div className={`bbj-widget__amount${bump ? ' bbj-widget__amount--bump' : ''}`}>
           {currency}
           {/* Dan 2026-04-17: 2-decimal precision was pushing the banner wider
               than the center gap between hamburger + stats pill at 375px,

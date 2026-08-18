@@ -68,6 +68,27 @@
 > `await` and FIX-217 comments), or restore the ordering and make the broadcast
 > genuinely awaitable. **Do not mark these rows VERIFIED until that is settled.**
 >
+> ### Owner ruling 2026-08-18 — time bank numbers changed
+>
+> Dan, verbatim: *"Time banks grant 20 seconds extra time, can only 2 per street
+> can be used, never more"* and *"every player base time is 15 seconds... time
+> extension is 20 seconds (time bank 20 seconds added)"*.
+>
+> The code and §6.2 both said 15s and 2-per-HAND, so this is a spec change, not
+> a bug fix. **§6.2 was rewritten in the same PR** — leaving them contradictory
+> is how FIX 200 happened, where someone set the grant to 15 citing the Bible
+> and annotated it "was incorrectly 20". Both now say 20 and per-street.
+>
+> | | was | now |
+> |---|---|---|
+> | decision clock | 15s | 15s (unchanged, already correct) |
+> | one time bank grants | 15s | **20s** |
+> | activation limit | 2 per hand | **2 per street** |
+> | free session base | 30s (2 x 15) | **40s (2 x 20)** |
+>
+> The base moved with the grant so a player still gets exactly two WHOLE
+> extensions rather than one and a 10-second stub.
+>
 > ### Re-verified on 2026-08-18
 >
 > | Row | Was | Now | Note |
@@ -244,6 +265,7 @@
 | 6.2.a | Time bank: auto-activate        | VERIFIED | ServerTableEngine.ts:497-608                                                                                                                                                                                                                                                        | Auto-activates on primary timer expiry |
 | 6.2.b | Time bank: pool model           | VERIFIED | TimeBankEngine.ts                                                                                                                                                                                                                                                                   | Pool model with per-session depletion  |
 | 6.2.c | Time bank: refill per orbit     | PARTIAL  | TimeBankEngine.ts:34,82,238 + ServerTableEngineDealing.ts:402                                                                                                                                                                                                                       | Bible allows per-orbit OR per-session. Per-session is what ships. `onOrbitComplete()` is called every orbit and returns on its first line because `refillPerOrbit` defaults false and no `configure()` call anywhere sets it. Per-orbit is unreachable, not broken. 2026-08-18 |
+| 6.2.e | Time bank: 20s grant, 2/street  | VERIFIED | TimeBankEngine.ts secondsPerUse + streetActivations; resetStreetActivations() called from dealHand() and from the COMMUNITY_CARDS handler                                                                                                                                             | Owner ruling 2026-08-18. Grant 15s -> 20s, limit 2/hand -> 2/street, free base 30s -> 40s. §6.2 rewritten to match. TimeBankEngine.streetlimit.test.ts, 7 cases, 6 of which fail on the old code. |
 | 6.2.d | Time bank: manual activation    | VERIFIED | TimeBankEngine.activate() + ServerTableEngineTurns.activateTimeBank()                                                                                                                                                                                                               | PR #100: was arming a second, SHORTER deadline than the one broadcast to the client, folding the player up to 30s early. `activate()` now takes the leftover turn clock. TimeBankEngine.manualcountdown.test.ts, 5 cases. 2026-08-18 |
 | 6.3.a | Heartbeat disconnect detection  | VERIFIED | DisconnectEngine.ts                                                                                                                                                                                                                                                                 | POST /heartbeat resets timer           |
 | 6.3.b | Disconnect timeout              | VERIFIED | DisconnectEngine.ts:25                                                                                                                                                                                                                                                              | Default 30s                            |

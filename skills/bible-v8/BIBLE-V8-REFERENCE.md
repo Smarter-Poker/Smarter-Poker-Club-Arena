@@ -531,12 +531,25 @@ Animations are SEQUENTIAL, not simultaneous:
 
 ### 6.2 — Time Bank
 
-- Per-hand limit: 2 activations max (1 auto + 1 manual)
+**Two different numbers, and they have been conflated before.** The standard
+decision clock is **15 seconds** (`action_time_seconds`). A time bank is an
+**extension on top of that**, worth **20 seconds**. FIX 200 once set the grant
+to 15 with the note "was incorrectly 20" — that was the conflation, and it is
+reversed. Owner ruling, 2026-08-18.
+
+- Decision clock: 15s for every player, cash and tournament alike
+- **Per-STREET limit: 2 activations max.** Preflop, flop, turn and river each
+  get their own allowance of 2. (Owner ruling 2026-08-18; previously 2 per hand,
+  which stranded a player who spent both banks preflop.)
 - Auto-activate: when primary timer expires and time bank available
 - Manual activate: player clicks "Time Bank" button during their turn
-- Each activation adds configurable seconds (default 15s per use)
-- Pool model: total seconds available per session, depletes per use
-- Refill: per orbit or per session (configurable)
+- **Each activation adds exactly 20 seconds**
+- Pool model: total seconds available per session, depletes 20s per use. The
+  free session base is 40s — two whole banks — plus VIP allowance and any
+  purchased extension.
+- Refill: per orbit or per session (configurable). NOTE: the per-orbit branch is
+  unreachable in production because nothing sets `refillPerOrbit`; per-session
+  is what ships. See COMPLIANCE-TRACKER 6.2.c.
 
 ### 6.3 — Disconnect Timer
 

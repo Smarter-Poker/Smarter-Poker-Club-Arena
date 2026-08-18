@@ -40,7 +40,9 @@ describe('TimeBankEngine session allowance', () => {
     tbe.initializePlayer(TABLE, 'u1', { remainingSeconds: 30, usesRemaining: 2 });
     expect(tbe.rebase(TABLE, 'u1', 90)).toBe(true);
     expect(tbe.getRemainingSeconds(TABLE, 'u1')).toBe(90);
-    expect(tbe.getUsesRemaining(TABLE, 'u1')).toBe(6);
+    // No configure() call here, so the DEFAULT grant applies: 90s / 20s = 5.
+    // Was 6 when a bank granted 15s (Bible V8 §6.2 changed to 20 on 2026-08-18).
+    expect(tbe.getUsesRemaining(TABLE, 'u1')).toBe(5);
 
     expect(tbe.activate(TABLE, 'u1', () => {})).toBe(true);
     expect(tbe.rebase(TABLE, 'u1', 300)).toBe(false);
@@ -65,8 +67,11 @@ describe('engine accounting: base first, DB for the excess', () => {
       dbConsumedSeconds: 0,
     });
     const useOnce = () => {
-      // each use in these tests is its own hand (Bible V8 6.2 caps 2/hand)
-      engine.timeBankEngine.resetHandActivations(TABLE);
+      // Each use here is its own street (Bible V8 §6.2 caps 2 per street).
+      // These tests pin secondsPerUse: 15 above deliberately — they exercise
+      // the base-first/DB-excess ACCOUNTING, which is per-second and does not
+      // care what one bank grants.
+      engine.timeBankEngine.resetStreetActivations(TABLE);
       engine.timeBankEngine.activate(TABLE, 'u1', () => {});
       engine.timeBankEngine.playerActed(TABLE, 'u1');
     };

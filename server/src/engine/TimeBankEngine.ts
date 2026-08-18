@@ -28,7 +28,7 @@ export interface TimeBankConfig {
   totalBankSeconds: number;
   /** Maximum number of time bank uses per session (default: 4) */
   maxUses: number;
-  /** Seconds per individual time bank use (default: 15) */
+  /** Seconds each time bank activation adds to the clock (default: 20) */
   secondsPerUse: number;
   /** Whether to refill 1 use per dealer orbit (default: false) */
   refillPerOrbit: boolean;
@@ -47,8 +47,11 @@ export interface PlayerTimeBank {
   activatedAt?: number;
   currentUseSeconds: number;
   onExpire?: () => void;
-  /** Per-hand activation count (Bible V8 §6.2: max 2 per hand — 1 auto + 1 manual) */
-  handActivations: number;
+  /**
+   * Activations used on the CURRENT STREET (Bible V8 §6.2: max 2 per street).
+   * Reset at the start of every hand and again on every flop/turn/river.
+   */
+  streetActivations: number;
 }
 
 export type TimeBankEventType =
@@ -76,9 +79,9 @@ export class TimeBankEngine {
   private onEvent?: (event: TimeBankEvent) => void;
 
   private readonly DEFAULT_CONFIG: TimeBankConfig = {
-    totalBankSeconds: 1800, // 120 uses × 15 seconds = 1800s per month (VIP default)
+    totalBankSeconds: 2400, // 120 uses × 20 seconds = 2400s per month (VIP default)
     maxUses: 120, // 120 time banks per month with VIP
-    secondsPerUse: 15, // Bible V8 §6.2: Each time bank adds 15 seconds to the clock
+    secondsPerUse: 20, // Bible V8 §6.2: each time bank adds 20 seconds to the clock
     refillPerOrbit: false,
     refillSeconds: 15,
     autoActivate: true,
@@ -116,7 +119,7 @@ export class TimeBankEngine {
       usesRemaining: initialState?.usesRemaining ?? config.maxUses,
       isActive: false,
       currentUseSeconds: 0,
-      handActivations: 0,
+      streetActivations: 0,
     });
   }
 
@@ -173,8 +176,12 @@ export class TimeBankEngine {
 
     if (!bank || bank.isActive) return false;
     if (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0) return false;
-    // Bible V8 §6.2: Per-hand limit — max 2 activations per hand (1 auto + 1 manual)
-    if (bank.handActivations >= 2) return false;
+    // Bible V8 §6.2: max 2 activations PER STREET, never more. Preflop, flop,
+    // turn and river each get their own allowance of 2; the counter is reset by
+    // resetStreetActivations() at the start of the hand and on every new street.
+    // The seconds pool is the other, harder cap — a player cannot activate a
+    // bank they do not have, however many streets are left.
+    if (bank.streetActivations >= 2) return false;
 
     const useSeconds = Math.min(config.secondsPerUse, bank.remainingSeconds);
 
@@ -182,7 +189,7 @@ export class TimeBankEngine {
     bank.activatedAt = Date.now();
     bank.currentUseSeconds = useSeconds;
     bank.usesRemaining--;
-    bank.handActivations++;
+    bank.streetActivations++;
     bank.onExpire = onExpire;
 
     this.emitEvent({
@@ -240,13 +247,17 @@ export class TimeBankEngine {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Reset per-hand activation counter for all players at a table.
-   * Must be called at the START of every new hand.
+   * Reset the per-STREET activation counter for every player at a table.
+   *
+   * Must be called at the start of each hand AND on every new street, because
+   * Bible V8 §6.2 allows 2 activations per street rather than 2 per hand. Miss
+   * the street call and a player who used both banks preflop can never use one
+   * again for the rest of the hand.
    */
-  resetHandActivations(tableId: string): void {
+  resetStreetActivations(tableId: string): void {
     for (const [key, bank] of this.playerBanks) {
       if (key.startsWith(`${tableId}:`)) {
-        bank.handActivations = 0;
+        bank.streetActivations = 0;
       }
     }
   }

@@ -716,7 +716,6 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
     'rake_cap',
     'min_buyin_bb',
     'max_buyin_bb',
-    'time_bank_seconds',
     'allow_straddle',
     'allow_run_it_twice',
     'allow_rabbit_hunt',

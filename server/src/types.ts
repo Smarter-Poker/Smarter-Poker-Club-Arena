@@ -90,7 +90,6 @@ export interface TableInfo {
   game_type?: string;
   tournament_id?: string;
   action_time_seconds?: number;
-  time_bank_seconds?: number;
   /** Bible V8 §4.3: Big Blind Ante — BB posts ante for entire table */
   big_blind_ante_enabled?: boolean;
   /** Bible V8 §4.4: Straddle settings */

@@ -464,33 +464,35 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
     previousLevel = level;
   }
 
-  // Fold the dead money into the main (first / most-contested) pot.
+  // Dead money gets its OWN pot at the bottom of the stack, contested by every
+  // non-folded player who put anything in — live or dead.
+  //
+  // 2026-08-18 (first attempt) folded deadTotal into pots[0] and then widened
+  // pots[0]'s eligibility to include dead-money-only players. That fixed the
+  // symptom (an all-in-for-the-ante player winning nothing) and introduced a
+  // worse bug: pots[0] is not a dead-money pot, it is `the lowest LIVE level x
+  // its contributors, PLUS all the dead money`. Widening it handed that player
+  // the live action they never matched.
+  //
+  //   u1 live 100, u2 live 100, u3 all-in for a 5 ante (live 0)
+  //   before: one pot of 205 contested by u1, u2 AND u3  -> u3 can win 205
+  //   now:    dead pot 5 contested by all three, live pot 200 by u1/u2 only
+  //
+  // Dead money still never creates a private side pot for whoever posted it:
+  // the Big Blind Ante is one player fronting the whole table, so it is summed
+  // across everyone and contested by everyone, exactly as before. That is also
+  // why dead money is kept out of the LEVEL construction above.
+  //
+  // When every non-folded player has live investment at the lowest level, this
+  // dead pot has the same eligible set as pots[0] and the merge step below
+  // folds the two back together — so the common case is byte-for-byte what it
+  // was, and only the dead-money-only case changes.
   if (pots.length > 0 && deadTotal > 0) {
-    pots[0].amount = Math.round((pots[0].amount + deadTotal) * 100) / 100;
-
-    // 2026-08-18 — a player who is all-in for DEAD money only must still be
-    // able to win the pot their chips are sitting in.
-    //
-    // Side-pot levels are built from LIVE investment, and eligibility is
-    // `getInvestment(p) >= level` with every level > 0. A non-folded player
-    // whose whole stack went to the ante (ante >= stack) or to a dead small
-    // blind (returning from sit-out with stack < SB) has live investment 0, so
-    // that test excluded them from EVERY pot — including this one, which is
-    // where their own chips were just folded in. They were dealt cards, could
-    // flop the nuts, and collected nothing; the pot went to someone else.
-    //
-    // 254 of the 437 tables dealing on 2026-08-18 have an ante, and 272 are
-    // tournaments, where being all-in for the ante is routine.
-    //
-    // The main pot is contested by everyone still in the hand who put anything
-    // in, live or dead. Widening only pots[0] is deliberate: dead money never
-    // creates a private side pot for whoever posted it.
-    for (const p of activePlayers) {
-      const putSomethingIn = (p.totalInvested ?? p.bet ?? 0) > 0;
-      if (putSomethingIn && !pots[0].eligiblePlayers.includes(p.user_id)) {
-        pots[0].eligiblePlayers.push(p.user_id);
-      }
-    }
+    const deadEligible = activePlayers.filter((p) => (p.totalInvested ?? p.bet ?? 0) > 0);
+    pots.unshift({
+      amount: deadTotal,
+      eligiblePlayers: deadEligible.map((p) => p.user_id),
+    });
   }
 
   // Merge pots with identical eligible players
@@ -720,12 +722,23 @@ function distributePot(
 
   // FIX 169: Sort by clockwise distance from dealer button for odd-chip allocation.
   // The player closest clockwise to the dealer gets the first odd chip.
+  //
+  // 2026-08-18: the button itself was getting it. `(seat - dealerSeat) % maxSeat`
+  // is 0 when the winner IS the dealer, which sorted the button FIRST — but the
+  // button is the LAST position clockwise from itself, not the first. TDA and
+  // this function's own docblock both say the first player clockwise OF the
+  // dealer, i.e. the small blind seat. Heads-up, a chopped pot with an odd cent
+  // paid the button instead of the big blind. Mapping distance 0 to maxSeat puts
+  // the button at the back of the queue where it belongs. Unknown-dealer (0)
+  // behaviour is unchanged: seats are 1-based, so no winner can score 0 there.
   const maxSeat = Math.max(...roundWinners.map((w) => w.player.seat), dealerSeat) + 1;
-  const sortedWinners = [...roundWinners].sort((a, b) => {
-    const aDist = (a.player.seat - dealerSeat + maxSeat * 10) % maxSeat;
-    const bDist = (b.player.seat - dealerSeat + maxSeat * 10) % maxSeat;
-    return aDist - bDist;
-  });
+  const clockwiseDistance = (seat: number) => {
+    const d = (seat - dealerSeat + maxSeat * 10) % maxSeat;
+    return d === 0 ? maxSeat : d;
+  };
+  const sortedWinners = [...roundWinners].sort(
+    (a, b) => clockwiseDistance(a.player.seat) - clockwiseDistance(b.player.seat)
+  );
 
   sortedWinners.forEach((pw, i) => {
     const existing = globalWinners.find((w) => w.userId === pw.player.user_id);

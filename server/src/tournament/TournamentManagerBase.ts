@@ -148,6 +148,25 @@ export abstract class TournamentManagerBase {
           }
         : null,
     });
+
+    // 2026-08-18: the break screen is a full-screen opaque overlay
+    // (TournamentBreakScreen.css: position fixed, inset 0, z-index 700), and
+    // until now NOTHING stopped the tables underneath it. Every player sat
+    // behind the overlay while hands were dealt: they auto-folded every hand
+    // and paid blinds and antes for the whole five minutes. In a turbo that is
+    // roughly a level and a half, enough to blind a short stack out "during
+    // the break". Worse, the overlay is minimizable, so a player who knew to
+    // close it kept playing against players who did not.
+    //
+    // pauseAfterHand() is the same mechanism hand-for-hand already uses: the
+    // current hand is played to the end and no new hand is dealt.
+    for (const engine of this.tableEngines.values()) {
+      try {
+        engine.pauseAfterHand();
+      } catch (err) {
+        reportError(err, 'TournamentManagerBase.pauseForBreak_pause_engine');
+      }
+    }
   }
 
   /** Resume from synchronized break: restart blind timer with remaining time */
@@ -157,6 +176,20 @@ export abstract class TournamentManagerBase {
 
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
     await this.broadcast('break_ended', { level: this.currentLevel });
+
+    // Undo the pause taken in pauseForBreak. Hand-for-hand owns the pause state
+    // when it is running (it pauses and resumes every engine in lockstep on the
+    // money bubble), so resuming here would let one table run away from the
+    // others — leave those engines alone and let the bubble sync resume them.
+    if (!this.handForHandActive) {
+      for (const engine of this.tableEngines.values()) {
+        try {
+          engine.resumeDealing();
+        } catch (err) {
+          reportError(err, 'TournamentManagerBase.resumeFromBreak_resume_engine');
+        }
+      }
+    }
 
     // Restart blind timer with saved remaining time. AUDIT FIX 2026-07-19: on
     // fire, run the SAME full level transition as the normal timer (writes

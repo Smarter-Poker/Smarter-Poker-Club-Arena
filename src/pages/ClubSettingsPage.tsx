@@ -28,7 +28,6 @@ interface ClubSettings {
   requires_approval: boolean;
   default_rake_percent: number;
   rake_cap: number;
-  time_bank_seconds: number;
   allow_straddle: boolean;
   allow_run_it_twice: boolean;
   allow_rabbit_hunt: boolean;
@@ -51,7 +50,6 @@ export default function ClubSettingsPage() {
     requires_approval: false,
     default_rake_percent: 5,
     rake_cap: 3,
-    time_bank_seconds: 30,
     allow_straddle: true,
     allow_run_it_twice: true,
     allow_rabbit_hunt: true,
@@ -74,7 +72,6 @@ export default function ClubSettingsPage() {
     if (settings.requires_approval !== orig.requires_approval) changes.push('Approval');
     if (settings.default_rake_percent !== orig.default_rake_percent) changes.push('Rake %');
     if (settings.rake_cap !== orig.rake_cap) changes.push('Rake Cap');
-    if (settings.time_bank_seconds !== orig.time_bank_seconds) changes.push('Time Bank');
     if (settings.allow_straddle !== orig.allow_straddle) changes.push('Straddle');
     if (settings.allow_run_it_twice !== orig.allow_run_it_twice) changes.push('Run It Twice');
     if (settings.allow_rabbit_hunt !== orig.allow_rabbit_hunt) changes.push('Rabbit Hunt');
@@ -203,7 +200,7 @@ export default function ClubSettingsPage() {
           supabase
             .from('clubs')
             .select(
-              'id, owner_id, name, description, is_public, requires_approval, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
+              'id, owner_id, name, description, is_public, requires_approval, default_rake_percent, rake_cap, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -223,7 +220,6 @@ export default function ClubSettingsPage() {
           requires_approval: data.requires_approval ?? false,
           default_rake_percent: data.default_rake_percent || 5,
           rake_cap: data.rake_cap || 3,
-          time_bank_seconds: data.time_bank_seconds || 30,
           allow_straddle: data.allow_straddle ?? true,
           allow_run_it_twice: data.allow_run_it_twice ?? true,
           allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
@@ -238,7 +234,6 @@ export default function ClubSettingsPage() {
           requires_approval: data.requires_approval ?? false,
           default_rake_percent: data.default_rake_percent || 5,
           rake_cap: data.rake_cap || 3,
-          time_bank_seconds: data.time_bank_seconds || 30,
           allow_straddle: data.allow_straddle ?? true,
           allow_run_it_twice: data.allow_run_it_twice ?? true,
           allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
@@ -298,7 +293,6 @@ export default function ClubSettingsPage() {
               requires_approval: settings.requires_approval,
               default_rake_percent: settings.default_rake_percent,
               rake_cap: settings.rake_cap,
-              time_bank_seconds: settings.time_bank_seconds,
               allow_straddle: settings.allow_straddle,
               allow_run_it_twice: settings.allow_run_it_twice,
               allow_rabbit_hunt: settings.allow_rabbit_hunt,
@@ -473,17 +467,11 @@ export default function ClubSettingsPage() {
               disabled={!isOwner}
             />
           </div>
-          <div className="form-group">
-            <label>Time Bank (seconds)</label>
-            <input
-              type="number"
-              value={settings.time_bank_seconds}
-              onChange={(e) => updateSetting('time_bank_seconds', parseInt(e.target.value) || 0)}
-              min={15}
-              max={120}
-              disabled={!isOwner}
-            />
-          </div>
+          {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
+              persisted to clubs.time_bank_seconds, which no engine code has
+              ever read — an owner could set it to 15 or to 120 and every table
+              behaved identically. A time bank is a flat 20-second grant, 2 per
+              street (Bible V8 s6.2); there is nothing per-club left to set. */}
           <div className="toggle-row">
             <div className="toggle-info">
               <span className="toggle-label">Allow Straddle</span>

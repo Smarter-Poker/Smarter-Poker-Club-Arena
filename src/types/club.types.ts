@@ -205,7 +205,6 @@ export interface Table {
 /** Bible V8 2.1: Timing configuration sub-object */
 export interface TableTimingConfig {
   time_to_act_seconds: number; // Primary shot clock (default 15-30)
-  time_bank_seconds: number; // Time bank per activation
   time_bank_max_activations_per_hand: number; // Max 2 per Bible V8 6.4
   time_bank_max_activations_per_session: number; // VIP pool
   disconnect_grace_period_ms: number; // Before marking disconnected

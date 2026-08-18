@@ -31,7 +31,6 @@ interface TableSettings {
   allow_straddle: boolean;
   allow_run_it_twice: boolean;
   allow_rabbit_hunt: boolean;
-  time_bank_seconds: number;
   ante?: number;
 }
 
@@ -51,7 +50,6 @@ export default function TableCreationPage() {
     allow_straddle: true,
     allow_run_it_twice: true,
     allow_rabbit_hunt: true,
-    time_bank_seconds: 30,
   });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +116,6 @@ export default function TableCreationPage() {
           allow_straddle: settings.allow_straddle,
           allow_run_it_twice: settings.allow_run_it_twice,
           allow_rabbit_hunt: settings.allow_rabbit_hunt,
-          time_bank_seconds: settings.time_bank_seconds,
           ante: settings.ante || 0,
           status: 'waiting',
           current_players: 0,

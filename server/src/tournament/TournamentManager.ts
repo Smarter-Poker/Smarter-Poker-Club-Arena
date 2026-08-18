@@ -824,7 +824,30 @@ export class TournamentManager extends TournamentManagerEliminations {
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Post-expansion rebalance: ${moves.length} player moves`
         );
-        await this.executePlayerMoves(moves);
+        // 2026-08-18: this was the one move site with no hand-boundary wait.
+        // The table-break path (above) and the gap-rebalance path both wait,
+        // with a comment saying why: executePlayerMoves reads table_seats.stack,
+        // which is only written at settlement, so moving a player mid-hand
+        // carries their PRE-hand stack to the new table while the old table
+        // still pays out the pot. An all-in player moved this way is cloned —
+        // their chips arrive at the new table and are also collected by whoever
+        // wins the hand they left behind. Late registration overflowing table
+        // capacity is exactly when this fires.
+        const sourceTables = [...new Set(moves.map((m) => m.fromTableId))] as string[];
+        const unsafeTables = new Set<string>();
+        for (const t of sourceTables) {
+          const safe = await this.waitForHandComplete(t);
+          if (!safe) unsafeTables.add(t);
+        }
+        const safeMoves = moves.filter((m) => !unsafeTables.has(m.fromTableId));
+        if (unsafeTables.size > 0) {
+          console.warn(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring ${moves.length - safeMoves.length} post-expansion move(s) — source table(s) still in-hand`
+          );
+        }
+        if (safeMoves.length > 0) {
+          await this.executePlayerMoves(safeMoves);
+        }
       }
     }
 

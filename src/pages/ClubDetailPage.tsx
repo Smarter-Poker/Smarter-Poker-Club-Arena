@@ -56,7 +56,6 @@ interface ClubData {
 interface ClubSettings {
   defaultRakePercent: number;
   rakeCap: number;
-  timeBankSeconds: number;
   allowStraddle: boolean;
   allowRunItTwice: boolean;
   allowRabbitHunt: boolean;
@@ -404,7 +403,6 @@ export default function ClubDetailPage() {
     rakeCap: 3,
     minBuyInBB: 40,
     maxBuyInBB: 200,
-    timeBankSeconds: 30,
     allowStraddle: false,
     allowRunItTwice: true,
     allowRabbitHunt: true,
@@ -514,7 +512,6 @@ export default function ClubDetailPage() {
         rakeCap: club.settings.rakeCap,
         minBuyInBB: club.settings.minBuyInBB,
         maxBuyInBB: club.settings.maxBuyInBB,
-        timeBankSeconds: club.settings.timeBankSeconds,
         allowStraddle: club.settings.allowStraddle,
         allowRunItTwice: club.settings.allowRunItTwice,
         allowRabbitHunt: club.settings.allowRabbitHunt,
@@ -742,7 +739,7 @@ export default function ClubDetailPage() {
       const { data: clubData, error: clubError } = await supabase
         .from('clubs')
         .select(
-          'id, club_id, name, description, avatar_url, is_public, requires_approval, member_count, table_count, created_at, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb, owner_id'
+          'id, club_id, name, description, avatar_url, is_public, requires_approval, member_count, table_count, created_at, default_rake_percent, rake_cap, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb, owner_id'
         )
         .eq(clubCol, clubVal)
         .maybeSingle();
@@ -775,7 +772,6 @@ export default function ClubDetailPage() {
         settings: {
           defaultRakePercent: clubData.default_rake_percent || 5,
           rakeCap: clubData.rake_cap || 3,
-          timeBankSeconds: clubData.time_bank_seconds || 30,
           allowStraddle: clubData.allow_straddle ?? true,
           allowRunItTwice: clubData.allow_run_it_twice ?? true,
           allowRabbitHunt: clubData.allow_rabbit_hunt ?? true,
@@ -933,7 +929,6 @@ export default function ClubDetailPage() {
         rake_cap: safeNum(settingsForm.rakeCap, club.settings.rakeCap),
         min_buyin_bb: safeNum(settingsForm.minBuyInBB, club.settings.minBuyInBB),
         max_buyin_bb: safeNum(settingsForm.maxBuyInBB, club.settings.maxBuyInBB),
-        time_bank_seconds: safeNum(settingsForm.timeBankSeconds, club.settings.timeBankSeconds),
         allow_straddle: settingsForm.allowStraddle,
         allow_run_it_twice: settingsForm.allowRunItTwice,
         allow_rabbit_hunt: settingsForm.allowRabbitHunt,
@@ -1850,17 +1845,8 @@ export default function ClubDetailPage() {
                   className={styles.numberInput}
                 />
               </div>
-              <div className={styles.settingRow}>
-                <label>Time Bank (seconds)</label>
-                <input
-                  type="number"
-                  value={settingsForm.timeBankSeconds}
-                  onChange={(e) =>
-                    setSettingsForm((f) => ({ ...f, timeBankSeconds: Number(e.target.value) || 0 }))
-                  }
-                  className={styles.numberInput}
-                />
-              </div>
+              {/* 2026-08-18: removed. clubs.time_bank_seconds was never read
+                  by the engine — see ClubSettingsPage for the full note. */}
               <div className={styles.settingRow}>
                 <label>Allow Straddle</label>
                 <input

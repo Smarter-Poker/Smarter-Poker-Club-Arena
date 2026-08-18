@@ -1370,6 +1370,14 @@ export default function TablePage({
   const actualClubIdRef = useRef<string>('');
   const [actualClubIdLoaded, setActualClubIdLoaded] = useState(false); // Tracks when club_id is available
   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
+  const [tableRakeOverride, setTableRakeOverride] = useState<{
+    rakePercent: number | null;
+    rakeCapBB: number | null;
+  } | null>(null);
+  const [clubRakeDefaults, setClubRakeDefaults] = useState<{
+    rakePercent: number | null;
+    rakeCapBB: number | null;
+  } | null>(null);
 
   // Chat — extracted to useTableChat hook
   // VISIBLE FIX 2026-08-15: throws are broadcast over chat, but useTableChat
@@ -3290,7 +3298,7 @@ export default function TablePage({
       const { data: table, error } = await supabase
         .from('tables')
         .select(
-          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, action_time_seconds'
+          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, action_time_seconds, rake_percent, rake_cap_bb'
         )
         .eq('id', tableId)
         .maybeSingle();
@@ -3318,6 +3326,17 @@ export default function TablePage({
           lastBetAmounts: Array(table.max_players || 6).fill(0),
         }));
 
+        // 2026-08-18: the table's own rake override, if the owner set one.
+        // -1 (or a missing value) means "inherit" — the club default, then the
+        // published schedule. The Game Rules modal must show what is actually
+        // taken, so this feeds displayRakeConfig below; reading the schedule
+        // alone would misstate the rake on exactly the tables whose owner
+        // changed it, which is the same class of bug the 2026-08-15 fix closed.
+        setTableRakeOverride({
+          rakePercent: table.rake_percent ?? null,
+          rakeCapBB: table.rake_cap_bb ?? null,
+        });
+
         // Store actual club_id for persistence and rake
         actualClubIdRef.current = table.club_id || '';
         setActualClubIdLoaded(true); // Signal observer chat permission check
@@ -3325,6 +3344,27 @@ export default function TablePage({
 
         // Fetch club name for table header display
         if (table.club_id) {
+          void Promise.resolve(
+            supabase
+              .from('clubs')
+              .select('default_rake_percent, rake_cap')
+              .eq('id', table.club_id)
+              .maybeSingle()
+          )
+            .then(({ data: clubRake }) => {
+              if (clubRake) {
+                setClubRakeDefaults({
+                  rakePercent: clubRake.default_rake_percent ?? null,
+                  // clubs.rake_cap is in BIG BLINDS despite the name — the club
+                  // settings screen labels it "Rake Cap (BB)".
+                  rakeCapBB: clubRake.rake_cap ?? null,
+                });
+              }
+            })
+            .catch(() => {
+              /* display-only; fall back to the schedule */
+            });
+
           supabase
             .from('clubs')
             .select('name')
@@ -5707,9 +5747,27 @@ export default function TablePage({
       // the modal shows its placeholder instead of asserting a false rake.
       return { rakePercent: undefined, rakeCap: undefined };
     }
-    const cfg = getRakeConfig(bb, tableState.gameType || 'nlh', Number.isFinite(sb) ? sb : null);
+    // Same precedence the engine uses (ServerTableEngineBase.getRakeOverride):
+    // table setting, then club default, then the schedule.
+    const pick = (a: number | null | undefined, b: number | null | undefined) => {
+      const na = a === null || a === undefined ? NaN : Number(a);
+      if (Number.isFinite(na) && na >= 0) return na;
+      const nb = b === null || b === undefined ? NaN : Number(b);
+      if (Number.isFinite(nb) && nb >= 0) return nb;
+      return undefined;
+    };
+    const override = {
+      rakePercent: pick(tableRakeOverride?.rakePercent, clubRakeDefaults?.rakePercent),
+      rakeCapBB: pick(tableRakeOverride?.rakeCapBB, clubRakeDefaults?.rakeCapBB),
+    };
+    const cfg = getRakeConfig(
+      bb,
+      tableState.gameType || 'nlh',
+      Number.isFinite(sb) ? sb : null,
+      override
+    );
     return { rakePercent: cfg.rakePercent, rakeCap: cfg.rakeCap };
-  }, [tableState.blinds, tableState.gameType]);
+  }, [tableState.blinds, tableState.gameType, tableRakeOverride, clubRakeDefaults]);
 
   const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
 

@@ -30,8 +30,9 @@ export interface GameRulesModalProps {
   stakes: string;
   minBuyIn: number;
   maxBuyIn: number;
-  rakePercentage: number;
-  rakeCap: number;
+  /** undefined while the stakes are still loading — render a dash, never a guess. */
+  rakePercentage?: number;
+  rakeCap?: number;
   isStraddleEnabled?: boolean;
   isRunItTwiceEnabled?: boolean;
   isInsuranceEnabled?: boolean;
@@ -135,9 +136,14 @@ export function GameRulesModal({
               </div>
               <div className="rules-modal__item">
                 <span className="rules-modal__label">Rake</span>
+                {/* 2026-08-18: this used to fall back to "5% (Cap $3)" whenever
+                    the props were undefined, which was every table until the
+                    2026-08-15 display fix. A placeholder that looks like a real
+                    number is worse than no number — show a dash instead. */}
                 <span className="rules-modal__value">
-                  {rakePercentage}% (Cap {currency}
-                  {rakeCap})
+                  {rakePercentage === undefined || rakeCap === undefined
+                    ? '—'
+                    : `${rakePercentage}% (Cap ${currency}${rakeCap})`}
                 </span>
               </div>
             </div>

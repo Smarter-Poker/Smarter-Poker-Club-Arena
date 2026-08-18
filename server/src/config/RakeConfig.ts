@@ -85,6 +85,8 @@ export interface ServerRakeConfigResult {
   qualifyingHand: BBJQualifyingHand;
   rules: typeof BBJ_RULES;
   _exactMatch: boolean;
+  /** Which fields came from a table/club override rather than the schedule. */
+  _overridden: { percent: boolean; cap: boolean };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -356,14 +358,60 @@ export function getTierForBB(bigBlind: number): StakesTier {
 }
 
 /**
+ * A per-table (or per-club) rake override. Both fields use RAKE_INHERIT (-1),
+ * null or undefined to mean "not set — fall through to the next level".
+ *
+ * 2026-08-18: until now `tables.rake_percent`, `tables.rake_cap_bb`,
+ * `clubs.default_rake_percent` and `clubs.rake_cap` were written by four
+ * owner-facing controls and read by nothing. An owner who set "Fee 2%" still
+ * had 10% taken. These are the values that make those controls real.
+ */
+export interface RakeOverride {
+  /** Whole-percent units, e.g. 7.5 means 7.5%. */
+  rakePercent?: number | null;
+  /** BIG BLINDS, not dollars. Converted here and only here. */
+  rakeCapBB?: number | null;
+}
+
+/** Sentinel stored in the database meaning "inherit". */
+export const RAKE_INHERIT = -1;
+/** An owner may never rake above the published schedule rate. */
+export const MAX_RAKE_PERCENT = 10;
+/** …nor set a cap above 10 big blinds. Matches the create-table slider. */
+export const MAX_RAKE_CAP_BB = 10;
+
+/** true only for a real, in-range number; -1 / null / NaN / '' all mean inherit. */
+function isRakeSet(v: number | null | undefined): v is number {
+  if (v === null || v === undefined) return false;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+
+/**
  * Get full rake + BBJ config for a given stakes/variant.
  * Tries exact schedule match first, then falls back to tier.
  * IMPORTANT: rakeCap is always an absolute dollar amount.
+ *
+ * `override` lets a table or club take LESS than the schedule. It can never
+ * take more: percent is clamped to MAX_RAKE_PERCENT and the cap to
+ * MAX_RAKE_CAP_BB, and anything non-finite falls back to the schedule rather
+ * than throwing — a bad row must not be able to stop a table dealing. The
+ * clamps are the load-bearing guard: `tables` is UPDATE-able by any club admin
+ * through RLS, so the database is not a trusted source for these two numbers.
+ *
+ * The BBJ fields are deliberately NOT overridable. The jackpot drop is a fixed
+ * number of big blinds from the schedule and funds a shared pool; letting one
+ * table opt out of contributing while still being eligible to win would be a
+ * way to farm the pool.
  */
 export function getFullRakeConfig(
   smallBlind: number,
   bigBlind: number,
-  variant: string = 'nlh'
+  variant: string = 'nlh',
+  override?: RakeOverride
 ): ServerRakeConfigResult {
   const scheduleMatch = findScheduleMatch(smallBlind, bigBlind);
   const tier = getTierForBB(bigBlind);
@@ -373,9 +421,22 @@ export function getFullRakeConfig(
   const qualifying = BBJ_QUALIFYING_HANDS[normalizedVariant] || BBJ_QUALIFYING_HANDS.nlh;
   const bbjEligible = qualifying.eligible !== false;
 
-  const rakePercent = scheduleMatch ? scheduleMatch.rakePercent : tier.rakePercent;
-  const rakeCap = scheduleMatch ? scheduleMatch.rakeCap : tier.rakeCap;
+  const schedulePercent = scheduleMatch ? scheduleMatch.rakePercent : tier.rakePercent;
+  const scheduleCap = scheduleMatch ? scheduleMatch.rakeCap : tier.rakeCap;
   const bbjFeeBB = scheduleMatch ? scheduleMatch.bbjFeeBB : tier.bbjFeeBB;
+
+  const overridePercent = isRakeSet(override?.rakePercent)
+    ? clamp(Number(override!.rakePercent), 0, MAX_RAKE_PERCENT)
+    : null;
+  // BIG BLINDS -> DOLLARS happens here and nowhere else. Everything downstream
+  // (calculateRake's Math.min, getPlayerCountCaps' 0.5x / 0.67x short-handed
+  // multipliers) assumes an absolute cash cap.
+  const overrideCap = isRakeSet(override?.rakeCapBB)
+    ? round2(clamp(Number(override!.rakeCapBB), 0, MAX_RAKE_CAP_BB) * bigBlind)
+    : null;
+
+  const rakePercent = overridePercent ?? schedulePercent;
+  const rakeCap = overrideCap ?? scheduleCap;
 
   // BBJ payout: total % of pool varies by stakes tier (Dan's authoritative table)
   // Distribution is always 50/25/25 split of the total payout amount.
@@ -398,6 +459,7 @@ export function getFullRakeConfig(
     qualifyingHand: qualifying,
     rules: BBJ_RULES,
     _exactMatch: !!scheduleMatch,
+    _overridden: { percent: overridePercent !== null, cap: overrideCap !== null },
   };
 }
 

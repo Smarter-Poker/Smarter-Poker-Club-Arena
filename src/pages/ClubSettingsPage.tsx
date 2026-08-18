@@ -20,6 +20,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
 import { reportError } from '../utils/errorReporter';
+import { MAX_RAKE_CAP_BB, MAX_RAKE_PERCENT, RAKE_INHERIT } from '../config/RakeConfig';
 
 interface ClubSettings {
   name: string;
@@ -48,8 +49,8 @@ export default function ClubSettingsPage() {
     description: '',
     is_public: true,
     requires_approval: false,
-    default_rake_percent: 5,
-    rake_cap: 3,
+    default_rake_percent: RAKE_INHERIT,
+    rake_cap: RAKE_INHERIT,
     allow_straddle: true,
     allow_run_it_twice: true,
     allow_rabbit_hunt: true,
@@ -218,8 +219,8 @@ export default function ClubSettingsPage() {
           description: data.description || '',
           is_public: data.is_public ?? true,
           requires_approval: data.requires_approval ?? false,
-          default_rake_percent: data.default_rake_percent || 5,
-          rake_cap: data.rake_cap || 3,
+          default_rake_percent: data.default_rake_percent ?? RAKE_INHERIT,
+          rake_cap: data.rake_cap ?? RAKE_INHERIT,
           allow_straddle: data.allow_straddle ?? true,
           allow_run_it_twice: data.allow_run_it_twice ?? true,
           allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
@@ -232,8 +233,8 @@ export default function ClubSettingsPage() {
           description: data.description || '',
           is_public: data.is_public ?? true,
           requires_approval: data.requires_approval ?? false,
-          default_rake_percent: data.default_rake_percent || 5,
-          rake_cap: data.rake_cap || 3,
+          default_rake_percent: data.default_rake_percent ?? RAKE_INHERIT,
+          rake_cap: data.rake_cap ?? RAKE_INHERIT,
           allow_straddle: data.allow_straddle ?? true,
           allow_run_it_twice: data.allow_run_it_twice ?? true,
           allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
@@ -437,35 +438,70 @@ export default function ClubSettingsPage() {
         {/* Game Rules */}
         <section className="settings-section">
           <h3>Game Rules</h3>
+          {/* 2026-08-18: these two are real now. They used to persist to
+              clubs.default_rake_percent / clubs.rake_cap and be read by
+              nothing — the engine took 10% with a fixed cash cap whatever an
+              owner set here.
+
+              Empty = "Use the house schedule" and is stored as the -1 sentinel,
+              because 0 is a legitimate setting (a rake-free club) and could not
+              double as "unset". The clamp below is a courtesy: min/max on a
+              number input are only enforced by form validation, which does not
+              run here, so the previous handler happily saved 500. The real
+              guard is server-side in getFullRakeConfig, since any club admin
+              can UPDATE this row directly through RLS. */}
           <div className="form-group">
             <label>Default Rake (%)</label>
             <input
               type="number"
-              value={settings.default_rake_percent}
+              placeholder="Use house schedule"
+              value={settings.default_rake_percent < 0 ? '' : settings.default_rake_percent}
               onChange={(e) => {
+                if (e.target.value === '') {
+                  updateSetting('default_rake_percent', RAKE_INHERIT);
+                  return;
+                }
                 const val = parseFloat(e.target.value);
-                updateSetting('default_rake_percent', isNaN(val) ? 0 : val);
+                updateSetting(
+                  'default_rake_percent',
+                  isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_PERCENT, Math.max(0, val))
+                );
               }}
               min={0}
-              max={10}
+              max={MAX_RAKE_PERCENT}
               step={0.5}
               disabled={!isOwner}
             />
+            <small className="form-hint">
+              Leave blank to use the house schedule (10%). A club can take less, never more.
+            </small>
           </div>
           <div className="form-group">
             <label>Rake Cap (BB)</label>
             <input
               type="number"
-              value={settings.rake_cap}
+              placeholder="Use house schedule"
+              value={settings.rake_cap < 0 ? '' : settings.rake_cap}
               onChange={(e) => {
+                if (e.target.value === '') {
+                  updateSetting('rake_cap', RAKE_INHERIT);
+                  return;
+                }
                 const val = parseFloat(e.target.value);
-                updateSetting('rake_cap', isNaN(val) ? 0 : val);
+                updateSetting(
+                  'rake_cap',
+                  isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_CAP_BB, Math.max(0, val))
+                );
               }}
-              min={1}
-              max={10}
+              min={0}
+              max={MAX_RAKE_CAP_BB}
               step={0.5}
               disabled={!isOwner}
             />
+            <small className="form-hint">
+              Most that can be raked from one pot, in big blinds. Blank uses the house cap for each
+              stake ($3–$20 depending on blinds).
+            </small>
           </div>
           {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
               persisted to clubs.time_bank_seconds, which no engine code has

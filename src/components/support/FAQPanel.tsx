@@ -35,7 +35,8 @@ export const DEFAULT_FAQS: FAQItem[] = [
     id: '3',
     category: 'Game',
     question: 'How does Bad Beat Jackpot work?',
-    answer: 'If you lose with Quad 8s or better, you trigger the jackpot!',
+    answer:
+      'Lose a monster hand and win big! In Hold\u2019em, Aces full of Jacks or better must lose to Quads or better (both hole cards play). In Omaha games, Quad Kings or better must lose. When it hits, the loser gets 50% of the payout, the winner 25%, and everyone else dealt in splits the rest \u2014 credited straight to your table stack.',
   },
   {
     id: '4',

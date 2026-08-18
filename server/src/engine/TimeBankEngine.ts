@@ -146,8 +146,27 @@ export class TimeBankEngine {
 
   /**
    * Manually activate time bank for a player.
+   *
+   * @param extraCountdownSeconds ordinary turn clock the player still had left
+   *   when they pressed the button. The bank is granted ON TOP of that, so the
+   *   countdown armed here has to cover both.
+   *
+   *   The auto path leaves this 0: the primary timer has already expired, so
+   *   the bank allocation is the whole of the remaining time.
+   *
+   *   Before 2026-08-18 this parameter did not exist. The manual path armed a
+   *   bank-only countdown here while ServerTableEngineTurns armed a turn timer
+   *   for `remaining + bank`. Two deadlines under different keys on the same
+   *   PreciseActionTimer, both live — and the shorter one folded the player
+   *   while the clock on screen was still counting down. With 12s left and a
+   *   15s bank the display said 27s and the fold landed at 15s.
    */
-  activate(tableId: string, playerId: string, onExpire: () => void): boolean {
+  activate(
+    tableId: string,
+    playerId: string,
+    onExpire: () => void,
+    extraCountdownSeconds = 0
+  ): boolean {
     const key = `${tableId}:${playerId}`;
     const bank = this.playerBanks.get(key);
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
@@ -175,8 +194,11 @@ export class TimeBankEngine {
       totalRemaining: bank.remainingSeconds,
     });
 
-    // Use PreciseActionTimer for the countdown
-    this.preciseTimer.startTimer(tableId, `timebank:${playerId}`, useSeconds * 1000, () => {
+    // Use PreciseActionTimer for the countdown. It must span the caller's
+    // leftover turn clock as well as the bank, or it becomes a second, shorter
+    // deadline racing the turn timer.
+    const countdownSeconds = useSeconds + Math.max(0, extraCountdownSeconds);
+    this.preciseTimer.startTimer(tableId, `timebank:${playerId}`, countdownSeconds * 1000, () => {
       this.onTimeBankExpired(tableId, playerId);
     });
 

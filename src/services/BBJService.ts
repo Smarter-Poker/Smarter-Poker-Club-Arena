@@ -212,7 +212,21 @@ export const BBJService = {
     if (unionId) {
       query = query.eq('union_id', unionId);
     } else if (clubId) {
-      query = query.eq('club_id', await resolveClubUUID(clubId));
+      // UNION-FIX 2026-08-18: mirror the server's pool resolution — a club
+      // that belongs to a union banks its jackpot in the UNION pool, so a
+      // club_id-only lookup returned null (or a stale club pool) for every
+      // union club. Check the club's union first.
+      const clubUUID = await resolveClubUUID(clubId);
+      const { data: clubRow } = await supabase
+        .from('clubs')
+        .select('union_id')
+        .eq('id', clubUUID)
+        .maybeSingle();
+      if (clubRow?.union_id) {
+        query = query.eq('union_id', clubRow.union_id);
+      } else {
+        query = query.eq('club_id', clubUUID);
+      }
     } else {
       reportError('Must provide unionId or clubId', 'BBJService.getPool');
       return null;

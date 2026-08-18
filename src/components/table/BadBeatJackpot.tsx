@@ -15,7 +15,8 @@ import './BadBeatJackpot.css';
 export interface BadBeatJackpotProps {
   amount: number;
   currency?: string;
-  qualifyingHand: string; // e.g., "Quad 8s or better"
+  qualifyingHand: string; // per-variant rule, e.g. "Aces full of Jacks or better must lose to Quads or better"
+  subText?: string; // hole-card requirement line, per variant
   isHit?: boolean; // Trigger for the hit animation
   onClaimed?: () => void;
 }
@@ -24,6 +25,7 @@ export function BadBeatJackpot({
   amount,
   currency = '',
   qualifyingHand,
+  subText = 'Both hole cards must play.',
   isHit = false,
 }: BadBeatJackpotProps) {
   const [showInfo, setShowInfo] = useState(false);
@@ -54,10 +56,13 @@ export function BadBeatJackpot({
   return (
     <>
       {/* Table Widget */}
+      {/* BBJ-UX 2026-08-18: hover-only popover was unreachable on touch
+          devices (the primary client at 375px). Tap now toggles it too. */}
       <div
         className="bbj-widget"
         onMouseEnter={() => setShowInfo(true)}
         onMouseLeave={() => setShowInfo(false)}
+        onClick={() => setShowInfo((v) => !v)}
       >
         <div className="bbj-widget__label">BAD BEAT JACKPOT</div>
         <div className="bbj-widget__amount">
@@ -80,7 +85,7 @@ export function BadBeatJackpot({
           <div className="bbj-info">
             <h4 className="bbj-info__title">Qualifying Hand</h4>
             <p className="bbj-info__rule">{qualifyingHand}</p>
-            <p className="bbj-info__sub">Both hole cards must play.</p>
+            {subText && <p className="bbj-info__sub">{subText}</p>}
           </div>
         )}
       </div>

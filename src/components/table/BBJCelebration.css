@@ -143,6 +143,20 @@
   opacity: 0.8;
 }
 
+/* Per-variant qualifying rule under the title (2026-08-18) */
+.bbj-title-qualifier {
+  font-size: 13px;
+  color: #ffe4b5;
+  letter-spacing: 1px;
+  margin-top: 8px;
+  padding: 4px 14px;
+  border: 1px solid rgba(255, 215, 0, 0.45);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  display: inline-block;
+  max-width: 90vw;
+}
+
 /* ── Amount ── */
 .bbj-amount {
   text-align: center;

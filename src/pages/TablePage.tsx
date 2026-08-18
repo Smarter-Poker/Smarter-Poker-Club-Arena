@@ -141,7 +141,6 @@ import FoldProtectionDialog from '../components/table/FoldProtectionDialog';
 // Phase 2 T2-02 (spec §5.7): Always-visible timebank counter (bottom-left).
 import TimebankCounter from '../components/table/TimebankCounter';
 import { sessionStatsService } from '../services/SessionStatsService';
-import { BBJService } from '../services/BBJService';
 import RabbitHunt from '../components/table/RabbitHunt';
 import LeaderboardPanel from '../components/table/LeaderboardPanel';
 import HandNotation from '../components/table/HandNotation';
@@ -1539,6 +1538,7 @@ export default function TablePage({
     tableShare: number;
     perPlayerShare: number;
     tablePlayerCount: number;
+    qualifyingLabel: string;
   } | null>(null);
 
   // Q3: Auto-set "Playing At" status for friends to see
@@ -1914,29 +1914,70 @@ export default function TablePage({
     }
   };
 
-  // Load BBJ pool data
+  // Load BBJ pool data — union-aware + LIVE (2026-08-18).
+  // Two fixes over the old one-shot load:
+  //  1. Union clubs bank the jackpot in the UNION pool (server checks union
+  //     first) — the old clubId-only lookup showed those tables a permanent $0.
+  //  2. The banner now subscribes to the pool row, so every hand's contribution
+  //     ticks the jackpot up live at the table, and it resets after a hit
+  //     without a page reload.
   useEffect(() => {
-    const loadBBJPool = async () => {
-      if (!tableId) return;
+    if (!tableId) return;
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
+    const loadBBJPool = async () => {
       try {
-        // Get BBJ pool — fetch the actual club_id from the table record
         const { data: tableData } = await supabase
           .from('tables')
           .select('club_id')
           .eq('id', tableId)
           .maybeSingle();
-        const actualClubId = tableData?.club_id || tableId;
-        const pool = await BBJService.getPool({ clubId: actualClubId });
-        if (pool && isMounted.current) {
-          setBbjAmount(pool.main_balance);
-        }
+        const actualClubId = tableData?.club_id;
+        if (!actualClubId || cancelled) return;
+
+        // Mirror the server's pool resolution: union-level first, then club.
+        const { data: club } = await supabase
+          .from('clubs')
+          .select('union_id')
+          .eq('id', actualClubId)
+          .maybeSingle();
+        if (cancelled) return;
+
+        let poolQuery = supabase
+          .from('bbj_pools')
+          .select('id, main_balance')
+          .eq('status', 'active');
+        poolQuery = club?.union_id
+          ? poolQuery.eq('union_id', club.union_id)
+          : poolQuery.eq('club_id', actualClubId);
+        const { data: pool } = await poolQuery.maybeSingle();
+        if (!pool || cancelled || !isMounted.current) return;
+
+        setBbjAmount(Number(pool.main_balance) || 0);
+
+        channel = supabase
+          .channel(`bbj-pool-${pool.id}-${tableId}`)
+          .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'bbj_pools', filter: `id=eq.${pool.id}` },
+            (payload) => {
+              const next = (payload.new as { main_balance?: number | string })?.main_balance;
+              const parsed = Number(next);
+              if (Number.isFinite(parsed) && isMounted.current) setBbjAmount(parsed);
+            }
+          )
+          .subscribe();
       } catch (error) {
         console.debug('Error loading BBJ pool:', error);
       }
     };
 
     loadBBJPool();
+    return () => {
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [tableId]);
 
   // Rabbit Hunt state
@@ -3010,6 +3051,9 @@ export default function TablePage({
             tableShare: tblShare,
             perPlayerShare: perPlayer,
             tablePlayerCount: tablePlayerIds.length,
+            // Per-variant qualifying rule from the server bbj_hit event —
+            // shown in the celebration so players see WHAT hit (2026-08-18).
+            qualifyingLabel: hitData?.qualifyingHandLabel || '',
           });
 
           // NOW trigger the HUD hit animation + full celebration overlay

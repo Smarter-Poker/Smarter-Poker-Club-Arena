@@ -259,13 +259,15 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     handRank: 'straight_flush',
     minRankValue: '87654',
   },
+  // BBJ-SYNC 2026-08-18: server (the authority that actually detects hits)
+  // marks PLO6 ineligible — this entry used to advertise an 8-high SF rule the
+  // engine never pays. Synced to match server/src/config/RakeConfig.ts.
   plo6: {
     label: 'PLO6',
-    minLosingHand: '87654',
-    description: 'Straight Flush (8-high) or better must LOSE',
-    rules: ['Must use exactly 2 cards from hand'],
-    handRank: 'straight_flush',
-    minRankValue: '87654',
+    minLosingHand: null,
+    description: 'BBJ not available for PLO6',
+    rules: [],
+    eligible: false,
   },
   short_deck: {
     label: 'Short Deck',
@@ -275,6 +277,78 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     eligible: false,
   },
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BBJ TABLE-WIDGET LABELS (2026-08-18)
+// ═══════════════════════════════════════════════════════════════════════════════
+// The on-table jackpot widget used to hardcode "Quad 8s or better" — wrong for
+// every variant we spread (NLH is Aces full of Jacks losing to Quads+). These
+// helpers turn whatever gameType string the table state carries (short variant
+// keys like 'plo4' OR display names like "No Limit Hold'em") into the correct
+// per-variant qualifying text.
+
+/** Normalize a gameType string (variant key or display name) to a BBJ_QUALIFYING_HANDS key. */
+export function normalizeVariantKey(gameType: string | null | undefined): string {
+  const raw = String(gameType || 'nlh')
+    .toLowerCase()
+    .trim();
+  if (BBJ_QUALIFYING_HANDS[raw]) return raw;
+  if (raw.includes('short')) return 'short_deck';
+  if (raw.includes('omaha') || raw.startsWith('plo') || raw.startsWith('flo')) {
+    if (raw.includes('hi-lo') || raw.includes('hilo') || raw.includes('8 or better')) return 'plo8';
+    const m = raw.match(/[4568]/);
+    if (m) {
+      const key = 'plo' + m[0];
+      if (BBJ_QUALIFYING_HANDS[key]) return key;
+    }
+    return 'plo4';
+  }
+  // Hold'em display names ("No Limit Hold'em", "Fixed Limit Hold'em") + unknowns
+  if (raw.includes('fixed limit')) return 'flh';
+  return 'nlh';
+}
+
+export interface BBJWidgetInfo {
+  eligible: boolean;
+  /** One-line qualifying rule for the widget popover. */
+  shortLabel: string;
+  /** Hole-card requirement line under the rule. */
+  subLabel: string;
+  variantLabel: string;
+}
+
+const BBJ_SHORT_LABELS: Record<string, string> = {
+  nlh: 'Aces full of Jacks or better must lose to Quads or better',
+  flh: 'Aces full of Jacks or better must lose to Quads or better',
+  plo4: 'Quad Kings or better must lose',
+  plo: 'Quad Kings or better must lose',
+  plo8: 'Quad Kings or better must lose (high hand only)',
+  plo_hilo: 'Quad Kings or better must lose (high hand only)',
+  plo5: '8-high Straight Flush or better must lose',
+};
+
+/** Per-variant info for the on-table BBJ widget. */
+export function getBBJQualifyingInfo(gameType: string | null | undefined): BBJWidgetInfo {
+  const key = normalizeVariantKey(gameType);
+  const q = BBJ_QUALIFYING_HANDS[key] || BBJ_QUALIFYING_HANDS.nlh;
+  if (q.eligible === false) {
+    return {
+      eligible: false,
+      shortLabel: 'Bad Beat Jackpot not available for ' + q.label,
+      subLabel: '',
+      variantLabel: q.label,
+    };
+  }
+  const isOmaha = key.startsWith('plo');
+  return {
+    eligible: true,
+    shortLabel: BBJ_SHORT_LABELS[key] || q.description,
+    subLabel: isOmaha
+      ? 'Exactly two hole cards must play (both players).'
+      : 'Both hole cards must play (with an Ace for the full house).',
+    variantLabel: q.label,
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BBJ GENERAL RULES

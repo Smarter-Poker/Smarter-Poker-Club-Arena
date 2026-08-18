@@ -65,6 +65,7 @@ export async function logBBJCollection(
         .from('bbj_pools')
         .select('id, main_balance')
         .eq('id', cached.poolId)
+        .eq('status', 'active') // HARDEN 2026-08-18: never bank into a retired pool
         .maybeSingle();
       pool = cachedPool;
       if (!pool) bbjPoolCache.delete(clubId); // pool vanished — fall through
@@ -84,7 +85,10 @@ export async function logBBJCollection(
       }
 
       // Look up pool: union-level first, then club-level — include main_balance for pivot check
-      let poolQuery = supabase.from('bbj_pools').select('id, main_balance');
+      // HARDEN 2026-08-18: status='active' — the column is NOT NULL DEFAULT
+      // 'active' (verified in production), so this only excludes pools an
+      // admin has deliberately retired.
+      let poolQuery = supabase.from('bbj_pools').select('id, main_balance').eq('status', 'active');
       if (club.union_id) {
         poolQuery = poolQuery.eq('union_id', club.union_id);
       } else {
@@ -112,8 +116,20 @@ export async function logBBJCollection(
         .eq('id', clubId)
         .maybeSingle();
       const insertPayload = clubRow?.union_id
-        ? { union_id: clubRow.union_id, main_balance: 0, backup_balance: 0, promo_balance: 0 }
-        : { club_id: clubId, main_balance: 0, backup_balance: 0, promo_balance: 0 };
+        ? {
+            union_id: clubRow.union_id,
+            main_balance: 0,
+            backup_balance: 0,
+            promo_balance: 0,
+            status: 'active',
+          }
+        : {
+            club_id: clubId,
+            main_balance: 0,
+            backup_balance: 0,
+            promo_balance: 0,
+            status: 'active',
+          };
       const { data: newPool, error: createErr } = await supabase
         .from('bbj_pools')
         .insert(insertPayload)
@@ -282,7 +298,11 @@ export async function processBBJPayout(params: {
     }
 
     // 2. Find the BBJ pool (union-level first, then club-level)
-    let poolQuery = supabase.from('bbj_pools').select('id, main_balance, backup_balance');
+    // HARDEN 2026-08-18: only an active pool can pay (matches collection path).
+    let poolQuery = supabase
+      .from('bbj_pools')
+      .select('id, main_balance, backup_balance')
+      .eq('status', 'active');
     if (club.union_id) {
       poolQuery = poolQuery.eq('union_id', club.union_id);
     } else {

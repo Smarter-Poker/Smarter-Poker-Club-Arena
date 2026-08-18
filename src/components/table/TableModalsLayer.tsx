@@ -18,6 +18,7 @@ import WaitListModal from './WaitListModal';
 import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
 import { RunItTwicePrompt, RunItTwiceResult, type RitResultData } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
+import { getBBJQualifyingInfo } from '../../config/RakeConfig';
 import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
 import type { ThrowEvent } from '../../services/ThrowableService';
@@ -174,6 +175,7 @@ export interface TableModalsLayerProps {
     tableShare: number;
     perPlayerShare: number;
     tablePlayerCount: number;
+    qualifyingLabel?: string;
   } | null;
   onBBJCelebrationComplete: () => void;
 
@@ -540,6 +542,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     navigate,
   } = props;
 
+  // Per-variant BBJ qualifying rule for the table widget (2026-08-18).
+  const bbjInfo = getBBJQualifyingInfo(gameType);
+
   return (
     <>
       {/* Player Notes Modal */}
@@ -683,8 +688,17 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onClose={onRitResultClose}
       />
 
-      {/* Bad Beat Jackpot Display */}
-      <BadBeatJackpot amount={bbjAmount} qualifyingHand="Quad 8s or better" isHit={showBBJ} />
+      {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).
+          Hidden entirely for variants the server never pays (PLO6, Short Deck):
+          advertising a jackpot that cannot hit is worse than no banner. */}
+      {bbjInfo.eligible && (
+        <BadBeatJackpot
+          amount={bbjAmount}
+          qualifyingHand={bbjInfo.shortLabel}
+          subText={bbjInfo.subLabel}
+          isHit={showBBJ}
+        />
+      )}
 
       {/* BBJ Celebration Overlay */}
       {bbjCelebrationData && (
@@ -696,6 +710,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           tableShare={bbjCelebrationData.tableShare}
           perPlayerShare={bbjCelebrationData.perPlayerShare}
           tablePlayerCount={bbjCelebrationData.tablePlayerCount}
+          qualifyingLabel={bbjCelebrationData.qualifyingLabel}
           onComplete={onBBJCelebrationComplete}
         />
       )}

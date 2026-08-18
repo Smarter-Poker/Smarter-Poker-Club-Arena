@@ -33,6 +33,8 @@ export interface BBJCelebrationProps {
   tableShare: number;
   perPlayerShare: number;
   tablePlayerCount: number;
+  /** Per-variant qualifying rule from the server bbj_hit event (2026-08-18). */
+  qualifyingLabel?: string;
   onComplete?: () => void;
 }
 
@@ -61,6 +63,25 @@ const FADE_START = 8000; // Start fading at 8s
 const PARTICLE_COUNT = 300;
 const FIREWORK_ROUNDS = 5;
 
+// PERF 2026-08-18: 300 shadow-blurred particles at 1x resolution looked soft on
+// retina and chugged on low-end phones. Particle budget now scales with the
+// viewport (a 375px phone gets ~40% of the desktop budget) and the canvas
+// renders at devicePixelRatio (capped at 2 — 3x retina buys nothing visible
+// and triples the pixel work).
+function particleScale(): number {
+  if (typeof window === 'undefined') return 1;
+  const area = window.innerWidth * window.innerHeight;
+  return Math.max(0.35, Math.min(1, area / (1280 * 800)));
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
 const GOLD_COLORS = ['#FFD700', '#FFA500', '#FFEC8B', '#DAA520', '#F5DEB3', '#FFE4B5'];
 const DIAMOND_COLORS = ['#B9F2FF', '#E0FFFF', '#87CEEB', '#ADD8E6', '#F0F8FF', '#FFFFFF'];
 const CONFETTI_COLORS = [
@@ -86,6 +107,7 @@ export function BBJCelebration({
   tableShare,
   perPlayerShare,
   tablePlayerCount,
+  qualifyingLabel,
   onComplete,
 }: BBJCelebrationProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -188,24 +210,37 @@ export function BBJCelebration({
   // ── Canvas animation loop ──
   useEffect(() => {
     if (!visible || !canvasRef.current) return;
+    // ACCESSIBILITY 2026-08-18: honor prefers-reduced-motion — skip the
+    // particle storm entirely; the static overlay still shows every number.
+    if (prefersReducedMotion()) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas to full screen
+    // Retina-sharp canvas: render at devicePixelRatio, lay out at CSS pixels.
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let viewW = window.innerWidth;
+    let viewH = window.innerHeight;
     const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      viewW = window.innerWidth;
+      viewH = window.innerHeight;
+      canvas.width = Math.round(viewW * dpr);
+      canvas.height = Math.round(viewH * dpr);
+      canvas.style.width = viewW + 'px';
+      canvas.style.height = viewH + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
     window.addEventListener('resize', resize);
 
+    const scale = particleScale();
+
     // Initial explosion
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    spawnExplosion(cx, cy, PARTICLE_COUNT, 'chip');
-    spawnExplosion(cx, cy, 100, 'spark');
+    const cx = viewW / 2;
+    const cy = viewH / 2;
+    spawnExplosion(cx, cy, Math.round(PARTICLE_COUNT * scale), 'chip');
+    spawnExplosion(cx, cy, Math.round(100 * scale), 'spark');
 
     // Delayed firework rounds
     const fireworkTimers: ReturnType<typeof setTimeout>[] = [];
@@ -213,9 +248,9 @@ export function BBJCelebration({
       fireworkTimers.push(
         setTimeout(
           () => {
-            const fx = 100 + Math.random() * (canvas.width - 200);
-            const fy = 100 + Math.random() * (canvas.height * 0.5);
-            spawnExplosion(fx, fy, 60, 'firework');
+            const fx = 60 + Math.random() * Math.max(60, viewW - 120);
+            const fy = 80 + Math.random() * (viewH * 0.5);
+            spawnExplosion(fx, fy, Math.round(60 * scale), 'firework');
           },
           1000 + r * 1200
         )
@@ -223,17 +258,18 @@ export function BBJCelebration({
     }
 
     // Continuous confetti rain
+    const confettiRate = Math.max(2, Math.round(5 * scale));
     const confettiInterval = setInterval(() => {
       const elapsed = Date.now() - startTimeRef.current;
       if (elapsed > FADE_START) return;
-      for (let i = 0; i < 5; i++) {
-        spawnExplosion(Math.random() * canvas.width, -20, 1, 'confetti');
+      for (let i = 0; i < confettiRate; i++) {
+        spawnExplosion(Math.random() * viewW, -20, 1, 'confetti');
       }
     }, 100);
 
     // Render loop
     const render = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, viewW, viewH);
 
       const particles = particlesRef.current;
       for (let i = particles.length - 1; i >= 0; i--) {
@@ -342,6 +378,7 @@ export function BBJCelebration({
           <div className="bbj-title-crown">&#x1F451;</div>
           <h1 className="bbj-title-text">BAD BEAT JACKPOT!</h1>
           <div className="bbj-title-subtitle">JACKPOT HIT!</div>
+          {qualifyingLabel && <div className="bbj-title-qualifier">{qualifyingLabel}</div>}
         </div>
 
         {/* Total Amount */}

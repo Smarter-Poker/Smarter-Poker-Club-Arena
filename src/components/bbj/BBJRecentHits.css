@@ -226,3 +226,66 @@
     animation: none;
   }
 }
+
+/* ── The showdown: real cards (2026-08-18) ─────────────────────────────────
+   Stacks on phones, sits in a row from 420px. Card sizing comes from
+   CardImage's own 'sm' preset so the deck matches the table exactly. */
+
+.bbj-hits__showdown {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 8px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bbj-hits__hand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bbj-hits__hand-label {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  overflow-wrap: anywhere;
+}
+
+.bbj-hits__hand--badbeat .bbj-hits__hand-label {
+  color: #ffd700;
+  font-weight: 700;
+}
+
+.bbj-hits__hand--board .bbj-hits__hand-label {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.bbj-hits__cards {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+/* The bad-beat hand is the story — lift it above the rest. */
+.bbj-hits__hand--badbeat .bbj-hits__cards {
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.45));
+}
+
+@media (min-width: 420px) {
+  .bbj-hits__showdown {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .bbj-hits__hand--board {
+    margin-left: auto;
+  }
+}

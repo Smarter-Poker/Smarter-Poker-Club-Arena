@@ -17,6 +17,8 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import CardImage from '../table/CardImage';
+import type { Card as DeckCard } from '../table/CardImage';
 import { reportError } from '../../utils/errorReporter';
 import './BBJRecentHits.css';
 
@@ -33,6 +35,12 @@ interface Recipient {
   role: 'bad_beat' | 'hand_winner' | 'table';
 }
 
+/** Card as stored in hand_history: full suit names, rank 2-9/T/J/Q/K/A. */
+interface HistoryCard {
+  rank: string;
+  suit: string;
+}
+
 interface Hit {
   payout_id: string;
   awarded_at: string;
@@ -41,11 +49,40 @@ interface Hit {
   bad_beat_name: string;
   bad_beat_hand: string | null;
   bad_beat_amount: number | null;
+  bad_beat_cards: HistoryCard[] | null;
   hand_winner_name: string;
   hand_winner_hand: string | null;
   hand_winner_amount: number | null;
+  hand_winner_cards: HistoryCard[] | null;
+  board: HistoryCard[] | null;
+  game_variant: string | null;
   table_player_count: number | null;
   recipients: Recipient[];
+}
+
+const SUIT_LETTER: Record<string, DeckCard['suit']> = {
+  hearts: 'h',
+  diamonds: 'd',
+  clubs: 'c',
+  spades: 's',
+};
+
+/**
+ * hand_history stores full suit names and uses 'T' for ten; CardImage wants a
+ * one-letter suit. Anything unrecognised is dropped rather than rendered as a
+ * broken card.
+ */
+function toDeckCards(cards: HistoryCard[] | null | undefined): DeckCard[] {
+  if (!Array.isArray(cards)) return [];
+  return cards
+    .map((c) => {
+      const suit = SUIT_LETTER[String(c?.suit || '').toLowerCase()];
+      const rank = String(c?.rank || '').toUpperCase();
+      const normRank = rank === '10' ? 'T' : rank;
+      if (!suit || !/^([2-9]|T|J|Q|K|A)$/.test(normRank)) return null;
+      return { rank: normRank as DeckCard['rank'], suit };
+    })
+    .filter((c): c is DeckCard => c !== null);
 }
 
 function money(n: number | null | undefined, dp = 2): string {
@@ -99,6 +136,9 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
         const rows = ((data || []) as Hit[]).map((h) => ({
           ...h,
           recipients: Array.isArray(h.recipients) ? h.recipients : [],
+          board: Array.isArray(h.board) ? h.board : [],
+          bad_beat_cards: Array.isArray(h.bad_beat_cards) ? h.bad_beat_cards : null,
+          hand_winner_cards: Array.isArray(h.hand_winner_cards) ? h.hand_winner_cards : null,
         }));
         setHits(rows);
         // Open the most recent hit by default — the one people came to see.
@@ -146,6 +186,9 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
     <div className="bbj-hits">
       {hits.map((hit) => {
         const isOpen = expanded === hit.payout_id;
+        const badBeatCards = toDeckCards(hit.bad_beat_cards);
+        const handWinnerCards = toDeckCards(hit.hand_winner_cards);
+        const boardCards = toDeckCards(hit.board);
         return (
           <div className={`bbj-hits__card${isOpen ? ' is-open' : ''}`} key={hit.payout_id}>
             <button
@@ -174,6 +217,53 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
 
             {isOpen && (
               <div className="bbj-hits__body">
+                {/* THE HAND — real Club Arena cards (2026-08-18). Hole-card
+                    coverage in history is partial, so each side renders only
+                    when we actually have its cards; the board almost always
+                    resolves and carries the story on its own. */}
+                {(badBeatCards.length > 0 ||
+                  handWinnerCards.length > 0 ||
+                  boardCards.length > 0) && (
+                  <div className="bbj-hits__showdown">
+                    {badBeatCards.length > 0 && (
+                      <div className="bbj-hits__hand bbj-hits__hand--badbeat">
+                        <span className="bbj-hits__hand-label">
+                          {hit.bad_beat_name} &middot; bad beat
+                        </span>
+                        <div className="bbj-hits__cards">
+                          {badBeatCards.map((c, i) => (
+                            <CardImage key={`bb-${i}`} card={c} size="sm" />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {handWinnerCards.length > 0 && (
+                      <div className="bbj-hits__hand">
+                        <span className="bbj-hits__hand-label">
+                          {hit.hand_winner_name} &middot; won the hand
+                        </span>
+                        <div className="bbj-hits__cards">
+                          {handWinnerCards.map((c, i) => (
+                            <CardImage key={`hw-${i}`} card={c} size="sm" />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {boardCards.length > 0 && (
+                      <div className="bbj-hits__hand bbj-hits__hand--board">
+                        <span className="bbj-hits__hand-label">Board</span>
+                        <div className="bbj-hits__cards">
+                          {boardCards.map((c, i) => (
+                            <CardImage key={`b-${i}`} card={c} size="sm" />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="bbj-hits__payouts">
                   {hit.recipients.map((r, i) => {
                     const isYou =

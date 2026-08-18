@@ -127,6 +127,18 @@ describe('RIT money path — 2 runs, heads-up', () => {
     }
     // Board-0 winner leads the id list (BBJ reads index 0).
     expect((e.currentHandWinnerIds as string[]).length).toBeGreaterThan(0);
+
+    // HAND HISTORY: board 0 recorded as the hand's community cards, and the
+    // second runout appended to the action log (was: no board at all).
+    expect((e.currentHandCommunityCards as string[]).length).toBe(5);
+    const ritActions = (e.currentHandActions as Array<{ action: string }>).filter((a) =>
+      a.action.startsWith('rit_board_')
+    );
+    expect(ritActions.length).toBe(1); // runs=2 → one extra board
+    // Card format matches the engine's rank+suit strings (e.g. 'Ahearts').
+    expect(ritActions[0].action).toMatch(
+      /^rit_board_2:([2-9TJQKA10]{1,2}(hearts|diamonds|clubs|spades),){4}[2-9TJQKA10]{1,2}(hearts|diamonds|clubs|spades)$/
+    );
   });
 });
 
@@ -142,6 +154,12 @@ describe('RIT money path — 3 runs, heads-up', () => {
     const winners = e.currentHandWinners as Array<{ userId: string; amount: number }>;
     const paid = winners.reduce((s, w) => s + w.amount, 0);
     expect(paid).toBeCloseTo(totalBuyin - 52.5, 2);
+
+    // runs=3 → boards 2 and 3 appended to the action log.
+    const ritActions = (e.currentHandActions as Array<{ action: string }>).filter((a) =>
+      a.action.startsWith('rit_board_')
+    );
+    expect(ritActions.length).toBe(2);
   });
 });
 

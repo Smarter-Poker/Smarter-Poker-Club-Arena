@@ -533,6 +533,23 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       boards.push([...existingBoard, ...runCards]);
     }
 
+    // HAND HISTORY 2026-08-18: these boards are built OUTSIDE HandController,
+    // so no COMMUNITY_CARDS events fire and currentHandCommunityCards stays
+    // at the pre-all-in board - a preflop all-in RIT hand recorded NO board
+    // at all. Record board 0 (the canonical, BBJ-eligible board) as the
+    // hand's community cards and append each extra runout to the action log,
+    // so the full multi-board hand is reconstructable from the record.
+    this.currentHandCommunityCards = boards[0].map((c) => `${c.rank}${c.suit}`);
+    for (let b = 1; b < boards.length; b++) {
+      this.currentHandActions.push({
+        seat: 0,
+        userId: 'system',
+        action: 'rit_board_' + (b + 1) + ':' + boards[b].map((c) => `${c.rank}${c.suit}`).join(','),
+        stage: 'river',
+        timestamp: Date.now(),
+      });
+    }
+
     // AUDIT FIX 2026-07-19: RIT previously read getPots() — which is `[]` until
     // completeHand() runs (after RIT) — so NOBODY was paid and the whole pot was
     // destroyed; it also distributed the full pot with NO rake while

@@ -216,3 +216,53 @@ describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () =
     expect(r.strictLossPct).toBeCloseTo(100 - r.equity, 1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DAN'S RULES (2026-08-18): "insurance is only allowed for running it once;
+// if the pot is chopped, insurance is voided." Every chop shape pinned.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('settlement — chop shapes (Dan: chopped pot voids insurance)', () => {
+  let e: InsuranceEngine;
+  beforeEach(() => {
+    e = mkEngine();
+  });
+
+  it('leader ties for the pot (chop) => VOID: no premium, no payout', () => {
+    offerLeader(e);
+    expect(e.accept('t1', LEADER)).toBe(true);
+    const settlements = e.settle('t1', [LEADER, OPP]); // chopped pot
+    expect(settlements).toHaveLength(1);
+    const s = settlements[0];
+    expect(s.premium).toBe(0); // refunded — the contract voids
+    expect(s.payout).toBe(0);
+    expect(s.won).toBe(false);
+  });
+
+  it('two OTHER players chop while the leader loses => insurance PAYS', () => {
+    const offers = offerLeader(e);
+    expect(e.accept('t1', LEADER)).toBe(true);
+    // Multi-winner hand that does NOT include the insured leader: the leader
+    // genuinely lost their stake — the void rule is about the LEADER sharing
+    // a pot, not about any chop anywhere on the table.
+    const settlements = e.settle('t1', ['someone-else', 'another-player']);
+    const s = settlements[0];
+    expect(s.won).toBe(true);
+    expect(s.payout).toBe(offers[0].insuredAmount);
+    expect(s.premium).toBeGreaterThan(0);
+  });
+
+  it('leader among MULTIPLE winners (e.g. side-pot split) => VOID, never double-paid', () => {
+    // Pinned conservative semantics: if the insured leader is among the
+    // winners of ANY pot in a multi-winner hand, the contract voids —
+    // premium refunded, no payout. The house never pays a player who
+    // walked away with chips, and the player is never charged for
+    // coverage that resolved ambiguously.
+    offerLeader(e);
+    expect(e.accept('t1', LEADER)).toBe(true);
+    const settlements = e.settle('t1', [OPP, LEADER]);
+    const s = settlements[0];
+    expect(s.premium).toBe(0);
+    expect(s.payout).toBe(0);
+    expect(s.won).toBe(false);
+  });
+});

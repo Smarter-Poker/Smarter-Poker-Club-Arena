@@ -731,7 +731,18 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * otherwise falls back to the synchronous EXACT enumeration (insuranceEquity),
    * keeping money-pricing accuracy in the degraded mode.
    */
-  protected async computeInsuranceLeaderEquity(
+  /**
+   * PRICING FIX 2026-08-18: insurance is priced by EXACT enumeration against
+   * the KNOWN all-in hands (InsuranceEquity), returning the contract's real
+   * outcome probabilities (pot-share equity for display, strict-loss and
+   * push for the premium). The Monte-Carlo worker (2000 ties-split
+   * iterations) that used to feed pricing was both noisy (~1% stderr) and
+   * blind to the push rule; it remains in use for the on-screen equity
+   * broadcast only. The enumeration is cheap on the loop now: flop/turn are
+   * exact (<=990 boards) and preflop samples 6,000 boards with a seeded
+   * PRNG - the CSPRNG syscall storm that motivated the worker is gone.
+   */
+  protected computeInsurancePricing(
     leaderId: string,
     allInForOffer: Array<{
       playerId: string;
@@ -741,29 +752,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     board: import('../types.js').Card[],
     variant: string,
     shortDeck: boolean
-  ): Promise<number> {
+  ): { equity: number; strictLossPct: number; pushPct: number } | undefined {
     const leader = allInForOffer.find((p) => p.playerId === leaderId);
-    if (!leader) return 0;
+    if (!leader) return undefined;
     const opponents = allInForOffer.filter((p) => p.playerId !== leaderId).map((p) => p.holeCards);
-    if (opponents.length === 0) return 0;
-
-    const isOmaha = variant.startsWith('plo');
-    const pool = getEquityPool();
-    if (pool.isAvailable()) {
-      try {
-        const fractions = await pool.estimateEquity(
-          [leader.holeCards, ...opponents],
-          board,
-          [],
-          2000,
-          { shortDeck, omaha: isOmaha }
-        );
-        return Math.round(fractions[0] * 1000) / 10; // fraction -> % (1 dp)
-      } catch {
-        /* fall through to exact synchronous pricing */
-      }
-    }
-    return insuranceEquity(leader.holeCards, opponents, board, variant, shortDeck).equity;
+    if (opponents.length === 0) return undefined;
+    const r = insuranceEquity(leader.holeCards, opponents, board, variant, shortDeck);
+    return { equity: r.equity, strictLossPct: r.strictLossPct, pushPct: r.pushPct };
   }
 
   protected async broadcastAllInEquity(
@@ -910,9 +905,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // PERF FIX (2026-07-24): precompute the leader's insurance equity OFF the
     // event loop (EquityWorkerPool), once per street, then hand it to
     // createOffers so the heavy board enumeration never blocks the main loop.
-    let leaderEquityPct: number | undefined;
+    let leaderPricing: { equity: number; strictLossPct: number; pushPct: number } | undefined;
     if (bestHandPlayer) {
-      leaderEquityPct = await this.computeInsuranceLeaderEquity(
+      leaderPricing = this.computeInsurancePricing(
         bestHandPlayer.playerId,
         allInForOffer,
         result.board,
@@ -936,11 +931,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           pot,
           variant,
           isShortDeckInsurance,
-          leaderEquityPct
+          leaderPricing
         );
 
         if (offers.length > 0) {
           this.broadcastInsuranceOffers(offers, pot, offerTimeout);
+          this.scheduleHorseInsuranceResponse(bestHandPlayer.playerId);
         }
       } else {
         console.log(
@@ -970,11 +966,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             pot,
             variant,
             isShortDeckInsurance,
-            leaderEquityPct
+            leaderPricing
           );
 
           if (offers.length > 0) {
             this.broadcastInsuranceOffers(offers, pot, offerTimeout);
+            this.scheduleHorseInsuranceResponse(bestHandPlayer.playerId);
           }
         }
       } else {
@@ -1062,6 +1059,37 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * Poll for all insurance responses to be resolved (accepted/declined/timed out).
    * Once all responded, invoke the callback to continue the hand.
    */
+  /**
+   * HORSE INSURANCE RESPONSE 2026-08-18: horses never answered
+   * insurance_offers, so a horse leader let every offer run its full 15s
+   * timeout - and the per-street flow re-offers each street, so an
+   * insurance-enabled table with horses would stall up to ~45s per all-in
+   * hand. A horse leader declines FOR THE HAND after ~1s: the pause
+   * collapses to an instant runout and the table keeps its pace. Horses do
+   * not buy insurance - the premium's house edge is a pure EV loss and
+   * horse chips are house chips anyway.
+   */
+  protected scheduleHorseInsuranceResponse(leaderId: string): void {
+    const seated = this.seatedPlayers.find((p) => p.user_id === leaderId);
+    if (!seated?.is_horse) return;
+    const handAtOffer = this.handCount;
+    setTimeout(
+      () => {
+        if (!this.running || this.handCount !== handAtOffer) return;
+        const offer = this.insuranceEngine
+          .getOffers(this.tableId)
+          .find((o) => o.playerId === leaderId && o.status === 'offered');
+        if (!offer) return;
+        try {
+          this.respondToInsurance(leaderId, 'decline', 100, true);
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_insurance_response');
+        }
+      },
+      900 + (this.handCount % 4) * 150
+    );
+  }
+
   protected waitForInsuranceResponses(onComplete: () => void): void {
     let completed = false;
     const controllerAtOffer = this.handController;

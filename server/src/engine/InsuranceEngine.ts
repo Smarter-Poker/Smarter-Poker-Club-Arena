@@ -157,9 +157,11 @@ export class InsuranceEngine {
     pot: number,
     variant: string,
     shortDeck: boolean = false,
-    // PERF FIX (2026-07-24): the heavy remaining-board enumeration is computed
-    // OFF the event loop by the caller (EquityWorkerPool) and passed in here.
-    precomputedEquity?: number
+    // PRICING FIX 2026-08-18: callers may pass the full outcome components
+    // (pot-share equity + strict-loss + push probabilities). A bare number is
+    // still accepted for backward compatibility and treated as pot-share
+    // equity with no push information.
+    precomputed?: number | { equity: number; strictLossPct: number; pushPct: number }
   ): InsuranceOffer[] {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     if (!config.enabled || pot < config.minPotForInsurance) return [];
@@ -191,10 +193,30 @@ export class InsuranceEngine {
     // PERF FIX (2026-07-24): use the equity precomputed off the event loop when
     // supplied; only fall back to the synchronous exact enumeration (which blocks
     // the loop) when the worker pool was unavailable.
-    const equity =
-      precomputedEquity ??
-      insuranceEquity(leader.holeCards, opponentHands, board, variant, shortDeck).equity;
-    const lossProbability = Math.max(0, Math.min(1, 1 - equity / 100));
+    // PRICING FIX 2026-08-18: price the CONTRACT, not the pot share.
+    // The contract's outcomes are: strict loss -> payout; leader wins alone
+    // -> premium kept; chop -> PUSH (premium refunded, FIX 118). The old
+    // premium used (1 - potShareEquity), which counts a chop partially as a
+    // loss even though a chop refunds the premium - overcharging every
+    // chop-prone spot on top of the house margin. Fair premium under the
+    // real terms is insured x P(strict loss | not push), then the margin.
+    let components: { equity: number; strictLossPct: number; pushPct: number };
+    if (typeof precomputed === 'object' && precomputed !== null) {
+      components = precomputed;
+    } else {
+      const r = insuranceEquity(leader.holeCards, opponentHands, board, variant, shortDeck);
+      components =
+        typeof precomputed === 'number'
+          ? { equity: precomputed, strictLossPct: r.strictLossPct, pushPct: r.pushPct }
+          : { equity: r.equity, strictLossPct: r.strictLossPct, pushPct: r.pushPct };
+    }
+    const equity = components.equity;
+    const pushFrac = Math.max(0, Math.min(1, components.pushPct / 100));
+    const lossFrac = Math.max(0, Math.min(1, components.strictLossPct / 100));
+    // A near-certain chop is uninsurable, and a leader who cannot strictly
+    // lose has nothing to insure - no offer in either case.
+    if (pushFrac >= 0.99 || lossFrac <= 0) return [];
+    const lossGivenNotPush = Math.min(1, lossFrac / (1 - pushFrac));
 
     // Insured amount = what the leader can actually LOSE (their own committed
     // chips this hand), capped by the max-insurable fraction of the pot.
@@ -203,7 +225,7 @@ export class InsuranceEngine {
     // Premium = fair cost x houseMargin. houseMargin 1.20 => a 20% edge banked by
     // the club/union. Player EV = payout*pLoss - premium = -(margin-1)*fair < 0.
     const fullPremium =
-      Math.round(fullInsuredAmount * lossProbability * config.houseMargin * 100) / 100;
+      Math.round(fullInsuredAmount * lossGivenNotPush * config.houseMargin * 100) / 100;
 
     if (fullInsuredAmount <= 0) return [];
 

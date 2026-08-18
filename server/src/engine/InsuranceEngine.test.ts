@@ -112,3 +112,107 @@ describe('InsuranceEngine.createOffers', () => {
     expect(kept[0].status).toBe('accepted');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRICING FIX 2026-08-18 — the premium prices the CONTRACT, not pot share.
+// Settlement pushes on a chop (FIX 118: premium refunded), so the fair
+// premium is insured x P(strict loss | not push) x margin. The old formula
+// used (1 - potShareEquity), which charged for chop probability the house
+// must refund - a near-pure chop priced at ~60% of the stake.
+// ═══════════════════════════════════════════════════════════════════════════
+import { insuranceEquity } from './InsuranceEquity.js';
+
+describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () => {
+  const c = (r: string, s2: string) => ({ rank: r, suit: s2 }) as never;
+
+  it('a guaranteed chop is uninsurable — no offer at all', () => {
+    const e = new InsuranceEngine();
+    e.configure('t1', { enabled: true, houseMargin: 1.2, offerTimeoutSeconds: 15 });
+    // Identical rank hole cards on a board neither can beat: every runout chops.
+    const offers = e.createOffers(
+      't1',
+      't1:1',
+      'L',
+      [
+        { playerId: 'L', holeCards: [c('2', 'clubs'), c('3', 'clubs')], atRisk: 100 },
+        { playerId: 'O', holeCards: [c('2', 'diamonds'), c('3', 'diamonds')], atRisk: 100 },
+      ],
+      [c('K', 'spades'), c('Q', 'spades'), c('J', 'hearts'), c('T', 'hearts')],
+      200,
+      'nlh'
+    );
+    expect(offers).toHaveLength(0);
+  });
+
+  it('a chop-dominated spot prices conditional on the hand being live (push refunds)', () => {
+    // AsKs vs AdKd, board 2d 7s 9c: each side has exactly ONE live suit
+    // (one board card of it) - runner-runner flush either way, ~91% chop.
+    // The contract refunds the premium on every chop, so the price is
+    // conditional on not-push: loss/(1-push) = a coinflip given live, and
+    // the premium is insured x 0.5 x 1.2 - NOT insured x (1 - potShare)
+    // blended over boards the house must refund.
+    const leaderCards = [c('A', 'spades'), c('K', 'spades')];
+    const oppCards = [c('A', 'diamonds'), c('K', 'diamonds')];
+    const board = [c('2', 'diamonds'), c('7', 'spades'), c('9', 'clubs')];
+
+    const r = insuranceEquity(leaderCards, [oppCards], board, 'nlh');
+    expect(r.exact).toBe(true);
+    expect(r.pushPct).toBeGreaterThan(88); // overwhelmingly a chop
+    expect(r.strictLossPct).toBeGreaterThan(3);
+    expect(r.strictLossPct).toBeLessThan(6);
+
+    const e = new InsuranceEngine();
+    e.configure('t1', { enabled: true, houseMargin: 1.2, offerTimeoutSeconds: 15 });
+    const offers = e.createOffers(
+      't1',
+      't1:1',
+      'L',
+      [
+        { playerId: 'L', holeCards: leaderCards, atRisk: 100 },
+        { playerId: 'O', holeCards: oppCards, atRisk: 100 },
+      ],
+      board,
+      200,
+      'nlh'
+    );
+    expect(offers).toHaveLength(1);
+    const premium = offers[0].fullPremium;
+    const expected = Math.round(100 * (r.strictLossPct / (100 - r.pushPct)) * 1.2 * 100) / 100;
+    expect(premium).toBeCloseTo(expected, 2);
+    // Symmetric live-suit spot: loss-given-not-push is a coinflip -> ~60.
+    expect(premium).toBeGreaterThan(55);
+    expect(premium).toBeLessThan(65);
+  });
+
+  it('a leader who cannot strictly lose gets no offer (free premium is not a product)', () => {
+    // Hero holds the ONLY possible flush (two hearts + two on board);
+    // identical ranks otherwise: hero wins on runner-runner hearts, chops
+    // everything else - strict loss probability is exactly zero.
+    const e = new InsuranceEngine();
+    e.configure('t1', { enabled: true, houseMargin: 1.2, offerTimeoutSeconds: 15 });
+    const offers = e.createOffers(
+      't1',
+      't1:1',
+      'L',
+      [
+        { playerId: 'L', holeCards: [c('A', 'hearts'), c('Q', 'hearts')], atRisk: 100 },
+        { playerId: 'O', holeCards: [c('A', 'spades'), c('Q', 'clubs')], atRisk: 100 },
+      ],
+      [c('2', 'hearts'), c('7', 'hearts'), c('9', 'diamonds')],
+      200,
+      'nlh'
+    );
+    expect(offers).toHaveLength(0);
+  });
+
+  it('with no ties, contract pricing equals the old pricing (regression anchor)', () => {
+    // Top set vs flush draw (the existing 37/44 spot): zero push probability,
+    // so strictLoss = 1 - equity and both formulas agree to the cent.
+    const leaderCards = [c('A', 'spades'), c('A', 'hearts')];
+    const oppCards = [c('7', 'clubs'), c('8', 'clubs')];
+    const board = [c('A', 'clubs'), c('K', 'clubs'), c('2', 'diamonds'), c('9', 'hearts')];
+    const r = insuranceEquity(leaderCards, [oppCards], board, 'nlh');
+    expect(r.pushPct).toBe(0);
+    expect(r.strictLossPct).toBeCloseTo(100 - r.equity, 1);
+  });
+});

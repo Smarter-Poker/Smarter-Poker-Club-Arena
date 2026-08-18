@@ -21,7 +21,12 @@
  */
 import type { Card } from '../types.js';
 import { evaluateHand, evaluateOmahaHand, compareHands, SUITS, RANKS } from './PokerEngine.js';
-import { secureShuffle } from './CryptoRandom.js';
+// PRICING FIX 2026-08-18: sampling uses SeededRandom, not secureShuffle.
+// A CSPRNG shuffle costs ~45 syscalls per sample - 6000 samples froze the
+// event loop, which is why pricing was pushed to the Monte-Carlo worker
+// (2000 iterations, ties-split) and stopped matching the contract. Equity
+// estimation does not need a CSPRNG (the sampled boards are throwaways).
+import { SeededRandom, hashSeed } from './equity/SeededRandom.js';
 
 const FULL_DECK: Card[] = [];
 for (const suit of SUITS) {
@@ -84,9 +89,43 @@ function heroShareOnBoard(
   return 1 / tiedForBest;
 }
 
+/**
+ * PRICING FIX 2026-08-18: classify a complete board by the insurance
+ * CONTRACT's outcomes, which are not the same thing as pot share:
+ *   'loss' - an opponent strictly beats the leader (insurance pays out)
+ *   'push' - the leader ties for best (chop: contract voids, premium refunded)
+ *   'win'  - the leader alone holds the best hand (premium kept by the house)
+ */
+function heroOutcomeOnBoard(
+  heroCards: Card[],
+  opponentsCards: Card[][],
+  board: Card[],
+  evalFn: EvalFn
+): 'loss' | 'push' | 'win' {
+  const heroEval = evalFn(heroCards, board);
+  let tied = false;
+  for (const opp of opponentsCards) {
+    const cmp = compareHands(heroEval, evalFn(opp, board));
+    if (cmp < 0) return 'loss';
+    if (cmp === 0) tied = true;
+  }
+  return tied ? 'push' : 'win';
+}
+
 export interface InsuranceEquityResult {
   /** Leader's pot-win equity as a percentage (0-100). */
   equity: number;
+  /**
+   * PRICING FIX 2026-08-18: probability (%) an opponent STRICTLY beats the
+   * leader - the only outcome the insurance contract pays on.
+   */
+  strictLossPct: number;
+  /**
+   * Probability (%) the leader ties for best (chop). The contract PUSHES on
+   * a chop - premium refunded - so the premium must be priced conditional
+   * on not-push, not on pot share.
+   */
+  pushPct: number;
   /** True if computed by exact enumeration, false if by random-board sampling. */
   exact: boolean;
   /** Number of runouts evaluated. */
@@ -116,8 +155,11 @@ export function insuranceEquity(
 
   // Board already complete — a single deterministic evaluation.
   if (board.length >= 5) {
+    const outcome = heroOutcomeOnBoard(heroCards, opponentsCards, board, evalFn);
     return {
       equity: heroShareOnBoard(heroCards, opponentsCards, board, evalFn) * 100,
+      strictLossPct: outcome === 'loss' ? 100 : 0,
+      pushPct: outcome === 'push' ? 100 : 0,
       exact: true,
       runouts: 1,
     };
@@ -133,7 +175,8 @@ export function insuranceEquity(
 
   const cardsToCome = 5 - board.length;
   if (remaining.length < cardsToCome) {
-    return { equity: 50, exact: false, runouts: 0 }; // not enough cards — neutral fallback
+    // not enough cards — neutral fallback
+    return { equity: 50, strictLossPct: 50, pushPct: 0, exact: false, runouts: 0 };
   }
 
   const EXACT_MAX_COMBOS = 20000;
@@ -146,22 +189,42 @@ export function insuranceEquity(
     exact = true;
   } else {
     // Fall back to sampling only the BOARD (opponents' cards remain known/fixed).
+    // Deterministic seed from the known cards: same spot => same price (no
+    // reprice-on-refresh drift), and no CSPRNG syscalls on the hot path.
     const N = 6000;
+    const rng = new SeededRandom(hashSeed(...[...known].sort(), cardsToCome));
     runouts = [];
     for (let i = 0; i < N; i++) {
-      secureShuffle(remaining);
-      runouts.push(remaining.slice(0, cardsToCome));
+      // Partial Fisher-Yates: draw cardsToCome distinct cards.
+      const pick: Card[] = [];
+      const idx = new Set<number>();
+      while (pick.length < cardsToCome) {
+        const j = rng.nextInt(remaining.length);
+        if (!idx.has(j)) {
+          idx.add(j);
+          pick.push(remaining[j]);
+        }
+      }
+      runouts.push(pick);
     }
     exact = false;
   }
 
   let shareSum = 0;
+  let losses = 0;
+  let pushes = 0;
   for (const runout of runouts) {
-    shareSum += heroShareOnBoard(heroCards, opponentsCards, [...board, ...runout], evalFn);
+    const full = [...board, ...runout];
+    shareSum += heroShareOnBoard(heroCards, opponentsCards, full, evalFn);
+    const outcome = heroOutcomeOnBoard(heroCards, opponentsCards, full, evalFn);
+    if (outcome === 'loss') losses += 1;
+    else if (outcome === 'push') pushes += 1;
   }
 
   return {
     equity: Math.round((shareSum / runouts.length) * 1000) / 10,
+    strictLossPct: Math.round((losses / runouts.length) * 1000) / 10,
+    pushPct: Math.round((pushes / runouts.length) * 1000) / 10,
     exact,
     runouts: runouts.length,
   };

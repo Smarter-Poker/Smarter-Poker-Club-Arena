@@ -159,9 +159,8 @@ export async function handleAdminKick(
     // (the universal immutable ledger) when available. Failures don't
     // block the response — the kick already happened.
     const reasonText = (body as { reason?: string }).reason ?? 'admin kick';
-    void supabase
-      .from('anti_cheat_events')
-      .insert({
+    void Promise.resolve(
+      supabase.from('anti_cheat_events').insert({
         event_type: 'player_kicked',
         player_id: targetUserId,
         club_id: clubId,
@@ -174,10 +173,20 @@ export async function handleAdminKick(
         },
         triggered_by: callerUserId,
       })
+    )
       .then(({ error }) => {
         if (error) {
           console.warn('[admin.kick] anti_cheat_events insert failed:', error.message);
         }
+      })
+      // .then() alone covers only the resolved-with-error case; a transport
+      // failure rejects, and an unhandled rejection here would take down an
+      // otherwise successful kick response.
+      .catch((err: unknown) => {
+        console.warn(
+          '[admin.kick] anti_cheat_events insert threw:',
+          (err as Error)?.message ?? err
+        );
       });
 
     return sendJSON(res, result.success ? 200 : 400, {

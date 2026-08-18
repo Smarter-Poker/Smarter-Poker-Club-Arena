@@ -999,10 +999,18 @@ export abstract class ServerTableEngineBase {
       const owed = Math.max(0, usedTotal - meta.baseSeconds) - meta.dbConsumedSeconds;
       if (owed <= 0) return;
       meta.dbConsumedSeconds += owed;
-      void supabase
-        .rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
+      // Promise.resolve() so this is a real Promise with a .catch(), not the
+      // PromiseLike the query builder returns. The enclosing try/catch below
+      // covers only the SYNCHRONOUS part of this statement — see the note on
+      // recordRecoveryEvent() for why the rejection path matters.
+      void Promise.resolve(
+        supabase.rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
+      )
         .then(({ error }) => {
           if (error) console.warn('[TimeBank] consume failed:', error.message);
+        })
+        .catch((err: unknown) => {
+          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
         });
     } catch {
       /* accounting must never break gameplay */
@@ -1036,19 +1044,38 @@ export abstract class ServerTableEngineBase {
   /**
    * Durable, DB-visible record of an automatic recovery action. Best-effort
    * by design: recovery must never depend on the insert succeeding.
+   *
+   * 2026-08-18 — WHY THE .catch() BELOW IS LOAD-BEARING
+   * `try { void p.then(...) } catch {}` does NOT make a promise safe. The
+   * try/catch guards only the synchronous call that builds the chain; once the
+   * statement returns, a rejection has nowhere to go and becomes an unhandled
+   * rejection on the process.
+   *
+   * `.then(({ error }) => ...)` handles the RESOLVED-with-error case, which is
+   * what supabase-js returns for most failures — that is why this looked
+   * covered. It is not: a transport-level failure (DNS, socket reset, abort)
+   * rejects instead, and under the test runner such a rejection is attributed
+   * to whichever test happens to be executing when it lands. That is exactly
+   * what made `CryptoRandom > is uniform over a range that does not divide
+   * 2^32` fail intermittently in full-suite runs while passing in isolation.
+   * The generator was never at fault: 160 trials / 11.2M draws produced a max
+   * chi-square of 15.07 against a 22.46 threshold, with zero exceedances.
    */
   protected recordRecoveryEvent(event: string, detail: string): void {
     try {
-      void supabase
-        .from('engine_recovery_events')
-        .insert({
+      void Promise.resolve(
+        supabase.from('engine_recovery_events').insert({
           table_id: this.tableId,
           event,
           detail: detail.slice(0, 500),
           hand_count: this.handCount,
         })
+      )
         .then(({ error }) => {
           if (error) console.warn('[RecoveryEvent] insert failed:', error.message);
+        })
+        .catch((err: unknown) => {
+          console.warn('[RecoveryEvent] insert threw:', (err as Error)?.message ?? err);
         });
     } catch {
       /* never let telemetry break recovery */

@@ -32,24 +32,24 @@ import type { BoardStage } from '../components/table/CommunityCards';
 // public/hub/club-arena/images/. A new file dropped in images/ would never
 // reach production, and git-safe-push.sh's `git clean` sweeps untracked files
 // there — assets/ is explicitly excluded from that clean.
-import skinClassicGreen from '../assets/tables/skin_classic_green.jpg';
-import skinOceanBlue from '../assets/tables/skin_ocean_blue.jpg';
-import skinCrimson from '../assets/tables/skin_crimson.jpg';
-import skinElectricPurple from '../assets/tables/skin_electric_purple.jpg';
-import skinGoldenSand from '../assets/tables/skin_golden_sand.jpg';
+import skinClassicGreen from '../assets/tables/skin_classic_green.png';
+import skinOceanBlue from '../assets/tables/skin_ocean_blue.png';
+import skinCrimson from '../assets/tables/skin_crimson.png';
+import skinElectricPurple from '../assets/tables/skin_electric_purple.png';
+import skinGoldenSand from '../assets/tables/skin_golden_sand.png';
 // Dan 2026-08-17 — five new composite skins (his renders) + three derived
 // colorways, all sharing the SAME canonical geometry as the original five
 // (felt window 20.3-79.6% x 8.9-89.2% of the 896x1200 frame, measured by
 // felt-edge scan). One asset per skin serves BOTH the darkened page backdrop
 // and the in-scaler table art, so seats always land on the painted rail.
-import skinNeonCity from '../assets/tables/skin_neon_city.jpg';
-import skinIceCavern from '../assets/tables/skin_ice_cavern.jpg';
-import skinCarbonRed from '../assets/tables/skin_carbon_red.jpg';
-import skinArcticWhite from '../assets/tables/skin_arctic_white.jpg';
-import skinMahoganyRed from '../assets/tables/skin_mahogany_red.jpg';
-import skinAmethystCavern from '../assets/tables/skin_amethyst_cavern.jpg';
-import skinCarbonIon from '../assets/tables/skin_carbon_ion.jpg';
-import skinJadeCity from '../assets/tables/skin_jade_city.jpg';
+import skinNeonCity from '../assets/tables/skin_neon_city.png';
+import skinIceCavern from '../assets/tables/skin_ice_cavern.png';
+import skinCarbonRed from '../assets/tables/skin_carbon_red.png';
+import skinArcticWhite from '../assets/tables/skin_arctic_white.png';
+import skinMahoganyRed from '../assets/tables/skin_mahogany_red.png';
+import skinAmethystCavern from '../assets/tables/skin_amethyst_cavern.png';
+import skinCarbonIon from '../assets/tables/skin_carbon_ion.png';
+import skinJadeCity from '../assets/tables/skin_jade_city.png';
 
 /**
  * Canonical skin registry. Every entry is a 896x1200 composite (scene +

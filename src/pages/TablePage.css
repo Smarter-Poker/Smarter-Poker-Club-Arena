@@ -557,16 +557,12 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  border-radius: 9999px;
-  /* Dan 2026-08-18 (round 2): an ellipse mask at 87% cut the rail's own
-     left/right edges (the rail spans nearly the full width, but only ~93%
-     of the height — one ellipse can't hug both). Mask on the X axis only:
-     a horizontal fade clips the composite's leftover scene strips while
-     the rail, which reaches x=100%, keeps its full silhouette. The
-     stadium border-radius above already rounds the corners. */
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 4%, #000 96%, transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 4%, #000 96%, transparent 100%);
+  /* Dan 2026-08-18 (final): the skin assets are now PRE-CROPPED transparent
+     PNGs — the scene around the table is alpha'd out at build time, on the
+     SAME canvas the scaler always used (605/1000), so the seat ring and
+     felt window percentages are unchanged. No CSS mask and no border-radius
+     are needed: whatever is painted IS the table. */
+  object-fit: fill;
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;

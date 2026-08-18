@@ -2437,3 +2437,20 @@
     animation: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RAISE PANEL OPEN (Dan 2026-08-18, screenshot review)
+   The raise panel occupies the bottom half. These fixed overlays used to
+   render straight through it: the previous-hand card + timebank pill sat on
+   top of the slider (hiding the handle) and the chat button covered ALL IN.
+   They are irrelevant while sizing a raise, so they yield to it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+body.ca-raising .table-hud__lower,
+body.ca-raising .tbc-widget,
+body.ca-raising .prev-hand-card-wrapper,
+body.ca-raising .chat-collapsed,
+body.ca-raising .bankroll-widget {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}

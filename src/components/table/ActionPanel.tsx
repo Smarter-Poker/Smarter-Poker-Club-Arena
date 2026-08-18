@@ -91,6 +91,21 @@ export default function ActionPanel({
   const [pendingAllIn, setPendingAllIn] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(minRaise);
   const [turnPulse, setTurnPulse] = useState(false);
+
+  /**
+   * Dan 2026-08-18 (screenshot review): the raise panel is tall, and the
+   * floating bottom-left HUD (previous-hand card, timebank pill) plus the
+   * chat button rendered straight THROUGH it — the slider handle sat behind
+   * the timebank pill. A body-level flag lets those fixed overlays hide for
+   * exactly as long as the panel is open (see .ca-raising rules in
+   * TablePage.css). Body class, not React state, because those overlays are
+   * siblings mounted far away in the tree.
+   */
+  useEffect(() => {
+    const on = isRaiseMode || pendingAllIn;
+    document.body.classList.toggle('ca-raising', on);
+    return () => document.body.classList.remove('ca-raising');
+  }, [isRaiseMode, pendingAllIn]);
   // Phase 2 T1-03: spec §5.2 — tapping the amount opens a numeric keyboard.
   // amountTyping toggles the inline input; amountDraft holds the raw text
   // while the user types so we don't fight their cursor mid-edit. Commit on

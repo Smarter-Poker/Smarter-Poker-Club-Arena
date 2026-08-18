@@ -202,7 +202,26 @@ export class HandController {
       bbPlayer.totalInvested += bbAmount;
       bbPlayer.stack -= bbAmount;
       this.state.pot += bbAmount;
-      this.state.currentBet = bbAmount;
+      // Bible V8 §4.2 / §7.2 — the price to enter is the BIG BLIND, not what
+      // the big blind could afford.
+      //
+      // This used to be `= bbAmount`, i.e. min(bigBlind, stack). A big blind
+      // all-in for less than a full blind therefore made the hand cheaper for
+      // everyone behind them: with a 1.00 BB and a 0.40 stack, currentBet
+      // became 0.40 and the whole table entered for 0.40. The short blind is
+      // all-in for less and can only win what they matched — that is what the
+      // side pots are for — but the price for everyone else does not move.
+      //
+      // Worse, when the BB's stack was below the SMALL blind the bet level
+      // ended up BELOW an already-posted live bet: SB posts 0.50, BB is all-in
+      // for 0.20, currentBet = 0.20, so the SB's toCall is −0.30. `call` then
+      // runs Math.min(negative, stack), which ADDS to the caller's stack and
+      // SUBTRACTS from the pot — a call that mints chips.
+      //
+      // Math.max keeps this monotonic: the level can only ever be raised by a
+      // blind, never lowered. The straddle block below deliberately raises it
+      // further.
+      this.state.currentBet = Math.max(this.state.currentBet, bigBlind);
       if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
     }
 

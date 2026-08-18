@@ -16,6 +16,15 @@ import { notificationService } from '../services/NotificationService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import UserProfileEdit from '../components/social/UserProfileEdit';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { useTableSettings } from '../hooks/useTableSettings';
+import {
+  CARD_BACKS,
+  DEFAULT_SETTINGS,
+  fromTableSettings,
+  toTableSettings,
+  validateSettings,
+  type UserSettings,
+} from '../lib/settingsBridge';
 import FAQPanel from '../components/support/FAQPanel';
 import TermsGate from '../components/auth/TermsGate';
 import styles from './SettingsPage.module.css';
@@ -31,164 +40,6 @@ const settingsSectionAnimationStyle = (index: number) => ({
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface UserSettings {
-  // Audio
-  soundEnabled: boolean;
-  soundVolume: number;
-  musicEnabled: boolean;
-  musicVolume: number;
-  voiceAnnouncements: boolean;
-
-  // Display
-  theme: 'dark' | 'light' | 'auto';
-  tableColor: string;
-  cardBack: string;
-  fourColorDeck: boolean;
-  animationSpeed: 'slow' | 'normal' | 'fast';
-  showBetAmount: boolean;
-  showPotOdds: boolean;
-
-  // Gameplay
-  autoMuck: boolean;
-  autoRebuy: boolean;
-  autoRebuyThreshold: number;
-  confirmAllIn: boolean;
-  // FIX 199: showHandStrength REMOVED — not allowed for live online gameplay
-  runItTwiceDefault: boolean;
-  straddleDefault: boolean;
-
-  // Chat
-  chatEnabled: boolean;
-  chatNotifications: boolean;
-
-  // Notifications
-  tournamentReminders: boolean;
-  clubActivity: boolean;
-  handWonNotifications: boolean;
-  achievementNotifications: boolean;
-  friendAlerts: boolean;
-  settlementAlerts: boolean;
-
-  // Privacy
-  showOnlineStatus: boolean;
-  allowFriendRequests: boolean;
-  shareHandHistories: boolean;
-}
-
-const DEFAULT_SETTINGS: UserSettings = {
-  soundEnabled: true,
-  soundVolume: 80,
-  musicEnabled: false,
-  musicVolume: 50,
-  voiceAnnouncements: true,
-
-  theme: 'dark',
-  tableColor: 'green',
-  cardBack: 'classic',
-  fourColorDeck: false,
-  animationSpeed: 'normal',
-  showBetAmount: true,
-  showPotOdds: false,
-
-  autoMuck: true,
-  autoRebuy: false,
-  autoRebuyThreshold: 50,
-  confirmAllIn: true,
-  runItTwiceDefault: false,
-  straddleDefault: false,
-
-  chatEnabled: true,
-  chatNotifications: true,
-
-  tournamentReminders: true,
-  clubActivity: true,
-  handWonNotifications: false,
-  achievementNotifications: true,
-  friendAlerts: true,
-  settlementAlerts: true,
-
-  showOnlineStatus: true,
-  allowFriendRequests: true,
-  shareHandHistories: false,
-};
-
-/**
- * Validate and sanitize settings loaded from localStorage or external sources.
- * Ensures only expected types/ranges are applied — prevents injection via DevTools.
- */
-function validateSettings(raw: unknown): UserSettings {
-  if (typeof raw !== 'object' || raw === null) return { ...DEFAULT_SETTINGS };
-  const s = raw as Record<string, unknown>;
-  const d = DEFAULT_SETTINGS;
-
-  const bool = (key: string): boolean =>
-    typeof s[key] === 'boolean' ? (s[key] as boolean) : (d as any)[key];
-  const num = (key: string, min: number, max: number): number => {
-    const v = s[key];
-    return typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max
-      ? v
-      : (d as any)[key];
-  };
-  const enumVal = <T extends string>(key: string, allowed: T[]): T => {
-    return allowed.includes(s[key] as T) ? (s[key] as T) : (d as any)[key];
-  };
-  const str = (key: string, maxLen: number): string => {
-    const v = s[key];
-    return typeof v === 'string' && v.length <= maxLen ? v : (d as any)[key];
-  };
-
-  return {
-    soundEnabled: bool('soundEnabled'),
-    soundVolume: num('soundVolume', 0, 100),
-    musicEnabled: bool('musicEnabled'),
-    musicVolume: num('musicVolume', 0, 100),
-    voiceAnnouncements: bool('voiceAnnouncements'),
-    theme: enumVal('theme', ['dark', 'light', 'auto']),
-    tableColor: str('tableColor', 50),
-    cardBack: str('cardBack', 50),
-    fourColorDeck: bool('fourColorDeck'),
-    animationSpeed: enumVal('animationSpeed', ['slow', 'normal', 'fast']),
-    showBetAmount: bool('showBetAmount'),
-    showPotOdds: bool('showPotOdds'),
-    autoMuck: bool('autoMuck'),
-    autoRebuy: bool('autoRebuy'),
-    autoRebuyThreshold: num('autoRebuyThreshold', 0, 100),
-    confirmAllIn: bool('confirmAllIn'),
-    runItTwiceDefault: bool('runItTwiceDefault'),
-    straddleDefault: bool('straddleDefault'),
-    chatEnabled: bool('chatEnabled'),
-    chatNotifications: bool('chatNotifications'),
-    tournamentReminders: bool('tournamentReminders'),
-    clubActivity: bool('clubActivity'),
-    handWonNotifications: bool('handWonNotifications'),
-    achievementNotifications: bool('achievementNotifications'),
-    friendAlerts: bool('friendAlerts'),
-    settlementAlerts: bool('settlementAlerts'),
-    showOnlineStatus: bool('showOnlineStatus'),
-    allowFriendRequests: bool('allowFriendRequests'),
-    shareHandHistories: bool('shareHandHistories'),
-  };
-}
-
-const TABLE_COLORS = [
-  { id: 'green', name: 'Classic Green', color: '#1a5f3a' },
-  { id: 'blue', name: 'Ocean Blue', color: '#1e3a5f' },
-  { id: 'red', name: 'Casino Red', color: '#5a1a1a' },
-  { id: 'purple', name: 'Royal Purple', color: '#3a1a5f' },
-  { id: 'black', name: 'Midnight Black', color: '#1a1a1a' },
-];
-
-const CARD_BACKS = [
-  { id: 'classic', name: 'Classic' },
-  { id: 'modern', name: 'Modern' },
-  { id: 'minimal', name: 'Minimal' },
-  { id: 'premium', name: 'Premium Gold' },
-];
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const Toggle = ({
@@ -234,28 +85,6 @@ const Slider = ({
   </div>
 );
 
-const ColorPicker = ({
-  options,
-  selected,
-  onChange,
-}: {
-  options: typeof TABLE_COLORS;
-  selected: string;
-  onChange: (id: string) => void;
-}) => (
-  <div className={styles.colorPicker}>
-    {options.map((option) => (
-      <button
-        key={option.id}
-        className={`${styles.colorOption} ${selected === option.id ? styles.selected : ''}`}
-        style={{ backgroundColor: option.color }}
-        onClick={() => onChange(option.id)}
-        title={option.name}
-      />
-    ))}
-  </div>
-);
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -268,6 +97,10 @@ export default function SettingsPage() {
   const [searchParams] = useSearchParams();
   const toast = useToast();
   const { user: authUser } = useAuthUser();
+  const { settings: tableSettings, updateSettings: updateTableSettings } = useTableSettings();
+  const tableSettingsRef = useRef(tableSettings);
+  tableSettingsRef.current = tableSettings;
+
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -298,7 +131,6 @@ export default function SettingsPage() {
   const appearanceRef = useRef<HTMLElement>(null);
   const gameplayRef = useRef<HTMLElement>(null);
   const notificationsRef = useRef<HTMLElement>(null);
-  const privacyRef = useRef<HTMLElement>(null);
   const securityRef = useRef<HTMLElement>(null);
   const dangerRef = useRef<HTMLElement>(null);
 
@@ -313,7 +145,6 @@ export default function SettingsPage() {
       display: appearanceRef,
       gameplay: gameplayRef,
       notifications: notificationsRef,
-      privacy: privacyRef,
       security: securityRef,
       account: securityRef,
       language: appearanceRef, // Language settings would be in appearance section
@@ -331,13 +162,19 @@ export default function SettingsPage() {
   useEffect(() => {
     let isMounted = true;
     const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    // The table's own store wins for the keys the two share: it is what the
+    // table is actually using right now, and it can be changed from the
+    // in-table settings panel while this page is closed. Opening this page must
+    // not silently show — and then save back — a stale copy.
+    let initial = DEFAULT_SETTINGS;
     if (saved) {
       try {
-        setSettings(validateSettings(JSON.parse(saved)));
+        initial = validateSettings(JSON.parse(saved));
       } catch (e) {
         reportError(e, 'SettingsPage.Failed_to_load_settings');
       }
     }
+    setSettings(fromTableSettings(tableSettingsRef.current, initial));
     // Get current user email from auth session (avoid redundant getUser() call)
     if (authUser?.id) {
       supabase.auth
@@ -686,6 +523,12 @@ export default function SettingsPage() {
       // Save to localStorage
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
 
+      // …and into the store the TABLE reads. updateSettings persists to
+      // club-arena-table-settings and emits SETTINGS_CHANGED per key, which the
+      // useTableSettings instance inside an open TablePage subscribes to — so a
+      // table already on screen picks these up without a reload.
+      updateTableSettings(toTableSettings(settings));
+
       // Sync theme to Zustand store so Shell.tsx applies it immediately
       const { setTheme, toggleSound, toggleFourColorDeck, toggleNotifications } =
         useSettingsStore.getState();
@@ -785,26 +628,6 @@ export default function SettingsPage() {
             />
           </div>
 
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Background Music</span>
-            </div>
-            <Toggle
-              checked={settings.musicEnabled}
-              onChange={(v) => updateSetting('musicEnabled', v)}
-            />
-          </div>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Voice Announcements</span>
-              <span className={styles.settingDesc}>Announce actions, pot sizes, and winners</span>
-            </div>
-            <Toggle
-              checked={settings.voiceAnnouncements}
-              onChange={(v) => updateSetting('voiceAnnouncements', v)}
-            />
-          </div>
         </section>
 
         {/* Display Settings */}
@@ -828,17 +651,6 @@ export default function SettingsPage() {
               <option value="light">Light</option>
               <option value="auto">Auto (System)</option>
             </select>
-          </div>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Table Felt Color</span>
-            </div>
-            <ColorPicker
-              options={TABLE_COLORS}
-              selected={settings.tableColor}
-              onChange={(v) => updateSetting('tableColor', v)}
-            />
           </div>
 
           <div className={styles.settingRow}>
@@ -910,16 +722,6 @@ export default function SettingsPage() {
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Auto Muck Losing Hands</span>
-              <span className={styles.settingDesc}>
-                Automatically muck when you lose at showdown
-              </span>
-            </div>
-            <Toggle checked={settings.autoMuck} onChange={(v) => updateSetting('autoMuck', v)} />
-          </div>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Confirm All-In</span>
               <span className={styles.settingDesc}>Require confirmation before going all-in</span>
             </div>
@@ -931,60 +733,14 @@ export default function SettingsPage() {
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Auto Rebuy</span>
+              <span className={styles.settingLabel}>Auto-Muck My Winning Hand</span>
               <span className={styles.settingDesc}>
-                Automatically rebuy when stack falls below threshold
+                Skip the show-or-muck prompt when you win without a showdown
               </span>
             </div>
-            <Toggle checked={settings.autoRebuy} onChange={(v) => updateSetting('autoRebuy', v)} />
-          </div>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Run It Twice (Default)</span>
-              <span className={styles.settingDesc}>Auto-accept when offered</span>
-            </div>
             <Toggle
-              checked={settings.runItTwiceDefault}
-              onChange={(v) => updateSetting('runItTwiceDefault', v)}
-            />
-          </div>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Straddle (Default)</span>
-              <span className={styles.settingDesc}>Auto-post straddle when UTG</span>
-            </div>
-            <Toggle
-              checked={settings.straddleDefault}
-              onChange={(v) => updateSetting('straddleDefault', v)}
-            />
-          </div>
-        </section>
-
-        {/* Chat */}
-        <section className={styles.section} style={settingsSectionAnimationStyle(3)}>
-          <h2>Chat</h2>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Table Chat</span>
-              <span className={styles.settingDesc}>Show chat messages at the table</span>
-            </div>
-            <Toggle
-              checked={settings.chatEnabled}
-              onChange={(v) => updateSetting('chatEnabled', v)}
-            />
-          </div>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Chat Notifications</span>
-              <span className={styles.settingDesc}>Show badge for new chat messages</span>
-            </div>
-            <Toggle
-              checked={settings.chatNotifications && settings.chatEnabled}
-              onChange={(v) => updateSetting('chatNotifications', v)}
+              checked={settings.autoMuckWinners}
+              onChange={(v) => updateSetting('autoMuckWinners', v)}
             />
           </div>
         </section>
@@ -1069,49 +825,6 @@ export default function SettingsPage() {
                 {pushLoading ? 'Enabling...' : 'Enable'}
               </button>
             )}
-          </div>
-        </section>
-
-        {/* Privacy */}
-        <section
-          ref={privacyRef}
-          className={styles.section}
-          style={settingsSectionAnimationStyle(5)}
-        >
-          <h2>Privacy</h2>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Show Online Status</span>
-              <span className={styles.settingDesc}>Let others see when you're online</span>
-            </div>
-            <Toggle
-              checked={settings.showOnlineStatus}
-              onChange={(v) => updateSetting('showOnlineStatus', v)}
-            />
-          </div>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Allow Friend Requests</span>
-            </div>
-            <Toggle
-              checked={settings.allowFriendRequests}
-              onChange={(v) => updateSetting('allowFriendRequests', v)}
-            />
-          </div>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Share Hand Histories</span>
-              <span className={styles.settingDesc}>
-                Allow others to view your shared hand replays
-              </span>
-            </div>
-            <Toggle
-              checked={settings.shareHandHistories}
-              onChange={(v) => updateSetting('shareHandHistories', v)}
-            />
           </div>
         </section>
 

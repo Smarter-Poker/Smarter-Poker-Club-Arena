@@ -4039,10 +4039,13 @@ export default function TablePage({
     if (typeof s.soundEnabled === 'boolean') {
       localStorage.setItem(STORAGE_KEYS.SOUNDS, String(s.soundEnabled));
     }
-    // Apply deck/theme preference if changed
-    if (s.deckStyle) {
-      localStorage.setItem(STORAGE_KEYS.DECK_STYLE, s.deckStyle);
-    }
+    // 2026-08-18: a `deckStyle` branch used to live here writing
+    // STORAGE_KEYS.DECK_STYLE. Nothing ever sent that key and nothing ever read
+    // that storage entry, and its presence made this listener look like the
+    // route by which the settings page reached the table. It was not — the real
+    // route is useTableSettings' SETTINGS_CHANGED subscription, which the
+    // settings page now feeds via updateSettings(). Deck style, card back, pot
+    // odds, animation speed and the rest all arrive that way.
   });
 
   // ── Bus Listeners: Phase 8 — Action Rejection + Timer Events ──

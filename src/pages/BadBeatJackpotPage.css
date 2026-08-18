@@ -357,3 +357,13 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
 }
+
+/* Player names on hit rows (2026-08-18) */
+.hit-players {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffd700;
+  margin: 2px 0 1px;
+  overflow-wrap: anywhere;
+}

@@ -18,6 +18,7 @@ import { reportError } from '../utils/errorReporter';
 import BBJService from '../services/BBJService';
 import { confirmDialog } from '../components/common/confirmDialog';
 import BBJAdminAnalytics from '../components/bbj/BBJAdminAnalytics';
+import BBJRulesPanel from '../components/bbj/BBJRulesPanel';
 
 interface JackpotInfo {
   id: string;
@@ -54,6 +55,9 @@ export default function BadBeatJackpotPage() {
   const [justUpdated, setJustUpdated] = useState(false);
   const [visibleHistoryRows, setVisibleHistoryRows] = useState(new Set<number>());
   const [playerContribution, setPlayerContribution] = useState(0);
+  // 2026-08-18: real hand count + own-contribution facts, from the ledger.
+  const [poolFacts, setPoolFacts] = useState<{ hands: number; chips: number } | null>(null);
+  const [myHands, setMyHands] = useState(0);
   const [canManagePromo, setCanManagePromo] = useState(false);
   const [promoAmount, setPromoAmount] = useState('');
   const [distributingPromo, setDistributingPromo] = useState(false);
@@ -283,17 +287,39 @@ export default function BadBeatJackpotPage() {
           setHistory(historyData);
         }
 
-        if (user?.id) {
-          const { data: contribData } = await supabase
-            .from('bbj_contributions')
-            .select('amount')
-            .eq('club_id', resolvedId)
-            .eq('player_id', user.id)
-            .limit(10000);
-
+        // 2026-08-18: pool facts from the LEDGER (the pool counters have
+        // drifted: 161,442 counter vs 261,316 actual rows).
+        if (jackpotData?.id) {
+          const { data: factRows } = await supabase.rpc('fn_bbj_pool_facts', {
+            p_pool_id: jackpotData.id,
+          });
           if (getIsMounted && !getIsMounted()) return;
-          const total = (contribData || []).reduce((sum, c) => sum + (c.amount || 0), 0);
-          setPlayerContribution(total);
+          const f = Array.isArray(factRows) ? factRows[0] : factRows;
+          if (f) {
+            setPoolFacts({
+              hands: Number(f.hands_contributed) || 0,
+              chips: Number(f.total_contributed) || 0,
+            });
+          }
+        }
+
+        // "Your contribution" used to read bbj_contributions.player_id, which
+        // is NULL on all 550,782 rows — the card always computed 0 and never
+        // rendered, after pulling up to 10,000 rows to find that out. The BBJ
+        // fee comes out of the POT, so a player's honest share is
+        // fee x (their pot contribution / pot size) — which is what this RPC
+        // returns, for the calling user only.
+        if (user?.id && jackpotData?.id) {
+          const { data: mineRows } = await supabase.rpc('fn_bbj_my_contribution', {
+            p_pool_id: jackpotData.id,
+            p_days: 90,
+          });
+          if (getIsMounted && !getIsMounted()) return;
+          const mine = Array.isArray(mineRows) ? mineRows[0] : mineRows;
+          if (mine) {
+            setPlayerContribution(Number(mine.attributed_chips) || 0);
+            setMyHands(Number(mine.hands_contributed) || 0);
+          }
         }
       } catch (error) {
         reportError(error, 'BadBeatJackpotPage.Failed_to_load_jackpot');
@@ -518,15 +544,19 @@ export default function BadBeatJackpotPage() {
         </div>
       )}
 
-      {/* Info Cards */}
+      {/* Info Cards.
+          2026-08-18: "Qualifying Hand: Quad 2s or better beaten" was wrong for
+          every game we spread — the per-variant truth now lives in the rules
+          panel below. "Hands Dealt" showed total_contributed, which is a CHIP
+          AMOUNT, not a hand count; both facts now come from the ledger. */}
       <div className="jackpot-info">
         <div className="info-card">
-          <span className="info-label">Qualifying Hand</span>
-          <span className="info-value">Quad 2s or better beaten</span>
+          <span className="info-label">Hands Contributed</span>
+          <span className="info-value">{(poolFacts?.hands || 0).toLocaleString()}</span>
         </div>
         <div className="info-card">
-          <span className="info-label">Hands Dealt</span>
-          <span className="info-value">{(jackpot?.total_contributed || 0).toLocaleString()}</span>
+          <span className="info-label">Total Collected</span>
+          <span className="info-value">{(poolFacts?.chips || 0).toLocaleString()} chips</span>
         </div>
         {playerContribution > 0 && (
           <div
@@ -536,17 +566,33 @@ export default function BadBeatJackpotPage() {
               background: 'rgba(52, 199, 89, 0.08)',
             }}
           >
-            <span className="info-label">Your Contribution</span>
+            <span className="info-label">Your Contribution (90d)</span>
             <span className="info-value" style={{ color: '#34c759' }}>
-              {playerContribution.toLocaleString()} chips
+              {playerContribution.toLocaleString(undefined, { maximumFractionDigits: 2 })} chips
+            </span>
+            <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.45)', marginTop: '2px' }}>
+              across {myHands.toLocaleString()} hands
             </span>
           </div>
         )}
       </div>
 
+      {/* What qualifies / what it pays — per variant and per stakes tier */}
+      <BBJRulesPanel poolAmount={jackpot?.main_balance || 0} />
+
       {/* Payout Structure */}
       <div className="payout-structure">
         <h3>Payout Structure</h3>
+        <p
+          style={{
+            margin: '0 0 10px',
+            fontSize: '12px',
+            color: 'rgba(255,255,255,0.6)',
+            lineHeight: 1.5,
+          }}
+        >
+          Applied to the stakes-tiered share of the pool shown above &mdash; not the whole pool.
+        </p>
         <div className="payout-bars">
           <div className="payout-bar">
             <span className="payout-label">Loser (Bad Beat)</span>
@@ -587,6 +633,14 @@ export default function BadBeatJackpotPage() {
               >
                 <div className="hit-info">
                   <span className="hit-date">{formatDate(hit.awarded_at)}</span>
+                  {/* 2026-08-18: names were selected but never shown — a hit
+                      list without people reads like test data. */}
+                  {(hit.loser_display_name || hit.winner_display_name) && (
+                    <span className="hit-players">
+                      {hit.loser_display_name || 'Player'}
+                      {hit.winner_display_name ? ` vs ${hit.winner_display_name}` : ''}
+                    </span>
+                  )}
                   <span className="hit-hands">
                     {hit.loser_hand} beat by {hit.winner_hand}
                   </span>

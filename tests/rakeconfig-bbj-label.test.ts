@@ -108,3 +108,33 @@ describe('getBBJPayoutPercentForBB', () => {
     expect(getBBJPayoutPercentForBB('not-a-number')).toBe(15);
   });
 });
+
+describe('BBJ rules panel data integrity (2026-08-18)', () => {
+  it('every variant row the panel renders resolves to a real config entry', () => {
+    // The panel iterates these keys; a typo would silently render a blank rule.
+    for (const key of ['nlh', 'plo4', 'plo8', 'plo5', 'plo6', 'short_deck']) {
+      expect(BBJ_QUALIFYING_HANDS[key], `missing config for ${key}`).toBeDefined();
+    }
+  });
+
+  it('eligible variants always produce a non-empty player-facing rule', () => {
+    for (const key of Object.keys(BBJ_QUALIFYING_HANDS)) {
+      const info = getBBJQualifyingInfo(key);
+      expect(info.shortLabel.length).toBeGreaterThan(0);
+      if (info.eligible) {
+        // Never ship a rule that says "Quad 2s"/"Quad 8s" again — those were
+        // the two wrong hardcoded strings this work removed.
+        expect(info.shortLabel).not.toMatch(/Quad [28]s/);
+      }
+    }
+  });
+
+  it('payout tiers are monotonic across the stakes ladder', () => {
+    const ladder = [0.2, 0.8, 3, 8, 40, 50].map(getBBJPayoutPercentForBB);
+    for (let i = 1; i < ladder.length; i++) {
+      expect(ladder[i]).toBeGreaterThan(ladder[i - 1]);
+    }
+    expect(ladder[0]).toBe(15);
+    expect(ladder[ladder.length - 1]).toBe(85);
+  });
+});

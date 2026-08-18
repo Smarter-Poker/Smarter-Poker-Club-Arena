@@ -71,12 +71,23 @@ export interface SettingMeta {
   description: string;
 }
 
+// Only list a setting here if flipping it changes what the player sees.
+// TABLE_SETTINGS_META drives the toggle list in TableSettingsPanel, so an entry
+// with no consumer is a switch that persists to the database and does nothing —
+// the player flips it, sees no change, and concludes the table is broken.
+//
+// Deliberately NOT listed:
+//   highlight_active_players — the acting-seat spotlight is unconditional by
+//     product decision (2026-08-15: "must always be ON AT ALL TIMES"), so
+//     TablePage stopped reading this column. Keeping the switch on screen
+//     advertised control that no longer existed.
+//   voice_message — there is no voice chat at a poker table in this codebase.
+//     Its only consumer muted the TEXT chat, so "Voice Message: off" silently
+//     took away text chat instead. List it again when voice actually ships.
+//
+// Both columns stay in UserTableSettings and in the database: the rows already
+// exist, and removing the toggle must not drop a player's stored value.
 export const TABLE_SETTINGS_META: SettingMeta[] = [
-  {
-    key: 'highlight_active_players',
-    label: 'Highlight Active Players',
-    description: "Highlight the currently-acting player's seat",
-  },
   {
     key: 'show_avatars',
     label: 'Show Avatars',
@@ -117,7 +128,6 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     label: 'Enhanced View',
     description: 'Enable enhanced visual effects and animations',
   },
-  { key: 'voice_message', label: 'Voice Message', description: 'Enable voice chat at table' },
   { key: 'text_message', label: 'Text Message', description: 'Enable text chat at table' },
   { key: 'emoji_enabled', label: 'Emoji', description: 'Enable emoji reactions/throwables' },
   {

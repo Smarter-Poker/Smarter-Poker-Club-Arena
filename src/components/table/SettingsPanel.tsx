@@ -17,6 +17,7 @@ import { TableSettingsPanel } from './TableSettingsPanel';
 import { ThemeSettingsModal } from './ThemeSettingsModal';
 import { useUserTableSettings } from '../../hooks/useUserTableSettings';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { supabase } from '../../lib/supabase';
 import './SettingsPanel.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -120,6 +121,35 @@ export function SettingsPanel({
     loading: v8Loading,
     toggleSetting: v8Toggle,
   } = useUserTableSettings(authUser?.id);
+
+  // VIP status for the asset gates below.
+  //
+  // TableModalsLayer renders this panel without an isVip prop, so the default
+  // (false) was the only value it ever had: ThemeSettingsModal locked every
+  // VIP-only theme behind a padlock and an upsell for PAYING VIPs. Resolving
+  // it here rather than threading a prop fixes it for every call site, and
+  // matches what TableMenu already does for the avatar gallery.
+  const [resolvedVip, setResolvedVip] = useState(isVip);
+  useEffect(() => {
+    if (isVip) {
+      setResolvedVip(true);
+      return;
+    }
+    const id = authUser?.id || userId;
+    if (!isOpen || !id) return;
+    let cancelled = false;
+    supabase
+      .from('profiles')
+      .select('is_vip, tier')
+      .eq('id', id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled && data) setResolvedVip(data.is_vip === true || data.tier === 'vip');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, isVip, authUser?.id, userId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -405,9 +435,9 @@ export function SettingsPanel({
       <AvatarGallery
         isOpen={showAvatarGallery}
         onClose={() => setShowAvatarGallery(false)}
-        userId={userId}
+        userId={authUser?.id || userId}
         currentAvatarUrl={currentAvatarUrl}
-        isVip={isVip}
+        isVip={resolvedVip}
         onAvatarChanged={onAvatarChanged}
       />
 
@@ -416,7 +446,7 @@ export function SettingsPanel({
         isOpen={showThemeSettings}
         onClose={() => setShowThemeSettings(false)}
         userId={authUser?.id || userId}
-        isVip={isVip}
+        isVip={resolvedVip}
       />
     </div>
   );

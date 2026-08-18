@@ -521,9 +521,19 @@ export abstract class ServerTableEngineBase {
       // of them, and no offer ever fired in live traffic. Owner intent:
       // OFF means at least one user-written column is false; the legacy
       // engine column is honored as an additional ON override.
+      // TOURNAMENT GATE 2026-08-18: RIT is a cash/club-game feature. Running
+      // it twice in a tournament is both non-standard (no major app offers
+      // it in MTTs) and numerically unsound here: per-board splits produce
+      // fractional amounts while tournament_players.chips is INTEGER (the
+      // sync floors, destroying chips - see POSTGRES_INTEGER_CAST_FLOOD).
+      // A live 3-run tournament hand (41627f9a, 02:11 UTC) split 1760.88
+      // into 586.96/1173.92 tournament chips before this gate went in.
+      const ritIsTournament =
+        !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
       const ritEnabled =
-        ((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
-        (this.tableInfo.run_it_twice_enabled ?? false);
+        !ritIsTournament &&
+        (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
+          (this.tableInfo.run_it_twice_enabled ?? false));
       const insuranceEnabled = this.tableInfo.insurance_enabled ?? false;
       const ritEffective = ritEnabled && !insuranceEnabled; // Insurance takes priority
 

@@ -792,21 +792,35 @@ export abstract class TournamentManagerBase {
     // Back-date the in-memory start so break pause/resume math stays correct
     this.blindTimerStartedAt = Date.now() - (durationMs - armMs);
     this.blindTimer = setTimeout(() => {
-      void this.advanceBlindLevel(blindStructure);
+      // Without the catch, a throw inside advanceBlindLevel becomes an
+      // unhandled rejection AND the level silently fails to advance with no
+      // trace of why.
+      void this.advanceBlindLevel(blindStructure).catch((err: unknown) => {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] advanceBlindLevel threw: ${(err as Error)?.message ?? err}`
+        );
+      });
     }, armMs);
     // Persist the level clock (wall-clock start of THIS level's remaining
     // window) so a restart resumes the level mid-flight. Fire-and-forget; the
     // column is added by migration 20260724c (graceful if absent).
-    void supabase
-      .from('tournaments')
-      .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
-      .eq('id', this.tournamentId)
+    void Promise.resolve(
+      supabase
+        .from('tournaments')
+        .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
+        .eq('id', this.tournamentId)
+    )
       .then(({ error }: { error: { message?: string } | null }) => {
         if (error && !/column|schema/i.test(error.message || '')) {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist failed: ${error.message}`
           );
         }
+      })
+      .catch((err: unknown) => {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist threw: ${(err as Error)?.message ?? err}`
+        );
       });
   }
 
@@ -1060,16 +1074,23 @@ export abstract class TournamentManagerBase {
     // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
     // restores it (resume() reads addon_period_triggered) instead of
     // re-broadcasting ADDON_PERIOD_START and losing finalizeAfterAddOn.
-    void supabase
-      .from('tournaments')
-      .update({ addon_period_triggered: true })
-      .eq('id', this.tournamentId)
+    void Promise.resolve(
+      supabase
+        .from('tournaments')
+        .update({ addon_period_triggered: true })
+        .eq('id', this.tournamentId)
+    )
       .then(({ error }: { error: { message?: string } | null }) => {
         if (error && !/column|schema/i.test(error.message || '')) {
           console.warn(
             `[Tournament:${this.tournamentId.slice(0, 8)}] addon_period_triggered persist failed: ${error.message}`
           );
         }
+      })
+      .catch((err: unknown) => {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] addon_period_triggered persist threw: ${(err as Error)?.message ?? err}`
+        );
       });
 
     const addonCost = this.tournamentCache?.addon_cost || this.tournamentCache?.buy_in_amount || 0;

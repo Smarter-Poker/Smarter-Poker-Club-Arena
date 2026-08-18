@@ -301,18 +301,21 @@ export class EngineWebSocketServer {
    * normally fires).
    */
   private logConnectionAudit(userId: string, tableId: string, ip: string | null): void {
-    void supabase
-      .from('action_audit_logs')
-      .insert({
+    void Promise.resolve(
+      supabase.from('action_audit_logs').insert({
         action_type: 'engine_ws_connect',
         user_id: userId,
         ip_address: ip ?? 'unknown',
         details: { table_id: tableId },
       })
+    )
       .then(({ error }) => {
         if (error && error.code !== '23505' /* dup */) {
           console.warn('[EngineWS] audit log failed:', error.message);
         }
+      })
+      .catch((err: unknown) => {
+        console.warn('[EngineWS] audit log threw:', (err as Error)?.message ?? err);
       });
   }
 

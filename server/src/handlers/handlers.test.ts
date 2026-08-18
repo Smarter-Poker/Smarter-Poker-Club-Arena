@@ -25,7 +25,10 @@ vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 // Audit S1: admin/pause|resume now resolve the caller's club-admin role via
 // supabase (tables.club_id -> club_members.role). Mock it with mutable results.
 const sb = vi.hoisted(() => ({
-  tablesResult: { data: { club_id: 't-club' } as { club_id: string } | null, error: null as unknown },
+  tablesResult: {
+    data: { club_id: 't-club' } as { club_id: string } | null,
+    error: null as unknown,
+  },
   membersResult: { data: { role: 'owner' } as { role: string } | null, error: null as unknown },
 }));
 vi.mock('../services/supabase.js', () => ({
@@ -185,6 +188,51 @@ describe.each(POST_CASES)(
     });
   }
 );
+
+// ── /rit chooser phase (WIRING FIX 2026-08-18) ───────────────────────────────
+// The handler used to REQUIRE `response`, but the client's chooser phase
+// sends only `{ tableId, runs }` - a human chooser's 1/2/3 pick was 400'd
+// at the HTTP layer, so no human could ever start a run-it-twice.
+
+describe('POST /rit — chooser phase sends runs without response', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
+  });
+
+  it('accepts { tableId, runs } and forwards runs to the engine', async () => {
+    vi.mocked(readBody).mockResolvedValue(JSON.stringify({ tableId: 't1', runs: 3 }));
+    const engine = mockEngine();
+    const { res, captured } = mockRes();
+    await handleRit(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
+    expect(captured.statusCode).toBe(200);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((engine as any).respondToRIT).toHaveBeenCalledWith('u1', undefined, 3);
+  });
+
+  it('still accepts the responder phase { tableId, response }', async () => {
+    vi.mocked(readBody).mockResolvedValue(JSON.stringify({ tableId: 't1', response: 'decline' }));
+    const engine = mockEngine();
+    const { res } = mockRes();
+    await handleRit(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((engine as any).respondToRIT).toHaveBeenCalledWith('u1', 'decline', undefined);
+  });
+
+  it('400s when neither runs nor response is present', async () => {
+    vi.mocked(readBody).mockResolvedValue(JSON.stringify({ tableId: 't1' }));
+    const { res, captured } = mockRes();
+    await handleRit(mockReq(), res, { gameServer: mockGameServer(mockEngine(), 't1') });
+    expect(captured.statusCode).toBe(400);
+  });
+
+  it('400s on an out-of-range runs value', async () => {
+    vi.mocked(readBody).mockResolvedValue(JSON.stringify({ tableId: 't1', runs: 7 }));
+    const { res, captured } = mockRes();
+    await handleRit(mockReq(), res, { gameServer: mockGameServer(mockEngine(), 't1') });
+    expect(captured.statusCode).toBe(400);
+  });
+});
 
 // ── admin/pause + admin/resume — club-admin authorization (Audit S1) ─────────
 

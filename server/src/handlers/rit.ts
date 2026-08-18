@@ -2,7 +2,8 @@
  * `POST /rit` — Bible V8 §4.20: respond to Run It Twice offer.
  *
  * Extracted Phase U3.3 (2026-04-23). Byte-identical.
- * Body: `{ tableId, response: 'accept' | 'decline' }`.
+ * Body: `{ tableId, runs: 1|2|3 }` (chooser phase) or
+ *       `{ tableId, response: 'accept' | 'decline' }` (responder phase).
  */
 
 import type { IncomingMessage, ServerResponse } from 'http';
@@ -39,13 +40,22 @@ export async function handleRit(
     }
 
     const body = JSON.parse(await readBody(req));
-    const { tableId, response } = body;
+    const { tableId, response, runs } = body;
     const userId = auth.userId;
 
-    if (!tableId || !response || !['accept', 'decline'].includes(response)) {
+    // WIRING FIX 2026-08-18: this handler REQUIRED `response`, but the
+    // chooser phase of the client (GameServerAPI.respondToRIT) sends only
+    // `{ tableId, runs }` - so a human chooser's 1/2/3 pick was 400'd at
+    // the HTTP layer and no human could ever start a run-it-twice. Horse
+    // responses bypass HTTP (in-engine), which masked it in live traffic.
+    const runsNum = runs !== undefined ? Number(runs) : undefined;
+    const validRuns = runsNum === 1 || runsNum === 2 || runsNum === 3;
+    const validResponse = response === 'accept' || response === 'decline';
+
+    if (!tableId || (!validRuns && !validResponse)) {
       return sendJSON(res, 400, {
         success: false,
-        error: 'Missing tableId or invalid response (must be accept or decline)',
+        error: 'Missing tableId, and either runs (1|2|3) or response (accept|decline)',
       });
     }
 
@@ -54,8 +64,11 @@ export async function handleRit(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    // response validated to be 'accept' | 'decline' above — narrow via cast for the typed signature.
-    const result = engine.respondToRIT(userId, response as 'accept' | 'decline');
+    const result = engine.respondToRIT(
+      userId,
+      validResponse ? (response as 'accept' | 'decline') : undefined,
+      validRuns ? (runsNum as 1 | 2 | 3) : undefined
+    );
     return sendJSON(res, result.success ? 200 : 400, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.rit_error');

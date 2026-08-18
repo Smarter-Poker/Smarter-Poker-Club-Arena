@@ -7846,3 +7846,26 @@ credential-gated: handoff at
 Smarter-Poker-World-Hub/.agent/handoffs/2026-08-17-u5-3-r2-static-assets.md.
 Note: an Antigravity reset --hard fired mid-codemod and destroyed the first
 uncommitted attempt — RULE 13 (commit small, often) exists for a reason.
+
+## 2026-08-18 — Designed backgrounds + scene removed from table art
+
+Dan: "remove the weird images around the table ... design backgrounds that
+are interchangeable."
+
+- SCENE REMOVED AT THE ASSET LEVEL. Two CSS-mask attempts failed (an ellipse
+  mask clipped the rail's own edges; an x-axis fade let top/bottom scene
+  strips through), so each skin is now a transparent PNG with the scene
+  alpha'd out and a stadium baked around the table silhouette, on the SAME
+  605/1000 canvas the scaler always used — every seat/felt percentage is
+  unchanged. No CSS mask, no border-radius, object-fit: fill.
+- TEN INTERCHANGEABLE BACKGROUNDS (procedurally designed, portrait
+  750x1624, ~150KB each): Midnight (default), Royal Indigo, Emerald Room,
+  Crimson Lounge, Ocean Abyss, Golden Dusk, Galaxy + VIP Carbon Grid, Ice
+  Frost, Jade Neon. Applied via TABLE_BACKGROUNDS with legacy-id aliases;
+  Background tab and preset bundles rewritten to the new ids.
+- Also this session: per-size seat rings for 2-9 max (7-max and 8-max had
+  NO positions for seats 7-8 — 525 such tables live in the fleet), top-
+  center seats lowered clear of the BBJ banner, all-in pill moved below the
+  name plate.
+- Verified live at prod b17a3efb: midnight/galaxy/crimson backgrounds each
+  render behind a clean table with zero scene fragments.

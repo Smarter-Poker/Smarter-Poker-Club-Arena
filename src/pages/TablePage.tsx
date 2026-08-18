@@ -561,6 +561,65 @@ const SEAT_POSITIONS_9MAX = [
   { x: 81, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
 ];
 
+/* Dan 2026-08-17 — PER-SIZE SEAT RINGS.
+   Production runs 2..9-max tables (audit: 53 seven-max plo6 + 472 eight-max
+   tables live in the fleet), but the client only had 6MAX/9MAX rings picked
+   by `maxPlayers === 9`. An 8-max table therefore indexed seats 7-8 past the
+   end of the 6-seat array — no position at all. Every count now has its own
+   ring on the SAME measured rail band (sides x 10.5/89.5, top cap y 8.5,
+   top diagonals on the cap circle, bottom caps (19/81, 82.5)); hero is
+   always slot 0, bottom-center. */
+const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
+  2: [
+    { x: 50, y: 93.5 }, // Hero
+    { x: 50, y: 8.5 }, // Villain, top-center (heads-up)
+  ],
+  3: [
+    { x: 50, y: 93.5 }, // Hero
+    { x: 20.5, y: 14 }, // upper-left diagonal, on rail cap circle
+    { x: 79.5, y: 14 }, // upper-right diagonal
+  ],
+  4: [
+    { x: 50, y: 93.5 }, // Hero
+    { x: 10.5, y: 45 }, // left-middle
+    { x: 50, y: 8.5 }, // top-center
+    { x: 89.5, y: 45 }, // right-middle
+  ],
+  5: [
+    { x: 50, y: 93.5 }, // Hero
+    { x: 10.5, y: 55 }, // left-low
+    { x: 20.5, y: 14 }, // upper-left diagonal
+    { x: 79.5, y: 14 }, // upper-right diagonal
+    { x: 89.5, y: 55 }, // right-low
+  ],
+  6: SEAT_POSITIONS_6MAX,
+  7: [
+    { x: 50, y: 93.5 }, // Hero
+    { x: 10.5, y: 62 }, // left-low
+    { x: 10.5, y: 33 }, // left-high
+    { x: 27, y: 13 }, // top-left diagonal
+    { x: 73, y: 13 }, // top-right diagonal
+    { x: 89.5, y: 33 }, // right-high
+    { x: 89.5, y: 62 }, // right-low
+  ],
+  8: [
+    { x: 50, y: 93.5 }, // Hero
+    { x: 19, y: 82.5 }, // lower-left bottom cap
+    { x: 10.5, y: 52 }, // left-low
+    { x: 10.5, y: 28 }, // left-high
+    { x: 50, y: 8.5 }, // top-center
+    { x: 89.5, y: 28 }, // right-high
+    { x: 89.5, y: 52 }, // right-low
+    { x: 81, y: 82.5 }, // lower-right bottom cap
+  ],
+  9: SEAT_POSITIONS_9MAX,
+};
+
+/** Ring for a table size; clamps to [2, 9] so unknown sizes never crash. */
+function seatLayoutFor(maxPlayers: number): Array<{ x: number; y: number }> {
+  return SEAT_LAYOUTS[Math.min(9, Math.max(2, maxPlayers || 9))];
+}
+
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
 // Each horse gets a unique colorful avatar derived from their name
 import { generateAvatarSvg } from '../utils/avatarGenerator';
@@ -5446,7 +5505,9 @@ export default function TablePage({
   }, [presence, userId]);
 
   // Get seat positions based on table size
-  const baseSeatPositions = tableState.maxPlayers === 9 ? SEAT_POSITIONS_9MAX : SEAT_POSITIONS_6MAX;
+  // Dan 2026-08-17: per-size rings — 7-max and 8-max tables (525 live in the
+  // fleet) used to fall into the 6-seat ring and seats 7-8 had no position.
+  const baseSeatPositions = seatLayoutFor(tableState.maxPlayers);
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // SEAT AUTO-ROTATION — Hero always appears at bottom-center (position 0)

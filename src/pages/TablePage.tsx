@@ -7420,6 +7420,11 @@ export default function TablePage({
                     pendingSeat === null &&
                     !tableState.players.some((pl) => pl && pl.id === userId)
                   }
+                  /* Dan 2026-08-18: the hero's own reserved seat reads
+                     "YOUR SEAT" instead of the generic EMPTY. */
+                  isHeroReservedSeat={
+                    tableState.heroSeat === seatNumber || pendingSeat === seatNumber
+                  }
                   onAvatarClick={() => {
                     // Open throwable selector targeting this seat
                     setThrowTargetSeat(seatNumber);
@@ -7707,7 +7712,7 @@ export default function TablePage({
             aria-label="Post the big blind to enter the next hand"
           >
             <span className="post-bb-overlay-button__title">Post BB to Enter</span>
-            <span className="post-bb-overlay-button__sub">Skip the wait — pay the BB now</span>
+            <span className="post-bb-overlay-button__sub">Skip The Wait, Pay The BB Now</span>
           </button>
         )}
 

@@ -105,6 +105,12 @@ export interface SeatSlotProps {
    * with no click target at all (not merely a rejected click).
    */
   canSit?: boolean;
+  /**
+   * Dan 2026-08-18: true for the hero's OWN reserved seat while they wait to
+   * be dealt in. Every other open seat reads EMPTY; this one reads YOUR SEAT
+   * so the player can see where they'll appear.
+   */
+  isHeroReservedSeat?: boolean;
   onAction?: () => void;
   onAvatarClick?: () => void;
   /** Bible V8 §11.1: Show/hide player avatar images */
@@ -281,6 +287,7 @@ export const SeatSlot = memo(
       showStackInBB = false,
       onSit,
       canSit = true,
+      isHeroReservedSeat = false,
       onAction,
       onAvatarClick,
       showAvatar = true,
@@ -461,7 +468,7 @@ export const SeatSlot = memo(
             className={`${containerClasses} seat--empty-locked`}
             aria-label={`Seat ${seatNumber}: empty`}
           >
-            <span className="seat__empty-label">EMPTY</span>
+            <span className="seat__empty-label">{isHeroReservedSeat ? 'YOUR SEAT' : 'EMPTY'}</span>
           </div>
         );
       }

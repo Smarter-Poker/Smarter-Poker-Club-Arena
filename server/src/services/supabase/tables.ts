@@ -82,9 +82,18 @@ export async function loadSeatedPlayers(tableId: string) {
       const profile = profileMap.get(seat.user_id)!;
       return {
         user_id: seat.user_id,
-        username: profile.use_real_name
+        /* Dan 2026-08-18: horses are IDENTITIES, not accounts — their
+           `username` is only an internal handle that a DB trigger forces to
+           lowercase, so shipping it printed "gatecityethan" / "steven
+           ferrara" on the felt. display_name holds the real, properly-cased
+           name (half real "First Last", half styled poker alias), so horses
+           always resolve through it. Humans keep the use_real_name
+           preference exactly as before. */
+        username: profile.is_horse
           ? profile.display_name || profile.username || 'Player'
-          : profile.username || profile.display_name || 'Player',
+          : profile.use_real_name
+            ? profile.display_name || profile.username || 'Player'
+            : profile.username || profile.display_name || 'Player',
         stack: seat.stack,
         seat_number: seat.seat_number || 1,
         is_horse: profile.is_horse || false,

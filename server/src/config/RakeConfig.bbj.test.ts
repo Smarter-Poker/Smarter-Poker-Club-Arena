@@ -62,20 +62,47 @@ describe('THE $99K RULE: the winning hand must be Quads or a Straight Flush', ()
   });
 
   it('the same loser DOES trigger when the winner holds quads', () => {
-    const r = detect([
-      sd('W', 8, [13, 14], [c('K', 'spades'), c('K', 'clubs')]), // quad kings
-      sd('L', 7, [14, 11], [c('A', 'hearts'), c('J', 'hearts')]),
-    ]);
+    // Board Kh Kd Ac Jd Js. W's pocket kings make quad kings (dropping either
+    // leaves only trips), and L's A-J makes aces full of jacks with both cards
+    // load-bearing — so this passes the both-cards rule on real card physics,
+    // not on a missing board.
+    const board = [
+      c('K', 'hearts'),
+      c('K', 'diamonds'),
+      c('A', 'clubs'),
+      c('J', 'diamonds'),
+      c('J', 'spades'),
+    ];
+    const r = detect(
+      [
+        sd('W', 8, [13, 14], [c('K', 'spades'), c('K', 'clubs')]), // quad kings
+        sd('L', 7, [14, 11], [c('A', 'hearts'), c('J', 'hearts')]),
+      ],
+      { board }
+    );
     expect(r.hit).toBe(true);
     expect(r.loserUserId).toBe('L');
     expect(r.winnerUserId).toBe('W');
   });
 
   it('a straight flush winner also qualifies', () => {
-    const r = detect([
-      sd('W', 9, [9], [c('9', 'hearts'), c('8', 'hearts')]),
-      sd('L', 8, [14, 13], [c('A', 'hearts'), c('A', 'clubs')]), // quad aces STILL lose
-    ]);
+    // Board Ac Ah 7h 6h 5h: W's 9h-8h completes 5-6-7-8-9 in hearts (drop
+    // either and it is only a flush), and L's pocket aces make quad aces with
+    // both cards playing.
+    const board = [
+      c('A', 'clubs'),
+      c('A', 'hearts'),
+      c('7', 'hearts'),
+      c('6', 'hearts'),
+      c('5', 'hearts'),
+    ];
+    const r = detect(
+      [
+        sd('W', 9, [9], [c('9', 'hearts'), c('8', 'hearts')]),
+        sd('L', 8, [14, 13], [c('A', 'spades'), c('A', 'diamonds')]), // quad aces STILL lose
+      ],
+      { board }
+    );
     expect(r.hit).toBe(true);
   });
 });
@@ -132,12 +159,21 @@ describe('table minimums', () => {
     sd('W', 8, [13, 14], [c('K', 'spades'), c('K', 'clubs')]),
     sd('L', 7, [14, 11], [c('A', 'hearts'), c('J', 'hearts')]),
   ];
+  // Same real board as the winner-quads case, so these minimums are tested
+  // against a hand that genuinely satisfies every other rule.
+  const BOARD = [
+    c('K', 'hearts'),
+    c('K', 'diamonds'),
+    c('A', 'clubs'),
+    c('J', 'diamonds'),
+    c('J', 'spades'),
+  ];
   it('requires 3+ players dealt', () => {
-    expect(detect(QUAL, { dealt: ['W', 'L'] }).hit).toBe(false);
+    expect(detect(QUAL, { dealt: ['W', 'L'], board: BOARD }).hit).toBe(false);
   });
   it('requires pot >= 10 BB', () => {
-    expect(detect(QUAL, { pot: 99, bb: 10 }).hit).toBe(false);
-    expect(detect(QUAL, { pot: 100, bb: 10 }).hit).toBe(true);
+    expect(detect(QUAL, { pot: 99, bb: 10, board: BOARD }).hit).toBe(false);
+    expect(detect(QUAL, { pot: 100, bb: 10, board: BOARD }).hit).toBe(true);
   });
 });
 
@@ -205,14 +241,34 @@ describe('"both cards from hand must play" (enforced when the board is provided)
   });
 });
 
-describe('multiple qualifying losers: the STRONGEST beat is chosen', () => {
-  it('quad-aces loser outranks an aces-full loser', () => {
-    const r = detect([
-      sd('W', 9, [10], [c('T', 'hearts'), c('9', 'hearts')]), // straight flush wins
-      sd('L', 7, [14, 11], [c('A', 'clubs'), c('J', 'clubs')]),
-      sd('X', 8, [14, 13], [c('A', 'spades'), c('A', 'diamonds')]), // quad aces - the worse beat
-    ]);
+describe('multiple losers: the QUALIFYING beat is chosen', () => {
+  // NOTE (2026-08-18): this used to pit a quad-aces loser against an
+  // aces-full loser. With "both hole cards must play" actually enforced, that
+  // scenario is physically IMPOSSIBLE in hold'em: a quad-aces loser needs two
+  // aces in hand and two on the board, which uses all four — leaving none for
+  // the aces-full loser, who must hold one to qualify. The old test only
+  // passed because it supplied no board, which silently disabled the rule.
+  // Restated with cards that can actually be dealt.
+  it('picks the loser who qualifies over one who does not', () => {
+    // Board Ah Ad Jc 5s 5d. W's pocket fives make quad fives; L holds A-J for
+    // aces full of jacks (both cards load-bearing); X's kings make only two
+    // pair and must be ignored.
+    const board = [
+      c('A', 'hearts'),
+      c('A', 'diamonds'),
+      c('J', 'clubs'),
+      c('5', 'spades'),
+      c('5', 'diamonds'),
+    ];
+    const r = detect(
+      [
+        sd('W', 8, [5, 14], [c('5', 'hearts'), c('5', 'clubs')]), // quad fives win
+        sd('L', 7, [14, 11], [c('A', 'spades'), c('J', 'hearts')]), // aces full of jacks
+        sd('X', 3, [13, 14], [c('K', 'hearts'), c('K', 'diamonds')]), // two pair — no
+      ],
+      { board }
+    );
     expect(r.hit).toBe(true);
-    expect(r.loserUserId).toBe('X');
+    expect(r.loserUserId).toBe('L');
   });
 });

@@ -559,7 +559,19 @@ export function detectBBJHit(
   const shortDeck = normalizedVariant === 'short_deck';
   const bothPlayOk = (hole: Array<{ rank: string; suit: string }>): boolean => {
     if (!needBothCards) return true;
-    if (!communityCards || communityCards.length < 5) return true; // no board given: legacy behavior
+    // FAIL CLOSED 2026-08-18 (live finding, $11,392.67 across 3 hits, most
+    // recent 15:14 that day): this used to `return true` when no board was
+    // supplied — "legacy behavior" — which silently DISABLED the
+    // both-cards-must-play rule instead of enforcing it. Every one of those
+    // three payouts was a hand where the BOARD itself made quads, so no
+    // player's two hole cards could both play; the rule would have rejected
+    // all of them had it run.
+    //
+    // A qualifying hand always needs a five-card board, so refusing to pay
+    // when we cannot see one cannot cost a legitimate jackpot — while paying
+    // blind demonstrably costs real money. If the board is missing, that is a
+    // bug upstream to fix, not a payout to wave through.
+    if (!communityCards || communityCards.length < 5) return false;
     if (hole.length < 2) return false;
     return bothHoleCardsPlay(hole, communityCards, shortDeck);
   };

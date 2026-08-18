@@ -19,7 +19,7 @@ import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
 import { RunItTwicePrompt, RunItTwiceResult, type RitResultData } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
-import BBJInfoModal from './BBJInfoModal';
+import BBJInfoModal from '../bbj/BBJInfoModal';
 import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
 import type { ThrowEvent } from '../../services/ThrowableService';

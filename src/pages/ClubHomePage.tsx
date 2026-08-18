@@ -39,6 +39,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import BBJTicker from '../components/bbj/BBJTicker';
+import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 
@@ -169,6 +170,10 @@ export default function ClubHomePage() {
     clubUuid: null,
     unionId: null,
   });
+  // Tapping the lobby jackpot opens the SAME view as tapping it at a table:
+  // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
+  const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
+  const [showBBJInfo, setShowBBJInfo] = useState(false);
   const [activeMainFilter, setActiveMainFilter] = useState<MainFilter>('ALL');
   const [cashVariant, setCashVariant] = useState<CashVariant>('ALL');
   const [tournVariant, setTournVariant] = useState<TournVariant>('ALL');
@@ -676,7 +681,7 @@ export default function ClubHomePage() {
             // BUGFIX: resolve the CORRECT BBJ pool. Union clubs contribute to the
             // UNION pool (that's the one that grows); a club-level pool row may exist
             // but is stale. Fetch by union_id when in a union, else club_id.
-            const q = supabase.from('bbj_pools').select('main_balance');
+            const q = supabase.from('bbj_pools').select('id, main_balance');
             const scoped = unionId ? q.eq('union_id', unionId) : q.eq('club_id', resolvedId);
             return await scoped.limit(1).maybeSingle();
           } catch (e) {
@@ -729,6 +734,7 @@ export default function ClubHomePage() {
       // BBJ jackpot
       if (bbjResult?.data && !(bbjResult as any).error) {
         setJackpotAmount((bbjResult.data as any)?.main_balance || 0);
+        setBbjPoolId((bbjResult.data as any)?.id || null);
       }
 
       // Calculate Club Level from live metrics
@@ -1064,11 +1070,18 @@ export default function ClubHomePage() {
             poolAmount={jackpotAmount}
             onClick={() => {
               haptic.selection();
-              navigate(`/clubs/${clubId}/jackpot`);
+              setShowBBJInfo(true);
             }}
           />
         </div>
       )}
+
+      <BBJInfoModal
+        isOpen={showBBJInfo}
+        onClose={() => setShowBBJInfo(false)}
+        poolId={bbjPoolId}
+        poolAmount={jackpotAmount}
+      />
 
       {/* ═══════════════════════════════════════════════════════════════════
                 CLUB CARD + WALLET DISPLAY (side-by-side layout)

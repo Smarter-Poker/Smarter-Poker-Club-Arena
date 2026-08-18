@@ -138,3 +138,44 @@ describe('BBJ rules panel data integrity (2026-08-18)', () => {
     expect(ladder[ladder.length - 1]).toBe(85);
   });
 });
+
+describe('BBJ modal highlighting — "your game" / "your stakes" (2026-08-18)', () => {
+  // The modal marks the row for the table you are sitting at. Aliases must
+  // collapse onto the row that actually renders, or nothing gets marked.
+  const rowKeyFor = (variant: string) => {
+    const k = normalizeVariantKey(variant);
+    return k === 'flh' ? 'nlh' : k === 'plo' ? 'plo4' : k === 'plo_hilo' ? 'plo8' : k;
+  };
+  const RENDERED_ROWS = ['nlh', 'plo4', 'plo8', 'plo5', 'plo6', 'short_deck'];
+
+  it('every variant a table can report maps onto a rendered row', () => {
+    const tableVariants = [
+      'nlh',
+      'flh',
+      'plo',
+      'plo4',
+      'plo5',
+      'plo6',
+      'plo8',
+      'plo_hilo',
+      'short_deck',
+      "No Limit Hold'em",
+      "Fixed Limit Hold'em",
+      'Pot Limit Omaha',
+      'Pot Limit Omaha Hi-Lo',
+      'Short Deck',
+    ];
+    for (const v of tableVariants) {
+      expect(RENDERED_ROWS, `${v} -> ${rowKeyFor(v)}`).toContain(rowKeyFor(v));
+    }
+  });
+
+  it('a stakes highlight matches exactly one tier percentage', () => {
+    const tierPcts = [0.2, 0.8, 3, 8, 40, 50].map(getBBJPayoutPercentForBB);
+    // A real table BB must light up exactly one row of the ladder.
+    for (const bb of [0.1, 0.2, 0.5, 1, 2, 5, 10, 25, 100]) {
+      const pct = getBBJPayoutPercentForBB(bb);
+      expect(tierPcts.filter((p) => p === pct)).toHaveLength(1);
+    }
+  });
+});

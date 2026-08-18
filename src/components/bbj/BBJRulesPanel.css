@@ -110,3 +110,35 @@
   line-height: 1.6;
   color: rgba(255, 255, 255, 0.7);
 }
+
+/* Embedded inside another surface (the BBJ modal) — no double chrome */
+.bbj-rules--embedded {
+  margin: 0;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+}
+
+.bbj-rules--embedded .bbj-rules__body {
+  padding: 0;
+}
+
+/* "You are here" row marking (2026-08-18) */
+.bbj-rules__table tr.is-current td {
+  background: rgba(255, 215, 0, 0.09);
+  box-shadow: inset 2px 0 0 #ffd700;
+}
+
+.bbj-rules__here {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #ffd700;
+  color: #1a1400;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+  white-space: nowrap;
+}

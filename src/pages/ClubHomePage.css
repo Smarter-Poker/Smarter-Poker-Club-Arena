@@ -528,7 +528,15 @@
 ═══════════════════════════════════════════════════════════════════════════════ */
 .club-home__games {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* 300px floor, was 150px. NeonCard spends 26px padding x2 (52px) plus a
+     fixed `flex: 0 0 100px` emblem = 152px BEFORE a single character of text,
+     and .ngc-info carries `min-width: 0`, so at a 150px track the info column
+     collapsed to roughly nothing: "BLINDS" rendered as "BLI", "1/2" as "1/",
+     and the BBJ/max corner pills sat on top of the content. The card was
+     designed for a wide tile and the grid was handing it a narrow one.
+     300px leaves ~148px of real text column. NeonCard.css additionally makes
+     the emblem and padding fluid so a squeeze can never truncate again. */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 1rem;
   padding: 1rem;
   position: relative;

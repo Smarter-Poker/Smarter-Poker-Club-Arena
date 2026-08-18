@@ -346,8 +346,16 @@ export default function ClubHomePage() {
       // funds it, instead of showing a value frozen at fetch time.
       const handleBBJChange = (payload: any) => {
         if (!isMounted) return;
-        const row = (payload?.new ?? payload?.old) as { main_balance?: number } | undefined;
-        if (row && typeof row.main_balance === 'number') setJackpotAmount(row.main_balance);
+        const row = (payload?.new ?? payload?.old) as
+          | { main_balance?: number | string }
+          | undefined;
+        // main_balance is numeric(14,2), and PostgREST/Realtime deliver
+        // numerics as STRINGS ("350.40"). The old guard was
+        // `typeof row.main_balance === 'number'`, which is therefore NEVER
+        // true - every live tick was silently dropped and the banner only
+        // ever showed the value fetched at mount. Coerce first, then check.
+        const next = Number(row?.main_balance);
+        if (Number.isFinite(next)) setJackpotAmount(next);
       };
       channel = channel.on(
         'postgres_changes',
@@ -731,9 +739,14 @@ export default function ClubHomePage() {
       }
       setTournaments(allTournaments);
 
-      // BBJ jackpot
+      // BBJ jackpot. Number() is load-bearing, not cosmetic: main_balance is
+      // numeric(14,2) and arrives as the STRING "10500.67". Assigning it raw
+      // put a string into a number-typed state, which then failed BBJTicker's
+      // `typeof poolAmount === 'number'` ownership check and left the ticker
+      // and the page disagreeing about who owns the value.
       if (bbjResult?.data && !(bbjResult as any).error) {
-        setJackpotAmount((bbjResult.data as any)?.main_balance || 0);
+        const initial = Number((bbjResult.data as any)?.main_balance);
+        setJackpotAmount(Number.isFinite(initial) ? initial : 0);
         setBbjPoolId((bbjResult.data as any)?.id || null);
       }
 

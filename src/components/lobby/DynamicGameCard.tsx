@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import './DynamicGameCard.css';
 import './NeonCard.css';
 import { reportError } from '../../utils/errorReporter';
+import { MEDIA_BASE } from '../../utils/mediaBase';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 interface TableSettings {
@@ -96,7 +97,17 @@ const TOURNEY_VARIANT_MAP: Record<string, string> = {
   PLO: 'plo4',
 };
 
-const ICON_BASE = '/game-card-icons/';
+// MUST resolve through MEDIA_BASE, not a root-absolute literal. This app is
+// served under `base: '/hub/club-arena/'` (vite.config.ts), so
+// '/game-card-icons/nlh.png' pointed at the SITE ROOT - where World Hub's
+// public/game-card-icons/ is EMPTY - and every emblem 404'd. Verified live:
+//   /game-card-icons/nlh.png                -> 404 text/html
+//   /hub/club-arena/game-card-icons/nlh.png -> 200 image/png  (51 files there)
+// The <img onError> handlers then hid each broken emblem, which is why the
+// lobby cards rendered as empty dark tiles with no game-type art. mediaBase.ts
+// already names game-card-icons/ as a directory that must go through this
+// helper; this file was the one place that did not.
+const ICON_BASE = `${MEDIA_BASE}game-card-icons/`;
 const NEON_HEX: Record<string, string> = {
   red: '#ff2d43',
   blue: '#22a7ff',

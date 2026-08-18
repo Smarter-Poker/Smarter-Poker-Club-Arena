@@ -12,7 +12,9 @@
   text-decoration: none;
   color: #eef4f9;
   border-radius: 34px;
-  padding: 22px 26px;
+  /* Fluid horizontal padding: 26px on a roomy card, down to 14px when the
+     grid track is tight. Fixed 26px each side was 52px of the ~150px track. */
+  padding: 22px clamp(14px, 6%, 26px);
   background: radial-gradient(120% 130% at 50% 30%, #12202b 0%, #0a121a 58%, #05090e 100%);
   box-shadow:
     0 20px 42px rgba(0, 0, 0, 0.62),
@@ -53,7 +55,12 @@
   min-height: 132px;
 }
 .ngc-emblem {
-  flex: 0 0 100px;
+  /* Was `flex: 0 0 100px` - a hard 100px which, with 52px of card padding,
+     consumed 152px before any text and collapsed .ngc-info (min-width: 0)
+     to nothing on a narrow grid track: "BLINDS" rendered as "BLI", "1/2" as
+     "1/". Now it shrinks WITH the card instead of starving the text. */
+  flex: 0 1 clamp(56px, 28%, 100px);
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72,7 +79,18 @@
   gap: 2px;
 }
 .ngc-head {
-  padding-right: 58px;
+  /* Reserves room for the absolutely-positioned .ngc-corner pills (BBJ +
+     max-players). 58px was measured against a wide card; on a tight track
+     that reservation exceeded the whole text column, so the pills sat on
+     top of the blinds value. Scales with the card now. */
+  padding-right: clamp(34px, 40%, 58px);
+}
+/* Never let a squeezed track clip the two values that matter. */
+.ngc-val,
+.ngc-lbl {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ngc-lbl {
   font-size: 10px;

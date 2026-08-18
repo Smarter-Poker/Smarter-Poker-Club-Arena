@@ -1182,6 +1182,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // The clock re-arm itself is deliberately preserved: removing it would
     // reintroduce the bug AUDIT FIX 2026-07-19 closed, where a reconnecting
     // player had no timer at all and the hand hung to the 10-minute void.
+    // 2026-08-18 — the same "two deadlines, the shorter one wins" bug that
+    // §6.2.d closed for the manual button, on the path that fix did not cover.
+    //
+    // If a time bank is already RUNNING for this seat, `timebank:<uid>` is
+    // counting down to a deadline that startTurnTimer cannot see: it is a
+    // different PreciseActionTimer key, so re-arming the turn clock replaces
+    // `<uid>` and leaves the bank countdown untouched. handleTurnChange then
+    // re-stamps playerTurnStartTime, which is what turn_deadline_ms broadcasts,
+    // so the client is told it has a fresh clock while the older, shorter bank
+    // deadline is still armed underneath and folds them mid-countdown. A tab
+    // that suspends on mobile and wakes three seconds before the bank expires
+    // is shown twenty seconds and folded in three.
+    //
+    // The player already spent the bank; reconnecting must not buy more time
+    // and must not lose them any either. Leaving both the countdown AND the
+    // broadcast stamps exactly as activation set them keeps the two in
+    // agreement and tells the client the truth. There is a live timer here by
+    // definition, so the hang this method exists to prevent cannot occur.
+    const activeBank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+    if (activeBank?.isActive) return;
+
     const timeBankAlreadyUsedThisTurn = this.timeBankActivatedThisTurn;
     this.handleTurnChange(
       { type: 'TURN_CHANGE', seat: player.seat, availableActions: [] } as HandEvent,

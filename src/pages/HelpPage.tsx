@@ -33,7 +33,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: 'What is the rake structure?',
     answer:
-      'Rake is 10% of the pot, capped at 2.5 big blinds. A small portion also goes to the Bad Beat Jackpot.',
+      'Rake is 10% of the pot, up to a cap that depends on the stake — from $3 at the smallest blinds to $20 at the largest. The cap is a cash amount, not a number of big blinds, and it is reduced when a hand is played heads-up or three-handed. No flop, no drop: an uncontested pot is never raked. A small portion of the rake also funds the Bad Beat Jackpot.',
   },
   {
     question: 'How do settlements work?',
@@ -48,7 +48,7 @@ const FAQ_ITEMS: FAQItem[] = [
   {
     question: 'What is the Bad Beat Jackpot?',
     answer:
-      'The BBJ is a progressive jackpot that triggers when a strong hand (like quad eights or better) loses. The pot is split among the table.',
+      'The BBJ is a progressive jackpot for losing a monster hand. In Hold\u2019em, Aces full of Jacks or better must lose to Quads or better, and both of your hole cards must play. In Omaha games, Quad Kings or better must lose. When it hits, the losing hand takes 50%, the winning hand 25%, and everyone else dealt into the hand splits the remaining 25% \u2014 credited straight to your table stack.',
   },
   {
     question: 'How do I report a problem?',

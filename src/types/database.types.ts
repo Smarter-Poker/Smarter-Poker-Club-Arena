@@ -15,7 +15,6 @@ import type { Club } from './club.types';
 export interface ClubSettings {
   default_rake_percent: number;
   rake_cap: number;
-  time_bank_seconds: number;
   allow_straddle: boolean;
   allow_run_it_twice: boolean;
   min_buy_in_bb: number;
@@ -116,7 +115,11 @@ export interface TableSettings {
   bomb_pot_enabled: boolean;
   bomb_pot_frequency: number; // Every N hands
   bomb_pot_ante_bb: number;
-  time_bank_seconds: number;
+  // 2026-08-18: time_bank_seconds is gone. A time bank is a flat 20s grant,
+  // 2 per street (Bible V8 s6.2) — there is no per-table "seconds per
+  // activation" any more, and the engine never read the column. Whether a
+  // table offers time banks at all is time_bank_enabled.
+  time_bank_enabled: boolean;
   auto_muck: boolean;
 
   // ── Additional Game Features ──

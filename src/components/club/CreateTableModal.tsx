@@ -81,7 +81,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
     bomb_pot_enabled: false,
     bomb_pot_frequency: 10,
     bomb_pot_ante_bb: 2,
-    time_bank_seconds: 30,
+    time_bank_enabled: true,
     auto_muck: true,
     vpip_display: false,
     ante_enabled: false,

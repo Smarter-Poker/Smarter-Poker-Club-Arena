@@ -1140,7 +1140,7 @@ class TournamentService {
           max_buy_in: 0,
           max_players: 9,
           status: 'RUNNING',
-          settings: { auto_muck: true, time_bank_seconds: 30 },
+          settings: { auto_muck: true },
         })
         .select()
         .maybeSingle();
@@ -2079,7 +2079,7 @@ class TournamentService {
           max_buy_in: 0,
           max_players: 9,
           status: 'RUNNING',
-          settings: { auto_muck: true, time_bank_seconds: 45 },
+          settings: { auto_muck: true },
         })
         .select()
         .maybeSingle();

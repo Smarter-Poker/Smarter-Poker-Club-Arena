@@ -215,7 +215,6 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
               rake_cap: 3,
               min_buy_in_bb: 40,
               max_buy_in_bb: 200,
-              time_bank_seconds: 30,
               allow_straddle: true,
               allow_run_it_twice: true,
             },

@@ -144,7 +144,7 @@ class TableService {
       bomb_pot_enabled: false,
       bomb_pot_frequency: 0,
       bomb_pot_ante_bb: 0,
-      time_bank_seconds: 30,
+      time_bank_enabled: true,
       auto_muck: true,
       vpip_display: false,
       ante_enabled: false,
@@ -228,8 +228,12 @@ class TableService {
         bomb_pot_ante_multiplier: defaultSettings.bomb_pot_enabled
           ? defaultSettings.bomb_pot_ante_bb || 2
           : 0,
-        time_bank_seconds: defaultSettings.time_bank_seconds ?? 30,
-        time_bank_enabled: (defaultSettings.time_bank_seconds ?? 0) > 0,
+        // 2026-08-18: time_bank_enabled used to be derived from a
+        // time_bank_seconds value the engine never read — a per-table "seconds
+        // per activation" knob that has not existed since the rule became a
+        // flat 20s grant. Setting 0 there was the only way to turn time banks
+        // off, which nothing documented. It is an explicit switch now.
+        time_bank_enabled: defaultSettings.time_bank_enabled ?? true,
         wait_for_big_blind: defaultSettings.wait_for_big_blind ?? true,
         // 7-2 game: winner holding any 7-2 collects a bounty (in BB) from each
         // other dealt-in player, post-flop only. Engine reads these columns.

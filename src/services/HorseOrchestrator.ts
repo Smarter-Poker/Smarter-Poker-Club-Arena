@@ -1241,7 +1241,6 @@ class HorseOrchestrator {
               bomb_pot_enabled: config.name.includes('Bomb'),
               bomb_pot_frequency: config.name.includes('Bomb') ? 10 : 0,
               bomb_pot_ante_bb: config.name.includes('Bomb') ? 2 : 0,
-              time_bank_seconds: 30,
               auto_muck: true,
             },
           })

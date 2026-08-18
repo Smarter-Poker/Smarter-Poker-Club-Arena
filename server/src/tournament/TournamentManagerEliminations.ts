@@ -355,10 +355,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (hasBounty && tournament) {
       try {
         // Find the table this player is seated at (left_at still null — not yet marked as left)
+        //
+        // 2026-08-18: unscoped by table, this returned ANY open seat the player
+        // held — with no ORDER BY, a cash table was a coin flip. The knocker
+        // was then derived from an unrelated cash hand, so the bounty went to a
+        // stranger or (more often) to someone not in the tournament at all, and
+        // fn_collect_bounty rejected it and logged bounty_not_collected.
         const { data: seat } = await supabase
           .from('table_seats')
-          .select('table_id')
+          .select('table_id, tables!inner(tournament_id)')
           .eq('user_id', userId)
+          .eq('tables.tournament_id', this.tournamentId)
           .is('left_at', null)
           .limit(1)
           .maybeSingle();
@@ -408,11 +415,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
     }
 
-    await supabase
-      .from('table_seats')
-      .update({ left_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .is('left_at', null);
+    // 2026-08-18: this UPDATE used to be scoped by user_id alone, so busting a
+    // player out of a tournament stamped left_at on EVERY open seat they had —
+    // including cash tables. Players are not confined to one context here
+    // (HorseFleetManager explicitly allows multi-tabling, and registerHorses
+    // only excludes horses busy in another TOURNAMENT), so a bustout could
+    // silently eject someone from a cash game they were winning, stranding the
+    // stack in a left_at row that atomicCashout never sees. Scope it to the
+    // tables that belong to this tournament.
+    const { data: tournamentTables } = await supabase
+      .from('tables')
+      .select('id')
+      .eq('tournament_id', this.tournamentId);
+    const tournamentTableIds = (tournamentTables ?? []).map((t: { id: string }) => t.id);
+    if (tournamentTableIds.length > 0) {
+      await supabase
+        .from('table_seats')
+        .update({ left_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .in('table_id', tournamentTableIds)
+        .is('left_at', null);
+    }
 
     // Broadcast player_eliminated event to all table pages
     // The elimination toast in TournamentDetails/TournamentPage needs a name;

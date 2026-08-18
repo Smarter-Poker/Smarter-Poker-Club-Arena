@@ -16,7 +16,7 @@ import { StraddleEngine } from './StraddleEngine.js';
 import { integrityFeed } from '../integrity/IntegrityFeed.js';
 import type { HandHistoryRow } from '../integrity/HandEventAdapter.js';
 import { computeSevenDeuceBounties } from './SevenDeuceBounty.js';
-import { getFullRakeConfig, detectBBJHit } from '../config/RakeConfig.js';
+import { getFullRakeConfig, detectBBJHit, detectBBJNearMiss } from '../config/RakeConfig.js';
 import {
   loadTable,
   syncStacks,
@@ -500,6 +500,40 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // Store BBJ hit for postHandTasks to process the actual payouts
         this.currentHandBBJHit = bbjResult;
         this.currentHandBBJPayoutConfig = rakeConfig;
+      } else {
+        // NEAR-MISS 2026-08-18: no hit — but did someone make a qualifying
+        // losing hand and miss on exactly one condition? Teaching the rules
+        // in the moment beats a rules page nobody opens. Display only: this
+        // branch moves no money and cannot gate a payout.
+        try {
+          const nearMiss = detectBBJNearMiss(
+            this.currentHandShowdownResults,
+            this.currentHandWinnerIds[0],
+            variant,
+            this.currentHandPotSize,
+            this.tableInfo.big_blind,
+            dealtInPlayerIds.length,
+            bbjBoard
+          );
+          if (nearMiss.nearMiss) {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] BBJ near miss (${nearMiss.reason}): ` +
+                `${nearMiss.userId} held ${nearMiss.handName}`
+            );
+            this.hub?.emitEvent(this.tableId, {
+              type: 'bbj_near_miss',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              user_id: nearMiss.userId,
+              hand_name: nearMiss.handName,
+              reason: nearMiss.reason,
+              message: nearMiss.message,
+            });
+          }
+        } catch (nmErr) {
+          // A cosmetic banner must never break settlement.
+          console.warn(`[ServerTableEngine:${this.tableId}] BBJ near-miss check failed:`, nmErr);
+        }
       }
     }
 

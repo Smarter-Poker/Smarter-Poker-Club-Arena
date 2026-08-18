@@ -1580,6 +1580,10 @@ export default function TablePage({
     qualifyingLabel: string;
     heroShare: number;
   } | null>(null);
+  // BBJ-FLOAT 2026-08-18: per-seat gold "BBJ +$X" floats, keyed by userId.
+  // Set alongside the celebration, cleared 4.5s later.
+  const [bbjSeatCredits, setBbjSeatCredits] = useState<Record<string, number>>({});
+  const bbjSeatCreditsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Q3: Auto-set "Playing At" status for friends to see
   useEffect(() => {
@@ -1814,6 +1818,7 @@ export default function TablePage({
       if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
       if (handRevealTimerRef.current) clearTimeout(handRevealTimerRef.current);
       if (bbjTimerRef.current) clearTimeout(bbjTimerRef.current);
+      if (bbjSeatCreditsTimerRef.current) clearTimeout(bbjSeatCreditsTimerRef.current);
       if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
     };
   }, []);
@@ -3034,6 +3039,22 @@ export default function TablePage({
         return;
       }
 
+      // NEAR-MISS 2026-08-18: someone made a qualifying losing hand and missed
+      // the jackpot on exactly one condition. Teaches the rule in the moment.
+      if (eventType === 'bbj_near_miss') {
+        const nmUser = handState.user_id as string;
+        const nmMessage = handState.message as string;
+        if (nmMessage) {
+          // The player who held the hand gets the personal framing; the rest
+          // of the table sees it happened (jackpot awareness) without noise.
+          toast.info(
+            nmUser === userId ? nmMessage : nmMessage.replace('So close!', 'Bad Beat Jackpot:'),
+            4000
+          );
+        }
+        return;
+      }
+
       if (eventType === 'bbj_payout_complete') {
         // FIX 128: BBJ payout calculated — NOW show the celebration.
         // This event arrives from postHandTasks() which runs AFTER the hand is fully complete,
@@ -3109,6 +3130,30 @@ export default function TablePage({
           // NOW trigger the HUD hit animation + full celebration overlay
           setShowBBJ(true);
           setShowBBJCelebration(true);
+
+          // Per-seat gold floats for every SEATED recipient (updatedStacks is
+          // exactly the set the engine credited at the table).
+          const shareForSeat = (uid: string): number =>
+            uid === (loserPayout?.userId || hitData?.loserUserId)
+              ? loserPayout?.share || 0
+              : uid === (winnerPayout?.userId || hitData?.winnerUserId)
+                ? winnerPayout?.share || 0
+                : tablePlayerIds.includes(uid)
+                  ? perPlayer
+                  : 0;
+          const credits: Record<string, number> = {};
+          for (const su of updatedStacks) {
+            const amt = shareForSeat(su.userId);
+            if (amt > 0) credits[su.userId] = amt;
+          }
+          if (Object.keys(credits).length > 0) {
+            setBbjSeatCredits(credits);
+            if (bbjSeatCreditsTimerRef.current) clearTimeout(bbjSeatCreditsTimerRef.current);
+            bbjSeatCreditsTimerRef.current = setTimeout(() => {
+              bbjSeatCreditsTimerRef.current = null;
+              setBbjSeatCredits({});
+            }, 4500);
+          }
 
           // Phase E: Notify all table players via in-app Notifications tab
           if (userId && userId !== 'guest') {
@@ -7316,6 +7361,7 @@ export default function TablePage({
                       ? tableState.engineWinners?.find((w) => w.userId === player.id)?.netAmount
                       : undefined
                   }
+                  bbjCreditAmount={player ? bbjSeatCredits[player.id] : undefined}
                   hudStats={player && !player.isHero ? getPlayerHUDStats(player.id) : null}
                   showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}

@@ -83,6 +83,13 @@ export interface SeatSlotProps {
    * Animation auto-fades after 2.5s.
    */
   netWinAmount?: number;
+  /**
+   * BBJ-FLOAT 2026-08-18: Bad Beat Jackpot share credited to this seat's
+   * stack. When > 0, renders a gold "BBJ +$X" float above the seat, timed
+   * with the celebration overlay so players see exactly where the jackpot
+   * chips landed. Cleared by TablePage a few seconds after the payout.
+   */
+  bbjCreditAmount?: number;
   hudStats?: MiniHUDStats | null; // Opponent VPIP/PFR stats
   showHUD?: boolean; // Whether to show the HUD overlay
   playerStyle?: PlayerStyleResult | null; // Auto-classified player archetype
@@ -263,6 +270,7 @@ export const SeatSlot = memo(
       bountyValue,
       isWinner = false,
       netWinAmount,
+      bbjCreditAmount,
       winningHandName,
       hudStats,
       showHUD = false,
@@ -788,6 +796,17 @@ export const SeatSlot = memo(
           </div>
         )}
 
+        {/* BBJ credit float — gold, distinct from the pot-win +N (2026-08-18) */}
+        {typeof bbjCreditAmount === 'number' && bbjCreditAmount > 0 && (
+          <div className="seat__bbj-credit" key={`bbj-${bbjCreditAmount}`}>
+            BBJ +
+            {(Math.trunc(bbjCreditAmount * 100) / 100).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </div>
+        )}
+
         {/* All-In Badge */}
         {player.status === 'all_in' && !isWinner && <div className="seat__allin-badge">ALL IN</div>}
 
@@ -819,6 +838,7 @@ export const SeatSlot = memo(
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
     if (prev.netWinAmount !== next.netWinAmount) return false;
+    if (prev.bbjCreditAmount !== next.bbjCreditAmount) return false;
     if (prev.lastAction !== next.lastAction) return false;
     if (prev.lastBetAmount !== next.lastBetAmount) return false;
     if (prev.showHUD !== next.showHUD) return false;

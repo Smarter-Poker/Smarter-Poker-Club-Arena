@@ -2315,3 +2315,57 @@
   border-color: rgba(255, 215, 0, 0.7);
   box-shadow: 0 0 16px rgba(255, 215, 0, 0.4);
 }
+
+/* ── BBJ credit float (2026-08-18) ──
+   Gold jackpot-share float, deliberately distinct from .seat__net-win:
+   brighter gold, coin-edge border, slower rise (the moment deserves it). */
+.seat__bbj-credit {
+  position: absolute;
+  top: -78px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 900;
+  color: #ffd700;
+  background: rgba(20, 12, 0, 0.72);
+  border: 1px solid rgba(255, 215, 0, 0.65);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.7),
+    0 0 14px rgba(255, 215, 0, 0.8);
+  box-shadow: 0 0 18px rgba(255, 215, 0, 0.35);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  z-index: 41;
+  pointer-events: none;
+  animation: bbj-credit-float 3.5s ease-out forwards;
+}
+
+@keyframes bbj-credit-float {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(14px) scale(0.7);
+  }
+  12% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1.12);
+  }
+  22% {
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-10px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-26px) scale(0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat__bbj-credit {
+    animation: none;
+  }
+}

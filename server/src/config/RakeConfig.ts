@@ -617,6 +617,145 @@ export function detectBBJHit(
   return noHit;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * BBJ NEAR-MISS DETECTION (2026-08-18)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * A jackpot that only ever announces itself on a hit is invisible: players
+ * never learn the rules and never feel the pull. This reports hands where a
+ * player DID hold a qualifying losing hand (aces full of jacks+, quad kings+,
+ * etc.) but exactly one other condition blocked the payout.
+ *
+ * Deliberately conservative: it fires ONLY when a real qualifying loser hand
+ * was made and lost. "You had a pair and lost" is not a near miss, and
+ * spamming one after every hand would train players to ignore it.
+ *
+ * This function NEVER moves money and never gates a payout — detectBBJHit
+ * remains the single authority on whether the jackpot fires. It is display
+ * only, so a bug here can cost a cosmetic banner and nothing else.
+ */
+export type BBJNearMissReason =
+  | 'winner_not_quads'
+  | 'both_cards_must_play'
+  | 'pot_too_small'
+  | 'not_enough_players';
+
+export interface BBJNearMissResult {
+  nearMiss: boolean;
+  reason?: BBJNearMissReason;
+  /** Player-facing one-liner. */
+  message?: string;
+  /** The player who held the qualifying losing hand. */
+  userId?: string;
+  handName?: string;
+}
+
+export function detectBBJNearMiss(
+  showdownResults: Array<{
+    userId: string;
+    handRanking: number;
+    handName: string;
+    kickers: number[];
+    holeCards?: Array<{ rank: string; suit: string }>;
+  }>,
+  winnerId: string,
+  variant: string,
+  potSize: number,
+  bigBlind: number,
+  numPlayersDealt: number,
+  communityCards?: Array<{ rank: string; suit: string }>
+): BBJNearMissResult {
+  const none: BBJNearMissResult = { nearMiss: false };
+
+  const normalizedVariant = variant.toLowerCase();
+  const qualifying = BBJ_QUALIFYING_HANDS[normalizedVariant];
+  if (!qualifying || qualifying.eligible === false || !qualifying.minLosingHand) return none;
+
+  const winner = showdownResults.find((r) => r.userId === winnerId);
+  const losers = showdownResults.filter((r) => r.userId !== winnerId);
+  if (!winner || losers.length === 0) return none;
+
+  // Find the strongest loser who met the qualifying HAND bar (ignoring every
+  // other condition — that is exactly what we are reporting on).
+  let best: (typeof losers)[number] | null = null;
+  for (const loser of losers) {
+    if (
+      !doesHandQualify(
+        loser.handRanking,
+        loser.kickers,
+        loser.holeCards || [],
+        qualifying,
+        normalizedVariant
+      )
+    ) {
+      continue;
+    }
+    if (
+      best === null ||
+      loser.handRanking > best.handRanking ||
+      (loser.handRanking === best.handRanking && compareKickers(loser.kickers, best.kickers) > 0)
+    ) {
+      best = loser;
+    }
+  }
+  if (!best) return none;
+
+  const base = { nearMiss: true as const, userId: best.userId, handName: best.handName };
+
+  // Report the FIRST unmet condition, in the order a player would ask about.
+  if (numPlayersDealt < BBJ_RULES.minPlayersDealt) {
+    return {
+      ...base,
+      reason: 'not_enough_players',
+      message: `So close! ${best.handName} would have qualified, but the jackpot needs ${BBJ_RULES.minPlayersDealt}+ players dealt in.`,
+    };
+  }
+
+  if (potSize < bigBlind * BBJ_RULES.minPotBB) {
+    return {
+      ...base,
+      reason: 'pot_too_small',
+      message: `So close! ${best.handName} would have qualified, but the pot needs to reach ${BBJ_RULES.minPotBB} big blinds.`,
+    };
+  }
+
+  if (winner.handRanking < HAND_RANK.FOUR_OF_A_KIND) {
+    return {
+      ...base,
+      reason: 'winner_not_quads',
+      message: `So close! ${best.handName} lost — but the jackpot needs the winning hand to be Quads or better.`,
+    };
+  }
+
+  // Both-cards-play (hold'em family only; Omaha is game-enforced).
+  const needBothCards =
+    BBJ_RULES.requireBothHoleCards &&
+    (normalizedVariant === 'nlh' ||
+      normalizedVariant === 'flh' ||
+      normalizedVariant === 'pineapple');
+  if (needBothCards && communityCards && communityCards.length >= 5) {
+    // needBothCards is true only for nlh/flh/pineapple, so short-deck
+    // evaluation never applies on this branch.
+    const loserOk =
+      (best.holeCards || []).length >= 2 &&
+      bothHoleCardsPlay(best.holeCards || [], communityCards, false);
+    const winnerOk =
+      (winner.holeCards || []).length >= 2 &&
+      bothHoleCardsPlay(winner.holeCards || [], communityCards, false);
+    if (!loserOk || !winnerOk) {
+      return {
+        ...base,
+        reason: 'both_cards_must_play',
+        message: `So close! ${best.handName} lost to Quads — but the jackpot needs BOTH hole cards to play.`,
+      };
+    }
+  }
+
+  // Every condition met — this was a real hit, not a near miss.
+  return none;
+}
+
 /** Lexicographic kicker comparison (higher wins). */
 function compareKickers(a: number[], b: number[]): number {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {

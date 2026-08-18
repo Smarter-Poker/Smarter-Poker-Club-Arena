@@ -1360,6 +1360,7 @@
     "fn_social_reels_block_too_long",
     "fn_social_reels_yt_intercept",
     "fn_social_reels_yt_queue_job",
+    "fn_solver_v2_progress",
     "fn_staff_pin_taken",
     "fn_submit_bug_report_to_admin",
     "fn_survival_progress_monotonic",

@@ -1,0 +1,312 @@
+diff --git a/server/src/engine/HandController.stackdeltas.test.ts b/server/src/engine/HandController.stackdeltas.test.ts
+new file mode 100644
+index 0000000..9ec3e63
+--- /dev/null
++++ b/server/src/engine/HandController.stackdeltas.test.ts
+@@ -0,0 +1,154 @@
++/**
++ * ENGINE STACK DELTAS — the getState()-returns-copies trap.
++ *
++ * `HandController.getState()` hands out copies:
++ *
++ *     players: this.state.players.map((p) => ({ ...p, cards: [...p.cards] }))
++ *
++ * so `getState().players.find(...).stack += x` mutates a throwaway object and
++ * the engine's authoritative state never moves. PR #97 found this destroying
++ * run-it-twice pots. The same pattern was still live in two more settlement
++ * adjustments, both of which land AFTER the WINNERS event:
++ *
++ *   - insurance payouts and premiums
++ *   - the 7-2 bounty transfer
++ *
++ * Neither lost money — `syncStacks()` persists `seatedPlayers`, which WAS being
++ * mutated correctly — but `broadcastCurrentState()` reads the engine state, so
++ * every snapshot between settlement and the next hand showed the player a stack
++ * that did not include their insurance payout or their bounty. In the 7-2 case
++ * the code explicitly re-broadcasts "so clients see the bounty-adjusted stacks
++ * immediately" and then sent the pre-bounty numbers.
++ *
++ * `applyStackDeltas()` is the single supported way to move engine stacks after
++ * the hand is decided. These tests pin its semantics and, first, pin the copy
++ * semantics that make it necessary — so nobody "simplifies" it back.
++ */
++
++import { describe, it, expect } from 'vitest';
++import { HandController } from './HandController.js';
++import type { HandConfig, SeatPlayer } from '../types.js';
++
++function mkPlayers(stacks: number[]): SeatPlayer[] {
++  return stacks.map(
++    (stack, i) =>
++      ({
++        seat: i + 1,
++        user_id: `u${i + 1}`,
++        username: `P${i + 1}`,
++        stack,
++        bet: 0,
++        totalInvested: 0,
++        cards: [],
++        is_folded: false,
++        is_all_in: false,
++        is_sitting_out: false,
++      }) as SeatPlayer
++  );
++}
++
++function mkConfig(over: Partial<HandConfig> = {}): HandConfig {
++  return {
++    tableId: 't-deltas',
++    handNumber: 1,
++    gameVariant: 'nlh',
++    smallBlind: 1,
++    bigBlind: 2,
++    rakeConfig: { percent: 5, cap: 100, noFlopNoDrop: true },
++    ...over,
++  } as HandConfig;
++}
++
++function hcOf(stacks: number[]) {
++  return new HandController(mkConfig(), mkPlayers(stacks), 1);
++}
++
++const stackOf = (hc: HandController, userId: string) =>
++  hc.getState().players.find((p) => p.user_id === userId)!.stack;
++
++describe('getState() copy semantics — why applyStackDeltas exists', () => {
++  it('writing through getState() does NOT move the engine', () => {
++    const hc = hcOf([200, 200, 200]);
++    const before = stackOf(hc, 'u3');
++
++    // Exactly what the insurance and 7-2 code used to do.
++    const copy = hc.getState().players.find((p) => p.user_id === 'u3')!;
++    copy.stack += 500;
++
++    expect(copy.stack).toBe(before + 500); // the throwaway moved...
++    expect(stackOf(hc, 'u3')).toBe(before); // ...and the engine did not.
++  });
++
++  it('each getState() call returns a fresh object, not a shared one', () => {
++    const hc = hcOf([200, 200, 200]);
++    const a = hc.getState().players.find((p) => p.user_id === 'u1')!;
++    const b = hc.getState().players.find((p) => p.user_id === 'u1')!;
++    expect(a).not.toBe(b);
++  });
++});
++
++describe('applyStackDeltas', () => {
++  it('credits and debits the engine state itself', () => {
++    const hc = hcOf([200, 200, 200]);
++    const u1 = stackOf(hc, 'u1');
++    const u3 = stackOf(hc, 'u3');
++
++    // A 7-2 bounty shape: two payers debited, the winner credited.
++    hc.applyStackDeltas(
++      new Map([
++        ['u1', -4],
++        ['u2', -4],
++        ['u3', +8],
++      ])
++    );
++
++    expect(stackOf(hc, 'u1')).toBe(u1 - 4);
++    expect(stackOf(hc, 'u3')).toBe(u3 + 8);
++  });
++
++  it('snaps to cents so repeated transfers cannot drift', () => {
++    const hc = hcOf([200, 200, 200]);
++    const start = stackOf(hc, 'u2');
++    for (let i = 0; i < 3; i++) hc.applyStackDeltas(new Map([['u2', 0.1]]));
++    expect(stackOf(hc, 'u2')).toBe(Math.round((start + 0.3) * 100) / 100);
++  });
++
++  it('ignores unknown users and zero deltas instead of throwing', () => {
++    const hc = hcOf([200, 200, 200]);
++    const before = hc.getState().players.map((p) => p.stack);
++    expect(() =>
++      hc.applyStackDeltas(
++        new Map([
++          ['nobody-at-this-table', 250],
++          ['u1', 0],
++        ])
++      )
++    ).not.toThrow();
++    expect(hc.getState().players.map((p) => p.stack)).toEqual(before);
++  });
++
++  it('does not touch the pot — these are transfers, not awards from the pot', () => {
++    const hc = hcOf([200, 200, 200]);
++    const pot = hc.getState().pot;
++    hc.applyStackDeltas(new Map([['u1', -5]]));
++    expect(hc.getState().pot).toBe(pot);
++  });
++});
++
++describe('creditRunoutWinnings still behaves exactly as before', () => {
++  it('delegating to applyStackDeltas did not change run-it-twice payouts', () => {
++    const hc = hcOf([200, 200, 200]);
++    const u1 = stackOf(hc, 'u1');
++    const u2 = stackOf(hc, 'u2');
++
++    hc.creditRunoutWinnings(
++      new Map([
++        ['u1', 60],
++        ['u2', 40],
++      ])
++    );
++
++    expect(stackOf(hc, 'u1')).toBe(u1 + 60);
++    expect(stackOf(hc, 'u2')).toBe(u2 + 40);
++  });
++});
+diff --git a/server/src/engine/HandController.ts b/server/src/engine/HandController.ts
+index d1dd52b..cb3a649 100644
+--- a/server/src/engine/HandController.ts
++++ b/server/src/engine/HandController.ts
+@@ -901,7 +901,30 @@ export class HandController {
+   }
+ 
+   public creditRunoutWinnings(distribution: Map<string, number>): void {
+-    for (const [userId, amount] of distribution) {
++    this.applyStackDeltas(distribution);
++  }
++
++  /**
++   * Apply signed stack deltas to the ENGINE'S OWN players.
++   *
++   * Exists because getState() hands out copies:
++   *
++   *   players: this.state.players.map((p) => ({ ...p, cards: [...p.cards] }))
++   *
++   * so `getState().players.find(...).stack += x` mutates a throwaway object
++   * and the authoritative state never moves. Every settlement adjustment that
++   * lands AFTER the WINNERS event — run-it-twice payouts (PR #97), insurance
++   * payouts and premiums, the 7-2 bounty transfer — has to come back through
++   * here, or the engine keeps broadcasting the pre-adjustment stacks until the
++   * next hand reloads seats from the database.
++   *
++   * Deltas are signed: positive credits, negative debits. Callers pass the
++   * amount they ACTUALLY applied to the persisted seat row, so the engine and
++   * the database move by the same number and cannot drift apart.
++   */
++  public applyStackDeltas(deltas: Map<string, number>): void {
++    for (const [userId, amount] of deltas) {
++      if (!amount) continue;
+       const player = this.state.players.find((p) => p.user_id === userId);
+       if (player) player.stack += amount;
+     }
+diff --git a/server/src/engine/ServerTableEngineSettlement.ts b/server/src/engine/ServerTableEngineSettlement.ts
+index 5391e5f..c579012 100644
+--- a/server/src/engine/ServerTableEngineSettlement.ts
++++ b/server/src/engine/ServerTableEngineSettlement.ts
+@@ -192,8 +192,23 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
+       // - LOSER who bought insurance: Gets insuredAmount from union/club bank → credited to table stack
+       // - WINNER who bought insurance: Premium deducted from winnings (taken at end like rake)
+       // - Player can't lose more than their premium; can't gain more than insuredAmount
++      // 2026-08-18: the engine's own stacks are moved through applyStackDeltas
++      // at the end of this loop, NOT by assigning to `enginePlayer.stack`.
++      // getState() returns copies (players spread, cards cloned), so the old
++      // `enginePlayer.stack += payout` mutated a throwaway and the engine state
++      // never moved — the same defect PR #97 fixed for run-it-twice. The
++      // database was always correct because syncStacks() persists
++      // seatedPlayers, but every broadcast between here and the next hand read
++      // the engine copy and therefore showed pre-insurance stacks.
++      //
++      // Deltas are keyed off what was ACTUALLY applied to the seat row, so the
++      // engine and the DB move by the same amount even where the premium is
++      // clamped against a short stack.
++      const insuranceDeltas = new Map<string, number>();
+       for (const settlement of this.currentHandInsuranceSettlements) {
+         const seatedPlayer = this.seatedPlayers.find((p) => p.user_id === settlement.playerId);
++        // Read-only: used solely as a stack fallback for the shortfall alert
++        // below when the player has no seat row. Never mutated.
+         const enginePlayer = this.handController
+           ? this.handController.getState().players.find((p) => p.user_id === settlement.playerId)
+           : null;
+@@ -202,11 +217,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
+           // LOSER with insurance: credit payout from union/club bank to table stack
+           if (seatedPlayer) {
+             seatedPlayer.stack += settlement.payout;
++            insuranceDeltas.set(
++              settlement.playerId,
++              (insuranceDeltas.get(settlement.playerId) ?? 0) + settlement.payout
++            );
+             console.log(
+               `[ServerTableEngine:${this.tableId}] Insurance payout: ${settlement.playerId} lost hand → +$${settlement.payout} from bank`
+             );
+           }
+-          if (enginePlayer) enginePlayer.stack += settlement.payout;
+         }
+ 
+         // ALL insured players: premium deducted from their stack at end (like rake)
+@@ -244,16 +262,22 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
+             );
+           }
+           if (seatedPlayer) {
++            const beforePremium = seatedPlayer.stack;
+             seatedPlayer.stack = Math.max(0, seatedPlayer.stack - settlement.premium);
++            // The CLAMPED amount, not settlement.premium — a short stack pays
++            // what it has and the engine must debit exactly that.
++            insuranceDeltas.set(
++              settlement.playerId,
++              (insuranceDeltas.get(settlement.playerId) ?? 0) + (seatedPlayer.stack - beforePremium)
++            );
+             console.log(
+               `[ServerTableEngine:${this.tableId}] Insurance premium: ${settlement.playerId} → -$${settlement.premium} (stack: $${seatedPlayer.stack})`
+             );
+           }
+-          if (enginePlayer) {
+-            enginePlayer.stack = Math.max(0, enginePlayer.stack - settlement.premium);
+-          }
+         }
+       }
++
++      if (insuranceDeltas.size > 0) this.handController?.applyStackDeltas(insuranceDeltas);
+     }
+ 
+     // ═══════════════════════════════════════════════════════════════════════
+@@ -302,6 +326,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
+         );
+ 
+         let sdAnyApplied = false;
++        // Same story as the insurance block above: sdState came from
++        // getState(), so its player objects are copies. Collect signed deltas
++        // and push them into the engine once, before the re-broadcast that
++        // exists specifically to show the bounty-adjusted stacks.
++        const bountyDeltas = new Map<string, number>();
+         for (const transfer of sdTransfers) {
+           // Apply debits to each payer (re-cap at the live stack in case an
+           // earlier transfer this hand already took chips) and credit the
+@@ -318,7 +347,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
+             const pay = Math.min(payer.amount, liveStack);
+             if (pay <= 0) continue;
+             if (seatedPayer) seatedPayer.stack = Math.round((seatedPayer.stack - pay) * 100) / 100;
+-            if (enginePayer) enginePayer.stack = Math.round((enginePayer.stack - pay) * 100) / 100;
++            bountyDeltas.set(payer.userId, (bountyDeltas.get(payer.userId) ?? 0) - pay);
+             applied = Math.round((applied + pay) * 100) / 100;
+             appliedPayers.push({ userId: payer.userId, amount: pay });
+           }
+@@ -330,8 +359,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
+           const engineWinner = sdState.players.find((p) => p.user_id === transfer.winnerUserId);
+           if (seatedWinner)
+             seatedWinner.stack = Math.round((seatedWinner.stack + applied) * 100) / 100;
+-          if (engineWinner)
+-            engineWinner.stack = Math.round((engineWinner.stack + applied) * 100) / 100;
++          bountyDeltas.set(
++            transfer.winnerUserId,
++            (bountyDeltas.get(transfer.winnerUserId) ?? 0) + applied
++          );
+ 
+           const winnerCards = engineWinner?.cards ?? [];
+           console.log(
+@@ -375,6 +406,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
+           }
+         }
+ 
++        // Move the engine's own stacks BEFORE the re-broadcast: broadcastCurrentState()
++        // reads handController.getState(), so without this the "bounty-adjusted"
++        // snapshot below went out with the pre-bounty numbers.
++        if (bountyDeltas.size > 0) this.handController?.applyStackDeltas(bountyDeltas);
++
+         // Re-broadcast so clients see the bounty-adjusted stacks immediately
+         // (the WINNERS snapshot went out before these transfers were applied).
+         if (sdAnyApplied) this.broadcastCurrentState();

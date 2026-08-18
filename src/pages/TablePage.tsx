@@ -1060,7 +1060,7 @@ export default function TablePage({
         if (data.type === 'time_bank_timeout') {
           if (data.showBuyMore) {
             toast.warning(
-              `You were auto-${data.timedOutAction === 'check' ? 'checked' : 'folded'} — no time banks remaining. Visit the Diamond Store to purchase more!`,
+              `You were auto-${data.timedOutAction === 'check' ? 'checked' : 'folded'} , no time banks remaining. Visit the Diamond Store to purchase more!`,
               2500
             );
           } else {
@@ -2966,7 +2966,7 @@ export default function TablePage({
           if (showBuyMore) {
             // Player has ZERO time banks left — prompt to buy more
             toast.warning(
-              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} — no time banks remaining. Visit the Diamond Store to purchase more!`,
+              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} , no time banks remaining. Visit the Diamond Store to purchase more!`,
               2500
             );
           } else {
@@ -7218,8 +7218,12 @@ export default function TablePage({
           {timeBankActive && (
             <div
               style={{
+                /* Dan 2026-08-18 (screenshot review): bottom 22% landed the
+                   countdown panel squarely ON the hero's avatar and hole
+                   cards. Anchored just above the action bar instead, where
+                   nothing else lives. */
                 position: 'fixed',
-                bottom: '22%',
+                bottom: 'calc(150px + env(safe-area-inset-bottom, 0px))',
                 left: '50%',
                 transform: 'translateX(-50%)',
                 zIndex: 60,

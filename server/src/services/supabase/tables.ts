@@ -104,7 +104,12 @@ export async function loadSeatedPlayers(tableId: string) {
  */
 export async function syncStacks(
   tableId: string,
-  players: { user_id: string; stack: number; time_bank_uses_remaining?: number }[]
+  players: {
+    user_id: string;
+    stack: number;
+    time_bank_uses_remaining?: number;
+    time_bank_remaining?: number;
+  }[]
 ): Promise<void> {
   const results = await Promise.allSettled(
     players.map((player) => {
@@ -112,6 +117,9 @@ export async function syncStacks(
       const updatePayload: any = { stack: Math.round(player.stack * 100) / 100 };
       if (player.time_bank_uses_remaining !== undefined) {
         updatePayload.time_bank_uses_remaining = player.time_bank_uses_remaining;
+      }
+      if (player.time_bank_remaining !== undefined) {
+        updatePayload.time_bank_remaining = player.time_bank_remaining;
       }
       return supabase
         .from('table_seats')

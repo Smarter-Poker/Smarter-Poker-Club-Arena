@@ -580,7 +580,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         players.map((p) => ({
           user_id: p.user_id,
           stack: p.stack,
-          time_bank_uses_remaining: p.time_bank_uses_remaining,
+          // VIP time banks 2026-08-18: HandController players never carried
+          // time_bank_uses_remaining (always undefined), so this column sat
+          // at its insert default (4) on every one of 22,805 seat rows -
+          // the persist had NEVER once written. Ask the engine, the actual
+          // source of truth.
+          time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
+          time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
         }))
       );
     });
@@ -968,7 +974,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             players.map((p) => ({
               user_id: p.user_id,
               stack: p.stack,
-              time_bank_uses_remaining: p.time_bank_uses_remaining,
+              time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(
+                this.tableId,
+                p.user_id
+              ),
+              time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
             }))
           );
 

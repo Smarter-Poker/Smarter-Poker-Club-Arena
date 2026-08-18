@@ -842,6 +842,36 @@ export class HandController {
     this.completeHand();
   }
 
+  /**
+   * Credit an externally-computed payout to the REAL hand state.
+   *
+   * Run It Twice computes its own distribution (one evaluation per board) and
+   * then calls finalizeRunout(true) to skip the normal payout. Before
+   * 2026-08-18 it applied that distribution by mutating the array returned by
+   * getState() — which is a COPY (see getState: players are spread into new
+   * objects). The real this.state.players were never credited.
+   *
+   * finalizeRunout(true) then emits WINNERS [], and that handler does
+   * `localPlayer.stack = enginePlayer.stack` from a fresh (still uncredited)
+   * getState(). So it overwrote the one real credit — the seated player's —
+   * with the pre-payout stack, and syncStacks persisted that. Both players in
+   * an all-in RIT pot finished on their post-betting stack and the pot was
+   * destroyed. 28,691 tables have run_it_twice_enabled.
+   *
+   * Crediting the real state here means the WINNERS sync propagates the
+   * CORRECT number instead of clobbering it, so there is exactly one place
+   * that owns the stack and one place that copies it outward.
+   */
+  public creditRunoutWinnings(distribution: Map<string, number>): void {
+    for (const [userId, amount] of distribution) {
+      const player = this.state.players.find((p) => p.user_id === userId);
+      if (player) player.stack += amount;
+    }
+    // Same reason completeHand() snaps after paying out: += on binary floats
+    // is where cross-hand drift is born.
+    this.snapChips();
+  }
+
   private runOutCommunityCards(): void {
     const deck = this.state.deck as unknown as Deck;
     while (this.state.communityCards.length < 5) {

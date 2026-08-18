@@ -540,12 +540,18 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     }
 
     // Apply distributions to player stacks
-    for (const [playerId, amount] of totalDistribution) {
-      const enginePlayer = state.players.find((p) => p.user_id === playerId);
-      const seatedPlayer = this.seatedPlayers.find((p) => p.user_id === playerId);
-      if (enginePlayer) enginePlayer.stack += amount;
-      if (seatedPlayer) seatedPlayer.stack += amount;
-    }
+    //
+    // 2026-08-18: credit the ENGINE state through HandController, not the copy
+    // getState() hands back. finalizeRunout(true) below emits WINNERS [], whose
+    // handler runs `localPlayer.stack = enginePlayer.stack` off a fresh
+    // getState() — so whatever is not written into the real state gets
+    // overwritten a moment later. Crediting the copy silently destroyed the
+    // whole pot on every multi-board RIT hand.
+    //
+    // seatedPlayers are deliberately NOT credited here: the WINNERS sync is
+    // the single path that copies engine stacks outward, and doing it twice
+    // would double-count if the two ever drift.
+    this.handController.creditRunoutWinnings(totalDistribution);
 
     // Broadcast RIT results
     this.hub?.emitEvent(this.tableId, {

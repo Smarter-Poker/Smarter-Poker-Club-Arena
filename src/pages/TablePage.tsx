@@ -1392,6 +1392,12 @@ export default function TablePage({
 
   // Run It Twice state — FIX 96: 2-phase flow with chooser model
   const [showRIT, setShowRIT] = useState(false);
+  // rit_result payload for the boards/payout overlay (2026-08-18) — the
+  // handler used to discard the event, so nobody ever saw the extra boards.
+  const [ritResult, setRitResult] = useState<
+    import('../components/table/RunItTwice').RitResultData | null
+  >(null);
+  const ritResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ritTimer, setRitTimer] = useState(10);
   const [ritOpponent, setRitOpponent] = useState('Opponent');
   const [ritIsChooser, setRitIsChooser] = useState(false);
@@ -2773,10 +2779,26 @@ export default function TablePage({
         return;
       }
 
-      // FIX 97: RIT result — display board results (future: animation)
+      // FIX 97 → 2026-08-18: RIT result — show the boards and payouts. The
+      // extra boards exist ONLY in this event (they never enter the engine's
+      // community-card state), so discarding it meant players watched the
+      // pot ship with no runout shown. Auto-dismisses before the next hand
+      // gets going; tap/OK dismisses sooner.
       if (eventType === 'rit_result') {
         setShowRIT(false);
-        // RIT boards and distribution can be displayed via a future component
+        const boards = (handState.boards as string[][]) || [];
+        const distribution = (handState.distribution as Record<string, number>) || {};
+        const pots = (handState.pots as Array<{ amount: number }>) || [];
+        if (boards.length >= 2) {
+          setRitResult({
+            runs: (handState.runs as number) || boards.length,
+            boards,
+            distribution,
+            potTotal: pots.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+          });
+          if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
+          ritResultTimerRef.current = setTimeout(() => setRitResult(null), 12_000);
+        }
         return;
       }
 
@@ -7685,8 +7707,14 @@ export default function TablePage({
       {/*
         Bible V8 §11.1: text_message toggle — hide chat entirely when off.
         The underlying messages keep streaming into chatMessages so when the
-        user re-enables, their history isn't lost. voice_message is not yet
-        implemented; when that arrives it will live here too.
+        user re-enables, their history isn't lost.
+
+        voice_message used to be OR'd into isMuted below. There is no voice
+        chat at the table, so all that switch did was silently mute TEXT chat
+        under a label that said "voice" — text_message already owns that, and
+        owning it twice meant a player could turn text chat on and still not
+        have it. The toggle is gone from TABLE_SETTINGS_META; when voice chat
+        actually ships it gets its own gate here.
       */}
       {v8Settings.text_message && (
         <TableChat
@@ -7697,7 +7725,7 @@ export default function TablePage({
           isCollapsed={isChatCollapsed}
           onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
           placeholder={canChatAsObserver ? 'Say something...' : 'Observers cannot chat'}
-          isMuted={isChatMuted || !v8Settings.voice_message}
+          isMuted={isChatMuted}
           isDisabled={!canChatAsObserver}
           unreadCount={unreadCount}
         />
@@ -7798,6 +7826,12 @@ export default function TablePage({
         onRITChooserDecide={handleRITChooserDecide}
         onRITAccept={handleRITAccept}
         onRITDecline={handleRITDecline}
+        ritResult={ritResult}
+        onRitResultClose={() => {
+          if (ritResultTimerRef.current) clearTimeout(ritResultTimerRef.current);
+          setRitResult(null);
+        }}
+        ritResolveName={(uid) => tableState.players.find((p) => p?.id === uid)?.name || 'Player'}
         // BBJ
         showBBJ={showBBJ}
         bbjAmount={bbjAmount}

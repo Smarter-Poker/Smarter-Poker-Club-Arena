@@ -332,3 +332,50 @@
     font-size: 0.8125rem;
   }
 }
+
+/* ── Result overlay (2026-08-18) ─────────────────────────────────────────── */
+.rit-result__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+.rit-result {
+  min-width: 280px;
+  max-width: 92vw;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #14212e, #0b141d);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.rit-result__payouts {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rit-result__payout {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #dfe8f0;
+}
+.rit-result__amount {
+  color: #4ade80;
+  font-weight: 700;
+}
+.rit-result__close {
+  margin-top: 12px;
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  border-radius: 10px;
+  background: #1f6feb;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}

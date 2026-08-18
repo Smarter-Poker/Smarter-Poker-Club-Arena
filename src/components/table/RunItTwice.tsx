@@ -296,4 +296,100 @@ export function RunItTwiceBoard({
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// RESULT OVERLAY (2026-08-18)
+//
+// The engine's rit_result event carried the boards and the per-player payout
+// for every run-it-twice hand, and the client THREW IT AWAY (the handler was
+// a stub) - players watched the pot ship with no runout cards shown at all,
+// because RIT boards never enter the engine's community-card state either.
+// This overlay is the only place a human sees the extra boards.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Engine card strings look like 'Ahearts' / '10diamonds'. */
+export function parseRitCard(raw: string): Card | null {
+  const m = /^(10|[2-9]|[TJQKA])(hearts|diamonds|clubs|spades)$/.exec(raw);
+  if (!m) return null;
+  return { rank: m[1] === '10' ? 'T' : m[1], suit: m[2][0] as Card['suit'] };
+}
+
+export interface RitResultData {
+  runs: number;
+  /** One array of card strings per board, engine format. */
+  boards: string[][];
+  /** userId → net amount won (post rake/BBJ). */
+  distribution: Record<string, number>;
+  potTotal: number;
+}
+
+export interface RunItTwiceResultProps {
+  isOpen: boolean;
+  data: RitResultData | null;
+  /** Resolve a userId to a display name (falls back to 'Player'). */
+  resolveName: (userId: string) => string;
+  onClose: () => void;
+  currency?: string;
+}
+
+export function RunItTwiceResult({
+  isOpen,
+  data,
+  resolveName,
+  onClose,
+  currency = '',
+}: RunItTwiceResultProps) {
+  if (!isOpen || !data) return null;
+  const payouts = Object.entries(data.distribution)
+    .filter(([, amt]) => amt > 0)
+    .sort((x, y) => y[1] - x[1]);
+
+  return (
+    <div className="rit-result__overlay" onClick={onClose} role="dialog" aria-label="Run it result">
+      <div className="rit-result" onClick={(e) => e.stopPropagation()}>
+        <div className="rit-board__header">
+          <span className="rit-board__badge">
+            Ran it {data.runs === 3 ? 'Three Times' : 'Twice'}
+          </span>
+          <span className="rit-board__pot">
+            Pot: {currency}
+            {data.potTotal.toLocaleString()}
+          </span>
+        </div>
+
+        {data.boards.map((board, bi) => (
+          <div key={`b-${bi}`} className="rit-board__run">
+            <span className="rit-board__run-label">Run {bi + 1}</span>
+            <div className="rit-board__cards">
+              {board.map((raw, ci) => {
+                const card = parseRitCard(raw);
+                return card ? (
+                  <span key={`c-${bi}-${ci}`} className="rit-board__card">
+                    <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+                  </span>
+                ) : null;
+              })}
+            </div>
+          </div>
+        ))}
+
+        <div className="rit-result__payouts">
+          {payouts.map(([uid, amt]) => (
+            <div key={uid} className="rit-result__payout">
+              <span className="rit-result__name">{resolveName(uid)}</span>
+              <span className="rit-result__amount">
+                +{currency}
+                {amt.toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <button className="rit-result__close" onClick={onClose}>
+          OK
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default RunItTwicePrompt;

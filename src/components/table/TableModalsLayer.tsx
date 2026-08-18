@@ -16,7 +16,7 @@ import { GameRulesModal } from './GameRulesModal';
 import SitOutModal from './SitOutModal';
 import WaitListModal from './WaitListModal';
 import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
-import { RunItTwicePrompt } from './RunItTwice';
+import { RunItTwicePrompt, RunItTwiceResult, type RitResultData } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
@@ -159,6 +159,9 @@ export interface TableModalsLayerProps {
   onRITChooserDecide: (runs: 1 | 2 | 3) => Promise<void>;
   onRITAccept: () => Promise<void>;
   onRITDecline: () => Promise<void>;
+  ritResult: RitResultData | null;
+  onRitResultClose: () => void;
+  ritResolveName: (userId: string) => string;
 
   // Bad Beat Jackpot
   showBBJ: boolean;
@@ -415,6 +418,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     onHandRevealClose,
     // RIT
     showRIT,
+    ritResult,
+    onRitResultClose,
+    ritResolveName,
     ritIsChooser,
     ritOpponent: _ritOpponent,
     ritTimer,
@@ -667,6 +673,14 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         maxRuns={ritMaxRuns}
         playerCount={ritPlayerCount}
         opponentName={_ritOpponent}
+      />
+
+      {/* Run It Twice result — the boards and payouts (2026-08-18) */}
+      <RunItTwiceResult
+        isOpen={ritResult !== null}
+        data={ritResult}
+        resolveName={ritResolveName}
+        onClose={onRitResultClose}
       />
 
       {/* Bad Beat Jackpot Display */}

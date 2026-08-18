@@ -559,12 +559,14 @@
   height: 100%;
   object-fit: cover;
   border-radius: 9999px;
-  /* Dan 2026-08-18: tightened 88->87% solid with a short 93% fade — the
-     composite's scene margin ("weird images around the table") is clipped
-     away against the designed page background; the rail's farthest point
-     sits at ~87% of this ellipse so the table itself is untouched. */
-  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 87%, transparent 93%);
-  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 87%, transparent 93%);
+  /* Dan 2026-08-18 (round 2): an ellipse mask at 87% cut the rail's own
+     left/right edges (the rail spans nearly the full width, but only ~93%
+     of the height — one ellipse can't hug both). Mask on the X axis only:
+     a horizontal fade clips the composite's leftover scene strips while
+     the rail, which reaches x=100%, keeps its full silhouette. The
+     stadium border-radius above already rounds the corners. */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 4%, #000 96%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 4%, #000 96%, transparent 100%);
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;

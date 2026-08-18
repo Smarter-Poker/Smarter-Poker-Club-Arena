@@ -25,7 +25,7 @@ const DEFAULT_THEME: UserThemeSelection = {
   // still resolves to it via the TABLE_SKINS legacy alias in TablePage).
   table_id: 'neon_city',
   button_id: 'classic-white',
-  background_id: 'diamond-pattern',
+  background_id: 'midnight',
   cards_id: 'standard-red',
 };
 

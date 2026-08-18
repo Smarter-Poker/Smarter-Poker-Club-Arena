@@ -90,6 +90,45 @@ const TABLE_SKINS: Record<string, string> = {
 function resolveSkin(tid: string): string {
   return TABLE_SKINS[tid] || skinClassicGreen;
 }
+
+// Dan 2026-08-18 — INTERCHANGEABLE DESIGNED BACKGROUNDS.
+// The blurred-skin backdrop is gone ("remove the weird images around the
+// table"). The page behind the table is now one of ten standalone designed
+// backgrounds, selected on the Theme modal's Background tab and stored in
+// user_theme_settings.background_id. Legacy ids alias to the closest design.
+import bgMidnight from '../assets/backgrounds/bg_midnight.jpg';
+import bgRoyalIndigo from '../assets/backgrounds/bg_royal_indigo.jpg';
+import bgEmeraldRoom from '../assets/backgrounds/bg_emerald_room.jpg';
+import bgCrimsonLounge from '../assets/backgrounds/bg_crimson_lounge.jpg';
+import bgOceanAbyss from '../assets/backgrounds/bg_ocean_abyss.jpg';
+import bgGoldenDusk from '../assets/backgrounds/bg_golden_dusk.jpg';
+import bgGalaxy from '../assets/backgrounds/bg_galaxy.jpg';
+import bgCarbonGrid from '../assets/backgrounds/bg_carbon_grid.jpg';
+import bgIceFrost from '../assets/backgrounds/bg_ice_frost.jpg';
+import bgJadeNeon from '../assets/backgrounds/bg_jade_neon.jpg';
+
+const TABLE_BACKGROUNDS: Record<string, string> = {
+  midnight: bgMidnight,
+  royal_indigo: bgRoyalIndigo,
+  emerald_room: bgEmeraldRoom,
+  crimson_lounge: bgCrimsonLounge,
+  ocean_abyss: bgOceanAbyss,
+  golden_dusk: bgGoldenDusk,
+  galaxy: bgGalaxy,
+  carbon_grid: bgCarbonGrid,
+  ice_frost: bgIceFrost,
+  jade_neon: bgJadeNeon,
+  // Legacy ids saved before 2026-08-18
+  'diamond-pattern': bgMidnight,
+  'stone-concrete': bgCarbonGrid,
+  'galaxy-nebula': bgGalaxy,
+  'hardwood-floor': bgGoldenDusk,
+  'teal-tile': bgJadeNeon,
+};
+
+function resolveBackground(bid: string): string {
+  return TABLE_BACKGROUNDS[bid] || bgMidnight;
+}
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -6517,36 +6556,24 @@ export default function TablePage({
   return (
     <div
       className={`table-page${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
-      /* Dan 2026-08-17 (audit fix) — the skin no longer paints the page
-         directly: a cover-scaled copy of the composite read as a SECOND,
-         giant table behind the real one (live screenshot showed seats
-         apparently floating on the backdrop's felt). Ambiance is now the
-         .table-backdrop child below — same image, heavily blurred and
-         darkened via CSS filter so it can never read as a table — while the
-         actual table is .table-art inside the aspect-locked scaler. */
+      /* Dan 2026-08-18 — the page never shows the skin composite's scene:
+         the table is .table-art inside the aspect-locked scaler, and the
+         page behind it is a standalone designed background (style below). */
       data-felt-theme={v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'}
-      data-background-theme={v8Theme.background_id || 'diamond-pattern'}
+      data-background-theme={v8Theme.background_id || 'midnight'}
       data-button-theme={v8Theme.button_id || 'classic-white'}
       data-cards-theme={v8Theme.cards_id || 'standard-red'}
       data-theme-preset={v8Theme.theme_id || 'default-dark'}
+      style={{
+        // Dan 2026-08-18: the blurred-skin backdrop is GONE ("remove the
+        // weird images around the table"). The page shows one of the ten
+        // designed, interchangeable backgrounds instead.
+        backgroundImage: `url(${resolveBackground(v8Theme.background_id || 'midnight')})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      }}
     >
-      {/* Blurred scene ambiance — see the comment on .table-page above.
-          STEP 8 (Bible V8 §11.2 Tab 4): only the DEFAULT background shows the
-          skin's own blurred scene. Any other saved background_id suppresses
-          this layer so the FIX 222 page background (diamond/stone/galaxy/
-          hardwood/teal) is actually visible — before this gate, the Tab 4
-          picker saved correctly but changed nothing on screen. */}
-      {(v8Theme.background_id || 'diamond-pattern') === 'diamond-pattern' && (
-        <div
-          className="table-backdrop"
-          aria-hidden="true"
-          style={{
-            backgroundImage: `url(${resolveSkin(
-              v8Theme.table_id || v8Theme.theme_id || userSettings.theme || ''
-            )})`,
-          }}
-        />
-      )}
       <style>{`
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
                 @keyframes boardFade { from { opacity: 0.7; } to { opacity: 1; } }

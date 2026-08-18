@@ -183,24 +183,9 @@
   overscroll-behavior: none;
 }
 
-/* Dan 2026-08-17 (audit fix) — blurred scene ambiance behind the table.
-   The active skin composite, cover-scaled, blurred hard and darkened so the
-   scene's mood carries but its painted table can NEVER read as the game
-   surface (that was the live bug: seats appeared to float on a giant
-   backdrop table). scale(1.18) hides the blur's soft edges. */
-.table-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  filter: blur(26px) brightness(0.42) saturate(1.15);
-  transform: scale(1.18);
-  pointer-events: none;
-}
-
-/* The table column stacks above the backdrop. */
+/* Dan 2026-08-18: the blurred-skin .table-backdrop layer is GONE ("remove
+   the weird images around the table"). The page background is a designed,
+   interchangeable image set inline by TablePage (TABLE_BACKGROUNDS). */
 .table-container {
   position: relative;
   z-index: 1;
@@ -574,8 +559,12 @@
   height: 100%;
   object-fit: cover;
   border-radius: 9999px;
-  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 88%, transparent 100%);
-  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 88%, transparent 100%);
+  /* Dan 2026-08-18: tightened 88->87% solid with a short 93% fade — the
+     composite's scene margin ("weird images around the table") is clipped
+     away against the designed page background; the rail's farthest point
+     sits at ~87% of this ellipse so the table itself is untouched. */
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 87%, transparent 93%);
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 87%, transparent 93%);
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;

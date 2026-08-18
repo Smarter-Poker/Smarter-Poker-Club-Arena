@@ -229,35 +229,67 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
       vipOnly: true,
     },
   ],
+  // Dan 2026-08-18: ten standalone designed backgrounds (see
+  // src/assets/backgrounds/, applied via TABLE_BACKGROUNDS in TablePage).
   background: [
     {
-      id: 'diamond-pattern',
-      name: 'Diamond',
-      thumbnail: 'linear-gradient(135deg, #263238, #37474f)',
+      id: 'midnight',
+      name: 'Midnight',
+      thumbnail: 'radial-gradient(ellipse at 50% 35%, #2c323c, #0a0c10)',
       vipOnly: false,
     },
     {
-      id: 'stone-concrete',
-      name: 'Stone',
-      thumbnail: 'linear-gradient(135deg, #424242, #616161)',
+      id: 'royal_indigo',
+      name: 'Royal Indigo',
+      thumbnail: 'radial-gradient(ellipse at 50% 35%, #3a306e, #0c0a1a)',
       vipOnly: false,
     },
     {
-      id: 'galaxy-nebula',
+      id: 'emerald_room',
+      name: 'Emerald Room',
+      thumbnail: 'radial-gradient(ellipse at 50% 35%, #164e36, #06120d)',
+      vipOnly: false,
+    },
+    {
+      id: 'crimson_lounge',
+      name: 'Crimson Lounge',
+      thumbnail: 'radial-gradient(ellipse at 50% 35%, #601a22, #14070a)',
+      vipOnly: false,
+    },
+    {
+      id: 'ocean_abyss',
+      name: 'Ocean Abyss',
+      thumbnail: 'radial-gradient(ellipse at 50% 35%, #143e68, #050c18)',
+      vipOnly: false,
+    },
+    {
+      id: 'golden_dusk',
+      name: 'Golden Dusk',
+      thumbnail: 'radial-gradient(ellipse at 50% 35%, #786022, #181008)',
+      vipOnly: false,
+    },
+    {
+      id: 'galaxy',
       name: 'Galaxy',
-      thumbnail: 'linear-gradient(135deg, #1a237e, #311b92)',
+      thumbnail: 'radial-gradient(ellipse at 30% 25%, #2e1650, #04040c)',
+      vipOnly: false,
+    },
+    {
+      id: 'carbon_grid',
+      name: 'Carbon Grid',
+      thumbnail: 'radial-gradient(ellipse at 50% 40%, #1e2126, #08090b)',
       vipOnly: true,
     },
     {
-      id: 'hardwood-floor',
-      name: 'Hardwood',
-      thumbnail: 'linear-gradient(135deg, #5d4037, #795548)',
+      id: 'ice_frost',
+      name: 'Ice Frost',
+      thumbnail: 'radial-gradient(ellipse at 50% 35%, #46607a, #0a121e)',
       vipOnly: true,
     },
     {
-      id: 'teal-tile',
-      name: 'Teal Tile',
-      thumbnail: 'linear-gradient(135deg, #00695c, #00897b)',
+      id: 'jade_neon',
+      name: 'Jade Neon',
+      thumbnail: 'radial-gradient(ellipse at 50% 90%, #12784f, #050a09)',
       vipOnly: true,
     },
   ],
@@ -307,7 +339,7 @@ const DEFAULT_SELECTION: ThemeSelection = {
   theme_id: 'default-dark',
   table_id: 'neon_city',
   button_id: 'classic-white',
-  background_id: 'diamond-pattern',
+  background_id: 'midnight',
   cards_id: 'standard-red',
 };
 
@@ -322,33 +354,31 @@ const THEME_PRESET_BUNDLES: Record<string, Partial<ThemeSelection>> = {
   'default-dark': {
     table_id: 'neon_city',
     button_id: 'classic-white',
-    background_id: 'diamond-pattern',
+    background_id: 'midnight',
     cards_id: 'standard-red',
   },
   'classic-brown': {
     table_id: 'mahogany_red',
     button_id: 'gray-d-gear',
-    // stone-concrete, not hardwood-floor: classic-brown is a FREE preset and
-    // hardwood-floor is VIP-only — a free preset must not smuggle VIP assets.
-    background_id: 'stone-concrete',
+    background_id: 'midnight',
     cards_id: 'standard-red',
   },
   'neon-blue': {
     table_id: 'ice_cavern',
     button_id: 'blue-crystal',
-    background_id: 'galaxy-nebula',
+    background_id: 'galaxy',
     cards_id: 'standard-blue',
   },
   'rustic-wood': {
     table_id: 'classic_green',
     button_id: 'gold-star',
-    background_id: 'hardwood-floor',
+    background_id: 'golden_dusk',
     cards_id: 'premium-gold',
   },
   'casino-green': {
     table_id: 'jade_city',
     button_id: 'gold-star',
-    background_id: 'teal-tile',
+    background_id: 'jade_neon',
     cards_id: 'premium-black',
   },
 };

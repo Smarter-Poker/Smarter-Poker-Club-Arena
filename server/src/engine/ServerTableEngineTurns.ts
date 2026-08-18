@@ -304,13 +304,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (applied) {
         this.recordRecoveryEvent(
           'watchdog_forced_action',
-          'forced ' +
-            forced +
-            ' at seat ' +
-            seat +
-            ' after ' +
-            Math.round(idleMs / 1000) +
-            's stall'
+          'forced ' + forced + ' at seat ' + seat + ' after ' + Math.round(idleMs / 1000) + 's stall'
         );
         this.markProgress();
       } else {

@@ -13,9 +13,13 @@ import { reportError } from '../services/errorReporter.js';
 
 export interface TimebankDeps {
   gameServer: {
-    getTableEngine(tableId: string):
+    getTableEngine(
+      tableId: string
+    ):
       | {
-          activateTimeBank(userId: string): Promise<{ success: boolean; [k: string]: unknown }>;
+          activateTimeBank(
+            userId: string
+          ): Promise<{ success: boolean; [k: string]: unknown }>;
         }
       | null
       | undefined;

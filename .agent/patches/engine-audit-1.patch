@@ -1,0 +1,920 @@
+--- a/server/src/engine/PokerEngine.ts
++++ b/server/src/engine/PokerEngine.ts
+@@ -464,33 +464,35 @@
+     previousLevel = level;
+   }
+ 
+-  // Fold the dead money into the main (first / most-contested) pot.
++  // Dead money gets its OWN pot at the bottom of the stack, contested by every
++  // non-folded player who put anything in — live or dead.
++  //
++  // 2026-08-18 (first attempt) folded deadTotal into pots[0] and then widened
++  // pots[0]'s eligibility to include dead-money-only players. That fixed the
++  // symptom (an all-in-for-the-ante player winning nothing) and introduced a
++  // worse bug: pots[0] is not a dead-money pot, it is `the lowest LIVE level x
++  // its contributors, PLUS all the dead money`. Widening it handed that player
++  // the live action they never matched.
++  //
++  //   u1 live 100, u2 live 100, u3 all-in for a 5 ante (live 0)
++  //   before: one pot of 205 contested by u1, u2 AND u3  -> u3 can win 205
++  //   now:    dead pot 5 contested by all three, live pot 200 by u1/u2 only
++  //
++  // Dead money still never creates a private side pot for whoever posted it:
++  // the Big Blind Ante is one player fronting the whole table, so it is summed
++  // across everyone and contested by everyone, exactly as before. That is also
++  // why dead money is kept out of the LEVEL construction above.
++  //
++  // When every non-folded player has live investment at the lowest level, this
++  // dead pot has the same eligible set as pots[0] and the merge step below
++  // folds the two back together — so the common case is byte-for-byte what it
++  // was, and only the dead-money-only case changes.
+   if (pots.length > 0 && deadTotal > 0) {
+-    pots[0].amount = Math.round((pots[0].amount + deadTotal) * 100) / 100;
+-
+-    // 2026-08-18 — a player who is all-in for DEAD money only must still be
+-    // able to win the pot their chips are sitting in.
+-    //
+-    // Side-pot levels are built from LIVE investment, and eligibility is
+-    // `getInvestment(p) >= level` with every level > 0. A non-folded player
+-    // whose whole stack went to the ante (ante >= stack) or to a dead small
+-    // blind (returning from sit-out with stack < SB) has live investment 0, so
+-    // that test excluded them from EVERY pot — including this one, which is
+-    // where their own chips were just folded in. They were dealt cards, could
+-    // flop the nuts, and collected nothing; the pot went to someone else.
+-    //
+-    // 254 of the 437 tables dealing on 2026-08-18 have an ante, and 272 are
+-    // tournaments, where being all-in for the ante is routine.
+-    //
+-    // The main pot is contested by everyone still in the hand who put anything
+-    // in, live or dead. Widening only pots[0] is deliberate: dead money never
+-    // creates a private side pot for whoever posted it.
+-    for (const p of activePlayers) {
+-      const putSomethingIn = (p.totalInvested ?? p.bet ?? 0) > 0;
+-      if (putSomethingIn && !pots[0].eligiblePlayers.includes(p.user_id)) {
+-        pots[0].eligiblePlayers.push(p.user_id);
+-      }
+-    }
++    const deadEligible = activePlayers.filter((p) => (p.totalInvested ?? p.bet ?? 0) > 0);
++    pots.unshift({
++      amount: deadTotal,
++      eligiblePlayers: deadEligible.map((p) => p.user_id),
++    });
+   }
+ 
+   // Merge pots with identical eligible players
+@@ -720,12 +722,23 @@
+ 
+   // FIX 169: Sort by clockwise distance from dealer button for odd-chip allocation.
+   // The player closest clockwise to the dealer gets the first odd chip.
++  //
++  // 2026-08-18: the button itself was getting it. `(seat - dealerSeat) % maxSeat`
++  // is 0 when the winner IS the dealer, which sorted the button FIRST — but the
++  // button is the LAST position clockwise from itself, not the first. TDA and
++  // this function's own docblock both say the first player clockwise OF the
++  // dealer, i.e. the small blind seat. Heads-up, a chopped pot with an odd cent
++  // paid the button instead of the big blind. Mapping distance 0 to maxSeat puts
++  // the button at the back of the queue where it belongs. Unknown-dealer (0)
++  // behaviour is unchanged: seats are 1-based, so no winner can score 0 there.
+   const maxSeat = Math.max(...roundWinners.map((w) => w.player.seat), dealerSeat) + 1;
+-  const sortedWinners = [...roundWinners].sort((a, b) => {
+-    const aDist = (a.player.seat - dealerSeat + maxSeat * 10) % maxSeat;
+-    const bDist = (b.player.seat - dealerSeat + maxSeat * 10) % maxSeat;
+-    return aDist - bDist;
+-  });
++  const clockwiseDistance = (seat: number) => {
++    const d = (seat - dealerSeat + maxSeat * 10) % maxSeat;
++    return d === 0 ? maxSeat : d;
++  };
++  const sortedWinners = [...roundWinners].sort(
++    (a, b) => clockwiseDistance(a.player.seat) - clockwiseDistance(b.player.seat)
++  );
+ 
+   sortedWinners.forEach((pw, i) => {
+     const existing = globalWinners.find((w) => w.userId === pw.player.user_id);
+--- a/server/src/engine/PokerEngine.deadmoneycap.test.ts
++++ b/server/src/engine/PokerEngine.deadmoneycap.test.ts
+@@ -0,0 +1,183 @@
++/**
++ * DEAD MONEY IS CAPPED AT THE DEAD MONEY (2026-08-18).
++ *
++ * The first attempt at "a player all-in for the ante must be able to win"
++ * folded the dead money into pots[0] and then added that player to pots[0]'s
++ * eligible list. But pots[0] is not a dead-money pot — it is the lowest LIVE
++ * betting level multiplied by its contributors, PLUS all the dead money. So a
++ * player who put in nothing but a 5-chip ante became eligible for the entire
++ * 205-chip pot, and the 200 of live action that two other players had fought
++ * over was handed to someone who never matched a single chip of it.
++ *
++ * PokerEngine.deadmoney.test.ts pins the eligibility half of the rule and
++ * never asserts an amount, which is exactly how the over-correction survived.
++ * This file pins the other half: how much they can actually win.
++ *
++ * The rule being enforced is the ordinary side-pot rule — you can win from
++ * each opponent no more than you put in yourself. Dead money is not an
++ * exception to it; it just gets its own pot at the bottom of the stack so the
++ * Big Blind Ante never becomes a private side pot for the player fronting it.
++ */
++import { describe, it, expect } from 'vitest';
++import { calculatePots, determineWinners } from './PokerEngine.js';
++import type { SeatPlayer, Card } from '../types.js';
++
++function mk(
++  seat: number,
++  over: Partial<SeatPlayer> & { totalInvested: number; deadInvested?: number }
++): SeatPlayer {
++  return {
++    seat,
++    user_id: `u${seat}`,
++    username: `P${seat}`,
++    stack: 0,
++    bet: 0,
++    cards: [],
++    is_folded: false,
++    is_all_in: false,
++    is_sitting_out: false,
++    deadInvested: 0,
++    ...over,
++  } as SeatPlayer;
++}
++
++const c = (s: string): Card => ({ rank: s[0], suit: s[1] }) as unknown as Card;
++const sum = (pots: { amount: number }[]) =>
++  Math.round(pots.reduce((s, p) => s + p.amount, 0) * 100) / 100;
++const potFor = (pots: { amount: number; eligiblePlayers: string[] }[], uid: string) =>
++  Math.round(
++    pots.filter((p) => p.eligiblePlayers.includes(uid)).reduce((s, p) => s + p.amount, 0) * 100
++  ) / 100;
++
++describe('a dead-money-only all-in can win the dead money and no more', () => {
++  it('splits the ante off into its own pot instead of widening the live pot', () => {
++    const players = [
++      mk(1, { totalInvested: 100 }),
++      mk(2, { totalInvested: 100 }),
++      mk(3, { totalInvested: 5, deadInvested: 5, is_all_in: true }),
++    ];
++    const pots = calculatePots(players);
++
++    // Still eligible for something — that was the original bug.
++    expect(potFor(pots, 'u3')).toBe(5);
++    // But NOT for the live action. This is what regressed.
++    expect(potFor(pots, 'u3')).not.toBe(205);
++    expect(sum(pots)).toBe(205);
++
++    const livePot = pots.find((p) => !p.eligiblePlayers.includes('u3'));
++    expect(livePot).toBeDefined();
++    expect(livePot!.amount).toBe(200);
++    expect(livePot!.eligiblePlayers).toEqual(expect.arrayContaining(['u1', 'u2']));
++  });
++
++  it('pays only the ante out even when the short player makes the best hand', () => {
++    const board = [c('Ah'), c('Ad'), c('7c'), c('2d'), c('3s')];
++    const players = [
++      mk(1, { totalInvested: 100, cards: [c('Kh'), c('Qh')] }),
++      mk(2, { totalInvested: 100, cards: [c('Jh'), c('Th')] }),
++      // Quads. Best hand at the table, all-in for the ante alone.
++      mk(3, { totalInvested: 5, deadInvested: 5, is_all_in: true, cards: [c('As'), c('Ac')] }),
++    ];
++    const pots = calculatePots(players);
++    const winners = determineWinners(players, board, pots, 'nlh', 1);
++
++    const u3 = winners.filter((w) => w.userId === 'u3').reduce((s, w) => s + w.amount, 0);
++    expect(u3).toBe(5);
++
++    const total = winners.reduce((s, w) => s + w.amount, 0);
++    expect(Math.round(total * 100) / 100).toBe(205);
++  });
++
++  it('a dead small blind that ate the whole stack is capped the same way', () => {
++    const players = [
++      mk(1, { totalInvested: 50 }),
++      mk(2, { totalInvested: 50 }),
++      mk(3, { totalInvested: 1, deadInvested: 1, is_all_in: true }),
++    ];
++    const pots = calculatePots(players);
++    expect(potFor(pots, 'u3')).toBe(1);
++    expect(sum(pots)).toBe(101);
++  });
++
++  it('a short player with SOME live money gets the ante pot AND their live level', () => {
++    // Everyone antes 5. u3 has 8 total: 5 ante + 3 live, all-in.
++    const players = [
++      mk(1, { totalInvested: 105, deadInvested: 5 }),
++      mk(2, { totalInvested: 105, deadInvested: 5 }),
++      mk(3, { totalInvested: 8, deadInvested: 5, is_all_in: true }),
++    ];
++    const pots = calculatePots(players);
++    // 15 of antes + 3 x 3 of live at u3's level = 24, which is exactly the 8
++    // they put in matched by both opponents.
++    expect(potFor(pots, 'u3')).toBe(24);
++    expect(sum(pots)).toBe(218);
++  });
++
++  it('the ordinary case — everyone has live money — still produces one pot', () => {
++    // No dead-money-only player, so the dead pot and the main pot have the same
++    // eligible set and the merge step folds them back together. This is the
++    // no-regression guard for the 99% path.
++    const players = [
++      mk(1, { totalInvested: 105, deadInvested: 5 }),
++      mk(2, { totalInvested: 105, deadInvested: 5 }),
++      mk(3, { totalInvested: 105, deadInvested: 5 }),
++    ];
++    const pots = calculatePots(players);
++    expect(pots).toHaveLength(1);
++    expect(pots[0].amount).toBe(315);
++  });
++
++  it('a folded dead-money player leaves their chips behind and wins nothing', () => {
++    const players = [
++      mk(1, { totalInvested: 100 }),
++      mk(2, { totalInvested: 100 }),
++      mk(3, { totalInvested: 5, deadInvested: 5, is_folded: true }),
++    ];
++    const pots = calculatePots(players);
++    expect(potFor(pots, 'u3')).toBe(0);
++    expect(sum(pots)).toBe(205);
++  });
++});
++
++describe('the odd chip goes to the first seat clockwise OF the button', () => {
++  const board = [c('Ah'), c('Kd'), c('7c'), c('2d'), c('3s')];
++
++  it('heads-up: the big blind gets the odd cent, not the button', () => {
++    // Identical hands -> a chop. 10.01 splits 5.005 each; one cent is odd.
++    const players = [
++      mk(1, { totalInvested: 5.005, cards: [c('Qh'), c('Jh')] }),
++      mk(2, { totalInvested: 5.005, cards: [c('Qs'), c('Js')] }),
++    ];
++    const pots = [{ amount: 10.01, eligiblePlayers: ['u1', 'u2'] }];
++    // Seat 1 is the button; seat 2 is the big blind.
++    const winners = determineWinners(players, board, pots, 'nlh', 1);
++
++    const button = winners.find((w) => w.userId === 'u1')!;
++    const bigBlind = winners.find((w) => w.userId === 'u2')!;
++    expect(bigBlind.amount).toBe(5.01);
++    expect(button.amount).toBe(5.0);
++  });
++
++  it('three-handed: the seat immediately left of the button gets it', () => {
++    const players = [
++      mk(1, { totalInvested: 1, cards: [c('Qh'), c('Jh')] }),
++      mk(2, { totalInvested: 1, cards: [c('Qs'), c('Js')] }),
++      mk(3, { totalInvested: 1, cards: [c('Qd'), c('Jd')] }),
++    ];
++    const pots = [{ amount: 3.01, eligiblePlayers: ['u1', 'u2', 'u3'] }];
++    // Button on seat 3 -> seat 1 is next clockwise.
++    const winners = determineWinners(players, board, pots, 'nlh', 3);
++    expect(winners.find((w) => w.userId === 'u1')!.amount).toBe(1.01);
++    expect(winners.find((w) => w.userId === 'u3')!.amount).toBe(1.0);
++  });
++
++  it('with no known button it still falls back to the lowest seat', () => {
++    const players = [
++      mk(1, { totalInvested: 1, cards: [c('Qh'), c('Jh')] }),
++      mk(2, { totalInvested: 1, cards: [c('Qs'), c('Js')] }),
++    ];
++    const pots = [{ amount: 2.01, eligiblePlayers: ['u1', 'u2'] }];
++    const winners = determineWinners(players, board, pots, 'nlh', 0);
++    expect(winners.find((w) => w.userId === 'u1')!.amount).toBe(1.01);
++  });
++});
+--- a/server/src/engine/ServerTableEngineTurns.ts
++++ b/server/src/engine/ServerTableEngineTurns.ts
+@@ -1182,6 +1182,27 @@
+     // The clock re-arm itself is deliberately preserved: removing it would
+     // reintroduce the bug AUDIT FIX 2026-07-19 closed, where a reconnecting
+     // player had no timer at all and the hand hung to the 10-minute void.
++    // 2026-08-18 — the same "two deadlines, the shorter one wins" bug that
++    // §6.2.d closed for the manual button, on the path that fix did not cover.
++    //
++    // If a time bank is already RUNNING for this seat, `timebank:<uid>` is
++    // counting down to a deadline that startTurnTimer cannot see: it is a
++    // different PreciseActionTimer key, so re-arming the turn clock replaces
++    // `<uid>` and leaves the bank countdown untouched. handleTurnChange then
++    // re-stamps playerTurnStartTime, which is what turn_deadline_ms broadcasts,
++    // so the client is told it has a fresh clock while the older, shorter bank
++    // deadline is still armed underneath and folds them mid-countdown. A tab
++    // that suspends on mobile and wakes three seconds before the bank expires
++    // is shown twenty seconds and folded in three.
++    //
++    // The player already spent the bank; reconnecting must not buy more time
++    // and must not lose them any either. Leaving both the countdown AND the
++    // broadcast stamps exactly as activation set them keeps the two in
++    // agreement and tells the client the truth. There is a live timer here by
++    // definition, so the hang this method exists to prevent cannot occur.
++    const activeBank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
++    if (activeBank?.isActive) return;
++
+     const timeBankAlreadyUsedThisTurn = this.timeBankActivatedThisTurn;
+     this.handleTurnChange(
+       { type: 'TURN_CHANGE', seat: player.seat, availableActions: [] } as HandEvent,
+--- a/server/src/engine/ReconnectTimeBank.test.ts
++++ b/server/src/engine/ReconnectTimeBank.test.ts
+@@ -0,0 +1,104 @@
++/**
++ * RECONNECT MUST NOT DESYNC THE TIME BANK DEADLINE (2026-08-18).
++ *
++ * §6.2.d fixed "two deadlines, the shorter one wins" for the manual time bank
++ * button. The reconnect path had the same shape and was not covered.
++ *
++ * A time bank arms `timebank:<uid>` on the PreciseActionTimer. The ordinary
++ * turn clock uses the key `<uid>`. They are different keys, so re-arming one
++ * does not cancel the other. rearmTurnTimerIfCurrent (which exists so a player
++ * who reconnects on their own turn is not left with no timer at all) called
++ * handleTurnChange unconditionally, which:
++ *
++ *   - replaced `<uid>` with a fresh 15s + grace clock, and
++ *   - re-stamped playerTurnStartTime / playerTurnDuration, which is exactly
++ *     what turn_deadline_ms broadcasts to the client.
++ *
++ * The bank countdown underneath kept its original deadline. A player whose tab
++ * suspended and woke three seconds before that deadline was shown a fresh
++ * twenty seconds and folded three seconds later.
++ */
++import { describe, it, expect, afterEach, vi } from 'vitest';
++import { ServerTableEngine } from './ServerTableEngine.js';
++
++const TABLE = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
++const SEAT = 3;
++
++afterEach(() => {
++  vi.restoreAllMocks();
++});
++
++function harness() {
++  const engine = new ServerTableEngine(TABLE) as any;
++  engine.tableInfo = {} as any;
++  engine.handController = {
++    getState: () => ({
++      currentPlayerSeat: SEAT,
++      currentBet: 0,
++      players: [
++        {
++          user_id: 'u1',
++          seat: SEAT,
++          bet: 0,
++          is_folded: false,
++          is_all_in: false,
++          is_sitting_out: false,
++        },
++      ],
++    }),
++  };
++  // rearmTurnTimerIfCurrent -> handleTurnChange needs a seated player to act on;
++  // without one it returns early and the test would pass vacuously.
++  engine.seatedPlayers = [{ seat_number: SEAT, user_id: 'u1' }];
++  engine.timeBankEngine.configure(TABLE, { secondsPerUse: 20 });
++  engine.timeBankEngine.initializePlayer(TABLE, 'u1', {
++    remainingSeconds: 40,
++    usesRemaining: 2,
++  });
++  engine.playerTurnDuration = 15;
++  engine.playerTurnStartTime = Date.now();
++  return engine;
++}
++
++describe('reconnecting while a time bank is running', () => {
++  it('leaves the enforcement deadline and the broadcast deadline in agreement', async () => {
++    const engine = harness();
++    expect((await engine.activateTimeBank('u1')).success).toBe(true);
++
++    const bankBefore = engine.preciseTimer.getRemainingMs(TABLE, 'timebank:u1');
++    const turnBefore = engine.preciseTimer.getRemainingMs(TABLE, 'u1');
++    const stampBefore = engine.playerTurnStartTime;
++    const durationBefore = engine.playerTurnDuration;
++
++    engine.rearmTurnTimerIfCurrent('u1');
++
++    const bankAfter = engine.preciseTimer.getRemainingMs(TABLE, 'timebank:u1');
++    const turnAfter = engine.preciseTimer.getRemainingMs(TABLE, 'u1');
++
++    // Neither deadline moved: the reconnect bought nothing and cost nothing.
++    expect(Math.abs(bankAfter - bankBefore)).toBeLessThanOrEqual(150);
++    expect(Math.abs(turnAfter - turnBefore)).toBeLessThanOrEqual(150);
++
++    // And what the client is told still matches what will actually be enforced.
++    // Pre-fix, playerTurnStartTime was re-stamped to now and the duration reset
++    // to the plain action clock, so the broadcast promised time the armed bank
++    // countdown was never going to honour.
++    expect(engine.playerTurnStartTime).toBe(stampBefore);
++    expect(engine.playerTurnDuration).toBe(durationBefore);
++    expect(turnAfter - bankAfter).toBeLessThanOrEqual(2_100);
++
++    engine.preciseTimer.dispose();
++  });
++
++  it('still re-arms a reconnecting player who has NO time bank running', async () => {
++    // The hang this method exists to prevent: a reconnect with no live timer.
++    const engine = harness();
++    engine.preciseTimer.cancelTimer(TABLE, 'u1');
++    expect(engine.preciseTimer.getRemainingMs(TABLE, 'u1')).toBeLessThanOrEqual(0);
++
++    engine.rearmTurnTimerIfCurrent('u1');
++
++    expect(engine.preciseTimer.getRemainingMs(TABLE, 'u1')).toBeGreaterThan(1_000);
++    engine.preciseTimer.dispose();
++  });
++});
+--- a/server/src/tournament/TournamentManagerBase.ts
++++ b/server/src/tournament/TournamentManagerBase.ts
+@@ -148,6 +148,25 @@
+           }
+         : null,
+     });
++
++    // 2026-08-18: the break screen is a full-screen opaque overlay
++    // (TournamentBreakScreen.css: position fixed, inset 0, z-index 700), and
++    // until now NOTHING stopped the tables underneath it. Every player sat
++    // behind the overlay while hands were dealt: they auto-folded every hand
++    // and paid blinds and antes for the whole five minutes. In a turbo that is
++    // roughly a level and a half, enough to blind a short stack out "during
++    // the break". Worse, the overlay is minimizable, so a player who knew to
++    // close it kept playing against players who did not.
++    //
++    // pauseAfterHand() is the same mechanism hand-for-hand already uses: the
++    // current hand is played to the end and no new hand is dealt.
++    for (const engine of this.tableEngines.values()) {
++      try {
++        engine.pauseAfterHand();
++      } catch (err) {
++        reportError(err, 'TournamentManagerBase.pauseForBreak_pause_engine');
++      }
++    }
+   }
+ 
+   /** Resume from synchronized break: restart blind timer with remaining time */
+@@ -158,6 +177,20 @@
+     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
+     await this.broadcast('break_ended', { level: this.currentLevel });
+ 
++    // Undo the pause taken in pauseForBreak. Hand-for-hand owns the pause state
++    // when it is running (it pauses and resumes every engine in lockstep on the
++    // money bubble), so resuming here would let one table run away from the
++    // others — leave those engines alone and let the bubble sync resume them.
++    if (!this.handForHandActive) {
++      for (const engine of this.tableEngines.values()) {
++        try {
++          engine.resumeDealing();
++        } catch (err) {
++          reportError(err, 'TournamentManagerBase.resumeFromBreak_resume_engine');
++        }
++      }
++    }
++
+     // Restart blind timer with saved remaining time. AUDIT FIX 2026-07-19: on
+     // fire, run the SAME full level transition as the normal timer (writes
+     // blinds to tables, emits level_up, chip race, late-reg/add-on) instead of
+--- a/server/src/tournament/TournamentManagerEliminations.ts
++++ b/server/src/tournament/TournamentManagerEliminations.ts
+@@ -355,10 +355,17 @@
+     if (hasBounty && tournament) {
+       try {
+         // Find the table this player is seated at (left_at still null — not yet marked as left)
++        //
++        // 2026-08-18: unscoped by table, this returned ANY open seat the player
++        // held — with no ORDER BY, a cash table was a coin flip. The knocker
++        // was then derived from an unrelated cash hand, so the bounty went to a
++        // stranger or (more often) to someone not in the tournament at all, and
++        // fn_collect_bounty rejected it and logged bounty_not_collected.
+         const { data: seat } = await supabase
+           .from('table_seats')
+-          .select('table_id')
++          .select('table_id, tables!inner(tournament_id)')
+           .eq('user_id', userId)
++          .eq('tables.tournament_id', this.tournamentId)
+           .is('left_at', null)
+           .limit(1)
+           .maybeSingle();
+@@ -408,11 +415,27 @@
+       }
+     }
+ 
+-    await supabase
+-      .from('table_seats')
+-      .update({ left_at: new Date().toISOString() })
+-      .eq('user_id', userId)
+-      .is('left_at', null);
++    // 2026-08-18: this UPDATE used to be scoped by user_id alone, so busting a
++    // player out of a tournament stamped left_at on EVERY open seat they had —
++    // including cash tables. Players are not confined to one context here
++    // (HorseFleetManager explicitly allows multi-tabling, and registerHorses
++    // only excludes horses busy in another TOURNAMENT), so a bustout could
++    // silently eject someone from a cash game they were winning, stranding the
++    // stack in a left_at row that atomicCashout never sees. Scope it to the
++    // tables that belong to this tournament.
++    const { data: tournamentTables } = await supabase
++      .from('tables')
++      .select('id')
++      .eq('tournament_id', this.tournamentId);
++    const tournamentTableIds = (tournamentTables ?? []).map((t: { id: string }) => t.id);
++    if (tournamentTableIds.length > 0) {
++      await supabase
++        .from('table_seats')
++        .update({ left_at: new Date().toISOString() })
++        .eq('user_id', userId)
++        .in('table_id', tournamentTableIds)
++        .is('left_at', null);
++    }
+ 
+     // Broadcast player_eliminated event to all table pages
+     // The elimination toast in TournamentDetails/TournamentPage needs a name;
+--- a/server/src/tournament/TournamentManager.ts
++++ b/server/src/tournament/TournamentManager.ts
+@@ -824,7 +824,30 @@
+         console.log(
+           `[Tournament:${this.tournamentId.slice(0, 8)}] Post-expansion rebalance: ${moves.length} player moves`
+         );
+-        await this.executePlayerMoves(moves);
++        // 2026-08-18: this was the one move site with no hand-boundary wait.
++        // The table-break path (above) and the gap-rebalance path both wait,
++        // with a comment saying why: executePlayerMoves reads table_seats.stack,
++        // which is only written at settlement, so moving a player mid-hand
++        // carries their PRE-hand stack to the new table while the old table
++        // still pays out the pot. An all-in player moved this way is cloned —
++        // their chips arrive at the new table and are also collected by whoever
++        // wins the hand they left behind. Late registration overflowing table
++        // capacity is exactly when this fires.
++        const sourceTables = [...new Set(moves.map((m) => m.fromTableId))] as string[];
++        const unsafeTables = new Set<string>();
++        for (const t of sourceTables) {
++          const safe = await this.waitForHandComplete(t);
++          if (!safe) unsafeTables.add(t);
++        }
++        const safeMoves = moves.filter((m) => !unsafeTables.has(m.fromTableId));
++        if (unsafeTables.size > 0) {
++          console.warn(
++            `[Tournament:${this.tournamentId.slice(0, 8)}] Deferring ${moves.length - safeMoves.length} post-expansion move(s) — source table(s) still in-hand`
++          );
++        }
++        if (safeMoves.length > 0) {
++          await this.executePlayerMoves(safeMoves);
++        }
+       }
+     }
+ 
+--- a/server/src/services/supabase/tables.ts
++++ b/server/src/services/supabase/tables.ts
+@@ -26,7 +26,7 @@
+       // RAKE-AUDIT 2026-07-24: bbj_percent added — the FIX-A2 BBJ gate reads
+       // tableInfo.bbj_percent, but this select never fetched it, so the gate
+       // saw `undefined ?? 0` and disabled the BBJ fee on every table.
+-      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, time_bank_seconds, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent'
++      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent'
+     )
+     .eq('id', tableId)
+     .maybeSingle();
+--- a/server/src/types.ts
++++ b/server/src/types.ts
+@@ -90,7 +90,6 @@
+   game_type?: string;
+   tournament_id?: string;
+   action_time_seconds?: number;
+-  time_bank_seconds?: number;
+   /** Bible V8 §4.3: Big Blind Ante — BB posts ante for entire table */
+   big_blind_ante_enabled?: boolean;
+   /** Bible V8 §4.4: Straddle settings */
+--- a/src/services/TableService.ts
++++ b/src/services/TableService.ts
+@@ -144,7 +144,7 @@
+       bomb_pot_enabled: false,
+       bomb_pot_frequency: 0,
+       bomb_pot_ante_bb: 0,
+-      time_bank_seconds: 30,
++      time_bank_enabled: true,
+       auto_muck: true,
+       vpip_display: false,
+       ante_enabled: false,
+@@ -228,8 +228,12 @@
+         bomb_pot_ante_multiplier: defaultSettings.bomb_pot_enabled
+           ? defaultSettings.bomb_pot_ante_bb || 2
+           : 0,
+-        time_bank_seconds: defaultSettings.time_bank_seconds ?? 30,
+-        time_bank_enabled: (defaultSettings.time_bank_seconds ?? 0) > 0,
++        // 2026-08-18: time_bank_enabled used to be derived from a
++        // time_bank_seconds value the engine never read — a per-table "seconds
++        // per activation" knob that has not existed since the rule became a
++        // flat 20s grant. Setting 0 there was the only way to turn time banks
++        // off, which nothing documented. It is an explicit switch now.
++        time_bank_enabled: defaultSettings.time_bank_enabled ?? true,
+         wait_for_big_blind: defaultSettings.wait_for_big_blind ?? true,
+         // 7-2 game: winner holding any 7-2 collects a bounty (in BB) from each
+         // other dealt-in player, post-flop only. Engine reads these columns.
+--- a/src/services/HorseOrchestrator.ts
++++ b/src/services/HorseOrchestrator.ts
+@@ -1241,7 +1241,6 @@
+               bomb_pot_enabled: config.name.includes('Bomb'),
+               bomb_pot_frequency: config.name.includes('Bomb') ? 10 : 0,
+               bomb_pot_ante_bb: config.name.includes('Bomb') ? 2 : 0,
+-              time_bank_seconds: 30,
+               auto_muck: true,
+             },
+           })
+--- a/src/services/ClubsService.ts
++++ b/src/services/ClubsService.ts
+@@ -716,7 +716,6 @@
+     'rake_cap',
+     'min_buyin_bb',
+     'max_buyin_bb',
+-    'time_bank_seconds',
+     'allow_straddle',
+     'allow_run_it_twice',
+     'allow_rabbit_hunt',
+--- a/src/services/TournamentService.ts
++++ b/src/services/TournamentService.ts
+@@ -1140,7 +1140,7 @@
+           max_buy_in: 0,
+           max_players: 9,
+           status: 'RUNNING',
+-          settings: { auto_muck: true, time_bank_seconds: 30 },
++          settings: { auto_muck: true },
+         })
+         .select()
+         .maybeSingle();
+@@ -2079,7 +2079,7 @@
+           max_buy_in: 0,
+           max_players: 9,
+           status: 'RUNNING',
+-          settings: { auto_muck: true, time_bank_seconds: 45 },
++          settings: { auto_muck: true },
+         })
+         .select()
+         .maybeSingle();
+--- a/src/types/database.types.ts
++++ b/src/types/database.types.ts
+@@ -15,7 +15,6 @@
+ export interface ClubSettings {
+   default_rake_percent: number;
+   rake_cap: number;
+-  time_bank_seconds: number;
+   allow_straddle: boolean;
+   allow_run_it_twice: boolean;
+   min_buy_in_bb: number;
+@@ -116,7 +115,11 @@
+   bomb_pot_enabled: boolean;
+   bomb_pot_frequency: number; // Every N hands
+   bomb_pot_ante_bb: number;
+-  time_bank_seconds: number;
++  // 2026-08-18: time_bank_seconds is gone. A time bank is a flat 20s grant,
++  // 2 per street (Bible V8 s6.2) — there is no per-table "seconds per
++  // activation" any more, and the engine never read the column. Whether a
++  // table offers time banks at all is time_bank_enabled.
++  time_bank_enabled: boolean;
+   auto_muck: boolean;
+ 
+   // ── Additional Game Features ──
+--- a/src/types/club.types.ts
++++ b/src/types/club.types.ts
+@@ -205,7 +205,6 @@
+ /** Bible V8 2.1: Timing configuration sub-object */
+ export interface TableTimingConfig {
+   time_to_act_seconds: number; // Primary shot clock (default 15-30)
+-  time_bank_seconds: number; // Time bank per activation
+   time_bank_max_activations_per_hand: number; // Max 2 per Bible V8 6.4
+   time_bank_max_activations_per_session: number; // VIP pool
+   disconnect_grace_period_ms: number; // Before marking disconnected
+--- a/src/pages/ClubSettingsPage.tsx
++++ b/src/pages/ClubSettingsPage.tsx
+@@ -28,7 +28,6 @@
+   requires_approval: boolean;
+   default_rake_percent: number;
+   rake_cap: number;
+-  time_bank_seconds: number;
+   allow_straddle: boolean;
+   allow_run_it_twice: boolean;
+   allow_rabbit_hunt: boolean;
+@@ -51,7 +50,6 @@
+     requires_approval: false,
+     default_rake_percent: 5,
+     rake_cap: 3,
+-    time_bank_seconds: 30,
+     allow_straddle: true,
+     allow_run_it_twice: true,
+     allow_rabbit_hunt: true,
+@@ -74,7 +72,6 @@
+     if (settings.requires_approval !== orig.requires_approval) changes.push('Approval');
+     if (settings.default_rake_percent !== orig.default_rake_percent) changes.push('Rake %');
+     if (settings.rake_cap !== orig.rake_cap) changes.push('Rake Cap');
+-    if (settings.time_bank_seconds !== orig.time_bank_seconds) changes.push('Time Bank');
+     if (settings.allow_straddle !== orig.allow_straddle) changes.push('Straddle');
+     if (settings.allow_run_it_twice !== orig.allow_run_it_twice) changes.push('Run It Twice');
+     if (settings.allow_rabbit_hunt !== orig.allow_rabbit_hunt) changes.push('Rabbit Hunt');
+@@ -203,7 +200,7 @@
+           supabase
+             .from('clubs')
+             .select(
+-              'id, owner_id, name, description, is_public, requires_approval, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
++              'id, owner_id, name, description, is_public, requires_approval, default_rake_percent, rake_cap, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
+             )
+             .eq(clubCol, clubVal)
+             .maybeSingle()
+@@ -223,7 +220,6 @@
+           requires_approval: data.requires_approval ?? false,
+           default_rake_percent: data.default_rake_percent || 5,
+           rake_cap: data.rake_cap || 3,
+-          time_bank_seconds: data.time_bank_seconds || 30,
+           allow_straddle: data.allow_straddle ?? true,
+           allow_run_it_twice: data.allow_run_it_twice ?? true,
+           allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
+@@ -238,7 +234,6 @@
+           requires_approval: data.requires_approval ?? false,
+           default_rake_percent: data.default_rake_percent || 5,
+           rake_cap: data.rake_cap || 3,
+-          time_bank_seconds: data.time_bank_seconds || 30,
+           allow_straddle: data.allow_straddle ?? true,
+           allow_run_it_twice: data.allow_run_it_twice ?? true,
+           allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
+@@ -298,7 +293,6 @@
+               requires_approval: settings.requires_approval,
+               default_rake_percent: settings.default_rake_percent,
+               rake_cap: settings.rake_cap,
+-              time_bank_seconds: settings.time_bank_seconds,
+               allow_straddle: settings.allow_straddle,
+               allow_run_it_twice: settings.allow_run_it_twice,
+               allow_rabbit_hunt: settings.allow_rabbit_hunt,
+@@ -473,17 +467,11 @@
+               disabled={!isOwner}
+             />
+           </div>
+-          <div className="form-group">
+-            <label>Time Bank (seconds)</label>
+-            <input
+-              type="number"
+-              value={settings.time_bank_seconds}
+-              onChange={(e) => updateSetting('time_bank_seconds', parseInt(e.target.value) || 0)}
+-              min={15}
+-              max={120}
+-              disabled={!isOwner}
+-            />
+-          </div>
++          {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
++              persisted to clubs.time_bank_seconds, which no engine code has
++              ever read — an owner could set it to 15 or to 120 and every table
++              behaved identically. A time bank is a flat 20-second grant, 2 per
++              street (Bible V8 s6.2); there is nothing per-club left to set. */}
+           <div className="toggle-row">
+             <div className="toggle-info">
+               <span className="toggle-label">Allow Straddle</span>
+--- a/src/pages/ClubDetailPage.tsx
++++ b/src/pages/ClubDetailPage.tsx
+@@ -56,7 +56,6 @@
+ interface ClubSettings {
+   defaultRakePercent: number;
+   rakeCap: number;
+-  timeBankSeconds: number;
+   allowStraddle: boolean;
+   allowRunItTwice: boolean;
+   allowRabbitHunt: boolean;
+@@ -404,7 +403,6 @@
+     rakeCap: 3,
+     minBuyInBB: 40,
+     maxBuyInBB: 200,
+-    timeBankSeconds: 30,
+     allowStraddle: false,
+     allowRunItTwice: true,
+     allowRabbitHunt: true,
+@@ -514,7 +512,6 @@
+         rakeCap: club.settings.rakeCap,
+         minBuyInBB: club.settings.minBuyInBB,
+         maxBuyInBB: club.settings.maxBuyInBB,
+-        timeBankSeconds: club.settings.timeBankSeconds,
+         allowStraddle: club.settings.allowStraddle,
+         allowRunItTwice: club.settings.allowRunItTwice,
+         allowRabbitHunt: club.settings.allowRabbitHunt,
+@@ -742,7 +739,7 @@
+       const { data: clubData, error: clubError } = await supabase
+         .from('clubs')
+         .select(
+-          'id, club_id, name, description, avatar_url, is_public, requires_approval, member_count, table_count, created_at, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb, owner_id'
++          'id, club_id, name, description, avatar_url, is_public, requires_approval, member_count, table_count, created_at, default_rake_percent, rake_cap, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb, owner_id'
+         )
+         .eq(clubCol, clubVal)
+         .maybeSingle();
+@@ -775,7 +772,6 @@
+         settings: {
+           defaultRakePercent: clubData.default_rake_percent || 5,
+           rakeCap: clubData.rake_cap || 3,
+-          timeBankSeconds: clubData.time_bank_seconds || 30,
+           allowStraddle: clubData.allow_straddle ?? true,
+           allowRunItTwice: clubData.allow_run_it_twice ?? true,
+           allowRabbitHunt: clubData.allow_rabbit_hunt ?? true,
+@@ -933,7 +929,6 @@
+         rake_cap: safeNum(settingsForm.rakeCap, club.settings.rakeCap),
+         min_buyin_bb: safeNum(settingsForm.minBuyInBB, club.settings.minBuyInBB),
+         max_buyin_bb: safeNum(settingsForm.maxBuyInBB, club.settings.maxBuyInBB),
+-        time_bank_seconds: safeNum(settingsForm.timeBankSeconds, club.settings.timeBankSeconds),
+         allow_straddle: settingsForm.allowStraddle,
+         allow_run_it_twice: settingsForm.allowRunItTwice,
+         allow_rabbit_hunt: settingsForm.allowRabbitHunt,
+@@ -1850,17 +1845,8 @@
+                   className={styles.numberInput}
+                 />
+               </div>
+-              <div className={styles.settingRow}>
+-                <label>Time Bank (seconds)</label>
+-                <input
+-                  type="number"
+-                  value={settingsForm.timeBankSeconds}
+-                  onChange={(e) =>
+-                    setSettingsForm((f) => ({ ...f, timeBankSeconds: Number(e.target.value) || 0 }))
+-                  }
+-                  className={styles.numberInput}
+-                />
+-              </div>
++              {/* 2026-08-18: removed. clubs.time_bank_seconds was never read
++                  by the engine — see ClubSettingsPage for the full note. */}
+               <div className={styles.settingRow}>
+                 <label>Allow Straddle</label>
+                 <input
+--- a/src/pages/TableCreationPage.tsx
++++ b/src/pages/TableCreationPage.tsx
+@@ -31,7 +31,6 @@
+   allow_straddle: boolean;
+   allow_run_it_twice: boolean;
+   allow_rabbit_hunt: boolean;
+-  time_bank_seconds: number;
+   ante?: number;
+ }
+ 
+@@ -51,7 +50,6 @@
+     allow_straddle: true,
+     allow_run_it_twice: true,
+     allow_rabbit_hunt: true,
+-    time_bank_seconds: 30,
+   });
+   const [creating, setCreating] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+@@ -118,7 +116,6 @@
+           allow_straddle: settings.allow_straddle,
+           allow_run_it_twice: settings.allow_run_it_twice,
+           allow_rabbit_hunt: settings.allow_rabbit_hunt,
+-          time_bank_seconds: settings.time_bank_seconds,
+           ante: settings.ante || 0,
+           status: 'waiting',
+           current_players: 0,
+--- a/src/pages/HelpPage.tsx
++++ b/src/pages/HelpPage.tsx
+@@ -33,7 +33,7 @@
+   {
+     question: 'What is the rake structure?',
+     answer:
+-      'Rake is 10% of the pot, capped at 2.5 big blinds. A small portion also goes to the Bad Beat Jackpot.',
++      'Rake is 10% of the pot, up to a cap that depends on the stake — from $3 at the smallest blinds to $20 at the largest. The cap is a cash amount, not a number of big blinds, and it is reduced when a hand is played heads-up or three-handed. No flop, no drop: an uncontested pot is never raked. A small portion of the rake also funds the Bad Beat Jackpot.',
+   },
+   {
+     question: 'How do settlements work?',
+@@ -48,7 +48,7 @@
+   {
+     question: 'What is the Bad Beat Jackpot?',
+     answer:
+-      'The BBJ is a progressive jackpot that triggers when a strong hand (like quad eights or better) loses. The pot is split among the table.',
++      'The BBJ is a progressive jackpot for losing a monster hand. In Hold\u2019em, Aces full of Jacks or better must lose to Quads or better, and both of your hole cards must play. In Omaha games, Quad Kings or better must lose. When it hits, the losing hand takes 50%, the winning hand 25%, and everyone else dealt into the hand splits the remaining 25% \u2014 credited straight to your table stack.',
+   },
+   {
+     question: 'How do I report a problem?',
+--- a/src/components/club/CreateTableModal.tsx
++++ b/src/components/club/CreateTableModal.tsx
+@@ -81,7 +81,7 @@
+     bomb_pot_enabled: false,
+     bomb_pot_frequency: 10,
+     bomb_pot_ante_bb: 2,
+-    time_bank_seconds: 30,
++    time_bank_enabled: true,
+     auto_muck: true,
+     vpip_display: false,
+     ante_enabled: false,
+--- a/src/components/modals/CreateClubModal.tsx
++++ b/src/components/modals/CreateClubModal.tsx
+@@ -215,7 +215,6 @@
+               rake_cap: 3,
+               min_buy_in_bb: 40,
+               max_buy_in_bb: 200,
+-              time_bank_seconds: 30,
+               allow_straddle: true,
+               allow_run_it_twice: true,
+             },
+--- a/src/components/table/TimeBankDisplay.tsx
++++ b/src/components/table/TimeBankDisplay.tsx
+@@ -21,12 +21,18 @@
+   isActive,
+   onBuyMore,
+ }: TimeBankDisplayProps) {
+-  // 2026-08-18: a session's pool is the free 30s base PLUS the VIP monthly
+-  // quota (engine fn_time_bank_allowance) - capping at the quota alone made
+-  // a fresh VIP session (150s) read as >100% and clamp. Note: this component
+-  // is currently unmounted (TablePage renders its own indicator); kept
+-  // correct so wiring it in later doesn't resurrect the wrong scale.
+-  const maxSeconds = 30 + (isVIP ? VIP_GOLD_LIMITS.timeBankSeconds : 0);
++  // A session's pool is the free base PLUS the VIP monthly quota (engine
++  // fn_time_bank_allowance) - capping at the quota alone made a fresh VIP
++  // session read as >100% and clamp. Note: this component is currently
++  // unmounted (TablePage renders its own indicator); kept correct so wiring it
++  // in later doesn't resurrect the wrong scale.
++  //
++  // FREE_BASE_SECONDS must track ServerTableEngineBase.timeBankBaseSeconds.
++  // It went 30 -> 40 on 2026-08-18 when a time bank became a 20-second grant
++  // (Bible V8 s6.2), so the free allowance is exactly two whole banks. Left at
++  // 30 the bar would read 133% full on a fresh non-VIP session.
++  const FREE_BASE_SECONDS = 40;
++  const maxSeconds = FREE_BASE_SECONDS + (isVIP ? VIP_GOLD_LIMITS.timeBankSeconds : 0);
+   const percentage = Math.min(100, (remainingSeconds / maxSeconds) * 100);
+   const isLow = percentage < 25;
+ 

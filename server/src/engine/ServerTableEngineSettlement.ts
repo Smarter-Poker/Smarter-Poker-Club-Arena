@@ -436,6 +436,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     ) {
       const variant = this.tableInfo.game_variant || 'nlh';
       const dealtInPlayerIds = players.map((p) => p.user_id);
+      // BBJ AUDIT FIX 2026-08-18: pass the final board (board 0 on RIT
+      // hands) so the detector can enforce "both cards from hand must play".
+      const bbjBoard = this.currentHandCommunityCards
+        .map((str) => {
+          const m = /^(10|[2-9]|[TJQKA])(hearts|diamonds|clubs|spades)$/.exec(str);
+          return m ? { rank: m[1], suit: m[2] } : null;
+        })
+        .filter((c): c is { rank: string; suit: string } => c !== null);
       const bbjResult = detectBBJHit(
         this.currentHandShowdownResults,
         this.currentHandWinnerIds[0],
@@ -443,7 +451,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         this.currentHandPotSize,
         this.tableInfo.big_blind,
         dealtInPlayerIds.length,
-        dealtInPlayerIds
+        dealtInPlayerIds,
+        bbjBoard
       );
 
       if (bbjResult.hit) {

@@ -26,6 +26,9 @@
  *   PLO8 (Hi-Lo 8 or Better): Same as PLO4 — KKKK2 (four Kings)
  */
 
+// BBJ AUDIT FIX 2026-08-18: enforce Dan's 'both cards from hand must play'.
+import { evaluateHand, compareHands } from '../engine/PokerEngine.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -426,7 +429,9 @@ export function calculateBBJFee(
 
 /**
  * Hand ranking values matching PokerEngine.HAND_RANKINGS.
- * Used here to avoid circular import (RakeConfig should not depend on PokerEngine).
+ * Historical note: HAND_RANK was duplicated here to avoid importing
+ * PokerEngine. The 2026-08-18 both-cards-play rule genuinely needs the
+ * evaluator, and PokerEngine only imports from types.js - no cycle exists.
  */
 const HAND_RANK = {
   FULL_HOUSE: 7,
@@ -508,7 +513,11 @@ export function detectBBJHit(
   potSize: number,
   bigBlind: number,
   numPlayersDealt: number,
-  dealtInPlayerIds: string[]
+  dealtInPlayerIds: string[],
+  // BBJ AUDIT FIX 2026-08-18: the final community cards (board 0 for RIT
+  // hands). Needed to enforce Dan's "both cards from hand must play" rule -
+  // BBJ_RULES.requireBothHoleCards was declared and never enforced.
+  communityCards?: Array<{ rank: string; suit: string }>
 ): BBJDetectionResult {
   const noHit: BBJDetectionResult = { hit: false };
 
@@ -526,7 +535,45 @@ export function detectBBJHit(
   const winner = showdownResults.find((r) => r.userId === winnerId);
   if (!winner || losers.length === 0) return noHit;
 
-  // 3. Check each loser against the qualifying minimum
+  // BBJ AUDIT FIX 2026-08-18 (the $99k finding): the WINNER's hand was never
+  // checked. Dan's NLH/FLH rule reads "AAAJJ+ must LOSE TO QUADS OR STRAIGHT
+  // FLUSH" - but a bigger full house (boat-over-boat) was triggering the
+  // jackpot: 25 of the 39 live payouts ($99,066 of $148,121) were paid on
+  // hands the pot-winner took with a mere Full House. For the quads/SF
+  // variants the loser rule already implies a qualifying winner (whatever
+  // beats quad kings is quad aces or a straight flush), but it is asserted
+  // here uniformly anyway: the winning hand must be Four of a Kind or better
+  // (PLO5's straight-flush floor is stricter still and implied by victory).
+  if (winner.handRanking < HAND_RANK.FOUR_OF_A_KIND) return noHit;
+
+  // BBJ AUDIT FIX 2026-08-18: "Both cards from hand must play" - declared in
+  // BBJ_RULES and the NLH/FLH rule text, enforced nowhere. For hold'em-family
+  // variants (2 hole cards at showdown: nlh, flh, pineapple post-discard),
+  // BOTH the loser's and the winner's best five must use both hole cards.
+  // Omaha variants are game-enforced (exactly 2 of 4/5 always play).
+  const needBothCards =
+    BBJ_RULES.requireBothHoleCards &&
+    (normalizedVariant === 'nlh' ||
+      normalizedVariant === 'flh' ||
+      normalizedVariant === 'pineapple');
+  const shortDeck = normalizedVariant === 'short_deck';
+  const bothPlayOk = (hole: Array<{ rank: string; suit: string }>): boolean => {
+    if (!needBothCards) return true;
+    if (!communityCards || communityCards.length < 5) return true; // no board given: legacy behavior
+    if (hole.length < 2) return false;
+    return bothHoleCardsPlay(hole, communityCards, shortDeck);
+  };
+
+  if (!bothPlayOk(winner.holeCards || [])) return noHit;
+
+  // 3. Check each loser against the qualifying minimum.
+  // BBJ AUDIT FIX 2026-08-18: evaluate ALL losers and take the STRONGEST
+  // qualifying hand (was: first in seat order). BBJ_RULES.splitIfMultipleQualify
+  // remains a documented aspiration - a split payout needs the atomic payout
+  // RPC to accept two bad-beat holders and the odds of two independent
+  // qualifying losers in one hand are astronomical; the strongest-hand rule
+  // is deterministic and favors the worse beat.
+  let best: (typeof losers)[number] | null = null;
   for (const loser of losers) {
     const qualifies = doesHandQualify(
       loser.handRanking,
@@ -535,30 +582,74 @@ export function detectBBJHit(
       qualifying,
       normalizedVariant
     );
-
-    if (qualifies) {
-      return {
-        hit: true,
-        loserUserId: loser.userId,
-        loserHand: {
-          ranking: loser.handRanking,
-          name: loser.handName,
-          kickers: loser.kickers,
-        },
-        winnerUserId: winnerId,
-        winnerHand: {
-          ranking: winner.handRanking,
-          name: winner.handName,
-          kickers: winner.kickers,
-        },
-        dealtInPlayerIds,
-        variant: normalizedVariant,
-        qualifyingHandLabel: qualifying.label,
-      };
+    if (!qualifies) continue;
+    if (!bothPlayOk(loser.holeCards || [])) continue;
+    if (
+      best === null ||
+      loser.handRanking > best.handRanking ||
+      (loser.handRanking === best.handRanking && compareKickers(loser.kickers, best.kickers) > 0)
+    ) {
+      best = loser;
     }
   }
 
+  if (best) {
+    return {
+      hit: true,
+      loserUserId: best.userId,
+      loserHand: {
+        ranking: best.handRanking,
+        name: best.handName,
+        kickers: best.kickers,
+      },
+      winnerUserId: winnerId,
+      winnerHand: {
+        ranking: winner.handRanking,
+        name: winner.handName,
+        kickers: winner.kickers,
+      },
+      dealtInPlayerIds,
+      variant: normalizedVariant,
+      qualifyingHandLabel: qualifying.label,
+    };
+  }
+
   return noHit;
+}
+
+/** Lexicographic kicker comparison (higher wins). */
+function compareKickers(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/**
+ * BBJ AUDIT FIX 2026-08-18: do BOTH hole cards play in the best five?
+ *
+ * The evaluator returns the best-5 cards; "plays" means the best five that
+ * includes both hole cards is STRICTLY better than any five buildable
+ * without one of them - i.e. dropping either hole card weakens the hand.
+ * (If board + one hole card ties the full evaluation, the other card is
+ * replaceable and does not "play" - the strict reading, which is the
+ * standard casino BBJ interpretation.)
+ */
+function bothHoleCardsPlay(
+  hole: Array<{ rank: string; suit: string }>,
+  board: Array<{ rank: string; suit: string }>,
+  shortDeck: boolean
+): boolean {
+  const toCard = (c: { rank: string; suit: string }) => ({ rank: c.rank, suit: c.suit });
+  const full = evaluateHand(hole.map(toCard) as never, board.map(toCard) as never, shortDeck);
+  for (let drop = 0; drop < 2; drop++) {
+    const kept = hole[1 - drop];
+    // Best five from board + the OTHER hole card only (6 cards).
+    const partial = evaluateHand([toCard(kept)] as never, board.map(toCard) as never, shortDeck);
+    if (compareHands(partial, full) >= 0) return false; // dropped card not needed
+  }
+  return true;
 }
 
 /**

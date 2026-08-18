@@ -38,6 +38,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import BBJTicker from '../components/bbj/BBJTicker';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 
@@ -161,6 +162,13 @@ export default function ClubHomePage() {
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
   const [wallet, setWallet] = useState<WalletBalances>({ gold: 0, diamonds: 0 });
   const [jackpotAmount, setJackpotAmount] = useState(0);
+  // BBJ-TICKER 2026-08-18: the resolved BBJ scope for the lobby ticker.
+  // (jackpotAmount was live-subscribed but rendered NOWHERE before this —
+  // the realtime feed fed a value no player could see.)
+  const [bbjScope, setBbjScope] = useState<{ clubUuid: string | null; unionId: string | null }>({
+    clubUuid: null,
+    unionId: null,
+  });
   const [activeMainFilter, setActiveMainFilter] = useState<MainFilter>('ALL');
   const [cashVariant, setCashVariant] = useState<CashVariant>('ALL');
   const [tournVariant, setTournVariant] = useState<TournVariant>('ALL');
@@ -246,6 +254,7 @@ export default function ClubHomePage() {
         if (ucCheck?.union_id) {
           unionId = ucCheck.union_id;
         }
+        if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       } catch (e) {
         reportError(e, 'ClubHomePage.setupRealtime');
         /* standalone club — no union_id */
@@ -1043,6 +1052,23 @@ export default function ClubHomePage() {
           </button>
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+                BAD BEAT JACKPOT TICKER — live pool + recent real hits
+            ═══════════════════════════════════════════════════════════════════ */}
+      {(bbjScope.clubUuid || bbjScope.unionId) && (
+        <div className="club-home__bbj-ticker">
+          <BBJTicker
+            clubId={bbjScope.clubUuid}
+            unionId={bbjScope.unionId}
+            poolAmount={jackpotAmount}
+            onClick={() => {
+              haptic.selection();
+              navigate(`/clubs/${clubId}/jackpot`);
+            }}
+          />
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
                 CLUB CARD + WALLET DISPLAY (side-by-side layout)

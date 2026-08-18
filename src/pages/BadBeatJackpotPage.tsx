@@ -17,6 +17,7 @@ import { formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import BBJService from '../services/BBJService';
 import { confirmDialog } from '../components/common/confirmDialog';
+import BBJAdminAnalytics from '../components/bbj/BBJAdminAnalytics';
 
 interface JackpotInfo {
   id: string;
@@ -431,6 +432,10 @@ export default function BadBeatJackpotPage() {
           </span>
         </div>
       </div>
+
+      {/* Admin-only jackpot health panel (server-gated; renders nothing for
+          non-admins). 2026-08-18 */}
+      <BBJAdminAnalytics poolId={jackpot?.id || null} />
 
       {/* Owner-only: distribute the promo pool to active players */}
       {canManagePromo && (jackpot?.promo_balance || 0) > 0 && (

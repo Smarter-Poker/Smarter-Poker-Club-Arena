@@ -1271,3 +1271,16 @@
   background-size: 1000px 100%;
   animation: shimmer 2s infinite;
 }
+
+/* BBJ lobby ticker spacing (2026-08-18) */
+.club-home__bbj-ticker {
+  padding: 0 12px;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 480px) {
+  .club-home__bbj-ticker {
+    padding: 0 8px;
+    margin-bottom: 8px;
+  }
+}

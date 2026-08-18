@@ -239,6 +239,58 @@ export async function reconcilePendingFees(): Promise<{
  * contribution split needed to re-drive correctly is not recoverable from these
  * two tables alone and guessing it would corrupt rakeback attribution.
  */
+/**
+ * SELF-HEAL 2026-08-18: bank BBJ fees that rake_records proves were withheld
+ * from pots but that never reached a pool.
+ *
+ * Why this exists on top of the pending_fee_distributions queue: that queue is
+ * only written when `logBBJCollection` RETURNS FALSE, which requires the engine
+ * process to still be alive to observe the failure and enqueue. A live
+ * investigation on 2026-08-18 found 4 hands (2.00 chips) lost with ZERO queue
+ * rows — two of them 52ms apart on different tables in different clubs, the
+ * signature of the process dying between the rake transaction and the banking
+ * call. Recovery that lives in the engine cannot survive the engine dying.
+ *
+ * fn_bbj_repair_unbanked works from rake_records — written inside the same
+ * atomic transaction that withheld the fee — so it recovers regardless of how
+ * the engine went away. It is idempotent by construction and skips the last 5
+ * minutes so it can never race the live banking path.
+ */
+export async function repairUnbankedBBJFees(
+  sinceHours = 48,
+  limit = 200
+): Promise<{ repaired: number; chips: number }> {
+  try {
+    const { data, error } = await supabase.rpc('fn_bbj_repair_unbanked', {
+      p_since_hours: sinceHours,
+      p_limit: limit,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.bbj_repair_failed');
+      return { repaired: 0, chips: 0 };
+    }
+    const rows = (data ?? []) as Array<{ hand_id: string; club_id: string; amount: number }>;
+    const chips = rows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    if (rows.length > 0) {
+      // Report every recovery: money that had to be repaired is a signal about
+      // engine stability, not routine bookkeeping to be logged and forgotten.
+      reportError(
+        new Error(
+          `[BBJ self-heal] Recovered ${rows.length} unbanked BBJ contribution(s) totalling ` +
+            `${chips.toFixed(2)} chips — these fees were withheld from pots but never reached a ` +
+            `pool (no pending_fee_distributions row, i.e. the engine did not survive to enqueue). ` +
+            `Hands: ${rows.map((r) => r.hand_id).join(', ')}`
+        ),
+        'FeeReconciler.bbj_self_heal_recovered'
+      );
+    }
+    return { repaired: rows.length, chips };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.bbj_repair_threw');
+    return { repaired: 0, chips: 0 };
+  }
+}
+
 export async function auditBBJDrift(
   windowDays = 1,
   toleranceChips = 0.05

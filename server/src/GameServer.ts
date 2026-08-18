@@ -15,7 +15,11 @@ import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
 import { RakebackSettlerService } from './services/RakebackSettlerService.js';
-import { reconcilePendingFees, auditBBJDrift } from './services/FeeReconciler.js';
+import {
+  reconcilePendingFees,
+  auditBBJDrift,
+  repairUnbankedBBJFees,
+} from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
@@ -509,6 +513,18 @@ export class GameServer {
       }
       if (cycle % DRIFT_EVERY_N_CYCLES === 0) {
         try {
+          // SELF-HEAL 2026-08-18: repair BEFORE auditing, so the audit reports
+          // what is still broken rather than what was already fixable. The
+          // repair backdates recovered rows to the original hand time, so a
+          // successful repair drives the drift measurement to zero in the same
+          // cycle instead of alarming on money that is now banked.
+          const healed = await repairUnbankedBBJFees(48);
+          if (healed.repaired > 0) {
+            console.log(
+              `[BBJ self-heal] recovered ${healed.repaired} unbanked contribution(s), ` +
+                `${healed.chips.toFixed(2)} chips`
+            );
+          }
           await auditBBJDrift(1);
         } catch (err) {
           reportError(err, 'GameServer.bbj_drift_audit_failed');

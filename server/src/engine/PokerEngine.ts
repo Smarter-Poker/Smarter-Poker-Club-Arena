@@ -467,6 +467,30 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   // Fold the dead money into the main (first / most-contested) pot.
   if (pots.length > 0 && deadTotal > 0) {
     pots[0].amount = Math.round((pots[0].amount + deadTotal) * 100) / 100;
+
+    // 2026-08-18 — a player who is all-in for DEAD money only must still be
+    // able to win the pot their chips are sitting in.
+    //
+    // Side-pot levels are built from LIVE investment, and eligibility is
+    // `getInvestment(p) >= level` with every level > 0. A non-folded player
+    // whose whole stack went to the ante (ante >= stack) or to a dead small
+    // blind (returning from sit-out with stack < SB) has live investment 0, so
+    // that test excluded them from EVERY pot — including this one, which is
+    // where their own chips were just folded in. They were dealt cards, could
+    // flop the nuts, and collected nothing; the pot went to someone else.
+    //
+    // 254 of the 437 tables dealing on 2026-08-18 have an ante, and 272 are
+    // tournaments, where being all-in for the ante is routine.
+    //
+    // The main pot is contested by everyone still in the hand who put anything
+    // in, live or dead. Widening only pots[0] is deliberate: dead money never
+    // creates a private side pot for whoever posted it.
+    for (const p of activePlayers) {
+      const putSomethingIn = (p.totalInvested ?? p.bet ?? 0) > 0;
+      if (putSomethingIn && !pots[0].eligiblePlayers.includes(p.user_id)) {
+        pots[0].eligiblePlayers.push(p.user_id);
+      }
+    }
   }
 
   // Merge pots with identical eligible players

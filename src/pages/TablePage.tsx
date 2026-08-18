@@ -7685,8 +7685,14 @@ export default function TablePage({
       {/*
         Bible V8 §11.1: text_message toggle — hide chat entirely when off.
         The underlying messages keep streaming into chatMessages so when the
-        user re-enables, their history isn't lost. voice_message is not yet
-        implemented; when that arrives it will live here too.
+        user re-enables, their history isn't lost.
+
+        voice_message used to be OR'd into isMuted below. There is no voice
+        chat at the table, so all that switch did was silently mute TEXT chat
+        under a label that said "voice" — text_message already owns that, and
+        owning it twice meant a player could turn text chat on and still not
+        have it. The toggle is gone from TABLE_SETTINGS_META; when voice chat
+        actually ships it gets its own gate here.
       */}
       {v8Settings.text_message && (
         <TableChat
@@ -7697,7 +7703,7 @@ export default function TablePage({
           isCollapsed={isChatCollapsed}
           onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
           placeholder={canChatAsObserver ? 'Say something...' : 'Observers cannot chat'}
-          isMuted={isChatMuted || !v8Settings.voice_message}
+          isMuted={isChatMuted}
           isDisabled={!canChatAsObserver}
           unreadCount={unreadCount}
         />

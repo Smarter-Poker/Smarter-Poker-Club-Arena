@@ -1,0 +1,128 @@
+diff --git a/skills/bible-v8/COMPLIANCE-TRACKER.md b/skills/bible-v8/COMPLIANCE-TRACKER.md
+index af21884..b02dfde 100644
+--- a/skills/bible-v8/COMPLIANCE-TRACKER.md
++++ b/skills/bible-v8/COMPLIANCE-TRACKER.md
+@@ -11,8 +11,8 @@
+ - VERIFIED = Confirmed working correctly per Bible specification
+ - N/A = Not applicable to current scope
+ 
+-**Last Updated:** 2026-08-17
+-**Updated By:** Claude (citation re-verification after the U2/U3 refactor)
++**Last Updated:** 2026-08-18
++**Updated By:** Claude (settings-toggle honesty sweep + time-bank / crash-recovery re-verification)
+ **Total Fixes:** 226
+ 
+ > ## ⚠️ READ THIS BEFORE TRUSTING THE PERCENTAGE BELOW
+@@ -68,6 +68,53 @@
+ > `await` and FIX-217 comments), or restore the ordering and make the broadcast
+ > genuinely awaitable. **Do not mark these rows VERIFIED until that is settled.**
+ >
++> ### Re-verified on 2026-08-18
++>
++> | Row | Was | Now | Note |
++> |---|---|---|---|
++> | 6.2.c | VERIFIED | **PARTIAL** | `onOrbitComplete()` is called, and returns immediately |
++> | 6.2.d | (row did not exist) | **FIXED** | manual time bank folded ~12s early, PR #100 |
++> | 7.17 | VERIFIED | **PARTIAL** | recovery is a documented stub; money claim REFUTED |
++> | 7.20 | VERIFIED | **N/A** | mixed games are not coming back (product decision) |
++> | 11.1.1 highlight_active_players | VERIFIED | **REMOVED** | had no consumer, PR #101 |
++> | 11.1.1 voice_message | VERIFIED | **REMOVED** | muted TEXT chat, PR #101 |
++> | 11.2.1-11.2.5 | VERIFIED | **FIXED** | VIP gating was hard-off for all 476 VIPs, PR #101 |
++>
++> **6.2.d was a live defect.** Pressing "use time bank" armed two deadlines on
++> the same `PreciseActionTimer` under different keys — `timebank:<uid>` for the
++> bank alone, `<uid>` for remaining-clock + bank. Neither cancelled the other,
++> the client was shown the longer one, and the shorter one did the folding.
++> With 12s left and a 15s bank the display said 27s and the fold landed at 15s.
++> Fixed in PR #100 with 5 regression tests, 3 of which fail on the old code.
++>
++> **7.17's money claim is REFUTED, and this is worth recording** because the
++> reflex reading of a stub recovery path is "the pot is destroyed". It is not.
++> `syncStacks()` runs only inside `postHandTasks`, so `table_seats.stack` never
++> moves mid-hand. When `checkCrashRecovery()` abandons an in-flight hand, every
++> chip returns to the player who bet it. Measured across all 5,086 orphaned
++> snapshots: 1,591 of 1,605 comparable seat rows show
++> `table_seats.stack - snapshot.stack` equal to that player's `totalInvested`
++> to the cent; the 14 that differ are explained by rebuys landing after the
++> crash. The abandon is chip-conserving.
++>
++> What IS wrong with 7.17: recovery does not resume the hand, it deletes it.
++> `checkCrashRecovery()` reads the snapshot, logs it, calls
++> `completeHandSnapshot()` and starts fresh — HandController is never rebuilt
++> (the code says so: "Full state reconstruction ... is tracked in Phase 1.2
++> PR-E"). A player who was all-in and ahead does not win; the hand simply never
++> happened. And the orphan rows are never swept: **5,086 incomplete snapshots
++> holding 2,510,620 chips of dead pot**, the oldest from 2026-07-19, each one
++> cleared only if that specific table happens to restart.
++>
++> **6.2.c is a tracker error, not a code defect.** The Bible says refill is
++> "per orbit or per session (configurable)". Production runs per-session.
++> `TimeBankEngine.refillPerOrbit` defaults to `false` and a repo-wide search
++> finds no `configure()` call that ever sets it, so the `onOrbitComplete()`
++> body is unreachable in production. The row cited the call site as proof the
++> feature worked; the call happens and the function returns on line 1. Per
++> session is a legitimate configured choice, so this is PARTIAL (one of two
++> Bible-sanctioned modes is reachable), not BROKEN.
++>
+ > ### Still unproven
+ >
+ > The other **107 rows have NOT been re-verified.** They cite files without line
+@@ -196,7 +243,8 @@
+ | 6.1.e | Auto-check if toCall=0          | VERIFIED | ServerTableEngine.ts:616-634                                                                                                                                                                                                                                                        | Auto-checks when no bet                |
+ | 6.2.a | Time bank: auto-activate        | VERIFIED | ServerTableEngine.ts:497-608                                                                                                                                                                                                                                                        | Auto-activates on primary timer expiry |
+ | 6.2.b | Time bank: pool model           | VERIFIED | TimeBankEngine.ts                                                                                                                                                                                                                                                                   | Pool model with per-session depletion  |
+-| 6.2.c | Time bank: refill per orbit     | VERIFIED | ServerTableEngine.ts:1508                                                                                                                                                                                                                                                           | onOrbitComplete() called               |
++| 6.2.c | Time bank: refill per orbit     | PARTIAL  | TimeBankEngine.ts:34,82,238 + ServerTableEngineDealing.ts:402                                                                                                                                                                                                                       | Bible allows per-orbit OR per-session. Per-session is what ships. `onOrbitComplete()` is called every orbit and returns on its first line because `refillPerOrbit` defaults false and no `configure()` call anywhere sets it. Per-orbit is unreachable, not broken. 2026-08-18 |
++| 6.2.d | Time bank: manual activation    | VERIFIED | TimeBankEngine.activate() + ServerTableEngineTurns.activateTimeBank()                                                                                                                                                                                                               | PR #100: was arming a second, SHORTER deadline than the one broadcast to the client, folding the player up to 30s early. `activate()` now takes the leftover turn clock. TimeBankEngine.manualcountdown.test.ts, 5 cases. 2026-08-18 |
+ | 6.3.a | Heartbeat disconnect detection  | VERIFIED | DisconnectEngine.ts                                                                                                                                                                                                                                                                 | POST /heartbeat resets timer           |
+ | 6.3.b | Disconnect timeout              | VERIFIED | DisconnectEngine.ts:25                                                                                                                                                                                                                                                              | Default 30s                            |
+ | 6.3.c | maxConsecutiveTimeouts          | VERIFIED | DisconnectEngine.ts:27                                                                                                                                                                                                                                                              | Default 3 → sit-out                    |
+@@ -224,10 +272,10 @@
+ | 7.14 | Tournament elimination          | VERIFIED | Double-elimination guard (CAS + status check), simultaneous bust tied positions, 3x retry prize credit, bounty/PKO/mystery bounty                                                                                                                                                                                                                                          |
+ | 7.15 | Hand-for-hand                   | VERIFIED | Full implementation: TournamentManager detects bubble (players=paid+1), activates handForHandActive, pauses all engines via pauseAfterHand(), 500ms sync polling via startHandForHandSync(), waits for all tables to finish, resumes simultaneously, re-pauses for next cycle, deactivates on bubble burst. ServerTableEngine waits via Promise with 2-min safety timeout. |
+ | 7.16 | Simultaneous disconnects        | VERIFIED | DisconnectEngine handles per-player independently                                                                                                                                                                                                                                                                                                                          |
+-| 7.17 | Server crash recovery           | VERIFIED | FIX 137 — hand_state_snapshots + recovery on startup                                                                                                                                                                                                                                                                                                                       |
++| 7.17 | Server crash recovery           | PARTIAL  | ServerTableEngineBase.checkCrashRecovery() — snapshots are written and read, but the hand is ABANDONED, not resumed: HandController is never rebuilt (code: "tracked in Phase 1.2 PR-E"). Chips are safe — syncStacks only runs in postHandTasks, so table_seats.stack is the pre-hand value and every bet is returned (verified: 1,591/1,605 seat rows refunded to the cent). Two real gaps: an all-in player who was ahead just loses the hand, and orphan snapshots are never swept — 5,086 rows / 2,510,620 chips of dead pot, oldest 2026-07-19. 2026-08-18 |
+ | 7.18 | No-flop-no-drop rake            | VERIFIED | PokerEngine.ts:547 — sawFlop check                                                                                                                                                                                                                                                                                                                                         |
+ | 7.19 | Rake cap per player count       | VERIFIED | FIX 166 — playerCountCaps: HU=50%, 3-handed=67%, 4+=100%                                                                                                                                                                                                                                                                                                                   |
+-| 7.20 | Mixed game rotation             | VERIFIED | FIX 159-160 — MixedGameEngine rotation applied, HORSE preset fixed                                                                                                                                                                                                                                                                                                         |
++| 7.20 | Mixed game rotation             | N/A      | PRODUCT DECISION 2026-08-18 (Dan, verbatim: "MIXED GAMES IS NOT COMING BACK"). Out of scope; not a compliance gap. Engine code is left in place, unreferenced. Do not re-open this row.                                                                                                                                                                                     |
+ 
+ ---
+ 
+@@ -235,8 +283,8 @@
+ 
+ | ID                                | Requirement                     | Status                                         | File(s)                                                                                                                      | Notes                                                                                                                |
+ | --------------------------------- | ------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+-| 11.1.1                            | All 12 required toggles present | VERIFIED                                       | src/hooks/useUserTableSettings.ts + src/components/table/TableSettingsPanel.tsx                                              | All spec toggles present plus skip_animations + use_alias extensions. TABLE_SETTINGS_META drives the rendering loop. |
+-| 11.1.1 — highlight_active_players | VERIFIED                        | TablePage / SeatSlot render path               | Controls active-seat highlight ring                                                                                          |
++| 11.1.1                            | Required toggles present        | VERIFIED                                       | src/hooks/useUserTableSettings.ts + src/components/table/TableSettingsPanel.tsx                                              | 10 toggles render, each with a live consumer. Was 12: `highlight_active_players` and `voice_message` were removed from TABLE_SETTINGS_META on 2026-08-18 (PR #101) because neither did what its label said. Both columns are retained in the interface and the database. TABLE_SETTINGS_META drives the rendering loop, so an unlisted key is a stored preference with no switch — which is the honest state for a capability that does not exist. |
++| 11.1.1 — highlight_active_players | REMOVED                         | (no consumer — deliberately)                   | The row above was FALSE. The spotlight was made unconditional on 2026-08-15 by product decision ("must always be ON AT ALL TIMES") and TablePage stopped reading the column, but the switch stayed on screen and kept persisting. Toggle removed 2026-08-18 (PR #101); column kept. |
+ | 11.1.1 — show_avatars             | VERIFIED                        | SeatSlot showAvatar prop wired from v8Settings |                                                                                                                              |
+ | 11.1.1 — show_badges              | VERIFIED                        | SeatSlot showBadges prop wired from v8Settings |                                                                                                                              |
+ | 11.1.1 — cards_pre_sort           | VERIFIED                        | cardsPreSortRef used in hole-card callbacks    | FIX-232 avoids stale closure                                                                                                 |
+@@ -245,13 +293,13 @@
+ | 11.1.1 — show_stack_in_bb         | VERIFIED                        | SeatSlot showStackInBB prop                    | Via legacy bridge (useUserSettings reads STORAGE_KEYS.SHOW_STACK_BB which useUserTableSettings mirrors). Works end-to-end.   |
+ | 11.1.1 — auto_time_bank           | VERIFIED                        | TablePage onTimeout                            | STEP-8 wiring: suppresses TimeBank modal when toggle on (silent grant)                                                       |
+ | 11.1.1 — enhanced_view            | VERIFIED                        | TablePage useEffect                            | STEP-8 wiring: sets document.documentElement[data-enhanced-view="1"] so themes/CSS can branch                                |
+-| 11.1.1 — voice_message            | VERIFIED                        | TablePage TableChat props                      | STEP-8 wiring: OR'd into TableChat isMuted                                                                                   |
++| 11.1.1 — voice_message            | REMOVED                         | (no voice chat exists at the table)            | The row above described the bug as if it were the feature. Label said "Enable voice chat at table"; the only consumer was `isMuted={isChatMuted \|\| !voice_message}` on TableChat — the TEXT chat, which `text_message` already owns. Turning "voice" off silently killed text chat. Consumer and toggle both removed 2026-08-18 (PR #101); column kept for when voice ships. |
+ | 11.1.1 — text_message             | VERIFIED                        | TablePage conditional render                   | STEP-8 wiring: gates TableChat rendering                                                                                     |
+ | 11.1.1 — emoji_enabled            | VERIFIED                        | TablePage conditional render                   | STEP-8 wiring: gates TableReactions + ThrowableSelector                                                                      |
+ | 11.1.1 — skip_animations          | VERIFIED                        | TablePage useEffect                            | Sets --animation-speed CSS var to 0; Bible V8 §10.3 compliant                                                                |
+ | 11.1.2                            | Supabase persistence            | VERIFIED                                       | useUserTableSettings.ts                                                                                                      | user_table_settings table, upsert on toggle, localStorage cache for instant reload                                   |
+ | 11.1 — dual-location rendering    | VERIFIED                        | TableSettingsPanel is reused                   | Rendered in both HamburgerMenu (inline) and SettingsPanel embed (overlay from table gear). Same hook, same row, same events. |
+-| 11.2.1-11.2.5                     | Theme Settings (5 tabs)         | VERIFIED                                       | ThemeSettingsModal.tsx + useUserThemeSettings.ts                                                                             | All 5 tabs (Themes/Table/Button/Background/Cards), per-game-type persistence, VIP gating, Reset/Confirm buttons      |
++| 11.2.1-11.2.5                     | Theme Settings (5 tabs)         | VERIFIED                                       | ThemeSettingsModal.tsx + useUserThemeSettings.ts + SettingsPanel.tsx                                                         | All 5 tabs (Themes/Table/Button/Background/Cards), per-game-type persistence, Reset/Confirm buttons. "VIP gating" was listed as working here while being hard-off: SettingsPanel defaults `isVip` to false and TableModalsLayer never passed it, so every VIP-only asset showed a padlock and an upsell to all 476 VIP profiles. SettingsPanel now resolves VIP from `profiles.is_vip / tier` itself. 2026-08-18 (PR #101) |
+ 
+ ---
+ 
+@@ -280,7 +328,7 @@
+   - Ch4 Procedures: 18/18 VERIFIED — blind posting, ante, straddle, all 6 action types, stage progression, RIT, insurance, showdown, bomb pot
+   - Ch5 UI/Sound/Haptic: 4/4 VERIFIED — all 12+ sounds with correct haptic levels
+   - Ch6 Timers: 12/12 VERIFIED — deadline-based PreciseActionTimer, time bank, disconnect, reconnect grace
+-  - Ch7 Edge Cases: 20/20 VERIFIED — short all-in, side pots, heads-up, Hi-Lo, RIT, bomb pot, straddle, disconnect, crash recovery, mixed game
++  - Ch7 Edge Cases: 18/20 VERIFIED, 1 PARTIAL (7.17 crash recovery abandons the hand rather than resuming it), 1 N/A (7.20 mixed game — product decision, not coming back). Re-counted 2026-08-18; the old "20/20" counted both.
+ - **0% broken, 0% missing, 0% needs-verify**
+ - **1% partial** — 4-tier hand history layering (design choice, not a bug)
+ - **Engine live on Hetzner**: https://engine.smarter.poker/health — running, auth enforced, telemetry active

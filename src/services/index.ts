@@ -56,7 +56,7 @@ export * from './CreditService';
 
 // BBJ & Jackpots
 export { BBJService } from './BBJService';
-export type { BBJPool, BBJContribution, BBJPayout, BBJTriggerResult } from './BBJService';
+export type { BBJPool } from './BBJService';
 
 // Leaderboards & Stats
 export { LeaderboardService } from './LeaderboardService';

@@ -19,7 +19,7 @@
   border: 1px solid rgba(255, 215, 0, 0.4);
   border-radius: 8px;
   padding: 3px 10px;
-  cursor: help;
+  cursor: pointer;
   z-index: 50;
   max-width: calc(100% - 200px);
   box-shadow:
@@ -313,4 +313,93 @@
   font-size: 11px;
   color: #ffd700;
   line-height: 1.4;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VISUAL PASS 2026-08-18
+   The banner is now a button that opens the jackpot view, and the amount
+   ticks up live. Three additions, all cheap and all reduced-motion aware:
+     1. a gold sheen that sweeps the plate, so a static number still reads
+        as a live, growing jackpot;
+     2. a "bump" the amount plays whenever it increases;
+     3. real focus styling, since it is keyboard-reachable now.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.bbj-widget {
+  overflow: hidden;
+}
+
+.bbj-widget::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 235, 150, 0.16) 45%,
+    rgba(255, 255, 255, 0.28) 50%,
+    rgba(255, 235, 150, 0.16) 55%,
+    transparent 100%
+  );
+  transform: skewX(-18deg);
+  animation: bbjSheen 5.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes bbjSheen {
+  0%,
+  62% {
+    left: -60%;
+  }
+  92%,
+  100% {
+    left: 130%;
+  }
+}
+
+.bbj-widget:focus-visible {
+  outline: none;
+  border-color: #ffd700;
+  box-shadow:
+    0 0 0 2px rgba(255, 215, 0, 0.5),
+    0 0 22px rgba(255, 215, 0, 0.35);
+}
+
+/* Amount bump on every increase (class toggled by the component) */
+.bbj-widget__amount--bump {
+  animation: bbjAmountBump 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes bbjAmountBump {
+  0% {
+    transform: scale(1);
+    text-shadow: none;
+  }
+  35% {
+    transform: scale(1.13);
+    text-shadow: 0 0 14px rgba(255, 215, 0, 0.85);
+  }
+  100% {
+    transform: scale(1);
+    text-shadow: none;
+  }
+}
+
+/* A jackpot banner must never be the reason someone feels motion sick. */
+@media (prefers-reduced-motion: reduce) {
+  .bbj-widget {
+    animation: none;
+  }
+
+  .bbj-widget::after {
+    animation: none;
+    display: none;
+  }
+
+  .bbj-widget__amount--bump {
+    animation: none;
+  }
 }

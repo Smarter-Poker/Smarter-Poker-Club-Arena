@@ -94,7 +94,12 @@ export function BBJRecentHits({ poolId, limit = 5, currentUserName }: BBJRecentH
           reportError(error, 'BBJRecentHits.load_failed');
           return;
         }
-        const rows = (data || []) as Hit[];
+        // jsonb arrives parsed, but this renders money — never let a shape
+        // surprise throw inside the map and blank the whole panel.
+        const rows = ((data || []) as Hit[]).map((h) => ({
+          ...h,
+          recipients: Array.isArray(h.recipients) ? h.recipients : [],
+        }));
         setHits(rows);
         // Open the most recent hit by default — the one people came to see.
         if (rows.length > 0) setExpanded(rows[0].payout_id);

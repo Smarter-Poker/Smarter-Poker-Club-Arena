@@ -161,6 +161,7 @@ export default function DynamicWallet({
   const [resolvedId, setResolvedId] = useState<string | null>(null);
   // Fetch version counter to discard stale responses on rapid club switching
   const fetchVersionRef = useRef(0);
+
   // Tracked union_id for union_wallets RT channel
   const currentUnionIdRef = useRef<string | null>(null);
   // Reconnect tracking
@@ -212,6 +213,17 @@ export default function DynamicWallet({
     const thisVersion = ++fetchVersionRef.current;
 
     try {
+      // UNION-FIX 2026-08-18: the jackpot for a club inside a union lives in the
+      // UNION's bbj_pools row (that is the row the engine funds). Resolving by
+      // club_id alone showed every union-club member a $0 or stale jackpot —
+      // the same defect already fixed on the table banner, the lobby ticker and
+      // BBJService. Look up the club's union first, exactly as the server does.
+      const { data: clubUnionRow } = await supabase
+        .from('clubs')
+        .select('union_id')
+        .eq('id', resolvedId)
+        .maybeSingle();
+      const bbjUnionId: string | null = clubUnionRow?.union_id ?? null;
       const [profileRes, memberRes, bbjRes, agentRes, clubRes] = await Promise.all([
         supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
         supabase
@@ -220,11 +232,18 @@ export default function DynamicWallet({
           .eq('club_id', resolvedId)
           .eq('user_id', userId)
           .maybeSingle(),
-        supabase
-          .from('bbj_pools')
-          .select('main_balance, backup_balance')
-          .eq('club_id', resolvedId)
-          .maybeSingle(),
+        (bbjUnionId
+          ? supabase
+              .from('bbj_pools')
+              .select('main_balance, backup_balance')
+              .eq('union_id', bbjUnionId)
+              .eq('status', 'active')
+          : supabase
+              .from('bbj_pools')
+              .select('main_balance, backup_balance')
+              .eq('club_id', resolvedId)
+              .eq('status', 'active')
+        ).maybeSingle(),
         supabase
           .from('agents')
           .select('agent_wallet_balance, promo_wallet_balance')
@@ -373,7 +392,13 @@ export default function DynamicWallet({
           event: 'UPDATE',
           schema: 'public',
           table: 'bbj_pools',
-          filter: `club_id=eq.${resolvedId}`,
+          // Must follow the SAME scope the fetch used (union pool for union
+          // clubs) or this would watch a row the widget never reads. Uses the
+          // union id from the most recent fetchData — the effect re-runs when
+          // isClubInUnion flips, exactly like the union_wallets channel below.
+          filter: currentUnionIdRef.current
+            ? `union_id=eq.${currentUnionIdRef.current}`
+            : `club_id=eq.${resolvedId}`,
         },
         (p) => {
           if (isMounted.current) {

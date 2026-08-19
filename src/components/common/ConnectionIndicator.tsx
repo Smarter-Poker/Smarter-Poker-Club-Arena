@@ -68,8 +68,10 @@ export default function ConnectionIndicator() {
     }, OFFLINE_DISPLAY_THRESHOLD_MS);
   });
 
-  if (!visible) return null;
+  // Hidden per design request — never render the reconnecting indicator
+  return null;
 
+   
   const labels: Record<ConnectionState, string> = {
     connected: 'Connected',
     disconnected: 'Reconnecting...',

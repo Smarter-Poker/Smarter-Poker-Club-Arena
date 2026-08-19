@@ -1177,7 +1177,23 @@ export class GameServer {
           // TournamentManager sweep, so here we only need to stop treating a
           // cash-only list as the definition of "should be dealing".
           const shouldBeDealing = readyIds.has(id) || this.tournamentOwnedTables.has(id);
-          if (shouldBeDealing && engine.msSinceProgress() > 180_000) {
+          /**
+           * Dan 2026-08-19: PAUSED IS NOT DEAD — the other half of the break fix.
+           *
+           * TournamentManagerBase.reviveDeadTableEngines was guarded against
+           * breaks, but THIS reaper never was, and it uses the same 180s
+           * threshold. A synchronized break parks every tournament table for
+           * five minutes, so three minutes in, this loop called a perfectly
+           * healthy paused table a zombie, stopped its engine and dropped it —
+           * mid-break, while the manager's own sweep was correctly standing
+           * down. The table only returned after the break when the manager
+           * rebuilt it, discarding engine state for no reason.
+           *
+           * isPausedByDesign() is the same signal the turn watchdog already
+           * trusts (ServerTableEngineTurns) and /health already reports; it was
+           * simply never consulted here.
+           */
+          if (shouldBeDealing && !engine.isPausedByDesign() && engine.msSinceProgress() > 180_000) {
             reportError(
               new Error(
                 'Engine for ' +

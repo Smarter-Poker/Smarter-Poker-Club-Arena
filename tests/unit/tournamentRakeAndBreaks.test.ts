@@ -146,6 +146,48 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
   });
 });
 
+/**
+ * Dan 2026-08-19: PAUSED IS NOT DEAD.
+ *
+ * TWO independent reapers rebuild "stalled" table engines on the same 180s
+ * threshold — one in TournamentManagerBase, one in GameServer.discoverCashTables.
+ * A synchronized break parks every tournament table for five minutes, which
+ * crosses that threshold, so a reaper that does not understand a deliberate
+ * pause will dismantle the break from the outside.
+ */
+describe('neither reaper treats a deliberately paused table as a zombie', () => {
+  it("GameServer's reaper skips engines paused by design", () => {
+    const reaper = GAME_SERVER.slice(
+      GAME_SERVER.indexOf('const shouldBeDealing'),
+      GAME_SERVER.indexOf('const shouldBeDealing') + 1600
+    );
+    expect(reaper).toMatch(/!engine\.isPausedByDesign\(\)/);
+    // The pause check must gate the SAME condition as the staleness check.
+    expect(reaper).toMatch(
+      /shouldBeDealing && !engine\.isPausedByDesign\(\) && engine\.msSinceProgress\(\) > 180_000/
+    );
+  });
+
+  it("the tournament manager's sweep also respects a by-design pause", () => {
+    const revive = BASE.slice(
+      BASE.indexOf('protected async reviveDeadTableEngines'),
+      BASE.indexOf('protected async reviveDeadTableEngines') + 2200
+    );
+    expect(revive).toMatch(
+      /!engine\.isPausedByDesign\(\) && engine\.msSinceProgress\(\) > 180_000/
+    );
+  });
+
+  it('isPausedByDesign covers both a break pause and hand-for-hand', () => {
+    const ENGINE = readFileSync(
+      resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
+      'utf8'
+    );
+    const fn = ENGINE.slice(ENGINE.indexOf('isPausedByDesign(): boolean'));
+    expect(fn).toMatch(/handForHandPaused \|\| this\.tableFSM\.state === 'paused'/);
+  });
+});
+
 describe('a restart mid-break does not resume play', () => {
   const resumeFn = BASE.slice(
     BASE.indexOf('async resume()'),

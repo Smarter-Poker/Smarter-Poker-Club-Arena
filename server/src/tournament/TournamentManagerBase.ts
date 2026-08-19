@@ -940,7 +940,10 @@ export abstract class TournamentManagerBase {
     this.revivingTables = true;
     try {
       for (const [tableId, engine] of this.tableEngines) {
-        const dead = !engine.isRunning() || engine.msSinceProgress() > 180_000;
+        // Belt and braces alongside the onBreak guard above: a table parked on
+        // purpose (break OR hand-for-hand) is healthy, never a rebuild candidate.
+        const dead =
+          !engine.isRunning() || (!engine.isPausedByDesign() && engine.msSinceProgress() > 180_000);
         if (!dead) continue;
         reportError(
           new Error(

@@ -10,6 +10,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { masterBus } from '../core/MasterBus';
 
 export interface UserThemeSelection {
   theme_id: string;
@@ -118,8 +119,31 @@ export function useUserThemeSettings(
     };
 
     load();
+
+    /**
+     * Dan 2026-08-19: apply theme changes LIVE. The modal now broadcasts the
+     * selection the moment it saves; any table currently mounted (including
+     * ones the player is only watching) repaints instantly instead of waiting
+     * for a remount. A change saved against "ALL" applies to every game type;
+     * a per-game-type change only applies to that type.
+     */
+    const off = masterBus.subscribe('UI_THEME_CHANGED', (payload) => {
+      const savedFor = (payload as { key?: string })?.key;
+      const selection = (payload as { value?: Partial<UserThemeSelection> })?.value;
+      if (!mounted || !selection) return;
+      // A change saved against "ALL" applies everywhere; a per-game-type
+      // change only applies to that type.
+      if (savedFor && savedFor !== 'ALL' && savedFor !== gameType) return;
+      setTheme((prev) => ({ ...prev, ...selection }));
+    });
+
     return () => {
       mounted = false;
+      try {
+        off?.();
+      } catch {
+        /* listener already detached */
+      }
     };
   }, [userId, gameVariant, isTournament, tournamentType]);
 

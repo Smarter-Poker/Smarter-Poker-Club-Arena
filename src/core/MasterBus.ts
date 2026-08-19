@@ -969,7 +969,9 @@ export interface BusPayloadMap {
       | 'LEAVE_TABLE'
       | 'FORCE_LEAVE_TABLE'
       | 'CHANGE_AVATAR'
-      | 'TOGGLE_ALIAS';
+      | 'TOGGLE_ALIAS'
+      /** Dan 2026-08-19: close a table's tab after the player leaves it. */
+      | 'CLOSE_TABLE_TAB';
   };
   // Table settings open
   TABLE_SETTINGS_OPEN: { tableId: string };

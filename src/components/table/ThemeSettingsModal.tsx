@@ -16,6 +16,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './ThemeSettingsModal.css';
 import { reportError } from '../../utils/errorReporter';
@@ -505,7 +506,13 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
         toast.error('Failed to save theme settings.');
         reportError(error, 'ThemeSettingsModal.Save_failed');
       } else {
-        toast.success('Theme saved!');
+        /* Dan 2026-08-19: saving is not applying. The modal wrote the row and
+           closed, but every open table had already read its theme once on
+           mount, so the felt/background/cards/button silently stayed on the
+           old skin until a full reload. Broadcast the new selection so every
+           mounted table repaints in real time. */
+        masterBus.emit('UI_THEME_CHANGED', { key: gameType, value: selection });
+        toast.success('Theme applied');
         onClose();
       }
     } catch (err) {

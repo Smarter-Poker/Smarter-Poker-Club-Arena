@@ -61,3 +61,9 @@ test-results/
 # Scratch/quarantine dir. device_bash on the mounted volume cannot unlink,
 # so stale locks and old build dirs get parked here instead of deleted.
 _to_delete/
+
+# Staging area for moving code between the sandbox and the host. Held a 12 MB
+# ca-code.tgz that a blanket `git add -A` would otherwise have committed.
+.upload-scratch/
+# One-off Playwright probe scripts written to the repo root while debugging.
+_v*.mjs

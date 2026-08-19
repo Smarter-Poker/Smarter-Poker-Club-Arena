@@ -1067,9 +1067,16 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
             onCloseSessionSummary();
             masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: heroSeat });
             masterBus.emit('SESSION_SUMMARY_DISMISSED', { tableId: tableId ?? '' });
-            if (window.location.pathname.includes('/table/')) {
-              navigate('/');
-            }
+            /* Dan 2026-08-19: leaving must land you in the LOBBY. In
+               multi-table mode the path is /hub/club-arena (no "/table/"), so
+               the old guard skipped the navigation and left the player staring
+               at the table they just left. Close the tab if we're embedded,
+               otherwise route to the lobby unconditionally. */
+            masterBus.emit('TABLE_MENU_ACTION', {
+              tableId: tableId ?? '',
+              action: 'CLOSE_TABLE_TAB',
+            });
+            navigate('/');
           }}
         />
       )}

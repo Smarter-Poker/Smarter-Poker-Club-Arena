@@ -48,6 +48,44 @@ function clearReloadCount(): void {
   }
 }
 
+/**
+ * Dan 2026-08-19: a plain window.location.reload() does NOT fix a stale chunk.
+ * The 404 happens because the page is running an OLD index.html that still
+ * references a chunk the latest deploy deleted — and reloading re-serves that
+ * SAME cached HTML (from the service worker, the bfcache, or the CDN edge), so
+ * the app loops back into the identical error. That is exactly what Dan hit:
+ * "Failed to fetch dynamically imported module ... HamburgerMenu-<hash>.js".
+ *
+ * Recovery has to invalidate the HTML itself: drop the service worker, purge
+ * the Cache Storage it was serving from, then navigate with a cache-busting
+ * query so the browser and the edge are both forced to fetch a fresh document.
+ */
+async function hardReload(): Promise<void> {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
+    }
+  } catch {
+    /* ignore — best effort */
+  }
+  try {
+    if (typeof caches !== 'undefined') {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k).catch(() => false)));
+    }
+  } catch {
+    /* ignore — best effort */
+  }
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('_cb', String(Date.now()));
+    window.location.replace(url.toString());
+  } catch {
+    window.location.reload();
+  }
+}
+
 export function lazyWithRetry<T extends ComponentType<any>>(
   importFn: () => Promise<{ default: T }>,
   retries = 3
@@ -74,7 +112,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
               `[lazyWithRetry] Chunk load failed after ${retries} retries. Reloading page (attempt ${getReloadCount() + 1}/${MAX_RELOADS})...`
             );
             incrementReloadCount();
-            window.location.reload();
+            void hardReload();
             // Return a never-resolving promise to prevent rendering during reload
             return new Promise<never>(() => {});
           }

@@ -52,6 +52,8 @@ const SOCIAL_AVATARS_BUCKET = 'social-media';
 const SOCIAL_AVATARS_PREFIX = 'avatars';
 const CUSTOM_AVATARS_BUCKET = 'custom-avatars';
 const CUSTOM_AVATARS_PREFIX = 'generated';
+/** Destination for user-uploaded photos. Public, 10MB cap, path must be <uid>/... */
+const UPLOAD_AVATARS_BUCKET = 'avatars';
 
 /** Default avatar — deterministic SVG when no real image exists */
 const DEFAULT_AVATAR_SVG = generateDefaultAvatar();
@@ -138,14 +140,35 @@ class AvatarServiceClass {
       return this._presetCache;
     }
 
-    const { data: files, error } = await supabase.storage
-      .from(SOCIAL_AVATARS_BUCKET)
-      .list(SOCIAL_AVATARS_PREFIX, { limit: 200, sortBy: { column: 'name', order: 'asc' } });
+    // PAGINATE. There are 436 presets in the bucket; the previous single
+    // .list({ limit: 200 }) silently truncated the gallery to the first 200
+    // and left the other 236 unreachable. Storage caps a page at 1000, so
+    // loop until a short page comes back.
+    const PAGE = 1000;
+    const files: Array<{ name: string }> = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const { data: page, error } = await supabase.storage
+        .from(SOCIAL_AVATARS_BUCKET)
+        .list(SOCIAL_AVATARS_PREFIX, {
+          limit: PAGE,
+          offset,
+          sortBy: { column: 'name', order: 'asc' },
+        });
 
-    if (error || !files) {
-      // If cache exists but is stale, return stale data rather than nothing
-      if (this._presetCache) return this._presetCache;
-      return [];
+      if (error) {
+        // Pages already collected beat nothing; only fall back to the cache
+        // when the very first page failed.
+        if (files.length === 0) {
+          console.warn('[AvatarService] Preset listing failed:', error.message);
+          if (this._presetCache) return this._presetCache;
+          return [];
+        }
+        break;
+      }
+
+      if (!page || page.length === 0) break;
+      files.push(...page);
+      if (page.length < PAGE) break;
     }
 
     const avatars: Avatar[] = files
@@ -248,21 +271,31 @@ class AvatarServiceClass {
         return false;
       }
 
-      // Also upsert into user_avatars for history tracking
-      const isCustom = avatarUrl.includes(CUSTOM_AVATARS_BUCKET);
-      const isPreset = avatarUrl.includes(SOCIAL_AVATARS_BUCKET);
+      // Also upsert into user_avatars for history tracking.
+      // Previously gated on the URL containing a known bucket name, which
+      // meant uploads and OAuth profile photos were silently never recorded.
+      // Every avatar the user actually picks now gets a history row.
+      const avatarType = avatarUrl.includes(CUSTOM_AVATARS_BUCKET)
+        ? 'custom'
+        : avatarUrl.includes(SOCIAL_AVATARS_BUCKET)
+          ? 'preset'
+          : 'custom';
 
-      if (isCustom || isPreset) {
-        await supabase.from('user_avatars').upsert(
-          {
-            user_id: userId,
-            avatar_type: isCustom ? 'custom' : 'preset',
-            custom_image_url: avatarUrl,
-            is_active: true,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' }
-        );
+      const { error: historyError } = await supabase.from('user_avatars').upsert(
+        {
+          user_id: userId,
+          avatar_type: avatarType,
+          custom_image_url: avatarUrl,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+
+      // History is best-effort: the profile write above is the source of
+      // truth, so a history failure must not report the change as failed.
+      if (historyError) {
+        console.warn('[AvatarService] Avatar history write failed:', historyError.message);
       }
 
       return true;
@@ -273,8 +306,86 @@ class AvatarServiceClass {
   }
 
   /**
-   * Open the Hub avatar selector in a new tab/modal.
-   * The Hub handles avatar creation + selection and saves to the user's profile.
+   * The signed-in user's photo from their identity provider (Google, etc).
+   *
+   * There is no separate "profile picture" column - profiles.avatar_url IS
+   * the profile picture. The distinct thing a user means by "use my profile
+   * pic" is the photo attached to the account they signed in with, which
+   * lives in the auth user metadata rather than in profiles.
+   *
+   * Returns null when the account has no provider photo (most accounts are
+   * email/password), so callers can hide the option instead of offering a
+   * button that does nothing.
+   */
+  async getProfilePhotoUrl(): Promise<string | null> {
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data?.user) return null;
+
+      const meta = (data.user.user_metadata ?? {}) as Record<string, unknown>;
+      // Providers disagree on the key: Google uses `picture`, most Supabase
+      // OAuth flows normalise to `avatar_url`. Accept either.
+      const candidate = meta.avatar_url ?? meta.picture;
+
+      if (typeof candidate !== 'string' || candidate.length === 0) return null;
+      if (!/^https?:\/\//i.test(candidate)) return null;
+
+      return candidate;
+    } catch (err) {
+      reportError(err, 'AvatarService.getProfilePhotoUrl');
+      return null;
+    }
+  }
+
+  /**
+   * Upload a user-supplied image and return its public URL.
+   *
+   * The gallery previously turned the chosen file into a base64 data URL and
+   * wrote that straight into profiles.avatar_url. A 5MB photo becomes a ~6.8MB
+   * string in a text column that is then re-sent to every client rendering
+   * that player at a table. This uploads to the `avatars` bucket instead and
+   * stores only the URL.
+   *
+   * Path must be `<uid>/<file>` to satisfy the bucket's INSERT policy
+   * (auth.uid() = foldername(name)[1]).
+   */
+  async uploadAvatar(userId: string, file: File): Promise<{ url?: string; error?: string }> {
+    const MAX_BYTES = 5 * 1024 * 1024;
+    const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
+
+    if (!ALLOWED.includes(file.type)) {
+      return { error: 'Use a JPG, PNG or WebP image.' };
+    }
+    if (file.size > MAX_BYTES) {
+      return { error: `That image is ${(file.size / 1048576).toFixed(1)}MB. The limit is 5MB.` };
+    }
+
+    const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+    const path = `${userId}/avatar-${Date.now()}.${ext}`;
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from(UPLOAD_AVATARS_BUCKET)
+        .upload(path, file, { cacheControl: '3600', upsert: true, contentType: file.type });
+
+      if (uploadError) {
+        reportError(uploadError, 'AvatarService.uploadAvatar');
+        return { error: 'Upload failed. Please try again.' };
+      }
+
+      const { data } = supabase.storage.from(UPLOAD_AVATARS_BUCKET).getPublicUrl(path);
+      if (!data?.publicUrl) return { error: 'Upload succeeded but no URL was returned.' };
+
+      return { url: data.publicUrl };
+    } catch (err) {
+      reportError(err, 'AvatarService.uploadAvatar');
+      return { error: 'Upload failed. Please try again.' };
+    }
+  }
+
+  /**
+   * Open the Hub avatar creator in a new tab/modal.
+   * The Hub handles AI avatar generation and saves to the user's profile.
    */
   openAvatarSelector(): void {
     const url = this.getHubAvatarUrl();

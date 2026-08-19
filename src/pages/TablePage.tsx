@@ -2554,6 +2554,12 @@ export default function TablePage({
       if (result.success) {
         // FIX 132: Clear heroSeatRef so player can re-seat at another table
         heroSeatRef.current = 0;
+        // Dan 2026-08-19: the REF was cleared but tableState.heroSeat was not,
+        // so after leaving, the chair still rendered "YOUR SEAT" (and counted
+        // as occupied by hero) until a snapshot happened to correct it. Clear
+        // the state too: the seat is immediately open to other players.
+        setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+        pendingSeatStackRef.current = 0;
         console.debug(`[Leave] Success — ${result.chipsReturned} chips returned to wallet`);
 
         // Notify system (TABLE_LEFT is deliberately delayed until Session Summary closes)

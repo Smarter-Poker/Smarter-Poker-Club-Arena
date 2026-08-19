@@ -104,6 +104,71 @@
   color: #8b949e;
 }
 
+/* ── Quick actions: use profile photo / create avatar ── */
+.ag-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+.ag-action {
+  flex: 1 1 0;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #e4e6eb;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 9px 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ag-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.ag-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ag-action--vip {
+  background: rgba(24, 119, 242, 0.14);
+  border-color: rgba(24, 119, 242, 0.4);
+  color: #4a9eff;
+}
+.ag-action--vip:hover:not(:disabled) {
+  background: rgba(24, 119, 242, 0.22);
+  border-color: rgba(24, 119, 242, 0.6);
+}
+
+/* ── Inline status line (upload rejected, load failed, etc) ── */
+.ag-notice {
+  margin: 10px 16px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.28);
+  color: #ffd970;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+/* ── Empty / loading state inside the grid area ── */
+.ag-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  padding: 0 24px;
+  text-align: center;
+  color: #8b949e;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 /* ── Tabs ── */
 .ag-tabs {
   display: flex;

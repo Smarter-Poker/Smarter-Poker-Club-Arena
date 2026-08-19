@@ -239,6 +239,36 @@ export default function MultiTablePage() {
   // TABLE_MENU_ACTION/FORCE_LEAVE_TABLE for the secure cashout path — has
   // nobody listening and the tab would be unclosable. There are no chips on a
   // lobby tab, so close it directly.
+  /**
+   * Dan 2026-08-19: leaving a table must CLOSE that table's tab and drop the
+   * player back to the lobby — previously the tab stayed open showing the
+   * table they had just left. Emitted by the session-summary close handler.
+   */
+  useMasterBusSubscription(
+    'TABLE_MENU_ACTION',
+    (payload: { tableId?: string; action?: string }) => {
+      if (payload?.action !== 'CLOSE_TABLE_TAB' || !payload.tableId) return;
+      setTables((prev) => {
+        const idx = prev.findIndex((t) => t.id === payload.tableId);
+        if (idx === -1) return prev;
+        const next = prev.filter((t) => t.id !== payload.tableId);
+        setActiveIndex((cur) => (cur >= idx && cur > 0 ? cur - 1 : 0));
+        // Nothing left to play — surface the lobby so there is always
+        // somewhere to go next.
+        if (next.length === 0) {
+          return [
+            {
+              id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
+              kind: 'lobby',
+              name: 'Lobby',
+            } as TableInstance,
+          ];
+        }
+        return next;
+      });
+    }
+  );
+
   useMasterBusSubscription(
     'TABLE_MENU_ACTION',
     (payload: { tableId?: string; action?: string }) => {

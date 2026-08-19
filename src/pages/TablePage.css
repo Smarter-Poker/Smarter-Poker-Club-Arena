@@ -1804,6 +1804,107 @@
   background-color: rgba(231, 76, 60, 0.9);
   box-shadow: 0 0 10px rgba(231, 76, 60, 0.35);
 }
+/* IMPROVEMENT PASS 2026-08-19: mini equity bar inside the badge. */
+.equity-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.equity-overlay__bar {
+  display: block;
+  height: 3px;
+  max-width: 100%;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+  transition: width 0.5s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ALL-IN BANNER — COMPETITOR-PARITY 2026-08-19
+   Table-level splash the moment the runout locks in (first equity broadcast).
+   Slams in with overshoot, holds, and burns out; an expanding shockwave ring
+   sells the impact. Removed from the DOM after 1.8s by TablePage.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.allin-banner {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.allin-banner__text {
+  font-size: clamp(2.2rem, 9vw, 3.6rem);
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  color: #fff;
+  text-shadow:
+    0 0 18px rgba(139, 92, 246, 0.9),
+    0 0 42px rgba(139, 92, 246, 0.55),
+    0 4px 10px rgba(0, 0, 0, 0.8);
+  animation: allInBannerSlam calc(1.8s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.9, 0.3, 1)
+    forwards;
+  will-change: transform, opacity;
+}
+.allin-banner::after {
+  content: '';
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 3px solid rgba(139, 92, 246, 0.8);
+  animation: allInShockwave calc(0.9s * var(--animation-speed, 1)) ease-out forwards;
+  will-change: transform, opacity;
+}
+@keyframes allInBannerSlam {
+  0% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(0.94);
+  }
+  28% {
+    transform: scale(1.06);
+  }
+  38% {
+    transform: scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+@keyframes allInShockwave {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(7);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .allin-banner__text,
+  .allin-banner::after {
+    animation: none;
+  }
+  .allin-banner {
+    opacity: 0.9;
+  }
+}
+
 @keyframes equityPop {
   0% {
     transform: translateX(-50%) scale(0.6);

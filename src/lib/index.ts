@@ -7,8 +7,8 @@
 // Formatting Utilities
 export * from './utils';
 
-// Animation Utilities
-export * from './animations';
+// Animation Utilities: lib/animations.ts deleted 2026-08-19 — framer-motion
+// preset library with zero importers anywhere in the app.
 
 // Constants
 export * from './constants';

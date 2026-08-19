@@ -32,6 +32,14 @@ export interface UserTableSettings {
   cards_pre_sort: boolean;
   gestures_enabled: boolean;
   card_slide: boolean;
+  /**
+   * Card Squeeze (competitor-parity 2026-08-19, GG-style marquee feature):
+   * hero hole cards are dealt FACE DOWN; drag upward on them to bend/peel
+   * them open like a live squeeze. Tap bounces a gesture hint. Auto-reveals
+   * at showdown / when the hero is all-in so the hero never sees less than
+   * the table does.
+   */
+  card_squeeze: boolean;
   show_stack_in_bb: boolean;
   auto_time_bank: boolean;
   enhanced_view: boolean;
@@ -53,6 +61,7 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   cards_pre_sort: true,
   gestures_enabled: false,
   card_slide: true,
+  card_squeeze: false,
   show_stack_in_bb: false,
   auto_time_bank: false,
   enhanced_view: true,
@@ -112,6 +121,11 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     key: 'card_slide',
     label: 'Card Slide',
     description: 'Enable card peek/slide reveal animation',
+  },
+  {
+    key: 'card_squeeze',
+    label: 'Card Squeeze',
+    description: 'Deal your cards face down - drag up to squeeze them open like a live game',
   },
   {
     key: 'show_stack_in_bb',
@@ -200,6 +214,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
             cards_pre_sort: data.cards_pre_sort ?? DEFAULT_USER_TABLE_SETTINGS.cards_pre_sort,
             gestures_enabled: data.gestures_enabled ?? DEFAULT_USER_TABLE_SETTINGS.gestures_enabled,
             card_slide: data.card_slide ?? DEFAULT_USER_TABLE_SETTINGS.card_slide,
+            card_squeeze: data.card_squeeze ?? DEFAULT_USER_TABLE_SETTINGS.card_squeeze,
             show_stack_in_bb: data.show_stack_in_bb ?? DEFAULT_USER_TABLE_SETTINGS.show_stack_in_bb,
             auto_time_bank: data.auto_time_bank ?? DEFAULT_USER_TABLE_SETTINGS.auto_time_bank,
             enhanced_view: data.enhanced_view ?? DEFAULT_USER_TABLE_SETTINGS.enhanced_view,

@@ -37,8 +37,11 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/club-engine.css';
 import './styles/animations.css';
-import './styles/ChipAnimations.css';
-import './components/table/CardAnimations.css';
+// IMPROVEMENT PASS 2026-08-19: ChipAnimations.css and CardAnimations.css
+// deleted — ~1,400 lines of keyframes/selectors with ZERO component
+// consumers (chip-bet--from-seat-*, community-card--flop-*, card--folding,
+// chip--scatter-* etc. were never emitted by any TSX). The live table
+// animations all live in their component stylesheets.
 import { initAntiGravity } from './core/AntiGravityBoot';
 import { initMasterBus } from './core/MasterBus';
 import { initIdentityDNA } from './core/IdentityDNA';

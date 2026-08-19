@@ -155,6 +155,17 @@ export function ParticleSystem({
       return;
     }
 
+    // IMPROVEMENT PASS 2026-08-19: rAF canvas loops are invisible to the CSS
+    // prefers-reduced-motion media query — honor it here like BBJCelebration
+    // already does. Completion still fires so parent state advances.
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    ) {
+      const t = setTimeout(() => onCompleteRef.current?.(), 0);
+      return () => clearTimeout(t);
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 

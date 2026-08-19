@@ -17,6 +17,7 @@
 
 import React, { useEffect, useState, useRef, memo } from 'react';
 import { soundService } from '../../services/SoundService';
+import { getAnimationSpeed } from '../../utils/animationSpeed';
 import './DealAnimation.css';
 
 // =================================================================================
@@ -34,6 +35,11 @@ export interface DealAnimationProps {
   seatPositions: { x: number; y: number }[];
   /** Called when animation completes */
   onComplete?: () => void;
+  /**
+   * IMPROVEMENT PASS 2026-08-19: multi-table gate. Background tables must
+   * not play deal sounds (#175); TablePage passes its ambientSoundsAllowed.
+   */
+  playSounds?: boolean;
 }
 
 interface FlyingCard {
@@ -51,10 +57,26 @@ interface FlyingCard {
 
 /** Delay between each card deal in ms — PokerBros-style rapid fire */
 const CARD_STAGGER_MS = 80;
-/** Duration of each card's flight animation (must match CSS --da-flight-duration) */
-const FLIGHT_DURATION_MS = 320;
 /** Extra settle time after last card arrives before cleanup */
 const SETTLE_BUFFER_MS = 100;
+
+/**
+ * IMPROVEMENT PASS 2026-08-19: flight duration used to be a JS constant (320)
+ * while the CSS breakpoints quietly dropped --da-flight-duration to 0.28s /
+ * 0.25s on small screens — the JS cleanup timer and the visuals disagreed on
+ * every phone, and neither side honored --animation-speed. The JS now picks
+ * the same base the CSS breakpoints used, scales it by the user's speed
+ * multiplier, and WRITES the result back as an inline --da-flight-duration so
+ * both sides are always the same number by construction.
+ */
+function flightDurationMs(): number {
+  let base = 320;
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    if (window.matchMedia('(max-width: 480px)').matches) base = 250;
+    else if (window.matchMedia('(max-width: 768px)').matches) base = 280;
+  }
+  return Math.round(base * getAnimationSpeed());
+}
 
 // =================================================================================
 // COMPONENT
@@ -66,9 +88,11 @@ function DealAnimationComponent({
   dealerSeatIndex,
   seatPositions,
   onComplete,
+  playSounds = true,
 }: DealAnimationProps) {
   const [cards, setCards] = useState<FlyingCard[]>([]);
   const [visible, setVisible] = useState(false);
+  const [flightMs, setFlightMs] = useState(320);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const soundTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const onCompleteRef = useRef(onComplete);
@@ -85,13 +109,18 @@ function DealAnimationComponent({
 
       const dealerPos = seatPositions[dealerSeatIndex] || { x: 50, y: 50 };
       const newCards: FlyingCard[] = [];
+      // IMPROVEMENT PASS 2026-08-19: stagger + flight honor --animation-speed.
+      const speed = getAnimationSpeed();
+      const staggerMs = Math.round(CARD_STAGGER_MS * speed);
+      const flight = flightDurationMs();
+      setFlightMs(flight);
 
       // Two rounds of dealing (two cards per player)
       for (let round = 0; round < 2; round++) {
         activeSeats.forEach((seatIdx, orderIdx) => {
           const pos = seatPositions[seatIdx];
           if (!pos) return;
-          const delay = (round * activeSeats.length + orderIdx) * CARD_STAGGER_MS;
+          const delay = (round * activeSeats.length + orderIdx) * staggerMs;
           newCards.push({
             id: `deal-${round}-${seatIdx}`,
             targetX: pos.x,
@@ -107,32 +136,30 @@ function DealAnimationComponent({
       setVisible(true);
 
       // --- Sound Integration ---
-      // Play "new hand starting" sound immediately
-      try {
-        soundService.playNewHand();
-      } catch {
-        // Sound failure should never break gameplay
-      }
-
-      // Play individual card deal sounds staggered with each card
-      // Clear any leftover timers from previous deal
+      // IMPROVEMENT PASS 2026-08-19: playNewHand() removed from here — the
+      // HAND_STARTED handler already plays shuffle + new-hand chime, so this
+      // was a guaranteed double chime on every hand. This component owns ONLY
+      // the per-card deal sounds (they must stay staggered with the visuals),
+      // gated by playSounds so background multi-table tabs stay quiet (#175).
       soundTimersRef.current.forEach(clearTimeout);
       soundTimersRef.current = [];
 
-      newCards.forEach((card) => {
-        const t = setTimeout(() => {
-          try {
-            soundService.playDeal();
-          } catch {
-            // Graceful degradation
-          }
-        }, card.delay + 30); // +30ms offset so sound fires slightly after visual launch
-        soundTimersRef.current.push(t);
-      });
+      if (playSounds) {
+        newCards.forEach((card) => {
+          const t = setTimeout(() => {
+            try {
+              soundService.playDeal();
+            } catch {
+              // Graceful degradation
+            }
+          }, card.delay + 30); // +30ms offset so sound fires slightly after visual launch
+          soundTimersRef.current.push(t);
+        });
+      }
 
       // Animation duration: last card delay + flight time + settle
       const lastDelay = newCards.length > 0 ? newCards[newCards.length - 1].delay : 0;
-      const totalDuration = lastDelay + FLIGHT_DURATION_MS + SETTLE_BUFFER_MS;
+      const totalDuration = lastDelay + flight + Math.round(SETTLE_BUFFER_MS * speed);
 
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
@@ -160,7 +187,13 @@ function DealAnimationComponent({
   if (!visible || cards.length === 0) return null;
 
   return (
-    <div className="deal-animation" aria-hidden="true">
+    <div
+      className="deal-animation"
+      aria-hidden="true"
+      /* JS is the single source of truth for flight duration — see
+         flightDurationMs(). Inline var out-specifies the CSS breakpoints. */
+      style={{ '--da-flight-duration': `${flightMs}ms` } as React.CSSProperties}
+    >
       {cards.map((card) => (
         <div
           key={card.id}

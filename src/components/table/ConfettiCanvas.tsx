@@ -113,6 +113,16 @@ export function ConfettiCanvas({
       return;
     }
 
+    // IMPROVEMENT PASS 2026-08-19: honor prefers-reduced-motion in the rAF
+    // loop (CSS media queries cannot). Completion still fires.
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    ) {
+      const t = setTimeout(() => onCompleteRef.current?.(), 0);
+      return () => clearTimeout(t);
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 

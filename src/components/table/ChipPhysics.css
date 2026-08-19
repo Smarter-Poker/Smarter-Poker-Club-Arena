@@ -326,7 +326,8 @@
    Chips slide from the left with motion blur and spring overshoot. */
 
 .cp--slide-in .cp-stacks {
-  animation: cpSlideIn var(--cp-slide-duration) var(--cp-ease-overshoot);
+  animation: cpSlideIn calc(var(--cp-slide-duration) * var(--animation-speed, 1))
+    var(--cp-ease-overshoot);
 }
 
 @keyframes cpSlideIn {
@@ -363,7 +364,10 @@
    Falls back to soft upward drift when variables are absent. */
 
 .cp--collect .cp-stacks {
-  animation: cpCollect var(--cp-collect-duration) var(--cp-ease-gravity) forwards;
+  /* IMPROVEMENT PASS 2026-08-19: honors --animation-speed like the JS
+     collect window (700ms * speed) that unmounts these chips. */
+  animation: cpCollect calc(var(--cp-collect-duration) * var(--animation-speed, 1))
+    var(--cp-ease-gravity) forwards;
 }
 
 @keyframes cpCollect {

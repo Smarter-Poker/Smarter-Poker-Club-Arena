@@ -107,7 +107,6 @@ import { ConfettiCanvas } from '../components/table/ConfettiCanvas';
 import { ParticleSystem } from '../components/table/ParticleSystem';
 import {
   ChipAnimationManager,
-  createChipToPotEvent,
   createPotToWinnerEvent,
   type ChipAnimationEvent,
 } from '../components/table/ChipAnimation';
@@ -164,9 +163,7 @@ import TournamentWinnerOverlay from '../components/table/TournamentWinnerOverlay
 import ChipStack from '../components/table/ChipStack';
 import { tournamentService } from '../services/TournamentService';
 import TimerBar from '../components/table/TimerBar';
-import PremiumCard from '../components/table/PremiumCard';
 import RealTimeResults from '../components/table/RealTimeResults';
-import PlayerCard from '../components/table/PlayerCard';
 // [MIGRATION] All engine imports removed — server-authoritative (Steps 1-7 complete)
 import { handPersistenceService } from '../services/HandPersistenceService';
 import { handHistoryService } from '../services/HandHistoryService';
@@ -215,7 +212,9 @@ import { TableReactions } from '../components/table/TableReactions';
 import { useTableKeyboard } from '../hooks/useTableKeyboard';
 
 import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
-import { HoleCardReveal } from '../components/tournament/HoleCardReveal';
+// IMPROVEMENT PASS 2026-08-19: PremiumCard, PlayerCard, HoleCardReveal and
+// createChipToPotEvent imports removed — imported for years, never rendered
+// or called (dead weight in the TablePage chunk).
 import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
 // Phase 9: Previously unwired table components
 import { StreamerMode } from '../components/table/StreamerMode';
@@ -236,6 +235,7 @@ import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { reportError } from '../utils/errorReporter';
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
+import { getAnimationSpeed } from '../utils/animationSpeed';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
 
@@ -1050,9 +1050,8 @@ export default function TablePage({
   // hero's own preflop action, cleared when the hand number advances.
   const heroVpipThisHandRef = useRef(false);
   const heroPfrThisHandRef = useRef(false);
-  const triggerChipAnimationRef = useRef<
-    ((fromSeat: number, toPot: boolean, amount: number) => void) | null
-  >(null);
+  // (triggerChipAnimationRef removed 2026-08-19 — see the note at the old
+  // triggerChipAnimation definition site.)
   const [waitListPlayers, setWaitListPlayers] = useState<
     Array<{
       playerId: string;
@@ -1986,6 +1985,32 @@ export default function TablePage({
   const [allInEquities, setAllInEquities] = useState<
     Array<{ userId: string; username: string; equity: number; seat: number }>
   >([]);
+
+  // COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner. The per-seat
+  // badge existed but the RUNOUT itself had no table-wide moment. Fires once
+  // per hand on the first all_in_equity broadcast (exactly when betting is
+  // done and the paced runout begins — for players AND observers).
+  const [showAllInBanner, setShowAllInBanner] = useState(false);
+  const allInBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevEquityCountRef = useRef(0);
+  useEffect(() => {
+    const count = allInEquities.length;
+    if (count > 0 && prevEquityCountRef.current === 0) {
+      setShowAllInBanner(true);
+      if (allInBannerTimerRef.current) clearTimeout(allInBannerTimerRef.current);
+      allInBannerTimerRef.current = setTimeout(() => {
+        allInBannerTimerRef.current = null;
+        setShowAllInBanner(false);
+      }, 1800);
+    }
+    prevEquityCountRef.current = count;
+  }, [allInEquities.length]);
+  useEffect(
+    () => () => {
+      if (allInBannerTimerRef.current) clearTimeout(allInBannerTimerRef.current);
+    },
+    []
+  );
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  PHASE 4 — Premium Features (HUD, Pot Odds, Hand History, Settings)
@@ -3649,6 +3674,9 @@ export default function TablePage({
                   blinds: levelData.blinds,
                 }));
                 setAnnouncement({ type: 'level_up', data: levelData });
+                // COMPETITOR-PARITY 2026-08-19: the level-up banner animated
+                // in silence — give it its fanfare.
+                if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playLevelUp();
               }
             })
             .subscribe((status: string, err?: Error) => {
@@ -4871,16 +4899,26 @@ export default function TablePage({
         setIsSeatDealing(true);
         // CA-19: track so unmount can cancel — prevents setIsSeatDealing on dead page
         if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
-        seatDealTimerRef.current = setTimeout(() => {
-          seatDealTimerRef.current = null;
-          setIsSeatDealing(false);
-        }, 700);
+        seatDealTimerRef.current = setTimeout(
+          () => {
+            seatDealTimerRef.current = null;
+            setIsSeatDealing(false);
+          },
+          // IMPROVEMENT PASS 2026-08-19: scales with --animation-speed like
+          // the cardDealIn keyframe it gates.
+          700 * getAnimationSpeed()
+        );
         // Bible V8 §5.3: new hand indicator + card dealing sound
         // #175 gated for multi-table: only play on the active tab
         if (soundService.isEnabled() && ambientSoundsAllowed) {
-          soundService.playNewHand();
-          // Stagger the deal sound slightly after the new-hand chime
-          setTimeout(() => soundService.playDeal(), 120);
+          // COMPETITOR-PARITY 2026-08-19: shuffle riffle before the deal —
+          // every major room marks the fresh hand with a shuffle.
+          soundService.playShuffle();
+          setTimeout(() => soundService.playNewHand(), 260);
+          // DealAnimation owns the per-card deal sounds (staggered with its
+          // visuals). Only when the card-slide animation is disabled does the
+          // page play a single deal slide as the audio fallback.
+          if (!v8Settings.card_slide) setTimeout(() => soundService.playDeal(), 380);
         }
         break;
       }
@@ -5011,15 +5049,18 @@ export default function TablePage({
           }
           // cpCollect runs 550ms + 100ms stack stagger; the old 450ms window
           // unmounted the chips at 82% of the keyframe.
-          collectSeatsTimerRef.current = window.setTimeout(() => {
-            collectSeatsTimerRef.current = null;
-            setCollectingChipSeats(Array(collectMask.length).fill(false));
-            streetBetsRef.current = Array(9).fill(0);
-            setTableState((prev) => ({
-              ...prev,
-              lastBetAmounts: prev.lastBetAmounts.map(() => 0),
-            }));
-          }, 700);
+          collectSeatsTimerRef.current = window.setTimeout(
+            () => {
+              collectSeatsTimerRef.current = null;
+              setCollectingChipSeats(Array(collectMask.length).fill(false));
+              streetBetsRef.current = Array(9).fill(0);
+              setTableState((prev) => ({
+                ...prev,
+                lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+              }));
+            },
+            700 * getAnimationSpeed()
+          );
         }
 
         setTableState((prev) => ({
@@ -5221,15 +5262,18 @@ export default function TablePage({
           if (collectSeatsTimerRef.current) {
             window.clearTimeout(collectSeatsTimerRef.current);
           }
-          collectSeatsTimerRef.current = window.setTimeout(() => {
-            collectSeatsTimerRef.current = null;
-            setCollectingChipSeats(Array(finalMask.length).fill(false));
-            streetBetsRef.current = Array(9).fill(0);
-            setTableState((prev) => ({
-              ...prev,
-              lastBetAmounts: prev.lastBetAmounts.map(() => 0),
-            }));
-          }, 700);
+          collectSeatsTimerRef.current = window.setTimeout(
+            () => {
+              collectSeatsTimerRef.current = null;
+              setCollectingChipSeats(Array(finalMask.length).fill(false));
+              streetBetsRef.current = Array(9).fill(0);
+              setTableState((prev) => ({
+                ...prev,
+                lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+              }));
+            },
+            700 * getAnimationSpeed()
+          );
         }
         // ANIMATION AUDIT 2026-08-19: showdown losers' cards used to simply
         // vanish at the 3s reset — no muck animation existed for them. Fly
@@ -5488,10 +5532,13 @@ export default function TablePage({
               if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
               // Slightly longer than --pd-collect-duration (0.5s) so the pot is
               // never yanked back to centre mid-slide.
-              potCollectTimerRef.current = setTimeout(() => {
-                potCollectTimerRef.current = null;
-                setPotCollectTo(null);
-              }, 700);
+              potCollectTimerRef.current = setTimeout(
+                () => {
+                  potCollectTimerRef.current = null;
+                  setPotCollectTo(null);
+                },
+                700 * getAnimationSpeed()
+              );
             }
           }
         }
@@ -6603,39 +6650,10 @@ export default function TablePage({
     });
   };
 
-  // Chip animation helpers
-  const triggerChipAnimation = useCallback(
-    (
-      fromSeat: number,
-      toPot: boolean,
-      amount: number,
-      chipColor: 'red' | 'green' | 'blue' | 'black' | 'gold' = 'gold'
-    ) => {
-      // Use rotated seat positions so chip animations align with visual seat layout
-      const rotatedPositions = seatPositions; // Already rotated via seatRotationMap
-      const fromPos = rotatedPositions[fromSeat] || { x: 50, y: 50 };
-      const toPos = toPot ? { x: 50, y: 45 } : fromPos; // Pot is center of table
-
-      const animId = `chip_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      setChipAnimations((prev) => [
-        ...prev,
-        {
-          id: animId,
-          from: {
-            x: (fromPos.x / 100) * window.innerWidth,
-            y: (fromPos.y / 100) * window.innerHeight,
-          },
-          to: { x: (toPos.x / 100) * window.innerWidth, y: (toPos.y / 100) * window.innerHeight },
-          amount,
-          chipColor,
-        },
-      ]);
-    },
-    [seatPositions]
-  );
-
-  // Keep ref in sync for use in closures that can't capture the callback directly
-  triggerChipAnimationRef.current = triggerChipAnimation;
+  // IMPROVEMENT PASS 2026-08-19: triggerChipAnimation + its ref were dead —
+  // every call site was rewritten to push ChipAnimationEvents inline
+  // (2026-04-14/16 fixes), and this leftover still carried the buggy
+  // window.innerWidth math and the wrong {50,45} pot target. Removed.
 
   const handleAnimationComplete = useCallback((id: string) => {
     setChipAnimations((prev) => prev.filter((a) => a.id !== id));
@@ -7282,6 +7300,7 @@ export default function TablePage({
               dealerSeatIndex={Math.max(0, tableState.dealerSeat - 1)}
               seatPositions={seatPositions}
               onComplete={() => setDealAnimationKey(0)}
+              playSounds={ambientSoundsAllowed}
             />
           )}
 
@@ -7295,6 +7314,14 @@ export default function TablePage({
             animations={chipAnimations}
             onAnimationComplete={handleAnimationComplete}
           />
+
+          {/* COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner — fires
+              once when the runout locks in (first equity broadcast). */}
+          {showAllInBanner && (
+            <div className="allin-banner" role="status" aria-label="All in">
+              <span className="allin-banner__text">ALL IN</span>
+            </div>
+          )}
 
           {/* Pot Display — click to toggle chips/BB */}
           <div className="pot-area">
@@ -7608,6 +7635,14 @@ export default function TablePage({
                   }}
                   isDealing={isSeatDealing}
                   isMucking={muckingSeats[idx] || false}
+                  /* COMPETITOR-PARITY 2026-08-19: Card Squeeze — hero only.
+                     Force-reveal conditions (showdown stage) are folded in
+                     here; SeatSlot adds the per-seat ones (all-in, winner). */
+                  cardSqueezeActive={
+                    !!displayPlayer?.isHero &&
+                    v8Settings.card_squeeze &&
+                    tableState.boardStage !== 'showdown'
+                  }
                 />
 
                 {/* FIX 89: All-In Equity Overlay — shown per seat during all-in */}
@@ -7631,6 +7666,12 @@ export default function TablePage({
                         className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}`}
                       >
                         {eq.equity}%
+                        {/* IMPROVEMENT PASS 2026-08-19: mini equity bar under
+                            the number — reads at a glance across the table. */}
+                        <span
+                          className="equity-overlay__bar"
+                          style={{ width: `${Math.max(2, Math.min(100, eq.equity))}%` }}
+                        />
                       </div>
                     );
                   })()}

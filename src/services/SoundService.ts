@@ -445,6 +445,91 @@ class SoundService {
   }
 
   /**
+   * Shuffle — riffle of the deck before the deal.
+   * COMPETITOR-PARITY 2026-08-19: every major room marks the new hand with a
+   * shuffle; we only ever had the deal slide. Three descending filtered
+   * noise riffles + a soft square-up tap.
+   */
+  playShuffle() {
+    if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+    // Three quick riffle bursts, descending brightness
+    this.createNoiseBurst(t, 0.09, 0.1, 4200);
+    this.createNoiseBurst(t + 0.09, 0.09, 0.12, 3200);
+    this.createNoiseBurst(t + 0.18, 0.1, 0.1, 2400);
+    // Square-up tap
+    const osc = this.ctx!.createOscillator();
+    const gain = this.ctx!.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(320, t + 0.3);
+    gain.gain.setValueAtTime(0.1, t + 0.3);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+    osc.connect(gain);
+    gain.connect(this.out);
+    osc.start(t + 0.3);
+    osc.stop(t + 0.38);
+  }
+
+  /**
+   * Card Squeeze reveal — soft paper bend + flick when the hero peels a
+   * face-down hole card open (COMPETITOR-PARITY 2026-08-19).
+   */
+  playCardSqueeze() {
+    if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+    // Slow paper bend
+    this.createNoiseBurst(t, 0.16, 0.08, 1800);
+    // Flick as the card snaps open
+    const osc = this.ctx!.createOscillator();
+    const gain = this.ctx!.createGain();
+    osc.frequency.setValueAtTime(3200, t + 0.14);
+    osc.frequency.exponentialRampToValueAtTime(900, t + 0.2);
+    gain.gain.setValueAtTime(0.09, t + 0.14);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.connect(gain);
+    gain.connect(this.out);
+    osc.start(t + 0.14);
+    osc.stop(t + 0.2);
+    haptic.light();
+  }
+
+  /**
+   * Dealer button move — one very soft felt 'tock' as the puck lands on the
+   * next seat (COMPETITOR-PARITY 2026-08-19). Deliberately quiet: it fires
+   * every hand.
+   */
+  playDealerButtonMove() {
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+    this.createNoiseBurst(t, 0.03, 0.08, 900);
+    this.playTone(240, 0.05, 0.06, 'sine');
+  }
+
+  /**
+   * Tournament level up — two rising tones + shimmer under the existing
+   * level-up announcement banner (COMPETITOR-PARITY 2026-08-19: the banner
+   * animated silently).
+   */
+  playLevelUp() {
+    if (!this.shouldPlay('showdown', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+    this.playTone(523, 0.16, 0.12, 'triangle'); // C5
+    const osc = this.ctx!.createOscillator();
+    const gain = this.ctx!.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(784, t + 0.14); // G5
+    gain.gain.setValueAtTime(0.12, t + 0.14);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+    osc.connect(gain);
+    gain.connect(this.out);
+    osc.start(t + 0.14);
+    osc.stop(t + 0.42);
+    // shimmer
+    this.createNoiseBurst(t + 0.16, 0.25, 0.04, 6000);
+    haptic.medium();
+  }
+
+  /**
    * Check — double table tap (wood-like thud)
    */
   playCheck() {

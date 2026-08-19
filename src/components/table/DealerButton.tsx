@@ -7,8 +7,9 @@
  * Smoothly animates between seat positions when the button moves.
  */
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { dealerButtonPosition } from './tableGeometry';
+import { soundService } from '../../services/SoundService';
 
 export interface DealerButtonProps {
   /** Index of the dealer seat (visual index, 0-based) */
@@ -24,6 +25,19 @@ export interface DealerButtonProps {
  * Uses CSS transitions for smooth movement between positions.
  */
 export function DealerButton({ dealerVisualIndex, seatPositions, isVisible }: DealerButtonProps) {
+  // COMPETITOR-PARITY 2026-08-19: one very soft felt 'tock' as the puck lands
+  // on its new seat. Skipped on first mount — only actual moves speak. The
+  // 600ms delay matches the CSS slide so the sound lands WITH the puck.
+  const prevIndexRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isVisible || dealerVisualIndex < 0) return;
+    const prev = prevIndexRef.current;
+    prevIndexRef.current = dealerVisualIndex;
+    if (prev == null || prev === dealerVisualIndex) return;
+    const t = setTimeout(() => soundService.playDealerButtonMove(), 600);
+    return () => clearTimeout(t);
+  }, [dealerVisualIndex, isVisible]);
+
   if (!isVisible || dealerVisualIndex < 0 || dealerVisualIndex >= seatPositions.length) {
     return null;
   }

@@ -12,7 +12,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import './TableMenu.css';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import {
   SitOutIcon,
   RebuyIcon,
@@ -293,28 +293,19 @@ export function TableMenu({
   ];
 
   // Sound cue on menu open
+  // SOUND IMPROVEMENT 2026-08-19: this used to spin up a BRAND NEW
+  // AudioContext on every menu open (browsers cap concurrent contexts at ~6
+  // on Safari — a heavy session could exhaust them and silence the whole
+  // table). Route through the shared SoundService, which also respects the
+  // real mute/volume settings instead of a fourth localStorage key.
   useEffect(() => {
     if (isOpen && !prevOpenRef.current) {
-      // Respect user sound settings
       const soundOff = localStorage.getItem('table_sound_muted') === 'true';
       if (!soundOff) {
         try {
-          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.frequency.value = 880;
-          osc.type = 'sine';
-          gain.gain.value = 0.04;
-          osc.start();
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
-          osc.stop(ctx.currentTime + 0.06);
-          // Close AudioContext after playback to prevent resource leak
-          setTimeout(() => ctx.close().catch(() => {}), 100);
+          soundService.playButtonClick();
         } catch (e) {
-          reportError(e, 'TableMenu.setTimeout');
-          /* audio unavailable */
+          reportError(e, 'TableMenu.openSound');
         }
       }
     }

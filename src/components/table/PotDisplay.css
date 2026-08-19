@@ -902,7 +902,10 @@
  * to define the direction vector toward the winning player.
  */
 .pot-display--collect {
-  animation: pdCollect var(--pd-collect-duration) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  /* IMPROVEMENT PASS 2026-08-19: honors --animation-speed like the JS timer
+     (700ms * speed) that clears collectTo. */
+  animation: pdCollect calc(var(--pd-collect-duration) * var(--animation-speed, 1))
+    cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 @keyframes pdCollect {

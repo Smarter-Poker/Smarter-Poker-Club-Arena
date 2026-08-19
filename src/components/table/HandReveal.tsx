@@ -15,7 +15,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
 import { CardImage } from './CardImage';
 import type { Card as CardImageCard } from './CardImage';
@@ -130,6 +130,9 @@ export function HandReveal({
 
   const handleShow = useCallback(() => {
     haptic.medium();
+    // SOUND IMPROVEMENT 2026-08-19: showing your hand was haptic-only —
+    // give the reveal its card-flick.
+    soundService.playCardSqueeze();
     setRevealed(true);
     if (timerRef.current) clearInterval(timerRef.current);
     onShow?.();
@@ -143,6 +146,8 @@ export function HandReveal({
 
   const handleMuck = useCallback(() => {
     haptic.light();
+    // SOUND IMPROVEMENT 2026-08-19: muck gets the fold slide.
+    soundService.playFold();
     setMucked(true);
     if (timerRef.current) clearInterval(timerRef.current);
     onMuck?.();

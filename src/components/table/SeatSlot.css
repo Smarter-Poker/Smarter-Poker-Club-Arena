@@ -1902,6 +1902,91 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   CARD SQUEEZE — COMPETITOR-PARITY 2026-08-19 (GG-style marquee feature)
+   Hero cards dealt face down; drag up bends the back away from its top edge,
+   progressively exposing the face beneath. --squeeze-progress (0..1) is set
+   inline by SeatSlot from the live pointer position, so the peel tracks the
+   finger exactly. A quick tap plays the squeezeHintBounce teach animation.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat__cards--squeeze {
+  touch-action: none; /* the drag must never scroll the page */
+  cursor: grab;
+}
+.seat__cards--squeeze:active {
+  cursor: grabbing;
+}
+
+.seat__squeeze-flip {
+  position: relative;
+  perspective: 420px;
+}
+
+.seat__squeeze-face--under {
+  /* The card face waiting underneath the cover. */
+  position: relative;
+  z-index: 1;
+}
+
+.seat__squeeze-face--cover {
+  /* The card back peeling away. Origin at the TOP edge so dragging up lifts
+     the bottom edge toward the player — how a live squeeze actually looks. */
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  transform-origin: top center;
+  transform: rotateX(calc(var(--squeeze-progress, 0) * -150deg));
+  transition: transform 0.12s ease-out;
+  backface-visibility: hidden;
+  will-change: transform;
+  /* Shadow deepens as the card lifts, selling the bend. */
+  filter: drop-shadow(0 calc(var(--squeeze-progress, 0) * 10px) calc(var(--squeeze-progress, 0) * 8px) rgba(0, 0, 0, 0.45));
+}
+
+/* Tap hint — the cover bounces up ~25% and settles, teaching the gesture. */
+.seat__cards--squeeze-hint .seat__squeeze-face--cover {
+  animation: squeezeHintBounce 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes squeezeHintBounce {
+  0% {
+    transform: rotateX(0deg);
+  }
+  40% {
+    transform: rotateX(-32deg);
+  }
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+/* The moment the squeeze completes, the real cards pop in. */
+.seat__cards--squeeze-open .seat__card {
+  animation: squeezeOpenPop calc(0.32s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
+}
+
+@keyframes squeezeOpenPop {
+  0% {
+    transform: rotateX(-60deg) scale(0.92);
+    opacity: 0.6;
+  }
+  100% {
+    transform: rotateX(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat__squeeze-face--cover {
+    transition: none;
+  }
+  .seat__cards--squeeze-hint .seat__squeeze-face--cover,
+  .seat__cards--squeeze-open .seat__card {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    SHOWDOWN CARD FLIP — 3D card reveal animation
    ═══════════════════════════════════════════════════════════════════════════════ */
 

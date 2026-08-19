@@ -340,6 +340,15 @@
 .community-cards__card--turn {
   animation: ccTurnReveal calc(var(--cc-turn-duration) * var(--animation-speed, 1))
     var(--cc-ease-spring) forwards !important;
+  /* IMPROVEMENT PASS 2026-08-19: promote the 3D reveal to its own layer —
+     the rotateY flip was rasterizing mid-animation on mobile GPUs. */
+  will-change: transform, opacity;
+}
+.community-cards__card--river {
+  will-change: transform, opacity;
+}
+.community-cards__card--flop-deal {
+  will-change: transform, opacity;
 }
 
 @keyframes ccTurnReveal {

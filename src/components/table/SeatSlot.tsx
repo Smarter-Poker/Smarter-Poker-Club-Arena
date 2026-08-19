@@ -25,6 +25,8 @@ import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
+import { soundService } from '../../services/SoundService';
+import { getAnimationSpeed } from '../../utils/animationSpeed';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -143,6 +145,14 @@ export interface SeatSlotProps {
    * resets. Set by the parent late in the winner-display window.
    */
   isMucking?: boolean;
+  /**
+   * COMPETITOR-PARITY 2026-08-19 — Card Squeeze. True when the user's
+   * card_squeeze setting is on AND no force-reveal condition applies
+   * (showdown / all-in runout). While true and the hand is not yet squeezed
+   * open, the hero's cards render face DOWN and a drag-up gesture peels
+   * them open. Parent computes the force conditions.
+   */
+  cardSqueezeActive?: boolean;
   /**
    * 2026-04-15 Bible V8 §6.1 — server-authoritative absolute wall-clock
    * deadline for the CURRENT active seat (ms since epoch). Combined with
@@ -317,6 +327,7 @@ export const SeatSlot = memo(
       isCollectingChips = false,
       isDealing = false,
       isMucking = false,
+      cardSqueezeActive = false,
       turnDeadlineMs,
       turnStartTimeMs,
       showPickedCardIndexes,
@@ -381,9 +392,11 @@ export const SeatSlot = memo(
     const [isFolding, setIsFolding] = useState(false);
     const prevActionRef = React.useRef<LastAction>(null);
     useEffect(() => {
+      // IMPROVEMENT PASS 2026-08-19: every class-removal window scales with
+      // --animation-speed, the same multiplier the keyframes use.
       if (lastAction === 'all_in' && prevActionRef.current !== 'all_in') {
         setAllinShake(true);
-        const timer = setTimeout(() => setAllinShake(false), 400);
+        const timer = setTimeout(() => setAllinShake(false), 400 * getAnimationSpeed());
         prevActionRef.current = lastAction;
         return () => clearTimeout(timer);
       }
@@ -393,7 +406,7 @@ export const SeatSlot = memo(
       // mid-flight and the second card snapped. 500ms covers it.
       if (lastAction === 'fold' && prevActionRef.current !== 'fold') {
         setIsFolding(true);
-        const timer = setTimeout(() => setIsFolding(false), 500);
+        const timer = setTimeout(() => setIsFolding(false), 500 * getAnimationSpeed());
         prevActionRef.current = lastAction;
         return () => clearTimeout(timer);
       }
@@ -410,12 +423,96 @@ export const SeatSlot = memo(
         setIsShowdownFlip(true);
         // ANIMATION AUDIT 2026-08-19: was 400ms, but card 2 runs 120ms delay
         // + 350ms flip = 470ms — it snapped face-up at 85%. 600ms covers it.
-        const timer = setTimeout(() => setIsShowdownFlip(false), 600);
+        const timer = setTimeout(() => setIsShowdownFlip(false), 600 * getAnimationSpeed());
         prevShowCardsRef.current = player.showCards;
         return () => clearTimeout(timer);
       }
       prevShowCardsRef.current = player.showCards ?? false;
     }, [player?.showCards]);
+
+    // ── COMPETITOR-PARITY 2026-08-19: Card Squeeze ─────────────────────────
+    // squeezeProgress: 0 = face down, 1 = fully peeled open. Driven by a
+    // drag-up gesture on the hero's cards. squeezeRevealed latches once the
+    // player peels past the threshold (or double-taps) and holds for the
+    // rest of the hand. A quick tap plays a bounce hint teaching the gesture.
+    const [squeezeRevealed, setSqueezeRevealed] = useState(false);
+    const [squeezeProgress, setSqueezeProgress] = useState(0);
+    const [squeezeHint, setSqueezeHint] = useState(false);
+    const squeezeStartYRef = useRef<number | null>(null);
+    const squeezeMovedRef = useRef(false);
+    const squeezeLastTapRef = useRef(0);
+    const squeezeHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(
+      () => () => {
+        if (squeezeHintTimerRef.current) clearTimeout(squeezeHintTimerRef.current);
+      },
+      []
+    );
+    // New hand (hero cards cleared at HAND_STARTED) → cards are face down again.
+    const heroCardCount = player?.isHero ? (player.holeCards?.length ?? 0) : 0;
+    useEffect(() => {
+      if (heroCardCount === 0) {
+        setSqueezeRevealed(false);
+        setSqueezeProgress(0);
+      }
+    }, [heroCardCount]);
+    const completeSqueeze = () => {
+      setSqueezeRevealed(true);
+      squeezeProgressRef.current = 0;
+      setSqueezeProgress(0);
+      soundService.playCardSqueeze();
+    };
+    const squeezeProgressRef = useRef(0);
+    const setProgress = (p: number) => {
+      squeezeProgressRef.current = p;
+      setSqueezeProgress(p);
+    };
+    const squeezeHandlers: React.HTMLAttributes<HTMLDivElement> = {
+      onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+        squeezeStartYRef.current = e.clientY;
+        squeezeMovedRef.current = false;
+        (e.currentTarget as HTMLDivElement).setPointerCapture?.(e.pointerId);
+      },
+      onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+        if (squeezeStartYRef.current == null) return;
+        const dy = squeezeStartYRef.current - e.clientY;
+        if (Math.abs(dy) > 4) squeezeMovedRef.current = true;
+        setProgress(Math.max(0, Math.min(1, dy / 70)));
+      },
+      onPointerUp: () => {
+        squeezeStartYRef.current = null;
+        if (squeezeProgressRef.current > 0.55) {
+          completeSqueeze();
+          return;
+        }
+        setProgress(0);
+        if (!squeezeMovedRef.current) {
+          // Tap: double-tap opens instantly; single tap bounces a hint.
+          const now = Date.now();
+          if (now - squeezeLastTapRef.current < 300) {
+            completeSqueeze();
+          } else {
+            setSqueezeHint(true);
+            if (squeezeHintTimerRef.current) clearTimeout(squeezeHintTimerRef.current);
+            squeezeHintTimerRef.current = setTimeout(() => {
+              squeezeHintTimerRef.current = null;
+              setSqueezeHint(false);
+            }, 450);
+          }
+          squeezeLastTapRef.current = now;
+        }
+      },
+      onPointerCancel: () => {
+        squeezeStartYRef.current = null;
+        setProgress(0);
+      },
+      onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          completeSqueeze();
+        }
+      },
+    };
 
     // Stack glow pulse — when stack changes by >20%
     const [stackGlow, setStackGlow] = useState(false);
@@ -535,6 +632,16 @@ export const SeatSlot = memo(
     // (no circle crop, no ring, larger) like the reference client. Uploaded
     // photos and generated SVGs keep the circular frame.
     const isBustArt = /\/avatars\/(table|free|vip)\//.test(avatarUrl);
+
+    // COMPETITOR-PARITY 2026-08-19 (Card Squeeze): single source of truth for
+    // "the hero's cards are currently face down awaiting a squeeze".
+    const squeezeDown =
+      cardSqueezeActive &&
+      !squeezeRevealed &&
+      player.status !== 'all_in' &&
+      !player.showCards &&
+      !isWinner &&
+      !isMucking;
 
     // 2026-04-15 Bible V8 §6.1 — pure-CSS ring countdown. Set animation
     // duration + a negative animation-delay so the ring animates from the
@@ -787,39 +894,65 @@ export const SeatSlot = memo(
          *  player can still see what they mucked (matches how the avatar
          *  dims on fold). Dan's UX rule, 2026-04-14. */}
         {player.holeCards && player.holeCards.length > 0 && player.isHero && (
+          /* COMPETITOR-PARITY 2026-08-19 (Card Squeeze): while the setting is
+             on and this hand has not been squeezed open, the hero's cards sit
+             face DOWN and the container owns a drag-up peel gesture instead
+             of the tap-to-peek handlers. Auto-opens if the table can already
+             see the hand (all-in runout / showdown / winner / muck). */
           <div
             className={
               'seat__cards seat__cards--hero' +
               (isDealing ? ' seat__cards--dealing' : '') +
               (isFolding ? ' seat__cards--folding' : '') +
               (lastAction === 'fold' || player.status === 'folded' ? ' seat__cards--folded' : '') +
-              (isPeeking ? ' seat__cards--peeking' : '')
+              (isPeeking ? ' seat__cards--peeking' : '') +
+              (squeezeDown
+                ? ' seat__cards--squeeze' + (squeezeHint ? ' seat__cards--squeeze-hint' : '')
+                : squeezeRevealed && cardSqueezeActive
+                  ? ' seat__cards--squeeze-open'
+                  : '')
             }
-            /* Bible V8 §5.3: tap hero cards to peek (brief lift animation) */
-            onTouchStart={() => {
-              if (gesturesEnabled) setIsPeeking(true);
-            }}
-            onTouchEnd={() => {
-              if (gesturesEnabled) {
-                if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
-                peekTimerRef.current = setTimeout(() => {
-                  peekTimerRef.current = null;
-                  setIsPeeking(false);
-                }, 300);
-              }
-            }}
-            onMouseDown={() => {
-              if (gesturesEnabled) setIsPeeking(true);
-            }}
-            onMouseUp={() => {
-              if (gesturesEnabled) {
-                if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
-                peekTimerRef.current = setTimeout(() => {
-                  peekTimerRef.current = null;
-                  setIsPeeking(false);
-                }, 300);
-              }
-            }}
+            style={
+              cardSqueezeActive
+                ? ({ '--squeeze-progress': squeezeProgress } as React.CSSProperties)
+                : undefined
+            }
+            role={squeezeDown ? 'button' : undefined}
+            tabIndex={squeezeDown ? 0 : undefined}
+            aria-label={
+              squeezeDown
+                ? 'Your cards are face down. Drag up to squeeze them open, or press Enter.'
+                : undefined
+            }
+            {...(squeezeDown
+              ? squeezeHandlers
+              : {
+                  /* Bible V8 §5.3: tap hero cards to peek (brief lift animation) */
+                  onTouchStart: () => {
+                    if (gesturesEnabled) setIsPeeking(true);
+                  },
+                  onTouchEnd: () => {
+                    if (gesturesEnabled) {
+                      if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+                      peekTimerRef.current = setTimeout(() => {
+                        peekTimerRef.current = null;
+                        setIsPeeking(false);
+                      }, 300);
+                    }
+                  },
+                  onMouseDown: () => {
+                    if (gesturesEnabled) setIsPeeking(true);
+                  },
+                  onMouseUp: () => {
+                    if (gesturesEnabled) {
+                      if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
+                      peekTimerRef.current = setTimeout(() => {
+                        peekTimerRef.current = null;
+                        setIsPeeking(false);
+                      }, 300);
+                    }
+                  },
+                })}
           >
             {player.holeCards.map((card, i) => (
               /* ── Dan 2026-08-18: click a card to show it after the hand ──
@@ -844,14 +977,16 @@ export const SeatSlot = memo(
                     : undefined
                 }
                 onClick={(e) => {
-                  if (!onToggleShowCard) return;
+                  // Squeeze mode: while face down, taps belong to the squeeze
+                  // gesture — you cannot mark a card you have not looked at.
+                  if (!onToggleShowCard || squeezeDown) return;
                   // The container above owns press-to-peek; stop this click
                   // from also being read as a peek gesture.
                   e.stopPropagation();
                   onToggleShowCard(i);
                 }}
                 onKeyDown={(e) => {
-                  if (!onToggleShowCard) return;
+                  if (!onToggleShowCard || squeezeDown) return;
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     e.stopPropagation();
@@ -859,15 +994,33 @@ export const SeatSlot = memo(
                   }
                 }}
               >
-                <HoleCard
-                  card={card}
-                  hidden={false}
-                  index={i}
-                  isHero={true}
-                  isWinner={isWinner}
-                  deckStyle={deckStyle}
-                  cardBack={cardBack}
-                />
+                {squeezeDown ? (
+                  /* Face-down squeeze box: the BACK lifts away from its top
+                     edge as the player drags (driven by --squeeze-progress),
+                     progressively exposing the FACE beneath. */
+                  <div className="seat__squeeze-flip">
+                    <div className="seat__squeeze-face seat__squeeze-face--under">
+                      {card ? (
+                        <CardImage card={card} deckStyle={deckStyle} size="md" />
+                      ) : (
+                        <CardBack size="md" style={cardBack} />
+                      )}
+                    </div>
+                    <div className="seat__squeeze-face seat__squeeze-face--cover">
+                      <CardBack size="md" style={cardBack} />
+                    </div>
+                  </div>
+                ) : (
+                  <HoleCard
+                    card={card}
+                    hidden={false}
+                    index={i}
+                    isHero={true}
+                    isWinner={isWinner}
+                    deckStyle={deckStyle}
+                    cardBack={cardBack}
+                  />
+                )}
               </span>
             ))}
           </div>
@@ -937,6 +1090,8 @@ export const SeatSlot = memo(
     if (prev.isCollectingChips !== next.isCollectingChips) return false;
     // ANIMATION AUDIT 2026-08-19: showdown-loser muck flag must re-render.
     if (prev.isMucking !== next.isMucking) return false;
+    // COMPETITOR-PARITY 2026-08-19: card squeeze mode flips render structure.
+    if (prev.cardSqueezeActive !== next.cardSqueezeActive) return false;
     // UI-AUDIT #13: gesture toggle must take effect on already-mounted seats.
     if (prev.gesturesEnabled !== next.gesturesEnabled) return false;
 

@@ -106,6 +106,25 @@ export default function ChipAnimation({
   });
 
   useEffect(() => {
+    // IMPROVEMENT PASS 2026-08-19: honor prefers-reduced-motion. The CSS
+    // media query flattens every keyframe on the table, but it cannot reach
+    // this rAF loop — chips were the ONE thing still flying for
+    // reduced-motion users. Land instantly, hold a beat, complete.
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    ) {
+      setPosition(to);
+      hideTimerRef.current = setTimeout(() => {
+        hideTimerRef.current = null;
+        setIsVisible(false);
+        onCompleteRef.current?.();
+      }, delay + 220);
+      return () => {
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      };
+    }
+
     let startTime: number | null = null;
 
     // Calculate control point for bezier arc

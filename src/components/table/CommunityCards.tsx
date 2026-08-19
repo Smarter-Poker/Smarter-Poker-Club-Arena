@@ -13,6 +13,7 @@
 import React, { useMemo, useEffect, useRef, useState, memo } from 'react';
 import { CardImage, CardBack, type Card } from './CardImage';
 import { haptic, soundService } from '../../services/SoundService';
+import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { ParticleSystem } from './ParticleSystem';
 import { triggerScreenShake } from '../../utils/ScreenShake';
 import './CommunityCards.css';
@@ -29,7 +30,6 @@ export interface CommunityCardsProps {
   cards: Card[];
   stage: BoardStage;
   highlightedIndices?: number[];
-  isDealing?: boolean;
   winningHandName?: string; // e.g. "Straight" — shown as overlay at showdown
   deckStyle?: '4color' | '2color';
   /**
@@ -161,7 +161,6 @@ function CommunityCardsComponent({
   cards,
   stage,
   highlightedIndices = [],
-  isDealing = false,
   winningHandName,
   deckStyle,
   cardBack,
@@ -200,6 +199,15 @@ function CommunityCardsComponent({
   // Track newly dealt cards — only new cards get deal animation, existing cards stay still
   useEffect(() => {
     const prevCount = prevVisibleCountRef.current;
+    // 700ms used to be enough, but the two-phase flop (land face down, then
+    // fan open) runs to ~1.22s. Clearing at 700ms tore the flip markup out
+    // mid-flip and the board snapped to face-up. Turn/river animations are
+    // `forwards` and already finished by then, so the longer window costs
+    // them nothing.
+    // IMPROVEMENT PASS 2026-08-19: the window scales with --animation-speed,
+    // the same multiplier the keyframes use — a slowed table no longer has
+    // its flip markup torn out mid-animation.
+    const windowMs = Math.round(1400 * getAnimationSpeed());
     if (visibleCount > prevCount) {
       // New cards appeared — mark them as newly dealt
       const newIndices = new Set<number>();
@@ -207,12 +215,7 @@ function CommunityCardsComponent({
         newIndices.add(i);
       }
       setNewlyDealtIndices(newIndices);
-      // 700ms used to be enough, but the two-phase flop (land face down, then
-      // fan open) runs to ~1.22s. Clearing at 700ms tore the flip markup out
-      // mid-flip and the board snapped to face-up. Turn/river animations are
-      // `forwards` and already finished by then, so the longer window costs
-      // them nothing.
-      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 1400);
+      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), windowMs);
       prevVisibleCountRef.current = visibleCount;
       return () => clearTimeout(timer);
     }
@@ -225,7 +228,7 @@ function CommunityCardsComponent({
           newIndices.add(i);
         }
         setNewlyDealtIndices(newIndices);
-        const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 1400);
+        const timer = setTimeout(() => setNewlyDealtIndices(new Set()), windowMs);
         return () => clearTimeout(timer);
       }
     }
@@ -389,7 +392,6 @@ function CommunityCardsComponent({
 export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.stage !== next.stage) return false;
-  if (prev.isDealing !== next.isDealing) return false;
   if (prev.winningHandName !== next.winningHandName) return false;
   if (prev.deckStyle !== next.deckStyle) return false;
   if (JSON.stringify(prev.cards) !== JSON.stringify(next.cards)) return false;

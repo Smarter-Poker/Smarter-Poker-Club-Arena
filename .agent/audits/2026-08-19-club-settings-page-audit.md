@@ -249,3 +249,45 @@ is unreachable in practice, and widening the shared resolver would touch every
 caller across the app for no real-world gain.
 
 Suite: 166 files / 2050 tests passing. eslint: 0 errors.
+
+## Pass 7 — the destructive gaps
+
+1. **Delete Club could cascade-destroy live tables.** `tables.club_id` and
+   `club_wallets.club_id` are both `ON DELETE CASCADE` from `clubs`. The
+   confirmation said only "all club data, members, and tables will be
+   permanently removed" and showed no numbers. Measured on production at the
+   time of writing, Midway Union alone would have taken **56 running tables
+   and 327 members** with it, plus every club wallet, on one click.
+   The modal now loads a real impact snapshot (members, running tables,
+   wallet chips) before it arms, lists exactly what dies, and **refuses**
+   while any table is running or any wallet still holds chips. If the impact
+   check fails, deletion stays disabled — unknown must not read as safe.
+   `handleDeleteClub` re-checks before firing, so the guard is not
+   button-state-only.
+2. **"Private" clubs were not private.** `fn_join_club` reads only
+   `requires_approval`; `is_public` merely hides the club from discovery. A
+   club switched to private with approval off still admitted anyone holding
+   the club code, instantly. Club creation already couples the two
+   (`requires_approval = !isPublic`); the settings page did not. Turning
+   Public off now also turns Require Approval on, and existing rows already
+   in the leaky state get an explicit warning rather than silence.
+3. **A logo could be replaced but never removed.** Added a Remove action
+   (owner-only, asserts the affected row like every other write here).
+
+Also verified this pass: the Vercel deploy target. The token authenticates as
+admin@smarter.poker whose only scope is the **smarter-poker** team
+(`team_SVD8r7AOPH065G3usBxVvrBc`), `hub-vanguard`
+(`prj_op66GkZyZcygXQKm76iyycfVFAQx`) sits under that team and is linked to
+`Smarter-Poker/Smarter-Poker-World-Hub`, and it is the **only** project in the
+team bound to that repo — i.e. no recurrence of the duplicate-project
+regression in section 1.1 of CLAUDE.md.
+
+### Suite flakiness (pre-existing, NOT introduced here)
+`npm test` intermittently fails ~33 files with `TypeError: React.act is not a
+function` across unrelated component tests. Same tree, same node_modules: one
+run 33 failed / 209 tests failing, the very next run 166 files / 2058 tests
+passing. The identical pattern appeared and vanished in pass 5. It is a
+test-infrastructure flake under parallel load, not a product defect, but it
+will randomly redden CI and is worth pinning separately.
+
+Suite (clean run): 166 files / 2058 tests. eslint: 0 errors.

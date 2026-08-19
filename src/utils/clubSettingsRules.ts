@@ -119,3 +119,42 @@ export function sanitizationWouldAlter(raw: string, sanitized: string): boolean 
  * order mark, so exported player names with accents arrived mojibake.
  */
 export const CSV_BOM = '\ufeff';
+
+/** What a club deletion would destroy. Gathered before the confirm modal
+ *  arms, because `tables` and `club_wallets` both CASCADE on clubs. */
+export interface ClubDeletionImpact {
+  members: number;
+  runningTables: number;
+  walletChips: number;
+}
+
+/**
+ * Reason this club must not be deleted yet, or null when it is safe.
+ *
+ * The FKs from `tables` and `club_wallets` to `clubs` are ON DELETE CASCADE,
+ * so deleting a club silently destroys every table under it — including
+ * running tables with players seated — and the club's wallets with them.
+ * The confirmation modal said only "all club data, members, and tables will
+ * be permanently removed" and showed no numbers at all.
+ */
+export function blockingDeletionReason(impact: ClubDeletionImpact): string | null {
+  if (impact.runningTables > 0) {
+    return `Close the ${impact.runningTables} running table${
+      impact.runningTables === 1 ? '' : 's'
+    } before deleting this club — deleting now would remove them with players seated.`;
+  }
+  if (impact.walletChips > 0) {
+    return `This club still holds ${impact.walletChips.toLocaleString()} chips. Settle the club wallet before deleting.`;
+  }
+  return null;
+}
+
+/**
+ * Turning a club private while approval is off does NOT close it: the join
+ * RPC (fn_join_club) reads only requires_approval, so anyone holding the
+ * club code still joins instantly. Club creation already couples these two
+ * (requires_approval = !isPublic); the settings page did not.
+ */
+export function privateClubNeedsApproval(isPublic: boolean, requiresApproval: boolean): boolean {
+  return !isPublic && !requiresApproval;
+}

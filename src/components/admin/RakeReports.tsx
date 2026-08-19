@@ -151,7 +151,7 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
   return (
     <div className="rake-reports">
       <div className="reports-header">
-        <h2>💰 Rake Reports</h2>
+        <h2>Rake Reports</h2>
         <div className="period-selector">
           {(['today', 'week', 'month', 'year'] as const).map((p) => (
             <button key={p} className={period === p ? 'active' : ''} onClick={() => setPeriod(p)}>
@@ -212,7 +212,7 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
 
       {/* Export Button */}
       <button className="export-btn" onClick={exportCSV}>
-        📥 Export Report
+        Export Report
       </button>
     </div>
   );

@@ -126,7 +126,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     // Bottom branding
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.font = 'bold 12px system-ui, sans-serif';
-    ctx.fillText('🏆  CLUB ARENA  ·  smarter.poker', 300, 370);
+    ctx.fillText('CLUB ARENA · smarter.poker', 300, 370);
 
     return canvas;
   }, [icon, name, description, rarity, unlockedAt, colors]);
@@ -158,7 +158,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
           );
 
           const shareData = {
-            title: `🏆 ${name}`,
+            title: `${name}`,
             text: `I just unlocked "${name}" on Club Arena! ${description}`,
             files: [file],
           };
@@ -214,7 +214,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
 
         {/* Share Button */}
         <button className="share-card-btn" onClick={handleShare} disabled={sharing}>
-          {sharing ? 'Sharing...' : '📤 Share'}
+          {sharing ? 'Sharing...' : 'Share'}
         </button>
       </div>
     </div>

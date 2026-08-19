@@ -1,0 +1,49 @@
+name: Silent Revert Guard
+
+# Fails a push whose commits restore a file to exactly its state before an
+# earlier commit, without saying so in the message.
+#
+# The case this exists for: World Hub 902d8b2b, "match icon sizes to profile
+# orb, show hamburger menu on all pages", which also reverted every line of
+# 3fec6aa3 across three source files and deleted a migration. The fix stayed
+# dead for four days. The cause is mechanical -- an agent commits a working
+# tree checked out before someone else's change landed -- so a mechanical
+# check is the right shape of answer.
+#
+# No `schedule:` trigger, per the cron-governance rule: this runs on push only.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: silent-revert-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@v4
+        with:
+          # The check compares blobs against commits up to 45 days back, so a
+          # shallow clone would make every prior commit invisible and the guard
+          # would pass by knowing nothing.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Detect unannounced reverts
+        run: |
+          BASE="${{ github.event.before }}"
+          if [ -z "$BASE" ] \
+             || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "No usable push base (first push, or force-push); falling back to HEAD~1."
+            BASE="HEAD~1"
+          fi
+          node scripts/ci/detect-silent-revert.mjs --base "$BASE" --days 45

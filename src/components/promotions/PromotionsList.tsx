@@ -27,13 +27,13 @@ interface PromotionsListProps {
 type TabFilter = 'active' | 'upcoming' | 'ended';
 
 const TYPE_ICONS: Record<string, string> = {
-  bonus: '🎁',
-  freeroll: '🎟️',
-  leaderboard: '🏆',
-  rakeback: '💰',
-  special: '⭐',
-  deposit_match: '💳',
-  refer_friend: '👥',
+  bonus: '◈',
+  freeroll: '◈',
+  leaderboard: '★',
+  rakeback: '◆',
+  special: '★',
+  deposit_match: '▣',
+  refer_friend: '◉',
 };
 
 export default function PromotionsList({ userId, clubId }: PromotionsListProps) {
@@ -132,7 +132,7 @@ export default function PromotionsList({ userId, clubId }: PromotionsListProps) 
         <div className="pl-grid">
           {promotions.map((promo) => {
             const claimed = isClaimedByUser(promo.id);
-            const icon = TYPE_ICONS[promo.type] || '🎁';
+            const icon = TYPE_ICONS[promo.type] || '◈';
 
             return (
               <button
@@ -155,11 +155,11 @@ export default function PromotionsList({ userId, clubId }: PromotionsListProps) 
                 <div className="pl-card-footer">
                   {promo.prizePool && promo.prizePool > 0 && (
                     <span className="pl-card-prize">
-                      💰 {promo.prizePool.toLocaleString()} chips
+                      {promo.prizePool.toLocaleString()} chips
                     </span>
                   )}
                   {tab === 'active' && (
-                    <span className="pl-card-time">⏰ {getTimeRemaining(promo.endDate)}</span>
+                    <span className="pl-card-time"> {getTimeRemaining(promo.endDate)}</span>
                   )}
                   {promo.maxClaims && (
                     <span className="pl-card-claims">

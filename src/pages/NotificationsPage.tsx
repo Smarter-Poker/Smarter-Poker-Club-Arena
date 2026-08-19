@@ -23,11 +23,11 @@ import { reportError } from '../utils/errorReporter';
 type NotifCategory = 'all' | 'games' | 'social' | 'achievements' | 'system';
 
 const NOTIF_CATEGORIES: { id: NotifCategory; label: string; icon: string }[] = [
-  { id: 'all', label: 'All', icon: '📋' },
-  { id: 'games', label: 'Games', icon: '🎰' },
-  { id: 'social', label: 'Social', icon: '👥' },
-  { id: 'achievements', label: 'Achievements', icon: '🏆' },
-  { id: 'system', label: 'System', icon: '⚙️' },
+  { id: 'all', label: 'All', icon: '▤' },
+  { id: 'games', label: 'Games', icon: '▦' },
+  { id: 'social', label: 'Social', icon: '◉' },
+  { id: 'achievements', label: 'Achievements', icon: '★' },
+  { id: 'system', label: 'System', icon: '⚙' },
 ];
 
 function categorizeNotification(notif: Notification): NotifCategory {
@@ -118,7 +118,7 @@ export default function NotificationsPage() {
       notificationService.setDnd(minutes);
       setDndActive(true);
       setShowDndPicker(false);
-      toast.success(`🌙 Do Not Disturb for ${minutes}m`);
+      toast.success(`Do Not Disturb for ${minutes}m`);
     },
     [toast]
   );
@@ -170,7 +170,7 @@ export default function NotificationsPage() {
             if (err) reportError(err?.message || err, 'NotificationsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[NotificationsPage] ⏱️ Realtime channel timed out');
+            console.warn('[NotificationsPage] Realtime channel timed out');
           }
         });
 
@@ -297,7 +297,7 @@ export default function NotificationsPage() {
   const getRichIcon = (notif: Notification): string => {
     const cat = categorizeNotification(notif);
     const catObj = NOTIF_CATEGORIES.find((c) => c.id === cat);
-    return catObj ? catObj.icon : '📋';
+    return catObj ? catObj.icon : '▤';
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -382,7 +382,7 @@ export default function NotificationsPage() {
               : 'Do Not Disturb'
           }
         >
-          {dndActive ? '🌙 DND On' : '🔔'}
+          {dndActive ? 'DND On' : '◉'}
         </button>
         <button
           className="dnd-toggle"
@@ -390,7 +390,7 @@ export default function NotificationsPage() {
           title="Notification Settings"
           style={{ marginLeft: 4 }}
         >
-          ⚙️
+          ⚙
         </button>
       </div>
 
@@ -411,7 +411,7 @@ export default function NotificationsPage() {
       {/* Q3: DND Active Banner */}
       {dndActive && (
         <div className="dnd-banner">
-          🌙 Do Not Disturb — {notificationService.getDndRemaining()}m remaining
+          Do Not Disturb — {notificationService.getDndRemaining()}m remaining
           <button className="dnd-clear" onClick={handleDndClear}>
             Resume
           </button>
@@ -459,7 +459,7 @@ export default function NotificationsPage() {
               className="empty-icon"
               style={{ fontSize: '3rem', display: 'block', marginBottom: '0.75rem' }}
             >
-              ✅
+              ✓
             </span>
             <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
               You're all caught up!
@@ -555,7 +555,7 @@ function SwipeableNotificationItem({
           onDelete();
         }}
       >
-        🗑️
+        ⊘
       </div>
       <div
         className={`notification-item surface ${notif.read ? 'read' : 'unread'} ${newHighlight ? 'new-highlight' : ''}`}

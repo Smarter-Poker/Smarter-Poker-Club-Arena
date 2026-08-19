@@ -153,7 +153,7 @@ export function PlayerProfileCard({
           <div className="player-card__actions">
             {onMessage && <button onClick={onMessage}> Message</button>}
             {onAddNote && <button onClick={onAddNote}> Note</button>}
-            {onInvite && <button onClick={onInvite}>📨 Invite</button>}
+            {onInvite && <button onClick={onInvite}>Invite</button>}
           </div>
         </>
       )}

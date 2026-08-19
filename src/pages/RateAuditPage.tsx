@@ -79,7 +79,7 @@ export default function RateAuditPage() {
           if (err) reportError(err?.message || err, 'RateAuditPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[RateAuditPage] ⏱️ Realtime channel timed out');
+          console.warn('[RateAuditPage] Realtime channel timed out');
         }
       });
     return () => {
@@ -226,7 +226,7 @@ export default function RateAuditPage() {
           >
             ← Back
           </button>
-          <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>📊 Rate Audit Trail</h1>
+          <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>Rate Audit Trail</h1>
           <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
             Commission & rake rate change history
           </p>
@@ -263,7 +263,7 @@ export default function RateAuditPage() {
               cursor: 'pointer',
             }}
           >
-            {f === 'all' ? 'All' : f === 'commission' ? '💼 Commission' : '♠ Rake'}
+            {f === 'all' ? 'All' : f === 'commission' ? 'Commission' : '♠ Rake'}
           </button>
         ))}
       </div>
@@ -281,7 +281,7 @@ export default function RateAuditPage() {
             border: '1px solid rgba(255,255,255,0.06)',
           }}
         >
-          <div style={{ fontSize: '2rem', marginBottom: '12px' }}>📋</div>
+          <div style={{ fontSize: '2rem', marginBottom: '12px' }}>▤</div>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
             No rate changes recorded yet
           </p>

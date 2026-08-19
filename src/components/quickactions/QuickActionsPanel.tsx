@@ -30,7 +30,7 @@ export const QuickActionsPanel: React.FC = () => {
     () => [
       {
         id: 'home',
-        icon: '🏠',
+        icon: '⌂',
         label: 'Home',
         shortcut: 'L',
         action: () => navigateRef.current('/'),
@@ -44,7 +44,7 @@ export const QuickActionsPanel: React.FC = () => {
       },
       {
         id: 'wallet',
-        icon: '💰',
+        icon: '◆',
         label: 'Wallet',
         shortcut: 'W',
         action: () => navigateRef.current('/wallet'),
@@ -65,14 +65,14 @@ export const QuickActionsPanel: React.FC = () => {
       },
       {
         id: 'stats',
-        icon: '📊',
+        icon: '▦',
         label: 'Stats',
         shortcut: 'S',
         action: () => navigateRef.current('/stats'),
       },
       {
         id: 'history',
-        icon: '📝',
+        icon: '▤',
         label: 'Hand History',
         shortcut: 'H',
         action: () => navigateRef.current('/hand-history'),
@@ -154,7 +154,7 @@ export const QuickActionsPanel: React.FC = () => {
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Quick Actions"
       >
-        <span className="toggle-icon">{isOpen ? '✕' : '⚡'}</span>
+        <span className="toggle-icon">{isOpen ? '✕' : '▲'}</span>
       </button>
 
       {/* Panel */}

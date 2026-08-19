@@ -521,12 +521,12 @@ export default function PlayerStatsPage() {
             onClick={() => setCategory(cat)}
           >
             {cat === 'overview'
-              ? '📊 Overview'
+              ? 'Overview'
               : cat === 'performance'
-                ? '🎯 Performance'
+                ? 'Performance'
                 : cat === 'positions'
-                  ? '📍 Positions'
-                  : '📈 Analysis'}
+                  ? 'Positions'
+                  : 'Analysis'}
           </button>
         ))}
       </div>
@@ -536,13 +536,13 @@ export default function PlayerStatsPage() {
         {/* EMPTY STATE */}
         {!hasData && category === 'overview' && (
           <div className="stats-empty-state">
-            <span className="empty-icon">🃏</span>
+            <span className="empty-icon">♠</span>
             <span className="empty-title">No Stats Yet</span>
             <span className="empty-description">
               Play some hands at the tables and your statistics will appear here automatically.
             </span>
             <button className="empty-cta" onClick={() => navigate('/')}>
-              🎰 Go to Lobby
+              Go to Lobby
             </button>
           </div>
         )}
@@ -581,7 +581,7 @@ export default function PlayerStatsPage() {
             </div>
 
             <button className="view-hands-btn" onClick={() => navigate('/hands')}>
-              📋 View Hand Histories
+              View Hand Histories
             </button>
           </>
         )}
@@ -592,7 +592,7 @@ export default function PlayerStatsPage() {
             {/* Preflop */}
             <div>
               <div className="stats-section-header">
-                <span className="section-icon">🎯</span>
+                <span className="section-icon">◎</span>
                 <h3 style={{ color: '#00d4ff' }}>Preflop</h3>
               </div>
               <div className="stats-grid">
@@ -621,7 +621,7 @@ export default function PlayerStatsPage() {
             {/* Postflop */}
             <div>
               <div className="stats-section-header">
-                <span className="section-icon">♠️</span>
+                <span className="section-icon">♠</span>
                 <h3 style={{ color: '#8b5cf6' }}>Postflop</h3>
               </div>
               <div className="stats-grid">
@@ -646,7 +646,7 @@ export default function PlayerStatsPage() {
             {/* Results */}
             <div>
               <div className="stats-section-header">
-                <span className="section-icon">💰</span>
+                <span className="section-icon">◆</span>
                 <h3 style={{ color: '#22c55e' }}>Results</h3>
               </div>
               <div className="stats-grid">
@@ -705,7 +705,7 @@ export default function PlayerStatsPage() {
             {/* Advanced Stats */}
             <div>
               <div className="stats-section-header">
-                <span className="section-icon">⚡</span>
+                <span className="section-icon">▲</span>
                 <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
               </div>
               <AdvancedStatsSummary userId={targetUserId} initialData={stats} />
@@ -714,7 +714,7 @@ export default function PlayerStatsPage() {
             {/* Charts */}
             <div className="charts-section">
               <div className="stats-section-header">
-                <span className="section-icon">📊</span>
+                <span className="section-icon">▦</span>
                 <h3 style={{ color: '#00d4ff' }}>Charts</h3>
               </div>
 
@@ -735,7 +735,7 @@ export default function PlayerStatsPage() {
                     }
                   }}
                 >
-                  📥 Export Sessions
+                  Export Sessions
                 </button>
               )}
 
@@ -859,7 +859,7 @@ export default function PlayerStatsPage() {
             {/* Sessions */}
             <div>
               <div className="stats-section-header">
-                <span className="section-icon">📅</span>
+                <span className="section-icon">▤</span>
                 <h3 style={{ color: '#3b82f6' }}>Session History</h3>
               </div>
               <SessionHistory userId={targetUserId} />
@@ -868,7 +868,7 @@ export default function PlayerStatsPage() {
             {/* Bankroll */}
             <div>
               <div className="stats-section-header">
-                <span className="section-icon">💎</span>
+                <span className="section-icon">◆</span>
                 <h3 style={{ color: '#10b981' }}>Bankroll Tracker</h3>
               </div>
               <BankrollTracker

@@ -23,12 +23,12 @@ interface Reaction {
 }
 
 const REACTIONS: Reaction[] = [
-  { emoji: '👏', label: 'Clap' },
-  { emoji: '😂', label: 'Laugh' },
-  { emoji: '😱', label: 'Shock' },
-  { emoji: '🔥', label: 'Fire' },
-  { emoji: '💀', label: 'Dead' },
-  { emoji: '🍀', label: 'Lucky' },
+  { emoji: '★', label: 'Clap' },
+  { emoji: '◆', label: 'Laugh' },
+  { emoji: '◆', label: 'Shock' },
+  { emoji: '▲', label: 'Fire' },
+  { emoji: '◆', label: 'Dead' },
+  { emoji: '♣', label: 'Lucky' },
 ];
 
 const RATE_LIMIT_MS = 3000;

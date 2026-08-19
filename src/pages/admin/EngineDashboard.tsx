@@ -139,7 +139,7 @@ export default function EngineDashboard() {
   return (
     <div className="engine-dashboard">
       <header className="engine-header">
-        <h1>⚙️ Global Matrix Orchestrator</h1>
+        <h1>⚙ Global Matrix Orchestrator</h1>
         <p>Master Control Panel for the Club Arena Cash Game & Hydra Engines</p>
         <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
           <Link
@@ -155,7 +155,7 @@ export default function EngineDashboard() {
               textDecoration: 'none',
             }}
           >
-            📊 Analytics Dashboard
+            Analytics Dashboard
           </Link>
         </div>
       </header>

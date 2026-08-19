@@ -158,7 +158,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
           if (err) reportError(err?.message || err, 'StakeLevelComparison._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[StakeLevelComparison] ⏱️ Realtime channel timed out');
+          console.warn('[StakeLevelComparison] Realtime channel timed out');
         }
       });
 

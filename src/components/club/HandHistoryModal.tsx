@@ -139,7 +139,7 @@ export function HandHistoryModal({
                   </div>
                   <div className="detail-actions">
                     <button className="action-btn" onClick={() => onReplay(selectedHand.id)}>
-                      ▶️ Replay
+                      ▶ Replay
                     </button>
                     <button className="action-btn" onClick={() => onShare(selectedHand.id)}>
                       Share

@@ -26,7 +26,7 @@ export const HandForHandBanner: React.FC<HandForHandBannerProps> = ({
     return (
       <div className="hfh-banner hfh-burst">
         <div className="hfh-burst-content">
-          <span className="hfh-burst-icon">💥</span>
+          <span className="hfh-burst-icon">▲</span>
           <span className="hfh-burst-text">BUBBLE BURST!</span>
           <span className="hfh-burst-sub">{playersRemaining} players are now in the money!</span>
         </div>
@@ -39,9 +39,9 @@ export const HandForHandBanner: React.FC<HandForHandBannerProps> = ({
       <div className="hfh-pulse" />
       <div className="hfh-content">
         <div className="hfh-label">
-          <span className="hfh-icon">🫧</span>
+          <span className="hfh-icon">◆</span>
           <span className="hfh-text">HAND FOR HAND</span>
-          <span className="hfh-icon">🫧</span>
+          <span className="hfh-icon">◆</span>
         </div>
         <div className="hfh-info">
           <span className="hfh-players">{playersRemaining} players remaining</span>

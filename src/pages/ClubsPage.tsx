@@ -375,7 +375,7 @@ export default function ClubsPage() {
               setActiveTab('create');
             }}
           >
-            ➕ Create Club
+            Create Club
           </button>
         </div>
 
@@ -505,10 +505,10 @@ export default function ClubsPage() {
                             <div className={styles.clubStat}>
                               <span className={styles.statValue}>
                                 {membership.role === 'owner'
-                                  ? '👑'
+                                  ? '♛'
                                   : membership.role === 'admin'
-                                    ? '⚙️'
-                                    : '🎮'}
+                                    ? '⚙'
+                                    : '▦'}
                               </span>
                               <span className={styles.statLabel}>
                                 {membership.role === 'owner'
@@ -573,7 +573,7 @@ export default function ClubsPage() {
                       <div className={styles.clubCard}>
                         {/* Union Header */}
                         <div className={styles.clubHeader}>
-                          <div className={styles.unionAvatar}>🏛️</div>
+                          <div className={styles.unionAvatar}>◆</div>
                           <div className={styles.clubInfo}>
                             <h3 className={styles.clubName}>
                               {union.name}
@@ -667,7 +667,7 @@ export default function ClubsPage() {
                           setIsPublic(true);
                         }}
                       />
-                      <span>🌐 Public (anyone can find and join)</span>
+                      <span>Public (anyone can find and join)</span>
                     </label>
                     <label className={styles.checkbox}>
                       <input
@@ -679,7 +679,7 @@ export default function ClubsPage() {
                           setIsPublic(false);
                         }}
                       />
-                      <span>🔒 Private (invite only, requires approval)</span>
+                      <span>Private (invite only, requires approval)</span>
                     </label>
                   </div>
                 </div>

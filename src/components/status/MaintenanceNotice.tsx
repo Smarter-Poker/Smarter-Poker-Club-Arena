@@ -17,7 +17,7 @@ export const MaintenanceNotice: React.FC<MaintenanceNoticeProps> = ({
 }) => {
   return (
     <div className={`maintenance-notice ${isUrgent ? 'urgent' : ''}`}>
-      <span className="notice-icon">{isUrgent ? '' : '🔧'}</span>
+      <span className="notice-icon">{isUrgent ? '' : '◇'}</span>
       <div className="notice-content">
         {message || (
           <>

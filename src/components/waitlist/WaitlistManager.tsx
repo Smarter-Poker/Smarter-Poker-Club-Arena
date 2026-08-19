@@ -81,7 +81,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
           if (err) reportError(err?.message || err, 'WaitlistManager._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[WaitlistManager] ⏱️ Realtime channel timed out');
+          console.warn('[WaitlistManager] Realtime channel timed out');
         }
       });
 

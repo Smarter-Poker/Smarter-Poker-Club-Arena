@@ -30,10 +30,10 @@ export const AvatarGenerator: React.FC<{
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const styles: AvatarStyle[] = [
-    { id: 'realistic', name: 'Realistic', icon: '📷', description: 'Photo-realistic poker player' },
-    { id: 'cartoon', name: 'Cartoon', icon: '🎨', description: 'Fun animated style' },
-    { id: 'cyberpunk', name: 'Cyberpunk', icon: '🤖', description: 'Futuristic neon aesthetic' },
-    { id: 'vintage', name: 'Vintage', icon: '🎰', description: 'Classic casino vibe' },
+    { id: 'realistic', name: 'Realistic', icon: '▣', description: 'Photo-realistic poker player' },
+    { id: 'cartoon', name: 'Cartoon', icon: '◇', description: 'Fun animated style' },
+    { id: 'cyberpunk', name: 'Cyberpunk', icon: '▣', description: 'Futuristic neon aesthetic' },
+    { id: 'vintage', name: 'Vintage', icon: '▦', description: 'Classic casino vibe' },
     { id: 'anime', name: 'Anime', icon: '✨', description: 'Japanese animation style' },
     { id: 'minimalist', name: 'Minimalist', icon: '◯', description: 'Clean, simple design' },
   ];
@@ -113,7 +113,7 @@ export const AvatarGenerator: React.FC<{
   return (
     <div className="avatar-generator">
       <div className="generator-header">
-        <h2>🎨 Avatar Generator</h2>
+        <h2>Avatar Generator</h2>
         {onClose && (
           <button className="close-btn" onClick={onClose}>
             ✕

@@ -468,42 +468,42 @@ interface LogoGeneratorModalProps {
 
 // Logo style presets
 const LOGO_PRESETS = [
-  { id: 'shark', icon: '🦈', name: 'Shark', theme: 'shark', style: 'aggressive' as const },
-  { id: 'dragon', icon: '🐉', name: 'Dragon', theme: 'dragon', style: 'classic' as const },
-  { id: 'eagle', icon: '🦅', name: 'Eagle', theme: 'eagle', style: 'elegant' as const },
-  { id: 'lion', icon: '🦁', name: 'Lion', theme: 'lion', style: 'aggressive' as const },
-  { id: 'phoenix', icon: '🔥', name: 'Phoenix', theme: 'phoenix', style: 'modern' as const },
-  { id: 'wolf', icon: '🐺', name: 'Wolf', theme: 'wolf', style: 'classic' as const },
+  { id: 'shark', icon: '◆', name: 'Shark', theme: 'shark', style: 'aggressive' as const },
+  { id: 'dragon', icon: '◆', name: 'Dragon', theme: 'dragon', style: 'classic' as const },
+  { id: 'eagle', icon: '◆', name: 'Eagle', theme: 'eagle', style: 'elegant' as const },
+  { id: 'lion', icon: '◆', name: 'Lion', theme: 'lion', style: 'aggressive' as const },
+  { id: 'phoenix', icon: '▲', name: 'Phoenix', theme: 'phoenix', style: 'modern' as const },
+  { id: 'wolf', icon: '◆', name: 'Wolf', theme: 'wolf', style: 'classic' as const },
   {
     id: 'cards',
-    icon: '🂡',
+    icon: '◆',
     name: 'Cards',
     theme: 'playing cards and poker chips',
     style: 'elegant' as const,
   },
   {
     id: 'crown',
-    icon: '👑',
+    icon: '♛',
     name: 'Crown',
     theme: 'royal crown with poker elements',
     style: 'elegant' as const,
   },
   {
     id: 'diamond',
-    icon: '💎',
+    icon: '◆',
     name: 'Diamond',
     theme: 'diamond gemstone',
     style: 'modern' as const,
   },
   {
     id: 'skull',
-    icon: '💀',
+    icon: '◆',
     name: 'Skull',
     theme: 'skull with poker elements',
     style: 'aggressive' as const,
   },
-  { id: 'tiger', icon: '🐯', name: 'Tiger', theme: 'tiger', style: 'playful' as const },
-  { id: 'spade', icon: '♠️', name: 'Spade', theme: 'spade suit symbol', style: 'classic' as const },
+  { id: 'tiger', icon: '◆', name: 'Tiger', theme: 'tiger', style: 'playful' as const },
+  { id: 'spade', icon: '♠', name: 'Spade', theme: 'spade suit symbol', style: 'classic' as const },
 ];
 
 function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorModalProps) {
@@ -607,7 +607,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
                 textShadow: '0 0 20px rgba(0, 212, 255, 0.8)',
               }}
             >
-              <div style={{ fontSize: '48px', marginBottom: '20px' }}>⏳</div>
+              <div style={{ fontSize: '48px', marginBottom: '20px' }}>◷</div>
               <div>GENERATING LOGO...</div>
               <div style={{ fontSize: '14px', marginTop: '10px', opacity: 0.7 }}>
                 Powered by Club Arena

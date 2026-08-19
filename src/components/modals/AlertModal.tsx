@@ -17,7 +17,7 @@ const TYPE_CONFIG = {
   success: { icon: '', color: '#4ade80' },
   warning: { icon: '', color: '#fbbf24' },
   error: { icon: '', color: '#f87171' },
-  confirm: { icon: '❓', color: '#a78bfa' },
+  confirm: { icon: '?', color: '#a78bfa' },
 };
 
 export const AlertModal: React.FC<AlertModalProps> = ({

@@ -169,7 +169,7 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
     return (
       <div className="agent-score-card">
         <div className="score-header">
-          <h3>📊 Agent Performance Score</h3>
+          <h3>Agent Performance Score</h3>
         </div>
         <div className="score-loading">
           <div className="score-skeleton score-skeleton-ring" />
@@ -187,10 +187,10 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
     return (
       <div className="agent-score-card">
         <div className="score-header">
-          <h3>📊 Agent Performance Score</h3>
+          <h3>Agent Performance Score</h3>
         </div>
         <div className="score-empty">
-          <span className="score-empty-icon">🏆</span>
+          <span className="score-empty-icon">★</span>
           <p>No performance data available yet</p>
         </div>
       </div>
@@ -204,7 +204,7 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
   return (
     <div className="agent-score-card">
       <div className="score-header">
-        <h3>📊 Agent Performance Score</h3>
+        <h3>Agent Performance Score</h3>
         <span className="score-period">Last 30 days</span>
       </div>
 

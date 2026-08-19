@@ -345,7 +345,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       {/* ── Break Mode ── */}
       {clock.isBreak && (
         <div className="tc-break-overlay">
-          <span className="tc-break-icon">☕</span>
+          <span className="tc-break-icon">◇</span>
           <span className="tc-break-text">BREAK</span>
           {clock.breakTimeRemaining > 0 && (
             <span className="tc-break-timer">{formatTime(clock.breakTimeRemaining)}</span>
@@ -401,7 +401,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       {!compact && (
         <div className="tc-stats">
           <div className="tc-stat">
-            <span className="tc-stat-icon">👥</span>
+            <span className="tc-stat-icon">◉</span>
             <span className="tc-stat-value">
               {clock.playersRemaining}
               {clock.entrants > 0 && (
@@ -411,12 +411,12 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
             <span className="tc-stat-label">Remaining</span>
           </div>
           <div className="tc-stat">
-            <span className="tc-stat-icon">📊</span>
+            <span className="tc-stat-icon">▦</span>
             <span className="tc-stat-value">{formatChips(clock.averageStack)}</span>
             <span className="tc-stat-label">Avg Stack</span>
           </div>
           <div className="tc-stat">
-            <span className="tc-stat-icon">🏦</span>
+            <span className="tc-stat-icon">▦</span>
             <span className="tc-stat-value">{formatChips(clock.totalChips)}</span>
             <span className="tc-stat-label">Total Chips</span>
           </div>

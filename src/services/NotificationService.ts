@@ -121,7 +121,7 @@ class NotificationServiceClass {
             reportError(err?.message || err, 'NotificationService._Channel_error_on_notifications');
         }
         if (status === 'TIMED_OUT') {
-          console.warn(`[NotificationService] ⏱️ Channel notifications:${userId} timed out`);
+          console.warn(`[NotificationService] Channel notifications:${userId} timed out`);
         }
       });
   }

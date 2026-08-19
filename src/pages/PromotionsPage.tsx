@@ -128,7 +128,7 @@ export default function PromotionsPage() {
           if (err) reportError(err?.message || err, 'PromotionsPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[PromotionsPage] ⏱️ Realtime channel timed out');
+          console.warn('[PromotionsPage] Realtime channel timed out');
         }
       });
 
@@ -207,15 +207,15 @@ export default function PromotionsPage() {
   const getTypeIcon = (type: string): string => {
     switch (type) {
       case 'bonus':
-        return '🎁';
+        return '◈';
       case 'freeroll':
-        return '🏆';
+        return '★';
       case 'leaderboard':
-        return '📊';
+        return '▦';
       case 'rakeback':
-        return '💰';
+        return '◆';
       default:
-        return '⭐';
+        return '★';
     }
   };
 
@@ -250,14 +250,14 @@ export default function PromotionsPage() {
     <div className="promotions-page">
       {/* Daily Bonus Button */}
       <div className="daily-bonus-banner" onClick={() => setShowBonusWheel(true)}>
-        <span className="bonus-icon">🎰</span>
+        <span className="bonus-icon">▦</span>
         <span className="bonus-text">Claim Your Daily Bonus!</span>
         <span className="bonus-arrow">›</span>
       </div>
 
       {/* Referral Banner */}
       <div className="referral-banner" onClick={() => setShowReferral(true)}>
-        <span className="bonus-icon">🤝</span>
+        <span className="bonus-icon">◈</span>
         <span className="bonus-text">Invite Friends & Earn 5% Rake!</span>
         <span className="bonus-arrow">›</span>
       </div>
@@ -294,7 +294,7 @@ export default function PromotionsPage() {
                 opacity: 0.5,
               }}
             >
-              🎁
+              ◈
             </span>
             <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
               {filter === 'active'
@@ -348,7 +348,7 @@ export default function PromotionsPage() {
                   <div className="promo-countdown-row">
                     <span className="promo-countdown">{getTimeRemaining(promo.end_date)}</span>
                     {new Date(promo.end_date).getTime() - now.getTime() < 86400000 && (
-                      <span className="ending-soon-badge">⚠️ Ending Soon</span>
+                      <span className="ending-soon-badge">⚠ Ending Soon</span>
                     )}
                   </div>
                 )}

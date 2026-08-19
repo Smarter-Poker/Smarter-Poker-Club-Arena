@@ -49,7 +49,7 @@ export default function ScheduledMessagePanel({
     const sendAt = new Date(`${sendDate}T${sendTime}`);
 
     if (sendAt.getTime() <= Date.now()) {
-      setError('⚠️ Schedule time must be in the future');
+      setError('⚠ Schedule time must be in the future');
       setLoading(false);
       return;
     }
@@ -68,7 +68,7 @@ export default function ScheduledMessagePanel({
       await loadScheduled();
       onScheduled?.();
     } else {
-      setError('⚠️ Failed to schedule message — please try again');
+      setError('⚠ Failed to schedule message — please try again');
     }
     setLoading(false);
   };
@@ -93,7 +93,7 @@ export default function ScheduledMessagePanel({
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
-          <h3>⏰ Schedule Message</h3>
+          <h3>Schedule Message</h3>
           <button className={styles.closeBtn} onClick={onClose}>
             ×
           </button>
@@ -128,7 +128,7 @@ export default function ScheduledMessagePanel({
             onClick={handleSchedule}
             disabled={loading || !content.trim() || !sendDate || !sendTime}
           >
-            {loading ? 'Scheduling...' : '⏰ Schedule'}
+            {loading ? 'Scheduling...' : 'Schedule'}
           </button>
           {error && (
             <div

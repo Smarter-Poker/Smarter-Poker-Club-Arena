@@ -23,7 +23,7 @@ interface LeaderboardPodiumProps {
   metricLabel?: string;
 }
 
-const TROPHY_ICONS = ['🥇', '🥈', '🥉'];
+const TROPHY_ICONS = ['★', '☆', '✧'];
 const PODIUM_COLORS = [
   { gradient: 'linear-gradient(180deg, #FFD700 0%, #B8860B 100%)', glow: 'rgba(255, 215, 0, 0.3)' },
   {

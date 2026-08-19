@@ -209,7 +209,7 @@ export function HandReveal({
               onClick={handlePayReveal}
               disabled={userDiamonds < revealCost}
             >
-              💎 Reveal ({revealCost})
+              Reveal ({revealCost})
             </button>
           )}
 

@@ -109,7 +109,7 @@ export default function FriendSuggestions() {
 
   return (
     <div className={styles.container}>
-      <h3 className={styles.title}>👥 People You May Know</h3>
+      <h3 className={styles.title}>People You May Know</h3>
       <div className={styles.scrollContainer}>
         {visible.map((suggestion) => (
           <div key={suggestion.userId} className={styles.card}>

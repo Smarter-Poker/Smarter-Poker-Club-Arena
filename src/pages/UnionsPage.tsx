@@ -217,7 +217,7 @@ export default function UnionsPage() {
       <div className="unions-grid">
         {unions.length === 0 ? (
           <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px 16px' }}>
-            <span style={{ fontSize: '2rem', display: 'block', marginBottom: '12px' }}>🤝</span>
+            <span style={{ fontSize: '2rem', display: 'block', marginBottom: '12px' }}>◈</span>
             <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>
               No unions found. Create one to link your clubs!
             </p>

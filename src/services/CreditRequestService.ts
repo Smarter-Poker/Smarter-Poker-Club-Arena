@@ -344,7 +344,7 @@ class CreditRequestServiceClass {
     amount: number
   ): Promise<void> {
     await pushNotificationService.sendToUser(approverId, {
-      title: '📨 Credit Request',
+      title: 'Credit Request',
       message: `${requesterName} requested ${amount.toLocaleString()} chips credit`,
       category: 'wallet_credit',
       url: '/agent/credit-requests',

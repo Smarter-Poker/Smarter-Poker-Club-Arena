@@ -44,7 +44,7 @@ export function TimeBank({
     <div className={`time-bank ${isActive ? 'time-bank--active' : ''}`}>
       {isActive ? (
         <div className="time-bank__active-display">
-          <span className="time-bank__icon">⏱</span>
+          <span className="time-bank__icon">◷</span>
           <div className="time-bank__progress">
             <div
               className="time-bank__bar"
@@ -65,8 +65,8 @@ export function TimeBank({
         </button>
       ) : onBuyMore ? (
         <button className="time-bank__trigger time-bank__buy-ext" onClick={onBuyMore}>
-          <span className="time-bank__label">⏱ +EXTENSION</span>
-          <span className="time-bank__diamond-cost">{diamondCost} 💎</span>
+          <span className="time-bank__label">+EXTENSION</span>
+          <span className="time-bank__diamond-cost">{diamondCost} </span>
         </button>
       ) : null}
     </div>

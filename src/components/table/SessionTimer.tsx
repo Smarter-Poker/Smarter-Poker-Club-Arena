@@ -99,7 +99,7 @@ export const SessionTimer: React.FC<SessionTimerProps> = ({
       {showBreakReminder && (
         <div className="break-reminder">
           <div className="reminder-content">
-            <span className="reminder-icon">☕</span>
+            <span className="reminder-icon">◇</span>
             <div className="reminder-text">
               <strong>Time for a break!</strong>
               <p>You've been playing for over {breakInterval} minutes</p>
@@ -118,7 +118,7 @@ export const SessionTimer: React.FC<SessionTimerProps> = ({
 
       {breaksTaken > 0 && (
         <div className="breaks-count">
-          ☕ {breaksTaken} break{breaksTaken > 1 ? 's' : ''} taken
+          {breaksTaken} break{breaksTaken > 1 ? 's' : ''} taken
         </div>
       )}
     </div>

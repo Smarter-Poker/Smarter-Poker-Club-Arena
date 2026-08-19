@@ -117,7 +117,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
             <div className={styles.formGroup}>
               <label>Poker Alias (Required)</label>
               <div className={styles.inputWrapper}>
-                <span className={styles.inputIcon}>🎭</span>
+                <span className={styles.inputIcon}>◆</span>
                 <input
                   className={styles.input}
                   placeholder="e.g. SharkPro99"
@@ -132,7 +132,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
             <div className={styles.formGroup} style={{ marginTop: '0.5rem' }}>
               <label>Real Name (Optional)</label>
               <div className={styles.inputWrapper}>
-                <span className={styles.inputIcon}>👤</span>
+                <span className={styles.inputIcon}>◉</span>
                 <input
                   className={styles.input}
                   placeholder="e.g. John Doe"

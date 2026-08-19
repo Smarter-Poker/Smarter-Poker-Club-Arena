@@ -255,7 +255,7 @@ export default function MarketplacePage() {
             if (err) reportError(err?.message || err, 'MarketplacePage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[MarketplacePage] ⏱️ Realtime channel timed out');
+            console.warn('[MarketplacePage] Realtime channel timed out');
           }
         });
     };
@@ -482,19 +482,19 @@ export default function MarketplacePage() {
   return (
     <div className={styles.page}>
       {/* Success flash */}
-      {showSuccess && <div className={styles.successFlash}>✅ {showSuccess}</div>}
+      {showSuccess && <div className={styles.successFlash}> {showSuccess}</div>}
 
       {/* Header */}
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <h1 className={styles.title}>
-            🛒 Item Shop
-            <span className={styles.balanceBadge}>💰 {fmt(balance)} chips</span>
+            Item Shop
+            <span className={styles.balanceBadge}> {fmt(balance)} chips</span>
           </h1>
         </div>
         <div className={styles.headerActions}>
           <Link to="/" className={styles.btnGhost}>
-            🏠 Lobby
+            Lobby
           </Link>
           {/* BUG-14 FIX: Reset loadingRef before calling loadMarketplace so Refresh never silently fails */}
           <button
@@ -519,7 +519,7 @@ export default function MarketplacePage() {
                 {buyTarget.image_url ? (
                   <img src={buyTarget.image_url} alt="" className={styles.itemImg} />
                 ) : (
-                  <div className={styles.itemPlaceholder}>🛒</div>
+                  <div className={styles.itemPlaceholder}>◆</div>
                 )}
               </div>
               <div>
@@ -539,7 +539,7 @@ export default function MarketplacePage() {
             </div>
             {balance < buyTarget.price && (
               <div className={styles.insufficientFunds}>
-                ⚠️ Insufficient chips. You need {fmtChips(buyTarget.price - balance)} more.
+                ⚠ Insufficient chips. You need {fmtChips(buyTarget.price - balance)} more.
               </div>
             )}
             <div className={styles.modalActions}>
@@ -568,13 +568,13 @@ export default function MarketplacePage() {
           className={`${styles.tab} ${tab === 'store' ? styles.tabActive : ''}`}
           onClick={() => setTab('store')}
         >
-          🛍️ Store <span className={styles.tabBadge}>{items.length}</span>
+          Store <span className={styles.tabBadge}>{items.length}</span>
         </button>
         <button
           className={`${styles.tab} ${tab === 'my_items' ? styles.tabActive : ''}`}
           onClick={() => setTab('my_items')}
         >
-          📦 My Items{' '}
+          My Items{' '}
           {purchases.length > 0 && <span className={styles.tabBadge}>{purchases.length}</span>}
         </button>
         {isAdmin && (
@@ -585,7 +585,7 @@ export default function MarketplacePage() {
               if (!adminLoaded) loadAdminItems();
             }}
           >
-            🛠️ Manage
+            Manage
           </button>
         )}
       </nav>
@@ -595,7 +595,7 @@ export default function MarketplacePage() {
         <div className={styles.section}>
           {items.length === 0 ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>🛍️</span>
+              <span className={styles.emptyIcon}>◆</span>
               <span className={styles.emptyText}>The shop is currently empty.</span>
               <span className={styles.emptySubText}>
                 Club owners can add in-game items like time banks, table skins, throwables, and
@@ -609,7 +609,7 @@ export default function MarketplacePage() {
                     if (!adminLoaded) loadAdminItems();
                   }}
                 >
-                  ➕ Add First Item
+                  Add First Item
                 </button>
               )}
             </div>
@@ -632,7 +632,7 @@ export default function MarketplacePage() {
               <div className={styles.toolbar}>
                 <input
                   type="text"
-                  placeholder="🔍 Search items..."
+                  placeholder="Search items..."
                   value={searchFilter}
                   onChange={(e) => setSearchFilter(e.target.value)}
                   className={styles.searchInput}
@@ -652,7 +652,7 @@ export default function MarketplacePage() {
               {/* Item grid */}
               {filteredItems.length === 0 ? (
                 <div className={styles.emptyState}>
-                  <span className={styles.emptyIcon}>🔍</span>
+                  <span className={styles.emptyIcon}>⌕</span>
                   <span className={styles.emptyText}>No items match your filters.</span>
                   <button
                     className={styles.emptyButton}
@@ -678,7 +678,7 @@ export default function MarketplacePage() {
                               className={styles.itemCover}
                             />
                           ) : (
-                            <div className={styles.itemPlaceholderLg}>🎁</div>
+                            <div className={styles.itemPlaceholderLg}>◈</div>
                           )}
                           <span className={styles.categoryTag}>
                             {item.category || 'Time Banks'}
@@ -691,7 +691,7 @@ export default function MarketplacePage() {
                           </div>
                           <div className={styles.itemFooter}>
                             <div>
-                              <span className={styles.itemPrice}>💰 {fmtChips(item.price)}</span>
+                              <span className={styles.itemPrice}> {fmtChips(item.price)}</span>
                               {(item.purchase_count || 0) > 0 && (
                                 <div className={styles.soldCount}>{item.purchase_count} sold</div>
                               )}
@@ -720,7 +720,7 @@ export default function MarketplacePage() {
         <div className={styles.section}>
           {inventory.length === 0 ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>📦</span>
+              <span className={styles.emptyIcon}>▣</span>
               <span className={styles.emptyText}>You haven&apos;t purchased any items yet.</span>
               <button className={styles.emptyButton} onClick={() => setTab('store')}>
                 Browse Store
@@ -817,7 +817,7 @@ export default function MarketplacePage() {
 
           {/* Create Form */}
           <div className={styles.createForm}>
-            <h3 className={styles.createTitle}>➕ Create Shop Item</h3>
+            <h3 className={styles.createTitle}>Create Shop Item</h3>
             <div className={styles.formRow}>
               <input
                 value={newItemName}
@@ -925,7 +925,7 @@ export default function MarketplacePage() {
           {/* Admin item list */}
           {adminItems.length === 0 ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>🛠️</span>
+              <span className={styles.emptyIcon}>◇</span>
               <span className={styles.emptyText}>No shop items. Create one above.</span>
             </div>
           ) : (
@@ -999,7 +999,7 @@ export default function MarketplacePage() {
                       }}
                       className={styles.btnDeleteSmall}
                     >
-                      🗑️ Delete
+                      Delete
                     </button>
                   </div>
                 </div>

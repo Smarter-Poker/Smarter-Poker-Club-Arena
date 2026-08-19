@@ -31,7 +31,7 @@ export default function PlayerBlockModal({
     <div className="block-modal-overlay" onClick={onCancel}>
       <div className="block-modal" onClick={(e) => e.stopPropagation()}>
         <div className="block-modal-header">
-          <span className="block-icon">🚫</span>
+          <span className="block-icon">⊘</span>
           <h3>Block {playerName}?</h3>
         </div>
 

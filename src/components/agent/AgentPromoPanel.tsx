@@ -193,7 +193,7 @@ export default function AgentPromoPanel({
     const elapsed = now - lastDistributeRef.current;
     if (elapsed < DISTRIBUTE_RATE_LIMIT_MS) {
       const waitSec = Math.ceil((DISTRIBUTE_RATE_LIMIT_MS - elapsed) / 1000);
-      showToast(`⏱ Please wait ${waitSec}s before distributing again`, 'error');
+      showToast(`Please wait ${waitSec}s before distributing again`, 'error');
       setDistributing(false);
       return;
     }

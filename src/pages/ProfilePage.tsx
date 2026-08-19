@@ -804,7 +804,7 @@ export default function ProfilePage() {
               if (err) reportError(err?.message || err, 'ProfilePage._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
-              console.warn('[ProfilePage] ⏱️ Realtime channel timed out');
+              console.warn('[ProfilePage] Realtime channel timed out');
             }
           });
       } catch (err) {
@@ -913,7 +913,7 @@ export default function ProfilePage() {
             onClick={() => navigate('/vip')}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            💎 {diamonds.toLocaleString()} {isVIP && <span style={{ fontSize: 12 }}>👑 VIP</span>}
+            ◆ {diamonds.toLocaleString()} {isVIP && <span style={{ fontSize: 12 }}>♛ VIP</span>}
           </button>
         </div>
       </section>

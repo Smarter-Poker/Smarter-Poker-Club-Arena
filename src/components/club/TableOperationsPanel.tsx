@@ -430,7 +430,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
         if (err) reportError(err?.message || err, 'TableOperationsPanel._Realtime_channel_error');
       }
       if (status === 'TIMED_OUT') {
-        console.warn('[TableOperationsPanel] ⏱️ Realtime channel timed out');
+        console.warn('[TableOperationsPanel] Realtime channel timed out');
       }
     });
 
@@ -617,7 +617,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
                       onClick={() => handlePauseResume(table.id, table.status)}
                       disabled={isLoading}
                     >
-                      ⏸ Pause
+                      Pause
                     </button>
                   )}
                   <button

@@ -102,7 +102,7 @@ class MessagingServiceClass {
           if (err) reportError(err?.message || err, 'MessagingService._Channel_error_on_messages');
         }
         if (status === 'TIMED_OUT') {
-          console.warn(`[MessagingService] ⏱️ Channel messages:${userId} timed out`);
+          console.warn(`[MessagingService] Channel messages:${userId} timed out`);
         }
       });
   }
@@ -1370,7 +1370,7 @@ class MessagingServiceClass {
         if (err) reportError(err?.message || err, 'MessagingService._Typing_channel_error');
       }
       if (status === 'TIMED_OUT') {
-        console.warn(`[MessagingService] ⏱️ Typing channel timed out`);
+        console.warn(`[MessagingService] Typing channel timed out`);
       }
     });
 

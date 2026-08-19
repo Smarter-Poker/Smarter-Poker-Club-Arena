@@ -21,25 +21,25 @@ const BADGES: Record<
   { icon: string; title: string; description: string; color: string }
 > = {
   first_cashout: {
-    icon: '💸',
+    icon: '→',
     title: 'First Cashout',
     description: 'Completed your first successful cashout',
     color: '#00c853',
   },
   thousand_club: {
-    icon: '💰',
+    icon: '◆',
     title: '1,000 Club',
     description: 'Lifetime earnings exceeded 1,000 chips',
     color: '#ffd700',
   },
   perfect_settlement: {
-    icon: '⭐',
+    icon: '★',
     title: 'Perfect Settlement',
     description: 'Zero-debt weekly settlement cycle',
     color: '#448aff',
   },
   diamond_whale: {
-    icon: '🐋',
+    icon: '◆',
     title: 'Diamond Whale',
     description: 'Accumulated 10,000+ diamonds',
     color: '#c084fc',
@@ -67,7 +67,7 @@ export default function FinancialAchievementBadge({
         <span className="fab-title">{badge.title}</span>
         <span className="fab-desc">{badge.description}</span>
       </div>
-      {!unlocked && <span className="fab-lock">🔒</span>}
+      {!unlocked && <span className="fab-lock">◈</span>}
     </div>
   );
 }

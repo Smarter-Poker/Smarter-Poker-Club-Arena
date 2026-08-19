@@ -234,7 +234,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
           if (err) reportError(err?.message || err, 'PlayerStyleRadar._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[PlayerStyleRadar] ⏱️ Realtime channel timed out');
+          console.warn('[PlayerStyleRadar] Realtime channel timed out');
         }
       });
 

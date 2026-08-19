@@ -83,7 +83,7 @@ class IdentityDNACore {
     // We only fall back to getSession() if localStorage is empty or JWT is expired.
     const localSession = this.readLocalSession();
     if (localSession) {
-      console.debug('[IdentityDNA] ⚡ Fast path: session found in localStorage');
+      console.debug('[IdentityDNA] Fast path: session found in localStorage');
       authenticated = true;
       userId = localSession.userId;
       username = localSession.username;
@@ -352,10 +352,10 @@ class IdentityDNACore {
               profile.vip_level ||
               'bronze') as UserProfile['vip_level'],
           });
-          console.debug('[IdentityDNA] ✅ Full profile loaded from database');
+          console.debug('[IdentityDNA] Full profile loaded from database');
         }
       } catch (e) {
-        console.warn('🧬 [PROFILE] Could not load from database, using session data');
+        console.warn('[PROFILE] Could not load from database, using session data');
       }
     }, 0);
   }

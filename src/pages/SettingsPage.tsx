@@ -811,7 +811,7 @@ export default function SettingsPage() {
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Push Notifications</span>
               <span className={styles.settingDesc}>
-                {pushEnabled ? '🔔 Enabled' : 'Allow browser notifications'}
+                {pushEnabled ? 'Enabled' : 'Allow browser notifications'}
               </span>
             </div>
             {pushEnabled ? (
@@ -860,7 +860,7 @@ export default function SettingsPage() {
               <span className={styles.settingLabel}>Two-Factor Authentication</span>
               <span className={styles.settingDesc}>
                 {twoFactorEnabled
-                  ? '🛡️ Enabled — Your account is protected'
+                  ? 'Enabled — Your account is protected'
                   : 'Add extra security to your account'}
               </span>
             </div>
@@ -1007,7 +1007,7 @@ export default function SettingsPage() {
           onClick={(e) => e.target === e.currentTarget && setShow2FAModal(false)}
         >
           <div className={styles.modal}>
-            <h3>🛡️ Set Up Two-Factor Authentication</h3>
+            <h3>Set Up Two-Factor Authentication</h3>
             <p>Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)</p>
 
             {totpQRCode && (

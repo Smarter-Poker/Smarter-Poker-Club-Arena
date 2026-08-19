@@ -100,7 +100,7 @@ function MondayPayoutCountdown() {
             letterSpacing: '0.5px',
           }}
         >
-          ⏱ Next Payout (Monday 4AM PST)
+          Next Payout (Monday 4AM PST)
         </span>
         {countdown.progress >= 99.9 ? (
           <span
@@ -113,7 +113,7 @@ function MondayPayoutCountdown() {
               animation: 'payoutPulse 1.5s ease-in-out infinite',
             }}
           >
-            🎉 PAYOUT IN PROGRESS!
+            PAYOUT IN PROGRESS!
           </span>
         ) : (
           <span
@@ -487,7 +487,7 @@ export default function SettlementPage() {
           if (err) reportError(err?.message || err, 'SettlementPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[SettlementPage] ⏱️ Realtime channel timed out');
+          console.warn('[SettlementPage] Realtime channel timed out');
         }
       });
 
@@ -708,7 +708,7 @@ export default function SettlementPage() {
         </div>
         <div className={`${styles.statusBadge} ${styles[selectedPeriod.status]}`}>
           {selectedPeriod.status === 'open' && ' Open'}
-          {selectedPeriod.status === 'processing' && '🟡 Processing'}
+          {selectedPeriod.status === 'processing' && 'Processing'}
           {selectedPeriod.status === 'settled' && ' Settled'}
         </div>
         <SecurityBadge variant="secured" label="Bank-Grade" />
@@ -725,7 +725,7 @@ export default function SettlementPage() {
               cursor: 'pointer',
             }}
           >
-            📥 Export CSV
+            Export CSV
           </button>
           <button
             onClick={handleToggleAutoSettlement}
@@ -741,7 +741,7 @@ export default function SettlementPage() {
               opacity: togglingAutoSettle ? 0.6 : 1,
             }}
           >
-            {autoSettlement ? '⏱ Auto: ON' : '⏱ Auto: OFF'}
+            {autoSettlement ? 'Auto: ON' : 'Auto: OFF'}
           </button>
         </div>
       </header>
@@ -890,7 +890,7 @@ export default function SettlementPage() {
                       <span className="btn-spinner" /> Processing...
                     </>
                   ) : (
-                    '⚡ Execute Settlement'
+                    'Execute Settlement'
                   )}
                 </button>
                 <p className={styles.actionNote}>

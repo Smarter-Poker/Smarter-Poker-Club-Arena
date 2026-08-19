@@ -198,7 +198,7 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
   return (
     <div className="card-back-selector">
       <h3 className="cbs-title">Card Back Design</h3>
-      <p className="cbs-subtitle">Select your card back style • 💎 {userDiamonds}</p>
+      <p className="cbs-subtitle">Select your card back style • {userDiamonds}</p>
 
       <div className="card-backs-grid">
         {CARD_BACKS.map((cardBack) => {
@@ -240,7 +240,7 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
               {isEquipped && <span className="cbs-badge cbs-badge--equipped">Equipped</span>}
               {owned && !isEquipped && <span className="cbs-badge cbs-badge--owned">Owned</span>}
               {!owned && cardBack.price && (
-                <span className="cbs-badge cbs-badge--price">💎 {cardBack.price}</span>
+                <span className="cbs-badge cbs-badge--price"> {cardBack.price}</span>
               )}
 
               {isSelected && <div className="selected-indicator" />}
@@ -266,7 +266,7 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
             </div>
 
             <p className="cbs-confirm__name">{confirmPurchase.name}</p>
-            <p className="cbs-confirm__cost">💎 {confirmPurchase.price} Diamonds</p>
+            <p className="cbs-confirm__cost"> {confirmPurchase.price} Diamonds</p>
 
             {userDiamonds < (confirmPurchase.price || 0) && (
               <p className="cbs-confirm__insufficient">

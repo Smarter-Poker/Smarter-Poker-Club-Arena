@@ -172,13 +172,13 @@ function Countdown({ startTime, live }: { startTime?: string; live?: boolean }) 
     return () => clearInterval(id);
   }, [live]);
   if (live) return <span className="ngc-cd ngc-cd--live">LIVE</span>;
-  if (!startTime) return <span className="ngc-cd">⏳ when full</span>;
+  if (!startTime) return <span className="ngc-cd">when full</span>;
   const ms = new Date(startTime).getTime() - now;
   if (ms <= 0) return <span className="ngc-cd ngc-cd--live">LIVE NOW</span>;
   const s = Math.floor(ms / 1000);
   return (
     <span className="ngc-cd">
-      ⏳ {pad(Math.floor(s / 3600))}:{pad(Math.floor((s % 3600) / 60))}:{pad(s % 60)}
+      {pad(Math.floor(s / 3600))}:{pad(Math.floor((s % 3600) / 60))}:{pad(s % 60)}
     </span>
   );
 }
@@ -296,7 +296,7 @@ export function CashGameCard({ table, isAdmin, onDelete }: CashCardProps) {
       </div>
       <div className="ngc-row">
         <span className="ngc-players">
-          👤 {table.current_players}/{table.max_players}
+          {table.current_players}/{table.max_players}
         </span>
       </div>
       <div className="ngc-seats">
@@ -361,13 +361,13 @@ export function TournamentCard({ tournament }: TournamentCardProps) {
         {tournament.guaranteed_prize ? (
           <span>GTD {tournament.guaranteed_prize.toLocaleString()}</span>
         ) : null}
-        <span className="ngc-players">👤 {tournament.current_players}</span>
+        <span className="ngc-players"> {tournament.current_players}</span>
       </div>
       <Badges names={tourneyFeatures(tournament)} />
       <div className="ngc-bottom">
         <span className="ngc-name">{tournament.name}</span>
         <span className="ngc-ttime">
-          <span>🗓 {formatDate(tournament.start_time)}</span>
+          <span> {formatDate(tournament.start_time)}</span>
           <Countdown startTime={tournament.start_time} live={isLive} />
         </span>
       </div>
@@ -400,14 +400,14 @@ export function SNGCard({ tournament }: TournamentCardProps) {
       </div>
       <div className="ngc-row">
         <span className="ngc-players">
-          👤 {tournament.current_players}/{tournament.max_players}
+          {tournament.current_players}/{tournament.max_players}
         </span>
       </div>
       <Badges names={feats} />
       <div className="ngc-bottom">
         <span className="ngc-name">{tournament.name}</span>
         <span className="ngc-ttime">
-          <span>🗓 {tournament.start_time ? formatDate(tournament.start_time) : 'when full'}</span>
+          <span> {tournament.start_time ? formatDate(tournament.start_time) : 'when full'}</span>
           <Countdown startTime={tournament.start_time} live={isLive} />
         </span>
       </div>
@@ -438,7 +438,7 @@ export function SpinCard({ tournament }: TournamentCardProps) {
       <div className="ngc-row">
         <span className="ngc-win">Win up to {mult}</span>
         <span className="ngc-players">
-          👤 {tournament.current_players}/{tournament.max_players}
+          {tournament.current_players}/{tournament.max_players}
         </span>
       </div>
       <Badges names={['winner-takes-all']} />

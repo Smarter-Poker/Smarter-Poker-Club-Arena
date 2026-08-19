@@ -324,7 +324,7 @@ export default function TournamentDetails() {
           if (err) reportError(err?.message || err, 'TournamentDetails._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[TournamentDetails] ⏱️ Realtime channel timed out');
+          console.warn('[TournamentDetails] Realtime channel timed out');
         }
       });
 
@@ -807,9 +807,9 @@ export default function TournamentDetails() {
                           className={`podium-card place-${player.position}`}
                         >
                           <span className="podium-medal">
-                            {player.position === 1 && '🥇'}
-                            {player.position === 2 && '🥈'}
-                            {player.position === 3 && '🥉'}
+                            {player.position === 1 && '★'}
+                            {player.position === 2 && '☆'}
+                            {player.position === 3 && '☆'}
                           </span>
                           <span className="podium-name">{player.username}</span>
                           <span className="podium-prize">

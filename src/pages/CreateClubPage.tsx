@@ -154,7 +154,7 @@ const Step1Basics = ({
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
           >
-            <div className={styles.dropIcon}>📷</div>
+            <div className={styles.dropIcon}>▣</div>
             <span className={styles.dropText}>
               <strong>Upload your club logo</strong>
             </span>
@@ -232,7 +232,7 @@ const Step1Basics = ({
             />
             <span className={styles.checkmark} />
             <div>
-              <strong>🌐 Public</strong>
+              <strong>Public</strong>
               <p>Anyone can find and join your club. Open membership.</p>
             </div>
           </label>
@@ -246,7 +246,7 @@ const Step1Basics = ({
             />
             <span className={styles.checkmark} />
             <div>
-              <strong>🔒 Private</strong>
+              <strong>Private</strong>
               <p>Invite only. New members require admin approval.</p>
             </div>
           </label>
@@ -306,14 +306,14 @@ const Step2Preview = ({
         {form.description && <p className={styles.previewDesc}>{form.description}</p>}
 
         <div className={styles.previewTags}>
-          <span>{form.isPublic ? '🌐 Public' : '🔒 Private'}</span>
+          <span>{form.isPublic ? 'Public' : 'Private'}</span>
           <span>{form.isPublic ? 'Open Join' : 'Approval Required'}</span>
         </div>
       </div>
 
       {/* Settings note */}
       <div className={styles.infoCard}>
-        <span className={styles.infoIcon}>⚙️</span>
+        <span className={styles.infoIcon}>⚙</span>
         <div>
           <strong>Rake & Game Settings</strong>
           <p>
@@ -325,7 +325,7 @@ const Step2Preview = ({
 
       {/* First-time bonus notice */}
       <div className={styles.bonusNotice}>
-        <span className={styles.bonusIcon}>🎁</span>
+        <span className={styles.bonusIcon}>◈</span>
         <p>
           If this is the first club that you are creating you will receive a bonus of{' '}
           <strong>10,000 club chips</strong>. Congratulations!

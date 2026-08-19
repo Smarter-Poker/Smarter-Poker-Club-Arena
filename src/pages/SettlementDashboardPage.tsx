@@ -350,7 +350,7 @@ export default function SettlementDashboardPage() {
             reportError(err?.message || err, 'SettlementDashboardPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[SettlementDashboardPage] ⏱️ Realtime channel timed out');
+          console.warn('[SettlementDashboardPage] Realtime channel timed out');
         }
       });
     return () => {
@@ -550,7 +550,7 @@ export default function SettlementDashboardPage() {
   if (loading && !currentPeriod && !loadError) {
     return (
       <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>⚖️ Settlement Center</h1>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>⚖ Settlement Center</h1>
         <PageSkeleton variant="financial" />
       </div>
     );
@@ -559,7 +559,7 @@ export default function SettlementDashboardPage() {
   if (loadError && !currentPeriod) {
     return (
       <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>⚖️ Settlement Center</h1>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>⚖ Settlement Center</h1>
         <div
           style={{
             padding: '32px',
@@ -570,7 +570,7 @@ export default function SettlementDashboardPage() {
             marginTop: '20px',
           }}
         >
-          <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</div>
+          <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠</div>
           <div style={{ color: '#ef4444', marginBottom: '12px', fontSize: '0.9rem' }}>
             {loadError}
           </div>
@@ -626,7 +626,7 @@ export default function SettlementDashboardPage() {
         >
           ← Back
         </button>
-        <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>⚖️ Settlement Center</h1>
+        <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>⚖ Settlement Center</h1>
         <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
           Weekly settlement cycle monitoring and execution
         </p>
@@ -749,28 +749,28 @@ export default function SettlementDashboardPage() {
           {
             label: 'Total Disbursed',
             value: totalDisbursed.toLocaleString(),
-            icon: '💰',
+            icon: '◆',
             color: '#10b981',
             glow: 'rgba(16,185,129,0.2)',
           },
           {
             label: 'Agents Paid',
             value: String(agentsPaid),
-            icon: '👥',
+            icon: '◉',
             color: '#3b82f6',
             glow: 'rgba(59,130,246,0.2)',
           },
           {
             label: 'Failed/Stuck',
             value: String(failedCount),
-            icon: failedCount > 0 ? '🔴' : '🟢',
+            icon: failedCount > 0 ? '✕' : '✓',
             color: failedCount > 0 ? '#ef4444' : '#10b981',
             glow: failedCount > 0 ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)',
           },
           {
             label: 'Canary',
             value: canaryResult ? (canaryResult.passed ? 'PASS' : 'FAIL') : '—',
-            icon: canaryResult?.passed === false ? '🔴' : canaryResult?.passed ? '🟢' : '⚪',
+            icon: canaryResult?.passed === false ? '✕' : canaryResult?.passed ? '✓' : '○',
             color:
               canaryResult?.passed === false
                 ? '#ef4444'
@@ -846,7 +846,7 @@ export default function SettlementDashboardPage() {
             transition: 'all 0.2s',
           }}
         >
-          {runningCanary ? '⏳ Running...' : '🐤 Run Canary Check'}
+          {runningCanary ? 'Running...' : 'Run Canary Check'}
         </button>
         <button
           onClick={handleTriggerSettlement}
@@ -870,10 +870,10 @@ export default function SettlementDashboardPage() {
           }}
         >
           {runningSettlement
-            ? '⏳ Settling...'
+            ? 'Settling...'
             : rakebackStatus && rakebackStatus.pendingPeriods > 0
-              ? `⚡ Settle Rakeback (${rakebackStatus.pendingPeriods})`
-              : '⚡ Settle Rakeback Now'}
+              ? `Settle Rakeback (${rakebackStatus.pendingPeriods})`
+              : 'Settle Rakeback Now'}
         </button>
         <button
           onClick={() => loadData()}
@@ -948,7 +948,7 @@ export default function SettlementDashboardPage() {
               color: canaryResult.passed ? '#10b981' : '#ef4444',
             }}
           >
-            {canaryResult.passed ? '✅ Ledger Balanced' : '❌ Ledger Drift Detected'}
+            {canaryResult.passed ? 'Ledger Balanced' : 'Ledger Drift Detected'}
           </div>
           <div
             style={{
@@ -1005,7 +1005,7 @@ export default function SettlementDashboardPage() {
             marginBottom: '24px',
           }}
         >
-          <div style={{ fontSize: '1.8rem', marginBottom: '8px' }}>📋</div>
+          <div style={{ fontSize: '1.8rem', marginBottom: '8px' }}>▤</div>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', margin: 0 }}>
             No agent settlements yet
           </p>
@@ -1108,7 +1108,7 @@ export default function SettlementDashboardPage() {
             border: '1px solid rgba(255,255,255,0.06)',
           }}
         >
-          <div style={{ fontSize: '1.8rem', marginBottom: '8px' }}>📅</div>
+          <div style={{ fontSize: '1.8rem', marginBottom: '8px' }}>▤</div>
           <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', margin: 0 }}>
             No completed settlement periods
           </p>

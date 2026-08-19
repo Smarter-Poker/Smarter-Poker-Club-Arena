@@ -113,7 +113,7 @@ export default function FinancialHealthPage() {
     return (
       <div className="financial-health-page" style={{ padding: '16px' }}>
         <div className="fh-header">
-          <h2>🏥 Financial Health Dashboard</h2>
+          <h2>Financial Health Dashboard</h2>
         </div>
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'rgba(255,255,255,0.3)' }}>
           Loading health status...
@@ -125,7 +125,7 @@ export default function FinancialHealthPage() {
   return (
     <div className="financial-health-page">
       <div className="fh-header">
-        <h2>🏥 Financial Health Dashboard</h2>
+        <h2>Financial Health Dashboard</h2>
         <button className="fh-refresh-btn" onClick={loadStatus} title="Refresh">
           ↻
         </button>
@@ -136,14 +136,14 @@ export default function FinancialHealthPage() {
         <h3>System Status</h3>
         <div className="fh-status-grid">
           <div className={`fh-status-card ${status?.isRunning ? 'healthy' : 'error'}`}>
-            <span className="fh-status-indicator">{status?.isRunning ? '✅' : '❌'}</span>
+            <span className="fh-status-indicator">{status?.isRunning ? '✓' : '✕'}</span>
             <div>
               <div className="fh-status-label">Financial Cron</div>
               <div className="fh-status-value">{status?.isRunning ? 'Running' : 'Stopped'}</div>
             </div>
           </div>
           <div className="fh-status-card info">
-            <span className="fh-status-indicator">⏱</span>
+            <span className="fh-status-indicator">◷</span>
             <div>
               <div className="fh-status-label">Reconciliation Interval</div>
               <div className="fh-status-value">
@@ -152,7 +152,7 @@ export default function FinancialHealthPage() {
             </div>
           </div>
           <div className="fh-status-card info">
-            <span className="fh-status-indicator">🔄</span>
+            <span className="fh-status-indicator">◆</span>
             <div>
               <div className="fh-status-label">Suspension Check</div>
               <div className="fh-status-value">
@@ -164,7 +164,7 @@ export default function FinancialHealthPage() {
             className={`fh-status-card ${status?.config.autoSuspendEnabled ? 'warning' : 'info'}`}
           >
             <span className="fh-status-indicator">
-              {status?.config.autoSuspendEnabled ? '⚡' : '👁'}
+              {status?.config.autoSuspendEnabled ? '▲' : '◉'}
             </span>
             <div>
               <div className="fh-status-label">Auto-Suspend</div>
@@ -179,7 +179,7 @@ export default function FinancialHealthPage() {
       {/* Ledger Reconciliation */}
       <section className="fh-section">
         <div className="fh-section-header">
-          <h3>📊 Ledger Reconciliation</h3>
+          <h3>Ledger Reconciliation</h3>
           <button
             className="fh-action-btn"
             onClick={handleManualReconciliation}
@@ -193,7 +193,7 @@ export default function FinancialHealthPage() {
             className={`fh-result-card ${status.lastReconciliation.isBalanced ? 'balanced' : 'drift'}`}
           >
             <div className="fh-result-icon">
-              {status.lastReconciliation.isBalanced ? '✅' : '⚠️'}
+              {status.lastReconciliation.isBalanced ? '✓' : '⚠'}
             </div>
             <div className="fh-result-body">
               <div className="fh-result-title">
@@ -221,7 +221,7 @@ export default function FinancialHealthPage() {
       {/* Credit Suspension */}
       <section className="fh-section">
         <div className="fh-section-header">
-          <h3>🔒 Credit Suspension Check</h3>
+          <h3>Credit Suspension Check</h3>
           <button
             className="fh-action-btn"
             onClick={handleManualSuspensionCheck}
@@ -252,13 +252,13 @@ export default function FinancialHealthPage() {
 
       {/* Quick Actions */}
       <section className="fh-section">
-        <h3>⚡ Quick Actions</h3>
+        <h3>Quick Actions</h3>
         <div className="fh-quick-actions">
           <button className="fh-nav-btn" onClick={() => navigate('/financial-alerts')}>
-            🔔 Financial Alerts
+            Financial Alerts
           </button>
           <button className="fh-nav-btn" onClick={() => navigate('/disputes')}>
-            ⚖️ Dispute Management
+            ⚖ Dispute Management
           </button>
         </div>
       </section>

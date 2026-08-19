@@ -135,7 +135,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
                 className="edit-avatar-btn"
                 onClick={() => setShowAvatarPicker(!showAvatarPicker)}
               >
-                ✏️
+                ✏
               </button>
             </div>
             {showAvatarPicker && (

@@ -33,14 +33,14 @@ interface MissionsPanelProps {
 }
 
 const TIER_CONFIG: Record<MissionTier, { label: string; icon: string; color: string }> = {
-  daily: { label: 'Daily', icon: '📅', color: '#00d4ff' },
-  weekly: { label: 'Weekly', icon: '📆', color: '#ffa726' },
-  monthly: { label: 'Monthly', icon: '🗓️', color: '#c084fc' },
+  daily: { label: 'Daily', icon: '▤', color: '#00d4ff' },
+  weekly: { label: 'Weekly', icon: '▤', color: '#ffa726' },
+  monthly: { label: 'Monthly', icon: '▤', color: '#c084fc' },
 };
 
 const REWARD_ICONS: Record<string, string> = {
-  diamonds: '💎',
-  chips: '🪙',
+  diamonds: '◆',
+  chips: '◉',
 };
 
 export default function MissionsPanel({ missions, onClaim }: MissionsPanelProps) {
@@ -100,13 +100,13 @@ export default function MissionsPanel({ missions, onClaim }: MissionsPanelProps)
       <div className="mp-list">
         {filtered.length === 0 ? (
           <div className="mp-empty">
-            <span className="mp-empty-icon">🎯</span>
+            <span className="mp-empty-icon">◎</span>
             <span className="mp-empty-text">No missions available</span>
           </div>
         ) : (
           filtered.map((mission) => {
             const progress = mission.target > 0 ? Math.min(mission.current / mission.target, 1) : 0;
-            const rewardIcon = REWARD_ICONS[mission.rewardType] || '⭐';
+            const rewardIcon = REWARD_ICONS[mission.rewardType] || '★';
             return (
               <div
                 key={mission.id}
@@ -136,7 +136,7 @@ export default function MissionsPanel({ missions, onClaim }: MissionsPanelProps)
                 {/* Reward / Claim */}
                 <div className="mp-card-reward">
                   {mission.claimed ? (
-                    <span className="mp-claimed-badge">✅</span>
+                    <span className="mp-claimed-badge">✓</span>
                   ) : mission.completed ? (
                     <button
                       className="mp-claim-btn"

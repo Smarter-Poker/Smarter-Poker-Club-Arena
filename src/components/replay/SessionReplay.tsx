@@ -177,7 +177,7 @@ export const SessionReplay: React.FC<SessionReplayProps> = ({ sessionId, onClose
       {/* Header */}
       <div className="replay-header">
         <div className="session-info">
-          <h2>📹 {replay.tableName}</h2>
+          <h2> {replay.tableName}</h2>
           <span className="stakes">{replay.stakes}</span>
         </div>
         <button className="close-btn" onClick={onClose}>
@@ -252,7 +252,7 @@ export const SessionReplay: React.FC<SessionReplayProps> = ({ sessionId, onClose
           ⏮
         </button>
         <button className="control-btn play" onClick={togglePlay}>
-          {isPlaying ? '⏸' : '▶'}
+          {isPlaying ? '▮' : '▶'}
         </button>
         <button className="control-btn" onClick={() => skipTo('next')}>
           ⏭

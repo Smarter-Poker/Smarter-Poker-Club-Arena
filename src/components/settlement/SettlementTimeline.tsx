@@ -21,17 +21,17 @@ interface SettlementTimelineProps {
 }
 
 const STATUS_CONFIG: Record<string, { color: string; icon: string; label: string }> = {
-  paid: { color: '#00c853', icon: '✅', label: 'Settled' },
-  pending: { color: '#ffa726', icon: '⏳', label: 'Pending' },
-  processing: { color: '#448aff', icon: '⚙️', label: 'Processing' },
-  failed: { color: '#ef4444', icon: '❌', label: 'Failed' },
+  paid: { color: '#00c853', icon: '✓', label: 'Settled' },
+  pending: { color: '#ffa726', icon: '◷', label: 'Pending' },
+  processing: { color: '#448aff', icon: '⚙', label: 'Processing' },
+  failed: { color: '#ef4444', icon: '✕', label: 'Failed' },
 };
 
 export default function SettlementTimeline({ entries, onSelect }: SettlementTimelineProps) {
   if (entries.length === 0) {
     return (
       <div className="st-empty">
-        <span className="st-empty-icon">📭</span>
+        <span className="st-empty-icon">◆</span>
         <span className="st-empty-text">No settlement history yet</span>
       </div>
     );

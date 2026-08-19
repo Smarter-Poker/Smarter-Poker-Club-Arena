@@ -88,7 +88,7 @@ export default function DisputeSubmitModal({
         }}
       >
         <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', color: 'var(--text-primary, #fff)' }}>
-          ⚠️ Submit a Dispute
+          ⚠ Submit a Dispute
         </h3>
 
         {/* Target Type */}

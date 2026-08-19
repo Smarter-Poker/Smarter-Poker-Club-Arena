@@ -78,7 +78,7 @@ export function TournamentRegistration({
             reportError(err?.message || err, 'TournamentRegistration._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[TournamentRegistration] ⏱️ Realtime channel timed out');
+          console.warn('[TournamentRegistration] Realtime channel timed out');
         }
       });
 

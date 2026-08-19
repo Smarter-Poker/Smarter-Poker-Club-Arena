@@ -83,7 +83,7 @@ const AlertItem: React.FC<{ alert: Alert; onDismiss: () => void }> = ({ alert, o
       case 'info':
         return 'ℹ';
       case 'game':
-        return '🎰';
+        return '▦';
     }
   };
 

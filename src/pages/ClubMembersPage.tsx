@@ -821,7 +821,7 @@ export default function ClubMembersPage() {
         } else if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'ClubMembersPage._Presence_channel_error');
         } else if (status === 'TIMED_OUT') {
-          console.warn('[ClubMembersPage] ⏱️ Presence channel timed out');
+          console.warn('[ClubMembersPage] Presence channel timed out');
         }
       });
 
@@ -946,12 +946,12 @@ export default function ClubMembersPage() {
               }}
             >
               {filter === 'agents'
-                ? '🤝'
+                ? '◈'
                 : filter === 'admins'
-                  ? '🛡️'
+                  ? '◈'
                   : filter === 'online'
-                    ? '🟢'
-                    : '👥'}
+                    ? '●'
+                    : '◉'}
             </span>
             <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
               {filter === 'agents'

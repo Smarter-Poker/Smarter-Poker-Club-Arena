@@ -168,12 +168,12 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
   return (
     <div className="club-discovery">
       <div className="discovery-header">
-        <h2>🔍 Discover Clubs</h2>
+        <h2>Discover Clubs</h2>
       </div>
 
       {/* Search */}
       <div className="search-bar">
-        <span className="search-icon">🔎</span>
+        <span className="search-icon">⌕</span>
         <input
           type="text"
           placeholder="Search clubs by name, game, or tag..."
@@ -247,7 +247,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
                   borderRadius: '8px',
                 }}
               >
-                🔥 HOT
+                HOT
               </div>
               <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '4px' }}>
                 {club.name}
@@ -278,7 +278,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
           Array.from({ length: 4 }).map((_, i) => <div key={i} className="club-card skeleton" />)
         ) : filteredClubs.length === 0 ? (
           <div className="empty-state">
-            <span>🏠</span>
+            <span>⌂</span>
             <p>No clubs found matching your criteria</p>
           </div>
         ) : (
@@ -320,7 +320,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
                       </span>
                     )}
                   </h3>
-                  {club.isPrivate && <span className="private-badge">🔒</span>}
+                  {club.isPrivate && <span className="private-badge">◈</span>}
                 </div>
               </div>
               <p className="club-desc">{club.description}</p>
@@ -332,10 +332,10 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
                 ))}
               </div>
               <div className="club-stats">
-                <span>👥 {club.memberCount}</span>
-                <span>🎰 {club.activeTableCount} tables</span>
+                <span> {club.memberCount}</span>
+                <span> {club.activeTableCount} tables</span>
                 <span>
-                  💵 {club.minStakes} - {club.maxStakes}
+                  {club.minStakes} - {club.maxStakes}
                 </span>
                 {club.activeTableCount > 0 && (
                   <span className="live-indicator">

@@ -92,7 +92,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'hands_100',
     name: 'Getting Started',
     description: 'Play 100 hands of poker',
-    icon: '🃏',
+    icon: '♠',
     category: 'poker',
     rarity: 'common',
     requirement: 'Play 100 hands',
@@ -101,7 +101,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'hands_1000',
     name: 'Regular',
     description: 'Play 1,000 hands',
-    icon: '💯',
+    icon: '◆',
     category: 'poker',
     rarity: 'rare',
     requirement: 'Play 1,000 hands',
@@ -110,7 +110,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'hands_10000',
     name: 'Grinder',
     description: 'Play 10,000 hands',
-    icon: '⚡',
+    icon: '▲',
     category: 'poker',
     rarity: 'epic',
     requirement: 'Play 10,000 hands',
@@ -119,7 +119,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'hands_100000',
     name: 'Professional',
     description: 'Play 100,000 hands',
-    icon: '🏃',
+    icon: '◆',
     category: 'poker',
     rarity: 'legendary',
     requirement: 'Play 100,000 hands',
@@ -139,7 +139,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'wins_100',
     name: 'Winner',
     description: 'Win 100 hands',
-    icon: '🎉',
+    icon: '★',
     category: 'poker',
     rarity: 'rare',
     requirement: 'Win 100 hands',
@@ -148,7 +148,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'wins_1000',
     name: 'Dominator',
     description: 'Win 1,000 hands',
-    icon: '💪',
+    icon: '▲',
     category: 'poker',
     rarity: 'epic',
     requirement: 'Win 1,000 hands',
@@ -159,7 +159,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'royal_flush',
     name: 'Royal Blood',
     description: 'Hit a Royal Flush',
-    icon: '👑',
+    icon: '♛',
     category: 'poker',
     rarity: 'legendary',
     requirement: 'Get Royal Flush',
@@ -168,7 +168,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'straight_flush',
     name: 'Straight Shooter',
     description: 'Hit a Straight Flush',
-    icon: '🌊',
+    icon: '◆',
     category: 'poker',
     rarity: 'epic',
     requirement: 'Get Straight Flush',
@@ -177,7 +177,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'quads',
     name: 'Four of a Kind',
     description: 'Hit Quads',
-    icon: '🎯',
+    icon: '◎',
     category: 'poker',
     rarity: 'rare',
     requirement: 'Get Quads',
@@ -188,7 +188,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'friends_5',
     name: 'Social Butterfly',
     description: 'Add 5 friends',
-    icon: '🦋',
+    icon: '◆',
     category: 'social',
     rarity: 'common',
     requirement: 'Add 5 friends',
@@ -197,7 +197,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'friends_25',
     name: 'Popular',
     description: 'Add 25 friends',
-    icon: '🌟',
+    icon: '★',
     category: 'social',
     rarity: 'rare',
     requirement: 'Add 25 friends',
@@ -206,7 +206,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'clubs_3',
     name: 'Club Hopper',
     description: 'Join 3 clubs',
-    icon: '🏠',
+    icon: '⌂',
     category: 'social',
     rarity: 'common',
     requirement: 'Join 3 clubs',
@@ -217,7 +217,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'profit_1000',
     name: 'In the Green',
     description: 'Profit 1,000 chips',
-    icon: '📈',
+    icon: '▲',
     category: 'financial',
     rarity: 'rare',
     requirement: 'Profit 1K chips',
@@ -226,7 +226,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'profit_10000',
     name: 'High Roller',
     description: 'Profit 10,000 chips',
-    icon: '💎',
+    icon: '◆',
     category: 'financial',
     rarity: 'epic',
     requirement: 'Profit 10K chips',
@@ -235,7 +235,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'biggest_pot_500',
     name: 'Big Pot',
     description: 'Win a 500+ chip pot',
-    icon: '🏆',
+    icon: '★',
     category: 'financial',
     rarity: 'rare',
     requirement: 'Win 500+ pot',
@@ -246,7 +246,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'tourney_win_1',
     name: 'Champion',
     description: 'Win a tournament',
-    icon: '🏅',
+    icon: '★',
     category: 'tournament',
     rarity: 'epic',
     requirement: 'Win tournament',
@@ -255,7 +255,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'tourney_top3_10',
     name: 'Consistent',
     description: 'Finish top 3 in 10 tournaments',
-    icon: '🎖️',
+    icon: '◆',
     category: 'tournament',
     rarity: 'rare',
     requirement: 'Top 3 x10',
@@ -264,7 +264,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'tourney_played_50',
     name: 'Tournament Regular',
     description: 'Play 50 tournaments',
-    icon: '🎪',
+    icon: '◆',
     category: 'tournament',
     rarity: 'rare',
     requirement: 'Play 50 tournaments',
@@ -275,7 +275,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'streak_7',
     name: 'Weekly Warrior',
     description: 'Log in 7 days in a row',
-    icon: '🔥',
+    icon: '▲',
     category: 'social',
     rarity: 'common',
     requirement: '7-day streak',
@@ -284,7 +284,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'streak_30',
     name: 'Monthly Grinder',
     description: 'Log in 30 days in a row',
-    icon: '📅',
+    icon: '▤',
     category: 'social',
     rarity: 'rare',
     requirement: '30-day streak',
@@ -293,7 +293,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     id: 'streak_100',
     name: 'Centurion',
     description: 'Log in 100 days in a row',
-    icon: '💯',
+    icon: '◆',
     category: 'social',
     rarity: 'legendary',
     requirement: '100-day streak',
@@ -394,7 +394,7 @@ export default function AchievementsPage() {
             if (err) reportError(err?.message || err, 'AchievementsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[AchievementsPage] ⏱️ Realtime channel timed out');
+            console.warn('[AchievementsPage] Realtime channel timed out');
           }
         });
 
@@ -620,9 +620,9 @@ export default function AchievementsPage() {
         {/* Milestone Rewards */}
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between' }}>
           {[
-            { day: 7, reward: '1K Chips', unlocked: dailyStreak >= 7, icon: '🥉' },
-            { day: 30, reward: '100 Diamonds', unlocked: dailyStreak >= 30, icon: '🥈' },
-            { day: 100, reward: 'Exclusive Badge', unlocked: dailyStreak >= 100, icon: '🥇' },
+            { day: 7, reward: '1K Chips', unlocked: dailyStreak >= 7, icon: '☆' },
+            { day: 30, reward: '100 Diamonds', unlocked: dailyStreak >= 30, icon: '☆' },
+            { day: 100, reward: 'Exclusive Badge', unlocked: dailyStreak >= 100, icon: '★' },
           ].map((m) => (
             <div
               key={m.day}
@@ -747,14 +747,14 @@ export default function AchievementsPage() {
           (cat) => {
             const label =
               cat === 'all'
-                ? '📋 All'
+                ? 'All'
                 : cat === 'poker'
-                  ? '🃏 Poker'
+                  ? 'Poker'
                   : cat === 'social'
-                    ? '👥 Social'
+                    ? 'Social'
                     : cat === 'financial'
-                      ? '💰 Financial'
-                      : '🏆 Tournament';
+                      ? 'Financial'
+                      : 'Tournament';
             return (
               <button
                 key={cat}
@@ -826,7 +826,7 @@ export default function AchievementsPage() {
                 opacity: 0.5,
               }}
             >
-              🏅
+              ★
             </span>
             <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
               {category === 'all'
@@ -1008,7 +1008,7 @@ export default function AchievementsPage() {
           <div className="unlock-content">
             <div className="unlock-icon">{newUnlock.icon}</div>
             <div className="unlock-text">
-              <span className="unlock-label">🎉 Achievement Unlocked!</span>
+              <span className="unlock-label">Achievement Unlocked!</span>
               <span className="unlock-name">{newUnlock.name}</span>
             </div>
           </div>

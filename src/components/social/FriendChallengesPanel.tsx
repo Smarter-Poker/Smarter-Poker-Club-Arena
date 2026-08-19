@@ -11,10 +11,10 @@ import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
 
 const TYPE_META: Record<string, { label: string; icon: string }> = {
-  streak_battle: { label: 'Streak Battle', icon: '🔥' },
-  mission_race: { label: 'Mission Race', icon: '🎯' },
-  spin_master: { label: 'Spin Master', icon: '🎰' },
-  hand_grinder: { label: 'Hand Grinder', icon: '🃏' },
+  streak_battle: { label: 'Streak Battle', icon: '▲' },
+  mission_race: { label: 'Mission Race', icon: '◎' },
+  spin_master: { label: 'Spin Master', icon: '▦' },
+  hand_grinder: { label: 'Hand Grinder', icon: '♠' },
 };
 
 interface ChallengeRow {
@@ -118,7 +118,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
     return (
       <div style={{ padding: '2rem 1.5rem', textAlign: 'center' }}>
         <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.5rem', opacity: 0.5 }}>
-          ⚔️
+          ⚔
         </span>
         <p style={{ fontWeight: 600, margin: '0 0 0.35rem' }}>No challenges yet</p>
         <p style={{ color: 'var(--soft-white,#B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
@@ -152,7 +152,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
   );
 
   const header = (r: ChallengeRow) => {
-    const meta = TYPE_META[r.challenge_type] || { label: r.challenge_type, icon: '⚔️' };
+    const meta = TYPE_META[r.challenge_type] || { label: r.challenge_type, icon: '⚔' };
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
         <span style={{ fontSize: '1.1rem' }}>{meta.icon}</span>
@@ -289,7 +289,7 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
                     <span>Tie vs {themName}</span>
                   ) : iWon ? (
                     <span style={{ color: '#31A24C', fontWeight: 700 }}>
-                      🏆 You won vs {themName}
+                      You won vs {themName}
                     </span>
                   ) : (
                     <span style={{ opacity: 0.8 }}>{themName} won</span>

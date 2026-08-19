@@ -77,7 +77,7 @@ export function ImageUpload({ onPreview, maxSizeMB = 5 }: ImageUploadProps) {
       onDrop={handleDrop}
       title={`Upload image (max ${maxSizeMB}MB)`}
     >
-      📷
+      ▣
       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleChange} hidden />
     </label>
   );
@@ -131,7 +131,7 @@ export function ImageThumbnail({ imageUrl, onClick }: { imageUrl: string; onClic
         className={styles.thumbnailImage}
         onLoad={() => setLoaded(true)}
       />
-      <div className={styles.zoomIcon}>🔍</div>
+      <div className={styles.zoomIcon}>⌕</div>
     </div>
   );
 }

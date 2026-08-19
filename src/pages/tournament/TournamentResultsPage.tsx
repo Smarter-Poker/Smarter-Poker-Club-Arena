@@ -281,7 +281,7 @@ export default function TournamentResultsPage() {
             reportError(err?.message || err, 'TournamentResultsPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[TournamentResultsPage] ⏱️ Realtime channel timed out');
+          console.warn('[TournamentResultsPage] Realtime channel timed out');
         }
       });
 

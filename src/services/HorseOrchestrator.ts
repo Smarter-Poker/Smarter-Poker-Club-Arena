@@ -1729,7 +1729,7 @@ class HorseOrchestrator {
     spinHorses: number;
   }> {
     console.debug('═══════════════════════════════════════════════════════════════');
-    console.debug('[Orchestrator] 🐎 LAUNCHING EVERYTHING — FULL FLEET DEPLOYMENT');
+    console.debug('[Orchestrator] LAUNCHING EVERYTHING — FULL FLEET DEPLOYMENT');
     console.debug('═══════════════════════════════════════════════════════════════');
 
     // 1. Cash games + today's tournaments (launch() now includes launchTodaysTournaments())

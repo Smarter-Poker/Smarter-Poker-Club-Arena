@@ -104,19 +104,19 @@ export default function GamificationLeaderboard() {
   return (
     <div className="gl-container">
       <div className="gl-header">
-        <h3 className="gl-title">🏆 Top Performers</h3>
+        <h3 className="gl-title">Top Performers</h3>
         <div className="gl-tabs">
           <button
             className={`gl-tab ${activeTab === 'wheel' ? 'active' : ''}`}
             onClick={() => setActiveTab('wheel')}
           >
-            🎡 Lucky Wheel
+            Lucky Wheel
           </button>
           <button
             className={`gl-tab ${activeTab === 'missions' ? 'active' : ''}`}
             onClick={() => setActiveTab('missions')}
           >
-            🎯 Missions
+            Missions
           </button>
         </div>
       </div>
@@ -131,11 +131,11 @@ export default function GamificationLeaderboard() {
             <div key={entry.id} className="gl-item">
               <div className="gl-rank">
                 {entry.rank === 1
-                  ? '🥇'
+                  ? '★'
                   : entry.rank === 2
-                    ? '🥈'
+                    ? '☆'
                     : entry.rank === 3
-                      ? '🥉'
+                      ? '☆'
                       : `#${entry.rank}`}
               </div>
               <img

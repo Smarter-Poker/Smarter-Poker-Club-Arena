@@ -229,7 +229,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
               style={{ marginLeft: 8, fontSize: 16, display: 'flex', alignItems: 'center' }}
               title="Securely Encrypted"
             >
-              🔒
+              ◈
             </span>
           )}
         </div>
@@ -254,7 +254,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
                   }}
                 />
               ) : (
-                <span className={styles.profilePlaceholder}>👤</span>
+                <span className={styles.profilePlaceholder}>◉</span>
               )}
             </div>
           </button>

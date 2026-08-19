@@ -82,7 +82,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
                 .replace(/_/g, ' ')
                 .replace(/\b\w/g, (c: string) => c.toUpperCase()),
               timestamp: new Date(a.unlocked_at),
-              icon: '🏆',
+              icon: '★',
             });
           }
         }
@@ -111,7 +111,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
                 .replace(/_/g, ' ')
                 .replace(/\b\w/g, (ch: string) => ch.toUpperCase()),
               timestamp: new Date(c.assigned_date),
-              icon: '🎯',
+              icon: '◎',
             });
           }
         }
@@ -148,7 +148,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
             avatar: friend.avatar_url,
             action: 'won a massive pot',
             timestamp: new Date(),
-            icon: '💰',
+            icon: '◆',
           },
           ...prev,
         ].slice(0, 20)
@@ -168,7 +168,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
             avatar: payload.avatarUrl,
             action: 'became friends with you',
             timestamp: new Date(),
-            icon: '🤝',
+            icon: '◈',
           },
           ...prev,
         ].slice(0, 20)
@@ -198,7 +198,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
           {[0, 1, 2].map((i) => (
             <div key={i} className="activity-item" style={{ opacity: 0.4 }}>
               <div className="activity-avatar">
-                <span>⏳</span>
+                <span>◷</span>
               </div>
               <div className="activity-content">
                 <p

@@ -165,7 +165,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
   return (
     <div className="player-notes">
       <div className="notes-header">
-        <h2>📝 Player Notes</h2>
+        <h2>Player Notes</h2>
         {onClose && (
           <button className="close-btn" onClick={onClose}>
             ✕
@@ -196,7 +196,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
       <div className="notes-list">
         {filteredNotes.length === 0 ? (
           <div className="empty-notes">
-            <span>📝</span>
+            <span>▤</span>
             <p>No notes yet</p>
           </div>
         ) : (

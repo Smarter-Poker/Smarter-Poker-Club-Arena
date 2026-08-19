@@ -141,12 +141,12 @@ class PostgresSyncHooksService {
         const channelName = `global_db_sync:${userId}`;
         switch (status) {
           case 'SUBSCRIBED':
-            console.info(`[PostgresSync] ✅ Realtime Hook Active for user ${userId}.`);
+            console.info(`[PostgresSync] Realtime Hook Active for user ${userId}.`);
             masterBus.emit('REALTIME_CONNECTED', { channelName });
             this.retryCount = 0; // Reset on success
             break;
           case 'CHANNEL_ERROR':
-            console.debug(`[PostgresSync] ❌ Channel error:`, err?.message || err || 'unknown');
+            console.debug(`[PostgresSync] Channel error:`, err?.message || err || 'unknown');
             masterBus.emit('REALTIME_DISCONNECTED', {
               channelName,
               reason: `Channel error: ${err?.message || 'unknown'}`,
@@ -154,7 +154,7 @@ class PostgresSyncHooksService {
             this.scheduleReconnect(userId);
             break;
           case 'TIMED_OUT':
-            console.warn(`[PostgresSync] ⏱️ Channel timed out — scheduling reconnect.`);
+            console.warn(`[PostgresSync] Channel timed out — scheduling reconnect.`);
             masterBus.emit('REALTIME_DISCONNECTED', {
               channelName,
               reason: 'Connection timed out',

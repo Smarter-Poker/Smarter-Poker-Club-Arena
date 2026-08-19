@@ -46,7 +46,7 @@ export default function ProfitChart({ transactions }: ProfitChartProps) {
             animation: 'profitChartPulse 3s ease-in-out infinite',
           }}
         >
-          📊
+          ▦
         </div>
         <div
           style={{

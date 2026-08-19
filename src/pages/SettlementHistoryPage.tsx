@@ -81,7 +81,7 @@ export default function SettlementHistoryPage() {
             reportError(err?.message || err, 'SettlementHistoryPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[SettlementHistoryPage] ⏱️ Realtime channel timed out');
+          console.warn('[SettlementHistoryPage] Realtime channel timed out');
         }
       });
 
@@ -163,7 +163,7 @@ export default function SettlementHistoryPage() {
         >
           ← Back
         </button>
-        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>📅 Settlement History</h1>
+        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Settlement History</h1>
         <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
           Weekly settlement cycles and revenue trends
         </p>
@@ -279,7 +279,7 @@ export default function SettlementHistoryPage() {
           }}
         >
           <div style={{ fontSize: '0.8rem', fontWeight: 700, marginBottom: '12px' }}>
-            📊 Revenue Timeline
+            Revenue Timeline
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '80px' }}>
             {cycles

@@ -238,7 +238,7 @@ export default function HandReplayViewer({
       {/* Header */}
       <div className={styles.header}>
         <div className={styles.handInfo}>
-          <h3>🎬 Hand Replay</h3>
+          <h3>Hand Replay</h3>
           <span className={styles.subtitle}>
             {hand.tableName} • {hand.blinds} {hand.gameType}
           </span>
@@ -302,19 +302,19 @@ export default function HandReplayViewer({
       {/* Controls */}
       <div className={styles.controls}>
         <button onClick={reset} title="Reset">
-          ⏮️
+          ⏮
         </button>
         <button onClick={stepBackward} title="Step Back">
           ⏪
         </button>
         <button onClick={togglePlay} className={styles.playBtn}>
-          {isPlaying ? '⏸️' : '▶️'}
+          {isPlaying ? '▮' : '▶'}
         </button>
         <button onClick={stepForward} title="Step Forward">
           ⏩
         </button>
         <button onClick={skipToEnd} title="Skip to End">
-          ⏭️
+          ⏭
         </button>
 
         <div className={styles.speedControl}>

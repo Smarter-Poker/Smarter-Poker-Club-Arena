@@ -310,7 +310,7 @@ export default function AgentTree({ clubId, onAgentClick, onTransferClick }: Age
   if (tree.length === 0) {
     return (
       <div className={styles.empty}>
-        <span className={styles.emptyIcon}>🌳</span>
+        <span className={styles.emptyIcon}>▲</span>
         <h4>No Agents Yet</h4>
         <p>Create your first agent to start building your hierarchy</p>
       </div>

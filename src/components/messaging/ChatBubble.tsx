@@ -32,6 +32,9 @@ interface ChatBubbleProps {
   onReply?: (message: any) => void;
 }
 
+// Emoji here are DATA, not decoration: this is the reaction picker, and the
+// values are written to the database and rendered back on other clients.
+// RULE 7 exempt for the same reason the emoji picker is.
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
 export default function ChatBubble({

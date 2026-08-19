@@ -23,9 +23,9 @@ interface ModerationLogProps {
 }
 
 const ACTION_ICONS: Record<string, string> = {
-  mute: '🔇',
-  ban: '⛔',
-  kick: '👢',
+  mute: '◌',
+  ban: '⊘',
+  kick: '◆',
   delete_message: '',
   warning: '',
   unban: '',

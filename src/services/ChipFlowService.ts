@@ -464,7 +464,7 @@ export const ChipFlowService = {
       );
     } else {
       console.debug(
-        `[Reconciliation] ✅ Ledger balanced: ${result.totalMinted.toLocaleString()} minted, ` +
+        `[Reconciliation] Ledger balanced: ${result.totalMinted.toLocaleString()} minted, ` +
           `${result.totalInWallets.toLocaleString()} in wallets, ${result.totalInLockedBalance.toLocaleString()} locked`
       );
     }

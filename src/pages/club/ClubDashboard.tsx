@@ -462,7 +462,7 @@ export default function ClubDashboard() {
         </div>
         <div className={styles.quickActions}>
           <Link to={`/clubs/${clubId}/create-table`} className={styles.actionBtn}>
-            ➕ New Table
+            New Table
           </Link>
           <Link to={`/clubs/${clubId}/financials`} className={styles.actionBtn}>
             Financials

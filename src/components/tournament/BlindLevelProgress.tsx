@@ -118,7 +118,7 @@ export const BlindLevelProgress: React.FC<BlindLevelProgressProps> = ({
           {isPaused && <span className="blp-badge paused">PAUSED</span>}
         </div>
         <div className="blp-level-number">
-          {current.isBreak ? '☕ BREAK' : `Level ${currentLevel}`}
+          {current.isBreak ? 'BREAK' : `Level ${currentLevel}`}
         </div>
       </div>
 
@@ -172,7 +172,7 @@ export const BlindLevelProgress: React.FC<BlindLevelProgressProps> = ({
           <div className="blp-next-label">Up Next</div>
           <div className="blp-next-content">
             <div className="blp-next-level-num">
-              {next.isBreak ? '☕' : `Level ${currentLevel + 1}`}
+              {next.isBreak ? '◇' : `Level ${currentLevel + 1}`}
             </div>
             <div className="blp-next-blinds">
               {next.isBreak ? (
@@ -200,7 +200,7 @@ export const BlindLevelProgress: React.FC<BlindLevelProgressProps> = ({
               key={level.level}
               className={`blp-level-item ${level.level === currentLevel ? 'current' : ''} ${level.level < currentLevel ? 'past' : ''} ${level.isBreak ? 'break' : ''} ${getBlindColor(level.level)}`}
             >
-              <span className="blp-item-level">{level.isBreak ? '☕' : `L${level.level}`}</span>
+              <span className="blp-item-level">{level.isBreak ? '◇' : `L${level.level}`}</span>
               <span className="blp-item-blinds">
                 {level.isBreak
                   ? 'Break'

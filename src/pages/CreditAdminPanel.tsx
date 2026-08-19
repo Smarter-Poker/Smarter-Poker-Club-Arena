@@ -189,7 +189,7 @@ export default function CreditAdminPanel() {
           if (err) reportError(err?.message || err, 'CreditAdminPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[CreditAdminPanel] ⏱️ Realtime channel timed out');
+          console.warn('[CreditAdminPanel] Realtime channel timed out');
         }
       });
     return () => {
@@ -236,7 +236,7 @@ export default function CreditAdminPanel() {
   if (authorized === false) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
-        <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🔒</div>
+        <div style={{ fontSize: '2rem', marginBottom: '12px' }}>◈</div>
         <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Access Denied</div>
         <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>
           Only club owners and admins can access the Credit Admin Panel.
@@ -278,7 +278,7 @@ export default function CreditAdminPanel() {
         >
           ← Back
         </button>
-        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>💳 Credit Admin Panel</h1>
+        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Credit Admin Panel</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
           <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
             Manage agent credit limits and monitor exposure
@@ -311,7 +311,7 @@ export default function CreditAdminPanel() {
                 whiteSpace: 'nowrap',
               }}
             >
-              📥 Export
+              Export
             </button>
           )}
         </div>

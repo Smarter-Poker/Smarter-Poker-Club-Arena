@@ -85,7 +85,7 @@ export default function ReportReviewPage() {
           if (err) reportError(err?.message || err, 'ReportReviewPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[ReportReviewPage] ⏱️ Realtime channel timed out');
+          console.warn('[ReportReviewPage] Realtime channel timed out');
         }
       });
 

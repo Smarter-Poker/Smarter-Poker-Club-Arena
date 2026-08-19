@@ -86,7 +86,7 @@ export default function ClubRulesPage() {
             if (err) reportError(err?.message || err, 'ClubRulesPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[ClubRulesPage] ⏱️ Realtime channel timed out');
+            console.warn('[ClubRulesPage] Realtime channel timed out');
           }
         });
     };
@@ -243,7 +243,7 @@ export default function ClubRulesPage() {
     return (
       <div className="club-rules-page">
         <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
-          <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</p>
+          <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠</p>
           <p style={{ marginBottom: '16px' }}>Failed to load club rules</p>
           <button
             onClick={() => loadRules()}
@@ -307,7 +307,7 @@ export default function ClubRulesPage() {
               </div>
             ) : (
               <div className="empty-rules">
-                <span className="empty-icon">📋</span>
+                <span className="empty-icon">▤</span>
                 <h3>No Rules Set</h3>
                 <p>
                   {isAdmin

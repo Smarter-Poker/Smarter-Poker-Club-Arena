@@ -118,7 +118,7 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
   return (
     <div className="dh-container">
       <div className="dh-header">
-        <h3 className="dh-title">📋 Distribution History</h3>
+        <h3 className="dh-title">Distribution History</h3>
         <div className="dh-filters">
           {(['7d', '30d', '90d', 'all'] as DateRange[]).map((range) => (
             <button
@@ -158,7 +158,7 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
       <input
         type="text"
         className="dh-search"
-        placeholder="🔍 Search by player name..."
+        placeholder="Search by player name..."
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
       />

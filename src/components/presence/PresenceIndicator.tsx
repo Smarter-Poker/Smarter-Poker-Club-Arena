@@ -48,7 +48,7 @@ export const PresenceIndicator: React.FC<PresenceIndicatorProps> = ({
           if (err) reportError(err?.message || err, 'PresenceIndicator._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[PresenceIndicator] ⏱️ Realtime channel timed out');
+          console.warn('[PresenceIndicator] Realtime channel timed out');
         }
       });
 

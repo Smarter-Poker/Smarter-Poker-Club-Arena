@@ -85,7 +85,7 @@ export default class RouteErrorBoundary extends Component<Props, State> {
             fontFamily: 'system-ui, -apple-system, sans-serif',
           }}
         >
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠</div>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '.5rem' }}>
             This page ran into an issue
           </h2>

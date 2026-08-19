@@ -95,7 +95,7 @@ export default function VIPPage() {
             if (err) reportError(err?.message || err, 'VIPPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[VIPPage] ⏱️ Realtime channel timed out');
+            console.warn('[VIPPage] Realtime channel timed out');
           }
         });
 
@@ -355,56 +355,56 @@ export default function VIPPage() {
             perks={[
               {
                 id: 'rabbit',
-                icon: '🐰',
+                icon: '◆',
                 title: 'Rabbit Hunt',
                 description: 'See undealt cards',
                 value: 'Unlimited',
               },
               {
                 id: 'timebank',
-                icon: '⏱️',
+                icon: '◷',
                 title: 'Time Bank',
                 description: `${VIP_GOLD_LIMITS.timeBankSeconds}s free per month`,
                 value: `${VIP_GOLD_LIMITS.timeBankSeconds}s`,
               },
               {
                 id: 'throwable',
-                icon: '💣',
+                icon: '◆',
                 title: 'Throwables',
                 description: '500 free throws per month',
                 value: '500/mo',
               },
               {
                 id: 'offline',
-                icon: '🛡️',
+                icon: '◈',
                 title: 'Offline Protection',
                 description: 'Unlimited timeout protection',
                 value: 'Unlimited',
               },
               {
                 id: 'autobank',
-                icon: '⏱️',
+                icon: '◷',
                 title: 'Auto Time Bank',
                 description: 'Automatic time bank usage',
                 value: 'Free',
               },
               {
                 id: 'themes',
-                icon: '🎨',
+                icon: '◇',
                 title: 'Themes',
                 description: `${VIP_GOLD_LIMITS.themes} premium themes`,
                 value: `${VIP_GOLD_LIMITS.themes}`,
               },
               {
                 id: 'boost',
-                icon: '📊',
+                icon: '▦',
                 title: 'Leaderboard Boost',
                 description: `${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}% score boost`,
                 value: `+${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}%`,
               },
               {
                 id: 'emojis',
-                icon: '😀',
+                icon: '◆',
                 title: 'Emojis',
                 description: 'Access to all emoji packs',
                 value: 'All Packs',
@@ -428,7 +428,7 @@ export default function VIPPage() {
             style={{ background: 'rgba(255,255,255,0.08)', marginLeft: '6px' }}
             onClick={() => setShowDiamondHistory(true)}
           >
-            📜 History
+            History
           </button>
         </div>
       </section>
@@ -451,7 +451,7 @@ export default function VIPPage() {
                     <span className="purchase-desc">{pricing.description}</span>
                   </div>
                   <div className="purchase-action">
-                    <span className="purchase-cost">{pricing.cost} 💎</span>
+                    <span className="purchase-cost">{pricing.cost} </span>
                     <button
                       className="purchase-btn"
                       onClick={() => handlePurchase(feature as VIPFeature)}

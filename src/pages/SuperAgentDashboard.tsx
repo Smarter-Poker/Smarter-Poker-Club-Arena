@@ -112,7 +112,7 @@ export default function SuperAgentDashboard() {
                 reportError(err?.message || err, 'SuperAgentDashboard._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
-              console.warn('[SuperAgentDashboard] ⏱️ Realtime channel timed out');
+              console.warn('[SuperAgentDashboard] Realtime channel timed out');
             }
           });
       };

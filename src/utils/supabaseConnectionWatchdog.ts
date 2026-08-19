@@ -199,7 +199,7 @@ class SupabaseConnectionWatchdog {
                     );
                 }
                 if (status === 'TIMED_OUT') {
-                  console.warn('[Watchdog] ⏱️ Channel re-subscribe timed out');
+                  console.warn('[Watchdog] Channel re-subscribe timed out');
                 }
               });
             } catch (err: unknown) {

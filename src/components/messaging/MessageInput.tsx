@@ -153,7 +153,7 @@ export default function MessageInput({
             padding: '4px 6px',
           }}
         >
-          😀
+          ◆
         </button>
 
         {/* Text Input */}
@@ -187,7 +187,7 @@ export default function MessageInput({
               padding: '4px 6px',
             }}
           >
-            🎤
+            ◆
           </button>
         )}
 

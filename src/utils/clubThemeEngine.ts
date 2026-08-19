@@ -33,7 +33,7 @@ export const THEMES: Record<string, ClubTheme> = {
   dark: {
     id: 'dark',
     label: 'Dark Mode',
-    icon: '🌙',
+    icon: '◐',
     pageBg: '#18191A',
     cardBg: '#242526',
     cardBgHover: '#2D2E2F',
@@ -52,7 +52,7 @@ export const THEMES: Record<string, ClubTheme> = {
   midnight: {
     id: 'midnight',
     label: 'Midnight Blue',
-    icon: '🔵',
+    icon: '●',
     pageBg: '#0a1628',
     cardBg: '#111d33',
     cardBgHover: '#162847',
@@ -71,7 +71,7 @@ export const THEMES: Record<string, ClubTheme> = {
   emerald: {
     id: 'emerald',
     label: 'Emerald Casino',
-    icon: '💚',
+    icon: '◆',
     pageBg: '#0a1a14',
     cardBg: '#112a1e',
     cardBgHover: '#163a28',

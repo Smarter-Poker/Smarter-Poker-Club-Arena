@@ -175,7 +175,7 @@ export default function MessageBubble({
         <div
           className={styles.bubble}
           onContextMenu={handleLongPress}
-          onDoubleClick={() => onReact?.(message.id, message.myReaction || '👍')}
+          onDoubleClick={() => onReact?.(message.id, message.myReaction || '▲')}
         >
           {/* Image */}
           {message.imageUrl && (
@@ -197,7 +197,7 @@ export default function MessageBubble({
 
           {/* Text */}
           {message.content &&
-            (message.content.startsWith('📇 Shared contact card') ? (
+            (message.content.startsWith('Shared contact card') ? (
               <div
                 className={styles.contactCard}
                 style={{
@@ -209,10 +209,10 @@ export default function MessageBubble({
                   cursor: 'pointer',
                 }}
               >
-                <span style={{ fontSize: '1.1rem' }}>📇</span>
+                <span style={{ fontSize: '1.1rem' }}>▤</span>
                 <span style={{ fontWeight: 600, marginLeft: 6 }}>
                   {message.content
-                    .replace('📇 Shared contact card — ', '')
+                    .replace('Shared contact card — ', '')
                     .replace(/\/profile\/.*/, 'Profile Card') || 'Contact'}
                 </span>
                 <span style={{ display: 'block', fontSize: '0.75rem', opacity: 0.6, marginTop: 2 }}>
@@ -325,7 +325,7 @@ export default function MessageBubble({
               <button
                 className={styles.menuItem}
                 onClick={() => {
-                  onReact?.(message.id, message.myReaction || '👍');
+                  onReact?.(message.id, message.myReaction || '▲');
                   setShowMenu(false);
                 }}
               >
@@ -339,7 +339,7 @@ export default function MessageBubble({
               </button>
               {isCurrentUser && canEdit && (
                 <button className={styles.menuItem} onClick={handleStartEdit}>
-                  ✏️ Edit
+                  ✏ Edit
                 </button>
               )}
               {isCurrentUser && (

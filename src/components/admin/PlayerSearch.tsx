@@ -169,7 +169,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
   return (
     <div className="player-search">
       <div className="search-header">
-        <h2>🔍 Player Search</h2>
+        <h2>Player Search</h2>
       </div>
 
       {/* Search Bar */}
@@ -194,7 +194,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           />
           <button className="search-btn" onClick={handleSearch} disabled={loading}>
-            {loading ? '...' : '🔍'}
+            {loading ? '...' : '⌕'}
           </button>
         </div>
       </div>
@@ -203,17 +203,17 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
       <div className="search-results">
         {!searched ? (
           <div className="empty-state">
-            <span>👤</span>
+            <span>◉</span>
             <p>Search for players to manage</p>
           </div>
         ) : loading ? (
           <div className="empty-state">
-            <span>⏳</span>
+            <span>◷</span>
             <p>Searching...</p>
           </div>
         ) : results.length === 0 ? (
           <div className="empty-state">
-            <span>🔍</span>
+            <span>⌕</span>
             <p>No players found matching "{query}"</p>
           </div>
         ) : (
@@ -263,7 +263,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
                     onViewProfile?.(player.id);
                   }}
                 >
-                  👁️
+                  ◉
                 </button>
                 {player.status !== 'banned' && (
                   <button
@@ -273,7 +273,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
                       onBanPlayer?.(player.id);
                     }}
                   >
-                    🚫
+                    ⊘
                   </button>
                 )}
               </div>

@@ -26,10 +26,10 @@ import { reportError } from '../utils/errorReporter';
 type Severity = 'critical' | 'high' | 'medium' | 'low';
 
 const SEVERITY_MAP: Record<Severity, { bg: string; color: string; label: string }> = {
-  critical: { bg: 'rgba(228,30,63,0.15)', color: '#FA383E', label: '🔴 Critical' },
-  high: { bg: 'rgba(245,166,35,0.15)', color: '#F5A623', label: '🟠 High' },
-  medium: { bg: 'rgba(247,197,42,0.15)', color: '#F7C52A', label: '🟡 Medium' },
-  low: { bg: 'rgba(69,153,255,0.15)', color: '#4599FF', label: '🔵 Low' },
+  critical: { bg: 'rgba(228,30,63,0.15)', color: '#FA383E', label: 'Critical' },
+  high: { bg: 'rgba(245,166,35,0.15)', color: '#F5A623', label: 'High' },
+  medium: { bg: 'rgba(247,197,42,0.15)', color: '#F7C52A', label: 'Medium' },
+  low: { bg: 'rgba(69,153,255,0.15)', color: '#4599FF', label: 'Low' },
 };
 
 function SeverityBadge({ severity }: { severity: string }) {
@@ -503,7 +503,7 @@ export default function AntiCheatPage() {
             if (err) reportError(err?.message || err, 'AntiCheatPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[AntiCheatPage] ⏱️ Realtime channel timed out');
+            console.warn('[AntiCheatPage] Realtime channel timed out');
           }
         });
     };
@@ -606,7 +606,7 @@ export default function AntiCheatPage() {
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <h1 className={styles.title}>
-            🛡️ Anti-Cheat Dashboard
+            Anti-Cheat Dashboard
             {stats && stats.open_flags > 0 && (
               <span className={styles.badgeRed}>{stats.open_flags} open</span>
             )}
@@ -614,10 +614,10 @@ export default function AntiCheatPage() {
         </div>
         <div className={styles.headerActions}>
           <Link to="/" className={styles.btnGhost}>
-            🏠 Lobby
+            Lobby
           </Link>
           <Link to="/admin" className={styles.btnGhost}>
-            ⚙️ Admin
+            ⚙ Admin
           </Link>
           <button onClick={handleRefresh} className={styles.btnGhost}>
             ↻ Refresh
@@ -666,7 +666,7 @@ export default function AntiCheatPage() {
               }
             }}
           >
-            📥 Export
+            Export
           </button>
         </div>
       </header>
@@ -700,9 +700,9 @@ export default function AntiCheatPage() {
                 value={reviewStatus}
                 onChange={(e) => setReviewStatus(e.target.value)}
               >
-                <option value="reviewed">✅ Mark Reviewed</option>
-                <option value="dismissed">🗑️ Dismiss</option>
-                <option value="actioned">⚡ Actioned</option>
+                <option value="reviewed">Mark Reviewed</option>
+                <option value="dismissed">Dismiss</option>
+                <option value="actioned">Actioned</option>
               </select>
             </div>
             <div className={styles.formGroup}>
@@ -733,11 +733,11 @@ export default function AntiCheatPage() {
       {/* ── Tabs ──────────────────────────────────────── */}
       <nav className={styles.tabNav}>
         {[
-          { id: 'overview' as const, label: '🛡️ Overview' },
-          { id: 'flags' as const, label: '🚩 Flags', badge: stats?.open_flags || 0 },
-          { id: 'events' as const, label: '📊 Events' },
-          { id: 'collusion' as const, label: '🤝 Collusion' },
-          { id: 'anomalies' as const, label: '🎯 Anomalies' },
+          { id: 'overview' as const, label: 'Overview' },
+          { id: 'flags' as const, label: 'Flags', badge: stats?.open_flags || 0 },
+          { id: 'events' as const, label: 'Events' },
+          { id: 'collusion' as const, label: 'Collusion' },
+          { id: 'anomalies' as const, label: 'Anomalies' },
         ].map((t) => (
           <button
             key={t.id}
@@ -827,7 +827,7 @@ export default function AntiCheatPage() {
 
               {stats.open_flags === 0 && (
                 <div className={styles.emptyState}>
-                  <span className={styles.emptyIcon}>✅</span>
+                  <span className={styles.emptyIcon}>✓</span>
                   <span className={styles.emptyText}>No open flags — club is clean!</span>
                 </div>
               )}
@@ -856,7 +856,7 @@ export default function AntiCheatPage() {
             <PageSkeleton variant="list" />
           ) : flags.length === 0 ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>🚩</span>
+              <span className={styles.emptyIcon}>▸</span>
               <span className={styles.emptyText}>No flags match the filter "{flagFilter}"</span>
             </div>
           ) : (
@@ -927,7 +927,7 @@ export default function AntiCheatPage() {
             <PageSkeleton variant="list" />
           ) : events.length === 0 ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>📊</span>
+              <span className={styles.emptyIcon}>▦</span>
               <span className={styles.emptyText}>No anti-cheat events recorded yet</span>
             </div>
           ) : (
@@ -1010,7 +1010,7 @@ export default function AntiCheatPage() {
 
               {collusionPairs.length === 0 ? (
                 <div className={styles.emptyState}>
-                  <span className={styles.emptyIcon}>✅</span>
+                  <span className={styles.emptyIcon}>✓</span>
                   <span className={styles.emptyText}>
                     No suspicious chip-dumping patterns detected across {fmt(analyzedHands)} hands
                   </span>
@@ -1127,7 +1127,7 @@ export default function AntiCheatPage() {
 
               {anomalies.length === 0 ? (
                 <div className={styles.emptyState}>
-                  <span className={styles.emptyIcon}>🎯</span>
+                  <span className={styles.emptyIcon}>◎</span>
                   <span className={styles.emptyText}>
                     No suspicious plays detected — all hands look clean!
                   </span>

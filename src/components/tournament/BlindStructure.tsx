@@ -58,7 +58,7 @@ export function BlindStructure({
                 level.level === currentLevel ? 'current' : ''
               } ${level.level < currentLevel ? 'past' : ''} ${level.isBreak ? 'break' : ''}`}
             >
-              <span className="level">{level.isBreak ? '☕' : level.level}</span>
+              <span className="level">{level.isBreak ? '◇' : level.level}</span>
               <span className="blinds">
                 {level.isBreak
                   ? 'Break'

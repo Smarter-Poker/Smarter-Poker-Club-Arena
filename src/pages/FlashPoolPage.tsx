@@ -199,7 +199,7 @@ export default function FlashPoolPage() {
           if (err) reportError(err?.message || err, 'FlashPoolPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[FlashPoolPage] ⏱️ Realtime channel timed out');
+          console.warn('[FlashPoolPage] Realtime channel timed out');
         }
       });
 
@@ -296,7 +296,7 @@ export default function FlashPoolPage() {
               WebkitTextFillColor: 'transparent',
             }}
           >
-            ⚡ Flash Pool
+            Flash Pool
           </h1>
           <p style={{ color: '#8b8fa3', margin: '4px 0 0', fontSize: '13px' }}>
             Fast-fold poker — fold instantly, get new cards
@@ -319,15 +319,15 @@ export default function FlashPoolPage() {
         }}
       >
         <div>
-          <div style={{ fontSize: '28px', marginBottom: '4px' }}>⚡</div>
+          <div style={{ fontSize: '28px', marginBottom: '4px' }}>▲</div>
           <div style={{ fontSize: '12px', color: '#8b8fa3' }}>Fold Instantly</div>
         </div>
         <div>
-          <div style={{ fontSize: '28px', marginBottom: '4px' }}>🔄</div>
+          <div style={{ fontSize: '28px', marginBottom: '4px' }}>◆</div>
           <div style={{ fontSize: '12px', color: '#8b8fa3' }}>New Table</div>
         </div>
         <div>
-          <div style={{ fontSize: '28px', marginBottom: '4px' }}>🃏</div>
+          <div style={{ fontSize: '28px', marginBottom: '4px' }}>♠</div>
           <div style={{ fontSize: '12px', color: '#8b8fa3' }}>New Cards</div>
         </div>
       </div>
@@ -368,7 +368,7 @@ export default function FlashPoolPage() {
                 </div>
                 {userBalance !== null && (
                   <div style={{ fontSize: '11px', color: '#60a5fa', marginTop: '2px' }}>
-                    💰 Your balance: {userBalance.toLocaleString()} chips
+                    Your balance: {userBalance.toLocaleString()} chips
                   </div>
                 )}
               </div>
@@ -436,10 +436,10 @@ export default function FlashPoolPage() {
                 }}
               >
                 {joiningPool === pool.poolId
-                  ? '⏳'
+                  ? '◷'
                   : pool.status === 'closed'
-                    ? '🔒 Closed'
-                    : '⚡ Play'}
+                    ? 'Closed'
+                    : 'Play'}
               </button>
             </div>
           </div>
@@ -454,7 +454,7 @@ export default function FlashPoolPage() {
             color: '#8b8fa3',
           }}
         >
-          <div style={{ fontSize: '48px', marginBottom: '12px' }}>⚡</div>
+          <div style={{ fontSize: '48px', marginBottom: '12px' }}>▲</div>
           <p>No flash pools available yet.</p>
           <p style={{ fontSize: '13px' }}>Check back soon!</p>
         </div>

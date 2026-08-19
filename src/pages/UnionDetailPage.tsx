@@ -489,7 +489,7 @@ export default function UnionDetailPage() {
           if (err) reportError(err?.message || err, 'UnionDetailPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[UnionDetailPage] ⏱️ Realtime channel timed out');
+          console.warn('[UnionDetailPage] Realtime channel timed out');
         }
       });
 
@@ -819,7 +819,7 @@ export default function UnionDetailPage() {
               }}
             >
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                ⚡ Union Activity
+                Union Activity
               </h3>
               <div
                 style={{
@@ -890,7 +890,7 @@ export default function UnionDetailPage() {
                 <div
                   style={{ textAlign: 'center', padding: '20px 0', color: 'rgba(255,255,255,0.4)' }}
                 >
-                  <div style={{ fontSize: '1.5rem', marginBottom: '6px' }}>🎴</div>
+                  <div style={{ fontSize: '1.5rem', marginBottom: '6px' }}>◆</div>
                   <p style={{ margin: 0, fontSize: '0.75rem' }}>
                     No active tables — games will appear here when clubs start playing
                   </p>
@@ -1018,7 +1018,7 @@ export default function UnionDetailPage() {
                   color: 'rgba(255,255,255,0.4)',
                 }}
               >
-                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🏠</div>
+                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⌂</div>
                 <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>No clubs yet</p>
                 <p style={{ margin: '4px 0 0', fontSize: '0.7rem' }}>
                   Invite clubs to join your union to get started
@@ -1081,7 +1081,7 @@ export default function UnionDetailPage() {
                         {club.memberCount} {club.memberCount === 1 ? 'member' : 'members'}
                         {activeTableCount > 0 && (
                           <span style={{ color: '#6ee7b7', fontSize: '0.7rem', fontWeight: 600 }}>
-                            🟢 {activeTableCount} {activeTableCount === 1 ? 'table' : 'tables'}
+                            {activeTableCount} {activeTableCount === 1 ? 'table' : 'tables'}
                           </span>
                         )}
                       </span>
@@ -1122,7 +1122,7 @@ export default function UnionDetailPage() {
                   color: 'rgba(255,255,255,0.4)',
                 }}
               >
-                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🎰</div>
+                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>▦</div>
                 <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>No tables active</p>
                 <p style={{ margin: '4px 0 0', fontSize: '0.7rem' }}>
                   Your clubs&apos; tables will appear here when games start

@@ -265,7 +265,7 @@ export default function TournamentPage() {
             if (err) reportError(err?.message || err, 'TournamentPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[TournamentPage] ⏱️ Realtime channel timed out');
+            console.warn('[TournamentPage] Realtime channel timed out');
           }
         });
     };
@@ -649,7 +649,7 @@ export default function TournamentPage() {
           if (err) reportError(err?.message || err, 'TournamentPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[TournamentPage] ⏱️ Realtime channel timed out');
+          console.warn('[TournamentPage] Realtime channel timed out');
         }
       });
 
@@ -935,7 +935,7 @@ export default function TournamentPage() {
                   <div
                     className={`tourn-countdown ${countdownStr[tourn.id] === 'Starting...' ? 'starting' : ''}`}
                   >
-                    ⏱ {countdownStr[tourn.id]}
+                    {countdownStr[tourn.id]}
                   </div>
                 )}
                 {/* SWEEP #6: live blind level + countdown for RUNNING tournaments */}
@@ -955,7 +955,7 @@ export default function TournamentPage() {
                       border: '1px solid rgba(79,195,247,0.28)',
                     }}
                   >
-                    🃏 {levelChip[tourn.id]}
+                    {levelChip[tourn.id]}
                   </div>
                 )}
               </div>
@@ -1239,7 +1239,7 @@ export default function TournamentPage() {
                       >
                         {isProcessingRebuy
                           ? ' Processing...'
-                          : `➕ Add-On (${selectedTournament.buy_in_amount})`}
+                          : `Add-On (${selectedTournament.buy_in_amount})`}
                       </button>
                     )}
                   </>
@@ -1266,7 +1266,7 @@ export default function TournamentPage() {
               {/* Tournament Results Overlay (Initiative 13) */}
               {selectedTournament.status === 'COMPLETED' && (
                 <div className="tourn-results-overlay">
-                  <div className="results-header">🏆 Final Standings</div>
+                  <div className="results-header">Final Standings</div>
                   <div className="results-podium">
                     {(Array.isArray(selectedTournament.payout_structure)
                       ? selectedTournament.payout_structure
@@ -1284,7 +1284,7 @@ export default function TournamentPage() {
                       .map((p: any, i: number) => (
                         <div key={i} className={`podium-place podium-${i + 1}`}>
                           <div className="podium-icon">
-                            {i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}
+                            {i === 0 ? '★' : i === 1 ? '☆' : '✧'}
                           </div>
                           <div className="podium-payout">
                             {Math.trunc(

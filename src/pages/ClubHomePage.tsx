@@ -393,7 +393,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
         } else if (status === 'TIMED_OUT') {
-          console.warn('[ClubHomePage] ⏱️ Tables RT channel timed out');
+          console.warn('[ClubHomePage] Tables RT channel timed out');
         }
       });
     };
@@ -832,7 +832,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         if (prev && prev.level > 0 && levelInfo.level > prev.level) {
           // Level went up — celebrate!
           toast.success(
-            `🎉 Level Up! Your club reached Lv.${levelInfo.level} — ${levelInfo.tierLabel}!`
+            `Level Up! Your club reached Lv.${levelInfo.level} — ${levelInfo.tierLabel}!`
           );
           haptic.success();
         }

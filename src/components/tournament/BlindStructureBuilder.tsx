@@ -50,10 +50,10 @@ const BREAK_LEVEL: BlindLevel = {
 };
 
 const PRESET_LABELS: Record<StructurePreset, string> = {
-  turbo: '⚡ Turbo',
-  regular: '⏱ Standard',
-  deepStack: '🏔 Deep Stack',
-  custom: '✏️ Custom',
+  turbo: 'Turbo',
+  regular: 'Standard',
+  deepStack: 'Deep Stack',
+  custom: '✏ Custom',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -291,7 +291,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                 {level.isBreak ? (
                   <>
                     <td colSpan={4} className="bsb-break-label">
-                      ☕ BREAK
+                      BREAK
                     </td>
                     <td className="bsb-col-duration">
                       <input
@@ -382,7 +382,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                           onClick={() => insertBreak(index)}
                           title="Insert break after"
                         >
-                          ☕
+                          ◇
                         </button>
                         <button
                           className="bsb-btn-remove"

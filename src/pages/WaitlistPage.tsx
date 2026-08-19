@@ -70,7 +70,7 @@ export default function WaitlistPage() {
             if (err) reportError(err?.message || err, 'WaitlistPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[WaitlistPage] ⏱️ Realtime channel timed out');
+            console.warn('[WaitlistPage] Realtime channel timed out');
           }
         });
 

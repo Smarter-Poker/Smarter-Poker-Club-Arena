@@ -890,7 +890,7 @@ export const SeatSlot = memo(
         {/* Bounty Badge */}
         {bountyValue != null && bountyValue > 0 && (
           <div className="seat__bounty">
-            <span className="seat__bounty-target">🎯</span>
+            <span className="seat__bounty-target">◎</span>
             <span className="seat__bounty-val">
               {(Math.trunc(bountyValue * 100) / 100).toLocaleString('en-US', {
                 minimumFractionDigits: 2,

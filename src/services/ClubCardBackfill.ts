@@ -121,7 +121,7 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
       masterBus.emit('CLUB_UPDATED', { clubId: club.id, action: 'card_backfill' });
 
       console.log(
-        `[ClubCardBackfill] ✅ Baked card saved for "${club.name}" (${ext}) → ${publicUrl}`
+        `[ClubCardBackfill] Baked card saved for "${club.name}" (${ext}) → ${publicUrl}`
       );
     } catch (err) {
       reportError(err, 'ClubCardBackfill.Error_processing_clubname');

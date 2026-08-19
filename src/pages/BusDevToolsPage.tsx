@@ -205,7 +205,7 @@ export default function BusDevToolsPage() {
     <div className="bus-devtools">
       <header className="bdt-header">
         <div className="bdt-title-row">
-          <h1>🚌 MasterBus DevTools</h1>
+          <h1>MasterBus DevTools</h1>
           <div className="bdt-status-pills">
             <span className={`bdt-pill ${diagnostics?.initialized ? 'green' : 'red'}`}>
               {diagnostics?.initialized ? '● ONLINE' : '● OFFLINE'}
@@ -221,32 +221,32 @@ export default function BusDevToolsPage() {
       {/* ═══ TOP ROW: Stats Cards ═══ */}
       <div className="bdt-stats-grid">
         <div className="bdt-stat-card">
-          <span className="bdt-stat-icon">📡</span>
+          <span className="bdt-stat-icon">◉</span>
           <div className="bdt-stat-value">{diagnostics?.channels.length || 0}</div>
           <div className="bdt-stat-label">Active Channels</div>
         </div>
         <div className="bdt-stat-card">
-          <span className="bdt-stat-icon">🔔</span>
+          <span className="bdt-stat-icon">◉</span>
           <div className="bdt-stat-value">{subscriberEntries.reduce((s, [, v]) => s + v, 0)}</div>
           <div className="bdt-stat-label">Event Subscribers</div>
         </div>
         <div className="bdt-stat-card">
-          <span className="bdt-stat-icon">⏱</span>
+          <span className="bdt-stat-icon">◷</span>
           <div className="bdt-stat-value">{diagnostics?.pendingTimers || 0}</div>
           <div className="bdt-stat-label">Pending Debounce</div>
         </div>
         <div className="bdt-stat-card">
-          <span className="bdt-stat-icon">📦</span>
+          <span className="bdt-stat-icon">▣</span>
           <div className="bdt-stat-value">{offlineCount}</div>
           <div className="bdt-stat-label">Offline Queue</div>
         </div>
         <div className="bdt-stat-card">
-          <span className="bdt-stat-icon">📝</span>
+          <span className="bdt-stat-icon">▤</span>
           <div className="bdt-stat-value">{loggerBatchSize}</div>
           <div className="bdt-stat-label">Logger Batch</div>
         </div>
         <div className="bdt-stat-card">
-          <span className="bdt-stat-icon">🔧</span>
+          <span className="bdt-stat-icon">◇</span>
           <div className="bdt-stat-value">{diagnostics?.channelFactories || 0}</div>
           <div className="bdt-stat-label">Recovery Factories</div>
         </div>
@@ -257,7 +257,7 @@ export default function BusDevToolsPage() {
         {/* LEFT: Event Log */}
         <div className="bdt-panel bdt-event-log">
           <div className="bdt-panel-header">
-            <h2>📋 Live Event Log</h2>
+            <h2>Live Event Log</h2>
             <div className="bdt-log-controls">
               <select
                 value={filter}
@@ -275,7 +275,7 @@ export default function BusDevToolsPage() {
                 className={`bdt-btn ${isPaused ? 'bdt-btn-green' : 'bdt-btn-yellow'}`}
                 onClick={() => setIsPaused(!isPaused)}
               >
-                {isPaused ? '▶ Resume' : '⏸ Pause'}
+                {isPaused ? '▶ Resume' : 'Pause'}
               </button>
               <button className="bdt-btn bdt-btn-red" onClick={handleClearLog}>
                 ✕ Clear
@@ -306,7 +306,7 @@ export default function BusDevToolsPage() {
         <div className="bdt-right-col">
           {/* Channel Registry */}
           <div className="bdt-panel bdt-channels">
-            <h2>📡 Channel Registry</h2>
+            <h2>Channel Registry</h2>
             <div className="bdt-channel-list">
               {diagnostics?.channels.length === 0 ? (
                 <div className="bdt-empty">No channels registered</div>
@@ -332,7 +332,7 @@ export default function BusDevToolsPage() {
 
           {/* Subscriber Bar Chart */}
           <div className="bdt-panel bdt-subscribers">
-            <h2>🔔 Subscribers per Event</h2>
+            <h2>Subscribers per Event</h2>
             <div className="bdt-sub-chart">
               {subscriberEntries.length === 0 ? (
                 <div className="bdt-empty">No subscribers</div>
@@ -355,7 +355,7 @@ export default function BusDevToolsPage() {
 
           {/* Test Emitter */}
           <div className="bdt-panel bdt-test">
-            <h2>🧪 Test Event Emitter</h2>
+            <h2>Test Event Emitter</h2>
             <div className="bdt-test-grid">
               {TEST_EVENTS.map((te) => (
                 <button

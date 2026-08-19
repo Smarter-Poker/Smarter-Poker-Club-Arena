@@ -16,11 +16,11 @@ interface NotificationSettingsPanelProps {
 }
 
 const CATEGORIES = [
-  { key: 'messages', label: 'Messages', icon: '✉️', desc: 'DMs and group chats' },
-  { key: 'games', label: 'Games', icon: '🎰', desc: 'Table invites, waitlist, hands' },
-  { key: 'social', label: 'Social', icon: '👥', desc: 'Friend requests, club invites' },
-  { key: 'achievements', label: 'Achievements', icon: '🏆', desc: 'Badges, streaks, diamonds' },
-  { key: 'system', label: 'System', icon: '⚙️', desc: 'Updates, maintenance, security' },
+  { key: 'messages', label: 'Messages', icon: '✉', desc: 'DMs and group chats' },
+  { key: 'games', label: 'Games', icon: '▦', desc: 'Table invites, waitlist, hands' },
+  { key: 'social', label: 'Social', icon: '◉', desc: 'Friend requests, club invites' },
+  { key: 'achievements', label: 'Achievements', icon: '★', desc: 'Badges, streaks, diamonds' },
+  { key: 'system', label: 'System', icon: '⚙', desc: 'Updates, maintenance, security' },
 ];
 
 export default function NotificationSettingsPanel({ onClose }: NotificationSettingsPanelProps) {
@@ -38,7 +38,7 @@ export default function NotificationSettingsPanel({ onClose }: NotificationSetti
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
-          <h3>🔔 Notification Settings</h3>
+          <h3>Notification Settings</h3>
           <button className={styles.closeBtn} onClick={onClose}>
             ×
           </button>
@@ -47,7 +47,7 @@ export default function NotificationSettingsPanel({ onClose }: NotificationSetti
         {/* DND Status */}
         {dndActive && (
           <div className={styles.dndBanner}>
-            🌙 Do Not Disturb — {dndRemaining}m remaining
+            Do Not Disturb — {dndRemaining}m remaining
             <button
               onClick={() => {
                 notificationService.clearDnd();

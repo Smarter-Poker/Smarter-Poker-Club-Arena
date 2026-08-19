@@ -114,7 +114,7 @@ export const PayoutStructureEditor: React.FC<PayoutStructureEditorProps> = ({
         {payouts.map((p, i) => (
           <div key={p.place} className="pe-row">
             <div className="pe-place">
-              {p.place <= 3 ? ['🥇', '🥈', '🥉'][p.place - 1] : `${p.place}th`}
+              {p.place <= 3 ? ['★', '☆', '✧'][p.place - 1] : `${p.place}th`}
             </div>
             <div className="pe-bar-wrapper">
               <div className="pe-bar" style={{ width: `${(p.percentage / maxPercent) * 100}%` }} />
@@ -148,7 +148,7 @@ export const PayoutStructureEditor: React.FC<PayoutStructureEditorProps> = ({
             + Add Place
           </button>
           <span className={`pe-total ${isValid ? 'pe-valid' : 'pe-invalid'}`}>
-            Total: {totalPercent.toFixed(1)}%{!isValid && ' ⚠️'}
+            Total: {totalPercent.toFixed(1)}%{!isValid && ' ⚠'}
           </span>
         </div>
       )}

@@ -63,7 +63,7 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
           if (err) reportError(err?.message || err, 'OnlinePlayersList._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[OnlinePlayersList] ⏱️ Realtime channel timed out');
+          console.warn('[OnlinePlayersList] Realtime channel timed out');
         }
       });
 

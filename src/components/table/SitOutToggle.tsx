@@ -24,7 +24,7 @@ export function SitOutToggle({
   return (
     <div className={`sit-out-toggle ${isSittingOut ? 'sitting-out' : ''}`}>
       <button onClick={() => onToggle(!isSittingOut)}>
-        <span className="icon">{isSittingOut ? '🪑' : ''}</span>
+        <span className="icon">{isSittingOut ? '◆' : ''}</span>
         <span className="label">{isSittingOut ? "I'm Back" : 'Sit Out'}</span>
       </button>
 

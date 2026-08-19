@@ -52,7 +52,7 @@ export function TimeBankDisplay({
         <span className="time-bank__seconds">{remainingSeconds}s</span>
         {!isVIP && remainingSeconds < 10 && onBuyMore && (
           <button className="time-bank__buy" onClick={onBuyMore}>
-            +Extension ({FEATURE_PRICING.time_bank_seconds.cost}💎)
+            +Extension ({FEATURE_PRICING.time_bank_seconds.cost})
           </button>
         )}
       </div>

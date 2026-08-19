@@ -55,7 +55,7 @@ export function QuickActionBar({
           className={`quick-action sitout ${isSittingOut ? 'active' : ''}`}
           onClick={onSitOut}
         >
-          {isSittingOut ? '🪑 Sit In' : '🚶 Sit Out'}
+          {isSittingOut ? 'Sit In' : 'Sit Out'}
         </button>
       )}
 

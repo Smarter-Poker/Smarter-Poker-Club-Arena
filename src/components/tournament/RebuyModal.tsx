@@ -64,7 +64,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
     <div className="rebuy-modal-overlay" onClick={onClose}>
       <div className="rebuy-modal" onClick={(e) => e.stopPropagation()}>
         <div className="rm-header">
-          <h3 className="rm-title">♻️ Rebuy Available</h3>
+          <h3 className="rm-title">♻ Rebuy Available</h3>
           <button className="rm-close" onClick={onClose}>
             ✕
           </button>
@@ -106,7 +106,7 @@ export const RebuyModal: React.FC<RebuyModalProps> = ({
             </div>
           </div>
 
-          {error && <div className="rm-error">⚠️ {error}</div>}
+          {error && <div className="rm-error">⚠ {error}</div>}
         </div>
 
         <div className="rm-footer">

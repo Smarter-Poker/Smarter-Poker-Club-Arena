@@ -252,7 +252,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
     return (
       <div className="transaction-history">
         <div className="tx-error-state">
-          <span className="tx-error-icon">⚠️</span>
+          <span className="tx-error-icon">⚠</span>
           <p>Failed to load transactions</p>
           <button className="tx-retry-btn" onClick={loadTransactions}>
             ↻ Retry

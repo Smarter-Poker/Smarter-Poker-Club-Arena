@@ -533,7 +533,7 @@ export default function PlayerSessionsPage() {
             if (err) reportError(err?.message || err, 'PlayerSessionsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[PlayerSessionsPage] ⏱️ Realtime channel timed out');
+            console.warn('[PlayerSessionsPage] Realtime channel timed out');
           }
         });
     };
@@ -680,10 +680,10 @@ export default function PlayerSessionsPage() {
     offline: '#6B7280',
   };
   const statusEmoji: Record<string, string> = {
-    online: '🟢',
-    idle: '🟡',
-    away: '🔵',
-    offline: '⚫',
+    online: '●',
+    idle: '●',
+    away: '●',
+    offline: '●',
   };
 
   return (
@@ -701,7 +701,7 @@ export default function PlayerSessionsPage() {
               style={{ maxWidth: '420px', margin: '60px auto' }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="admin-card-title">🎁 Send Welcome-Back Chips</h3>
+              <h3 className="admin-card-title">Send Welcome-Back Chips</h3>
               <p className="admin-text-secondary" style={{ marginBottom: '12px', lineHeight: 1.5 }}>
                 Send promo chips to{' '}
                 <strong style={{ color: 'var(--text-primary)' }}>{wbTarget.name}</strong> to
@@ -727,7 +727,7 @@ export default function PlayerSessionsPage() {
                   className="admin-btn admin-btn-success"
                   disabled={processing}
                 >
-                  {processing ? 'Sending...' : '🎁 Send Chips'}
+                  {processing ? 'Sending...' : 'Send Chips'}
                 </button>
               </div>
             </div>
@@ -743,7 +743,7 @@ export default function PlayerSessionsPage() {
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="admin-card-title">
-                📝 Note: {noteTarget.displayName || noteTarget.userId?.substring(0, 8)}
+                Note: {noteTarget.displayName || noteTarget.userId?.substring(0, 8)}
               </h3>
               <div style={{ marginBottom: '12px' }}>
                 <label className="admin-label">Player Type</label>
@@ -810,7 +810,7 @@ export default function PlayerSessionsPage() {
                   disabled={savingNote}
                   onClick={saveNote}
                 >
-                  {savingNote ? 'Saving...' : '💾 Save Note'}
+                  {savingNote ? 'Saving...' : 'Save Note'}
                 </button>
               </div>
             </div>
@@ -820,7 +820,7 @@ export default function PlayerSessionsPage() {
         {/* Header */}
         <div className="admin-page-header">
           <div className="admin-page-title">
-            👥 Players
+            Players
             {summary && (
               <span
                 style={{
@@ -836,7 +836,7 @@ export default function PlayerSessionsPage() {
           </div>
           <div className="admin-header-actions">
             <button onClick={() => navigate('/')} className="admin-btn admin-btn-ghost">
-              🏠 Lobby
+              Lobby
             </button>
             <button onClick={() => loadSessions(clubId)} className="admin-btn admin-btn-ghost">
               ↻ Refresh
@@ -949,10 +949,10 @@ export default function PlayerSessionsPage() {
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
                 <option value="all">All Status</option>
-                <option value="online">🟢 Online</option>
-                <option value="idle">🟡 Idle</option>
-                <option value="away">🔵 Away</option>
-                <option value="offline">⚫ Offline</option>
+                <option value="online">Online</option>
+                <option value="idle">Idle</option>
+                <option value="away">Away</option>
+                <option value="offline">Offline</option>
               </select>
               <select
                 className="admin-input"
@@ -1006,7 +1006,7 @@ export default function PlayerSessionsPage() {
             {/* Member Cards */}
             {filtered.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">👥</span>
+                <span className="admin-empty-icon">◉</span>
                 <span>
                   {searchQuery || statusFilter !== 'all'
                     ? 'No players match your filters'
@@ -1088,8 +1088,8 @@ export default function PlayerSessionsPage() {
                         color: 'var(--text-secondary)',
                       }}
                     >
-                      <span>💰 {fmtChips(p.chipBalance)}</span>
-                      <span>⏱ {timeAgo(p.lastActive)}</span>
+                      <span> {fmtChips(p.chipBalance)}</span>
+                      <span> {timeAgo(p.lastActive)}</span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1109,7 +1109,7 @@ export default function PlayerSessionsPage() {
                         }}
                         title={notes[p.userId] ? 'Edit note' : 'Add note'}
                       >
-                        {notes[p.userId] ? '📝' : '✏️'}
+                        {notes[p.userId] ? '▤' : '✏'}
                       </button>
                     </div>
                   </div>
@@ -1141,7 +1141,7 @@ export default function PlayerSessionsPage() {
             <h3 className="admin-section-title">Player Sessions</h3>
             {sessions.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">📊</span>
+                <span className="admin-empty-icon">▦</span>
                 <span>No session data available</span>
               </div>
             ) : (
@@ -1204,7 +1204,7 @@ export default function PlayerSessionsPage() {
           <div className="admin-tab-content">
             {!retentionLoaded ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">⏳</span>
+                <span className="admin-empty-icon">◷</span>
                 <span>Scanning player activity...</span>
               </div>
             ) : (
@@ -1238,7 +1238,7 @@ export default function PlayerSessionsPage() {
 
                 {atRisk.length > 0 && (
                   <div style={{ marginBottom: '24px' }}>
-                    <h3 className="admin-section-title">⚠️ At-Risk Players ({atRisk.length})</h3>
+                    <h3 className="admin-section-title">⚠ At-Risk Players ({atRisk.length})</h3>
                     <div
                       className="admin-text-secondary"
                       style={{ marginBottom: '8px', fontSize: '12px' }}
@@ -1272,7 +1272,7 @@ export default function PlayerSessionsPage() {
                                   className="admin-btn admin-btn-ghost admin-btn-sm"
                                   style={{ borderColor: '#F7C52A', color: '#F7C52A' }}
                                 >
-                                  🎁 Welcome Back
+                                  Welcome Back
                                 </button>
                               </td>
                             </tr>
@@ -1285,7 +1285,7 @@ export default function PlayerSessionsPage() {
 
                 {churned.length > 0 && (
                   <div style={{ marginBottom: '24px' }}>
-                    <h3 className="admin-section-title">🔴 Churned Players ({churned.length})</h3>
+                    <h3 className="admin-section-title"> Churned Players ({churned.length})</h3>
                     <div
                       className="admin-text-secondary"
                       style={{ marginBottom: '8px', fontSize: '12px' }}
@@ -1319,7 +1319,7 @@ export default function PlayerSessionsPage() {
                                   className="admin-btn admin-btn-ghost admin-btn-sm"
                                   style={{ borderColor: '#F7C52A', color: '#F7C52A' }}
                                 >
-                                  🎁 Re-engage
+                                  Re-engage
                                 </button>
                               </td>
                             </tr>
@@ -1332,7 +1332,7 @@ export default function PlayerSessionsPage() {
 
                 {atRisk.length === 0 && churned.length === 0 && (
                   <div className="admin-empty-state">
-                    <span className="admin-empty-icon">✅</span>
+                    <span className="admin-empty-icon">✓</span>
                     <span>All players are actively engaged!</span>
                   </div>
                 )}
@@ -1352,7 +1352,7 @@ export default function PlayerSessionsPage() {
               </div>
             ) : chipFlowEntries.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">💸</span>
+                <span className="admin-empty-icon">→</span>
                 <span>No chip flow data for the last 7 days</span>
               </div>
             ) : (

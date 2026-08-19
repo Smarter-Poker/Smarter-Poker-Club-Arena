@@ -78,7 +78,7 @@ export default function MessageSearchBar({
   return (
     <div className={styles.container}>
       <div className={styles.searchWrapper}>
-        <span className={styles.icon}>🔍</span>
+        <span className={styles.icon}>⌕</span>
         <input
           type="text"
           className={styles.input}

@@ -150,7 +150,7 @@ export function NotificationBadge({ count }: { count: number }) {
 export function NotificationBell({ count, onClick }: { count: number; onClick?: () => void }) {
   return (
     <button className="notification-bell" onClick={onClick}>
-      <span className="notification-bell-icon">🔔</span>
+      <span className="notification-bell-icon">◉</span>
       <AnimatePresence>{count > 0 && <NotificationBadge count={count} />}</AnimatePresence>
     </button>
   );

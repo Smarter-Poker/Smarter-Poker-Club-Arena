@@ -41,19 +41,19 @@ interface ArenaLedgerProps {
 
 // Map actions to visual branding
 const ACTION_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
-  chip_mint: { icon: '🪙', color: '#22C55E', label: 'Chip Mint' },
-  chip_transfer: { icon: '💸', color: '#3B82F6', label: 'Chip Transfer' },
-  chip_distribute: { icon: '🎁', color: '#8B5CF6', label: 'Distribution' },
-  buyin: { icon: '🎰', color: '#F59E0B', label: 'Buy-in' },
-  cashout: { icon: '💰', color: '#10B981', label: 'Cash-out' },
-  settlement: { icon: '📊', color: '#6366F1', label: 'Settlement' },
-  rake: { icon: '🏦', color: '#EC4899', label: 'Rake Collected' },
-  promo: { icon: '🎉', color: '#A855F7', label: 'Promo' },
-  commission: { icon: '📈', color: '#14B8A6', label: 'Commission' },
-  member_join: { icon: '👤', color: '#06B6D4', label: 'Member Joined' },
-  member_leave: { icon: '👋', color: '#EF4444', label: 'Member Left' },
-  role_change: { icon: '🔐', color: '#F97316', label: 'Role Change' },
-  message: { icon: '💬', color: '#64748B', label: 'Message' },
+  chip_mint: { icon: '◉', color: '#22C55E', label: 'Chip Mint' },
+  chip_transfer: { icon: '→', color: '#3B82F6', label: 'Chip Transfer' },
+  chip_distribute: { icon: '◈', color: '#8B5CF6', label: 'Distribution' },
+  buyin: { icon: '▦', color: '#F59E0B', label: 'Buy-in' },
+  cashout: { icon: '◆', color: '#10B981', label: 'Cash-out' },
+  settlement: { icon: '▦', color: '#6366F1', label: 'Settlement' },
+  rake: { icon: '▦', color: '#EC4899', label: 'Rake Collected' },
+  promo: { icon: '★', color: '#A855F7', label: 'Promo' },
+  commission: { icon: '▲', color: '#14B8A6', label: 'Commission' },
+  member_join: { icon: '◉', color: '#06B6D4', label: 'Member Joined' },
+  member_leave: { icon: '◆', color: '#EF4444', label: 'Member Left' },
+  role_change: { icon: '◈', color: '#F97316', label: 'Role Change' },
+  message: { icon: '◉', color: '#64748B', label: 'Message' },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -181,7 +181,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
           if (err) reportError(err?.message || err, 'ArenaLedger._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[ArenaLedger] ⏱️ Realtime channel timed out');
+          console.warn('[ArenaLedger] Realtime channel timed out');
         }
       });
 
@@ -213,7 +213,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
       {/* Header */}
       <div className="arena-ledger__header">
         <div className="arena-ledger__title">
-          <span className="arena-ledger__title-icon">📋</span>
+          <span className="arena-ledger__title-icon">▤</span>
           <span>Arena Ledger</span>
           {isLive && <span className="arena-ledger__live-dot" />}
         </div>
@@ -222,7 +222,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
             className={`arena-ledger__toggle ${isLive ? 'arena-ledger__toggle--active' : ''}`}
             onClick={() => setIsLive(!isLive)}
           >
-            {isLive ? '⏸ Pause' : '▶ Live'}
+            {isLive ? 'Pause' : '▶ Live'}
           </button>
           <button className="arena-ledger__refresh" onClick={fetchEntries}>
             ↻
@@ -268,7 +268,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
               entry.type === 'message'
                 ? ACTION_CONFIG.message
                 : ACTION_CONFIG[entry.action || ''] || {
-                    icon: '📝',
+                    icon: '▤',
                     color: '#64748B',
                     label: entry.action || 'Event',
                   };

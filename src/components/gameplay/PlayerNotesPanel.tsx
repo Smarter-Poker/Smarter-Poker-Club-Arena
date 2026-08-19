@@ -267,7 +267,7 @@ export default function PlayerNotesPanel({
           onClick={saveNote}
           disabled={saving || !currentNote.trim()}
         >
-          {saving ? 'Saving...' : '💾 Save Note'}
+          {saving ? 'Saving...' : 'Save Note'}
         </button>
       </div>
     );

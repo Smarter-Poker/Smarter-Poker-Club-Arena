@@ -110,7 +110,7 @@ export const BlindTimer: React.FC<BlindTimerProps> = ({
       <div className="timer-header">
         {isBreak ? (
           <>
-            <span className="level-label break-label">☕ BREAK</span>
+            <span className="level-label break-label">BREAK</span>
             {isPaused && <span className="paused-badge">PAUSED</span>}
           </>
         ) : (

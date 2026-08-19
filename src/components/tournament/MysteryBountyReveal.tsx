@@ -259,7 +259,7 @@ export default function MysteryBountyReveal({
                 animation: 'mystEnvelopeFlip 1.2s ease-in-out forwards',
               }}
             >
-              <span style={{ fontSize: 48 }}>✉️</span>
+              <span style={{ fontSize: 48 }}>✉</span>
               <div
                 style={{
                   position: 'absolute',
@@ -321,7 +321,7 @@ export default function MysteryBountyReveal({
                   letterSpacing: 1,
                 }}
               >
-                🎭 {tier.label}
+                {tier.label}
               </div>
               <div style={{ color: FB.text, fontSize: 14, marginBottom: 12 }}>
                 <strong>{reveal.playerName}</strong> reveals...

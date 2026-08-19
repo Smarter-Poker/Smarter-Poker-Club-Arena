@@ -156,7 +156,7 @@ export default function SharedHandReplayPage() {
             <span style={{ flex: 1 }}>
               {p.name}
               {p.isHero ? ' (hero)' : ''}
-              {p.isWinner ? ' 🏆' : ''}
+              {p.isWinner ? ' ★' : ''}
             </span>
             {!!p.cards?.length && (
               <span>

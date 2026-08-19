@@ -206,7 +206,7 @@ export default function BadBeatJackpotPage() {
                 reportError(err?.message || err, 'BadBeatJackpotPage._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
-              console.warn('[BadBeatJackpotPage] ⏱️ Realtime channel timed out');
+              console.warn('[BadBeatJackpotPage] Realtime channel timed out');
             }
           });
       };
@@ -402,7 +402,7 @@ export default function BadBeatJackpotPage() {
                 letterSpacing: '0.5px',
               }}
             >
-              🎯 100K Pivot Alert
+              100K Pivot Alert
             </span>
             <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
               Pool at {(((jackpot?.main_balance || 0) / 100000) * 100).toFixed(1)}% of pivot
@@ -440,7 +440,7 @@ export default function BadBeatJackpotPage() {
             background: 'rgba(0, 122, 255, 0.08)',
           }}
         >
-          <span className="info-label">🏦 Backup Pool</span>
+          <span className="info-label">Backup Pool</span>
           <span className="info-value" style={{ color: '#007aff' }}>
             {(jackpot?.backup_balance || 0).toLocaleString()} chips
           </span>
@@ -452,7 +452,7 @@ export default function BadBeatJackpotPage() {
             background: 'rgba(175, 82, 222, 0.08)',
           }}
         >
-          <span className="info-label">🎁 Promo Pool</span>
+          <span className="info-label">Promo Pool</span>
           <span className="info-value" style={{ color: '#af52de' }}>
             {(jackpot?.promo_balance || 0).toLocaleString()} chips
           </span>
@@ -538,7 +538,7 @@ export default function BadBeatJackpotPage() {
                 opacity: distributingPromo ? 0.6 : 1,
               }}
             >
-              {distributingPromo ? 'Raining…' : '🎁 Rain to Active Players'}
+              {distributingPromo ? 'Raining…' : 'Rain to Active Players'}
             </button>
           </div>
         </div>

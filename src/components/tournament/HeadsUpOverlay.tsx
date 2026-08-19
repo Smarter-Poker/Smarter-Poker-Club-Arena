@@ -64,7 +64,7 @@ export const HeadsUpOverlay: React.FC<HeadsUpOverlayProps> = ({
 
       <div className="hu-overlay__content">
         <div className="hu-overlay__title-wrap">
-          <div className="hu-overlay__swords">⚔️</div>
+          <div className="hu-overlay__swords">⚔</div>
           <h1 className="hu-overlay__title">HEADS UP</h1>
           <div className="hu-overlay__subtitle">{tournamentName}</div>
         </div>

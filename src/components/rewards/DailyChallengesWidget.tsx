@@ -79,7 +79,7 @@ export const DailyChallengesWidget: React.FC = () => {
               reportError(err?.message || err, 'DailyChallengesWidget._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[DailyChallengesWidget] ⏱️ Realtime channel timed out');
+            console.warn('[DailyChallengesWidget] Realtime channel timed out');
           }
         });
     }
@@ -139,7 +139,7 @@ export const DailyChallengesWidget: React.FC = () => {
 
       const mappedWeekly: Challenge[] = weeklyData.map((c: any) => ({
         id: c.id,
-        title: `📆 ${c.challenge.name}`,
+        title: `${c.challenge.name}`,
         description: c.challenge.description,
         progress: c.progress,
         target: c.challenge.requirement,
@@ -153,7 +153,7 @@ export const DailyChallengesWidget: React.FC = () => {
 
       const mappedMonthly: Challenge[] = monthlyData.map((c: any) => ({
         id: c.id,
-        title: `📅 ${c.challenge.name}`,
+        title: `${c.challenge.name}`,
         description: c.challenge.description,
         progress: c.progress,
         target: c.challenge.requirement,
@@ -174,7 +174,7 @@ export const DailyChallengesWidget: React.FC = () => {
             const prev = previousChallengesRef.current.find((p) => p.id === nc.id);
             if (prev && !prev.completed) {
               toast.success(
-                `🎉 Challenge complete: ${nc.title}! Claim your +${nc.reward.amount} Chips`
+                `Challenge complete: ${nc.title}! Claim your +${nc.reward.amount} Chips`
               );
             }
           }
@@ -239,7 +239,7 @@ export const DailyChallengesWidget: React.FC = () => {
   if (challenges.length === 0) {
     return (
       <div className="daily-challenges-widget empty">
-        <span className="empty-icon">{loadErrorRef.current ? '⚠️' : '★'}</span>
+        <span className="empty-icon">{loadErrorRef.current ? '⚠' : '★'}</span>
         <p>
           {loadErrorRef.current
             ? 'Could not load challenges. Pull to refresh.'

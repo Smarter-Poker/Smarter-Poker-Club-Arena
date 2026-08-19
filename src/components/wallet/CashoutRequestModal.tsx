@@ -104,7 +104,7 @@ function CashoutStepTracker({ status, createdAt }: { status: string; createdAt?:
             letterSpacing: '0.3px',
           }}
         >
-          ⏱ Cancel window: {Math.floor(remainingMs / 60000)}m{' '}
+          Cancel window: {Math.floor(remainingMs / 60000)}m{' '}
           {Math.floor((remainingMs % 60000) / 1000)}s remaining
         </div>
       )}

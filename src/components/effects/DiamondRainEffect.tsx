@@ -87,7 +87,7 @@ export default function DiamondRainEffect({
             } as React.CSSProperties
           }
         >
-          💎
+          ◆
         </div>
       ))}
     </div>

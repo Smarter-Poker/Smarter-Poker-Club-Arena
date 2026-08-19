@@ -112,9 +112,9 @@ class PresenceServiceClass {
           reportError(e, 'PresenceService.track');
         }
       } else if (status === 'CHANNEL_ERROR') {
-        console.debug(`[PresenceService] ❌ Channel error on ${channelName}:`, err?.message || err);
+        console.debug(`[PresenceService] Channel error on ${channelName}:`, err?.message || err);
       } else if (status === 'TIMED_OUT') {
-        console.debug(`[PresenceService] ⏱️ Channel ${channelName} timed out`);
+        console.debug(`[PresenceService] Channel ${channelName} timed out`);
       }
     });
 

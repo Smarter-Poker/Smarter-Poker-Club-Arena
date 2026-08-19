@@ -522,7 +522,7 @@ export default function TableConfigPage() {
             if (err) reportError(err?.message || err, 'TableConfigPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[TableConfigPage] ⏱️ Realtime channel timed out');
+            console.warn('[TableConfigPage] Realtime channel timed out');
           }
         });
     };

@@ -86,7 +86,7 @@ export default function BonusPage() {
             if (err) reportError(err?.message || err, 'BonusPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[BonusPage] ⏱️ Realtime channel timed out');
+            console.warn('[BonusPage] Realtime channel timed out');
           }
         });
 

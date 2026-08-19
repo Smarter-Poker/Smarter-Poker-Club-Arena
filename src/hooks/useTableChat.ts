@@ -209,10 +209,10 @@ export function useTableChat(
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.debug('[useTableChat] ❌ Realtime channel error:', err?.message || err);
+          console.debug('[useTableChat] Realtime channel error:', err?.message || err);
         }
         if (status === 'TIMED_OUT') {
-          console.debug('[useTableChat] ⏱️ Realtime channel timed out');
+          console.debug('[useTableChat] Realtime channel timed out');
         }
       });
 

@@ -633,7 +633,7 @@ export default function UnionDashboardPage() {
           if (err) reportError(err?.message || err, 'UnionDashboardPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[UnionDashboardPage] ⏱️ Realtime channel timed out');
+          console.warn('[UnionDashboardPage] Realtime channel timed out');
         }
       });
     return () => {
@@ -802,7 +802,7 @@ export default function UnionDashboardPage() {
         {/* Header */}
         <div className="admin-page-header">
           <div className="admin-page-title">
-            🏛️ {union?.name || 'Union Dashboard'}
+            {union?.name || 'Union Dashboard'}
             {union?.code && (
               <span className="admin-badge" style={{ marginLeft: '12px' }}>
                 {union.code}
@@ -845,10 +845,10 @@ export default function UnionDashboardPage() {
               onClick={() => navigate('/union-games')}
               className="admin-btn admin-btn-primary"
             >
-              🎮 Games
+              Games
             </button>
             <button onClick={() => navigate('/')} className="admin-btn admin-btn-ghost">
-              🏠 Lobby
+              Lobby
             </button>
             <button
               onClick={() => loadDashboard(unionId)}
@@ -868,8 +868,8 @@ export default function UnionDashboardPage() {
               { id: 'clubs' as UnionTab, label: `Clubs (${clubs.length})` },
               { id: 'agents' as UnionTab, label: `Agents (${agents.length})` },
               { id: 'wallet' as UnionTab, label: 'Wallet' },
-              { id: 'treasury' as UnionTab, label: '🏦 Treasury' },
-              { id: 'analytics' as UnionTab, label: '📊 Analytics' },
+              { id: 'treasury' as UnionTab, label: 'Treasury' },
+              { id: 'analytics' as UnionTab, label: 'Analytics' },
               {
                 id: 'applications' as UnionTab,
                 label: 'Applications',
@@ -961,7 +961,7 @@ export default function UnionDashboardPage() {
             {/* Broadcast (Lead only) */}
             {isLead && (
               <div className="admin-card" style={{ marginTop: '16px', padding: '16px' }}>
-                <h3 className="admin-card-title">📢 Broadcast Announcement</h3>
+                <h3 className="admin-card-title">Broadcast Announcement</h3>
                 <textarea
                   className="admin-input"
                   value={annMsg}
@@ -1118,7 +1118,7 @@ export default function UnionDashboardPage() {
             </div>
             {filteredClubs.length === 0 && (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">🏢</span>
+                <span className="admin-empty-icon">◆</span>
                 <span>{clubSearch ? 'No clubs match' : 'No clubs yet'}</span>
               </div>
             )}
@@ -1158,7 +1158,7 @@ export default function UnionDashboardPage() {
                 style={{ maxWidth: '300px' }}
               />
               <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={exportAgents}>
-                📥 Export CSV
+                Export CSV
               </button>
             </div>
 
@@ -1206,7 +1206,7 @@ export default function UnionDashboardPage() {
             </div>
             {filteredAgents.length === 0 && (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">👤</span>
+                <span className="admin-empty-icon">◉</span>
                 <span>{agentSearch ? 'No agents match' : 'No agents found'}</span>
               </div>
             )}
@@ -1591,10 +1591,10 @@ export default function UnionDashboardPage() {
         {/* ══════ TAB: TREASURY ══════ */}
         {tab === 'treasury' && (
           <div className="admin-tab-content">
-            <h3 className="admin-section-title">🏦 Club Treasury Breakdown</h3>
+            <h3 className="admin-section-title">Club Treasury Breakdown</h3>
             {clubs.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">🏦</span>
+                <span className="admin-empty-icon">▦</span>
                 <span>No clubs yet</span>
               </div>
             ) : (
@@ -1755,7 +1755,7 @@ export default function UnionDashboardPage() {
             <h3 className="admin-section-title">Recent Settlement Periods</h3>
             {recentPeriods.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">📊</span>
+                <span className="admin-empty-icon">▦</span>
                 <span>No settlement data yet</span>
               </div>
             ) : (
@@ -1940,7 +1940,7 @@ export default function UnionDashboardPage() {
               </div>
             ) : (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">📝</span>
+                <span className="admin-empty-icon">▤</span>
                 <span>No {appsFilter} applications</span>
               </div>
             )}

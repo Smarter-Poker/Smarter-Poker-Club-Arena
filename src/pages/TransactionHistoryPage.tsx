@@ -145,7 +145,7 @@ export default function TransactionHistoryPage() {
             reportError(err?.message || err, 'TransactionHistoryPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[TransactionHistoryPage] ⏱️ Realtime channel timed out');
+          console.warn('[TransactionHistoryPage] Realtime channel timed out');
         }
       });
     return () => {
@@ -467,7 +467,7 @@ export default function TransactionHistoryPage() {
                 opacity: 0.5,
               }}
             >
-              📊
+              ▦
             </span>
             <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
               {filter !== 'all'

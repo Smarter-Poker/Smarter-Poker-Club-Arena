@@ -60,7 +60,7 @@ export default function PositionAnalysis({
 
       {/* Strategy advice */}
       <div className="position-advice">
-        <span className="advice-icon">💡</span>
+        <span className="advice-icon">◍</span>
         <p>{positionInfo.advice}</p>
       </div>
 

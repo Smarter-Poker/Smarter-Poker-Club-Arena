@@ -59,7 +59,7 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
         for (const a of achievements) {
           feed.push({
             id: `ach-${a.id}`,
-            icon: '🏆',
+            icon: '★',
             label: 'Achievement Unlocked',
             detail: a.achievement_id
               .replace(/_/g, ' ')
@@ -82,7 +82,7 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
         for (const c of challenges) {
           feed.push({
             id: `chal-${c.id}`,
-            icon: '🎯',
+            icon: '◎',
             label: 'Mission Completed',
             detail: c.challenge_id
               .replace(/_/g, ' ')
@@ -102,7 +102,7 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
       if (spins && spins.length > 0 && spins[0].last_spin_date) {
         feed.push({
           id: `spin-${spins[0].user_id}`,
-          icon: '🎰',
+          icon: '▦',
           label: 'Lucky Wheel Spin',
           detail: `${spins[0].total_spins} total spins`,
           time: spins[0].last_spin_date,
@@ -119,7 +119,7 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
       if (rewards && rewards.length > 0 && rewards[0].last_claim_date) {
         feed.push({
           id: `reward-${rewards[0].id}`,
-          icon: '🔥',
+          icon: '▲',
           label: 'Daily Login Reward',
           detail: `${rewards[0].current_streak}-day streak`,
           time: rewards[0].last_claim_date,

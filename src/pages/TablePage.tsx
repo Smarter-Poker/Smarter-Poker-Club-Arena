@@ -3212,7 +3212,7 @@ export default function TablePage({
               .create({
                 userId,
                 type: 'bonus',
-                title: '🃏 Bad Beat Jackpot Hit!',
+                title: 'Bad Beat Jackpot Hit!',
                 message: `The BBJ paid out a total of $${totalPayout.toLocaleString()} at ${tableState.tableName}!`,
                 metadata: { tableId: tableId || '', totalPayout },
               })
@@ -7803,7 +7803,7 @@ export default function TablePage({
                     onClick={handleActivateTimeBank}
                     disabled={timeBanksRemaining <= 0 || timeBankActive}
                   >
-                    <span className="control-strip__icon">⏱</span>
+                    <span className="control-strip__icon">◷</span>
                     <span className="control-strip__count">{timeBanksRemaining}</span>
                   </button>
 
@@ -8156,7 +8156,7 @@ export default function TablePage({
                 setIsSideMenuOpen(false);
               }}
             >
-              <span className="menu-item-icon">⏸</span>
+              <span className="menu-item-icon">▮</span>
               <span className="menu-item-label">Sit Out</span>
               <span className="menu-item-arrow">›</span>
             </button>

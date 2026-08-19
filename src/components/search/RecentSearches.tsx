@@ -38,7 +38,7 @@ export const RecentSearches: React.FC<RecentSearchesProps> = ({
             className="recent-item"
             onClick={() => onSearchClick?.(search.query)}
           >
-            <span className="recent-icon">🕐</span>
+            <span className="recent-icon">◷</span>
             <span className="recent-query">{search.query}</span>
             {search.type && <span className="recent-type">{search.type}</span>}
             <button

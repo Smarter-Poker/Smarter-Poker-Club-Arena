@@ -312,7 +312,7 @@ class CardErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <div className={styles.cardErrorFallback}>
-          <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+          <span style={{ fontSize: '1.5rem' }}>⚠</span>
           <span style={{ fontSize: '0.8rem' }}>
             Failed to load {this.props.label || 'component'}
           </span>
@@ -676,7 +676,7 @@ export default function ClubDetailPage() {
             if (err)
               reportError(err?.message || err, 'ClubDetailPage._Club_detail_RT_channel_error');
           } else if (status === 'TIMED_OUT') {
-            console.warn('[ClubDetailPage] ⏱️ Club detail RT channel timed out');
+            console.warn('[ClubDetailPage] Club detail RT channel timed out');
           }
         });
     };
@@ -1221,16 +1221,16 @@ export default function ClubDetailPage() {
       >
         <span style={{ fontSize: '1.1rem' }}>
           {activeTab === 'overview'
-            ? '📊'
+            ? '▦'
             : activeTab === 'tables'
-              ? '🃏'
+              ? '♠'
               : activeTab === 'members'
-                ? '👥'
+                ? '◉'
                 : activeTab === 'agents'
-                  ? '🛡️'
+                  ? '◈'
                   : activeTab === 'operations'
-                    ? '⚙️'
-                    : '🔧'}
+                    ? '⚙'
+                    : '◇'}
         </span>
         <div>
           <span style={{ color: '#fff', fontSize: '0.85rem', fontWeight: 600, display: 'block' }}>
@@ -1612,7 +1612,7 @@ export default function ClubDetailPage() {
                             aria-label={`Actions for ${member.username}`}
                             disabled={memberActionLoading === member.id}
                           >
-                            {memberActionLoading === member.id ? '⏳' : '⋮'}
+                            {memberActionLoading === member.id ? '◷' : '⋮'}
                           </button>
                           {showMemberMenu === member.id && (
                             <div className={styles.memberMenu}>

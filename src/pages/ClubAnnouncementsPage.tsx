@@ -104,7 +104,7 @@ export default function ClubAnnouncementsPage() {
                 reportError(err?.message || err, 'ClubAnnouncementsPage._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
-              console.warn('[ClubAnnouncementsPage] ⏱️ Realtime channel timed out');
+              console.warn('[ClubAnnouncementsPage] Realtime channel timed out');
             }
           });
       };
@@ -324,7 +324,7 @@ export default function ClubAnnouncementsPage() {
     <div className="announcements-page">
       {loadError && !loading && (
         <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa' }}>
-          <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</p>
+          <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠</p>
           <p style={{ marginBottom: '16px' }}>Failed to load announcements</p>
           <button
             onClick={() => loadAnnouncements()}

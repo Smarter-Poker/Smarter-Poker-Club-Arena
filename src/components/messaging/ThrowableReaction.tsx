@@ -40,23 +40,23 @@ export interface ActiveThrowable {
 
 export const THROWABLE_EMOJIS: ThrowableEmoji[] = [
   // Free tier
-  { id: 'thumbs-up', emoji: '👍', label: 'Nice Hand', category: 'free' },
-  { id: 'clap', emoji: '👏', label: 'Well Played', category: 'free' },
-  { id: 'fire', emoji: '🔥', label: 'On Fire', category: 'free' },
-  { id: 'trophy', emoji: '🏆', label: 'Champion', category: 'free' },
-  { id: 'rocket', emoji: '🚀', label: 'To The Moon', category: 'free' },
-  { id: 'laugh', emoji: '😂', label: 'LOL', category: 'free' },
-  { id: 'eyes', emoji: '👀', label: 'Watching', category: 'free' },
-  { id: 'skull', emoji: '💀', label: 'Rekt', category: 'free' },
+  { id: 'thumbs-up', emoji: '▲', label: 'Nice Hand', category: 'free' },
+  { id: 'clap', emoji: '★', label: 'Well Played', category: 'free' },
+  { id: 'fire', emoji: '▲', label: 'On Fire', category: 'free' },
+  { id: 'trophy', emoji: '★', label: 'Champion', category: 'free' },
+  { id: 'rocket', emoji: '▲', label: 'To The Moon', category: 'free' },
+  { id: 'laugh', emoji: '◆', label: 'LOL', category: 'free' },
+  { id: 'eyes', emoji: '◉', label: 'Watching', category: 'free' },
+  { id: 'skull', emoji: '◆', label: 'Rekt', category: 'free' },
   // VIP tier
-  { id: 'diamond', emoji: '💎', label: 'Diamond', category: 'vip' },
-  { id: 'crown', emoji: '👑', label: 'Crown', category: 'vip' },
-  { id: 'money-bag', emoji: '💰', label: 'Money Bag', category: 'vip' },
-  { id: 'spade', emoji: '♠️', label: 'Spade', category: 'vip' },
-  { id: 'shark', emoji: '🦈', label: 'Shark', category: 'vip' },
-  { id: 'bomb', emoji: '💣', label: 'Bomb', category: 'vip' },
-  { id: 'lightning', emoji: '⚡', label: 'Lightning', category: 'vip' },
-  { id: 'tornado', emoji: '🌪️', label: 'Tornado', category: 'vip' },
+  { id: 'diamond', emoji: '◆', label: 'Diamond', category: 'vip' },
+  { id: 'crown', emoji: '♛', label: 'Crown', category: 'vip' },
+  { id: 'money-bag', emoji: '◆', label: 'Money Bag', category: 'vip' },
+  { id: 'spade', emoji: '♠', label: 'Spade', category: 'vip' },
+  { id: 'shark', emoji: '◆', label: 'Shark', category: 'vip' },
+  { id: 'bomb', emoji: '◆', label: 'Bomb', category: 'vip' },
+  { id: 'lightning', emoji: '▲', label: 'Lightning', category: 'vip' },
+  { id: 'tornado', emoji: '◆', label: 'Tornado', category: 'vip' },
 ];
 
 const ANIMATION_DURATION_MS = 1200;

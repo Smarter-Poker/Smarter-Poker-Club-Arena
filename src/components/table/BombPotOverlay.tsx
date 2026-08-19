@@ -62,7 +62,7 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId }) => {
   return (
     <div className="bomb-pot-overlay">
       <div className="bpo-container">
-        <div className="bpo-icon">💣</div>
+        <div className="bpo-icon">◆</div>
         <div className="bpo-title">BOMB POT</div>
         <div className="bpo-subtitle">{doubleBoard ? 'DOUBLE BOARD' : 'ALL PLAYERS IN'}</div>
         <div className="bpo-ante">

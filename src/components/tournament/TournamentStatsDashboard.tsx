@@ -73,7 +73,7 @@ export const TournamentStatsDashboard: React.FC<TournamentStatsDashboardProps> =
       <div className="stats-grid">
         {/* Players Remaining */}
         <div className="stat-card players">
-          <div className="stat-icon">👥</div>
+          <div className="stat-icon">◉</div>
           <div className="stat-content">
             <span className="stat-value">{stats.playersRemaining}</span>
             <span className="stat-label">
@@ -84,7 +84,7 @@ export const TournamentStatsDashboard: React.FC<TournamentStatsDashboardProps> =
 
         {/* Current Level */}
         <div className="stat-card level">
-          <div className="stat-icon">📊</div>
+          <div className="stat-icon">▦</div>
           <div className="stat-content">
             <span className="stat-value">{stats.currentLevel}</span>
             <span className="stat-label">
@@ -100,7 +100,7 @@ export const TournamentStatsDashboard: React.FC<TournamentStatsDashboardProps> =
 
         {/* Average Stack */}
         <div className="stat-card average">
-          <div className="stat-icon">📈</div>
+          <div className="stat-icon">▲</div>
           <div className="stat-content">
             <span className="stat-value">{formatChips(stats.averageStack)}</span>
             <span className="stat-label">Avg ({getMRatio(stats.averageStack)}BB)</span>
@@ -109,7 +109,7 @@ export const TournamentStatsDashboard: React.FC<TournamentStatsDashboardProps> =
 
         {/* Largest Stack */}
         <div className="stat-card largest">
-          <div className="stat-icon">👑</div>
+          <div className="stat-icon">♛</div>
           <div className="stat-content">
             <span className="stat-value">{formatChips(stats.largestStack)}</span>
             <span className="stat-label">Largest ({getMRatio(stats.largestStack)}BB)</span>
@@ -118,7 +118,7 @@ export const TournamentStatsDashboard: React.FC<TournamentStatsDashboardProps> =
 
         {/* Smallest Stack */}
         <div className="stat-card smallest">
-          <div className="stat-icon">⚠️</div>
+          <div className="stat-icon">⚠</div>
           <div className="stat-content">
             <span className="stat-value">{formatChips(stats.smallestStack)}</span>
             <span className="stat-label">Smallest ({getMRatio(stats.smallestStack)}BB)</span>
@@ -127,7 +127,7 @@ export const TournamentStatsDashboard: React.FC<TournamentStatsDashboardProps> =
 
         {/* Time Elapsed */}
         <div className="stat-card time">
-          <div className="stat-icon">⏱️</div>
+          <div className="stat-icon">◷</div>
           <div className="stat-content">
             <span className="stat-value">{formatTime(stats.timeElapsed)}</span>
             <span className="stat-label">Time Elapsed</span>
@@ -136,7 +136,7 @@ export const TournamentStatsDashboard: React.FC<TournamentStatsDashboardProps> =
 
         {/* Chip Spread */}
         <div className="stat-card spread">
-          <div className="stat-icon">📊</div>
+          <div className="stat-icon">▦</div>
           <div className="stat-content">
             <span className="stat-value">{getChipSpread()}%</span>
             <span className="stat-label">Chip Spread</span>
@@ -146,7 +146,7 @@ export const TournamentStatsDashboard: React.FC<TournamentStatsDashboardProps> =
         {/* Hands Played */}
         {stats.handsPlayed !== undefined && (
           <div className="stat-card hands">
-            <div className="stat-icon">🎴</div>
+            <div className="stat-icon">◆</div>
             <div className="stat-content">
               <span className="stat-value">{stats.handsPlayed}</span>
               <span className="stat-label">Hands Played</span>

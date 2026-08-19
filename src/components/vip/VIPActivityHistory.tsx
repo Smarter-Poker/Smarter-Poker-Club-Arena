@@ -37,10 +37,10 @@ const getActivityColor = (action: VIPActivity['action']) => {
 const getActivityIcon = (action: VIPActivity['action']) => {
   switch (action) {
     case 'earned':
-      return '⬆️';
+      return '⬆';
     case 'spent':
     case 'redeemed':
-      return '⬇️';
+      return '⬇';
     default:
       return '●';
   }
@@ -183,7 +183,7 @@ export const VIPActivityHistory: React.FC<VIPActivityHistoryProps> = ({ activiti
           ))
         ) : (
           <div className="no-activity">
-            <span className="no-activity-icon">📭</span>
+            <span className="no-activity-icon">◆</span>
             <p>No activity in this category yet</p>
           </div>
         )}

@@ -166,7 +166,7 @@ export default function SessionHistoryPage() {
           if (err) reportError(err?.message || err, 'SessionHistoryPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[SessionHistoryPage] ⏱️ Realtime channel timed out');
+          console.warn('[SessionHistoryPage] Realtime channel timed out');
         }
       });
 
@@ -340,7 +340,7 @@ export default function SessionHistoryPage() {
           </div>
         ) : sessions.length === 0 ? (
           <div className="sh-empty">
-            <span className="sh-empty-icon">📊</span>
+            <span className="sh-empty-icon">▦</span>
             <p>No sessions found. Play some hands to see your history!</p>
           </div>
         ) : (

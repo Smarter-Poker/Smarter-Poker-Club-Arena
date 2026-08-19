@@ -96,7 +96,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
           />
         ) : (
           <div className="club-card-viewport-fallback">
-            <span className="club-card-fallback-icon">{isUnion ? '🤝' : '♠'}</span>
+            <span className="club-card-fallback-icon">{isUnion ? '◈' : '♠'}</span>
           </div>
         )}
       </div>

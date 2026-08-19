@@ -62,7 +62,7 @@ export default function StatsExportButton({
       title="Download as CSV"
       aria-label={`Export ${filename} data as CSV`}
     >
-      📥 {label}
+      {label}
     </button>
   );
 }

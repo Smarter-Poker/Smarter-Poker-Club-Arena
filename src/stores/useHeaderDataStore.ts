@@ -253,7 +253,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.debug('[HeaderDataStore] ❌ Realtime channel error:', err?.message || err);
+          console.debug('[HeaderDataStore] Realtime channel error:', err?.message || err);
           // Auto-retry: remove stale channel and re-create after 3s
           setTimeout(() => {
             if (get()._userId !== userId || get()._channelKey !== channelKey) return;
@@ -269,7 +269,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           }, 3000);
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[HeaderDataStore] ⏱️ Realtime channel timed out — retrying...');
+          console.warn('[HeaderDataStore] Realtime channel timed out — retrying...');
           // Same retry as CHANNEL_ERROR
           setTimeout(() => {
             if (get()._userId !== userId || get()._channelKey !== channelKey) return;

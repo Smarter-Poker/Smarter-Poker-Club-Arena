@@ -42,7 +42,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         onChange={handleChange}
         hidden
       />
-      <div className="upload-icon">📁</div>
+      <div className="upload-icon">▣</div>
       <div className="upload-text">
         <span className="upload-primary">Click to upload</span>
         <span className="upload-hint">or drag and drop</span>

@@ -241,7 +241,7 @@ export default function SearchPage() {
       case 'table':
         return '■';
       case 'tournament':
-        return '🏆';
+        return '★';
       default:
         return '○';
     }
@@ -415,7 +415,7 @@ export default function SearchPage() {
                 opacity: 0.5,
               }}
             >
-              🔍
+              ⌕
             </span>
             <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
               No Results for "{query}"
@@ -460,7 +460,7 @@ export default function SearchPage() {
                         onClick={(e) => handleAddFriend(e, result.id)}
                         title="Add Friend"
                       >
-                        👥+
+                        +
                       </button>
                     )}
                     <button

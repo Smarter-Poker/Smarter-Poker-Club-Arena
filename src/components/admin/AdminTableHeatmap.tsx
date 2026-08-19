@@ -104,7 +104,7 @@ export default function AdminTableHeatmap({
           if (err) reportError(err?.message || err, 'AdminTableHeatmap._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[AdminTableHeatmap] ⏱️ Realtime channel timed out');
+          console.warn('[AdminTableHeatmap] Realtime channel timed out');
         }
       });
 
@@ -174,7 +174,7 @@ export default function AdminTableHeatmap({
                 cursor: 'pointer',
               }}
             >
-              {mode === 'density' ? '🔥 Density' : mode === 'stakes' ? '💰 Stakes' : '🃏 Variant'}
+              {mode === 'density' ? 'Density' : mode === 'stakes' ? 'Stakes' : 'Variant'}
             </button>
           ))}
         </div>

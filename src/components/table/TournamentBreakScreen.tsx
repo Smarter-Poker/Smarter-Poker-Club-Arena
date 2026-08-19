@@ -126,7 +126,7 @@ export function TournamentBreakScreen({
   if (minimized) {
     return (
       <div className="break-screen__minimized" onClick={() => setMinimized(false)}>
-        <span className="break-screen__mini-badge">⏸️ Break: {formatTime(displayTime)}</span>
+        <span className="break-screen__mini-badge"> Break: {formatTime(displayTime)}</span>
       </div>
     );
   }
@@ -137,7 +137,7 @@ export function TournamentBreakScreen({
       <div className="break-screen__content">
         {/* Header */}
         <div className="break-screen__header">
-          <span className="break-screen__badge">⏸️ Tournament on Break</span>
+          <span className="break-screen__badge">Tournament on Break</span>
           <h1 className="break-screen__title">{tournamentName}</h1>
           <button
             className="break-screen__minimize-btn"

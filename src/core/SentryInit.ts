@@ -203,7 +203,7 @@ async function loadAndInitSentry(): Promise<typeof import('@sentry/react') | nul
 
     SentryModule = Sentry;
     flushQueue();
-    console.log('[Sentry] ✅ Lazy-loaded and initialized');
+    console.log('[Sentry] Lazy-loaded and initialized');
     return Sentry;
   } catch (error) {
     reportError(error, 'SentryInit.Initialization_failed');

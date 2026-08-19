@@ -325,7 +325,7 @@ export default function AnalyticsDashboard() {
   return (
     <div className="analytics-dashboard">
       <header className="analytics-header">
-        <h1>📊 Club Analytics Dashboard</h1>
+        <h1>Club Analytics Dashboard</h1>
         <p>
           Real-time player position stats and VIP economy overview
           <span className="refresh-indicator">
@@ -354,7 +354,7 @@ export default function AnalyticsDashboard() {
             onClick={handleExportCSV}
             disabled={positionStats.length === 0 && vipLedger.length === 0}
           >
-            📥 Export CSV
+            Export CSV
           </button>
         </div>
       </header>
@@ -469,7 +469,7 @@ export default function AnalyticsDashboard() {
             </div>
           ) : (
             <div className="empty-state">
-              <div className="icon">📈</div>
+              <div className="icon">▲</div>
               <p>No position stats yet. Data populates as hands are dealt.</p>
             </div>
           )}
@@ -512,7 +512,7 @@ export default function AnalyticsDashboard() {
             </div>
           ) : (
             <div className="empty-state">
-              <div className="icon">🎯</div>
+              <div className="icon">◎</div>
               <p>VPIP data populates as hands are dealt.</p>
             </div>
           )}
@@ -576,7 +576,7 @@ export default function AnalyticsDashboard() {
       ) : (
         <div className="chart-card">
           <div className="empty-state">
-            <div className="icon">💎</div>
+            <div className="icon">◆</div>
             <p>No VIP points transactions yet.</p>
           </div>
         </div>

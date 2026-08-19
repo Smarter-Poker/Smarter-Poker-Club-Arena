@@ -102,7 +102,7 @@ export async function exportSettlementPDF(data: {
         </tbody>
     </table>
 
-    <h2>👔 Agent Payouts</h2>
+    <h2>Agent Payouts</h2>
     <table>
         <thead>
             <tr>

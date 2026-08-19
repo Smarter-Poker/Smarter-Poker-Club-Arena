@@ -318,7 +318,7 @@ export default function HandReplay({
         <div className="header-actions">
           <button className="action-btn star">☆</button>
           <button className="action-btn play" onClick={handlePlay}>
-            {isPlaying ? '⏸' : '▶'}
+            {isPlaying ? '▮' : '▶'}
           </button>
         </div>
       </header>

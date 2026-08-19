@@ -263,7 +263,7 @@ export default function UnionGamesPage() {
           if (err) reportError(err?.message || err, 'UnionGamesPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[UnionGamesPage] ⏱️ Realtime channel timed out');
+          console.warn('[UnionGamesPage] Realtime channel timed out');
         }
       });
 
@@ -322,16 +322,16 @@ export default function UnionGamesPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.headerLeft}>
-          <h1 className={styles.title}>🎮 {unionName} — Games</h1>
+          <h1 className={styles.title}> {unionName} — Games</h1>
         </div>
         <div className={styles.headerActions}>
           {unionId && (
             <Link to={`/unions/${unionId}`} className={styles.btnGhost}>
-              🏛️ Union
+              Union
             </Link>
           )}
           <Link to="/" className={styles.btnGhost}>
-            🏠 Lobby
+            Lobby
           </Link>
           <button onClick={() => loadUnionData(unionId || undefined)} className={styles.btnGhost}>
             ↻ Refresh
@@ -375,19 +375,19 @@ export default function UnionGamesPage() {
           className={`${styles.tab} ${tab === 'tournaments' ? styles.tabActive : ''}`}
           onClick={() => setTab('tournaments')}
         >
-          🏆 Tournaments <span className={styles.tabBadge}>{tournaments.length}</span>
+          Tournaments <span className={styles.tabBadge}>{tournaments.length}</span>
         </button>
         <button
           className={`${styles.tab} ${tab === 'tables' ? styles.tabActive : ''}`}
           onClick={() => setTab('tables')}
         >
-          🎰 Tables <span className={styles.tabBadge}>{tables.length}</span>
+          Tables <span className={styles.tabBadge}>{tables.length}</span>
         </button>
         <button
           className={`${styles.tab} ${tab === 'bbj' ? styles.tabActive : ''}`}
           onClick={() => setTab('bbj')}
         >
-          💎 BBJ Pool
+          BBJ Pool
         </button>
       </nav>
 
@@ -410,7 +410,7 @@ export default function UnionGamesPage() {
 
           {filteredTournaments.length === 0 ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>🏆</span>
+              <span className={styles.emptyIcon}>★</span>
               <span className={styles.emptyText}>No tournaments match the filter.</span>
             </div>
           ) : (
@@ -428,12 +428,12 @@ export default function UnionGamesPage() {
                     <StatusBadge status={t.status} />
                   </div>
                   <div className={styles.tournMeta}>
-                    <span>💰 {fmtChips(t.buy_in)}</span>
+                    <span> {fmtChips(t.buy_in)}</span>
                     <span>
-                      👥 {t.registered_count || 0}/{t.max_players || '∞'}
+                      {t.registered_count || 0}/{t.max_players || '∞'}
                     </span>
-                    <span>🕐 {formatDate(t.start_time || null)}</span>
-                    {t.prize_pool ? <span>🏆 {fmtChips(t.prize_pool)}</span> : null}
+                    <span> {formatDate(t.start_time || null)}</span>
+                    {t.prize_pool ? <span> {fmtChips(t.prize_pool)}</span> : null}
                   </div>
                   <div className={styles.tournActions}>
                     <Link to={`/tournaments/${t.id}`} className={styles.btnGhost}>
@@ -462,7 +462,7 @@ export default function UnionGamesPage() {
         <div className={styles.section}>
           {tables.length === 0 ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>🎰</span>
+              <span className={styles.emptyIcon}>▦</span>
               <span className={styles.emptyText}>No tables running across union clubs.</span>
             </div>
           ) : (
@@ -470,7 +470,7 @@ export default function UnionGamesPage() {
               {activeTables.length > 0 && (
                 <>
                   <h3 className={styles.subsectionTitle}>
-                    🟢 Active Tables ({activeTables.length})
+                    Active Tables ({activeTables.length})
                   </h3>
                   <div className={styles.tableGrid}>
                     {activeTables.map((table) => (
@@ -496,7 +496,7 @@ export default function UnionGamesPage() {
               {emptyTables.length > 0 && (
                 <>
                   <h3 className={styles.subsectionTitle} style={{ marginTop: 24 }}>
-                    ⚪ Empty Tables ({emptyTables.length})
+                    Empty Tables ({emptyTables.length})
                   </h3>
                   <div className={styles.tableGrid}>
                     {emptyTables.map((table) => (
@@ -531,7 +531,7 @@ export default function UnionGamesPage() {
         <div className={styles.section}>
           {!bbjPool ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>💎</span>
+              <span className={styles.emptyIcon}>◆</span>
               <span className={styles.emptyText}>
                 Bad Beat Jackpot is not enabled for this union.
               </span>

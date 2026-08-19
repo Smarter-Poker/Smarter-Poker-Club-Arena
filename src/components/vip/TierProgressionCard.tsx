@@ -185,7 +185,7 @@ export const TierProgressionCard: React.FC<TierProgressionCardProps> = ({
             <span className="benefit-label">Monthly Tickets</span>
           </div>
           <div className="benefit-card">
-            <span className="benefit-icon">⚡</span>
+            <span className="benefit-icon">▲</span>
             <span className="benefit-value">{currentTier.multiplier}x</span>
             <span className="benefit-label">Point Multiplier</span>
           </div>

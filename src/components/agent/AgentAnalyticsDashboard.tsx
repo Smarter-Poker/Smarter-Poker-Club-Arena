@@ -168,7 +168,7 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
   if (loading) {
     return (
       <div className="aad-container">
-        <h3 className="aad-title">📊 Agent Analytics</h3>
+        <h3 className="aad-title">Agent Analytics</h3>
         <div className="aad-loading">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="aad-skeleton" />
@@ -180,7 +180,7 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
 
   return (
     <div className="aad-container">
-      <h3 className="aad-title">📊 Agent Analytics</h3>
+      <h3 className="aad-title">Agent Analytics</h3>
 
       {/* KPI Cards */}
       <div className="aad-kpis">

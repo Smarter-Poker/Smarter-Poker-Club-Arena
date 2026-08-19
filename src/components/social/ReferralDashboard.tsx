@@ -136,7 +136,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
       <div className="refd-milestones">
         {milestones.map((m) => (
           <div key={m.count} className={`refd-milestone ${m.unlocked ? 'refd-unlocked' : ''}`}>
-            <span className="refd-ms-icon">{m.unlocked ? '✅' : '🔒'}</span>
+            <span className="refd-ms-icon">{m.unlocked ? '✓' : '◈'}</span>
             <span className="refd-ms-label">{m.label}</span>
             <span className="refd-ms-reward">{m.reward.toLocaleString()} chips</span>
           </div>

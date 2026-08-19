@@ -75,16 +75,16 @@ const METRIC_OPTIONS: {
   icon: string;
   description: string;
 }[] = [
-  { value: 'profit', label: 'Profit', icon: '💰', description: 'Total profit earned' },
-  { value: 'hands_played', label: 'Hands Played', icon: '🃏', description: 'Total hands dealt in' },
+  { value: 'profit', label: 'Profit', icon: '◆', description: 'Total profit earned' },
+  { value: 'hands_played', label: 'Hands Played', icon: '♠', description: 'Total hands dealt in' },
   {
     value: 'tournaments_won',
     label: 'Tournaments Won',
-    icon: '🏆',
+    icon: '★',
     description: 'Tournament victories',
   },
-  { value: 'vpip', label: 'VPIP', icon: '📊', description: 'Voluntarily put chips in pot %' },
-  { value: 'roi', label: 'ROI', icon: '📈', description: 'Return on investment %' },
+  { value: 'vpip', label: 'VPIP', icon: '▦', description: 'Voluntarily put chips in pot %' },
+  { value: 'roi', label: 'ROI', icon: '▲', description: 'Return on investment %' },
 ];
 
 const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
@@ -389,9 +389,9 @@ export default function LeaderboardPage() {
   };
 
   const getRankBadge = (rank: number): string => {
-    if (rank === 1) return '🥇';
-    if (rank === 2) return '🥈';
-    if (rank === 3) return '🥉';
+    if (rank === 1) return '★';
+    if (rank === 2) return '☆';
+    if (rank === 3) return '☆';
     return `#${rank}`;
   };
 
@@ -518,7 +518,7 @@ export default function LeaderboardPage() {
               }
             }}
           >
-            📥 Export CSV
+            Export CSV
           </button>
         )}
       </div>
@@ -561,7 +561,7 @@ export default function LeaderboardPage() {
               className="empty-icon"
               style={{ fontSize: '3rem', display: 'block', marginBottom: '0.75rem' }}
             >
-              🏆
+              ★
             </span>
             <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
               No rankings yet for this period.
@@ -602,7 +602,7 @@ export default function LeaderboardPage() {
                     color: 'var(--off-white, #E4E6EB)',
                   }}
                 >
-                  💡 How to rank up
+                  How to rank up
                 </div>
                 <ul
                   style={{
@@ -635,7 +635,7 @@ export default function LeaderboardPage() {
           </div>
         ) : activeTab === 'tournaments' && tournamentStats.length === 0 ? (
           <div className="empty-state">
-            <span className="empty-icon">🏅</span>
+            <span className="empty-icon">★</span>
             <p>No tournament stats yet.</p>
             <p className="empty-sub">Register for a tournament to see your stats!</p>
           </div>
@@ -662,14 +662,14 @@ export default function LeaderboardPage() {
                   {top3[1].isVIP && <span className="vip-badge">VIP</span>}
                   {(top3[1].change || 0) >= 3 && (
                     <span className="hot-streak-badge" title="Hot Streak!">
-                      🔥
+                      ▲
                     </span>
                   )}
                   <span className="podium-name">{top3[1].username}</span>
                   <span className="podium-value silver-text">
                     {formatValue(top3[1].value, metric)}
                   </span>
-                  <span className="podium-rank-emoji">🥈</span>
+                  <span className="podium-rank-emoji">☆</span>
                   <div className="podium-bar silver-bar"></div>
                 </div>
 
@@ -678,7 +678,7 @@ export default function LeaderboardPage() {
                   className="podium-place podium-1st"
                   onClick={() => navigate(`/profile/${top3[0].userId}`)}
                 >
-                  <div className="podium-crown">👑</div>
+                  <div className="podium-crown">♛</div>
                   <PlayerAvatar
                     src={top3[0].avatar}
                     name={top3[0].username}
@@ -692,14 +692,14 @@ export default function LeaderboardPage() {
                   {top3[0].isVIP && <span className="vip-badge">VIP</span>}
                   {(top3[0].change || 0) >= 3 && (
                     <span className="hot-streak-badge" title="Hot Streak!">
-                      🔥
+                      ▲
                     </span>
                   )}
                   <span className="podium-name">{top3[0].username}</span>
                   <span className="podium-value gold-text">
                     {formatValue(top3[0].value, metric)}
                   </span>
-                  <span className="podium-rank-emoji">🥇</span>
+                  <span className="podium-rank-emoji">★</span>
                   <div className="podium-bar gold-bar"></div>
                 </div>
 
@@ -721,14 +721,14 @@ export default function LeaderboardPage() {
                   {top3[2].isVIP && <span className="vip-badge">VIP</span>}
                   {(top3[2].change || 0) >= 3 && (
                     <span className="hot-streak-badge" title="Hot Streak!">
-                      🔥
+                      ▲
                     </span>
                   )}
                   <span className="podium-name">{top3[2].username}</span>
                   <span className="podium-value bronze-text">
                     {formatValue(top3[2].value, metric)}
                   </span>
-                  <span className="podium-rank-emoji">🥉</span>
+                  <span className="podium-rank-emoji">☆</span>
                   <div className="podium-bar bronze-bar"></div>
                 </div>
               </div>
@@ -790,7 +790,7 @@ export default function LeaderboardPage() {
                     {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                     {(entry.change || 0) >= 3 && (
                       <span className="hot-streak-badge" title="Hot Streak!">
-                        🔥
+                        ▲
                       </span>
                     )}
                   </span>
@@ -809,7 +809,7 @@ export default function LeaderboardPage() {
             {/* Motivational CTA when leaderboard is sparse */}
             {entries.length < 10 && (
               <div className="lb-motivational-cta">
-                <div className="lb-motivational-icon">🎯</div>
+                <div className="lb-motivational-icon">◎</div>
                 <div className="lb-motivational-text">
                   <strong>Keep climbing!</strong>
                   <span>Play more hands to move up the rankings and unlock bragging rights.</span>

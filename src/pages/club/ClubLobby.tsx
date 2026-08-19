@@ -520,12 +520,12 @@ export default function ClubLobby() {
           <h2 className="club-name">{club.name}</h2>
           <div className="club-meta">
             <span className="club-id">ID: {club.club_id}</span>
-            <span className="member-count">👥 {club.member_count || 0}</span>
+            <span className="member-count"> {club.member_count || 0}</span>
           </div>
         </div>
         <div className="club-balances">
           <div className="balance-row">
-            <span className="chip-icon gold">🪙</span>
+            <span className="chip-icon gold">◉</span>
             <span className="balance-amount">
               {chipBalance.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
@@ -542,7 +542,7 @@ export default function ClubLobby() {
             </button>
           </div>
           <div className="balance-row">
-            <span className="chip-icon diamond">💎</span>
+            <span className="chip-icon diamond">◆</span>
             <span className="balance-amount">
               {diamondBalance.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
@@ -560,7 +560,7 @@ export default function ClubLobby() {
           {/* Fix #7: Union badge only when in union */}
           {isInUnion && (
             <div className="union-badge">
-              <span>🔗 UNION</span>
+              <span>UNION</span>
             </div>
           )}
         </div>
@@ -707,7 +707,7 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
   return (
     <Link to={`/tournaments/${tournament.id}`} className="tournament-card">
       <div className="card-header">
-        <div className="trophy-icon">🏆</div>
+        <div className="trophy-icon">★</div>
         <div className="seats-badge">{maxPlayers} Max</div>
       </div>
       <div className="card-body">

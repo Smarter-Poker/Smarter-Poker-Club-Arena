@@ -66,9 +66,9 @@ export default function SettlementReceipt({
   }, [receiptId]);
 
   const statusConfig = {
-    paid: { label: 'Settled', color: '#00c853', icon: '✅' },
-    pending: { label: 'Pending', color: '#ffa726', icon: '⏳' },
-    processing: { label: 'Processing', color: '#448aff', icon: '⚙️' },
+    paid: { label: 'Settled', color: '#00c853', icon: '✓' },
+    pending: { label: 'Pending', color: '#ffa726', icon: '◷' },
+    processing: { label: 'Processing', color: '#448aff', icon: '⚙' },
   };
 
   const s = statusConfig[status];
@@ -80,7 +80,7 @@ export default function SettlementReceipt({
 
       {/* Header */}
       <div className="sr-header">
-        <div className="sr-logo">💰</div>
+        <div className="sr-logo">◆</div>
         <div className="sr-title-block">
           <span className="sr-title">Settlement Receipt</span>
           <span className="sr-period">
@@ -147,7 +147,7 @@ export default function SettlementReceipt({
         <div className="sr-id-row">
           <code className="sr-id-value">{shortId}</code>
           <button className="sr-copy-btn" onClick={handleCopy}>
-            {copied ? '✓ Copied' : '📋 Copy'}
+            {copied ? '✓ Copied' : 'Copy'}
           </button>
         </div>
       </div>

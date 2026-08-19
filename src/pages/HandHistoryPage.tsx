@@ -400,7 +400,7 @@ export default function HandHistoryPage() {
                       analyzeWithJarvis(hand);
                     }}
                   >
-                    🧠 Analyze
+                    Analyze
                   </button>
                   <button
                     className="share-btn"
@@ -435,7 +435,7 @@ export default function HandHistoryPage() {
                       setShowShare(true);
                     }}
                   >
-                    📤 Share
+                    Share
                   </button>
                   <button className="replay-btn">▶ Replay</button>
                 </div>

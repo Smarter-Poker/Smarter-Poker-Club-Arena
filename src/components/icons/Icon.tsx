@@ -20,7 +20,7 @@ const ICONS: Record<string, string> = {
   warning: '',
   info: '',
   star: '',
-  heart: '❤️',
+  heart: '❤',
   trophy: '',
   chip: '',
   diamond: '',

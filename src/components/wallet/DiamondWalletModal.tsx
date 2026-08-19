@@ -246,7 +246,7 @@ export default function DiamondWalletModal({
         <div className="diamond-wallet-modal__header">
           <div className="diamond-wallet-modal__header-label">Diamond Wallet</div>
           <div className="diamond-wallet-modal__balance-row">
-            <span className="diamond-wallet-modal__balance-icon">💎</span>
+            <span className="diamond-wallet-modal__balance-icon">◆</span>
             <span className="diamond-wallet-modal__balance-value">
               {loading ? '...' : balance.toLocaleString()}
             </span>
@@ -281,7 +281,7 @@ export default function DiamondWalletModal({
             <div className="diamond-wallet-modal__status">Loading transactions...</div>
           ) : filteredTx.length === 0 ? (
             <div className="diamond-wallet-modal__status">
-              <div style={{ fontSize: 32, marginBottom: 8 }}>💎</div>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>◆</div>
               No transactions yet
             </div>
           ) : (

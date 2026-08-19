@@ -202,7 +202,7 @@ export function TournamentHUD({
           {isBreak ? 'Break' : 'Level'}
         </span>
         <span style={{ fontSize: 18, fontWeight: 700 }}>
-          {isBreak ? '☕' : levelState.levelIndex + 1}
+          {isBreak ? '◇' : levelState.levelIndex + 1}
         </span>
       </div>
 

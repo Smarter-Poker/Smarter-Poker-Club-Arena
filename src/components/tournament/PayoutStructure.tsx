@@ -100,8 +100,8 @@ export function PayoutStructure({
           />
         </div>
         <div className="payout-status-badge">
-          {isOnBubble && <span className="badge bubble">🫧 BUBBLE</span>}
-          {isInTheMoney && !isOnBubble && <span className="badge money">💰 IN THE MONEY</span>}
+          {isOnBubble && <span className="badge bubble">BUBBLE</span>}
+          {isInTheMoney && !isOnBubble && <span className="badge money">IN THE MONEY</span>}
           {!isInTheMoney && !isOnBubble && playersUntilMoney > 0 && (
             <span className="badge remaining">{playersUntilMoney} Players Until Money</span>
           )}
@@ -127,7 +127,7 @@ export function PayoutStructure({
               }}
             >
               <span className="position">
-                {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : ''}
+                {idx === 0 ? '★' : idx === 1 ? '☆' : idx === 2 ? '✧' : ''}
                 {typeof payout.position === 'number' ? `#${payout.position}` : payout.position}
               </span>
               <div className="bar-container">

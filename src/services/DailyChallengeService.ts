@@ -728,7 +728,7 @@ class DailyChallengeServiceClass {
         type: 'hands_played' as ChallengeType,
         requirement: 0,
         chipReward: 0,
-        icon: '❓',
+        icon: '?',
       };
 
     return {

@@ -41,7 +41,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       />
       {!controls && (
         <button className="video-play-btn" onClick={togglePlay}>
-          {playing ? '⏸' : '▶'}
+          {playing ? '▮' : '▶'}
         </button>
       )}
     </div>

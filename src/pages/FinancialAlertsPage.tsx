@@ -71,7 +71,7 @@ export default function FinancialAlertsPage() {
           if (err) reportError(err?.message || err, 'FinancialAlertsPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[FinancialAlertsPage] ⏱️ Realtime channel timed out');
+          console.warn('[FinancialAlertsPage] Realtime channel timed out');
         }
       });
     return () => {
@@ -188,7 +188,7 @@ export default function FinancialAlertsPage() {
     return (
       <div className="financial-alerts-page">
         <div className="alerts-header">
-          <h2>🔔 Financial Alerts</h2>
+          <h2>Financial Alerts</h2>
         </div>
         <div className="loading-state">
           <PageSkeleton variant="financial" />
@@ -201,19 +201,19 @@ export default function FinancialAlertsPage() {
   return (
     <div className="financial-alerts-page">
       <div className="alerts-header">
-        <h2>🔔 Financial Alerts</h2>
+        <h2>Financial Alerts</h2>
         <div className="alert-stats">
-          {criticalCount > 0 && <span className="stat critical">🔴 {criticalCount} critical</span>}
-          {warningCount > 0 && <span className="stat warning">🟡 {warningCount} warning</span>}
+          {criticalCount > 0 && <span className="stat critical"> {criticalCount} critical</span>}
+          {warningCount > 0 && <span className="stat warning"> {warningCount} warning</span>}
           {infoCount > 0 && (
             <span
               className="stat"
               style={{ background: 'rgba(99,102,241,0.15)', color: '#818cf8' }}
             >
-              ℹ️ {infoCount} info
+              ℹ {infoCount} info
             </span>
           )}
-          {alerts.length === 0 && <span className="stat clear">✅ All clear</span>}
+          {alerts.length === 0 && <span className="stat clear">All clear</span>}
         </div>
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
           {loading && alerts.length > 0 && (
@@ -233,7 +233,7 @@ export default function FinancialAlertsPage() {
             title="Export CSV"
             style={{ fontSize: '0.9rem' }}
           >
-            {exporting ? '...' : '📥'}
+            {exporting ? '...' : '↓'}
           </button>
         </div>
       </div>
@@ -303,7 +303,7 @@ export default function FinancialAlertsPage() {
             <div key={alert.id} className={`alert-card severity-${alert.severity}`}>
               <div className="alert-header">
                 <span className={`severity-badge ${alert.severity}`}>
-                  {alert.severity === 'critical' ? '🔴' : '🟡'} {alert.severity.toUpperCase()}
+                  {alert.severity === 'critical' ? '●' : '◐'} {alert.severity.toUpperCase()}
                 </span>
                 <span className="alert-source">{alert.source}</span>
                 <span className="alert-time">{new Date(alert.createdAt).toLocaleString()}</span>

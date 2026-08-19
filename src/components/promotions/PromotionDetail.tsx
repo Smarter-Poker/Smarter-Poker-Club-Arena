@@ -124,12 +124,12 @@ export default function PromotionDetail({
         <div className="pd-stats">
           {promotion.prizePool && promotion.prizePool > 0 && (
             <div className="pd-stat">
-              <span className="pd-stat-value">💰 {promotion.prizePool.toLocaleString()}</span>
+              <span className="pd-stat-value"> {promotion.prizePool.toLocaleString()}</span>
               <span className="pd-stat-label">Prize Pool</span>
             </div>
           )}
           <div className="pd-stat">
-            <span className="pd-stat-value">⏰ {getTimeRemaining()}</span>
+            <span className="pd-stat-value"> {getTimeRemaining()}</span>
             <span className="pd-stat-label">Time Left</span>
           </div>
           {promotion.maxClaims && (
@@ -180,7 +180,7 @@ export default function PromotionDetail({
                     <span className="pd-lb-name">{entry.displayName || entry.username}</span>
                     <span className="pd-lb-score">{entry.score.toLocaleString()}</span>
                     {entry.prize && (
-                      <span className="pd-lb-prize">💰 {entry.prize.toLocaleString()}</span>
+                      <span className="pd-lb-prize"> {entry.prize.toLocaleString()}</span>
                     )}
                   </div>
                 ))}

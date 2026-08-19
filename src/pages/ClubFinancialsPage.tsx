@@ -387,7 +387,7 @@ export default function ClubFinancialsPage() {
             opacity: exporting ? 0.5 : 1,
           }}
         >
-          {exporting ? 'Exporting...' : '📥 Export CSV'}
+          {exporting ? 'Exporting...' : 'Export CSV'}
         </button>
       </div>
 

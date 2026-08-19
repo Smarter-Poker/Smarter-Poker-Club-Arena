@@ -59,14 +59,14 @@ export default function DailyLoginReward({
     }, 1800);
   }, [onClaim, onClose, amount, rewardType, streakDay]);
 
-  const icon = rewardType === 'diamonds' ? '💎' : '🪙';
+  const icon = rewardType === 'diamonds' ? '◆' : '◉';
 
   return (
     <div className="dlr-overlay" onClick={!claimed ? undefined : onClose}>
       <div className="dlr-container" onClick={(e) => e.stopPropagation()}>
         {/* Streak indicator */}
         <div className="dlr-streak">
-          <span className="dlr-streak-fire">🔥</span>
+          <span className="dlr-streak-fire">▲</span>
           <span className="dlr-streak-text">Day {streakDay} Streak</span>
         </div>
 
@@ -78,7 +78,7 @@ export default function DailyLoginReward({
           {/* Front face */}
           <div className="dlr-card-front">
             <div className="dlr-card-pattern" />
-            <span className="dlr-card-icon">🎁</span>
+            <span className="dlr-card-icon">◈</span>
             <span className="dlr-card-prompt">Tap to Reveal</span>
           </div>
 
@@ -102,7 +102,7 @@ export default function DailyLoginReward({
         {/* Claimed celebration */}
         {claimed && (
           <div className="dlr-celebration">
-            <span className="dlr-celebration-text">Claimed! 🎉</span>
+            <span className="dlr-celebration-text">Claimed!</span>
           </div>
         )}
 

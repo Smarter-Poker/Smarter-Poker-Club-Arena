@@ -94,7 +94,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
           if (err) reportError(err?.message || err, 'AgentCashoutPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[AgentCashoutPanel] ⏱️ Realtime channel timed out');
+          console.warn('[AgentCashoutPanel] Realtime channel timed out');
         }
       });
 
@@ -117,7 +117,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     try {
       const lockResult = await checkSettlementLock(clubId || '');
       if (lockResult.locked) {
-        if (isMounted.current) setError('🔒 Settlement in progress — cashout actions frozen');
+        if (isMounted.current) setError('Settlement in progress — cashout actions frozen');
         if (isMounted.current) setProcessing(null);
         return;
       }
@@ -151,7 +151,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     try {
       const lockResult = await checkSettlementLock(clubId || '');
       if (lockResult.locked) {
-        if (isMounted.current) setError('🔒 Settlement in progress — cashout actions frozen');
+        if (isMounted.current) setError('Settlement in progress — cashout actions frozen');
         if (isMounted.current) setProcessing(null);
         return;
       }
@@ -248,7 +248,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
           <h3> Pending Cashouts</h3>
         </div>
         <div style={{ textAlign: 'center', padding: '24px 16px', color: '#94a3b8' }}>
-          <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠️</div>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠</div>
           <p style={{ margin: '0 0 12px', fontSize: '13px' }}>Failed to load cashout requests</p>
           <button
             onClick={loadCashouts}

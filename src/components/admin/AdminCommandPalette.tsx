@@ -63,7 +63,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         {
           id: 'nav-overview',
           label: 'Go to Overview',
-          icon: '📊',
+          icon: '▦',
           description: 'Club overview & activity',
           action: () => navigate(`/clubs/${clubId}`),
           category: 'Navigation',
@@ -71,7 +71,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         {
           id: 'nav-tables',
           label: 'View Tables',
-          icon: '🃏',
+          icon: '♠',
           description: 'Active tables & management',
           action: () => navigate(`/clubs/${clubId}`),
           category: 'Navigation',
@@ -79,7 +79,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         {
           id: 'nav-members',
           label: 'Member Directory',
-          icon: '👥',
+          icon: '◉',
           description: 'View and manage members',
           action: () => navigate(`/clubs/${clubId}`),
           category: 'Navigation',
@@ -87,7 +87,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         {
           id: 'nav-agents',
           label: 'Agent Management',
-          icon: '🛡️',
+          icon: '◈',
           description: 'Manage agents & hierarchy',
           action: () => navigate(`/clubs/${clubId}/agents`),
           category: 'Navigation',
@@ -95,7 +95,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         {
           id: 'nav-financials',
           label: 'Club Financials',
-          icon: '💰',
+          icon: '◆',
           description: 'Revenue & transactions',
           action: () => navigate(`/clubs/${clubId}/financials`),
           category: 'Navigation',
@@ -103,7 +103,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         {
           id: 'nav-stats',
           label: 'Player Stats',
-          icon: '📈',
+          icon: '▲',
           description: 'Detailed player statistics',
           action: () => navigate(`/stats`),
           category: 'Navigation',
@@ -115,7 +115,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         {
           id: 'act-create-table',
           label: 'Create New Table',
-          icon: '➕',
+          icon: '+',
           description: 'Set up a new poker table',
           action: () => navigate(`/clubs/${clubId}/create-table`),
           category: 'Actions',
@@ -123,7 +123,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         {
           id: 'act-invite',
           label: 'Invite Players',
-          icon: '📨',
+          icon: '✉',
           description: 'Send club invite links',
           action: () => navigate(`/invite/${clubId}`),
           category: 'Actions',
@@ -131,7 +131,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         {
           id: 'act-announce',
           label: 'Post Announcement',
-          icon: '📢',
+          icon: '◉',
           description: 'Broadcast to all members',
           action: () => navigate(`/clubs/${clubId}/announcements`),
           category: 'Actions',
@@ -142,7 +142,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         actions.push({
           id: 'act-settings',
           label: 'Club Settings',
-          icon: '⚙️',
+          icon: '⚙',
           description: 'Configure rules & privacy',
           action: () => navigate(`/clubs/${clubId}/settings`),
           category: 'Admin',
@@ -155,7 +155,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
       {
         id: 'gl-home',
         label: 'Home',
-        icon: '🏠',
+        icon: '⌂',
         description: 'Return to dashboard',
         action: () => navigate('/'),
         category: 'Global',
@@ -163,7 +163,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
       {
         id: 'gl-clubs',
         label: 'My Clubs',
-        icon: '🏛',
+        icon: '◆',
         description: 'View all clubs',
         action: () => navigate('/clubs'),
         category: 'Global',

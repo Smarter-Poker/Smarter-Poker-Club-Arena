@@ -150,7 +150,7 @@ export const InstallPrompt: React.FC = () => {
           ✕
         </button>
 
-        <div className="prompt-icon">♠️</div>
+        <div className="prompt-icon">♠</div>
         <h3>Add Club Arena to Home Screen</h3>
         <p>Get instant access with a native app experience!</p>
 

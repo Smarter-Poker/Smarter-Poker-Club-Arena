@@ -38,11 +38,11 @@ const VIP_COLORS: Record<string, string> = {
 };
 
 const VIP_LABELS: Record<string, string> = {
-  bronze: '🥉 Bronze',
-  silver: '🥈 Silver',
-  gold: '🥇 Gold',
-  platinum: '💎 Platinum',
-  diamond: '♦️ Diamond',
+  bronze: 'Bronze',
+  silver: 'Silver',
+  gold: 'Gold',
+  platinum: 'Platinum',
+  diamond: '♦ Diamond',
 };
 
 export default function PublicProfilePage() {
@@ -290,7 +290,7 @@ export default function PublicProfilePage() {
     return (
       <div className="public-profile-page">
         <div className="public-profile-empty">
-          <span className="empty-icon">👤</span>
+          <span className="empty-icon">◉</span>
           <h2>Player Not Found</h2>
         </div>
       </div>
@@ -322,7 +322,7 @@ export default function PublicProfilePage() {
           {profile.bio && <p className="profile-bio">{profile.bio}</p>}
           <div className="profile-badges">
             <span className="vip-badge" style={{ color: VIP_COLORS[profile.vipTier] || '#cd7f32' }}>
-              {VIP_LABELS[profile.vipTier] || '🥉 Bronze'}
+              {VIP_LABELS[profile.vipTier] || 'Bronze'}
             </span>
             <span className="level-badge">Level {profile.level}</span>
             <span className="member-since">Member since {memberSince}</span>
@@ -336,7 +336,7 @@ export default function PublicProfilePage() {
                 playerStatus.playingAtTableId && navigate(`/table/${playerStatus.playingAtTableId}`)
               }
             >
-              🎯 Playing at <strong>{playerStatus.playingAt}</strong>
+              Playing at <strong>{playerStatus.playingAt}</strong>
             </div>
           )}
           {playerStatus?.statusText && (
@@ -353,7 +353,7 @@ export default function PublicProfilePage() {
             onClick={handleUnblock}
             disabled={actionLoading}
           >
-            🚫 Unblock
+            Unblock
           </button>
         ) : (
           <>
@@ -363,12 +363,12 @@ export default function PublicProfilePage() {
                 onClick={handleAddFriend}
                 disabled={actionLoading}
               >
-                👥 Add Friend
+                Add Friend
               </button>
             )}
             {friendStatus === 'pending_sent' && (
               <button className="action-btn pending-btn" disabled>
-                ⏳ Request Sent
+                Request Sent
               </button>
             )}
             {friendStatus === 'pending_received' && (
@@ -393,7 +393,7 @@ export default function PublicProfilePage() {
               ✉ Message
             </button>
             <button className="action-btn block-btn" onClick={() => setShowBlockModal(true)}>
-              🚫
+              ⊘
             </button>
             <button
               className="action-btn share-btn"
@@ -403,7 +403,7 @@ export default function PublicProfilePage() {
                 toast.success('Profile link copied!');
               }}
             >
-              📤 Share
+              Share
             </button>
           </>
         )}
@@ -430,7 +430,7 @@ export default function PublicProfilePage() {
           </div>
           <div className="stat-card">
             <span className="stat-value">{profile.currentStreak}</span>
-            <span className="stat-label">Current Streak 🔥</span>
+            <span className="stat-label">Current Streak</span>
           </div>
           <div className="stat-card">
             <span className="stat-value">{stats.favoriteVariant}</span>
@@ -443,7 +443,7 @@ export default function PublicProfilePage() {
       {mutualFriends.length > 0 && (
         <div className="mutual-friends-section">
           <h3>
-            👥 {mutualFriends.length} Mutual Friend{mutualFriends.length !== 1 ? 's' : ''}
+            {mutualFriends.length} Mutual Friend{mutualFriends.length !== 1 ? 's' : ''}
           </h3>
           <div className="mutual-friends-list">
             {mutualFriends.slice(0, 6).map((friend) => (
@@ -470,11 +470,11 @@ export default function PublicProfilePage() {
       {/* Q3: Achievement Showcase */}
       {(profile as any).achievements && (profile as any).achievements.length > 0 && (
         <div className="achievement-showcase">
-          <h3>🏆 Achievement Showcase</h3>
+          <h3>Achievement Showcase</h3>
           <div className="achievement-grid">
             {(profile as any).achievements.slice(0, 5).map((achievement: any, i: number) => (
               <div key={i} className="achievement-card">
-                <span className="achievement-icon">{achievement.icon || '🏅'}</span>
+                <span className="achievement-icon">{achievement.icon || '★'}</span>
                 <span className="achievement-name">{achievement.name}</span>
               </div>
             ))}
@@ -485,7 +485,7 @@ export default function PublicProfilePage() {
       {/* Q3: Profile QR Code */}
       {userId && (
         <div className="profile-qr-section">
-          <h3>📱 Scan to Connect</h3>
+          <h3>Scan to Connect</h3>
           <img
             src={messagingService.generateProfileQRData(userId)}
             alt="Profile QR Code"

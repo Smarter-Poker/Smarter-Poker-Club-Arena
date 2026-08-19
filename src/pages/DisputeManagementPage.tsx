@@ -119,7 +119,7 @@ export default function DisputeManagementPage() {
               reportError(err?.message || err, 'DisputeManagementPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[DisputeManagementPage] ⏱️ Realtime channel timed out');
+            console.warn('[DisputeManagementPage] Realtime channel timed out');
           }
         });
     };
@@ -231,11 +231,11 @@ export default function DisputeManagementPage() {
 
   const getStatusBadge = (status: DisputeStatus) => {
     const map: Record<DisputeStatus, { icon: string; cls: string }> = {
-      open: { icon: '⚪', cls: 'badge-open' },
-      under_review: { icon: '🔵', cls: 'badge-review' },
-      resolved: { icon: '✅', cls: 'badge-resolved' },
-      escalated: { icon: '🔴', cls: 'badge-escalated' },
-      withdrawn: { icon: '⬜', cls: 'badge-withdrawn' },
+      open: { icon: '○', cls: 'badge-open' },
+      under_review: { icon: '●', cls: 'badge-review' },
+      resolved: { icon: '✓', cls: 'badge-resolved' },
+      escalated: { icon: '●', cls: 'badge-escalated' },
+      withdrawn: { icon: '◆', cls: 'badge-withdrawn' },
     };
     const cfg = map[status] || map.open;
     return (
@@ -249,7 +249,7 @@ export default function DisputeManagementPage() {
     <>
       <div className="dispute-management-page">
         <div className="dispute-header">
-          <h2>⚖️ Dispute Management</h2>
+          <h2>⚖ Dispute Management</h2>
           {statusCounts.open > 0 && (
             <span className="open-count-badge">{statusCounts.open} open</span>
           )}
@@ -346,7 +346,7 @@ export default function DisputeManagementPage() {
                               fontWeight: sla.urgent ? 700 : 400,
                             }}
                           >
-                            ⏱️ {sla.text}
+                            {sla.text}
                           </span>
                         );
                       })()}
@@ -374,7 +374,7 @@ export default function DisputeManagementPage() {
                           onClick={() => handleStartReview(dispute.id)}
                           disabled={reviewing === dispute.id}
                         >
-                          {reviewing === dispute.id ? '🔍 Reviewing...' : '🔍 Start Review'}
+                          {reviewing === dispute.id ? 'Reviewing...' : 'Start Review'}
                         </button>
                       )}
 
@@ -418,7 +418,7 @@ export default function DisputeManagementPage() {
                                 onClick={() => handleEscalate(dispute.id)}
                                 disabled={escalating === dispute.id}
                               >
-                                {escalating === dispute.id ? '🔴 Escalating...' : '🔴 Escalate'}
+                                {escalating === dispute.id ? 'Escalating...' : 'Escalate'}
                               </button>
                             </div>
                           </div>

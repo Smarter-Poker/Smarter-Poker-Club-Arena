@@ -255,7 +255,7 @@ export default function PlayerWalletPage() {
           if (err) reportError(err?.message || err, 'PlayerWalletPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[PlayerWalletPage] ⏱️ Realtime channel timed out');
+          console.warn('[PlayerWalletPage] Realtime channel timed out');
         }
       });
     return () => {
@@ -399,7 +399,7 @@ export default function PlayerWalletPage() {
               color: '#ffa726',
             }}
           >
-            <span>🔒</span>
+            <span>◈</span>
             <span>{balances.PLAYER.locked.toLocaleString()} chips in escrow</span>
             <span style={{ marginLeft: 'auto', fontSize: '0.65rem', opacity: 0.7 }}>
               Funds Secured

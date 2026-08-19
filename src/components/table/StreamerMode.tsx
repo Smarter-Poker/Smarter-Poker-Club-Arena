@@ -25,7 +25,7 @@ export function StreamerMode({ isEnabled, onToggle }: StreamerModeProps) {
         className={`toggle-btn ${isEnabled ? 'active' : ''}`}
         onClick={() => onToggle(!isEnabled)}
       >
-        <span className="icon">🎬</span>
+        <span className="icon">▶</span>
         <span className="label">Streamer Mode</span>
         <span className="status">{isEnabled ? 'ON' : 'OFF'}</span>
       </button>

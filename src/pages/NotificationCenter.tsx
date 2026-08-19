@@ -38,12 +38,12 @@ interface Notification {
 
 const ICON_MAP: Record<string, string> = {
   club: '♠',
-  tournament: '🏆',
-  settlement: '💰',
-  achievement: '🎖️',
-  system: '⚙️',
-  friend: '👤',
-  table: '🎯',
+  tournament: '★',
+  settlement: '◆',
+  achievement: '◆',
+  system: '⚙',
+  friend: '◉',
+  table: '◎',
 };
 
 export default function NotificationCenter() {
@@ -79,7 +79,7 @@ export default function NotificationCenter() {
             link: n.link || n.action_url,
             read: n.read || false,
             created_at: n.created_at,
-            icon: ICON_MAP[n.type] || '📬',
+            icon: ICON_MAP[n.type] || '✉',
           }))
         );
       }
@@ -118,7 +118,7 @@ export default function NotificationCenter() {
               link: n.link || n.action_url,
               read: false,
               created_at: n.created_at,
-              icon: ICON_MAP[n.type] || '📬',
+              icon: ICON_MAP[n.type] || '✉',
             },
             ...prev,
           ]);
@@ -144,7 +144,7 @@ export default function NotificationCenter() {
           if (err) reportError(err?.message || err, 'NotificationCenter._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[NotificationCenter] ⏱️ Realtime channel timed out');
+          console.warn('[NotificationCenter] Realtime channel timed out');
         }
       });
 
@@ -285,7 +285,7 @@ export default function NotificationCenter() {
           <div className="notif-empty">
             <div className="notif-empty-illustration">
               <div className="notif-empty-bell-ring">
-                <span className="notif-empty-bell">🔔</span>
+                <span className="notif-empty-bell">◉</span>
                 <span className="notif-empty-sparkle notif-sparkle-1">✦</span>
                 <span className="notif-empty-sparkle notif-sparkle-2">✦</span>
                 <span className="notif-empty-sparkle notif-sparkle-3">✧</span>

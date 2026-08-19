@@ -319,9 +319,9 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           .from('conversations')
           .update({
             last_message: audioUrl
-              ? '🎤 Voice message'
+              ? 'Voice message'
               : imageUrl
-                ? '📷 Image'
+                ? 'Image'
                 : text.trim().substring(0, 100),
             last_message_time: new Date().toISOString(),
             last_message_user_id: user.id,
@@ -524,7 +524,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           if (err) reportError(err?.message || err, 'MessageThread._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[MessageThread] ⏱️ Realtime channel timed out');
+          console.warn('[MessageThread] Realtime channel timed out');
         }
       });
 
@@ -655,14 +655,14 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           onClick={() => setShowSearch((prev) => !prev)}
           title="Search messages"
         >
-          🔍
+          ⌕
         </button>
         <button
           className={styles.searchToggle}
           onClick={() => setShowSchedule((prev) => !prev)}
           title="Schedule message"
         >
-          ⏰
+          ◷
         </button>
       </div>
 
@@ -766,7 +766,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
                           fontWeight: 600,
                         }}
                       >
-                        💬 {message.threadReplyCount} repl
+                        {message.threadReplyCount} repl
                         {message.threadReplyCount !== 1 ? 'ies' : 'y'}
                       </div>
                     )}
@@ -802,7 +802,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
               {replyingToMessage.content
                 ? replyingToMessage.content.substring(0, 80)
                 : replyingToMessage.imageUrl
-                  ? '📷 Image'
+                  ? 'Image'
                   : ''}
             </p>
           </div>
@@ -819,7 +819,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
             const recipientId = participants?.[0]?.userId;
             if (recipientId && user?.id) {
               // Send a contact card as a message
-              sendMessage(`📇 Shared contact card — /profile/${user.id}`, undefined, undefined);
+              sendMessage(`Shared contact card — /profile/${user.id}`, undefined, undefined);
             }
           }}
           title="Share Contact Card"
@@ -833,7 +833,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
             color: 'var(--text-secondary, #8b9dc3)',
           }}
         >
-          📇
+          ▤
         </button>
       </div>
 

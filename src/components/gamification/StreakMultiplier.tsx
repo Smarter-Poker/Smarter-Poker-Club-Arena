@@ -33,9 +33,9 @@ export default function StreakMultiplier({
       <div className={`sm-flame-wrap ${flameClass}`}>
         {/* Layered flame SVGs for depth */}
         <div className="sm-flame sm-flame-outer" style={{ opacity: 0.4 + intensity * 0.6 }}>
-          🔥
+          ▲
         </div>
-        {streak >= 7 && <div className="sm-flame sm-flame-inner">🔥</div>}
+        {streak >= 7 && <div className="sm-flame sm-flame-inner">▲</div>}
       </div>
 
       <div className="sm-info">

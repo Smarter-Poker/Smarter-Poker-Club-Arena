@@ -34,14 +34,14 @@ interface LuckyDrawWheelProps {
 }
 
 const DEFAULT_SEGMENTS: WheelSegment[] = [
-  { id: '1', label: '10', icon: '💎', color: '#7c3aed', amount: 10, type: 'diamonds' },
-  { id: '2', label: '50', icon: '🪙', color: '#00c853', amount: 50, type: 'chips' },
-  { id: '3', label: '25', icon: '💎', color: '#1a73e8', amount: 25, type: 'diamonds' },
-  { id: '4', label: '100', icon: '🪙', color: '#ff6d00', amount: 100, type: 'chips' },
-  { id: '5', label: '5', icon: '💎', color: '#e91e63', amount: 5, type: 'diamonds' },
-  { id: '6', label: '200', icon: '🪙', color: '#ffd700', amount: 200, type: 'chips' },
-  { id: '7', label: '50', icon: '💎', color: '#00bcd4', amount: 50, type: 'diamonds' },
-  { id: '8', label: '500', icon: '🏆', color: '#9c27b0', amount: 500, type: 'chips' },
+  { id: '1', label: '10', icon: '◆', color: '#7c3aed', amount: 10, type: 'diamonds' },
+  { id: '2', label: '50', icon: '◉', color: '#00c853', amount: 50, type: 'chips' },
+  { id: '3', label: '25', icon: '◆', color: '#1a73e8', amount: 25, type: 'diamonds' },
+  { id: '4', label: '100', icon: '◉', color: '#ff6d00', amount: 100, type: 'chips' },
+  { id: '5', label: '5', icon: '◆', color: '#e91e63', amount: 5, type: 'diamonds' },
+  { id: '6', label: '200', icon: '◉', color: '#ffd700', amount: 200, type: 'chips' },
+  { id: '7', label: '50', icon: '◆', color: '#00bcd4', amount: 50, type: 'diamonds' },
+  { id: '8', label: '500', icon: '★', color: '#9c27b0', amount: 500, type: 'chips' },
 ];
 
 export default function LuckyDrawWheel({
@@ -119,14 +119,14 @@ export default function LuckyDrawWheel({
       <div className="ldw-container" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="ldw-header">
-          <span className="ldw-title">🍀 Lucky Draw</span>
+          <span className="ldw-title">Lucky Draw</span>
           <button className="ldw-close" onClick={onClose} aria-label="Close lucky draw">
             ✕
           </button>
         </div>
 
         {streakMultiplier > 1 && (
-          <div className="ldw-streak-banner">🔥 {streakMultiplier}x Streak Bonus!</div>
+          <div className="ldw-streak-banner"> {streakMultiplier}x Streak Bonus!</div>
         )}
 
         {/* Wheel */}
@@ -194,7 +194,7 @@ export default function LuckyDrawWheel({
           onClick={handleSpin}
           disabled={spinning || spinsRemaining <= 0}
         >
-          {spinning ? '🍀 Spinning...' : result ? '🍀 Spin Again' : '🍀 SPIN THE WHEEL'}
+          {spinning ? 'Spinning...' : result ? 'Spin Again' : 'SPIN THE WHEEL'}
         </button>
 
         {spinsRemaining > 0 && !spinning && (

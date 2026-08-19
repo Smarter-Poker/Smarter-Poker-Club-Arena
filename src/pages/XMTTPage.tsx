@@ -308,13 +308,13 @@ export default function XMTTPage() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>🏆 XMTT Tournament Lobby</h1>
+        <h1 className={styles.title}>XMTT Tournament Lobby</h1>
         <div className={styles.headerActions}>
           <Link to="/tournaments" className={styles.btnGhost}>
-            📋 All Tournaments
+            All Tournaments
           </Link>
           <Link to="/" className={styles.btnGhost}>
-            🏠 Lobby
+            Lobby
           </Link>
         </div>
       </header>
@@ -347,10 +347,10 @@ export default function XMTTPage() {
         <div className={styles.listPanel}>
           {filtered.length === 0 ? (
             <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>🏆</span>
+              <span className={styles.emptyIcon}>★</span>
               <span className={styles.emptyText}>No MTT tournaments found for this filter.</span>
               <Link to="/" className={styles.btnPrimary} style={{ marginTop: 12 }}>
-                🏠 Go to Lobby
+                Go to Lobby
               </Link>
             </div>
           ) : (
@@ -368,11 +368,11 @@ export default function XMTTPage() {
                   <StatusBadge status={t.status} />
                 </div>
                 <div className={styles.tournMeta}>
-                  <span>💰 Buy-in: {fmtChips(t.buy_in)}</span>
+                  <span> Buy-in: {fmtChips(t.buy_in)}</span>
                   <span>
-                    👥 {t.registered_count || 0} / {t.max_players || '∞'}
+                    {t.registered_count || 0} / {t.max_players || '∞'}
                   </span>
-                  <span>🕐 {formatDate(t.start_time || t.created_at)}</span>
+                  <span> {formatDate(t.start_time || t.created_at)}</span>
                 </div>
                 {t.status === 'registering' && (
                   <div className={styles.tournActions}>
@@ -407,7 +407,7 @@ export default function XMTTPage() {
                             <span
                               style={{ color: '#F5A623', fontSize: '0.75rem', fontWeight: 600 }}
                             >
-                              📋 Position #{waitlistPositions[t.id]}
+                              Position #{waitlistPositions[t.id]}
                             </span>
                             <button
                               onClick={(e) => {
@@ -429,7 +429,7 @@ export default function XMTTPage() {
                             disabled={waitlistProcessing === t.id}
                             className={styles.btnRegister}
                           >
-                            {waitlistProcessing === t.id ? 'Joining...' : '📋 Join Waitlist'}
+                            {waitlistProcessing === t.id ? 'Joining...' : 'Join Waitlist'}
                           </button>
                         )}
                       </>

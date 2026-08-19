@@ -28,7 +28,7 @@ interface HubStats {
 
 const NAV_ITEMS = [
   {
-    icon: '🚨',
+    icon: '◆',
     label: 'Financial Alerts',
     description: 'Critical warnings and system notifications',
     path: '/financial-alerts',
@@ -37,7 +37,7 @@ const NAV_ITEMS = [
     border: 'rgba(239,68,68,0.3)',
   },
   {
-    icon: '🩺',
+    icon: '◇',
     label: 'System Health',
     description: 'Ledger reconciliation & cron status',
     path: '/financial-health',
@@ -46,7 +46,7 @@ const NAV_ITEMS = [
     border: 'rgba(16,185,129,0.3)',
   },
   {
-    icon: '⚠️',
+    icon: '⚠',
     label: 'Disputes',
     description: 'Open disputes needing resolution',
     path: '/disputes',
@@ -55,7 +55,7 @@ const NAV_ITEMS = [
     border: 'rgba(245,158,11,0.3)',
   },
   {
-    icon: '📊',
+    icon: '▦',
     label: 'Rate Audit Trail',
     description: 'Commission & rake rate change history',
     path: '/rate-audit',
@@ -64,7 +64,7 @@ const NAV_ITEMS = [
     border: 'rgba(139,92,246,0.3)',
   },
   {
-    icon: '🏧',
+    icon: '▦',
     label: 'Agent Portal',
     description: 'Triple wallet, credit lines, commissions',
     path: '/agent-portal',
@@ -73,7 +73,7 @@ const NAV_ITEMS = [
     border: 'rgba(14,165,233,0.3)',
   },
   {
-    icon: '🎰',
+    icon: '▦',
     label: 'Rakeback Dashboard',
     description: 'Player rakeback tiers & pending payouts',
     path: '/rakeback',
@@ -82,7 +82,7 @@ const NAV_ITEMS = [
     border: 'rgba(217,70,239,0.3)',
   },
   {
-    icon: '💳',
+    icon: '▣',
     label: 'Credit Admin',
     description: 'Set & adjust agent credit limits',
     path: '/credit-admin',
@@ -91,7 +91,7 @@ const NAV_ITEMS = [
     border: 'rgba(249,115,22,0.3)',
   },
   {
-    icon: '📅',
+    icon: '▤',
     label: 'Settlement History',
     description: 'Weekly settlement cycles & revenue trends',
     path: '/settlement-history',
@@ -100,7 +100,7 @@ const NAV_ITEMS = [
     border: 'rgba(20,184,166,0.3)',
   },
   {
-    icon: '⚖️',
+    icon: '⚖',
     label: 'Settlement Center',
     description: 'Canary checks, payout execution & monitoring',
     path: '/settlement-dashboard',
@@ -109,7 +109,7 @@ const NAV_ITEMS = [
     border: 'rgba(99,102,241,0.3)',
   },
   {
-    icon: '🏦',
+    icon: '▦',
     label: 'Settlements',
     description: 'Club & agent settlement management',
     path: '/wallet',
@@ -118,7 +118,7 @@ const NAV_ITEMS = [
     border: 'rgba(59,130,246,0.3)',
   },
   {
-    icon: '📥',
+    icon: '↓',
     label: 'CSV Exports',
     description: 'Financial reports & data exports',
     path: '/wallet',
@@ -318,7 +318,7 @@ export default function FinancialAdminHub() {
           if (err) reportError(err?.message || err, 'FinancialAdminHub._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[FinancialAdminHub] ⏱️ Realtime channel timed out');
+          console.warn('[FinancialAdminHub] Realtime channel timed out');
         }
       });
     return () => {
@@ -343,28 +343,28 @@ export default function FinancialAdminHub() {
     {
       label: 'Open Disputes',
       value: stats.openDisputes,
-      icon: '⚠️',
+      icon: '⚠',
       color: stats.openDisputes > 0 ? '#f59e0b' : '#10b981',
       glow: stats.openDisputes > 0 ? 'rgba(245,158,11,0.2)' : 'rgba(16,185,129,0.2)',
     },
     {
       label: 'Rate Changes',
       value: stats.rateChanges,
-      icon: '📊',
+      icon: '▦',
       color: '#8b5cf6',
       glow: 'rgba(139,92,246,0.2)',
     },
     {
       label: 'Health Checks',
       value: stats.healthChecks,
-      icon: stats.lastCheckPassed === false ? '🔴' : stats.lastCheckPassed === true ? '🟢' : '⚪',
+      icon: stats.lastCheckPassed === false ? '✕' : stats.lastCheckPassed === true ? '✓' : '○',
       color: stats.lastCheckPassed === false ? '#ef4444' : '#10b981',
       glow: stats.lastCheckPassed === false ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)',
     },
     {
       label: 'Active Alerts',
       value: stats.totalAlerts,
-      icon: '🚨',
+      icon: '◆',
       color: stats.totalAlerts > 0 ? '#ef4444' : '#10b981',
       glow: stats.totalAlerts > 0 ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)',
     },
@@ -374,7 +374,7 @@ export default function FinancialAdminHub() {
     return (
       <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '24px' }}>
-          🏦 Financial Admin Hub
+          Financial Admin Hub
         </h1>
         <PageSkeleton variant="financial" />
       </div>
@@ -399,7 +399,7 @@ export default function FinancialAdminHub() {
         >
           ← Back
         </button>
-        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>🏦 Financial Admin Hub</h1>
+        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Financial Admin Hub</h1>
         <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
           Central command for all financial operations
         </p>
@@ -479,7 +479,7 @@ export default function FinancialAdminHub() {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>📈 7-Day Revenue</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>7-Day Revenue</span>
                   {loading && (
                     <span
                       style={{
@@ -643,10 +643,10 @@ export default function FinancialAdminHub() {
         <span>
           System Health:{' '}
           {stats.lastCheckPassed === true
-            ? '🟢 Passing'
+            ? 'Passing'
             : stats.lastCheckPassed === false
-              ? '🔴 Failing'
-              : '⚪ Unknown'}
+              ? 'Failing'
+              : 'Unknown'}
         </span>
       </div>
     </div>

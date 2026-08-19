@@ -17,56 +17,56 @@ interface Benefit {
 const BENEFITS: Benefit[] = [
   {
     id: 'rakeback',
-    icon: '💰',
+    icon: '◆',
     label: 'Rakeback',
     description: 'Earn cashback on every hand',
     unlockedAtTier: 'bronze',
   },
   {
     id: 'tournaments',
-    icon: '🎟️',
+    icon: '◈',
     label: 'Tournament Tickets',
     description: 'Monthly free tournament entries',
     unlockedAtTier: 'silver',
   },
   {
     id: 'priority',
-    icon: '⚡',
+    icon: '▲',
     label: 'Priority Support',
     description: '24/7 dedicated customer support',
     unlockedAtTier: 'gold',
   },
   {
     id: 'exclusive_table',
-    icon: '🎰',
+    icon: '▦',
     label: 'Exclusive Tables',
     description: 'Access private high-stakes tables',
     unlockedAtTier: 'platinum',
   },
   {
     id: 'monthly_bonus',
-    icon: '🎁',
+    icon: '◈',
     label: 'Monthly Bonus',
     description: 'Exclusive bonus multipliers',
     unlockedAtTier: 'gold',
   },
   {
     id: 'badge_frame',
-    icon: '🏅',
+    icon: '★',
     label: 'Custom Badges',
     description: 'Exclusive avatar frames & badges',
     unlockedAtTier: 'silver',
   },
   {
     id: 'vip_events',
-    icon: '🎊',
+    icon: '★',
     label: 'VIP Events',
     description: 'Invitation to exclusive tournaments',
     unlockedAtTier: 'diamond',
   },
   {
     id: 'point_multiplier',
-    icon: '⭐',
+    icon: '★',
     label: 'Point Multiplier',
     description: 'Earn points faster on all actions',
     unlockedAtTier: 'bronze',
@@ -112,7 +112,7 @@ export const VIPBenefitsGrid: React.FC<VIPBenefitsGridProps> = ({ currentPoints 
             >
               {!isUnlocked && (
                 <div className="lock-overlay">
-                  <span className="lock-icon">🔒</span>
+                  <span className="lock-icon">◈</span>
                 </div>
               )}
 

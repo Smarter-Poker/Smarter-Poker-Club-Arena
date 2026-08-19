@@ -123,7 +123,7 @@ export function SettlementCronStatus() {
               animation: snapshotUrgent ? 'pulse-dot 1s infinite' : 'none',
             }}
           >
-            📸 Snapshot: {status.snapshotCountdown}
+            Snapshot: {status.snapshotCountdown}
           </span>
           <span
             style={{
@@ -132,7 +132,7 @@ export function SettlementCronStatus() {
               animation: payoutUrgent ? 'pulse-dot 1s infinite' : 'none',
             }}
           >
-            💰 Payout: {status.payoutCountdown}
+            Payout: {status.payoutCountdown}
           </span>
         </div>
       </div>

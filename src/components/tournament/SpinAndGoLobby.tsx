@@ -92,7 +92,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
             if (err) reportError(err?.message || err, 'SpinAndGoLobby._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[SpinAndGoLobby] ⏱️ Realtime channel timed out');
+            console.warn('[SpinAndGoLobby] Realtime channel timed out');
           }
         });
     };

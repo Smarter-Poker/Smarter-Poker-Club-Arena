@@ -419,7 +419,7 @@ export default function ConversationList({
                   <span className={styles.name}>
                     {conv.isPinned && (
                       <span className={styles.pinIcon} title="Pinned">
-                        📌
+                        ▸
                       </span>
                     )}
                     {conv.isGroup && ' '}
@@ -443,7 +443,7 @@ export default function ConversationList({
                       onClick={(e) => handlePin(e, conv.id, conv.isPinned)}
                       title={conv.isPinned ? 'Unpin' : 'Pin'}
                     >
-                      📌
+                      ▸
                     </button>
                     {conv.unreadCount > 0 && (
                       <span className={styles.badge}>{conv.unreadCount}</span>

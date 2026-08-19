@@ -69,7 +69,7 @@ export default function ShareableHighlight({
 
   const resultColor = result === 'win' ? '#10b981' : result === 'loss' ? '#ef4444' : '#f59e0b';
   const resultLabel = result === 'win' ? 'WINNER' : result === 'loss' ? 'LOSER' : 'SPLIT';
-  const resultIcon = result === 'win' ? '🏆' : result === 'loss' ? '⚠️' : '🤝';
+  const resultIcon = result === 'win' ? '★' : result === 'loss' ? '⚠' : '◈';
 
   const formatDate = (dateStr: string) => {
     try {
@@ -140,10 +140,10 @@ export default function ShareableHighlight({
       {/* Share buttons */}
       <div className="highlight-actions">
         <button className="action-btn copy-btn" onClick={handleCopyLink}>
-          {copied ? '✓ Copied!' : '📋 Copy Link'}
+          {copied ? '✓ Copied!' : 'Copy Link'}
         </button>
         <button className="action-btn share-btn" onClick={handleShare}>
-          📤 Share
+          Share
         </button>
       </div>
 

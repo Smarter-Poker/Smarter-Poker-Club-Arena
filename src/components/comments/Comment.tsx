@@ -48,7 +48,7 @@ export const Comment: React.FC<CommentProps> = ({
         <div className="comment-actions">
           {onLike && (
             <button className="comment-action" onClick={onLike}>
-              ❤️ {likes > 0 && likes}
+              ❤ {likes > 0 && likes}
             </button>
           )}
           {onReply && (

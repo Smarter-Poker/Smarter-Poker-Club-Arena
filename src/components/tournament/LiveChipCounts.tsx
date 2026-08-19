@@ -195,7 +195,7 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
               }}
             >
               {/* Rank Badge */}
-              <div className="lcc-rank-badge">{leader.rank === 1 ? '👑' : `#${leader.rank}`}</div>
+              <div className="lcc-rank-badge">{leader.rank === 1 ? '♛' : `#${leader.rank}`}</div>
 
               {/* Player Info */}
               <div className="lcc-player-info">
@@ -235,7 +235,7 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
               {/* Status Badge */}
               {status === 'danger' && (
                 <div className="lcc-badge danger" title={`In danger (${mRatio}BB)`}>
-                  ⚠️
+                  ⚠
                 </div>
               )}
               {status === 'warning' && (

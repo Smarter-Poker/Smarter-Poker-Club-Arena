@@ -181,7 +181,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onSend, onCancel }
             ✕
           </button>
           <button className="voice-stop-btn" onClick={stopRecording}>
-            ⏹
+            ■
           </button>
         </div>
       )}
@@ -194,7 +194,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onSend, onCancel }
             ✕
           </button>
           <button className="voice-send-btn" onClick={handleSend}>
-            📤 Send
+            Send
           </button>
         </div>
       )}

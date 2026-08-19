@@ -146,7 +146,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
           if (err) reportError(err?.message || err, 'PerformanceTrends._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[PerformanceTrends] ⏱️ Realtime channel timed out');
+          console.warn('[PerformanceTrends] Realtime channel timed out');
         }
       });
 

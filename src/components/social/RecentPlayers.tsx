@@ -91,7 +91,7 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
   return (
     <div className="recent-players">
       <div className="section-header">
-        <h2>⏱️ Recent Players</h2>
+        <h2>Recent Players</h2>
       </div>
 
       <div className="players-list">
@@ -99,7 +99,7 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
           Array.from({ length: 4 }).map((_, i) => <div key={i} className="player-row skeleton" />)
         ) : players.length === 0 ? (
           <div className="empty-state">
-            <span>👤</span>
+            <span>◉</span>
             <p>No recent players</p>
           </div>
         ) : (
@@ -154,7 +154,7 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
                     }}
                     title="Add friend"
                   >
-                    ➕
+                    +
                   </button>
                 )}
                 <button
@@ -165,7 +165,7 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
                   }}
                   title="Invite to table"
                 >
-                  🎰
+                  ▦
                 </button>
               </div>
             </div>

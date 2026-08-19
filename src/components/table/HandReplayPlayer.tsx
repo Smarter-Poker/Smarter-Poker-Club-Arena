@@ -529,7 +529,7 @@ export function HandReplayPlayer({
         {/* Bottom Controls */}
         <div className="replay-player__bottom">
           <button className="replay-player__play-btn" onClick={handlePlayPause}>
-            {state === 'PLAYING' ? '⏸' : state === 'COMPLETE' ? '⟳' : '▶'}
+            {state === 'PLAYING' ? '▮' : state === 'COMPLETE' ? '⟳' : '▶'}
           </button>
 
           <input

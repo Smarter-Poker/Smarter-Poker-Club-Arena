@@ -313,7 +313,7 @@ export default function HandReplayerPage() {
                 ⏮
               </button>
               <button className="ctrl-btn play" onClick={togglePlay}>
-                {isPlaying ? '⏸' : '▶'}
+                {isPlaying ? '▮' : '▶'}
               </button>
               <button className="ctrl-btn" onClick={forward}>
                 ⏭
@@ -378,7 +378,7 @@ export default function HandReplayerPage() {
           className="share-btn"
           onClick={() => navigator.share?.({ url: shareUrl, title: 'Check out this hand!' })}
         >
-          📤 Share
+          Share
         </button>
 
         {/* Club Arena branding */}

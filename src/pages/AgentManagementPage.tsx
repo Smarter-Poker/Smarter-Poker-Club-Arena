@@ -270,7 +270,7 @@ export default function AgentManagementPage() {
               reportError(err?.message || err, 'AgentManagementPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[AgentManagementPage] ⏱️ Realtime channel timed out');
+            console.warn('[AgentManagementPage] Realtime channel timed out');
           }
         });
     };
@@ -638,7 +638,7 @@ export default function AgentManagementPage() {
               }
             }}
           >
-            📥 Export
+            Export
           </button>
         )}
       </div>
@@ -688,7 +688,7 @@ export default function AgentManagementPage() {
             onClick={() => setActiveTab(tab)}
           >
             {tab === 'agents' && ' Agents'}
-            {tab === 'players' && '👤 Players'}
+            {tab === 'players' && 'Players'}
             {tab === 'hierarchy' && 'Hierarchy'}
             {tab === 'credit-limits' && 'Credit Limits'}
             {tab === 'commissions' && ' Commissions'}
@@ -957,11 +957,11 @@ export default function AgentManagementPage() {
                               if (result.success) {
                                 if (result.partial) {
                                   toast.success(
-                                    `⚠️ Partially recovered ${(result.recovered || 0).toLocaleString()} of ${tx.amount.toLocaleString()} chips (player had insufficient balance)`
+                                    `⚠ Partially recovered ${(result.recovered || 0).toLocaleString()} of ${tx.amount.toLocaleString()} chips (player had insufficient balance)`
                                   );
                                 } else {
                                   toast.success(
-                                    `✅ Fully recovered ${(result.recovered || tx.amount).toLocaleString()} chips`
+                                    `Fully recovered ${(result.recovered || tx.amount).toLocaleString()} chips`
                                   );
                                 }
                                 masterBus.emit('BALANCE_UPDATED', { source: 'clawback' });
@@ -1160,7 +1160,7 @@ export default function AgentManagementPage() {
               <h2>Settlement Schedule</h2>
               <div className={styles.scheduleGrid}>
                 <div className={styles.scheduleItem}>
-                  <span className={styles.scheduleIcon}>⏱</span>
+                  <span className={styles.scheduleIcon}>◷</span>
                   <div>
                     <strong>Sunday 11:59 PM PST</strong>
                     <p>Snapshot & Invoice Generation</p>

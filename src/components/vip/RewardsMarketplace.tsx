@@ -36,7 +36,7 @@ const REWARDS: Reward[] = [
     description: 'Exclusive gold avatar frame',
     category: 'avatar',
     pointsCost: 1500,
-    icon: '🏆',
+    icon: '★',
     featured: true,
   },
   {
@@ -45,7 +45,7 @@ const REWARDS: Reward[] = [
     description: 'Vibrant neon-style table theme',
     category: 'theme',
     pointsCost: 2000,
-    icon: '🌆',
+    icon: '◆',
   },
   {
     id: 'bonus-50k',
@@ -53,7 +53,7 @@ const REWARDS: Reward[] = [
     description: 'Bonus chips to use in games',
     category: 'bonus',
     pointsCost: 3500,
-    icon: '💸',
+    icon: '→',
   },
   {
     id: 'tournament-vip',
@@ -61,7 +61,7 @@ const REWARDS: Reward[] = [
     description: 'Reserved seat in exclusive weekly tournament',
     category: 'tournament',
     pointsCost: 4000,
-    icon: '💎',
+    icon: '◆',
   },
   {
     id: 'avatar-royal-crown',
@@ -69,7 +69,7 @@ const REWARDS: Reward[] = [
     description: 'Premium royal crown avatar badge',
     category: 'avatar',
     pointsCost: 2500,
-    icon: '👑',
+    icon: '♛',
   },
   {
     id: 'theme-midnight',
@@ -77,7 +77,7 @@ const REWARDS: Reward[] = [
     description: 'Dark elegant casino-inspired theme',
     category: 'theme',
     pointsCost: 1800,
-    icon: '🌙',
+    icon: '◐',
   },
   {
     id: 'bonus-25k',
@@ -85,7 +85,7 @@ const REWARDS: Reward[] = [
     description: 'Bonus chips to use in games',
     category: 'bonus',
     pointsCost: 1500,
-    icon: '💰',
+    icon: '◆',
   },
   {
     id: 'tournament-weekly',
@@ -93,7 +93,7 @@ const REWARDS: Reward[] = [
     description: 'Entry to 4 weekly tournaments',
     category: 'tournament',
     pointsCost: 2000,
-    icon: '📅',
+    icon: '▤',
   },
   {
     id: 'avatar-diamond-halo',
@@ -101,7 +101,7 @@ const REWARDS: Reward[] = [
     description: 'Animated diamond halo around avatar',
     category: 'avatar',
     pointsCost: 3000,
-    icon: '💠',
+    icon: '◆',
   },
   {
     id: 'theme-cosmic',
@@ -109,7 +109,7 @@ const REWARDS: Reward[] = [
     description: 'Futuristic space-themed table',
     category: 'theme',
     pointsCost: 2200,
-    icon: '🚀',
+    icon: '▲',
   },
   {
     id: 'merch-hoodie',
@@ -117,7 +117,7 @@ const REWARDS: Reward[] = [
     description: 'Limited edition branded hoodie',
     category: 'merch',
     pointsCost: 8000,
-    icon: '👕',
+    icon: '◆',
     stock: 50,
   },
 ];
@@ -233,7 +233,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
       {/* Featured Reward */}
       {featuredReward && (
         <div className="featured-reward">
-          <div className="featured-badge">⭐ FEATURED</div>
+          <div className="featured-badge">FEATURED</div>
           <div className="featured-content">
             <div className="featured-icon">{featuredReward.icon}</div>
             <div className="featured-info">
@@ -340,7 +340,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
           ))
         ) : (
           <div className="no-rewards">
-            <span className="no-rewards-icon">🎁</span>
+            <span className="no-rewards-icon">◈</span>
             <p>No rewards in this category yet</p>
           </div>
         )}

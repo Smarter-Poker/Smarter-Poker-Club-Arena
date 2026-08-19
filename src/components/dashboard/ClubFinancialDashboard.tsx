@@ -138,7 +138,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
             reportError(err?.message || err, 'ClubFinancialDashboard._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[ClubFinancialDashboard] ⏱️ Realtime channel timed out');
+          console.warn('[ClubFinancialDashboard] Realtime channel timed out');
         }
       });
 
@@ -258,7 +258,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
 
   return (
     <div className="p-6 bg-gray-900 text-white rounded-lg shadow-xl space-y-6">
-      <h1 className="text-2xl font-bold text-yellow-400">💰 Club Financial Command</h1>
+      <h1 className="text-2xl font-bold text-yellow-400">Club Financial Command</h1>
 
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -317,7 +317,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       {/* Revenue Chart */}
       <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
         <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">
-          📈 Weekly Revenue Trend
+          Weekly Revenue Trend
         </h2>
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={revenueData}>
@@ -354,7 +354,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
         {/* Pie Chart */}
         <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
           <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">
-            🥧 Commission Split
+            Commission Split
           </h2>
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
@@ -388,7 +388,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
 
         {/* Bar Chart */}
         <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-          <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">💹 Daily Rake</h2>
+          <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">Daily Rake</h2>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -411,7 +411,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-gray-800 p-6 rounded-lg border border-green-500/30">
           <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">
-            🏭 Chip Minting Console
+            Chip Minting Console
           </h2>
           <div className="flex flex-col space-y-4">
             <div>
@@ -436,7 +436,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
                   : 'bg-gray-600 text-gray-400 cursor-not-allowed'
               }`}
             >
-              {loading ? 'Minting...' : '⚡ MINT CHIPS'}
+              {loading ? 'Minting...' : 'MINT CHIPS'}
             </button>
           </div>
         </div>
@@ -444,7 +444,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
         {/* Commission Settings */}
         <div className="bg-gray-800 p-6 rounded-lg border border-purple-500/30">
           <h2 className="text-gray-400 text-sm uppercase tracking-wide mb-4">
-            ⚙️ Commission Settings
+            ⚙ Commission Settings
           </h2>
           <div className="flex flex-col space-y-4">
             <div>
@@ -499,7 +499,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
               marginBottom: '12px',
             }}
           >
-            🛠️ Financial Tools
+            Financial Tools
           </h2>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button
@@ -516,7 +516,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
                 textDecoration: 'none',
               }}
             >
-              🚨 Financial Alerts
+              Financial Alerts
             </button>
             <button
               type="button"
@@ -532,7 +532,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
                 textDecoration: 'none',
               }}
             >
-              ⚠️ Disputes
+              ⚠ Disputes
             </button>
             <button
               type="button"
@@ -548,7 +548,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
                 textDecoration: 'none',
               }}
             >
-              🩺 System Health
+              System Health
             </button>
           </div>
         </div>

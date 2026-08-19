@@ -299,13 +299,13 @@ function FriendListPanelInner({
   const getStatusIcon = (status?: string): string => {
     switch (status) {
       case 'online':
-        return '🟢';
+        return '●';
       case 'playing':
         return '♠';
       case 'away':
-        return '🟡';
+        return '●';
       default:
-        return '⚫';
+        return '●';
     }
   };
 

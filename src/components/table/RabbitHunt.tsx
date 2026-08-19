@@ -149,7 +149,7 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
           onClick={handleReveal}
           disabled={isRevealing || isCheckingVIP}
         >
-          <span className="rabbit-hunt__icon">🐰</span>
+          <span className="rabbit-hunt__icon">◆</span>
           <span className="rabbit-hunt__label">{isRevealing ? 'Revealing...' : 'Rabbit Hunt'}</span>
           {!isRevealing && !isCheckingVIP && (
             <span className={`rabbit-hunt__cost ${isVIP ? 'rabbit-hunt__cost--free' : ''}`}>
@@ -162,7 +162,7 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
       {/* Revealed Cards */}
       {revealedCards.length > 0 && (
         <div className="rabbit-hunt__reveal">
-          <span className="rabbit-hunt__reveal-label">🐰 Rabbit shows:</span>
+          <span className="rabbit-hunt__reveal-label">Rabbit shows:</span>
           <div className="rabbit-hunt__cards">
             {revealedCards.map((card, idx) => (
               <div

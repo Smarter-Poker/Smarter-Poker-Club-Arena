@@ -28,10 +28,10 @@ interface NotificationGrouperProps {
 }
 
 const CATEGORIES: Array<{ id: NotificationCategory; icon: string; label: string }> = [
-  { id: 'games', icon: '🎰', label: 'Games' },
-  { id: 'social', icon: '👥', label: 'Social' },
-  { id: 'achievements', icon: '🏆', label: 'Achievements' },
-  { id: 'system', icon: '⚙️', label: 'System' },
+  { id: 'games', icon: '▦', label: 'Games' },
+  { id: 'social', icon: '◉', label: 'Social' },
+  { id: 'achievements', icon: '★', label: 'Achievements' },
+  { id: 'system', icon: '⚙', label: 'System' },
 ];
 
 export default function NotificationGrouper({
@@ -88,7 +88,7 @@ export default function NotificationGrouper({
       <div className="ng-list">
         {filtered.length === 0 ? (
           <div className="ng-empty">
-            <span className="ng-empty-icon">🔔</span>
+            <span className="ng-empty-icon">◉</span>
             <span className="ng-empty-text">No notifications here</span>
           </div>
         ) : (
@@ -99,7 +99,7 @@ export default function NotificationGrouper({
               onClick={() => onRead?.(notif.id)}
             >
               <span className="ng-item-icon">
-                {notif.icon || CATEGORIES.find((c) => c.id === notif.category)?.icon || '📌'}
+                {notif.icon || CATEGORIES.find((c) => c.id === notif.category)?.icon || '▸'}
               </span>
               <div className="ng-item-content">
                 <span className="ng-item-title">{notif.title}</span>

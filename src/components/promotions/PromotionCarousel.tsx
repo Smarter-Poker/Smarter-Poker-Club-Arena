@@ -25,13 +25,13 @@ const GRADIENT_PALETTE = [
 ];
 
 const TYPE_ICONS: Record<string, string> = {
-  bonus: '🎁',
-  freeroll: '🎟️',
-  leaderboard: '🏆',
-  rakeback: '💰',
-  special: '⭐',
-  deposit_match: '💳',
-  refer_friend: '👥',
+  bonus: '◈',
+  freeroll: '◈',
+  leaderboard: '★',
+  rakeback: '◆',
+  special: '★',
+  deposit_match: '▣',
+  refer_friend: '◉',
 };
 
 export default function PromotionCarousel({ clubId, onPromoClick }: PromotionCarouselProps) {
@@ -104,7 +104,7 @@ export default function PromotionCarousel({ clubId, onPromoClick }: PromotionCar
   const safeIndex = activeIndex >= promos.length ? 0 : activeIndex;
   const promo = promos[safeIndex];
   const gradient = GRADIENT_PALETTE[safeIndex % GRADIENT_PALETTE.length];
-  const icon = TYPE_ICONS[promo.type] || '🎁';
+  const icon = TYPE_ICONS[promo.type] || '◈';
 
   const getTimeRemaining = (): string => {
     const diff = new Date(promo.endDate).getTime() - Date.now();
@@ -133,9 +133,9 @@ export default function PromotionCarousel({ clubId, onPromoClick }: PromotionCar
         </div>
         <div className="pc-meta">
           {promo.prizePool && promo.prizePool > 0 && (
-            <span className="pc-prize">💰 {promo.prizePool.toLocaleString()}</span>
+            <span className="pc-prize"> {promo.prizePool.toLocaleString()}</span>
           )}
-          <span className="pc-time">⏰ {getTimeRemaining()}</span>
+          <span className="pc-time"> {getTimeRemaining()}</span>
         </div>
       </button>
 

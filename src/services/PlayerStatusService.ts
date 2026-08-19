@@ -17,7 +17,7 @@ import { reportError } from '../utils/errorReporter';
 
 export interface PlayerStatus {
   userId: string;
-  statusText: string | null; // Custom status: "Grinding MTTs 🎯"
+  statusText: string | null; // Custom status: "Grinding MTTs"
   playingAt: string | null; // Current table name
   playingAtTableId: string | null; // Current table ID for deep-link
   isOnline: boolean;
@@ -193,7 +193,7 @@ class PlayerStatusServiceClass {
       avatarUrl: targetAvatarUrl,
     });
 
-    const content = `📇 Shared a contact: @${card.username}\n${card.link}`;
+    const content = `Shared a contact: @${card.username}\n${card.link}`;
 
     // Destructure 'type' from card to avoid duplication in metadata,
     // as metadata will have its own 'type' property.

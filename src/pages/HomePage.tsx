@@ -432,7 +432,7 @@ function HomePageInner() {
             if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[HomePage] ⏱️ Realtime channel timed out');
+            console.warn('[HomePage] Realtime channel timed out');
           }
         });
     };
@@ -719,7 +719,7 @@ function HomePageInner() {
           if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[HomePage] ⏱️ Realtime channel timed out');
+          console.warn('[HomePage] Realtime channel timed out');
         }
       });
 
@@ -1400,7 +1400,7 @@ function HomePageInner() {
         {/* Empty state — premium onboarding when user has no clubs */}
         {!isLoading && hasFetchedOnceRef.current && displayClubs.length === 0 && (
           <div className={styles.emptyStateCard}>
-            <div className={styles.emptyStateIcon}>🃏</div>
+            <div className={styles.emptyStateIcon}>♠</div>
             <h3 className={styles.emptyStateTitle}>Welcome to Club Arena</h3>
             <p className={styles.emptyStateDesc}>
               Join a club to play poker with friends, compete on leaderboards, and earn rewards.

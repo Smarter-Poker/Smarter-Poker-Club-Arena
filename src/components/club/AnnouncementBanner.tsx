@@ -54,15 +54,15 @@ export const AnnouncementBanner: React.FC<AnnouncementBannerProps> = ({
   const getTypeIcon = (type: Announcement['type']) => {
     switch (type) {
       case 'info':
-        return 'ℹ️';
+        return 'ℹ';
       case 'warning':
-        return '⚠️';
+        return '⚠';
       case 'promo':
-        return '🎁';
+        return '◈';
       case 'event':
-        return '🎉';
+        return '★';
       default:
-        return '📢';
+        return '◉';
     }
   };
 

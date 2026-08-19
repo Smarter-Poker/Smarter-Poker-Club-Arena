@@ -113,7 +113,7 @@ export default function AgentPortalPage() {
           if (err) reportError(err?.message || err, 'AgentPortalPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[AgentPortalPage] ⏱️ Realtime channel timed out');
+          console.warn('[AgentPortalPage] Realtime channel timed out');
         }
       });
     return () => {
@@ -272,7 +272,7 @@ export default function AgentPortalPage() {
         >
           ← Back
         </button>
-        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>🏧 Agent Command Center</h1>
+        <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>Agent Command Center</h1>
         <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
           Triple wallet management, credit lines, and commission trends
         </p>
@@ -407,7 +407,7 @@ export default function AgentPortalPage() {
             marginBottom: '10px',
           }}
         >
-          <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>💳 Credit Line</span>
+          <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Credit Line</span>
           <span
             style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'rgba(255,255,255,0.5)' }}
           >
@@ -499,7 +499,7 @@ export default function AgentPortalPage() {
         }}
       >
         <div style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '12px' }}>
-          📈 Commission Trends (7 Days)
+          Commission Trends (7 Days)
         </div>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '80px' }}>
           {commissionData.map((d) => (

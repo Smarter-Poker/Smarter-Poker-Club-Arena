@@ -30,7 +30,7 @@ export const StreakBadge = memo(function StreakBadge({ streak }: StreakBadgeProp
 
   return (
     <div className={`streak-badge streak-badge--${tier}`}>
-      <span className="streak-badge__icon">🔥</span>
+      <span className="streak-badge__icon">▲</span>
       <span className="streak-badge__count">{streak}</span>
       <span className="streak-badge__label">streak</span>
     </div>

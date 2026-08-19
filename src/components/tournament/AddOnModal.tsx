@@ -81,7 +81,7 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
     <div className="addon-modal-overlay" onClick={onClose}>
       <div className="addon-modal" onClick={(e) => e.stopPropagation()}>
         <div className="am-header">
-          <h3 className="am-title">🎁 Add-On Period</h3>
+          <h3 className="am-title">Add-On Period</h3>
           <button className="am-close" onClick={onClose}>
             ✕
           </button>
@@ -134,10 +134,10 @@ export const AddOnModal: React.FC<AddOnModalProps> = ({
           </div>
 
           {purchased && (
-            <div className="am-success">✅ Add-on purchased! Your stack has been updated.</div>
+            <div className="am-success">Add-on purchased! Your stack has been updated.</div>
           )}
 
-          {error && <div className="am-error">⚠️ {error}</div>}
+          {error && <div className="am-error">⚠ {error}</div>}
         </div>
 
         <div className="am-footer">

@@ -240,6 +240,8 @@ function HomePageInner() {
   const [isValidatingCode, setIsValidatingCode] = useState(false);
   const [showReferralPrompt, setShowReferralPrompt] = useState(false);
   const [validClubId, setValidClubId] = useState<string | null>(null);
+  const [validClubName, setValidClubName] = useState<string | null>(null);
+  const [isJoining, setIsJoining] = useState(false);
   const [referralCode, setReferralCode] = useState('');
   const joinInputRef = useRef<HTMLInputElement>(null);
 
@@ -926,10 +928,12 @@ function HomePageInner() {
       return;
     }
 
-    // Sanitize input for defense-in-depth, then validate 5-digit number
+    // Sanitize input for defense-in-depth, then validate the numeric code.
+    // Canonical codes are 5-digit, but 6-digit codes exist from a legacy
+    // generation bug — accept both so those clubs remain joinable.
     const sanitized = sanitizeInput(clubCode.trim());
     const numericCode = parseInt(sanitized, 10);
-    if (isNaN(numericCode) || numericCode < 10000 || numericCode > 99999) {
+    if (isNaN(numericCode) || numericCode < 10000 || numericCode > 999999) {
       toast.error('Club code must be a 5-digit number');
       return;
     }
@@ -958,12 +962,24 @@ function HomePageInner() {
       if (currentUser) {
         const { data: existingMembership } = await supabase
           .from('club_members')
-          .select('user_id')
+          .select('user_id, status')
           .eq('club_id', club.id)
           .eq('user_id', currentUser.id)
           .maybeSingle();
         if (existingMembership) {
-          toast.info('You are already a member of this club!');
+          if (existingMembership.status === 'pending') {
+            toast.info('Your join request for this club is still pending approval.');
+          } else {
+            toast.info('You are already a member of this club!');
+          }
+          setIsValidatingCode(false);
+          return;
+        }
+
+        // Pre-check the 4-club limit for faster, friendlier feedback than the RPC error
+        const { canJoin } = await ClubsService.canJoinMoreClubs();
+        if (!canJoin) {
+          toast.error('You can only be a member of up to 4 clubs. Leave a club to join a new one.');
           setIsValidatingCode(false);
           return;
         }
@@ -971,6 +987,7 @@ function HomePageInner() {
 
       // Valid club found - show referral prompt
       setValidClubId(club.id);
+      setValidClubName(club.name || null);
       setShowReferralPrompt(true);
     } catch (err) {
       if (!isMountedRef.current) return;
@@ -982,36 +999,50 @@ function HomePageInner() {
   };
 
   const handleJoinClub = async (withReferral = false) => {
-    if (!validClubId) return;
+    if (!validClubId || isJoining) return;
 
+    setIsJoining(true);
     try {
       if (withReferral && referralCode) {
         localStorage.setItem(`referral_${validClubId}`, referralCode);
       }
-      await ClubsService.join(validClubId);
+      const membership = await ClubsService.join(validClubId);
       if (!isMountedRef.current) return;
-      // #2: Optimistic UI — add placeholder club immediately
-      const optimisticClub: UserClub = {
-        id: validClubId,
-        club_id: 0,
-        name: 'Loading...',
-        avatar_url: null,
-        member_count: 1,
-        is_owner: false,
-      } as UserClub;
-      setUserClubs((prev) => [...prev, optimisticClub]);
-      toast.success('Successfully joined the club!');
+
+      if (membership?.status === 'pending') {
+        // Approval-required club — request queued, NOT yet a member.
+        // No optimistic club card; it would vanish on the next refresh.
+        toast.info(
+          `Join request sent to ${validClubName || 'the club'} — you'll be added once an admin approves.`
+        );
+      } else {
+        // #2: Optimistic UI — add placeholder club immediately
+        const optimisticClub: UserClub = {
+          id: validClubId,
+          club_id: 0,
+          name: validClubName || 'Loading...',
+          avatar_url: null,
+          member_count: 1,
+          is_owner: false,
+        } as UserClub;
+        setUserClubs((prev) => [...prev, optimisticClub]);
+        toast.success(`Successfully joined ${validClubName || 'the club'}!`);
+      }
+
       setShowJoinModal(false);
       setShowReferralPrompt(false);
       setClubCode('');
       setReferralCode('');
       // NOTE: ClubsService.join() already emits CLUB_JOINED via bus
       setValidClubId(null);
+      setValidClubName(null);
       // Background refresh to get real club data
       fetchUserData(true, () => isMountedRef.current);
     } catch (err: any) {
       if (!isMountedRef.current) return;
       toast.error(err.message || 'Failed to join club');
+    } finally {
+      if (isMountedRef.current) setIsJoining(false);
     }
   };
 
@@ -1599,6 +1630,7 @@ function HomePageInner() {
             setClubCode('');
             setReferralCode('');
             setValidClubId(null);
+            setValidClubName(null);
           }}
         >
           <div
@@ -1614,12 +1646,12 @@ function HomePageInner() {
                     ref={joinInputRef}
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]{5}"
-                    maxLength={5}
+                    pattern="[0-9]{5,6}"
+                    maxLength={6}
                     className={styles.clubCodeInput}
                     placeholder="Enter 5-Digit Club Code"
                     value={clubCode}
-                    onChange={(e) => setClubCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                    onChange={(e) => setClubCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     onKeyDown={(e) => e.key === 'Enter' && handleJoinClubSubmit()}
                   />
                 </div>
@@ -1627,7 +1659,7 @@ function HomePageInner() {
                   <button
                     className={styles.modalButtonPrimary}
                     onClick={handleJoinClubSubmit}
-                    disabled={isValidatingCode}
+                    disabled={isValidatingCode || clubCode.length < 5}
                   >
                     {isValidatingCode ? 'Validating...' : 'Continue'}
                   </button>
@@ -1641,7 +1673,9 @@ function HomePageInner() {
               </>
             ) : (
               <>
-                <h2 className={styles.modalTitle}>Referral Code</h2>
+                <h2 className={styles.modalTitle}>
+                  {validClubName ? `Join ${validClubName}` : 'Referral Code'}
+                </h2>
                 <p className={styles.modalSubtitle}>Enter a referral code or join without one</p>
                 <div className={styles.inputGroup}>
                   <input
@@ -1656,14 +1690,16 @@ function HomePageInner() {
                   <button
                     className={styles.modalButtonPrimary}
                     onClick={() => handleJoinClub(true)}
+                    disabled={isJoining}
                   >
-                    Join with Referral
+                    {isJoining ? 'Joining...' : 'Join with Referral'}
                   </button>
                   <button
                     className={styles.modalButtonSecondary}
                     onClick={() => handleJoinClub(false)}
+                    disabled={isJoining}
                   >
-                    Join Without Referral
+                    {isJoining ? 'Joining...' : 'Join Without Referral'}
                   </button>
                 </div>
               </>

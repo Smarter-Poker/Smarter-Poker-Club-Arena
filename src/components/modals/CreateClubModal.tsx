@@ -50,12 +50,14 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!isOpen) return;
     setVisibleFormElements([]);
-    [0, 1, 2, 3, 4].forEach((i) => {
+    const timers = [0, 1, 2, 3, 4].map((i) =>
       setTimeout(() => {
         setVisibleFormElements((prev) => [...prev, true]);
-      }, i * 80);
-    });
+      }, i * 80)
+    );
+    return () => timers.forEach((t) => clearTimeout(t));
   }, [isOpen]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,8 +114,10 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       return;
     }
 
-    // Double-click protection
+    // Double-click protection — set BEFORE any await so a rapid second click
+    // can't slip through while the duplicate-name check is in flight
     if (isCreating) return;
+    setIsCreating(true);
 
     // Check for duplicate club name
     try {
@@ -124,15 +128,16 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         .limit(1);
 
       if (existing && existing.length > 0) {
-        if (isMounted.current) toast.error('A club with this name already exists');
+        if (isMounted.current) {
+          toast.error('A club with this name already exists');
+          setIsCreating(false);
+        }
         return;
       }
     } catch (err) {
       reportError(err, 'CreateClubModal.Error');
       // Non-blocking
     }
-
-    setIsCreating(true);
 
     // 4-club membership limit
     try {
@@ -188,7 +193,10 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       const MAX_RETRIES = 3;
 
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
+        // 5-digit code (10000-99999) — canonical format. The Join modal and all
+        // existing production clubs use 5-digit codes; 6-digit codes were a bug
+        // that made new clubs unjoinable by code.
+        const clubIdNumber = Math.floor(10000 + Math.random() * 90000);
 
         // Generate URL-friendly slug
         const slug = sanitizeInput(clubName.trim())
@@ -295,8 +303,10 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
       onClose();
       onSuccess?.(clubData.id);
+      // CLUB_JOINED drives all cross-page refreshes (HomePage subscribes with
+      // fetchUserData). No full page reload — it destroyed the SPA navigation
+      // to the new club that onSuccess just performed.
       masterBus.emit('CLUB_JOINED', { clubId: clubData.id, action: 'club_created' });
-      window.location.reload();
     } catch (err: any) {
       reportError(err, 'CreateClubModal.Failed_to_create_club');
       if (isMounted.current) toast.error(err.message || 'Failed to create club');

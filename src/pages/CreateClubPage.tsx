@@ -534,12 +534,17 @@ export default function CreateClubPage() {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '');
 
-      // Determine the logo value for insert
+      // Determine the logo value for insert.
+      // IMPORTANT: consumers (carousel, club cards, getUserMemberships) read
+      // logo_url / avatar_url — the bare `logo` column is legacy. Write all of
+      // them so default-icon clubs actually render a logo.
       const selectedIcon = CLUB_ICONS.find((i) => i.id === form.iconId);
       const logoValue =
         form.iconId !== 'custom' && selectedIcon
           ? `images/club-icons/icon-${form.iconId}.png`
           : null;
+      const logoUrlValue =
+        form.iconId !== 'custom' && selectedIcon ? selectedIcon.src : null;
 
       // Insert club with collision retry for random club_id
       let data: any = null;
@@ -547,7 +552,10 @@ export default function CreateClubPage() {
       const MAX_RETRIES = 3;
 
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
+        // 5-digit code (10000-99999) — canonical format. The Join modal and all
+        // existing production clubs use 5-digit codes; 6-digit codes were a bug
+        // that made new clubs unjoinable by code.
+        const clubIdNumber = Math.floor(10000 + Math.random() * 90000);
 
         const { data: insertData, error: insertError } = await supabase
           .from('clubs')
@@ -560,6 +568,8 @@ export default function CreateClubPage() {
             is_public: form.isPublic,
             requires_approval: !form.isPublic,
             logo: logoValue,
+            logo_url: logoUrlValue,
+            avatar_url: logoUrlValue,
             member_count: 1,
             level: 1,
             settings: {
@@ -624,10 +634,15 @@ export default function CreateClubPage() {
               .getPublicUrl(uploadData.path);
 
             if (urlData?.publicUrl) {
-              // Save logo URL to club record
+              // Save logo URL to club record — logo_url included so the
+              // baked-card backfill (which keys off logo_url) can run
               await supabase
                 .from('clubs')
-                .update({ avatar_url: urlData.publicUrl, logo: urlData.publicUrl })
+                .update({
+                  avatar_url: urlData.publicUrl,
+                  logo: urlData.publicUrl,
+                  logo_url: urlData.publicUrl,
+                })
                 .eq('id', data.id);
             }
           }

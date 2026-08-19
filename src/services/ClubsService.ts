@@ -203,7 +203,9 @@ export async function createClub(clubData: {
   const MAX_RETRIES = 3;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
+    // 5-digit code (10000-99999) — canonical format matching the Join modal
+    // and all existing production clubs.
+    const clubIdNumber = Math.floor(10000 + Math.random() * 90000);
 
     const { data: insertData, error: insertError } = await supabase
       .from('clubs')

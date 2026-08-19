@@ -60,6 +60,20 @@ function toTitleCase(str: string): string {
   return str.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+/**
+ * Make user input safe for use inside a PostgREST .or(`...ilike.%q%...`) filter:
+ * strip the or() delimiter characters (comma, parens, dot sequences that could
+ * terminate the expression) and escape ilike wildcards so "100%" matches
+ * literally instead of matching everything.
+ */
+function escapeSearchQuery(raw: string): string {
+  return raw
+    .replace(/[(),]/g, ' ') // PostgREST or() syntax delimiters
+    .replace(/[\\%_]/g, (m) => `\\${m}`) // ilike wildcards / escape char
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Role scope for search permissions */
 interface SearchScope {
   role: 'player' | 'agent' | 'admin' | 'owner' | 'union';
@@ -196,6 +210,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
   const [suggestions, setSuggestions] = useState<SuggestedPlayer[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cached search scope — computed once when modal opens
@@ -299,7 +314,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
     const scope = searchScopeRef.current;
     if (!scope || scope.searchableUserIds.length === 0) return;
 
-    const safeQuery = sanitizeInput(query.trim());
+    const safeQuery = escapeSearchQuery(sanitizeInput(query.trim()));
     if (!safeQuery || safeQuery.length < 3) {
       setSuggestions([]);
       setShowSuggestions(false);
@@ -308,7 +323,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
 
     setIsSuggesting(true);
     try {
-      // Search within the first 100 searchable IDs (fast path)
+      // Search within the first 200 searchable IDs (fast path)
       const batch = scope.searchableUserIds.slice(0, 200);
       const { data: players } = await supabase
         .from('profiles')
@@ -328,6 +343,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
             avatar_url: p.avatar_url || null,
           }))
         );
+        setHighlightedIndex(-1);
         setShowSuggestions(true);
       } else {
         setSuggestions([]);
@@ -420,7 +436,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
         if (player) allPlayers = [player];
       } else {
         // Search by query
-        const safeQuery = sanitizeInput(searchQuery.trim());
+        const safeQuery = escapeSearchQuery(sanitizeInput(searchQuery.trim()));
         if (!safeQuery) return;
 
         const BATCH_SIZE = 100;
@@ -601,6 +617,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
     setSearchResults([]);
     setSuggestions([]);
     setShowSuggestions(false);
+    setHighlightedIndex(-1);
     setNotFound(false);
     setError(null);
     setScopeLabel('');
@@ -625,12 +642,33 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                 value={searchQuery}
                 onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown' && showSuggestions && suggestions.length > 0) {
+                    e.preventDefault();
+                    setHighlightedIndex((prev) => (prev + 1) % suggestions.length);
+                    return;
+                  }
+                  if (e.key === 'ArrowUp' && showSuggestions && suggestions.length > 0) {
+                    e.preventDefault();
+                    setHighlightedIndex(
+                      (prev) => (prev - 1 + suggestions.length) % suggestions.length
+                    );
+                    return;
+                  }
                   if (e.key === 'Enter') {
+                    if (
+                      showSuggestions &&
+                      highlightedIndex >= 0 &&
+                      highlightedIndex < suggestions.length
+                    ) {
+                      handleSuggestionClick(suggestions[highlightedIndex]);
+                      return;
+                    }
                     setShowSuggestions(false);
                     handleSearch();
                   }
                   if (e.key === 'Escape') {
                     setShowSuggestions(false);
+                    setHighlightedIndex(-1);
                   }
                 }}
                 onFocus={() => {
@@ -642,10 +680,16 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
               {/* Auto-suggest dropdown */}
               {showSuggestions && suggestions.length > 0 && (
                 <div className={styles.suggestDropdown}>
-                  {suggestions.map((s) => (
+                  {suggestions.map((s, i) => (
                     <button
                       key={s.id}
                       className={styles.suggestItem}
+                      style={
+                        i === highlightedIndex
+                          ? { background: 'rgba(0, 212, 255, 0.15)' }
+                          : undefined
+                      }
+                      onMouseEnter={() => setHighlightedIndex(i)}
                       onClick={() => handleSuggestionClick(s)}
                     >
                       <div className={styles.suggestAvatar}>

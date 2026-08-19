@@ -341,3 +341,34 @@
   outline: 2px solid rgba(239, 68, 68, 0.8);
   outline-offset: 2px;
 }
+
+/* ── Row hint (WALLET AUDIT 2026-08-19) ────────────────────────────────────
+   A second, quieter line under a row label. It exists because two of these
+   numbers are routinely misread: the Rake Treasury is a SUB-ACCOUNT held
+   inside the Union Bank (not a second pot that sums with it), and the Backup
+   BBJ is a reserve that reseeds the main jackpot rather than spendable funds.
+   The hint also carries what the Monday close will hand back, so the panel
+   answers "what happens to this money?" rather than only "how much?". */
+.dw__row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.dw__row-hint {
+  font-size: 0.58rem;
+  font-weight: 500;
+  color: #6b7686;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 210px;
+}
+
+.dw__row--backup-bbj .dw__row-hint {
+  color: #7a8398;
+}

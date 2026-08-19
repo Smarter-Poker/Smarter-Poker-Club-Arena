@@ -78,6 +78,39 @@ interface WalletData {
   promoBalance: number;
   unionBank: number;
   backupBBJ: number;
+  /**
+   * WALLET AUDIT 2026-08-19 — RESTORED + made regression-proof.
+   *
+   * Commit 714738896 removed the union ledger rows and the union-first BBJ
+   * resolver from this widget. The effect, had it shipped: every union club
+   * resolves its jackpot by club_id, finds its own RETIRED pool row (both
+   * club pools were merged into the union pool and zeroed on 2026-08-19) and
+   * shows a 0.00 Bad Beat Jackpot while 14k sits in the union pool — plus the
+   * Rake Treasury row disappears and Promo falls back to the club-agent
+   * wallet. Production was still serving the older, correct bundle, so this
+   * was latent rather than live.
+   *
+   * All of that rule now lives in ONE server function, fn_club_money_panel,
+   * so a client-side edit cannot silently un-fix it again.
+   */
+  clubTreasury: number;
+  unionRake: number;
+  unionPromo: number;
+  /** Sum of member clubs' operational banks — the real union-level figure. */
+  clubsWallet: number;
+  /** Union bank minus the rake treasury held inside it. */
+  unionBankUnreserved: number;
+  /** What Monday's close hands back to THIS club / to all clubs. */
+  clubProjectedRakeback: number;
+  projectedClubsShare: number;
+  nextCloseAt: string | null;
+  /**
+   * What the caller is permitted to see. union_wallets is RLS-restricted to
+   * union owners/admins, so a CLUB owner's union reads returned nothing and
+   * the panel rendered "Union Bank 0.00 / Rake Treasury 0.00" as if that were
+   * the truth. Anything outside this scope renders as "—" (unknown) instead.
+   */
+  scope: 'union' | 'club' | 'member' | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -153,6 +186,15 @@ export default function DynamicWallet({
     promoBalance: 0,
     unionBank: 0,
     backupBBJ: 0,
+    clubTreasury: 0,
+    unionRake: 0,
+    unionPromo: 0,
+    clubsWallet: 0,
+    unionBankUnreserved: 0,
+    clubProjectedRakeback: 0,
+    projectedClubsShare: 0,
+    nextCloseAt: null,
+    scope: null,
   });
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
@@ -200,10 +242,20 @@ export default function DynamicWallet({
         : data.chipBalance
   );
   const animRow2 = useAnimatedCounter(
-    effectiveVariant === 'union' ? data.clubBank : data.agentBalance
+    // Union: the combined operational banks of the member clubs. This used to
+    // read the SELECTED club's own bank, which is not a union-level figure at
+    // all — it read 0.00 for a union whose clubs held 800k.
+    effectiveVariant === 'union' ? data.clubsWallet : data.agentBalance
   );
-  const animRow3 = useAnimatedCounter(data.promoBalance);
+  const animRow3 = useAnimatedCounter(
+    // Union promo is the swept 25% BBJ slice in union_wallets, not the
+    // club-agent promo wallet.
+    effectiveVariant === 'union' ? data.unionPromo : data.promoBalance
+  );
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
+  const animTreasury = useAnimatedCounter(
+    effectiveVariant === 'union' ? data.unionRake : data.clubTreasury
+  );
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
   const fetchData = useCallback(async () => {
@@ -213,7 +265,13 @@ export default function DynamicWallet({
     const thisVersion = ++fetchVersionRef.current;
 
     try {
-      const [profileRes, memberRes, bbjRes, agentRes, clubRes] = await Promise.all([
+      // fn_club_money_panel replaces three separate reads (bbj_pools, clubs,
+      // union_wallets) with one permission-aware server call. It resolves the
+      // BBJ pool union-first exactly as the engine banks it, and returns a
+      // `scope` saying which figures the caller may actually see — so the
+      // panel can render "—" for what it is not allowed to read instead of a
+      // fabricated 0.00. It also removes the second, serial round trip.
+      const [profileRes, memberRes, agentRes, panelRes] = await Promise.all([
         supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
         supabase
           .from('club_members')
@@ -222,53 +280,49 @@ export default function DynamicWallet({
           .eq('user_id', userId)
           .maybeSingle(),
         supabase
-          .from('bbj_pools')
-          .select('main_balance, backup_balance')
-          .eq('club_id', resolvedId)
-          .maybeSingle(),
-        supabase
           .from('agents')
           .select('agent_wallet_balance, promo_wallet_balance')
           .eq('club_id', resolvedId)
           .eq('user_id', userId)
           .maybeSingle(),
-        // Club treasury for owner variant
-        supabase.from('clubs').select('chip_treasury, union_id').eq('id', resolvedId).maybeSingle(),
+        supabase.rpc('fn_club_money_panel', { p_club_id: resolvedId }),
       ]);
 
       // Discard stale response if a newer fetch has started
-      if (thisVersion !== fetchVersionRef.current) return;
-
-      // Fetch union bank balance when the club is in a union
-      let unionBankBalance = 0;
-      const unionId = clubRes.data?.union_id;
-      if (unionId) {
-        const { data: uwData } = await supabase
-          .from('union_wallets')
-          .select('chip_balance')
-          .eq('union_id', unionId)
-          .maybeSingle();
-        unionBankBalance = Number(uwData?.chip_balance) || 0;
-      }
-
-      // Double-check version after second await + isMounted
       if (thisVersion !== fetchVersionRef.current || !isMounted.current) return;
 
-      // Track union_id for union_wallets RT channel
-      currentUnionIdRef.current = unionId || null;
+      // Defensive unwrap: a jsonb-returning RPC hands back the object, but a
+      // TABLE-returning one hands back an array. Reading `.x` off the array
+      // was exactly how Backup BBJ came to render 0.00 once before.
+      const panel = ((Array.isArray(panelRes.data) ? panelRes.data[0] : panelRes.data) ??
+        {}) as Record<string, unknown>;
+      const bbj = (panel.bbj ?? {}) as Record<string, unknown>;
+      const num = (v: unknown) => Number(v) || 0;
+      const unionId = (panel.union_id as string | null) ?? null;
+
+      // Track union_id for the union_wallets RT channel
+      currentUnionIdRef.current = unionId;
 
       setData({
         diamonds: Number(profileRes.data?.diamonds) || 0,
         chipBalance: Number(memberRes.data?.chip_balance) || 0,
         promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
-        bbjPool: Number(bbjRes.data?.main_balance) || 0,
-        backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
+        bbjPool: num(bbj.main),
+        backupBBJ: num(bbj.backup),
         agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
-        clubBank: Number(clubRes.data?.chip_treasury) || 0,
-        unionBank: unionBankBalance,
+        clubBank: num(panel.club_treasury),
+        clubTreasury: num(panel.club_treasury),
+        unionBank: num(panel.union_bank),
+        unionRake: num(panel.rake_treasury),
+        unionPromo: num(panel.union_promo),
+        clubsWallet: num(panel.clubs_wallet),
+        unionBankUnreserved: num(panel.union_bank_unreserved),
+        clubProjectedRakeback: num(panel.club_projected_rakeback),
+        projectedClubsShare: num(panel.projected_clubs_share),
+        nextCloseAt: (panel.next_close_at as string | null) ?? null,
+        scope: (panel.scope as WalletData['scope']) ?? null,
       });
-      // Auto-detect union membership from clubs.union_id
-      setIsClubInUnion(!!unionId);
+      setIsClubInUnion(Boolean(panel.in_union));
       setFetchError(false);
       setLoading(false);
     } catch (err) {
@@ -300,7 +354,12 @@ export default function DynamicWallet({
     console.warn(
       `[DynamicWallet] Scheduling reconnect in ${delay}ms (attempt ${retryCountRef.current + 1})`
     );
+    // A repeated CHANNEL_ERROR used to stack one timer per event, each firing
+    // its own full refetch — a thundering herd exactly when the connection is
+    // already unhealthy. Only ever one pending reconnect.
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
       if (!isMounted.current) return;
       retryCountRef.current++;
       fetchData(); // Full refetch as reconnection fallback
@@ -364,7 +423,14 @@ export default function DynamicWallet({
           event: 'UPDATE',
           schema: 'public',
           table: 'bbj_pools',
-          filter: `club_id=eq.${resolvedId}`,
+          // Must watch the pool the widget actually READS. Filtering by
+          // club_id for a union club subscribes to that club's own retired
+          // pool row — a row that will never change again — so the jackpot
+          // would freeze on screen. currentUnionIdRef is set by fetchData and
+          // this effect re-runs when isClubInUnion flips.
+          filter: currentUnionIdRef.current
+            ? `union_id=eq.${currentUnionIdRef.current}`
+            : `club_id=eq.${resolvedId}`,
         },
         (p) => {
           if (isMounted.current) {
@@ -455,10 +521,27 @@ export default function DynamicWallet({
             filter: `union_id=eq.${unionId}`,
           },
           (p) => {
-            if (isMounted.current && p.new?.chip_balance !== undefined) {
+            if (isMounted.current && p.new) {
+              // Mirror every union ledger the panel shows, not just the bank.
+              // Previously rake_wallet and promo_wallet sat on their first
+              // fetched value while rake poured in all week.
               setData((prev) => ({
                 ...prev,
-                unionBank: Number(p.new.chip_balance) || 0,
+                unionBank:
+                  p.new.chip_balance !== undefined
+                    ? Number(p.new.chip_balance) || 0
+                    : prev.unionBank,
+                unionRake:
+                  p.new.rake_wallet !== undefined ? Number(p.new.rake_wallet) || 0 : prev.unionRake,
+                unionPromo:
+                  p.new.promo_wallet !== undefined
+                    ? Number(p.new.promo_wallet) || 0
+                    : prev.unionPromo,
+                unionBankUnreserved:
+                  p.new.chip_balance !== undefined && p.new.rake_wallet !== undefined
+                    ? Math.round((Number(p.new.chip_balance) - Number(p.new.rake_wallet)) * 100) /
+                      100
+                    : prev.unionBankUnreserved,
               }));
             }
           }
@@ -474,7 +557,27 @@ export default function DynamicWallet({
   }, [userId, resolvedId, isClubInUnion]);
 
   // ── Role-specific row config ───────────────────────────────────────────────
-  const ROW_CONFIG: Record<WalletVariant, { label: string; icon: string; value: number }[]> = {
+  // Union figures come from union_wallets, which RLS restricts to union
+  // owners/admins. If we are not allowed to read them we must say so rather
+  // than print 0.00 — a wrong number on a money surface is worse than none.
+  const unionFiguresKnown = data.scope === 'union';
+  const closeDay = data.nextCloseAt
+    ? new Date(data.nextCloseAt).toLocaleDateString('en-US', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+      })
+    : 'Monday';
+
+  type WalletRow = {
+    label: string;
+    icon: string;
+    value: number;
+    hint?: string;
+    known?: boolean;
+  };
+
+  const ROW_CONFIG: Record<WalletVariant, WalletRow[]> = {
     player: [
       { label: 'Chip Balance', icon: '🪙', value: animRow1 },
       { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
@@ -482,13 +585,58 @@ export default function DynamicWallet({
     ],
     owner: [
       { label: 'Club Bank', icon: '🏦', value: animRow1 },
+      // A club inside a union is paid 90% of the rake it generated at the
+      // weekly close. Showing what is owed turns an opaque balance into
+      // something an owner can plan against.
+      ...(isClubInUnion && data.clubProjectedRakeback > 0
+        ? [
+            {
+              label: 'Due at close',
+              icon: '📈',
+              value: data.clubProjectedRakeback,
+              hint: `90% rakeback · ${closeDay}`,
+            } as WalletRow,
+          ]
+        : []),
       { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
       { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
     ],
     union: [
-      { label: 'Union Bank', icon: '🏦', value: animRow1 },
-      { label: 'Clubs Wallet', icon: '🅰️', value: animRow2 },
-      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
+      {
+        label: 'Union Bank',
+        icon: '🏦',
+        value: animRow1,
+        known: unionFiguresKnown,
+        hint: unionFiguresKnown
+          ? `${formatBalance(data.unionBankUnreserved)} unreserved`
+          : 'union admins only',
+      },
+      {
+        // The rake treasury is a SUB-ACCOUNT of the union bank, not a second
+        // pot beside it. Without this hint the two rows read as separate money
+        // that sums — they do not.
+        label: 'Rake Treasury',
+        icon: '💠',
+        value: animTreasury,
+        known: unionFiguresKnown,
+        hint: unionFiguresKnown
+          ? `held in bank · ${formatBalance(data.projectedClubsShare)} to clubs ${closeDay}`
+          : 'union admins only',
+      },
+      {
+        label: 'Clubs Wallet',
+        icon: '🅰️',
+        value: animRow2,
+        known: unionFiguresKnown,
+        hint: unionFiguresKnown ? 'member club banks' : undefined,
+      },
+      {
+        label: 'Promo Wallet',
+        icon: '🎟️',
+        value: animRow3,
+        known: unionFiguresKnown,
+        hint: unionFiguresKnown ? '25% BBJ slice' : undefined,
+      },
     ],
   };
 
@@ -552,7 +700,7 @@ export default function DynamicWallet({
       </div>
 
       {/* ── Wallet Rows ───────────────────────────────────────────────────── */}
-      <div className="dw__rows" aria-live="polite">
+      <div className="dw__rows" aria-live="off">
         {/* Diamond Balance */}
         <div className="dw__row dw__row--diamond">
           <span className="dw__row-icon" aria-hidden="true">
@@ -582,8 +730,13 @@ export default function DynamicWallet({
             <span className="dw__row-icon" aria-hidden="true">
               {row.icon}
             </span>
-            <span className="dw__row-label">{row.label}</span>
-            <span className="dw__row-value">{formatBalance(row.value)}</span>
+            <span className="dw__row-label">
+              {row.label}
+              {row.hint && <span className="dw__row-hint">{row.hint}</span>}
+            </span>
+            <span className="dw__row-value">
+              {row.known === false ? '—' : formatBalance(row.value)}
+            </span>
             {idx === 0 && showMintButton && (
               <button
                 className="dw__plus"
@@ -599,13 +752,16 @@ export default function DynamicWallet({
           </div>
         ))}
 
-        {/* Backup BBJ (Union only) */}
-        {effectiveVariant === 'union' && (
+        {/* Backup BBJ — union pools, and standalone clubs that hold a reserve */}
+        {(effectiveVariant === 'union' || data.backupBBJ > 0) && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon" aria-hidden="true">
               🛡️
             </span>
-            <span className="dw__row-label">Backup BBJ</span>
+            <span className="dw__row-label">
+              Backup BBJ
+              <span className="dw__row-hint">reserve · reseeds main after a hit</span>
+            </span>
             <span className="dw__row-value">
               {animBackupBBJ === 0 ? '—' : formatBalance(animBackupBBJ)}
             </span>

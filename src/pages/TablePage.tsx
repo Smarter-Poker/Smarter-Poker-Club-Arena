@@ -214,7 +214,7 @@ import { tableService } from '../services/TableService';
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
 import { potSizedRaiseTo } from '../components/table/ActionPanel';
-import { betChipFactor } from '../components/table/tableGeometry';
+import { betChipFactor, chipCollectFactor } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
@@ -4922,6 +4922,17 @@ export default function TablePage({
           const hn = Number((evt.data as any)?.hand_number) || 0;
           if (hn > 0) heroHandRef.current = hn;
         }
+        // AUDIT 2026-08-19: drop any in-flight pot push. It is otherwise
+        // cleared only by a 700ms timer, and a hand that starts inside that
+        // window would render its FRESH pot with .pot-display--collect still
+        // applied — an animation that ends at opacity 0 with `forwards`, so the
+        // new pot would be invisible until the timer caught up. Background-tab
+        // timer throttling makes that window longer than 700ms in practice.
+        setPotCollectTo(null);
+        if (potCollectTimerRef.current) {
+          clearTimeout(potCollectTimerRef.current);
+          potCollectTimerRef.current = null;
+        }
         // Fresh hand → reset the accumulated achievement outcome.
         heroHandOutcomeRef.current = {
           dealtIn: false,
@@ -7300,6 +7311,7 @@ export default function TablePage({
                     highlightedIndices={winnerInfo.cardIndices}
                     winningHandName={winnerInfo.handName}
                     deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
+                    cardBack={userSettings.cardBack}
                   />
                   {(ritResult?.boards?.length ?? 0) >= 2 &&
                     ritResult!.boards.slice(1).map((board, bi) => (
@@ -7309,6 +7321,7 @@ export default function TablePage({
                           cards={normalizeCards(board) as Card[]}
                           stage="river"
                           deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
+                          cardBack={userSettings.cardBack}
                         />
                       </div>
                     ))}
@@ -7554,9 +7567,20 @@ export default function TablePage({
             const betOffsetX = Math.round((dx * scalerSize.w * betTravel.x) / 100);
             const betOffsetY = Math.round((dy * scalerSize.h * betTravel.y) / 100);
             // Bible V8 §1.16 — on collect, bet chips fly from their resting
-            // spot the rest of the way toward the pot (~2x current offset).
-            const collectDx = betOffsetX * 2;
-            const collectDy = betOffsetY * 2;
+            // spot the rest of the way toward the pot.
+            //
+            // AUDIT 2026-08-19: this was `betOffset * 2`, which puts the
+            // ENDPOINT at 3x the bet factor because the chip already sits one
+            // bet-offset from its seat and the keyframe translates it by a
+            // FURTHER --collect-dx. That landed at 0.66 only because every seat
+            // shared the same 0.22 factor. Moving the dealer seat's chips out
+            // to 0.38 (item 8) turned the same multiply into 3 x 0.38 = 1.14 —
+            // past the centre of the table and out the other side. The collect
+            // offset is derived from the bet offset now, so the endpoint is the
+            // same for every seat and the ordinary case is unchanged.
+            const collectTravel = chipCollectFactor(isDealerSeat);
+            const collectDx = Math.round((dx * scalerSize.w * collectTravel.x) / 100);
+            const collectDy = Math.round((dy * scalerSize.h * collectTravel.y) / 100);
 
             return (
               <div

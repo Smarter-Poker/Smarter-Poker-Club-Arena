@@ -15,8 +15,10 @@ import { describe, it, expect } from 'vitest';
 import {
   betChipFactor,
   betChipPosition,
+  chipCollectFactor,
   dealerButtonPosition,
   BET_CHIP_FACTOR,
+  CHIP_COLLECT_END_FACTOR,
   DEALER_BUTTON_FACTOR,
   type Pos,
 } from '../src/components/table/tableGeometry';
@@ -117,5 +119,44 @@ describe('CONTROL: the old flat 0.22 really was behind the button', () => {
     const btn = dealerButtonPosition(seat);
     const oldChipsX = seat.x + (50 - seat.x) * 0.22;
     expect(travel(seat.x, oldChipsX)).toBeLessThan(travel(seat.x, btn.x));
+  });
+});
+
+describe('chip collect vector — must never overshoot the pot', () => {
+  it('lands every seat on the SAME endpoint, dealer or not', () => {
+    for (const isDealer of [false, true]) {
+      const bet = betChipFactor(isDealer);
+      const collect = chipCollectFactor(isDealer);
+      expect(bet.x + collect.x).toBeCloseTo(CHIP_COLLECT_END_FACTOR, 6);
+      expect(bet.y + collect.y).toBeCloseTo(CHIP_COLLECT_END_FACTOR, 6);
+    }
+  });
+
+  it('never carries a chip past the centre of the table', () => {
+    for (const isDealer of [false, true]) {
+      const bet = betChipFactor(isDealer);
+      const collect = chipCollectFactor(isDealer);
+      // A factor of 1 IS the centre. Anything above it flies out the far side.
+      expect(bet.x + collect.x).toBeLessThan(1);
+      expect(bet.y + collect.y).toBeLessThan(1);
+    }
+  });
+
+  it('reproduces the old 0.44 offset exactly for an ordinary seat', () => {
+    // Regression guard: the ordinary seat must not move at all. The old code
+    // was betOffset * 2 with a 0.22 factor, i.e. 0.44.
+    const collect = chipCollectFactor(false);
+    expect(collect.x).toBeCloseTo(0.44, 6);
+    expect(collect.y).toBeCloseTo(0.44, 6);
+  });
+
+  it('CONTROL: the old betOffset*2 rule WOULD have overshot on the dealer seat', () => {
+    const bet = betChipFactor(true);
+    const oldEndpoint = bet.x * 3; // resting offset + 2x offset
+    expect(oldEndpoint).toBeGreaterThan(1); // past the centre — the bug
+  });
+
+  it('shortens the remaining travel for the seat that starts further out', () => {
+    expect(chipCollectFactor(true).x).toBeLessThan(chipCollectFactor(false).x);
   });
 });

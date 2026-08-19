@@ -17,7 +17,10 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import PotDisplay from '../src/components/table/PotDisplay';
-import { createPotToWinnerEvent } from '../src/components/table/ChipAnimation';
+import {
+  createChipToPotEvent,
+  createPotToWinnerEvent,
+} from '../src/components/table/ChipAnimation';
 
 describe('PotDisplay pot push', () => {
   it('does not animate between hands', () => {
@@ -79,5 +82,32 @@ describe('pot-to-winner chip fan', () => {
   it('a split pot ships each winner their own share', () => {
     const half = createPotToWinnerEvent({ x: 0, y: 0 }, { x: 10, y: 10 }, POT / 2);
     expect(half[0].labelAmount).toBe(POT / 2);
+  });
+});
+
+describe('bet-to-pot chip fan (same labelling rule)', () => {
+  const BET = 100;
+  const fan = createChipToPotEvent({ x: 10, y: 400 }, { x: 200, y: 200 }, BET);
+
+  it('labels exactly one chip', () => {
+    expect(fan.filter((c) => c.showLabel).length).toBe(1);
+  });
+
+  it('that label names the BET, not a quarter of it', () => {
+    expect(fan[0].labelAmount).toBe(BET);
+  });
+
+  it('still splits the bet across the chips it draws', () => {
+    const total = fan.reduce((sum, c) => sum + c.amount, 0);
+    expect(Math.abs(total - BET)).toBeLessThanOrEqual(fan.length);
+  });
+});
+
+describe('a new hand must not inherit a pot mid-push', () => {
+  it('collectTo=null renders a normal, fully visible pot', () => {
+    const { container } = render(<PotDisplay mainPot={250} collectTo={null} />);
+    const el = container.querySelector('.pot-display')!;
+    expect(el.className).not.toContain('pot-display--collect');
+    expect(container.textContent).toContain('250');
   });
 });

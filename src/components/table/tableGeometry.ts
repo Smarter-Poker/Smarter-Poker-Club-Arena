@@ -66,3 +66,31 @@ export function betChipPosition(seat: Pos, isDealer: boolean): Pos {
     y: seat.y + (50 - seat.y) * f.y,
   };
 }
+
+/**
+ * Where a bet chip ENDS UP when it is collected into the pot, as a factor of
+ * the seat-to-centre run.
+ *
+ * The chip is already sitting at `betChipFactor()` from its seat, and the
+ * collect keyframe translates it by a FURTHER `--collect-dx`. So the endpoint
+ * is (bet factor + collect factor), and the collect offset has to be derived
+ * from the bet offset — not multiplied by it.
+ *
+ * It used to be a flat `betOffset * 2`, which put the endpoint at 3x the bet
+ * factor. That happened to land at 0.66 while every seat shared one 0.22
+ * factor. The moment the dealer seat's chips moved out to 0.38 (item 8), the
+ * same multiply sent them to 3 x 0.38 = 1.14 — straight past the centre of the
+ * table and out the other side. Deriving the collect offset instead keeps the
+ * endpoint identical for every seat, dealer or not, and reproduces the old
+ * 0.44 collect offset exactly for the ordinary 0.22 case.
+ */
+export const CHIP_COLLECT_END_FACTOR = 0.66;
+
+/** How far a chip must still travel to reach the collect endpoint. */
+export function chipCollectFactor(isDealer: boolean): { x: number; y: number } {
+  const bet = betChipFactor(isDealer);
+  return {
+    x: Math.max(0, CHIP_COLLECT_END_FACTOR - bet.x),
+    y: Math.max(0, CHIP_COLLECT_END_FACTOR - bet.y),
+  };
+}

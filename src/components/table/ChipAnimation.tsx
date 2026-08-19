@@ -260,6 +260,10 @@ export function createChipToPotEvent(
     delay: i * 50,
     type: 'to-pot' as const,
     chipColor: getChipColor(amount / chipCount),
+    // AUDIT 2026-08-19: same rule as the pot-to-winner fan. A 100 bet drawn as
+    // four chips used to print "25" four times; the label now names the bet.
+    showLabel: i === 0,
+    labelAmount: amount,
   }));
 }
 

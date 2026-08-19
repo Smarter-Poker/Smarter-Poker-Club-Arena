@@ -32,6 +32,17 @@ export interface CommunityCardsProps {
   isDealing?: boolean;
   winningHandName?: string; // e.g. "Straight" — shown as overlay at showdown
   deckStyle?: '4color' | '2color';
+  /**
+   * The player's chosen card-back design.
+   *
+   * AUDIT 2026-08-19: the board had never been told about it. The not-yet-dealt
+   * turn/river slots hardcoded 'classic_red', and the face-down flop card added
+   * with the two-phase flip fell through to CardBack's own default of
+   * 'classic_blue' — so a flop could show three BLUE backs sitting next to two
+   * RED ones, and neither matched the back the player actually picked. Every
+   * back on the board comes from here now.
+   */
+  cardBack?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -65,9 +76,18 @@ interface CardFaceProps {
   isNewlyDealt: boolean;
   stage: BoardStage;
   deckStyle?: '4color' | '2color';
+  cardBack?: string;
 }
 
-function CardFace({ card, index, isHighlighted, isNewlyDealt, stage, deckStyle }: CardFaceProps) {
+function CardFace({
+  card,
+  index,
+  isHighlighted,
+  isNewlyDealt,
+  stage,
+  deckStyle,
+  cardBack,
+}: CardFaceProps) {
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
   const isRiverCard = isNewlyDealt && (stage === 'river' || stage === 'showdown') && index === 4;
@@ -104,7 +124,7 @@ function CardFace({ card, index, isHighlighted, isNewlyDealt, stage, deckStyle }
          */
         <div className="community-cards__flip">
           <div className="community-cards__flip-face community-cards__flip-face--back">
-            <CardBack size="lg" />
+            <CardBack size="lg" style={cardBack} />
           </div>
           <div className="community-cards__flip-face community-cards__flip-face--front">
             <CardImage card={card} deckStyle={deckStyle} size="lg" isHighlighted={isHighlighted} />
@@ -121,12 +141,14 @@ function CardFace({ card, index, isHighlighted, isNewlyDealt, stage, deckStyle }
 
 interface PlaceholderCardProps {
   index: number;
+  cardBack?: string;
 }
 
-function PlaceholderCard({ index }: PlaceholderCardProps) {
+function PlaceholderCard({ index, cardBack }: PlaceholderCardProps) {
   return (
     <div className="community-cards__placeholder" style={{ animationDelay: `${index * 100}ms` }}>
-      <CardBack size="lg" style="classic_red" />
+      {/* Was hardcoded 'classic_red' — see the cardBack note on the props. */}
+      <CardBack size="lg" style={cardBack} />
     </div>
   );
 }
@@ -142,6 +164,7 @@ function CommunityCardsComponent({
   isDealing = false,
   winningHandName,
   deckStyle,
+  cardBack,
 }: CommunityCardsProps) {
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
   const prevStageRef = useRef(stage);
@@ -324,13 +347,14 @@ function CommunityCardsComponent({
               isNewlyDealt={slot.isNewlyDealt}
               stage={stage}
               deckStyle={deckStyle}
+              cardBack={cardBack}
             />
           ) : // Phase 2 T1-07 — per POKERBROS_CLONE_SPEC.md line 485:
           //   "Preflop: cards exist but are hidden/not displayed"
           // Suppress placeholder card backs during preflop. Post-flop we
           // still show placeholders for not-yet-dealt slots (turn/river).
           stage === 'preflop' ? null : (
-            <PlaceholderCard key={`placeholder-${i}`} index={i} />
+            <PlaceholderCard key={`placeholder-${i}`} index={i} cardBack={cardBack} />
           )
         )}
       </div>

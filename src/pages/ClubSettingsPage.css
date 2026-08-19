@@ -406,3 +406,20 @@
   line-height: 1.4;
   color: var(--text-secondary, #6a7a8a);
 }
+
+/* Empty/error states: no club selected, club not found. */
+.settings-empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-secondary, #6a7a8a);
+}
+.settings-empty-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-primary, #e6edf3);
+  margin: 0 0 8px;
+}
+.settings-empty-desc {
+  font-size: 0.88rem;
+  margin: 0 0 20px;
+}

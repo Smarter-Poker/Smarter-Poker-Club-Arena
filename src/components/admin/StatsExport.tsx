@@ -21,6 +21,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { toCSV } from '../../utils/clubSettingsRules';
 import { reportError } from '../../utils/errorReporter';
 import './StatsExport.css';
 
@@ -77,7 +78,8 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
         'user_id, role, status, joined_at, hands_played, sessions_played, total_rake_paid, chips_won, chips_lost, biggest_pot'
       )
       .eq('club_id', resolvedId)
-      .order('hands_played', { ascending: false });
+      .order('hands_played', { ascending: false })
+      .limit(5000);
     if (error) throw error;
 
     const ids = [...new Set((members || []).map((m: any) => m.user_id).filter(Boolean))];
@@ -116,11 +118,14 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
 
     if (clubId) {
       const resolvedId = await resolveClubUUID(clubId);
+      // Every id goes into the query string of the next request; 1000 uuids
+      // is a ~37 KB URL and servers answer 414. Newest tables first.
       const { data: clubTables, error: tablesErr } = await supabase
         .from('tables')
         .select('id')
         .eq('club_id', resolvedId)
-        .limit(1000);
+        .order('created_at', { ascending: false })
+        .limit(200);
       if (tablesErr) throw tablesErr;
       // No tables -> no hands in this club. An empty export is the honest
       // answer; silently widening to every club you ever played in is not.
@@ -149,6 +154,19 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
     setExporting(true);
     try {
       const rows = dataset === 'members' ? await fetchMemberStats() : await fetchOwnHands();
+      // convertToCSV([]) returns an empty string, so "no data" used to
+      // download a 0-byte file and report success. Say so instead.
+      if (rows.length === 0) {
+        if (isMounted.current) {
+          toast.error(
+            dataset === 'members'
+              ? 'No members to export yet.'
+              : 'No hands found for this club in the selected range.'
+          );
+          setExporting(false);
+        }
+        return;
+      }
       const stamp = new Date().toISOString().slice(0, 10);
       const base = `${dataset === 'members' ? 'club-member-stats' : 'my-hand-history'}-${stamp}`;
 
@@ -158,7 +176,8 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
         downloadFile(JSON.stringify(rows, null, 2), `${base}.json`, 'application/json');
       }
 
-      if (isMounted.current) toast.success('Stats exported successfully!');
+      if (isMounted.current)
+        toast.success(`Exported ${rows.length.toLocaleString()} rows`);
       onClose();
     } catch (error) {
       reportError(error, 'StatsExport.Failed_to_export');
@@ -167,25 +186,10 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
     if (isMounted.current) setExporting(false);
   };
 
-  const convertToCSV = (data: any[]) => {
-    if (data.length === 0) return '';
-
-    // Neutralize spreadsheet formula injection: a STRING cell beginning with
-    // = + - or @ executes when the CSV is opened in Excel/Sheets, even when
-    // the field is quoted. Numbers are inert — guarding them would corrupt
-    // every negative value.
-    const safeCell = (v: any) => {
-      if (typeof v === 'string' && /^[=+\-@]/.test(v)) {
-        return JSON.stringify(`'${v}`);
-      }
-      return JSON.stringify(v ?? '');
-    };
-
-    const headers = Object.keys(data[0]);
-    const rows = data.map((row) => headers.map((h) => safeCell(row[h])).join(','));
-
-    return [headers.join(','), ...rows].join('\n');
-  };
+  // CSV encoding (including the formula-injection guard) lives in
+  // utils/clubSettingsRules so it can be unit tested — the inline version
+  // shipped a bug that corrupted every negative number.
+  const convertToCSV = (data: any[]) => toCSV(data);
 
   const downloadFile = (content: string, filename: string, mimeType: string) => {
     const blob = new Blob([content], { type: mimeType });

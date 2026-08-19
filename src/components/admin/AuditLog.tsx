@@ -28,10 +28,24 @@ type ActionType = 'all' | 'player' | 'table' | 'finance' | 'settings' | 'securit
 /** Map filter category to action_type prefixes in the audit_logs table */
 const FILTER_PREFIXES: Record<ActionType, string[]> = {
   all: [],
-  player: ['player', 'ban', 'kick', 'mute', 'unmute', 'role_change'],
+  // These are substring matches against the action name. The audit triggers
+  // write update_club_settings / delete_club / role_change / banned /
+  // unban_member / member_status_change / kick_member / member_left —
+  // 'delete_club' and 'member_left' matched no category and were visible
+  // only under All.
+  player: [
+    'player',
+    'ban',
+    'kick',
+    'mute',
+    'unmute',
+    'role_change',
+    'member_left',
+    'member_status',
+  ],
   table: ['table', 'seat', 'game'],
   finance: ['balance', 'deposit', 'withdraw', 'transfer', 'settlement', 'rake'],
-  settings: ['settings', 'config', 'update_club'],
+  settings: ['settings', 'config', 'update_club', 'delete_club'],
   security: ['login', 'security', 'password', 'ip', 'auth'],
 };
 
@@ -48,8 +62,11 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const loadAuditLog = useCallback(async () => {
-    setLoading(true);
+  const loadAuditLog = useCallback(async (opts?: { silent?: boolean }) => {
+    // A background refresh (realtime INSERT, ADMIN_ACTION bus event) must not
+    // tear the rendered list down to skeleton rows — the log visibly flashed
+    // every time an admin action landed.
+    if (!opts?.silent) setLoading(true);
     // Clear any existing stagger timers
     staggerTimersRef.current.forEach((t) => clearTimeout(t));
     staggerTimersRef.current = [];
@@ -184,7 +201,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
 
   // Auto-refresh when admin actions fire from other components
   useMasterBusSubscription('ADMIN_ACTION', () => {
-    if (isMounted.current) loadAuditLog();
+    if (isMounted.current) loadAuditLog({ silent: true });
   });
 
   // Realtime: rows written by other admins / other devices appear without a
@@ -207,7 +224,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
             filter: `club_id=eq.${resolvedId}`,
           },
           () => {
-            if (isMounted.current) loadAuditLog();
+            if (isMounted.current) loadAuditLog({ silent: true });
           }
         )
         .subscribe();

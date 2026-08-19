@@ -21,11 +21,13 @@ import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
 import { reportError } from '../utils/errorReporter';
 import { MAX_RAKE_CAP_BB, MAX_RAKE_PERCENT, RAKE_INHERIT } from '../config/RakeConfig';
-
-// Buy-in bounds, in big blinds. A table cannot be seated below one big blind,
-// and 1000 BB is the deepest stack the lobby renders sanely.
-const BUYIN_BB_FLOOR = 1;
-const BUYIN_BB_CEILING = 1000;
+import {
+  BUYIN_BB_CEILING,
+  BUYIN_BB_FLOOR,
+  WATCHED_COLUMNS,
+  clampBuyin,
+  validateBuyinRange,
+} from '../utils/clubSettingsRules';
 
 interface ClubSettings {
   name: string;
@@ -98,21 +100,18 @@ export default function ClubSettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, baselineVersion]);
   const changedFieldsDisplay = pendingLogo ? [...changedFields, 'Logo'] : changedFields;
+  // The delete confirmation must quote the club's SAVED name. It read the
+  // live form value, so typing a new name without saving made the modal
+  // demand the unsaved text — and the placeholder advertised a name the club
+  // does not have.
+  const savedClubName = originalSettings.current?.name ?? settings.name;
   const hasUnsavedChanges = changedFieldsDisplay.length > 0;
 
   // Buy-in bounds were the one numeric pair with no guard at all. The min/max
   // attributes on a number input are advisory outside a submitting <form>, and
   // this page never submits one — so "max 10, min 5000" saved happily and every
   // table in the club then had an impossible buy-in range.
-  const buyinError = (() => {
-    const min = settings.min_buyin_bb;
-    const max = settings.max_buyin_bb;
-    if (!Number.isFinite(min) || !Number.isFinite(max)) return 'Buy-in limits must be numbers.';
-    if (min < BUYIN_BB_FLOOR) return `Minimum buy-in must be at least ${BUYIN_BB_FLOOR} BB.`;
-    if (max > BUYIN_BB_CEILING) return `Maximum buy-in cannot exceed ${BUYIN_BB_CEILING} BB.`;
-    if (max <= min) return 'Maximum buy-in must be greater than the minimum.';
-    return null;
-  })();
+  const buyinError = validateBuyinRange(settings.min_buyin_bb, settings.max_buyin_bb);
 
   // The loaders below run from timers, realtime callbacks and bus events. They
   // close over whatever `hasUnsavedChanges` was when the effect was created, so
@@ -133,6 +132,11 @@ export default function ClubSettingsPage() {
   const [confirmText, setConfirmText] = useState('');
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const [loadError, setLoadError] = useState(false);
+  // A club id that resolves to no row (deleted club, bad code, or a club RLS
+  // hides) used to fall straight through the `if (data)` block: no error, no
+  // state change, loading -> false. The page then rendered a fully blank,
+  // editable settings form for a club that does not exist.
+  const [notFound, setNotFound] = useState(false);
   const loadingRef = useRef(false);
 
   // ── CRITICAL: Reset per-club state when navigating between club settings ──
@@ -146,6 +150,7 @@ export default function ClubSettingsPage() {
     setIsDeleting(false);
     setConfirmText('');
     setLoadError(false);
+    setNotFound(false);
     setServerChanged(false);
     setClubCode(null);
     setCurrentLogoUrl(null);
@@ -156,6 +161,26 @@ export default function ClubSettingsPage() {
     loadingRef.current = false;
     originalSettings.current = null;
   }, [clubId]);
+
+  // Release the pending-logo blob URL when the page goes away. The per-club
+  // reset and the save/discard paths revoke it, but plain unmount did not.
+  const pendingLogoRef = useRef<{ file: File; preview: string } | null>(null);
+  // Path of the object uploaded during the in-flight save, so the catch block
+  // can clean it up if the row update fails.
+  const uploadedPathRef = useRef<string | null>(null);
+  const currentLogoUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    pendingLogoRef.current = pendingLogo;
+  }, [pendingLogo]);
+  useEffect(() => {
+    currentLogoUrlRef.current = currentLogoUrl;
+  }, [currentLogoUrl]);
+  useEffect(
+    () => () => {
+      if (pendingLogoRef.current) URL.revokeObjectURL(pendingLogoRef.current.preview);
+    },
+    []
+  );
 
   // Re-fetch settings when user tabs back (covers WS disconnect gap).
   // Silent: tabbing away and back must not replace the form with a skeleton,
@@ -219,8 +244,23 @@ export default function ClubSettingsPage() {
             table: 'clubs',
             filter: `id=eq.${resolvedId}`,
           },
-          () => {
-            if (isMounted) loadClubSettings(() => isMounted, { silent: true });
+          (payload: { new?: Record<string, unknown> }) => {
+            if (!isMounted) return;
+            // clubs rows are rewritten on hot paths — chip_pool by the rake
+            // waterfall, member_count by the membership sync trigger — so an
+            // unfiltered UPDATE subscription refetched this page continuously
+            // on a busy club. Only react when a column this page shows moved.
+            const next = payload?.new;
+            if (next && originalSettings.current) {
+              const base = originalSettings.current as unknown as Record<string, unknown>;
+              const touched = WATCHED_COLUMNS.some(
+                (k) => k in next && String(next[k]) !== String(base[k])
+              );
+              const logoTouched =
+                'logo_url' in next && (next.logo_url ?? null) !== (currentLogoUrlRef.current ?? null);
+              if (!touched && !logoTouched) return;
+            }
+            loadClubSettings(() => isMounted, { silent: true });
           }
         )
         .subscribe((status: string, err?: Error) => {
@@ -271,6 +311,7 @@ export default function ClubSettingsPage() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoadError(false);
+    setNotFound(false);
     // silent = a background refresh (tab focus, realtime, bus). It must not
     // tear the rendered form down to a skeleton.
     if (!opts?.silent && (!getIsMounted || getIsMounted())) setLoading(true);
@@ -356,6 +397,8 @@ export default function ClubSettingsPage() {
             /* non-critical */
           }
         }
+      } else if (!getIsMounted || getIsMounted()) {
+        setNotFound(true);
       }
     } catch (error) {
       reportError(error, 'ClubSettingsPage.Failed_to_load_club_settings');
@@ -401,6 +444,7 @@ export default function ClubSettingsPage() {
           .from('club-assets')
           .upload(path, pendingLogo.file, { contentType: pendingLogo.file.type });
         if (uploadErr) throw uploadErr;
+        uploadedPathRef.current = path;
         newLogoUrl = supabase.storage.from('club-assets').getPublicUrl(path).data?.publicUrl || null;
       }
       // Phase 13: Optimistic save — emit events instantly, then confirm with server
@@ -410,7 +454,7 @@ export default function ClubSettingsPage() {
         async () => {
           if (clubId) masterBus.emit('CLUB_UPDATED', { clubId });
           if (clubId) masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
-          const { error } = await supabase
+          const { data: updated, error } = await supabase
             .from('clubs')
             .update({
               ...(newLogoUrl ? { logo_url: newLogoUrl } : {}),
@@ -426,8 +470,20 @@ export default function ClubSettingsPage() {
               min_buyin_bb: toSave.min_buyin_bb,
               max_buyin_bb: toSave.max_buyin_bb,
             })
-            .eq(resolveClubIdFilter(clubId!).column, resolveClubIdFilter(clubId!).value);
+            .eq(resolveClubIdFilter(clubId!).column, resolveClubIdFilter(clubId!).value)
+            // .select() is what makes a rejected write observable. Without it
+            // an UPDATE matching zero rows — RLS denied it, ownership moved,
+            // the club was deleted — returns no error at all, and the page
+            // cheerfully reported "Settings saved!" while nothing had been.
+            // Verified against production: a non-owner UPDATE returns 0 rows
+            // and no error.
+            .select('id');
           if (error) throw error;
+          if (!updated || updated.length === 0) {
+            throw new Error(
+              'Settings were not saved — you may no longer own this club, or it no longer exists.'
+            );
+          }
         }
       );
       toast.success('Settings saved!');
@@ -450,8 +506,18 @@ export default function ClubSettingsPage() {
       setBaselineVersion((v) => v + 1);
       setServerChanged(false);
     } catch (error) {
+      // The logo lands in storage before the row update. If the update then
+      // fails, drop the object rather than leaving it orphaned in the bucket.
+      if (uploadedPathRef.current) {
+        await supabase.storage
+          .from('club-assets')
+          .remove([uploadedPathRef.current])
+          .catch(() => undefined);
+      }
       reportError(error, 'ClubSettingsPage.Failed_to_save_settings');
-      toast.error('Failed to save settings');
+      toast.error(error instanceof Error ? error.message : 'Failed to save settings');
+    } finally {
+      uploadedPathRef.current = null;
     }
     setSaving(false);
   };
@@ -499,7 +565,7 @@ export default function ClubSettingsPage() {
   };
 
   const handleDeleteClub = async () => {
-    if (!clubId || confirmText.trim() !== settings.name.trim()) return;
+    if (!clubId || confirmText.trim() !== savedClubName.trim()) return;
 
     setIsDeleting(true);
     try {
@@ -515,10 +581,46 @@ export default function ClubSettingsPage() {
     }
   };
 
+  // Without a club id nothing ever loads: the fetch effect is gated on
+  // `clubId`, so `loading` stayed true and the page showed its skeleton
+  // forever instead of saying what was wrong.
+  if (!clubId) {
+    return (
+      <div className="club-settings-page">
+        <div className="settings-empty-state">
+          <p className="settings-empty-title">No club selected</p>
+          <p className="settings-empty-desc">
+            Open this page from a club so it knows which settings to show.
+          </p>
+          <button className="btn btn-primary" onClick={() => navigate('/clubs')}>
+            Browse clubs
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="club-settings-page">
         <PageSkeleton variant="settings" />
+      </div>
+    );
+  }
+
+  if (notFound && !loading) {
+    return (
+      <div className="club-settings-page">
+        <div className="settings-empty-state">
+          <p className="settings-empty-title">Club not found</p>
+          <p className="settings-empty-desc">
+            This club does not exist, or it is private and you are not a member.
+          </p>
+          <button className="btn btn-primary" onClick={() => navigate('/clubs')}>
+            Browse clubs
+          </button>
+        </div>
+        <ClubBottomNav clubId={clubId} userRole={userRole} />
       </div>
     );
   }
@@ -837,14 +939,9 @@ export default function ClubSettingsPage() {
               <label>Min (BB)</label>
               <input
                 type="number"
-                value={settings.min_buyin_bb}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  updateSetting(
-                    'min_buyin_bb',
-                    isNaN(val) ? BUYIN_BB_FLOOR : Math.min(BUYIN_BB_CEILING, Math.max(BUYIN_BB_FLOOR, val))
-                  );
-                }}
+                value={Number.isFinite(settings.min_buyin_bb) ? settings.min_buyin_bb : ''}
+                onChange={(e) => updateSetting('min_buyin_bb', parseInt(e.target.value, 10))}
+                onBlur={() => updateSetting('min_buyin_bb', clampBuyin(settings.min_buyin_bb, BUYIN_BB_FLOOR))}
                 min={BUYIN_BB_FLOOR}
                 max={BUYIN_BB_CEILING}
                 disabled={!isOwner}
@@ -854,14 +951,9 @@ export default function ClubSettingsPage() {
               <label>Max (BB)</label>
               <input
                 type="number"
-                value={settings.max_buyin_bb}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  updateSetting(
-                    'max_buyin_bb',
-                    isNaN(val) ? BUYIN_BB_CEILING : Math.min(BUYIN_BB_CEILING, Math.max(BUYIN_BB_FLOOR, val))
-                  );
-                }}
+                value={Number.isFinite(settings.max_buyin_bb) ? settings.max_buyin_bb : ''}
+                onChange={(e) => updateSetting('max_buyin_bb', parseInt(e.target.value, 10))}
+                onBlur={() => updateSetting('max_buyin_bb', clampBuyin(settings.max_buyin_bb, BUYIN_BB_CEILING))}
                 min={BUYIN_BB_FLOOR}
                 max={BUYIN_BB_CEILING}
                 disabled={!isOwner}
@@ -944,13 +1036,13 @@ export default function ClubSettingsPage() {
             <h3> Delete Club</h3>
             <p>
               This action <strong>cannot be undone</strong>. This will permanently delete the club{' '}
-              <strong>{settings.name}</strong> and remove all members.
+              <strong>{savedClubName}</strong> and remove all members.
             </p>
             <div className="form-group">
               <label>Type the club name to confirm:</label>
               <input
                 type="text"
-                placeholder={settings.name}
+                placeholder={savedClubName}
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
                 autoFocus
@@ -969,7 +1061,7 @@ export default function ClubSettingsPage() {
               <button
                 className="btn btn-danger"
                 onClick={handleDeleteClub}
-                disabled={confirmText.trim() !== settings.name.trim() || isDeleting}
+                disabled={confirmText.trim() !== savedClubName.trim() || isDeleting}
               >
                 {isDeleting ? 'Deleting...' : 'Delete Club'}
               </button>

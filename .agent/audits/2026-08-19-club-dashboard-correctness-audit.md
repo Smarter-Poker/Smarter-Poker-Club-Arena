@@ -195,3 +195,37 @@ tsc clean; 25 dashboard unit tests (3 new for `formatAgo`, including the
 clock-skew case); full suite 1980 assertions passing across 162 files, the one
 failing file being the pre-existing `@sentry/node` server dep. Production build
 green.
+
+## 10. Conservation-first attribution (coverage upgrade)
+
+Strict adjacency turned out to be too strict. It was only ever a PROXY for
+"were chips injected between these two observations?". The real guarantee is
+per-hand chip conservation: if every seat has a prior stack and the deltas sum
+to -(rake + bbj), nothing entered or left the table during ANY of those gaps,
+so every delta in that hand is exact regardless of how many hands a player sat
+out. Adjacency was discarding provably-good data on exactly the tables where
+players rotate seats — which is what the horse clubs do all day.
+
+Measured on table 68c94447 (13,898 hands):
+
+| set                                   | hands  |
+|---------------------------------------|--------|
+| fully adjacent                        |  8,361 |
+| every seat has a prior stack          | 13,634 |
+| ...of those, conserving exactly       | 10,887 |
+
+New rule: if every seat has a prior stack, conservation decides (all or
+nothing); otherwise fall back to per-player adjacency AND delta <= won. The
+delta <= won check is applied only on the unvalidated fallback path — where
+conservation holds the deltas are proven, and applying it there would discard
+split/side-pot rows whose winners[] entry under-reports.
+
+Result on that table: fully-attributed hands 8,052 -> 10,894 (+35%),
+non_reconciling still **0**, sum(deltas) -1415.71 == -(rake+bbj) -1415.71,
+stored hands_attributed 41,384 == independent recompute 41,384. Coverage
+69% -> 83.7%. Midway Union club coverage 89.1% -> **93.4%**.
+
+Backfill state at time of writing: Midway Union fully rebuilt under the new
+rule. Club JAQK and SHARK CLUB are being refreshed table by table (SHARK CLUB
+39.9% -> 41.4% after 9 of 38); every NEW hand on every club already uses the
+new rule via the trigger.

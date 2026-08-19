@@ -238,12 +238,9 @@ export function SettingsPanel({
               onChange={() => handleToggle('autoPostBlinds')}
             />
 
-            <SettingToggle
-              label="Confirm all-in"
-              description="Show confirmation before going all-in"
-              checked={settings.confirmAllIn}
-              onChange={() => handleToggle('confirmAllIn')}
-            />
+            {/* Dan 2026-08-19, bug list item 12: "do NOT add a confirm-all-in
+                button - accept the action." Control removed so it cannot be
+                switched back on. Do not reintroduce. */}
 
             <SettingToggle
               label="Sit out next hand"

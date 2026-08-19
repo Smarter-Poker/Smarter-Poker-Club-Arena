@@ -101,11 +101,10 @@ export const GameplaySettings: React.FC<GameplaySettingsProps> = ({ onChange }) 
           checked={config.showOneCard}
           onChange={(v) => updateConfig('showOneCard', v)}
         />
-        <Toggle
-          label="Confirm All-In Bets"
-          checked={config.confirmAllIn}
-          onChange={(v) => updateConfig('confirmAllIn', v)}
-        />
+        {/* Dan 2026-08-19, bug list item 12: "do NOT add a confirm-all-in
+            button - accept the action." The toggle is gone so the option
+            cannot be switched back on; ActionPanel ignores the stored
+            value. Do not reintroduce this control. */}
       </div>
 
       <div className="gameplay-section">

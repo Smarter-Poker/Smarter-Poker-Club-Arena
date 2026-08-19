@@ -31,6 +31,11 @@ interface ActionPanelProps {
   onAction: (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => void;
   isMyTurn?: boolean;
   showPotOdds?: boolean;
+  /**
+   * @deprecated Dan 2026-08-19, bug list item 12: "do NOT add a confirm-all-in
+   * button - accept the action." Accepted and ignored so that callers still
+   * passing it do not break; there is no confirmation step any more.
+   */
   confirmAllIn?: boolean;
   showBetSizePresets?: boolean;
   /** Phase 2 T1-02 hint — drives preflop 2X/3X/4X/5X presets vs postflop fraction presets. */
@@ -192,7 +197,7 @@ export default function ActionPanel({
   onAction,
   isMyTurn = true,
   showPotOdds = false,
-  confirmAllIn = true,
+  confirmAllIn: _confirmAllInDeprecated,
   showBetSizePresets = true,
   isPreflop = false,
   currentBet = 0,
@@ -204,7 +209,6 @@ export default function ActionPanel({
   // Only an amount that reaches the REAL all-in threshold is an all-in.
   const allInThreshold = allInTo ?? rawMaxRaise;
   const [isRaiseMode, setIsRaiseMode] = useState(false);
-  const [pendingAllIn, setPendingAllIn] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(minRaise);
   const [turnPulse, setTurnPulse] = useState(false);
 
@@ -218,10 +222,9 @@ export default function ActionPanel({
    * siblings mounted far away in the tree.
    */
   useEffect(() => {
-    const on = isRaiseMode || pendingAllIn;
-    document.body.classList.toggle('ca-raising', on);
+    document.body.classList.toggle('ca-raising', isRaiseMode);
     return () => document.body.classList.remove('ca-raising');
-  }, [isRaiseMode, pendingAllIn]);
+  }, [isRaiseMode]);
   // Phase 2 T1-03: spec §5.2 — tapping the amount opens a numeric keyboard.
   // amountTyping toggles the inline input; amountDraft holds the raw text
   // while the user types so we don't fight their cursor mid-edit. Commit on
@@ -242,7 +245,6 @@ export default function ActionPanel({
   useEffect(() => {
     if (!isMyTurn) {
       setIsRaiseMode(false);
-      setPendingAllIn(false);
     }
   }, [isMyTurn]);
 
@@ -306,23 +308,16 @@ export default function ActionPanel({
     // In PLO maxRaise is the pot cap, so this branch used to fire on every
     // pot-sized bet and shove the stack.
     if (raiseAmount >= allInThreshold) {
-      if (confirmAllIn) {
-        setPendingAllIn(true);
-        return;
-      }
       onAction('allin', allInThreshold);
     } else {
       onAction('raise', raiseAmount);
     }
     setIsRaiseMode(false);
-  }, [raiseAmount, allInThreshold, onAction, confirmAllIn]);
+  }, [raiseAmount, allInThreshold, onAction]);
 
   const handleAllIn = useCallback(() => {
     haptic.strong();
-    if (confirmAllIn) {
-      setPendingAllIn(true);
-      return;
-    }
+    // Dan 2026-08-19, bug 12: no confirmation step. The tap IS the action.
     // AUDIT 2026-08-19: was maxRaise, which in POT-LIMIT is the pot cap, not
     // the stack - an "ALL IN" tap would report a pot-sized amount. The server
     // derives the real all-in from the stack so no chips were ever wrong, but
@@ -330,7 +325,7 @@ export default function ActionPanel({
     // that reads it (optimistic UI, telemetry).
     onAction('allin', allInThreshold);
     setIsRaiseMode(false);
-  }, [allInThreshold, onAction, confirmAllIn]);
+  }, [allInThreshold, onAction]);
 
   const adjustRaise = useCallback(
     (delta: number) => {
@@ -414,36 +409,6 @@ export default function ActionPanel({
 
   const sliderProgress =
     maxRaise > minRaise ? ((raiseAmount - minRaise) / (maxRaise - minRaise)) * 100 : 0;
-
-  // ─── ALL-IN CONFIRMATION MODE ────────────────────────────────
-  if (pendingAllIn) {
-    return (
-      <div className="action-panel action-panel--raise action-panel--allin-confirm">
-        <div className="raise-actions" style={{ flexDirection: 'column', gap: '8px' }}>
-          <button
-            className="raise-confirm"
-            style={{ backgroundColor: '#D32F2F', height: '64px', fontSize: '20px' }}
-            onClick={() => {
-              haptic.strong();
-              onAction('allin', allInThreshold);
-              setPendingAllIn(false);
-              setIsRaiseMode(false);
-            }}
-            aria-label={`Confirm all in ${formatChips(maxRaise)}`}
-          >
-            CONFIRM ALL-IN ({formatChips(maxRaise)})
-          </button>
-          <button
-            className="raise-cancel"
-            onClick={() => setPendingAllIn(false)}
-            aria-label="Cancel all in"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   // ─── RAISE MODE ──────────────────────────────────────────────
   if (isRaiseMode) {

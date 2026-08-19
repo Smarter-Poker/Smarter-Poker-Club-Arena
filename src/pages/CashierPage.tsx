@@ -1343,21 +1343,37 @@ export default function CashierPage() {
       {/* Financial Quick Links — visible to owners/admins/agents */}
       {canSend && clubId && (
         <div className={styles.quickLinks}>
-          <a
-            href={`/clubs/${clubId}/disputes`}
+          {/* These were raw <a href="/clubs/..."> tags. The app mounts under
+              basename="/hub/club-arena" (main.tsx), and a plain href is NOT
+              basename-aware — so every one of them resolved to
+              smarter.poker/clubs/<id>/disputes, a path that does not exist.
+              All three chips were dead links to routes that were present and
+              working the whole time.
+              react-router's navigate() applies the basename, and it keeps the
+              SPA mounted instead of triggering a full document load that drops
+              the realtime subscriptions this page opens. Same pattern already
+              used for the jackpot link above. */}
+          <button
+            type="button"
+            onClick={() => clubId && navigate(`/clubs/${clubId}/disputes`)}
             className={`${styles.quickLink} ${styles.quickLinkWarning}`}
           >
             ⚠️ Disputes
-          </a>
-          <a href="/financial-alerts" className={`${styles.quickLink} ${styles.quickLinkDanger}`}>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/financial-alerts')}
+            className={`${styles.quickLink} ${styles.quickLinkDanger}`}
+          >
             🚨 Alerts
-          </a>
-          <a
-            href={`/clubs/${clubId}/financials`}
+          </button>
+          <button
+            type="button"
+            onClick={() => clubId && navigate(`/clubs/${clubId}/financials`)}
             className={`${styles.quickLink} ${styles.quickLinkPrimary}`}
           >
             💰 Financials
-          </a>
+          </button>
         </div>
       )}
 

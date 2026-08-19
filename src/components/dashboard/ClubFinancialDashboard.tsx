@@ -1,4 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
+// Basename-aware navigation. This app mounts under
+// basename="/hub/club-arena"; a plain <a href="/..."> ignores that and
+// lands on smarter.poker/... which 404s. See the Financial Tools links below.
+import { useNavigate } from 'react-router-dom';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { WalletService } from '../../services/WalletService';
 import { CommissionService } from '../../services/CommissionService';
@@ -54,6 +58,7 @@ const commissionDistribution = [
 
 export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ clubId }) => {
   const isMounted = useIsMounted();
+  const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
   const [diamondBalance, setDiamondBalance] = useState(0);
@@ -497,8 +502,9 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
             🛠️ Financial Tools
           </h2>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <a
-              href="/financial-alerts"
+            <button
+              type="button"
+              onClick={() => navigate('/financial-alerts')}
               style={{
                 padding: '8px 14px',
                 background: 'rgba(239,68,68,0.1)',
@@ -511,9 +517,10 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
               }}
             >
               🚨 Financial Alerts
-            </a>
-            <a
-              href={`/clubs/${clubId}/disputes`}
+            </button>
+            <button
+              type="button"
+              onClick={() => clubId && navigate(`/clubs/${clubId}/disputes`)}
               style={{
                 padding: '8px 14px',
                 background: 'rgba(245,158,11,0.1)',
@@ -526,9 +533,10 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
               }}
             >
               ⚠️ Disputes
-            </a>
-            <a
-              href="/financial-health"
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/financial-health')}
               style={{
                 padding: '8px 14px',
                 background: 'rgba(16,185,129,0.1)',
@@ -541,7 +549,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
               }}
             >
               🩺 System Health
-            </a>
+            </button>
           </div>
         </div>
       </div>

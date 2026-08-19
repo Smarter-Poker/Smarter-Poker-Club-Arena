@@ -192,6 +192,27 @@ jobs:
       # alias the real column (alias:real_col), add the migration + regenerate the
       # manifest, or (for a view-projected/dynamic name) allowlist it under
       # "phantomColumns" in scripts/ci/supabase-invariants.allowlist.json.
+      # BLOCKING: reading a table that receives no writes is uniquely dangerous
+      # because it fails SILENTLY — the query succeeds, returns [], and the UI
+      # renders "0" as if it were a real answer. On 2026-08-19 five features
+      # were found doing exactly this (a club owner's financials page had shown
+      # zeros for 3.5 months; every player's profile reported 0 hands). The
+      # codebase already had comments saying those tables were empty; comments
+      # did not stop it happening five times. Writes are still allowed — some
+      # legacy writers retire on their own MIGRATION-LAW schedule.
+      - name: Supabase Invariants — Deprecated Tables
+        run: |
+          set -o pipefail
+          echo "## Deprecated-Table Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-deprecated-tables.mjs 2>&1 | tee /tmp/deprecated.log; then
+            echo "OK — no source file reads a table that receives no writes." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A deprecated table is being READ — the query returns [] and renders as a" >> $GITHUB_STEP_SUMMARY
+            echo "real zero. Repoint it at the live table named in the log." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       - name: Supabase Invariants — Phantom Columns
         run: |
           set -o pipefail

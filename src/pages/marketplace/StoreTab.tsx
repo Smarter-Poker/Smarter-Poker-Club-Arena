@@ -3,13 +3,19 @@
  * Purchases go through /api/club-arena/marketplace-purchase (server-authoritative).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { useToast } from '../../components/common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { fmtChips } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
-import { CATEGORIES, type MarketplaceItem, type SortMode } from './marketplaceShared';
+import {
+  CATEGORIES,
+  describeGrant,
+  safeImageUrl,
+  type MarketplaceItem,
+  type SortMode,
+} from './marketplaceShared';
 
 interface StoreTabProps {
   clubId: string;
@@ -17,6 +23,8 @@ interface StoreTabProps {
   ownedItemIds: Set<string>;
   balance: number;
   isAdmin: boolean;
+  /** true while the shop is still loading — do NOT claim the shop is empty */
+  loading: boolean;
   onGoManage: () => void;
   onGoChips: () => void;
   onPurchased: (newBalance: number | null) => void;
@@ -28,6 +36,7 @@ export default function StoreTab({
   ownedItemIds,
   balance,
   isAdmin,
+  loading,
   onGoManage,
   onGoChips,
   onPurchased,
@@ -35,6 +44,7 @@ export default function StoreTab({
   const toast = useToast();
   const [buyTarget, setBuyTarget] = useState<MarketplaceItem | null>(null);
   const [processing, setProcessing] = useState(false);
+  const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [sortMode, setSortMode] = useState<SortMode>('newest');
@@ -71,6 +81,22 @@ export default function StoreTab({
     return result;
   }, [items, categoryFilter, searchFilter, sortMode]);
 
+  // Modal a11y: Escape to close, initial focus on Confirm, background locked.
+  useEffect(() => {
+    if (!buyTarget) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !processing) setBuyTarget(null);
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    confirmBtnRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [buyTarget, processing]);
+
   const handlePurchase = async () => {
     if (!buyTarget || processing) return;
     setProcessing(true);
@@ -90,14 +116,22 @@ export default function StoreTab({
     }
   };
 
+  if (items.length === 0 && loading) {
+    return (
+      <div className={styles.emptyState}>
+        <span className={styles.emptyText}>Loading the shop...</span>
+      </div>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <div className={styles.emptyState}>
         <span className={styles.emptyIcon}>◇</span>
         <span className={styles.emptyText}>The club shop is currently empty.</span>
         <span className={styles.emptySubText}>
-          Club owners can add in-game items like time banks, table skins, throwables, and emotes
-          for members to purchase with chips.
+          Club owners can add in-game items like time banks, table skins, throwables, and emotes for
+          members to purchase with chips.
         </span>
         {isAdmin && (
           <button className={styles.emptyButton} onClick={onGoManage}>
@@ -113,12 +147,26 @@ export default function StoreTab({
       {/* Buy confirm modal */}
       {buyTarget && (
         <div className={styles.modalOverlay} onClick={() => !processing && setBuyTarget(null)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h2 className={styles.modalTitle}>Confirm Purchase</h2>
+          <div
+            className={styles.modal}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="buy-modal-title"
+          >
+            <h2 className={styles.modalTitle} id="buy-modal-title">
+              Confirm Purchase
+            </h2>
             <div className={styles.purchasePreview}>
               <div className={styles.purchaseImage}>
-                {buyTarget.image_url ? (
-                  <img src={buyTarget.image_url} alt="" className={styles.itemImg} />
+                {safeImageUrl(buyTarget.image_url) ? (
+                  <img
+                    src={safeImageUrl(buyTarget.image_url) as string}
+                    alt={buyTarget.name}
+                    className={styles.itemImg}
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                  />
                 ) : (
                   <div className={styles.itemPlaceholder}>◇</div>
                 )}
@@ -126,6 +174,11 @@ export default function StoreTab({
               <div>
                 <div className={styles.itemName}>{buyTarget.name}</div>
                 <div className={styles.itemDesc}>{buyTarget.description}</div>
+                {describeGrant(buyTarget.grant_spec) && (
+                  <div className={styles.grantLine}>
+                    Grants on redeem: {describeGrant(buyTarget.grant_spec)}
+                  </div>
+                )}
               </div>
             </div>
             <div className={styles.priceBox}>
@@ -155,6 +208,7 @@ export default function StoreTab({
                 Cancel
               </button>
               <button
+                ref={confirmBtnRef}
                 onClick={handlePurchase}
                 className={styles.btnPrimary}
                 disabled={processing || balance < buyTarget.price}
@@ -184,6 +238,7 @@ export default function StoreTab({
         <input
           type="text"
           placeholder="Search items..."
+          aria-label="Search shop items"
           value={searchFilter}
           onChange={(e) => setSearchFilter(e.target.value)}
           className={styles.searchInput}
@@ -192,6 +247,7 @@ export default function StoreTab({
           value={sortMode}
           onChange={(e) => setSortMode(e.target.value as SortMode)}
           className={styles.sortSelect}
+          aria-label="Sort shop items"
         >
           <option value="newest">Newest First</option>
           <option value="price-low">Price: Low to High</option>
@@ -222,8 +278,17 @@ export default function StoreTab({
             return (
               <div key={item.id} className={styles.itemCard}>
                 <div className={styles.itemImageArea}>
-                  {item.image_url ? (
-                    <img src={item.image_url} alt={item.name} className={styles.itemCover} />
+                  {safeImageUrl(item.image_url) ? (
+                    <img
+                      src={safeImageUrl(item.image_url) as string}
+                      alt={item.name}
+                      className={styles.itemCover}
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
                   ) : (
                     <div className={styles.itemPlaceholderLg}>◇</div>
                   )}
@@ -234,6 +299,9 @@ export default function StoreTab({
                   <div className={styles.itemDesc}>
                     {item.description || 'No description available.'}
                   </div>
+                  {describeGrant(item.grant_spec) && (
+                    <div className={styles.grantBadge}>{describeGrant(item.grant_spec)}</div>
+                  )}
                   <div className={styles.itemFooter}>
                     <div>
                       <span className={styles.itemPrice}>{fmtChips(item.price)} chips</span>

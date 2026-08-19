@@ -16,10 +16,17 @@ import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { fmtChips } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
-import { CATEGORIES, type MarketplaceItem } from './marketplaceShared';
+import {
+  CATEGORIES,
+  describeGrant,
+  type MarketplaceItem,
+  type ShopCategoryInfo,
+} from './marketplaceShared';
 
 interface ManageTabProps {
   clubId: string;
+  /** category -> grant mapping from /api/club-arena/store-catalog */
+  categories?: ShopCategoryInfo[];
   onShopChanged: () => void;
 }
 
@@ -31,11 +38,14 @@ interface EditDraft {
   imageUrl: string;
 }
 
-export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
+export default function ManageTab({ clubId, categories, onShopChanged }: ManageTabProps) {
   const toast = useToast();
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [totalRevenue, setTotalRevenue] = useState(0);
   const [processing, setProcessing] = useState(false);
+  const [grantQty, setGrantQty] = useState('1');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [desc, setDesc] = useState('');
@@ -45,6 +55,7 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
   const [draft, setDraft] = useState<EditDraft | null>(null);
 
   const loadItems = useCallback(async () => {
+    setLoadError(null);
     try {
       const {
         data: { session },
@@ -57,9 +68,16 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
       const data = await res.json().catch(() => ({ success: false }));
       if (!data.success) throw new Error(data.error || 'Failed to load shop items');
       setItems(data.items || []);
-      setLoaded(true);
+      setTotalRevenue(Number(data.totalRevenue) || 0);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load shop items');
+      const msg = err instanceof Error ? err.message : 'Failed to load shop items';
+      setItems([]);
+      setLoadError(msg);
+      toast.error(msg);
+    } finally {
+      // Must be in `finally`: leaving it in the try left the tab stuck on
+      // "Loading items..." forever whenever the request failed.
+      setLoaded(true);
     }
   }, [clubId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -67,11 +85,16 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
     loadItems();
   }, [loadItems]);
 
+  // What the selected category will grant when a member redeems it.
+  const grantInfo = (categories || []).find((c) => c.name === category);
+
   const stats = {
     total: items.length,
     active: items.filter((i) => i.is_active).length,
     totalSold: items.reduce((sum, i) => sum + (i.purchase_count || 0), 0),
-    totalRevenue: items.reduce((sum, i) => sum + (i.purchase_count || 0) * i.price, 0),
+    // Server-computed from price_paid. Multiplying today's price by historical
+    // sales let an admin rewrite reported revenue just by editing a price.
+    totalRevenue,
   };
 
   const validate = (n: string, p: string): number | null => {
@@ -104,6 +127,8 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
         description: desc.trim() || null,
         category,
         imageUrl: imageUrl.trim() || null,
+        grantType: grantInfo?.grantType,
+        grantQty: grantInfo?.grantUnit ? Math.max(1, Number(grantQty) || 1) : undefined,
       });
       toast.success('Item created');
       setName('');
@@ -160,6 +185,8 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
   };
 
   const handleToggle = async (item: MarketplaceItem) => {
+    if (processing) return;
+    setProcessing(true);
     try {
       await callClubArenaApi('manage-shop', { action: 'toggle', clubId, itemId: item.id });
       toast.success(item.is_active ? 'Item hidden' : 'Item activated');
@@ -167,6 +194,8 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
       onShopChanged();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Toggle failed');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -186,6 +215,8 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
       }))
     )
       return;
+    if (processing) return;
+    setProcessing(true);
     try {
       await callClubArenaApi('manage-shop', { action: 'delete', clubId, itemId: item.id });
       toast.success('Item deleted');
@@ -193,6 +224,8 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
       onShopChanged();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -226,6 +259,7 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Item name"
+            aria-label="Item name"
             className={styles.formInput}
             maxLength={100}
           />
@@ -234,7 +268,9 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             placeholder="Price (chips)"
+            aria-label="Item price in chips"
             min="1"
+            step="1"
             className={styles.formInput}
           />
         </div>
@@ -260,10 +296,37 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
           <input
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="Image URL (optional)"
+            placeholder="Image URL (https only, optional)"
+            aria-label="Item image URL"
             className={styles.formInput}
           />
         </div>
+        {grantInfo?.grantUnit && (
+          <div className={styles.formRow}>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={grantQty}
+              onChange={(e) => setGrantQty(e.target.value)}
+              placeholder={`How many ${grantInfo.grantUnit}?`}
+              aria-label={`Number of ${grantInfo.grantUnit} granted`}
+              className={styles.formInput}
+            />
+            <span className={styles.grantHint}>
+              {grantInfo.grantType === 'time_bank'
+                ? `= ${(Number(grantQty) || 1) * (grantInfo.secondsPerUse || 20)}s of table time`
+                : `${Number(grantQty) || 1} free ${grantInfo.grantUnit}`}
+            </span>
+          </div>
+        )}
+        {grantInfo && !grantInfo.grantUnit && (
+          <div className={styles.grantHint}>
+            {grantInfo.grantType === 'none'
+              ? 'Exclusive items grant nothing automatically — your club fulfils them.'
+              : 'Redeeming unlocks this permanently for the member.'}
+          </div>
+        )}
         <button
           className={styles.btnPrimary}
           disabled={processing || !name.trim() || !price}
@@ -277,6 +340,14 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
       {!loaded ? (
         <div className={styles.emptyState}>
           <span className={styles.emptyText}>Loading items...</span>
+        </div>
+      ) : loadError ? (
+        <div className={styles.emptyState}>
+          <span className={styles.emptyText}>Could not load shop items.</span>
+          <span className={styles.emptySubText}>{loadError}</span>
+          <button className={styles.emptyButton} onClick={loadItems}>
+            Retry
+          </button>
         </div>
       ) : items.length === 0 ? (
         <div className={styles.emptyState}>
@@ -302,17 +373,30 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
                     <span className={styles.categorySmall}>{item.category || 'Time Banks'}</span>
                     {' - '}
                     {item.purchase_count || 0} sold
+                    {item.revenue ? ` - ${fmtChips(item.revenue)} earned` : ''}
                   </div>
+                  {describeGrant(item.grant_spec) && (
+                    <div className={styles.grantHint}>Grants: {describeGrant(item.grant_spec)}</div>
+                  )}
                 </div>
                 <div className={styles.adminActions}>
                   <button
-                    onClick={() => (editingId === item.id ? setEditingId(null) : startEdit(item))}
+                    onClick={() => {
+                      if (editingId === item.id) {
+                        setEditingId(null);
+                        setDraft(null);
+                      } else {
+                        startEdit(item);
+                      }
+                    }}
+                    disabled={processing}
                     className={styles.btnEditSmall}
                   >
                     {editingId === item.id ? 'Close' : 'Edit'}
                   </button>
                   <button
                     onClick={() => handleToggle(item)}
+                    disabled={processing}
                     className={item.is_active ? styles.btnActiveToggle : styles.btnInactiveToggle}
                   >
                     {item.is_active ? 'Active' : 'Hidden'}
@@ -320,7 +404,7 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
                   <button
                     onClick={() => handleDelete(item)}
                     className={styles.btnDeleteSmall}
-                    disabled={(item.purchase_count || 0) > 0}
+                    disabled={processing || (item.purchase_count || 0) > 0}
                     title={
                       (item.purchase_count || 0) > 0
                         ? 'Items with sales cannot be deleted - hide them instead'

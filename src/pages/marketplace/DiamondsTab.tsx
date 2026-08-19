@@ -8,14 +8,16 @@ import { useState } from 'react';
 import { useToast } from '../../components/common/Toast';
 import { fmt } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
-import { DIAMOND_PACKAGES, startCheckout, type WalletInfo } from './marketplaceShared';
+import { startCheckout, type DiamondPackage, type WalletInfo } from './marketplaceShared';
 
 interface DiamondsTabProps {
   clubId: string;
   wallet: WalletInfo;
+  /** package table served by /api/club-arena/store-catalog */
+  packages: DiamondPackage[];
 }
 
-export default function DiamondsTab({ clubId, wallet }: DiamondsTabProps) {
+export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabProps) {
   const toast = useToast();
   const [redirecting, setRedirecting] = useState<string | null>(null);
 
@@ -40,14 +42,20 @@ export default function DiamondsTab({ clubId, wallet }: DiamondsTabProps) {
       <div className={styles.sectionIntro}>
         <h2 className={styles.sectionTitle}>Buy Diamonds</h2>
         <p className={styles.sectionSub}>
-          Diamonds power everything: chips, VIP passes, throwables, and premium features. Current
-          balance: <strong>{fmt(wallet.diamonds)}</strong>. Secure payment via Stripe — you will
-          be redirected to checkout and returned here.
+          Diamonds power everything: chips, VIP passes, throwables, and premium features.{' '}
+          {wallet.loaded ? (
+            <>
+              Current balance: <strong>{fmt(wallet.diamonds)}</strong>.
+            </>
+          ) : (
+            <>Your current balance is unavailable right now.</>
+          )}{' '}
+          Secure payment via Stripe — you will be redirected to checkout and returned here.
         </p>
       </div>
 
       <div className={styles.pkgGrid}>
-        {DIAMOND_PACKAGES.map((pkg) => (
+        {packages.map((pkg) => (
           <div
             key={pkg.id}
             className={`${styles.pkgCard} ${pkg.popular ? styles.pkgCardPopular : ''}`}
@@ -68,8 +76,8 @@ export default function DiamondsTab({ clubId, wallet }: DiamondsTabProps) {
       </div>
 
       <div className={styles.infoNote}>
-        1 diamond = $0.01. Purchases are credited automatically after payment. If your balance
-        does not update right away, use Refresh — Stripe confirmation can take a few seconds.
+        1 diamond = $0.01. Purchases are credited automatically after payment. If your balance does
+        not update right away, use Refresh — Stripe confirmation can take a few seconds.
       </div>
     </>
   );

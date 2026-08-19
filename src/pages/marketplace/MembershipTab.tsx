@@ -12,28 +12,47 @@ import { confirmDialog } from '../../components/common/confirmDialog';
 import { masterBus } from '../../core/MasterBus';
 import { fmt, formatDate } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
-import { VIP_PLANS, startCheckout, storeFetch, type WalletInfo } from './marketplaceShared';
+import {
+  startCheckout,
+  storeFetch,
+  uuid,
+  type VipPlan,
+  type WalletInfo,
+} from './marketplaceShared';
 
 interface MembershipTabProps {
   clubId: string;
   wallet: WalletInfo;
+  /** plan table served by /api/club-arena/store-catalog */
+  plans: VipPlan[];
   onWalletChanged: () => void;
 }
 
-export default function MembershipTab({ clubId, wallet, onWalletChanged }: MembershipTabProps) {
+export default function MembershipTab({
+  clubId,
+  wallet,
+  plans,
+  onWalletChanged,
+}: MembershipTabProps) {
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
 
-  const buyDailyPass = async () => {
+  const buyDailyPass = async (cost: number) => {
     if (busy) return;
-    if (wallet.diamonds < 150) {
-      toast.error('You need 150 diamonds for a Daily Pass');
+    if (!wallet.loaded) {
+      toast.error('Your diamond balance is unavailable right now');
+      return;
+    }
+    if (wallet.diamonds < cost) {
+      toast.error(`You need ${fmt(cost)} diamonds for a Daily Pass`);
       return;
     }
     if (
       !(await confirmDialog({
         title: 'Daily VIP Pass',
-        message: 'Spend 150 diamonds for 24 hours of VIP access?',
+        message: wallet.isVip
+          ? `Spend ${fmt(cost)} diamonds to extend your VIP access by 24 hours?`
+          : `Spend ${fmt(cost)} diamonds for 24 hours of VIP access?`,
         confirmText: 'Activate',
         variant: 'default',
       }))
@@ -43,7 +62,7 @@ export default function MembershipTab({ clubId, wallet, onWalletChanged }: Membe
     try {
       const data = await storeFetch<{ success: true; expiresAt?: string; newBalance?: number }>(
         '/api/store/purchase-daily-vip',
-        { body: { idempotencyKey: crypto.randomUUID() } }
+        { body: { idempotencyKey: uuid() } }
       );
       toast.success(
         data.expiresAt ? `VIP active until ${formatDate(data.expiresAt)}` : 'VIP Daily Pass active'
@@ -74,6 +93,10 @@ export default function MembershipTab({ clubId, wallet, onWalletChanged }: Membe
 
   const buyWithDiamonds = async (planKey: 'monthly' | 'annual', priceDiamonds: number) => {
     if (busy) return;
+    if (!wallet.loaded) {
+      toast.error('Your diamond balance is unavailable right now');
+      return;
+    }
     if (wallet.diamonds < priceDiamonds) {
       toast.error(`You need ${fmt(priceDiamonds)} diamonds for this plan`);
       return;
@@ -90,7 +113,7 @@ export default function MembershipTab({ clubId, wallet, onWalletChanged }: Membe
     setBusy(`diamonds-${planKey}`);
     try {
       await storeFetch('/api/store/purchase-vip-with-diamonds', {
-        body: { plan: planKey, idempotencyKey: crypto.randomUUID() },
+        body: { plan: planKey, idempotencyKey: uuid() },
       });
       toast.success('VIP membership activated');
       masterBus.emit('BALANCE_UPDATED', { source: 'vip_purchase' });
@@ -131,7 +154,7 @@ export default function MembershipTab({ clubId, wallet, onWalletChanged }: Membe
       </div>
 
       <div className={styles.planGrid}>
-        {VIP_PLANS.map((plan) => (
+        {plans.map((plan) => (
           <div
             key={plan.id}
             className={`${styles.planCard} ${plan.featured ? styles.planCardFeatured : ''}`}
@@ -139,7 +162,9 @@ export default function MembershipTab({ clubId, wallet, onWalletChanged }: Membe
             {plan.featured && <span className={styles.pkgRibbon}>MOST POPULAR</span>}
             <div className={styles.planName}>{plan.name}</div>
             <div className={styles.planPrice}>
-              {plan.priceUsd != null ? `$${plan.priceUsd.toFixed(2)}` : `${fmt(plan.priceDiamonds)} diamonds`}
+              {plan.priceUsd != null
+                ? `$${plan.priceUsd.toFixed(2)}`
+                : `${fmt(plan.priceDiamonds)} diamonds`}
             </div>
             <div className={styles.planPeriod}>{plan.period}</div>
             <ul className={styles.planFeatures}>
@@ -150,23 +175,29 @@ export default function MembershipTab({ clubId, wallet, onWalletChanged }: Membe
             {plan.id === 'vip-daily' ? (
               <button
                 className={styles.btnPrimary}
-                disabled={busy !== null || wallet.diamonds < plan.priceDiamonds}
-                onClick={buyDailyPass}
+                disabled={busy !== null || !wallet.loaded || wallet.diamonds < plan.priceDiamonds}
+                onClick={() => buyDailyPass(plan.priceDiamonds)}
               >
-                {busy === 'vip-daily' ? 'Activating...' : `Activate for ${fmt(plan.priceDiamonds)} diamonds`}
+                {busy === 'vip-daily'
+                  ? 'Activating...'
+                  : `${wallet.isVip ? 'Extend' : 'Activate'} for ${fmt(plan.priceDiamonds)} diamonds`}
               </button>
             ) : (
               <>
                 <button
                   className={styles.btnPrimary}
-                  disabled={busy !== null}
+                  disabled={busy !== null || !plan.checkoutPlan}
                   onClick={() => plan.checkoutPlan && buyWithCard(plan.checkoutPlan)}
                 >
-                  {busy === `card-${plan.checkoutPlan}` ? 'Opening checkout...' : 'Subscribe with card'}
+                  {busy === `card-${plan.checkoutPlan}`
+                    ? 'Opening checkout...'
+                    : wallet.isVip
+                      ? 'Switch to this plan'
+                      : 'Subscribe with card'}
                 </button>
                 <button
                   className={styles.btnGhostWide}
-                  disabled={busy !== null || wallet.diamonds < plan.priceDiamonds}
+                  disabled={busy !== null || !wallet.loaded || wallet.diamonds < plan.priceDiamonds}
                   onClick={() => plan.planKey && buyWithDiamonds(plan.planKey, plan.priceDiamonds)}
                 >
                   {busy === `diamonds-${plan.planKey}`

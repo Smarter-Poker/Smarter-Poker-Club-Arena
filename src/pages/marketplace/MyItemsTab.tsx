@@ -11,7 +11,7 @@ import { reportError } from '../../utils/errorReporter';
 import { fmtChips, timeAgo } from '../../utils/format';
 import { useState } from 'react';
 import styles from '../MarketplacePage.module.css';
-import type { InventoryRow, ShopPurchase } from './marketplaceShared';
+import { isOwnedRow, type InventoryRow, type ShopPurchase } from './marketplaceShared';
 
 interface MyItemsTabProps {
   inventory: InventoryRow[];
@@ -50,7 +50,21 @@ export default function MyItemsTab({
       if (error || !data?.success) {
         throw new Error(data?.error || error?.message || 'Redeem failed');
       }
-      toast.success('Item redeemed');
+      // fn_redeem_shop_item now grants a real entitlement and reports it back.
+      const g = data?.granted as { type?: string; uses?: number; seconds?: number } | undefined;
+      if (g?.type === 'time_bank' && g.seconds) {
+        toast.success(`Redeemed — +${g.seconds}s of table time added`);
+      } else if (g?.type === 'throwable' && g.uses) {
+        toast.success(`Redeemed — ${g.uses} free throws added`);
+      } else if (g?.type === 'emote_pack') {
+        toast.success('Redeemed — emote pack unlocked');
+      } else if (g?.type === 'table_skin') {
+        toast.success('Redeemed — table theme unlocked');
+      } else if (g?.type === 'avatar') {
+        toast.success('Redeemed — avatar unlocked');
+      } else {
+        toast.success('Redeemed — your club will fulfil this perk');
+      }
       onRedeemed();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Redeem failed');
@@ -84,12 +98,14 @@ export default function MyItemsTab({
                 <th>Price Paid</th>
                 <th>Acquired</th>
                 <th>Status</th>
-                <th></th>
+                <th>
+                  <span className={styles.srOnly}>Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {inventory.map((it) => {
-                const redeemed = it.status === 'redeemed';
+                const redeemed = !isOwnedRow(it);
                 return (
                   <tr key={it.id}>
                     <td style={{ fontWeight: 700 }}>{it.item_name || 'Unknown Item'}</td>
@@ -97,7 +113,9 @@ export default function MyItemsTab({
                       <span className={styles.categorySmall}>{it.category || '-'}</span>
                     </td>
                     <td style={{ fontWeight: 800, color: '#f7c52a' }}>{fmtChips(it.price_paid)}</td>
-                    <td style={{ fontSize: '12px', color: '#8b8d91' }}>{timeAgo(it.acquired_at)}</td>
+                    <td style={{ fontSize: '12px', color: '#8b8d91' }}>
+                      {timeAgo(it.acquired_at)}
+                    </td>
                     <td>
                       <span
                         style={{
@@ -118,7 +136,7 @@ export default function MyItemsTab({
                           className={styles.emptyButton}
                           style={{ padding: '4px 12px', fontSize: '12px' }}
                           onClick={() => handleRedeem(it.id)}
-                          disabled={redeeming === it.id}
+                          disabled={redeeming !== null}
                         >
                           {redeeming === it.id ? '...' : 'Redeem'}
                         </button>
@@ -163,8 +181,12 @@ export default function MyItemsTab({
                       <td>
                         <span className={styles.categorySmall}>{p.item_category || '-'}</span>
                       </td>
-                      <td style={{ color: '#f7c52a', fontWeight: 700 }}>{fmtChips(p.price_paid)}</td>
-                      <td style={{ fontSize: '12px', color: '#8b8d91' }}>{timeAgo(p.created_at)}</td>
+                      <td style={{ color: '#f7c52a', fontWeight: 700 }}>
+                        {fmtChips(p.price_paid)}
+                      </td>
+                      <td style={{ fontSize: '12px', color: '#8b8d91' }}>
+                        {timeAgo(p.created_at)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

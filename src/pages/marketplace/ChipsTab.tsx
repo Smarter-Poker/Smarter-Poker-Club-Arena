@@ -14,16 +14,24 @@ import { useToast } from '../../components/common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { fmt } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
-import { CHIP_PACKAGES, type WalletInfo } from './marketplaceShared';
+import { type ChipPackage, type WalletInfo } from './marketplaceShared';
 
 interface ChipsTabProps {
   wallet: WalletInfo;
   clubId: string | null;
+  /** package table served by /api/club-arena/store-catalog */
+  packages: ChipPackage[];
   onGoDiamonds: () => void;
   onPurchased: () => void;
 }
 
-export default function ChipsTab({ wallet, clubId, onGoDiamonds, onPurchased }: ChipsTabProps) {
+export default function ChipsTab({
+  wallet,
+  clubId,
+  packages,
+  onGoDiamonds,
+  onPurchased,
+}: ChipsTabProps) {
   const toast = useToast();
   const [purchasing, setPurchasing] = useState<string | null>(null);
 
@@ -56,20 +64,28 @@ export default function ChipsTab({ wallet, clubId, onGoDiamonds, onPurchased }: 
         <h2 className={styles.sectionTitle}>Get Chips</h2>
         <p className={styles.sectionSub}>
           Convert diamonds into chips for this club&apos;s games and shop. Chips are held per club;
-          diamonds are global. You have <strong>{fmt(wallet.diamonds)}</strong> diamonds.
+          diamonds are global.{' '}
+          {wallet.loaded ? (
+            <>
+              You have <strong>{fmt(wallet.diamonds)}</strong> diamonds.
+            </>
+          ) : (
+            <>Your diamond balance is unavailable right now.</>
+          )}
         </p>
       </div>
 
       <div className={styles.pkgGrid}>
-        {CHIP_PACKAGES.map((pkg) => {
-          const affordable = wallet.diamonds >= pkg.diamonds;
+        {packages.map((pkg) => {
+          const affordable = wallet.loaded && wallet.diamonds >= pkg.diamonds;
+          const value = pkg.valuePct ?? pkg.bonus;
           return (
             <div
               key={pkg.id}
               className={`${styles.pkgCard} ${pkg.popular ? styles.pkgCardPopular : ''}`}
             >
               {pkg.popular && <span className={styles.pkgRibbon}>BEST VALUE</span>}
-              {pkg.bonus ? <span className={styles.pkgBonus}>+{pkg.bonus}% value</span> : null}
+              {value ? <span className={styles.pkgBonus}>+{value}% value</span> : null}
               <div className={styles.pkgAmount}>{fmt(pkg.chips)}</div>
               <div className={styles.pkgLabel}>chips</div>
               <button

@@ -46,6 +46,14 @@ const ALLOWLIST = new Set([
   // `fn_increment_vip_usage` (also referenced by `fn_platform_invariants_health`).
   // Verified against production 2026-08-17. Read from src/services/VIPService.ts:266.
   'vip_feature_usage_monthly',
+  // Same shape as vip_feature_usage_monthly: the writers are SECURITY DEFINER
+  // functions that live in the DATABASE, not in server/src or this repo's
+  // (intentionally stale) migrations, so this repo-scanning check cannot see
+  // them. Both verified against production 2026-08-19 via the Supabase MCP:
+  //   union_pnl_settlements  3 writer functions, 3 rows.  Read: UnionDashboardPage.tsx:406
+  //   avatar_unlocks         2 writer functions, 1 row.   Read: marketplaceShared.ts:352
+  'union_pnl_settlements',
+  'avatar_unlocks',
   // Cross-orb tables (tracked in ~/Documents/Smarter-Poker-World-Hub/supabase/migrations)
   'diamond_ledger', // Diamond Arena orb
   'user_avatars', // Identity DNA Engine

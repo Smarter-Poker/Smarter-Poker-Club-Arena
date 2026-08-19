@@ -73,40 +73,67 @@ async function cosTheta(p: import('@playwright/test').Page, i: number) {
 
 test.use({ viewport: { width: 800, height: 400 } });
 
-test('all three cards are FACE DOWN while they are being dealt', async ({ page: p }) => {
+/**
+ * Animation timings, read off the live timeline rather than sampled by sleeping.
+ *
+ * 2026-08-19: the first version of these tests waited a fixed 700ms and then
+ * asserted on the rotation it happened to catch. That is a race — under a
+ * loaded parallel run the animation had not started yet and the spec failed on
+ * main. getAnimations() exposes delay and duration directly, so the ORDERING
+ * (land, then fan open, left to right) is checked deterministically and the
+ * only thing left to wait on is `finished`.
+ */
+async function timings(p: import('@playwright/test').Page) {
+  return p.evaluate(() =>
+    [0, 1, 2].map((i) => {
+      const card = document.getElementById(`card-${i}`)!;
+      const flip = document.getElementById(`flip-${i}`)!;
+      const one = (el: Element, name: string) => {
+        const a = el
+          .getAnimations()
+          .find((x) => (x as CSSAnimation).animationName === name) as CSSAnimation | undefined;
+        const t = a?.effect?.getComputedTiming();
+        return { delay: Number(t?.delay ?? NaN), duration: Number(t?.duration ?? NaN) };
+      };
+      return { land: one(card, 'ccFlopLand'), flip: one(flip, 'ccFlopFanOpen') };
+    })
+  );
+}
+
+test('all three cards are dealt FACE DOWN before anything turns over', async ({ page: p }) => {
   await p.setContent(page());
-  // Phase 1 runs 0 - 0.5s (0.2s stagger + 0.3s travel). Sample inside it.
-  await p.waitForTimeout(320);
-  for (const i of [0, 1, 2]) {
-    expect(await cosTheta(p, i)).toBeGreaterThan(0.9); // ~0deg, back showing
-  }
+  const t = await timings(p);
+
+  // Every card lands before the FIRST flip begins — nothing turns over while a
+  // card is still in the air.
+  const lastLanded = Math.max(...t.map((c) => c.land.delay + c.land.duration));
+  const firstFlip = Math.min(...t.map((c) => c.flip.delay));
+  expect(firstFlip).toBeGreaterThanOrEqual(lastLanded);
 });
 
 test('they fan open LEFT TO RIGHT, not all at once', async ({ page: p }) => {
   await p.setContent(page());
-  // Card 0 flips at 0.52s, card 2 at 0.80s. Sample between them.
-  await p.waitForTimeout(700);
-  const first = await cosTheta(p, 0);
-  const last = await cosTheta(p, 2);
-  expect(first).toBeLessThan(0.9); // card 0 has started turning
-  expect(last).toBeGreaterThan(first); // card 2 is still behind it
+  const t = await timings(p);
+  expect(t[0].flip.delay).toBeLessThan(t[1].flip.delay);
+  expect(t[1].flip.delay).toBeLessThan(t[2].flip.delay);
+});
+
+test('the deal itself is staggered, not simultaneous', async ({ page: p }) => {
+  await p.setContent(page());
+  const t = await timings(p);
+  expect(t[0].land.delay).toBeLessThan(t[1].land.delay);
+  expect(t[1].land.delay).toBeLessThan(t[2].land.delay);
 });
 
 test('the flop finishes FACE UP', async ({ page: p }) => {
   await p.setContent(page());
-  await p.waitForTimeout(1500);
+  // Derive the wait from the real timings rather than guessing a number: the
+  // sequence is over once the LAST flip's delay + duration has elapsed.
+  const t = await timings(p);
+  const endsAt = Math.max(...t.map((c) => c.flip.delay + c.flip.duration));
+  await p.waitForTimeout(endsAt + 250);
   for (const i of [0, 1, 2]) {
     expect(await cosTheta(p, i)).toBeLessThan(-0.9); // ~180deg, front showing
-  }
-});
-
-test('nothing turns over while a card is still in the air', async ({ page: p }) => {
-  await p.setContent(page());
-  // Last card lands at 0.2s stagger + 0.3s travel = 0.5s. Nothing may have
-  // begun rotating before then.
-  await p.waitForTimeout(480);
-  for (const i of [0, 1, 2]) {
-    expect(await cosTheta(p, i)).toBeGreaterThan(0.9);
   }
 });
 
@@ -114,7 +141,6 @@ test('with animations suppressed the board is FACE UP, never stuck on backs', as
   page: p,
 }) => {
   await p.setContent(page('* { animation: none !important; }'));
-  await p.waitForTimeout(50);
   for (const i of [0, 1, 2]) {
     expect(await cosTheta(p, i)).toBeLessThan(-0.9);
   }

@@ -26,7 +26,10 @@ import {
   BUYIN_BB_FLOOR,
   CLUB_NAME_MAX,
   WATCHED_COLUMNS,
+  type ClubDeletionImpact,
+  blockingDeletionReason,
   clampBuyin,
+  privateClubNeedsApproval,
   sanitizationWouldAlter,
   validateBuyinRange,
   validateClubName,
@@ -137,6 +140,11 @@ export default function ClubSettingsPage() {
   const [serverChanged, setServerChanged] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  // What a delete would actually destroy. tables and club_wallets are both
+  // ON DELETE CASCADE from clubs, so the modal must show real numbers and
+  // refuse while anything is live.
+  const [deleteImpact, setDeleteImpact] = useState<ClubDeletionImpact | null>(null);
+  const [impactLoading, setImpactLoading] = useState(false);
   const [showStatsExport, setShowStatsExport] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -144,6 +152,7 @@ export default function ClubSettingsPage() {
   // Mirrors the audit_trail SELECT policies: owner, or is_club_admin() which
   // accepts role IN ('owner','admin','manager','agent').
   const canSeeAuditLog = isOwner || userRole === 'admin' || userRole === 'agent';
+  const deleteBlockedReason = deleteImpact ? blockingDeletionReason(deleteImpact) : null;
   const [loadError, setLoadError] = useState(false);
   // A club id that resolves to no row (deleted club, bad code, or a club RLS
   // hides) used to fall straight through the `if (data)` block: no error, no
@@ -159,6 +168,8 @@ export default function ClubSettingsPage() {
     setIsOwner(false);
     setUserRole('member');
     setShowDeleteModal(false);
+    setDeleteImpact(null);
+    setImpactLoading(false);
     setShowStatsExport(false);
     setIsDeleting(false);
     setConfirmText('');
@@ -569,6 +580,30 @@ export default function ClubSettingsPage() {
     });
   };
 
+  /** Clearing the logo was impossible: it could be replaced but never removed. */
+  const removeLogo = async () => {
+    if (!isOwner || !clubId || !currentLogoUrl) return;
+    setSaving(true);
+    try {
+      const { data: updated, error } = await supabase
+        .from('clubs')
+        .update({ logo_url: null })
+        .eq(resolveClubIdFilter(clubId).column, resolveClubIdFilter(clubId).value)
+        .select('id');
+      if (error) throw error;
+      if (!updated || updated.length === 0) {
+        throw new Error('Logo was not removed — you may no longer own this club.');
+      }
+      setCurrentLogoUrl(null);
+      toast.success('Logo removed');
+      masterBus.emit('CLUB_UPDATED', { clubId });
+    } catch (e) {
+      reportError(e, 'ClubSettingsPage.Failed_to_remove_logo');
+      toast.error(e instanceof Error ? e.message : 'Failed to remove logo');
+    }
+    setSaving(false);
+  };
+
   const clearPendingLogo = () => {
     setPendingLogo((prev) => {
       if (prev) URL.revokeObjectURL(prev.preview);
@@ -586,8 +621,55 @@ export default function ClubSettingsPage() {
     }
   };
 
+  const loadDeleteImpact = async () => {
+    if (!clubId) return;
+    setImpactLoading(true);
+    setDeleteImpact(null);
+    try {
+      const resolvedId = await resolveClubUUID(clubId);
+      const [members, tables, wallets] = await Promise.all([
+        supabase
+          .from('club_members')
+          .select('user_id', { count: 'exact', head: true })
+          .eq('club_id', resolvedId),
+        supabase
+          .from('tables')
+          .select('id', { count: 'exact', head: true })
+          .eq('club_id', resolvedId)
+          .neq('status', 'closed'),
+        supabase.from('club_wallets').select('chip_balance').eq('club_id', resolvedId),
+      ]);
+      const walletChips = (wallets.data || []).reduce(
+        (sum: number, w: { chip_balance: number | null }) => sum + Number(w.chip_balance || 0),
+        0
+      );
+      setDeleteImpact({
+        members: members.count ?? 0,
+        runningTables: tables.count ?? 0,
+        walletChips,
+      });
+    } catch (e) {
+      reportError(e, 'ClubSettingsPage.Failed_to_load_delete_impact');
+      // Unknown impact must not read as "safe to delete".
+      setDeleteImpact(null);
+    } finally {
+      setImpactLoading(false);
+    }
+  };
+
   const handleDeleteClub = async () => {
     if (!clubId || !savedClubName.trim() || confirmText.trim() !== savedClubName.trim()) return;
+    // Belt and braces: the button is disabled for these cases, but a delete
+    // that cascades 56 running tables deserves a second gate.
+    if (!deleteImpact) {
+      toast.error('Still checking what this would delete — try again in a moment.');
+      return;
+    }
+    const blocked = blockingDeletionReason(deleteImpact);
+    if (blocked) {
+      toast.error(blocked);
+      return;
+    }
 
     setIsDeleting(true);
     try {
@@ -818,6 +900,17 @@ export default function ClubSettingsPage() {
                   Undo
                 </button>
               )}
+              {isOwner && !pendingLogo && currentLogoUrl && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                  onClick={removeLogo}
+                  disabled={saving}
+                >
+                  Remove
+                </button>
+              )}
             </div>
             <small className="form-hint">
               PNG, JPG, WEBP or GIF up to 2 MB. Applied when you save changes.
@@ -839,12 +932,28 @@ export default function ClubSettingsPage() {
               aria-checked={settings.is_public}
               aria-label="Public Club"
               className={`toggle-btn ${settings.is_public ? 'on' : ''}`}
-              onClick={() => updateSetting('is_public', !settings.is_public)}
+              onClick={() => {
+                const nextPublic = !settings.is_public;
+                // Going private also switches approval on, matching what club
+                // creation already does (requires_approval = !isPublic).
+                // Without it the club is merely hidden, not closed.
+                setSettings((prev) => ({
+                  ...prev,
+                  is_public: nextPublic,
+                  requires_approval: nextPublic ? prev.requires_approval : true,
+                }));
+              }}
               disabled={!isOwner}
             >
               {settings.is_public ? 'ON' : 'OFF'}
             </button>
           </div>
+          {privateClubNeedsApproval(settings.is_public, settings.requires_approval) && (
+            <small className="form-hint" role="alert" style={{ color: '#ffb020' }}>
+              This club is private but admits anyone instantly. Private only hides the club from
+              search — joining is gated by Require Approval.
+            </small>
+          )}
           <div className="toggle-row">
             <div className="toggle-info">
               <span className="toggle-label">Require Approval</span>
@@ -1073,7 +1182,13 @@ export default function ClubSettingsPage() {
                   Once deleted, all club data, members, and tables will be permanently removed.
                 </span>
               </div>
-              <button className="btn btn-danger" onClick={() => setShowDeleteModal(true)}>
+              <button
+                className="btn btn-danger"
+                onClick={() => {
+                  setShowDeleteModal(true);
+                  loadDeleteImpact();
+                }}
+              >
                 Delete Club
               </button>
             </div>
@@ -1105,8 +1220,34 @@ export default function ClubSettingsPage() {
             <h3>Delete Club</h3>
             <p>
               This action <strong>cannot be undone</strong>. This will permanently delete the club{' '}
-              <strong>{savedClubName}</strong> and remove all members.
+              <strong>{savedClubName}</strong>.
             </p>
+            {impactLoading && <p className="delete-impact">Checking what this would delete...</p>}
+            {!impactLoading && deleteImpact && (
+              <ul className="delete-impact">
+                <li>{deleteImpact.members.toLocaleString()} member records</li>
+                <li>
+                  every table in this club
+                  {deleteImpact.runningTables > 0
+                    ? `, including ${deleteImpact.runningTables} currently running`
+                    : ' (none are running)'}
+                </li>
+                <li>
+                  club wallets holding {deleteImpact.walletChips.toLocaleString()} chips
+                </li>
+              </ul>
+            )}
+            {!impactLoading && !deleteImpact && (
+              <p className="delete-impact delete-impact--blocked">
+                Could not check what this would delete. Deletion is disabled until that check
+                succeeds.
+              </p>
+            )}
+            {deleteBlockedReason && (
+              <p className="delete-impact delete-impact--blocked" role="alert">
+                {deleteBlockedReason}
+              </p>
+            )}
             <div className="form-group">
               <label htmlFor="confirm-club-name">Type the club name to confirm:</label>
               <input
@@ -1124,6 +1265,7 @@ export default function ClubSettingsPage() {
                 onClick={() => {
                   setShowDeleteModal(false);
                   setConfirmText('');
+                  setDeleteImpact(null);
                 }}
               >
                 Cancel
@@ -1134,8 +1276,12 @@ export default function ClubSettingsPage() {
                 disabled={
                   !savedClubName.trim() ||
                   confirmText.trim() !== savedClubName.trim() ||
-                  isDeleting
+                  isDeleting ||
+                  impactLoading ||
+                  !deleteImpact ||
+                  !!deleteBlockedReason
                 }
+                title={deleteBlockedReason || undefined}
               >
                 {isDeleting ? 'Deleting...' : 'Delete Club'}
               </button>

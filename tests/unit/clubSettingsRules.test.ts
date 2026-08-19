@@ -12,7 +12,9 @@ import {
   WATCHED_COLUMNS,
   clampBuyin,
   CSV_BOM,
+  blockingDeletionReason,
   csvSafeCell,
+  privateClubNeedsApproval,
   sanitizationWouldAlter,
   toCSV,
   validateBuyinRange,
@@ -156,5 +158,50 @@ describe('CSV_BOM', () => {
     const csv = CSV_BOM + toCSV([{ player: 'José', hands_played: 12 }]);
     expect(csv.startsWith('\ufeff')).toBe(true);
     expect(csv.slice(1).split('\n')[0]).toBe('player,hands_played');
+  });
+});
+
+describe('blockingDeletionReason', () => {
+  const clean = { members: 3, runningTables: 0, walletChips: 0 };
+
+  it('allows deletion of a settled, idle club', () => {
+    expect(blockingDeletionReason(clean)).toBeNull();
+  });
+
+  it('blocks while tables are running', () => {
+    // tables.club_id is ON DELETE CASCADE: deleting the club would drop
+    // running tables with players seated. Midway Union had 56 of them.
+    const r = blockingDeletionReason({ ...clean, runningTables: 56 });
+    expect(r).toMatch(/56 running tables/);
+  });
+
+  it('uses the singular for one table', () => {
+    expect(blockingDeletionReason({ ...clean, runningTables: 1 })).toMatch(/1 running table /);
+  });
+
+  it('blocks while the club wallet still holds chips', () => {
+    expect(blockingDeletionReason({ ...clean, walletChips: 12500 })).toMatch(/12,500 chips/);
+  });
+
+  it('reports running tables before wallet chips', () => {
+    const r = blockingDeletionReason({ members: 1, runningTables: 2, walletChips: 500 });
+    expect(r).toMatch(/running table/);
+  });
+});
+
+describe('privateClubNeedsApproval', () => {
+  it('flags a private club that admits anyone', () => {
+    // fn_join_club reads only requires_approval — is_public does not gate
+    // joining, it only hides the club from discovery.
+    expect(privateClubNeedsApproval(false, false)).toBe(true);
+  });
+
+  it('is satisfied when private clubs require approval', () => {
+    expect(privateClubNeedsApproval(false, true)).toBe(false);
+  });
+
+  it('does not flag public clubs', () => {
+    expect(privateClubNeedsApproval(true, false)).toBe(false);
+    expect(privateClubNeedsApproval(true, true)).toBe(false);
   });
 });

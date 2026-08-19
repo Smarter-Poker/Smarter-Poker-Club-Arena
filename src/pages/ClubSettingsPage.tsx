@@ -22,6 +22,11 @@ import './ClubSettingsPage.css';
 import { reportError } from '../utils/errorReporter';
 import { MAX_RAKE_CAP_BB, MAX_RAKE_PERCENT, RAKE_INHERIT } from '../config/RakeConfig';
 
+// Buy-in bounds, in big blinds. A table cannot be seated below one big blind,
+// and 1000 BB is the deepest stack the lobby renders sanely.
+const BUYIN_BB_FLOOR = 1;
+const BUYIN_BB_CEILING = 1000;
+
 interface ClubSettings {
   name: string;
   description: string;
@@ -82,6 +87,33 @@ export default function ClubSettingsPage() {
   }, [settings]);
   const hasUnsavedChanges = changedFields.length > 0;
 
+  // Buy-in bounds were the one numeric pair with no guard at all. The min/max
+  // attributes on a number input are advisory outside a submitting <form>, and
+  // this page never submits one — so "max 10, min 5000" saved happily and every
+  // table in the club then had an impossible buy-in range.
+  const buyinError = (() => {
+    const min = settings.min_buyin_bb;
+    const max = settings.max_buyin_bb;
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return 'Buy-in limits must be numbers.';
+    if (min < BUYIN_BB_FLOOR) return `Minimum buy-in must be at least ${BUYIN_BB_FLOOR} BB.`;
+    if (max > BUYIN_BB_CEILING) return `Maximum buy-in cannot exceed ${BUYIN_BB_CEILING} BB.`;
+    if (max <= min) return 'Maximum buy-in must be greater than the minimum.';
+    return null;
+  })();
+
+  // The loaders below run from timers, realtime callbacks and bus events. They
+  // close over whatever `hasUnsavedChanges` was when the effect was created, so
+  // they need a ref to read the CURRENT value.
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  useEffect(() => {
+    hasUnsavedChangesRef.current = hasUnsavedChanges;
+  }, [hasUnsavedChanges]);
+
+  // Set when a background refresh finds the server copy has moved while the
+  // owner has unsaved edits. We keep the edits and say so, rather than silently
+  // overwriting one or the other.
+  const [serverChanged, setServerChanged] = useState(false);
+
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showStatsExport, setShowStatsExport] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -101,12 +133,28 @@ export default function ClubSettingsPage() {
     setIsDeleting(false);
     setConfirmText('');
     setLoadError(false);
+    setServerChanged(false);
     loadingRef.current = false;
     originalSettings.current = null;
   }, [clubId]);
 
-  // Re-fetch settings when user tabs back (covers WS disconnect gap)
-  useVisibilityRefresh(() => loadClubSettings());
+  // Re-fetch settings when user tabs back (covers WS disconnect gap).
+  // Silent: tabbing away and back must not replace the form with a skeleton,
+  // and must not throw away edits the owner has not saved yet.
+  useVisibilityRefresh(() => loadClubSettings(undefined, { silent: true }));
+
+  // Warn before a reload/close with unsaved edits. The page already tracks
+  // exactly which fields changed; it just never used that to stop the browser
+  // from throwing them away.
+  useEffect(() => {
+    if (!hasUnsavedChanges || !isOwner) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [hasUnsavedChanges, isOwner]);
 
   // Keyboard shortcut: Ctrl+S to save settings
   useEffect(() => {
@@ -149,7 +197,7 @@ export default function ClubSettingsPage() {
             filter: `id=eq.${resolvedId}`,
           },
           () => {
-            if (isMounted) loadClubSettings(() => isMounted);
+            if (isMounted) loadClubSettings(() => isMounted, { silent: true });
           }
         )
         .subscribe((status: string, err?: Error) => {
@@ -157,7 +205,7 @@ export default function ClubSettingsPage() {
             if (err) reportError(err?.message || err, 'ClubSettingsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[ClubSettingsPage] ⏱️ Realtime channel timed out');
+            console.warn('[ClubSettingsPage] Realtime channel timed out');
           }
         });
     };
@@ -175,7 +223,7 @@ export default function ClubSettingsPage() {
     let isMounted = true;
     const handler = (payload?: any) => {
       if (payload?.clubId && payload.clubId !== clubId) return;
-      if (isMounted) loadClubSettings(() => isMounted);
+      if (isMounted) loadClubSettings(() => isMounted, { silent: true });
     };
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', handler, 500),
@@ -189,11 +237,16 @@ export default function ClubSettingsPage() {
     };
   }, [clubId]);
 
-  const loadClubSettings = async (getIsMounted?: () => boolean) => {
+  const loadClubSettings = async (
+    getIsMounted?: () => boolean,
+    opts?: { silent?: boolean; force?: boolean }
+  ) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoadError(false);
-    if (!getIsMounted || getIsMounted()) setLoading(true);
+    // silent = a background refresh (tab focus, realtime, bus). It must not
+    // tear the rendered form down to a skeleton.
+    if (!opts?.silent && (!getIsMounted || getIsMounted())) setLoading(true);
     try {
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId!);
       const data = await retryFetch(
@@ -214,7 +267,12 @@ export default function ClubSettingsPage() {
 
       if (getIsMounted && !getIsMounted()) return;
       if (data) {
-        setSettings({
+        // One mapping, used for both the form and the diff baseline. These were
+        // two hand-written copies of the same twelve lines; they had already
+        // drifted once and would again.
+        // ?? not ||: 0 is a legitimate value for every numeric field here, and
+        // || quietly turned "no minimum" into 40.
+        const fromServer: ClubSettings = {
           name: data.name || '',
           description: data.description || '',
           is_public: data.is_public ?? true,
@@ -224,23 +282,27 @@ export default function ClubSettingsPage() {
           allow_straddle: data.allow_straddle ?? true,
           allow_run_it_twice: data.allow_run_it_twice ?? true,
           allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
-          min_buyin_bb: data.min_buyin_bb || 40,
-          max_buyin_bb: data.max_buyin_bb || 200,
-        });
-        // Capture original for live diff comparison
-        originalSettings.current = {
-          name: data.name || '',
-          description: data.description || '',
-          is_public: data.is_public ?? true,
-          requires_approval: data.requires_approval ?? false,
-          default_rake_percent: data.default_rake_percent ?? RAKE_INHERIT,
-          rake_cap: data.rake_cap ?? RAKE_INHERIT,
-          allow_straddle: data.allow_straddle ?? true,
-          allow_run_it_twice: data.allow_run_it_twice ?? true,
-          allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
-          min_buyin_bb: data.min_buyin_bb || 40,
-          max_buyin_bb: data.max_buyin_bb || 200,
+          min_buyin_bb: data.min_buyin_bb ?? 40,
+          max_buyin_bb: data.max_buyin_bb ?? 200,
         };
+
+        // A background refresh must never overwrite edits the owner has typed
+        // and not saved. Three paths land here without the user asking —
+        // tab-focus, the realtime UPDATE subscription, and four bus events —
+        // and every one of them used to call setSettings() unconditionally.
+        // The page even renders an "N unsaved changes" banner while doing it.
+        const wouldDiscardEdits = !opts?.force && hasUnsavedChangesRef.current;
+        if (wouldDiscardEdits) {
+          const serverMoved = JSON.stringify(fromServer) !== JSON.stringify(originalSettings.current);
+          // Re-baseline so the change list stays honest about what the save
+          // would actually alter, and tell the owner the server copy moved.
+          originalSettings.current = fromServer;
+          if (serverMoved) setServerChanged(true);
+        } else {
+          setSettings(fromServer);
+          originalSettings.current = fromServer;
+          setServerChanged(false);
+        }
         const ownerMatch = data.owner_id === user?.id;
         setIsOwner(ownerMatch);
         if (ownerMatch) {
@@ -276,6 +338,10 @@ export default function ClubSettingsPage() {
 
   const saveSettings = async () => {
     if (!isOwner) return;
+    if (buyinError) {
+      toast.error(buyinError);
+      return;
+    }
     setSaving(true);
     try {
       // Phase 13: Optimistic save — emit events instantly, then confirm with server
@@ -356,7 +422,7 @@ export default function ClubSettingsPage() {
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
           <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Failed to load settings</p>
           <button
-            onClick={() => loadClubSettings()}
+            onClick={() => loadClubSettings(undefined, { force: true })}
             style={{
               padding: '10px 24px',
               borderRadius: '8px',
@@ -368,7 +434,7 @@ export default function ClubSettingsPage() {
               fontWeight: 600,
             }}
           >
-            🔄 Retry
+            Retry
           </button>
         </div>
         {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
@@ -555,9 +621,15 @@ export default function ClubSettingsPage() {
               <input
                 type="number"
                 value={settings.min_buyin_bb}
-                onChange={(e) => updateSetting('min_buyin_bb', parseInt(e.target.value) || 0)}
-                min={20}
-                max={100}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  updateSetting(
+                    'min_buyin_bb',
+                    isNaN(val) ? BUYIN_BB_FLOOR : Math.min(BUYIN_BB_CEILING, Math.max(BUYIN_BB_FLOOR, val))
+                  );
+                }}
+                min={BUYIN_BB_FLOOR}
+                max={BUYIN_BB_CEILING}
                 disabled={!isOwner}
               />
             </div>
@@ -566,13 +638,24 @@ export default function ClubSettingsPage() {
               <input
                 type="number"
                 value={settings.max_buyin_bb}
-                onChange={(e) => updateSetting('max_buyin_bb', parseInt(e.target.value) || 0)}
-                min={100}
-                max={1000}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  updateSetting(
+                    'max_buyin_bb',
+                    isNaN(val) ? BUYIN_BB_CEILING : Math.min(BUYIN_BB_CEILING, Math.max(BUYIN_BB_FLOOR, val))
+                  );
+                }}
+                min={BUYIN_BB_FLOOR}
+                max={BUYIN_BB_CEILING}
                 disabled={!isOwner}
               />
             </div>
           </div>
+          {buyinError && (
+            <small className="form-hint" role="alert" style={{ color: '#ff6b6b' }}>
+              {buyinError}
+            </small>
+          )}
         </section>
 
         {/* Audit Log - Admin Activity */}
@@ -586,7 +669,7 @@ export default function ClubSettingsPage() {
         {/* Data Export - Owner Only */}
         {isOwner && (
           <section className="settings-section export-section">
-            <h3>📊 Data Export</h3>
+            <h3>Data Export</h3>
             <div className="export-item">
               <div className="export-info">
                 <span className="export-label">Export Club Stats</span>
@@ -595,7 +678,7 @@ export default function ClubSettingsPage() {
                 </span>
               </div>
               <button className="btn btn-secondary" onClick={() => setShowStatsExport(true)}>
-                📥 Export Stats
+                Export Stats
               </button>
             </div>
           </section>
@@ -680,6 +763,55 @@ export default function ClubSettingsPage() {
         onClose={() => setShowStatsExport(false)}
       />
 
+      {/* Someone else saved this club while you were editing */}
+      {serverChanged && isOwner && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: clubId ? 128 : 72,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            padding: '0.6rem 1.2rem',
+            borderRadius: '14px',
+            background: 'rgba(255, 176, 32, 0.14)',
+            border: '1px solid rgba(255, 176, 32, 0.35)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            maxWidth: '90vw',
+          }}
+        >
+          <span style={{ color: '#ffb020', fontSize: '0.75rem', fontWeight: 600 }}>
+            These settings changed elsewhere
+          </span>
+          <span style={{ color: '#6a7a8a', fontSize: '0.7rem' }}>
+            Your edits are still here. Saving overwrites the newer values.
+          </span>
+          <button
+            onClick={() => {
+              setServerChanged(false);
+              loadClubSettings(undefined, { force: true });
+            }}
+            style={{
+              padding: '0.35rem 0.75rem',
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              color: '#ddd',
+              fontSize: '0.7rem',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            Load theirs
+          </button>
+        </div>
+      )}
+
       {/* Live Preview: Unsaved Changes Bar */}
       {hasUnsavedChanges && isOwner && (
         <div
@@ -739,7 +871,7 @@ export default function ClubSettingsPage() {
           </button>
           <button
             onClick={saveSettings}
-            disabled={saving}
+            disabled={saving || !!buyinError}
             style={{
               padding: '0.4rem 1rem',
               background: 'linear-gradient(135deg, #00d4ff, #0099cc)',

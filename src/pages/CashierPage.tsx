@@ -827,7 +827,7 @@ export default function CashierPage() {
           if (isMounted.current) setRealtimeStatus('error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[CashierPage] ⏱️ Realtime channel timed out');
+          console.warn('[CashierPage] Realtime channel timed out');
           if (isMounted.current) setRealtimeStatus('reconnecting');
         }
       });
@@ -934,7 +934,7 @@ export default function CashierPage() {
     // Rate limit: block rapid successive actions (2s minimum)
     const now = Date.now();
     if (now - lastActionRef.current < RATE_LIMIT_MS) {
-      setMessage({ type: 'error', text: '⏱ Please wait before submitting another action' });
+      setMessage({ type: 'error', text: 'Please wait before submitting another action' });
       return;
     }
     lastActionRef.current = now;
@@ -950,7 +950,7 @@ export default function CashierPage() {
           if (isMounted.current)
             setMessage({
               type: 'error',
-              text: `🔒 Chip movements are frozen during settlement (${lockResult.reason || 'Monday 4AM payout in progress'}). Please try again after settlement completes.`,
+              text: `Chip movements are frozen during settlement (${lockResult.reason || 'Monday 4AM payout in progress'}). Please try again after settlement completes.`,
             });
           if (isMounted.current) setIsProcessing(false);
           return;
@@ -1207,6 +1207,23 @@ export default function CashierPage() {
   // ─────────────────────────────────────────────────────────────────────────────
   // CSV EXPORT LOGIC
   // ─────────────────────────────────────────────────────────────────────────────
+  /**
+   * One CSV cell, quoted and de-weaponised.
+   *
+   * Only the description used to be quoted, and nothing was protected against
+   * formula injection. Descriptions are partly attacker-controlled — they carry
+   * usernames ("alice -> bob") and free-text transfer notes — so a value
+   * beginning with = + - @ or a leading tab/CR is executed as a formula the
+   * moment a club owner opens this audit trail in Excel or Sheets. Prefixing a
+   * single quote is the standard neutralisation (OWASP CSV injection); it is
+   * invisible in the spreadsheet and preserved in plain text.
+   */
+  const csvCell = (value: unknown): string => {
+    let str = value === null || value === undefined ? '' : String(value);
+    if (/^[=+\-@\t\r]/.test(str)) str = `'${str}`;
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
   const exportCSV = () => {
     if (filteredTransactions.length === 0) {
       setMessage({ type: 'error', text: 'No transactions to export' });
@@ -1222,13 +1239,22 @@ export default function CashierPage() {
         CATEGORY_LABELS[tx.category] ||
         (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase();
 
-      // Escape quotes and commas in description
-      const desc = `"${(tx.description || '').replace(/"/g, '""')}"`;
-
-      return [date, time, typeText, categoryText, tx.amount, tx.wallet_type, desc].join(',');
+      return [
+        date,
+        time,
+        typeText,
+        categoryText,
+        tx.amount,
+        tx.wallet_type,
+        tx.description || '',
+      ]
+        .map(csvCell)
+        .join(',');
     });
 
-    const csvContent = [headers.join(','), ...rows].join('\n');
+    // CRLF per RFC 4180, and a BOM so Excel reads it as UTF-8 instead of
+    // mangling every non-ASCII username in the audit trail.
+    const csvContent = '\uFEFF' + [headers.map(csvCell).join(','), ...rows].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1358,21 +1384,21 @@ export default function CashierPage() {
             onClick={() => clubId && navigate(`/clubs/${clubId}/disputes`)}
             className={`${styles.quickLink} ${styles.quickLinkWarning}`}
           >
-            ⚠️ Disputes
+            Disputes
           </button>
           <button
             type="button"
             onClick={() => navigate('/financial-alerts')}
             className={`${styles.quickLink} ${styles.quickLinkDanger}`}
           >
-            🚨 Alerts
+            Alerts
           </button>
           <button
             type="button"
             onClick={() => clubId && navigate(`/clubs/${clubId}/financials`)}
             className={`${styles.quickLink} ${styles.quickLinkPrimary}`}
           >
-            💰 Financials
+            Financials
           </button>
         </div>
       )}
@@ -1620,7 +1646,7 @@ export default function CashierPage() {
                   const waitSec = Math.ceil((DISTRIBUTE_RATE_LIMIT_MS - elapsed) / 1000);
                   setMessage({
                     type: 'error',
-                    text: `⏱ Please wait ${waitSec}s before distributing again`,
+                    text: `Please wait ${waitSec}s before distributing again`,
                   });
                   return;
                 }
@@ -1636,7 +1662,7 @@ export default function CashierPage() {
                       if (isMounted.current)
                         setMessage({
                           type: 'error',
-                          text: `🔒 Chip movements are frozen during settlement (${lockResult.reason || 'settlement in progress'}). Please try again after settlement completes.`,
+                          text: `Chip movements are frozen during settlement (${lockResult.reason || 'settlement in progress'}). Please try again after settlement completes.`,
                         });
                       if (isMounted.current) setIsProcessing(false);
                       return;
@@ -1697,22 +1723,22 @@ export default function CashierPage() {
                     if (isMounted.current)
                       setMessage({
                         type: 'error',
-                        text: '⏱ Too many distributions — please wait 60 seconds',
+                        text: 'Too many distributions — please wait 60 seconds',
                       });
                   } else if (msg.includes('Insufficient promo')) {
                     if (isMounted.current)
                       setMessage({
                         type: 'error',
-                        text: '💰 Insufficient promo balance for this distribution',
+                        text: 'Insufficient promo balance for this distribution',
                       });
                   } else if (msg.includes('Player not found')) {
                     if (isMounted.current)
-                      setMessage({ type: 'error', text: '❌ Player is not a member of this club' });
+                      setMessage({ type: 'error', text: 'Player is not a member of this club' });
                   } else if (msg.includes('Agent not found')) {
                     if (isMounted.current)
                       setMessage({
                         type: 'error',
-                        text: '❌ Your agent record was not found — contact club owner',
+                        text: 'Your agent record was not found — contact club owner',
                       });
                   } else {
                     if (isMounted.current) setMessage({ type: 'error', text: msg });
@@ -1738,7 +1764,7 @@ export default function CashierPage() {
           <h2 className={styles.cardTitle}>
             <span className={styles.cardTitleIcon}>
               {action === 'cashout' && cashoutConfirm.show
-                ? '🛡'
+                ? '◈'
                 : action === 'buyin'
                   ? '▶'
                   : action === 'cashout'
@@ -1755,7 +1781,7 @@ export default function CashierPage() {
           </h2>
           {action === 'cashout' && cashoutConfirm.show ? (
             <div className={styles.escrowFlow}>
-              <div className={styles.escrowIcon}>🛡️</div>
+              <div className={styles.escrowIcon}>◈</div>
               <h3 className={styles.escrowTitle}>Security Verification Required</h3>
               <p className={styles.escrowDesc}>
                 You are requesting a high-value cashout of{' '}
@@ -1778,7 +1804,7 @@ export default function CashierPage() {
                   <span className={styles.escrowCheckLabel}>Identity Verification Confirmed</span>
                 </div>
                 <div className={styles.escrowCheckItem}>
-                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>⏳</div>
+                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
                   <span className={styles.escrowCheckLabel}>
                     Escrow Holding (Pending Agent Review)
                   </span>
@@ -1814,7 +1840,7 @@ export default function CashierPage() {
               {/* U-02 FIX: Show pending cashouts when on cashout tab */}
               {action === 'cashout' && pendingCashouts.length > 0 && (
                 <div className={styles.pendingBox}>
-                  <div className={styles.pendingTitle}>⏳ Pending Cashouts</div>
+                  <div className={styles.pendingTitle}>Pending Cashouts</div>
                   {pendingCashouts.map((pc) => (
                     <div key={pc.id} className={styles.pendingRow}>
                       <span>{pc.amount.toLocaleString()} chips</span>
@@ -1829,7 +1855,7 @@ export default function CashierPage() {
               {/* Open full CashoutRequestModal for premium step-tracker experience */}
               {action === 'cashout' && !tableId && clubId && user?.id && (
                 <button className={styles.btnSuccess} onClick={() => setShowCashoutModal(true)}>
-                  📋 Manage Cashout Requests
+                  Manage Cashout Requests
                 </button>
               )}
 
@@ -1953,7 +1979,7 @@ export default function CashierPage() {
                 )
               )}
               <button className={styles.txExportBtn} onClick={exportCSV}>
-                📥 Export CSV
+                Export CSV
               </button>
             </div>
 
@@ -1988,7 +2014,7 @@ export default function CashierPage() {
               </div>
             ) : filteredTransactions.length === 0 ? (
               <div className={styles.txEmpty}>
-                <span className={styles.txEmptyIcon}>📊</span>
+                <span className={styles.txEmptyIcon}>▦</span>
                 <span className={styles.txEmptyTitle}>No transactions recorded yet</span>
                 <span className={styles.txEmptyDesc}>
                   Your buy-ins, cashouts, and chip transfers will appear here.
@@ -2086,7 +2112,7 @@ export default function CashierPage() {
         >
           <div className={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
             <h3 id="send-confirm-title" className={styles.confirmTitle}>
-              ⚠️ Confirm High-Value Transfer
+              Confirm High-Value Transfer
             </h3>
             <p className={styles.confirmText}>
               You are about to send <strong>{sendConfirm.value.toLocaleString()}</strong> chips to{' '}

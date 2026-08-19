@@ -2,7 +2,7 @@
  *  CLUB SETTINGS PAGE — Club Configuration
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, type ChangeEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { retryFetch } from '../utils/retryFetch';
@@ -70,6 +70,13 @@ export default function ClubSettingsPage() {
   // reads a ref, so without this a silent rebaseline (tab focus, realtime)
   // left the unsaved-changes banner listing stale fields.
   const [baselineVersion, setBaselineVersion] = useState(0);
+  // Read-only club identity shown in Basic Information.
+  const [clubCode, setClubCode] = useState<number | null>(null);
+  // Logo: current stored URL + a not-yet-saved local pick. The file is
+  // uploaded only when Save runs, so the logo participates in the same
+  // unsaved-changes / discard flow as every other field.
+  const [currentLogoUrl, setCurrentLogoUrl] = useState<string | null>(null);
+  const [pendingLogo, setPendingLogo] = useState<{ file: File; preview: string } | null>(null);
 
   // Live change detection — compute which fields have been modified
   const changedFields = useMemo(() => {
@@ -90,7 +97,8 @@ export default function ClubSettingsPage() {
     return changes;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, baselineVersion]);
-  const hasUnsavedChanges = changedFields.length > 0;
+  const changedFieldsDisplay = pendingLogo ? [...changedFields, 'Logo'] : changedFields;
+  const hasUnsavedChanges = changedFieldsDisplay.length > 0;
 
   // Buy-in bounds were the one numeric pair with no guard at all. The min/max
   // attributes on a number input are advisory outside a submitting <form>, and
@@ -139,6 +147,12 @@ export default function ClubSettingsPage() {
     setConfirmText('');
     setLoadError(false);
     setServerChanged(false);
+    setClubCode(null);
+    setCurrentLogoUrl(null);
+    setPendingLogo((prev) => {
+      if (prev) URL.revokeObjectURL(prev.preview);
+      return null;
+    });
     loadingRef.current = false;
     originalSettings.current = null;
   }, [clubId]);
@@ -267,7 +281,7 @@ export default function ClubSettingsPage() {
           supabase
             .from('clubs')
             .select(
-              'id, owner_id, name, description, is_public, requires_approval, default_rake_percent, rake_cap, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
+              'id, owner_id, club_id, logo_url, name, description, is_public, requires_approval, default_rake_percent, rake_cap, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -304,6 +318,8 @@ export default function ClubSettingsPage() {
         // tab-focus, the realtime UPDATE subscription, and four bus events —
         // and every one of them used to call setSettings() unconditionally.
         // The page even renders an "N unsaved changes" banner while doing it.
+        setClubCode(typeof data.club_id === 'number' ? data.club_id : null);
+        setCurrentLogoUrl(data.logo_url || null);
         const wouldDiscardEdits = !opts?.force && hasUnsavedChangesRef.current;
         if (wouldDiscardEdits) {
           const serverMoved = JSON.stringify(fromServer) !== JSON.stringify(originalSettings.current);
@@ -368,6 +384,25 @@ export default function ClubSettingsPage() {
     };
     setSaving(true);
     try {
+      // Upload the pending logo first so the row update carries its URL.
+      // The club-assets bucket caps files at 2 MB / images only server-side.
+      let newLogoUrl: string | null = null;
+      if (pendingLogo) {
+        const resolvedId = await resolveClubUUID(clubId!);
+        const ext = pendingLogo.file.type.includes('png')
+          ? 'png'
+          : pendingLogo.file.type.includes('webp')
+            ? 'webp'
+            : pendingLogo.file.type.includes('gif')
+              ? 'gif'
+              : 'jpg';
+        const path = `club-logos/${resolvedId}-${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('club-assets')
+          .upload(path, pendingLogo.file, { contentType: pendingLogo.file.type });
+        if (uploadErr) throw uploadErr;
+        newLogoUrl = supabase.storage.from('club-assets').getPublicUrl(path).data?.publicUrl || null;
+      }
       // Phase 13: Optimistic save — emit events instantly, then confirm with server
       await masterBus.executeOptimistic(
         'SETTINGS_UPDATED',
@@ -378,6 +413,7 @@ export default function ClubSettingsPage() {
           const { error } = await supabase
             .from('clubs')
             .update({
+              ...(newLogoUrl ? { logo_url: newLogoUrl } : {}),
               name: toSave.name,
               description: toSave.description,
               is_public: toSave.is_public,
@@ -398,8 +434,13 @@ export default function ClubSettingsPage() {
       masterBus.emit('ADMIN_ACTION', {
         action: 'settings_updated',
         target: clubId || '',
-        details: { changedFields },
+        details: { changedFields: changedFieldsDisplay },
         userId: user?.id,
+      });
+      if (newLogoUrl) setCurrentLogoUrl(newLogoUrl);
+      setPendingLogo((prev) => {
+        if (prev) URL.revokeObjectURL(prev.preview);
+        return null;
       });
       // Reset the diff baseline to what the server now holds, and clear any
       // conflict banner our own save raced into existence. Stay on the page:
@@ -417,6 +458,44 @@ export default function ClubSettingsPage() {
 
   const updateSetting = <K extends keyof ClubSettings>(key: K, value: ClubSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+  const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+
+  const onLogoSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // same file can be re-picked after a discard
+    if (!file) return;
+    if (!LOGO_TYPES.includes(file.type)) {
+      toast.error('Logo must be a PNG, JPG, WEBP or GIF image');
+      return;
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      toast.error('Logo must be 2 MB or smaller');
+      return;
+    }
+    setPendingLogo((prev) => {
+      if (prev) URL.revokeObjectURL(prev.preview);
+      return { file, preview: URL.createObjectURL(file) };
+    });
+  };
+
+  const clearPendingLogo = () => {
+    setPendingLogo((prev) => {
+      if (prev) URL.revokeObjectURL(prev.preview);
+      return null;
+    });
+  };
+
+  const copyClubCode = async () => {
+    if (clubCode == null) return;
+    try {
+      await navigator.clipboard.writeText(String(clubCode));
+      toast.success('Club code copied');
+    } catch {
+      toast.error('Could not copy — code is ' + String(clubCode));
+    }
   };
 
   const handleDeleteClub = async () => {
@@ -514,6 +593,95 @@ export default function ClubSettingsPage() {
               maxLength={500}
             />
           </div>
+          {clubCode != null && (
+            <div className="form-group">
+              <label>Club Code</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span
+                  style={{
+                    fontFamily: 'monospace',
+                    fontSize: '1.1rem',
+                    letterSpacing: '3px',
+                    color: 'var(--text-primary, #e6edf3)',
+                  }}
+                >
+                  {clubCode}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 12px', fontSize: '0.75rem' }}
+                  onClick={copyClubCode}
+                >
+                  Copy
+                </button>
+              </div>
+              <small className="form-hint">
+                Players can find and join the club with this code.
+              </small>
+            </div>
+          )}
+          <div className="form-group">
+            <label>Club Logo</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {pendingLogo?.preview || currentLogoUrl ? (
+                <img
+                  src={pendingLogo?.preview || currentLogoUrl || undefined}
+                  alt="Club logo"
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 12,
+                    objectFit: 'cover',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px dashed rgba(255, 255, 255, 0.2)',
+                    color: 'var(--text-secondary, #6a7a8a)',
+                    fontSize: '0.65rem',
+                  }}
+                >
+                  No logo
+                </div>
+              )}
+              {isOwner && (
+                <label
+                  className="btn btn-secondary"
+                  style={{ cursor: 'pointer', padding: '6px 14px', fontSize: '0.8rem' }}
+                >
+                  {pendingLogo ? 'Change' : currentLogoUrl ? 'Replace' : 'Upload'}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    style={{ display: 'none' }}
+                    onChange={onLogoSelect}
+                  />
+                </label>
+              )}
+              {pendingLogo && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                  onClick={clearPendingLogo}
+                >
+                  Undo
+                </button>
+              )}
+            </div>
+            <small className="form-hint">
+              PNG, JPG, WEBP or GIF up to 2 MB. Applied when you save changes.
+            </small>
+          </div>
         </section>
 
         {/* Privacy */}
@@ -585,7 +753,10 @@ export default function ClubSettingsPage() {
               disabled={!isOwner}
             />
             <small className="form-hint">
-              Leave blank to use the house schedule (10%). A club can take less, never more.
+              Leave blank to use the house schedule (10%). A club can take less, never more.{' '}
+              {settings.default_rake_percent < 0
+                ? 'Currently: house schedule.'
+                : `Currently: ${settings.default_rake_percent}% (house caps still apply).`}
             </small>
           </div>
           <div className="form-group">
@@ -889,7 +1060,7 @@ export default function ClubSettingsPage() {
           <span
             style={{ color: '#00d4ff', fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap' }}
           >
-            {changedFields.length} unsaved change{changedFields.length > 1 ? 's' : ''}
+            {changedFieldsDisplay.length} unsaved change{changedFieldsDisplay.length > 1 ? 's' : ''}
           </span>
           <span
             style={{
@@ -901,11 +1072,12 @@ export default function ClubSettingsPage() {
               maxWidth: '200px',
             }}
           >
-            {changedFields.join(', ')}
+            {changedFieldsDisplay.join(', ')}
           </span>
           <button
             onClick={() => {
               if (originalSettings.current) setSettings({ ...originalSettings.current });
+              clearPendingLogo();
             }}
             style={{
               padding: '0.4rem 0.8rem',

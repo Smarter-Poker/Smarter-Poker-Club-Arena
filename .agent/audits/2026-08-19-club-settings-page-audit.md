@@ -97,3 +97,32 @@ trimmed names; migration 20260819b (applied, version present in prod) moves
 the settings comparison into the trigger WHEN clause so chip_pool /
 member_count churn never invokes the function, and lets club admins
 (is_club_admin) read their club's audit rows — table stays append-only.
+
+## Pass 3 (same day) — upgrade build-out
+
+- **club-assets bucket did not exist.** CreateClubModal has uploaded to
+  storage.from('club-assets') since club creation shipped; every upload
+  failed silently and fell back to a data URL. Migration (applied to prod
+  as club_assets_bucket_and_policies) creates the bucket: public read,
+  2 MB cap, image mime types only, INSERT scoped to club-logos/ for
+  authenticated users, UPDATE scoped to the uploader.
+- **Club Logo upload on the settings page.** Picked file participates in
+  the normal unsaved-changes/discard flow; uploaded on Save to
+  club-logos/<club-uuid>-<ts>.<ext>; logo_url saved with the row and now a
+  WATCHED audit column (verified with a rolled-back trigger test).
+- **Club Code row** in Basic Information with copy-to-clipboard — the
+  6-digit clubs.club_id was displayed nowhere on the admin surface.
+- **delete_club is now audited** (BEFORE DELETE trigger, applied to prod as
+  club_delete_audit_and_logo_watch). club_id written NULL deliberately —
+  the FK is ON DELETE SET NULL so it would be nulled in the same statement;
+  target_id preserves the club uuid.
+- **Dynamic rake hint**: the Default Rake field states what the club
+  currently does ('Currently: house schedule.' / 'Currently: 3.5%').
+- **gps_restricted toggle deliberately NOT added**: the column is read by
+  no join gate and no engine code — adding a switch for it would recreate
+  exactly the lying-control class the Time Bank removal fixed. Wire
+  enforcement first, then surface the toggle.
+- Note: prod migration history records pass-3 as two entries
+  (club_assets_bucket_and_policies + club_delete_audit_and_logo_watch)
+  because the single-transaction version deadlocked against live engine
+  traffic on clubs; the repo file 20260819c contains the combined content.

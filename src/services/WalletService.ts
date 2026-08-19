@@ -86,6 +86,8 @@ export interface ChipMintResult {
   chipsAdded: number;
   diamondsSpent: number;
   newBalance: number;
+  /** Reason for a failed mint, surfaced to the user instead of a generic retry. */
+  error?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

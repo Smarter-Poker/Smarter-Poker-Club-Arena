@@ -28,7 +28,6 @@ import {
 } from '../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../stores/useWalletStore';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { WalletService as _WalletService } from '../services/WalletService';
 import { ChipFlowService } from '../services/ChipFlowService';
 import { cashoutService } from '../services/CashoutService';
 import { supabase } from '../lib/supabase';
@@ -38,6 +37,12 @@ import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { callClubArenaApi } from '../services/clubArenaApi';
+import {
+  resolveTargetClub,
+  readCachedQuickLinkClubs,
+  fetchQuickLinkClubs,
+} from '../utils/clubQuickLink';
 import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
@@ -67,6 +72,36 @@ interface Recipient {
   balance: number;
   commissionRate?: number;
   isPrepaid?: boolean;
+}
+
+/** Hard ceiling mirrored from atomic_chip_transfer's own AMOUNT_EXCEEDS_LIMIT guard. */
+export const MAX_CHIP_AMOUNT = 1_000_000_000_000;
+
+/**
+ * Validate a typed chip amount.
+ *
+ * Chips are whole units: the per-club ledger column (club_members.chip_balance)
+ * is an integer, so a fractional amount is rounded on write while the sending
+ * side is debited the exact decimal — that difference is money created or
+ * destroyed. `parseFloat` alone also accepted exponent notation ("1e9"), so the
+ * bound is enforced here as well as in the database.
+ */
+export function parseChipAmount(
+  raw: string
+): { ok: true; value: number } | { ok: false; error: string } {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return { ok: false, error: 'Please enter an amount' };
+  const value = Number(trimmed);
+  if (!Number.isFinite(value) || value <= 0) {
+    return { ok: false, error: 'Please enter a valid amount' };
+  }
+  if (!Number.isInteger(value)) {
+    return { ok: false, error: 'Chips must be a whole number' };
+  }
+  if (value > MAX_CHIP_AMOUNT) {
+    return { ok: false, error: 'Amount exceeds the maximum transfer limit' };
+  }
+  return { ok: true, value };
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -165,14 +200,29 @@ export default function CashierPage() {
     recipientName: string;
   }>({ show: false, value: 0, recipientId: '', recipientName: '' });
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-
   const isMounted = useIsMounted();
+
+  // ── /cashier with no club in the URL ─────────────────────────────────────
+  // The table menu links here without a club param. Every data effect below
+  // bails on `!clubId`, but loadingContext stays true, so the page used to
+  // sit on a skeleton forever. Resolve the user's club (same rule as the
+  // lobby quick links) and redirect; only show the empty state if they
+  // genuinely have no club.
+  const [hasNoClubs, setHasNoClubs] = useState(false);
   useEffect(() => {
+    if (clubId || !user?.id) return;
+    let live = true;
+    (async () => {
+      let target = resolveTargetClub(readCachedQuickLinkClubs());
+      if (!target) target = resolveTargetClub(await fetchQuickLinkClubs(user.id));
+      if (!live) return;
+      if (target) navigate(`/clubs/${target.id}/cashier`, { replace: true });
+      else setHasNoClubs(true);
+    })();
     return () => {
-      if (abortControllerRef.current) abortControllerRef.current.abort();
+      live = false;
     };
-  }, []);
+  }, [clubId, user?.id, navigate]);
 
   // Auto-dismiss success/error messages after 8s
   useEffect(() => {
@@ -221,6 +271,7 @@ export default function CashierPage() {
   // worked end-to-end but nothing in the UI could reach it).
   const [buyChipsOpen, setBuyChipsOpen] = useState(false);
   const [diamondBalance, setDiamondBalance] = useState(0);
+  const [loadingDiamonds, setLoadingDiamonds] = useState(false);
   const [loadingTx, setLoadingTx] = useState(false);
   const [txFilter, setTxFilter] = useState('all');
   const [txPage, setTxPage] = useState(1);
@@ -579,9 +630,15 @@ export default function CashierPage() {
             supabase
               .from('chip_ledger')
               .select(
-                'id, performed_by, from_type, from_label, to_type, to_label, to_entity_id, amount, category, description, created_at'
+                'id, performed_by, from_type, from_label, from_entity_id, to_type, to_label, to_entity_id, amount, category, description, created_at'
               )
-              .or(`performed_by.eq.${user.id},to_entity_id.eq.${user.id}`)
+              // from_entity_id was missing here while the RLS policy allows it
+              // (performed_by OR from_entity_id OR to_entity_id), so chips moved
+              // OUT of this user by an admin or the system were readable but
+              // never requested — they simply vanished from their history.
+              .or(
+                `performed_by.eq.${user.id},to_entity_id.eq.${user.id},from_entity_id.eq.${user.id}`
+              )
               .order('created_at', { ascending: false })
               .limit(50)
               .then((r) => r),
@@ -596,7 +653,18 @@ export default function CashierPage() {
         user_id: user.id,
         wallet_type: 'PLAYER',
         amount: entry.amount,
-        type: entry.performed_by === user.id ? 'debit' : 'credit',
+        // Direction is who the chips moved BETWEEN, not who clicked the button.
+        // Keying off performed_by rendered every self-initiated credit (a mint
+        // to yourself, a refill you triggered) as a debit with a leading minus
+        // — money coming in displayed as money going out.
+        type:
+          entry.to_entity_id === user.id
+            ? 'credit'
+            : entry.from_entity_id === user.id
+              ? 'debit'
+              : entry.performed_by === user.id
+                ? 'debit'
+                : 'credit',
         category: entry.category,
         description: entry.description || `${entry.from_label} → ${entry.to_label}`,
         related_entity_id: entry.to_entity_id,
@@ -862,6 +930,14 @@ export default function CashierPage() {
     return t;
   }, [canSend, canDistribute, canMint]);
 
+  // `action` defaults to 'send', but a plain player has no Send tab. Left
+  // unclamped the tablist had no selected tab (every roving tabindex was -1,
+  // so Tab could not reach it) and the Send panel rendered for someone with
+  // no permission to use it and an always-empty recipient list.
+  useEffect(() => {
+    if (tabs.length > 0 && !tabs.includes(action)) setAction(tabs[0]);
+  }, [tabs, action]);
+
   const tabLabels: Record<CashierAction, string> = {
     send: 'Send',
     distribute: 'Distribute',
@@ -924,12 +1000,21 @@ export default function CashierPage() {
     [tabs, action]
   );
 
-  const handleAction = async () => {
-    const value = parseFloat(amount);
-    if (isNaN(value) || value <= 0) {
-      setMessage({ type: 'error', text: 'Please enter a valid amount' });
+  const handleAction = async (override?: { value?: number; recipientId?: string }) => {
+    // Chips are whole units. `parseFloat` alone accepted 0.5 and 1e9: the
+    // per-club ledger column is an integer, so a fractional amount is rounded
+    // on write while the sending side is debited the exact decimal — money
+    // created or destroyed by rounding. Reject anything that is not a
+    // positive whole number up front.
+    const parsed = parseChipAmount(override?.value !== undefined ? String(override.value) : amount);
+    if (!parsed.ok) {
+      setMessage({ type: 'error', text: parsed.error });
       return;
     }
+    const value = parsed.value;
+    // The confirmation modal captured what the user agreed to; use that rather
+    // than re-reading live state that a realtime refresh may have changed.
+    const recipientIdForAction = override?.recipientId ?? selectedRecipient;
     if (!user?.id) return;
 
     // Rate limit: block rapid successive actions (2s minimum)
@@ -938,7 +1023,6 @@ export default function CashierPage() {
       setMessage({ type: 'error', text: 'Please wait before submitting another action' });
       return;
     }
-    lastActionRef.current = now;
 
     setIsProcessing(true);
     setMessage(null);
@@ -965,11 +1049,14 @@ export default function CashierPage() {
     try {
       if (action === 'send') {
         // ─── SEND CHIPS ───
-        if (!selectedRecipient) {
+        if (!recipientIdForAction) {
           if (isMounted.current) setMessage({ type: 'error', text: 'Please select a recipient' });
           if (isMounted.current) setIsProcessing(false);
           return;
         }
+        // Stamp the rate limiter only once the submission is actually valid,
+        // so a rejected attempt does not lock out the corrected retry.
+        lastActionRef.current = now;
         if (balances.PLAYER.available < value) {
           if (isMounted.current)
             setMessage({
@@ -980,14 +1067,19 @@ export default function CashierPage() {
           return;
         }
 
-        const recipient = selectedRecipientData;
+        const recipient = recipients.find((r) => r.id === recipientIdForAction);
         const recipientIsAgent = recipient?.role === 'agent' || recipient?.role === 'super_agent';
 
         if (userRole === 'owner' && recipientIsAgent) {
+          // clubId here may be the 6-digit club code rather than the UUID.
+          // Every other DB call on this page resolves first; this one passed
+          // the raw param into a uuid argument, so an owner arriving on
+          // /clubs/25450/cashier got `invalid input syntax for type uuid`.
+          const resolvedForTransfer = (await resolveClubUUID(clubId!)) || clubId!;
           await ChipFlowService.clubToAgent(
             user.id,
-            selectedRecipient,
-            clubId!,
+            recipientIdForAction,
+            resolvedForTransfer,
             value,
             recipient?.username || 'Agent',
             clubName
@@ -995,7 +1087,7 @@ export default function CashierPage() {
         } else if (userRole === 'owner' || isUnionOwner) {
           await ChipFlowService.clubToPlayer(
             user.id,
-            selectedRecipient,
+            recipientIdForAction,
             value,
             recipient?.username || 'Player',
             clubName
@@ -1003,7 +1095,7 @@ export default function CashierPage() {
         } else {
           await ChipFlowService.agentToPlayer(
             user.id,
-            selectedRecipient,
+            recipientIdForAction,
             value,
             user.username || 'Agent',
             recipient?.username || 'Player',
@@ -1020,13 +1112,21 @@ export default function CashierPage() {
         loadRecipients(true); // Force refresh — a send just changed recipient balances; skip the 60s cache
         setSelectedRecipient('');
         notifyWalletChange(user.id, value);
-        notifyWalletChange(selectedRecipient, value);
+        notifyWalletChange(recipientIdForAction, value);
       } else if (action === 'mint') {
         // ─── MINT CHIPS ───
+        lastActionRef.current = now;
         const mintResult = await mintChips(clubId!, value);
         if (!mintResult.success) {
+          // The store catches everything and returns success:false, so the
+          // real reason ("Minting is locked for clubs in a union — only the
+          // Union owner can mint", auth errors, economy caps) was replaced by
+          // "try again", which is the wrong advice for a union-locked club.
           if (isMounted.current)
-            setMessage({ type: 'error', text: 'Minting failed. Please try again.' });
+            setMessage({
+              type: 'error',
+              text: mintResult.error || 'Minting failed. Please try again.',
+            });
           if (isMounted.current) setIsProcessing(false);
           return;
         }
@@ -1227,7 +1327,10 @@ export default function CashierPage() {
 
   const exportCSV = () => {
     if (filteredTransactions.length === 0) {
+      // The History panel renders no {message} block, so this error was
+      // invisible — Export on an empty filter looked like a dead button.
       setMessage({ type: 'error', text: 'No transactions to export' });
+      toast.info('No transactions to export');
       return;
     }
 
@@ -1267,6 +1370,40 @@ export default function CashierPage() {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // No club in the URL: either we are still resolving one to redirect to, or
+  // the user genuinely has no club. Previously this state fell through to the
+  // main render, where every data effect had bailed and the skeleton never
+  // cleared — an permanent loading page reachable from the table menu.
+  if (!clubId) {
+    return (
+      <div className={styles.page}>
+        <section className={styles.card}>
+          <h2 className={styles.cardTitle}>
+            <span className={styles.cardTitleIcon}>◆</span>Cashier
+          </h2>
+          <div className={styles.cardBody}>
+            {hasNoClubs ? (
+              <>
+                <div className={`${styles.message} ${styles.messageInfo}`}>
+                  The cashier belongs to a club — chips are held per club, so there is no cashier
+                  until you join one.
+                </div>
+                <button type="button" className={styles.btnPrimary} onClick={() => navigate('/')}>
+                  Find a club
+                </button>
+              </>
+            ) : (
+              <div className={styles.loadingSkeleton} aria-busy="true">
+                <div className={styles.skeletonBar} style={{ width: '45%', height: '14px' }} />
+                <div className={styles.skeletonBar} style={{ width: '100%', height: '44px' }} />
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.page}>
       {/* Loading context skeleton — shown INSIDE content area, NOT blocking tabs/nav */}
@@ -1295,19 +1432,37 @@ export default function CashierPage() {
             type="button"
             className={styles.tab}
             style={{ width: '100%', marginTop: 8 }}
+            disabled={loadingDiamonds}
             onClick={async () => {
-              if (!user?.id) return;
-              const { data } = await supabase
-                .from('profiles')
-                .select('diamonds')
-                .eq('id', user.id)
-                .maybeSingle();
-              setDiamondBalance(Number(data?.diamonds) || 0);
-              setBuyChipsOpen(true);
+              if (!user?.id || loadingDiamonds) return;
+              // Was an unguarded async handler: a network failure produced an
+              // unhandled rejection, a query error silently became "you have 0
+              // diamonds", and nothing stopped a double click.
+              setLoadingDiamonds(true);
+              try {
+                const { data, error } = await supabase
+                  .from('profiles')
+                  .select('diamonds')
+                  .eq('id', user.id)
+                  .maybeSingle();
+                if (error) throw error;
+                if (!isMounted.current) return;
+                setDiamondBalance(Number(data?.diamonds) || 0);
+                setBuyChipsOpen(true);
+              } catch (e) {
+                reportError(e, 'CashierPage.Get_chips_diamond_lookup');
+                if (isMounted.current)
+                  setMessage({
+                    type: 'error',
+                    text: 'Could not load your diamond balance. Please try again.',
+                  });
+              } finally {
+                if (isMounted.current) setLoadingDiamonds(false);
+              }
             }}
             aria-haspopup="dialog"
           >
-            Get Chips
+            {loadingDiamonds ? 'Loading...' : 'Get Chips'}
           </button>
           <ChipPurchaseModal
             isOpen={buyChipsOpen}
@@ -1316,6 +1471,9 @@ export default function CashierPage() {
             clubId={clubId}
             onPurchase={(chips) => {
               if (user?.id) notifyWalletChange(user.id, chips);
+              // Diamonds were just spent — drop the stale figure so reopening
+              // the modal does not show the pre-purchase balance.
+              setDiamondBalance((d) => Math.max(0, d - chips));
             }}
           />
         </div>
@@ -1425,8 +1583,11 @@ export default function CashierPage() {
       )}
 
       {/* ═══ SEND CHIPS ═══ */}
-      {action === 'send' && (
-        <section className={styles.card}>
+      {/* `canSend` guard added: `action` defaults to 'send', so a plain player
+          — who has no Send tab at all — was shown a fully rendered Send Chips
+          panel with a permanently empty recipient dropdown. */}
+      {action === 'send' && canSend && (
+        <section className={styles.card} id="cashier-panel-send" role="tabpanel">
           <h2 className={styles.cardTitle}>
             <span className={styles.cardTitleIcon}>↗</span>Send Chips
           </h2>
@@ -1479,14 +1640,20 @@ export default function CashierPage() {
             </div>
 
             <div className={styles.formGroup}>
-              <label className={styles.formLabel}>AMOUNT:</label>
+              <label className={styles.formLabel} htmlFor="cashier-send-amount">
+                AMOUNT:
+              </label>
               <input
+                id="cashier-send-amount"
                 className={styles.input}
                 type="number"
                 placeholder="0"
                 value={amount}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
-                inputMode="decimal"
+                min={1}
+                step={1}
+                max={MAX_CHIP_AMOUNT}
+                inputMode="numeric"
               />
             </div>
 
@@ -1569,8 +1736,8 @@ export default function CashierPage() {
       )}
 
       {/* ═══ DISTRIBUTE CHIPS ═══ */}
-      {action === 'distribute' && (
-        <section className={styles.card}>
+      {action === 'distribute' && canDistribute && (
+        <section className={styles.card} id="cashier-panel-distribute" role="tabpanel">
           <h2 className={styles.cardTitle}>
             <span className={styles.cardTitleIcon}>↓</span>Distribute Chips
           </h2>
@@ -1605,14 +1772,20 @@ export default function CashierPage() {
 
             {/* Amount */}
             <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Amount</label>
+              <label className={styles.formLabel} htmlFor="cashier-distribute-amount">
+                Amount
+              </label>
               <input
+                id="cashier-distribute-amount"
                 className={styles.input}
                 type="number"
                 placeholder="Enter chip amount"
                 value={amount}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
-                inputMode="decimal"
+                min={1}
+                step={1}
+                max={MAX_CHIP_AMOUNT}
+                inputMode="numeric"
               />
             </div>
 
@@ -1629,11 +1802,12 @@ export default function CashierPage() {
               className={styles.btnPrimary}
               disabled={isProcessing || cooldown > 0 || !selectedRecipient || !amount}
               onClick={async () => {
-                const value = parseFloat(amount);
-                if (isNaN(value) || value <= 0) {
-                  setMessage({ type: 'error', text: 'Enter a valid amount' });
+                const parsed = parseChipAmount(amount);
+                if (!parsed.ok) {
+                  setMessage({ type: 'error', text: parsed.error });
                   return;
                 }
+                const value = parsed.value;
                 if (!user?.id || !selectedRecipient) return;
 
                 // DISTRIBUTE RATE LIMIT — prevent rapid-fire distributions (10s cooldown)
@@ -1671,25 +1845,21 @@ export default function CashierPage() {
                 }
 
                 try {
-                  // Look up agent PK — distributePromo RPC expects agents.id, not auth.users.id
-                  const resolvedClub = await resolveClubUUID(clubId || '');
-                  const { data: agentRow } = await retryFetch(
-                    () =>
-                      supabase
-                        .from('agents')
-                        .select('id')
-                        .eq('user_id', user.id)
-                        .eq('club_id', resolvedClub)
-                        .maybeSingle()
-                        .then((r) => r),
-                    { maxRetries: 2, isMountedRef: isMounted }
-                  );
-                  if (!agentRow?.id) {
-                    if (isMounted.current)
-                      setMessage({ type: 'error', text: 'Agent record not found for this club' });
-                    return;
-                  }
-                  await _WalletService.distributePromo(agentRow.id, selectedRecipient, value);
+                  // Distribute SERVER-SIDE. `distribute_promo_chips` is granted
+                  // to postgres/service_role only, so the browser rpc() this
+                  // used to call returned 42501 permission denied, was retried
+                  // three times, and surfaced as a raw Postgres string — the
+                  // Distribute tab could never succeed for anyone. The route
+                  // identifies the agent from the JWT (no agents.id lookup
+                  // needed, which also unblocks owners who have no agents row),
+                  // enforces the promo caps, and writes the audit trail.
+                  // Same call the Agent promo panel already uses.
+                  await callClubArenaApi('distribute-promo', {
+                    action: 'send',
+                    clubId: (await resolveClubUUID(clubId || '')) || clubId || '',
+                    targetUserId: selectedRecipient,
+                    amount: value,
+                  });
                   const recipient = recipients.find((r) => r.id === selectedRecipient);
                   if (isMounted.current)
                     setMessage({
@@ -1757,7 +1927,7 @@ export default function CashierPage() {
 
       {/* ═══ BUY-IN / CASH-OUT / MINT ═══ */}
       {(action === 'buyin' || action === 'cashout' || action === 'mint') && (
-        <section className={styles.card}>
+        <section className={styles.card} id={`cashier-panel-${action}`} role="tabpanel">
           <h2 className={styles.cardTitle}>
             <span className={styles.cardTitleIcon}>
               {action === 'cashout' && cashoutConfirm.show
@@ -1789,21 +1959,30 @@ export default function CashierPage() {
                 This amount triggers our mandatory escrow protocols to ensure player security.
               </p>
 
+              {/* These three rows previously rendered "Anti-Money Laundering
+                  (AML) Check Passed" and "Identity Verification Confirmed"
+                  with green ticks, hardcoded. No AML or identity check is
+                  performed here or in cashoutService.requestCashout — the app
+                  was asserting a compliance result it had never computed, at
+                  the exact moment of a large withdrawal. Replaced with what
+                  actually happens to the request. */}
               <div className={styles.escrowChecklist}>
                 <div className={styles.escrowCheckItem}>
                   <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckGreen}`}>✓</div>
                   <span className={styles.escrowCheckLabel}>
-                    Anti-Money Laundering (AML) Check Passed
+                    Request amount confirmed against your club balance
                   </span>
-                </div>
-                <div className={styles.escrowCheckItem}>
-                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckGreen}`}>✓</div>
-                  <span className={styles.escrowCheckLabel}>Identity Verification Confirmed</span>
                 </div>
                 <div className={styles.escrowCheckItem}>
                   <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
                   <span className={styles.escrowCheckLabel}>
-                    Escrow Holding (Pending Agent Review)
+                    Escrow holding — chips are reserved until review completes
+                  </span>
+                </div>
+                <div className={styles.escrowCheckItem}>
+                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>◷</div>
+                  <span className={styles.escrowCheckLabel}>
+                    Pending club agent review and approval
                   </span>
                 </div>
               </div>
@@ -1864,16 +2043,20 @@ export default function CashierPage() {
               )}
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>
+                <label className={styles.formLabel} htmlFor="cashier-amount">
                   {action === 'mint' ? 'CHIPS TO MINT:' : 'AMOUNT:'}
                 </label>
                 <input
+                  id="cashier-amount"
                   className={styles.input}
                   type="number"
                   placeholder="0"
                   value={amount}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
-                  inputMode="decimal"
+                  min={1}
+                  step={1}
+                  max={MAX_CHIP_AMOUNT}
+                  inputMode="numeric"
                 />
               </div>
 
@@ -1916,8 +2099,11 @@ export default function CashierPage() {
               )}
 
               <button
+                type="button"
                 className={styles.btnPrimary}
-                onClick={handleAction}
+                // Called through a wrapper: passing the handler directly hands
+                // React's MouseEvent in as the override argument.
+                onClick={() => handleAction()}
                 disabled={isProcessing || cooldown > 0 || !amount}
               >
                 {isProcessing ? (
@@ -1948,7 +2134,7 @@ export default function CashierPage() {
 
       {/* ═══ TRANSACTION HISTORY ═══ */}
       {action === 'history' && (
-        <section className={styles.card}>
+        <section className={styles.card} id="cashier-panel-history" role="tabpanel">
           <h2 className={styles.cardTitle}>
             <span className={styles.cardTitleIcon}>≡</span>Transaction History
           </h2>
@@ -2120,6 +2306,7 @@ export default function CashierPage() {
             </p>
             <div className={styles.confirmButtons}>
               <button
+                type="button"
                 className={styles.btnSecondary}
                 onClick={() =>
                   setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })
@@ -2128,10 +2315,23 @@ export default function CashierPage() {
                 Cancel
               </button>
               <button
+                type="button"
                 className={styles.btnDanger}
+                disabled={isProcessing}
                 onClick={() => {
+                  // Send exactly what the user was shown and agreed to.
+                  // This used to call handleAction() with no arguments, which
+                  // re-read `amount` and `selectedRecipient` from live state —
+                  // a realtime-driven refresh between opening and confirming
+                  // could send a different amount to a different person than
+                  // the modal displayed. sendConfirm.recipientId was captured
+                  // for exactly this and was never read.
+                  const confirmed = {
+                    value: sendConfirm.value,
+                    recipientId: sendConfirm.recipientId,
+                  };
                   setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
-                  handleAction();
+                  handleAction(confirmed);
                 }}
               >
                 Confirm Send {sendConfirm.value.toLocaleString()} Chips

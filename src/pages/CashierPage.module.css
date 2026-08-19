@@ -862,10 +862,15 @@
     font-size: 12px;
   }
 
+  /* 16px is deliberate and must not go lower: iOS Safari auto-zooms the
+     viewport when a focused input is under 16px, and this is the amount
+     field on the money screen. The base rule is already 16px; this override
+     used to drop it to 14px and re-introduce the zoom. */
   .select,
   .input {
     padding: 10px 12px;
-    font-size: 14px;
+    font-size: 16px;
+    min-height: 44px;
   }
 
   .txAmount {
@@ -895,6 +900,33 @@
   .presetGrid {
     grid-template-columns: repeat(4, 1fr);
     gap: 4px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOUCH TARGETS — 44px minimum on the money screen
+   ═══════════════════════════════════════════════════════════════════════════
+   At the 375px target the preset amount buttons rendered ~30px tall, the
+   tabs ~26px, and the history filter / export / quick-link chips ~23-24px.
+   The presets are how an amount actually gets entered on mobile, so a
+   mis-tap there is a mis-typed transfer. Sized to the 44px guideline
+   without changing the visual padding rhythm. */
+@media (max-width: 480px) {
+  .presetBtn,
+  .tab,
+  .txFilterBtn,
+  .txExportBtn,
+  .quickLink {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btnPrimary,
+  .btnSecondary,
+  .btnDanger {
+    min-height: 48px;
   }
 }
 

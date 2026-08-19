@@ -101,7 +101,10 @@ interface WalletState {
     toWallet: WalletType,
     amount: number
   ) => Promise<boolean>;
-  mintChips: (clubId: string, chips: number) => Promise<{ chips: number; success: boolean }>;
+  mintChips: (
+    clubId: string,
+    chips: number
+  ) => Promise<{ chips: number; success: boolean; error?: string }>;
 
   reset: () => void;
 }
@@ -341,10 +344,17 @@ export const useWalletStore = create<WalletState>()(
             // Refresh balances after minting
             return { chips: result.chipsAdded, success: true };
           }
-          return { chips: 0, success: false };
+          return { chips: 0, success: false, error: result.error };
         } catch (error) {
           reportError(error, 'useWalletStore.Mint_chips_failed');
-          return { chips: 0, success: false };
+          // Surface the reason to the caller. Swallowing it turned
+          // "Minting is locked for clubs in a union" into "please try again",
+          // which is advice that can never succeed.
+          return {
+            chips: 0,
+            success: false,
+            error: error instanceof Error ? error.message : undefined,
+          };
         }
       },
 

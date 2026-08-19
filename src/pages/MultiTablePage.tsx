@@ -14,8 +14,9 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
+import LiveTablesBar from '../components/table/LiveTablesBar';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -83,13 +84,53 @@ const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(L
 
 const MAX_TABLES = 4;
 
+/**
+ * Dan 2026-08-19 (persistence upgrade): what the GLOBAL dock should show while
+ * the container is hidden on a non-/table route. Pure so the logic harness
+ * can lift it verbatim.
+ * - Some table needs the hero's action -> 'urgent' (most pressing deadline
+ *   wins): the player must be pulled back before their hand is folded out.
+ * - Tables merely running -> 'return': a quiet re-entry affordance.
+ * - On /table/* the container itself is visible -> 'none' (no dock).
+ */
+const dockStateFor = (tabs: TableInstance[], hidden: boolean, nowMs: number) => {
+  if (!hidden) return { kind: 'none' as const };
+  const live = tabs.filter((t) => !isLobbyTab(t));
+  if (live.length === 0) return { kind: 'none' as const };
+  const urgent = live
+    .filter((t) => t.isMyTurn)
+    .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
+  if (urgent) {
+    return {
+      kind: 'urgent' as const,
+      targetId: urgent.id,
+      name: urgent.name,
+      secondsLeft:
+        urgent.turnDeadlineMs !== undefined
+          ? Math.max(0, Math.ceil((urgent.turnDeadlineMs - nowMs) / 1000))
+          : undefined,
+    };
+  }
+  return { kind: 'return' as const, count: live.length, targetId: live[0].id };
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function MultiTablePage() {
   const { user } = useAuthUser();
-  const { tableId: routeTableId } = useParams<{ tableId: string }>();
+  /**
+   * Dan 2026-08-19 (persistence upgrade): this container no longer lives under
+   * the /table/:tableId route — App.tsx mounts it ONCE via
+   * PersistentTableLayer, as a sibling of <Routes>, so navigating ANYWHERE
+   * keeps every TablePage (and its EngineStateClient socket) mounted. The
+   * route param is therefore derived from the location, and `hidden` collapses
+   * the whole container to display:none while the player browses other routes.
+   */
+  const location = useLocation();
+  const routeTableId = matchPath('/table/:tableId', location.pathname)?.params.tableId;
+  const hidden = routeTableId === undefined;
   /**
    * The club whose lobby the player should return to. Resolved from the tables
    * they actually sat at, so it survives closing every tab. Kept in state (not
@@ -572,6 +613,11 @@ export default function MultiTablePage() {
   // 2026-08-15 fix: this compared against a hardcoded timeRemaining of 15,
   // so it could never fire. Now derived from the real server deadline.
   useEffect(() => {
+    // Dan 2026-08-19: only auto-switch the active TAB while the player is
+    // actually on /table/*. When they browse elsewhere the global dock
+    // surfaces the alert instead — yanking the route out from under them
+    // mid-cashier would be hostile.
+    if (hidden) return;
     const urgentTable = tables.find((t, idx) => {
       if (idx === activeIndex) return false;
       const left = secondsLeft(t);
@@ -585,10 +631,13 @@ export default function MultiTablePage() {
         setTimeout(() => setIsTransitioning(false), 320);
       }
     }
-  }, [tables, activeIndex, secondsLeft]);
+  }, [tables, activeIndex, secondsLeft, hidden]);
 
   // ─── Keyboard shortcuts for table switching ───────────────────────────
   useEffect(() => {
+    // Dan 2026-08-19: the container is now ALWAYS mounted; while hidden on
+    // another route these shortcuts must not hijack Tab/1-4 from that page.
+    if (hidden) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       // P1-5 FIX: never hijack keystrokes while the user is typing in an input,
       // textarea, select, or contenteditable (table chat, raise amount, modals),
@@ -626,7 +675,7 @@ export default function MultiTablePage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tables.length]);
+  }, [tables.length, hidden]);
 
   // ─── Swipe Gesture Handling ──────────────────────────────────────────
   const handleTouchStart = useCallback(
@@ -709,7 +758,14 @@ export default function MultiTablePage() {
   useEffect(() => {
     if (!routeTableId) return;
     const prev = tablesRef.current;
-    if (prev.find((t) => t.id === routeTableId)) return;
+    const existingIdx = prev.findIndex((t) => t.id === routeTableId);
+    if (existingIdx !== -1) {
+      // Dan 2026-08-19: navigating to a table that is ALREADY mounted (dock
+      // click, lobby resume link, browser back) must focus its tab — the
+      // container persists now, so "arriving" is a tab switch, not a mount.
+      setActiveIndex(existingIdx);
+      return;
+    }
     const fromUrl: TableInstance = {
       id: routeTableId,
       name: searchParams.get('name') || `Table ${prev.length + 1}`,
@@ -730,8 +786,25 @@ export default function MultiTablePage() {
     }
   }, [routeTableId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ─── Global dock (Dan 2026-08-19) ────────────────────────────────────
+  // While hidden on another route, the LiveTablesBar dock is the ONE global
+  // affordance: "Return to game" when tables are quietly running, "Action
+  // needed" (with the live countdown — nowMs already ticks whenever any
+  // turn clock runs) when a hidden table waits on the hero.
+  const dock = dockStateFor(tables, hidden, nowMs);
+  const handleDockReturn = useCallback(
+    (tableId: string) => {
+      const idx = tablesRef.current.findIndex((t) => t.id === tableId);
+      if (idx !== -1) setActiveIndex(idx);
+      navigate(`/table/${tableId}`);
+    },
+    [navigate]
+  );
+
   // ─── Render ──────────────────────────────────────────────────────────
   if (tables.length === 0) {
+    // Hidden with nothing mounted: render nothing at all.
+    if (hidden) return null;
     return (
       <div className="multi-table-page multi-table-page--empty">
         <p>No tables open</p>
@@ -750,7 +823,19 @@ export default function MultiTablePage() {
     : 'none';
 
   return (
-    <div className="multi-table-page">
+    <>
+      {hidden && dock.kind !== 'none' && (
+        <LiveTablesBar
+          tables={tables.filter((t) => !isLobbyTab(t)).map((t) => ({ id: t.id, name: t.name }))}
+          urgent={
+            dock.kind === 'urgent'
+              ? { tableId: dock.targetId, name: dock.name, secondsLeft: dock.secondsLeft }
+              : null
+          }
+          onReturn={handleDockReturn}
+        />
+      )}
+      <div className="multi-table-page" style={hidden ? { display: 'none' } : undefined}>
       {/* Tab Bar */}
       {tables.length > 1 && (
         <div className="multi-table-page__tab-bar-wrapper">
@@ -855,7 +940,7 @@ export default function MultiTablePage() {
                     embeddedTableId={table.id}
                     onTableInfoUpdate={getTableInfoCb(table.id)}
                     isMultiTable={true}
-                    isActive={idx === activeIndex}
+                    isActive={idx === activeIndex && !hidden}
                   />
                 )}
               </Suspense>
@@ -915,8 +1000,12 @@ export default function MultiTablePage() {
                       key={table.id}
                       embeddedTableId={table.id}
                       onTableInfoUpdate={getTableInfoCb(table.id)}
-                      isMultiTable={tables.length > 1}
-                      isActive={idx === activeIndex}
+                      // Dan 2026-08-19: while hidden on another route no tab is
+                      // "active" — ambient table sounds must not follow the
+                      // player into the cashier (isMultiTable true when hidden
+                      // so single-table mode is muted too).
+                      isMultiTable={tables.length > 1 || hidden}
+                      isActive={idx === activeIndex && !hidden}
                     />
                   )}
                 </Suspense>
@@ -925,6 +1014,7 @@ export default function MultiTablePage() {
           })}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

@@ -59,3 +59,32 @@
   color: rgba(0, 212, 255, 0.9);
   white-space: nowrap;
 }
+
+/* ── Urgent variant: a hidden table's action clock is running on the hero.
+   Amber matches the app's attention color (offline banner); faster pulse. ── */
+
+.live-tables-bar--urgent {
+  border-color: rgba(251, 191, 36, 0.65);
+  box-shadow: 0 4px 24px rgba(251, 191, 36, 0.25);
+}
+
+.live-tables-bar--urgent:hover {
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.live-tables-bar__dot--urgent {
+  color: #fbbf24;
+  animation-duration: 0.8s;
+}
+
+.live-tables-bar__timer {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fbbf24;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.live-tables-bar--urgent .live-tables-bar__cta {
+  color: rgba(251, 191, 36, 0.95);
+}

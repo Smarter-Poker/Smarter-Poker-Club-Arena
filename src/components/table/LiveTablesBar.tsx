@@ -1,89 +1,62 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  LIVE TABLES BAR — "you have games running" resume affordance
+ *  LIVE TABLES BAR — global "you have games running" dock
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Dan 2026-08-19: multi-table play keeps a player's seats alive on the server
- * (table_seats.left_at IS NULL) even when they navigate the lobby on the
- * /clubs routes, where MultiTablePage is unmounted. Until now NOTHING in the
- * lobby showed that those games existed — a player who wandered off had no way
- * back except remembering the table URL, while their stacks blinded away.
+ * Dan 2026-08-19 (persistence upgrade): originally this bar lived on the club
+ * lobby only and re-queried table_seats itself, because MultiTablePage
+ * unmounted on every navigation. The container is now mounted persistently
+ * beside <Routes> (see PersistentTableLayer), so the mounted tabs ARE the
+ * truth — this component became a pure presentational dock that
+ * MultiTablePage renders on EVERY non-/table route while tables are live.
  *
- * This bar renders on the standalone club lobby whenever the signed-in user
- * has at least one active seat. Tapping it returns to /table/:firstId, where
- * MultiTablePage's server-truth rebuild re-opens EVERY live seat as a tab.
+ * Two states:
+ * - quiet:  "Return to game →" — tables running, nobody waiting on the hero.
+ * - urgent: "Action needed — <table> · Ns" — a hidden table's action clock is
+ *   running on the hero; tapping it focuses that tab and returns to /table/*.
  *
- * Kept intentionally read-only: it never mutates seats, it only navigates.
+ * Read-only: it never mutates seats, it only asks the container to navigate.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
-import { useAuthUser } from '../../hooks/useAuthUser';
-import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './LiveTablesBar.css';
 
-interface LiveSeat {
-  tableId: string;
-  name: string;
+export interface LiveTablesBarProps {
+  /** Table-kind tabs currently mounted, in tab order (lobby tabs excluded). */
+  tables: { id: string; name: string }[];
+  /** The mounted table whose action clock is running on the hero, if any. */
+  urgent: { tableId: string; name: string; secondsLeft?: number } | null;
+  /** Focus the tab and navigate back onto /table/:id. */
+  onReturn: (tableId: string) => void;
 }
 
-export default function LiveTablesBar() {
-  const { user } = useAuthUser();
-  const navigate = useNavigate();
-  const [seats, setSeats] = useState<LiveSeat[]>([]);
-  const aliveRef = useRef(true);
+export default function LiveTablesBar({ tables, urgent, onReturn }: LiveTablesBarProps) {
+  if (tables.length === 0) return null;
 
-  const reload = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const { data: seatRows, error } = await supabase
-        .from('table_seats')
-        .select('table_id')
-        .eq('user_id', user.id)
-        .is('left_at', null);
-      if (error || !aliveRef.current) return;
-      const ids = Array.from(
-        new Set((seatRows ?? []).map((r) => r.table_id as string).filter(Boolean))
-      );
-      if (ids.length === 0) {
-        setSeats([]);
-        return;
-      }
-      const { data: tblRows } = await supabase.from('tables').select('id, name').in('id', ids);
-      if (!aliveRef.current) return;
-      setSeats(
-        ids.map((id) => ({
-          tableId: id,
-          name: (tblRows?.find((t) => t.id === id)?.name as string) || 'Table',
-        }))
-      );
-    } catch {
-      /* transient — the next TABLE_SEATED/TABLE_LEFT tick retries */
-    }
-  }, [user?.id]);
+  if (urgent) {
+    return (
+      <button
+        className="live-tables-bar live-tables-bar--urgent"
+        onClick={() => onReturn(urgent.tableId)}
+        title="Your turn — return to the table"
+      >
+        <span className="live-tables-bar__dot live-tables-bar__dot--urgent" aria-hidden="true">
+          ●
+        </span>
+        <span className="live-tables-bar__label">Action needed — {urgent.name}</span>
+        {urgent.secondsLeft !== undefined && (
+          <span className="live-tables-bar__timer">{urgent.secondsLeft}s</span>
+        )}
+        <span className="live-tables-bar__cta">Act now →</span>
+      </button>
+    );
+  }
 
-  useEffect(() => {
-    aliveRef.current = true;
-    reload();
-    return () => {
-      aliveRef.current = false;
-    };
-  }, [reload]);
-
-  // Seats change exactly on these bus events; debounce coalesces bursts.
-  useMasterBusSubscription('TABLE_SEATED', reload, { debounce: 500 });
-  useMasterBusSubscription('TABLE_LEFT', reload, { debounce: 500 });
-
-  if (seats.length === 0) return null;
-
-  const label =
-    seats.length === 1 ? seats[0].name : `${seats.length} live tables`;
+  const label = tables.length === 1 ? tables[0].name : `${tables.length} live tables`;
 
   return (
     <button
       className="live-tables-bar"
-      onClick={() => navigate(`/table/${seats[0].tableId}`)}
+      onClick={() => onReturn(tables[0].id)}
       title="Return to your live tables"
     >
       <span className="live-tables-bar__dot" aria-hidden="true">●</span>

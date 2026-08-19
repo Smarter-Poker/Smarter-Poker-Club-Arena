@@ -37,7 +37,6 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
-import LiveTablesBar from '../components/table/LiveTablesBar';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import BBJTicker from '../components/bbj/BBJTicker';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
@@ -1026,10 +1025,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   return (
     <div className="club-home">
       <GlobalUXIndicators wsConnected={wsConnected} />
-      {/* Dan 2026-08-19: when this lobby is the standalone /clubs/:id route and
-          the player has live seats elsewhere, show the resume bar. Hidden in
-          embedded mode — there the lobby IS a tab beside the live tables. */}
-      {!clubIdOverride && <LiveTablesBar />}
+      {/* Dan 2026-08-19: the resume bar moved into the persistent multi-table
+          layer (PersistentTableLayer in App.tsx), which now shows it on EVERY
+          non-/table route — a per-page copy here would double-render it. */}
       {/* Animations moved to ClubHomePage.css */}
       {/* ═══════════════════════════════════════════════════════════════════
                 QUICK ACTION ICONS ROW

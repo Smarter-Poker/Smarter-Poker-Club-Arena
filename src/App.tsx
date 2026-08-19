@@ -33,6 +33,7 @@ import OfflineQueueBadge from './components/common/OfflineQueueBadge';
 import NavigationProgress from './components/common/NavigationProgress';
 import ConnectionIndicator from './components/common/ConnectionIndicator';
 import ConnectionStatusBar from './components/ConnectionStatusBar';
+import PersistentTableLayer from './components/table/PersistentTableLayer';
 import BusToastBridge from './components/common/BusToastBridge';
 import { ConfirmHost } from './components/common/confirmDialog';
 import MilestoneToast from './components/common/MilestoneToast';
@@ -63,7 +64,6 @@ const TournamentDetails = lazy(() => import('./pages/tournament/TournamentDetail
 const TournamentLobbyPage = lazy(() => import('./pages/tournament/TournamentLobbyPage'));
 const TournamentResultsPage = lazy(() => import('./pages/tournament/TournamentResultsPage'));
 const TablePage = lazy(() => import('./pages/TablePage'));
-const MultiTablePage = lazy(() => import('./pages/MultiTablePage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const UnionsPage = lazy(() => import('./pages/UnionsPage'));
@@ -159,6 +159,17 @@ function LoadingSpinner() {
       <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>Loading...</p>
     </div>
   );
+}
+
+/**
+ * Dan 2026-08-19: /table/:tableId only CLAIMS the path (and keeps AuthGuard's
+ * redirect for unauthenticated deep links). The actual multi-table UI is
+ * mounted once by <PersistentTableLayer /> beside <Routes>, so navigating
+ * anywhere else hides it with display:none instead of unmounting it — live
+ * engine sockets survive every route change.
+ */
+function TableRouteSurface() {
+  return null;
 }
 
 // Imported from centralized storage keys
@@ -378,13 +389,15 @@ export default function App() {
                 }
               />
 
-              {/* Table — Standalone without AppLayout shell (full-screen immersive) */}
+              {/* Table — Standalone without AppLayout shell (full-screen immersive).
+                  Renders null: PersistentTableLayer (sibling of <Routes>)
+                  draws the tables so they survive every route change. */}
               <Route
                 path="table/:tableId"
                 element={
                   <AuthGuard>
                     <RouteErrorBoundary>
-                      <MultiTablePage />
+                      <TableRouteSurface />
                     </RouteErrorBoundary>
                   </AuthGuard>
                 }
@@ -1423,6 +1436,11 @@ export default function App() {
               </Route>
             </Routes>
           </Suspense>
+          {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
+              unmounts on navigation: engine sockets for seated tables survive
+              every route. Off /table/* it collapses to display:none and
+              surfaces the global resume/action dock instead. */}
+          <PersistentTableLayer />
         </TOSGuard>
       </ToastProvider>
     </ErrorBoundary>

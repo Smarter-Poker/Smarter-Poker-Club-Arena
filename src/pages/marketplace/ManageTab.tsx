@@ -56,6 +56,7 @@ export default function ManageTab({
   const [processing, setProcessing] = useState(false);
   const [grantQty, setGrantQty] = useState('1');
   const [grantRef, setGrantRef] = useState('');
+  const [stock, setStock] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [desc, setDesc] = useState('');
@@ -151,6 +152,7 @@ export default function ManageTab({
         grantType: catalogFromServer ? grantInfo?.grantType : undefined,
         grantQty: grantInfo?.grantUnit ? Math.max(1, Math.floor(Number(grantQty) || 1)) : undefined,
         grantRef: grantNeedsRef ? grantRef.trim() || undefined : undefined,
+        stock: stock.trim() === '' ? null : Math.max(0, Math.floor(Number(stock) || 0)),
       });
       toast.success('Item created');
       setName('');
@@ -160,6 +162,7 @@ export default function ManageTab({
       setCategory('Time Banks');
       setGrantQty('1');
       setGrantRef('');
+      setStock('');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
@@ -340,6 +343,21 @@ export default function ManageTab({
             className={styles.formInput}
           />
         </div>
+        <div className={styles.formRow}>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={stock}
+            onChange={(e) => setStock(e.target.value)}
+            placeholder="Stock (blank = unlimited)"
+            aria-label="Stock quantity, blank for unlimited"
+            className={styles.formInput}
+          />
+          <span className={styles.grantHint}>
+            Leave blank for unlimited. Set a number to run a limited drop.
+          </span>
+        </div>
         {grantInfo?.grantUnit && (
           <div className={styles.formRow}>
             <input
@@ -432,6 +450,7 @@ export default function ManageTab({
                     {' - '}
                     {item.purchase_count || 0} sold
                     {item.revenue ? ` - ${fmtChips(item.revenue)} earned` : ''}
+                    {item.stock !== null && item.stock !== undefined ? ` - ${item.stock} left` : ''}
                   </div>
                   {describeGrant(item.grant_spec, secondsPerUse) && (
                     <div className={styles.grantHint}>

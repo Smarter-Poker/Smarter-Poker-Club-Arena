@@ -76,6 +76,9 @@ export default function StoreTab({
           (item.description || '').toLowerCase().includes(q)
       );
     }
+    // Sold-out items always sink, whatever the sort.
+    const soldOutRank = (i: MarketplaceItem) =>
+      i.stock !== null && i.stock !== undefined && i.stock <= 0 ? 1 : 0;
     switch (sortMode) {
       case 'price-low':
         result.sort((a, b) => a.price - b.price);
@@ -89,6 +92,7 @@ export default function StoreTab({
       default:
         break;
     }
+    result.sort((a, b) => soldOutRank(a) - soldOutRank(b));
     return result;
   }, [items, categoryFilter, searchFilter, sortMode]);
 
@@ -296,6 +300,8 @@ export default function StoreTab({
           {filteredItems.map((item) => {
             const alreadyOwned = ownedItemIds.has(item.id);
             const img = safeImageUrl(item.image_url);
+            const limited = item.stock !== null && item.stock !== undefined;
+            const soldOut = limited && (item.stock as number) <= 0;
             return (
               <div key={item.id} className={styles.itemCard}>
                 <div className={styles.itemImageArea}>
@@ -314,6 +320,10 @@ export default function StoreTab({
                     <div className={styles.itemPlaceholderLg}>◇</div>
                   )}
                   <span className={styles.categoryTag}>{item.category || 'Time Banks'}</span>
+                  {soldOut && <span className={styles.soldOutTag}>SOLD OUT</span>}
+                  {limited && !soldOut && (
+                    <span className={styles.stockTag}>{item.stock} left</span>
+                  )}
                 </div>
                 <div className={styles.itemBody}>
                   <div className={styles.itemName}>{item.name}</div>
@@ -331,9 +341,9 @@ export default function StoreTab({
                     <button
                       onClick={() => setBuyTarget(item)}
                       className={alreadyOwned ? styles.btnOwned : styles.btnPrimary}
-                      disabled={alreadyOwned || processing}
+                      disabled={alreadyOwned || processing || soldOut}
                     >
-                      {alreadyOwned ? 'Owned' : 'Buy'}
+                      {alreadyOwned ? 'Owned' : soldOut ? 'Sold out' : 'Buy'}
                     </button>
                   </div>
                 </div>

@@ -34,6 +34,8 @@ export interface MarketplaceItem {
   category?: string;
   item_type?: string | null;
   grant_spec?: GrantSpec | null;
+  /** remaining units; null/undefined = unlimited, 0 = sold out */
+  stock?: number | null;
   is_active: boolean;
   purchase_count?: number;
   /** admin view only — real revenue from price_paid */

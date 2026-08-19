@@ -537,13 +537,22 @@ const SEAT_POSITIONS_9MAX = [
 ];
 
 /* Dan 2026-08-17 — PER-SIZE SEAT RINGS.
-   Production runs 2..9-max tables (audit: 53 seven-max plo6 + 472 eight-max
-   tables live in the fleet), but the client only had 6MAX/9MAX rings picked
+   Production runs 2..9-max tables, but the client only had 6MAX/9MAX rings picked
    by `maxPlayers === 9`. An 8-max table therefore indexed seats 7-8 past the
    end of the 6-seat array — no position at all. Every count now has its own
    ring on the SAME measured rail band (sides x 10.5/89.5, top cap y 8.5,
    top diagonals on the cap circle, bottom caps (19/81, 82.5)); hero is
-   always slot 0, bottom-center. */
+   always slot 0, bottom-center.
+
+   CORRECTION 2026-08-19: this comment used to cite "53 seven-max plo6 + 472
+   eight-max tables live in the fleet" as evidence for the range. Those seat
+   counts are ILLEGAL for that variant — Dan: "ITS ALWAYS 6 MAX FOR PLO 6 AND
+   7 MAX FOR PLO5" — so they were evidence of a missing seat cap, not of a
+   supported configuration, and citing them as normal is what led a later
+   audit to reason from an 8-max PLO6 table that cannot exist. The caps now
+   live in src/config/tableSeating.ts and are enforced in TableService. The
+   rings below still cover 2..9 because other variants legitimately use them
+   and because 10,130 pre-existing rows still carry the old seat counts. */
 const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   2: [
     { x: 50, y: 93.5 }, // Hero

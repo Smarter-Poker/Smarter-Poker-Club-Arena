@@ -74,6 +74,20 @@ function extractClientIp(req: IncomingMessage): string | null {
   return sockAddr ?? null;
 }
 
+/**
+ * Loopback and the 'unknown' placeholder are what we see when the proxy did not
+ * forward a real client address. Two players must never be treated as sharing a
+ * connection just because we failed to learn either of their addresses.
+ */
+const UNUSABLE_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1', 'unknown', '']);
+
+export function isUsableClientIp(ip: string | null | undefined): ip is string {
+  return typeof ip === 'string' && !UNUSABLE_IPS.has(ip.trim().toLowerCase());
+}
+
+/** How long a table's ip_restriction flag is trusted before re-reading it. */
+const IP_RESTRICTION_TTL_MS = 60_000;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
@@ -104,6 +118,8 @@ interface ConnectionState {
   lastPongAt: number;
   inboundCount: number;
   inboundWindowStart: number;
+  /** Client address from the x-forwarded-for chain; null when unknown. */
+  clientIp: string | null;
 }
 
 // ─── Default JWT verification (Supabase) ──────────────────────────────────────
@@ -129,6 +145,8 @@ export class EngineWebSocketServer {
   private readonly tableExists: TableExistsCheck;
   private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
   private readonly onResync?: (tableId: string, userId: string) => void;
+  /** tableId -> { restricted, readAt } — see IP_RESTRICTION_TTL_MS. */
+  private ipRestrictionCache: Map<string, { restricted: boolean; readAt: number }> = new Map();
 
   constructor(opts: EngineWebSocketServerOptions) {
     this.hub = opts.hub;
@@ -209,6 +227,31 @@ export class EngineWebSocketServer {
             // blacklist-check error. Log and proceed.
           }
 
+          // 2026-08-19: IP Restriction, made real. The switch existed on the
+          // create-table page since day one and enforced nothing. It means
+          // what it means in a live room: two DIFFERENT accounts may not be at
+          // the same table from the same internet connection.
+          //
+          // Deliberately narrow:
+          //   • the same player reconnecting is always fine — only a different
+          //     userId counts as a conflict;
+          //   • an address we could not learn (loopback, 'unknown') never
+          //     counts, or a proxy misconfiguration would lock out the room;
+          //   • whoever is already connected keeps their seat. This refuses
+          //     the arriving connection, it never drops a seated player.
+          try {
+            if (await this.isIpConflict(tableId, auth.userId, clientIp)) {
+              socket.write(
+                'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+              );
+              socket.destroy();
+              return;
+            }
+          } catch {
+            // Same rule as the blacklist gate: a failure to CHECK must never
+            // become a refusal.
+          }
+
           // Round 67/190: log connection IP to action_audit_logs so the
           // multi-account detector has data on real player traffic. Bots
           // generate no audit log entries; this gap meant the detector was
@@ -216,7 +259,7 @@ export class EngineWebSocketServer {
           this.logConnectionAudit(auth.userId, tableId, clientIp);
 
           this.wss.handleUpgrade(req, socket, head, (ws) => {
-            this.onUpgraded(ws, req, auth.userId, tableId);
+            this.onUpgraded(ws, req, auth.userId, tableId, clientIp);
           });
         })
         .catch(() => {
@@ -293,6 +336,61 @@ export class EngineWebSocketServer {
     return !!(bans && bans.length > 0);
   }
 
+  // ─── IP Restriction (2026-08-19) ────────────────────────────────────────
+  /**
+   * Is `tableId` configured to allow only one account per internet connection?
+   *
+   * Cached for IP_RESTRICTION_TTL_MS so a burst of reconnects does not hammer
+   * the table row, and so an owner flipping the switch takes effect within a
+   * minute rather than needing a table restart.
+   *
+   * A read failure returns FALSE — the gate stays open. Refusing players
+   * because the database hiccuped is a worse outcome than briefly not
+   * enforcing a collusion control.
+   */
+  private async isIpRestricted(tableId: string): Promise<boolean> {
+    const hit = this.ipRestrictionCache.get(tableId);
+    if (hit && Date.now() - hit.readAt < IP_RESTRICTION_TTL_MS) return hit.restricted;
+
+    const { data, error } = await supabase
+      .from('tables')
+      .select('ip_restriction')
+      .eq('id', tableId)
+      .maybeSingle();
+
+    if (error) return false;
+    const restricted = data?.ip_restriction === true;
+    this.ipRestrictionCache.set(tableId, { restricted, readAt: Date.now() });
+    return restricted;
+  }
+
+  /**
+   * True when this arriving connection would put a SECOND account at
+   * `tableId` from `ip`.
+   */
+  private async isIpConflict(
+    tableId: string,
+    userId: string,
+    ip: string | null
+  ): Promise<boolean> {
+    if (!isUsableClientIp(ip)) return false;
+    if (!(await this.isIpRestricted(tableId))) return false;
+
+    const needle = ip.trim().toLowerCase();
+    for (const conn of this.connections.values()) {
+      if (conn.tableId !== tableId) continue;
+      if (conn.userId === userId) continue; // the same player reconnecting
+      if (!isUsableClientIp(conn.clientIp)) continue;
+      if (conn.clientIp.trim().toLowerCase() === needle) return true;
+    }
+    return false;
+  }
+
+  /** Drop a table's cached flag — used when the table closes. */
+  forgetTable(tableId: string): void {
+    this.ipRestrictionCache.delete(tableId);
+  }
+
   // ─── Round 67/190: per-connection audit log ─────────────────────────────
   /**
    * Fire-and-forget: write a row to action_audit_logs so the multi-account
@@ -321,7 +419,13 @@ export class EngineWebSocketServer {
 
   // ─── Upgrade aftermath ─────────────────────────────────────────────────────
 
-  private onUpgraded(ws: WebSocket, _req: IncomingMessage, userId: string, tableId: string): void {
+  private onUpgraded(
+    ws: WebSocket,
+    _req: IncomingMessage,
+    userId: string,
+    tableId: string,
+    clientIp: string | null = null
+  ): void {
     const conn: ConnectionState = {
       id: randomUUID(),
       userId,
@@ -330,6 +434,7 @@ export class EngineWebSocketServer {
       lastPongAt: Date.now(),
       inboundCount: 0,
       inboundWindowStart: Date.now(),
+      clientIp,
     };
     this.connections.set(ws, conn);
 

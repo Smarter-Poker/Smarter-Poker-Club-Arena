@@ -159,14 +159,20 @@ interface TableConfig {
   synchronizedBreaks: boolean;
 
   // Security Settings
-  agentDownlineLimit: number | null;
-  buyInAuthorization: boolean;
-  restrictDevice: boolean;
-  restrictObservers: boolean;
-  gpsRestriction: boolean;
+  //
+  // 2026-08-19: seven switches were removed from here — Same Agent Downline
+  // Limit, Buy-in Authorization, Restrict Device, Restrict Observers, GPS
+  // Restriction, PC Emulator Restriction and Photo Rotation Verification.
+  // Every one of them wrote a `tables` column that NOTHING reads, and the four
+  // that sound like real protections have no data behind them at all:
+  // user_devices and geofence_visits are both empty, and there is no emulator
+  // detection or photo verification anywhere in the codebase. A switch labelled
+  // "GPS Restriction" that an owner turns on and believes in is worse than no
+  // switch. The columns are left in place so nothing is lost.
+  //
+  // ipRestriction is the one that CAN be honoured — the engine already has each
+  // player's IP at connect — so it stays.
   ipRestriction: boolean;
-  pcEmulatorRestriction: boolean;
-  photoRotationVerification: boolean;
 }
 
 const GAME_TYPE_LABELS: Record<string, { name: string; color: string }> = {
@@ -293,15 +299,12 @@ const DEFAULT_CONFIG: TableConfig = {
   tournamentSchedule: false,
   synchronizedBreaks: true,
 
-  // Security Settings
-  agentDownlineLimit: null,
-  buyInAuthorization: false,
-  restrictDevice: true,
-  restrictObservers: false,
-  gpsRestriction: true,
-  ipRestriction: true,
-  pcEmulatorRestriction: false,
-  photoRotationVerification: false,
+  // Security Settings.
+  // OFF by default. The column default was `true`, so all 56,053 existing
+  // tables carry ip_restriction = true — not because anyone chose it, but
+  // because the switch never meant anything. Enforcement is opt-in: an owner
+  // turns it on deliberately.
+  ipRestriction: false,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -746,15 +749,9 @@ export default function TableConfigPage() {
     tournament_schedule: config.tournamentSchedule,
     synchronized_breaks: config.synchronizedBreaks,
 
-    // Security
-    agent_downline_limit: config.agentDownlineLimit,
-    buy_in_authorization: config.buyInAuthorization,
-    restrict_device: config.restrictDevice,
-    restrict_observers: config.restrictObservers,
-    gps_restriction: config.gpsRestriction,
+    // Security. Only the switch that is actually enforced is written; the
+    // other seven were removed (see TableConfig above).
     ip_restriction: config.ipRestriction,
-    pc_emulator_restriction: config.pcEmulatorRestriction,
-    photo_rotation_verification: config.photoRotationVerification,
 
     // Status
     status: 'waiting',
@@ -1518,51 +1515,11 @@ export default function TableConfigPage() {
         />
 
         {/* SECTION: Security */}
-        <Slider
-          label="Same Agent Downline Number Limit"
-          value={config.agentDownlineLimit ?? 100}
-          onChange={(v) => updateConfig('agentDownlineLimit', v === 100 ? null : v)}
-          min={1}
-          max={100}
-          suffix={config.agentDownlineLimit === null ? '' : ''}
-        />
-
-        <Toggle
-          label="Buy-in Authorization"
-          value={config.buyInAuthorization}
-          onChange={(v) => updateConfig('buyInAuthorization', v)}
-        />
-        <Toggle
-          label="Restrict Device"
-          value={config.restrictDevice}
-          onChange={(v) => updateConfig('restrictDevice', v)}
-          tooltip="One device per player"
-        />
-        <Toggle
-          label="Restrict Observers"
-          value={config.restrictObservers}
-          onChange={(v) => updateConfig('restrictObservers', v)}
-        />
-        <Toggle
-          label="GPS Restriction"
-          value={config.gpsRestriction}
-          onChange={(v) => updateConfig('gpsRestriction', v)}
-        />
         <Toggle
           label="IP Restriction"
           value={config.ipRestriction}
           onChange={(v) => updateConfig('ipRestriction', v)}
-        />
-        <Toggle
-          label="PC Emulator Restriction"
-          value={config.pcEmulatorRestriction}
-          onChange={(v) => updateConfig('pcEmulatorRestriction', v)}
-        />
-        <Toggle
-          label="Photo Rotation Verification"
-          value={config.photoRotationVerification}
-          onChange={(v) => updateConfig('photoRotationVerification', v)}
-          tooltip="Verify identity with photo"
+          tooltip="Two different accounts cannot sit at this table from the same internet connection. Players already seated are not affected."
         />
         <Toggle
           label="Hide Club Name"

@@ -445,6 +445,25 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           return m ? { rank: m[1], suit: m[2] } : null;
         })
         .filter((c): c is { rank: string; suit: string } => c !== null);
+
+      // OBSERVABILITY 2026-08-18: detectBBJHit now FAILS CLOSED when it cannot
+      // see a five-card board — the right call for money, but silence would be
+      // the wrong failure mode: a parse or plumbing regression would quietly
+      // stop paying jackpots and nobody would know. A showdown that reached
+      // this point had a board, so anything short of five parsed cards is a
+      // bug, and it is reported once per occurrence rather than swallowed.
+      if (this.currentHandShowdownResults.length >= 2 && bbjBoard.length < 5) {
+        reportError(
+          new Error(
+            `[BBJ] Board unavailable at settlement — jackpot detection will fail closed for ` +
+              `table ${this.tableId} hand #${this.handCount}. ` +
+              `raw=${JSON.stringify(this.currentHandCommunityCards)} parsed=${bbjBoard.length}. ` +
+              `A qualifying hand cannot be verified without the board, so no payout is made; ` +
+              `if this fires, the plumbing is broken, not the rule.`
+          ),
+          'ServerTableEngine.bbj_board_unavailable'
+        );
+      }
       const bbjResult = detectBBJHit(
         this.currentHandShowdownResults,
         this.currentHandWinnerIds[0],

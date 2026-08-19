@@ -213,17 +213,6 @@ export default function DynamicWallet({
     const thisVersion = ++fetchVersionRef.current;
 
     try {
-      // UNION-FIX 2026-08-18: the jackpot for a club inside a union lives in the
-      // UNION's bbj_pools row (that is the row the engine funds). Resolving by
-      // club_id alone showed every union-club member a $0 or stale jackpot —
-      // the same defect already fixed on the table banner, the lobby ticker and
-      // BBJService. Look up the club's union first, exactly as the server does.
-      const { data: clubUnionRow } = await supabase
-        .from('clubs')
-        .select('union_id')
-        .eq('id', resolvedId)
-        .maybeSingle();
-      const bbjUnionId: string | null = clubUnionRow?.union_id ?? null;
       const [profileRes, memberRes, bbjRes, agentRes, clubRes] = await Promise.all([
         supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
         supabase
@@ -232,18 +221,13 @@ export default function DynamicWallet({
           .eq('club_id', resolvedId)
           .eq('user_id', userId)
           .maybeSingle(),
-        (bbjUnionId
-          ? supabase
-              .from('bbj_pools')
-              .select('main_balance, backup_balance')
-              .eq('union_id', bbjUnionId)
-              .eq('status', 'active')
-          : supabase
-              .from('bbj_pools')
-              .select('main_balance, backup_balance')
-              .eq('club_id', resolvedId)
-              .eq('status', 'active')
-        ).maybeSingle(),
+        // UNION-FIX + OPTIMISED 2026-08-18: the jackpot for a club inside a
+        // union lives in the UNION's bbj_pools row (the row the engine funds).
+        // Resolving by club_id alone showed every union-club member a $0 or
+        // stale jackpot. fn_bbj_pool_for_club owns that rule server-side, so
+        // this stays ONE parallel call — no serial clubs lookup first, and no
+        // fourth copy of the union rule to get wrong.
+        supabase.rpc('fn_bbj_pool_for_club', { p_club_id: resolvedId }),
         supabase
           .from('agents')
           .select('agent_wallet_balance, promo_wallet_balance')
@@ -288,7 +272,8 @@ export default function DynamicWallet({
         diamonds: Number(profileRes.data?.diamonds) || 0,
         chipBalance: Number(memberRes.data?.chip_balance) || 0,
         promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
-        bbjPool: Number(bbjRes.data?.main_balance) || 0,
+        bbjPool:
+          Number((Array.isArray(bbjRes.data) ? bbjRes.data[0] : bbjRes.data)?.main_balance) || 0,
         backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
         agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
         clubBank: Number(clubRes.data?.chip_pool) || 0,

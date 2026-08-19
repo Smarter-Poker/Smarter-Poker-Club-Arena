@@ -72,37 +72,41 @@ export function BBJTicker({
   }, [poolAmount]);
 
   useEffect(() => {
-    if (!clubId && !unionId) return;
+    if (!clubId) return;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const load = async () => {
-      // Resolve the pool the same way the server does: union first, then club.
-      let q = supabase.from('bbj_pools').select('id, main_balance').eq('status', 'active');
-      q = unionId ? q.eq('union_id', unionId) : q.eq('club_id', clubId as string);
-      const { data: poolRow } = await q.maybeSingle();
+      // OPTIMISED 2026-08-18: one RPC; the union rule lives server-side in
+      // fn_bbj_pool_for_club instead of being re-implemented per surface.
+      // (unionId is still accepted as a prop for callers that already know it,
+      // but resolution no longer depends on the caller getting it right.)
+      const { data: poolRows } = await supabase.rpc('fn_bbj_pool_for_club', {
+        p_club_id: clubId,
+      });
+      const poolRow = Array.isArray(poolRows) ? poolRows[0] : poolRows;
       if (cancelled || !poolRow) return;
-      poolIdRef.current = poolRow.id;
+      poolIdRef.current = poolRow.pool_id;
       if (typeof poolAmount !== 'number') setPool(Number(poolRow.main_balance) || 0);
 
       const { data: winners } = await supabase
         .from('bbj_winners')
         .select('id, loser_display_name, winner_display_name, loser_hand, total_payout, awarded_at')
-        .eq('pool_id', poolRow.id)
+        .eq('pool_id', poolRow.pool_id)
         .order('awarded_at', { ascending: false })
         .limit(maxHits);
       if (cancelled) return;
       setHits((winners as HitRow[]) || []);
 
       channel = supabase
-        .channel(`bbj-ticker-${poolRow.id}`)
+        .channel(`bbj-ticker-${poolRow.pool_id}`)
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
             table: 'bbj_winners',
-            filter: `pool_id=eq.${poolRow.id}`,
+            filter: `pool_id=eq.${poolRow.pool_id}`,
           },
           (payload) => {
             const row = payload.new as HitRow;
@@ -116,7 +120,7 @@ export function BBJTicker({
             event: 'UPDATE',
             schema: 'public',
             table: 'bbj_pools',
-            filter: `id=eq.${poolRow.id}`,
+            filter: `id=eq.${poolRow.pool_id}`,
           },
           (payload) => {
             if (typeof poolAmount === 'number' || cancelled) return;

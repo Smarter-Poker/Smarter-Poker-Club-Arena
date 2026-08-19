@@ -46,6 +46,13 @@ export abstract class TournamentManagerBase {
    * finishes, while a genuinely wedged table cannot stall the break forever.
    */
   static readonly LAST_HAND_GRACE_MS = 2 * 60 * 1000;
+  /**
+   * Longest a table may sit paused ON PURPOSE before the liveness sweep stops
+   * believing it. Comfortably above the worst legitimate case (5 min break +
+   * 2 min last-hand grace), so a real break is never disturbed, while a table
+   * wedged in a pause is still rebuilt instead of freezing forever.
+   */
+  static readonly MAX_HEALTHY_PAUSE_MS = 10 * 60 * 1000;
   protected savedBlindTimerRemaining: number = 0;
   protected blindTimerStartedAt: number = 0;
   // Hand-for-hand sync
@@ -941,9 +948,14 @@ export abstract class TournamentManagerBase {
     try {
       for (const [tableId, engine] of this.tableEngines) {
         // Belt and braces alongside the onBreak guard above: a table parked on
-        // purpose (break OR hand-for-hand) is healthy, never a rebuild candidate.
+        // purpose (break OR hand-for-hand) is healthy — but only for as long as
+        // a legitimate pause lasts. Past that ceiling it is wedged, and must be
+        // rebuilt rather than left frozen forever.
+        const parkedOnPurpose =
+          engine.isPausedByDesign() &&
+          engine.msPaused() <= TournamentManagerBase.MAX_HEALTHY_PAUSE_MS;
         const dead =
-          !engine.isRunning() || (!engine.isPausedByDesign() && engine.msSinceProgress() > 180_000);
+          !engine.isRunning() || (!parkedOnPurpose && engine.msSinceProgress() > 180_000);
         if (!dead) continue;
         reportError(
           new Error(

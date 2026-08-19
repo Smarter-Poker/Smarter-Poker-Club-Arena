@@ -96,6 +96,13 @@ export class GameServer {
    * minutes, so play resumes exactly on the hour.
    */
   private static readonly BREAK_START_MINUTE = 55;
+  /**
+   * Longest a table may sit paused ON PURPOSE before the reapers stop believing
+   * it. Comfortably above the worst legitimate case (5 min break + 2 min
+   * last-hand grace), so a real break is never disturbed, while a table wedged
+   * in a pause still gets rebuilt instead of freezing forever.
+   */
+  static readonly MAX_HEALTHY_PAUSE_MS = 10 * 60 * 1000;
 
   async start(): Promise<void> {
     this.running = true;
@@ -1193,7 +1200,14 @@ export class GameServer {
            * trusts (ServerTableEngineTurns) and /health already reports; it was
            * simply never consulted here.
            */
-          if (shouldBeDealing && !engine.isPausedByDesign() && engine.msSinceProgress() > 180_000) {
+          // ...but paused is not a licence to sit there forever. A pause that
+          // outlives any legitimate one (break + last-hand grace, with room to
+          // spare) is a wedged table, and MUST still be reaped — otherwise this
+          // guard would trade "breaks get dismantled" for "a stuck table never
+          // recovers", which is the worse bug.
+          const pausedTooLong = engine.msPaused() > GameServer.MAX_HEALTHY_PAUSE_MS;
+          const parkedOnPurpose = engine.isPausedByDesign() && !pausedTooLong;
+          if (shouldBeDealing && !parkedOnPurpose && engine.msSinceProgress() > 180_000) {
             reportError(
               new Error(
                 'Engine for ' +

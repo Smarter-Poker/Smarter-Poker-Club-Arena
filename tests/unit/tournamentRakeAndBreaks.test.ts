@@ -159,12 +159,12 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
   it("GameServer's reaper skips engines paused by design", () => {
     const reaper = GAME_SERVER.slice(
       GAME_SERVER.indexOf('const shouldBeDealing'),
-      GAME_SERVER.indexOf('const shouldBeDealing') + 1600
+      GAME_SERVER.indexOf('const shouldBeDealing') + 3000
     );
-    expect(reaper).toMatch(/!engine\.isPausedByDesign\(\)/);
+    expect(reaper).toMatch(/engine\.isPausedByDesign\(\)/);
     // The pause check must gate the SAME condition as the staleness check.
     expect(reaper).toMatch(
-      /shouldBeDealing && !engine\.isPausedByDesign\(\) && engine\.msSinceProgress\(\) > 180_000/
+      /shouldBeDealing && !parkedOnPurpose && engine\.msSinceProgress\(\) > 180_000/
     );
   });
 
@@ -173,9 +173,22 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
       BASE.indexOf('protected async reviveDeadTableEngines'),
       BASE.indexOf('protected async reviveDeadTableEngines') + 2200
     );
-    expect(revive).toMatch(
-      /!engine\.isPausedByDesign\(\) && engine\.msSinceProgress\(\) > 180_000/
-    );
+    expect(revive).toMatch(/engine\.isPausedByDesign\(\)/);
+    expect(revive).toMatch(/!parkedOnPurpose && engine\.msSinceProgress\(\) > 180_000/);
+  });
+
+  it('a pause is only healthy for as long as a real break could last', () => {
+    // Otherwise this guard would trade "breaks get dismantled" for "a wedged
+    // table never recovers", which is the worse bug.
+    expect(GAME_SERVER).toMatch(/MAX_HEALTHY_PAUSE_MS = 10 \* 60 \* 1000/);
+    expect(BASE).toMatch(/MAX_HEALTHY_PAUSE_MS = 10 \* 60 \* 1000/);
+    expect(GAME_SERVER).toMatch(/msPaused\(\) > GameServer\.MAX_HEALTHY_PAUSE_MS/);
+    expect(BASE).toMatch(/msPaused\(\) <= TournamentManagerBase\.MAX_HEALTHY_PAUSE_MS/);
+  });
+
+  it('the ceiling exceeds a full break plus the last-hand grace', () => {
+    // 5 min break + 2 min grace = 7 min worst legitimate case.
+    expect(10 * 60 * 1000).toBeGreaterThan(5 * 60 * 1000 + 2 * 60 * 1000);
   });
 
   it('isPausedByDesign covers both a break pause and hand-for-hand', () => {

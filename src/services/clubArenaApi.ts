@@ -73,7 +73,16 @@ export async function callClubArenaApi<T = Record<string, unknown>>(
     .catch(() => ({ success: false, error: `HTTP ${response.status}` }));
 
   if (!data?.success) {
-    throw new Error(data?.error || `Request failed (HTTP ${response.status})`);
+    // Preserve the server's machine-readable flags (soldOut, alreadyOwned,
+    // hasSales, ...). Callers previously saw only the message and could not
+    // react — e.g. refresh the shop when an item turned out to be sold out.
+    const err = new Error(data?.error || `Request failed (HTTP ${response.status})`) as Error & {
+      status?: number;
+      data?: Record<string, unknown>;
+    };
+    err.status = response.status;
+    err.data = data && typeof data === 'object' ? data : undefined;
+    throw err;
   }
 
   return data as T & { success: true };

@@ -40,6 +40,8 @@ interface EditDraft {
   imageUrl: string;
   grantQty: string;
   grantRef: string;
+  /** '' = unlimited */
+  stock: string;
 }
 
 export default function ManageTab({
@@ -184,6 +186,7 @@ export default function ManageTab({
       imageUrl: item.image_url || '',
       grantQty: String(item.grant_spec?.qty ?? 1),
       grantRef: item.grant_spec?.avatar_id || item.grant_spec?.theme_id || '',
+      stock: item.stock === null || item.stock === undefined ? '' : String(item.stock),
     });
   };
 
@@ -211,6 +214,9 @@ export default function ManageTab({
           ? Math.max(1, Math.floor(Number(draft.grantQty) || 1))
           : undefined,
         grantRef: draft.grantRef.trim() || undefined,
+        // Restocking was impossible: a limited drop that sold out (or lost a
+        // unit to a failed purchase) could never be revived from the UI.
+        stock: draft.stock.trim() === '' ? null : Math.max(0, Math.floor(Number(draft.stock) || 0)),
       });
       toast.success('Item updated');
       setEditingId(null);
@@ -544,6 +550,21 @@ export default function ManageTab({
                       placeholder="Image URL (optional)"
                       className={styles.formInput}
                     />
+                  </div>
+                  <div className={styles.formRow}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={draft.stock}
+                      onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
+                      placeholder="Stock (blank = unlimited)"
+                      aria-label="Stock quantity, blank for unlimited"
+                      className={styles.formInput}
+                    />
+                    <span className={styles.grantHint}>
+                      {draft.stock.trim() === '' ? 'Unlimited' : `${draft.stock} available`}
+                    </span>
                   </div>
                   {(() => {
                     const g = categories.find((c) => c.name === draft.category);

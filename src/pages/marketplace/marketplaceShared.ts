@@ -36,7 +36,11 @@ export interface MarketplaceItem {
   grant_spec?: GrantSpec | null;
   /** remaining units; null/undefined = unlimited, 0 = sold out */
   stock?: number | null;
-  is_active: boolean;
+  /**
+   * Admin view only. /api/club-arena/marketplace-items already filters to
+   * is_active=true and does NOT select the column, so it is undefined there.
+   */
+  is_active?: boolean;
   purchase_count?: number;
   /** admin view only — real revenue from price_paid */
   revenue?: number;
@@ -57,7 +61,7 @@ export function describeGrant(
   const qty = Math.max(1, Math.floor(Number(spec.qty) || 1));
   switch (spec.type) {
     case 'time_bank':
-      return `+${qty * secondsPerUse}s table time (${qty} uses)`;
+      return `+${qty * secondsPerUse}s table time (${qty} ${qty === 1 ? 'use' : 'uses'})`;
     case 'throwable':
       return `${qty} free ${qty === 1 ? 'throw' : 'throws'}`;
     case 'emote_pack':

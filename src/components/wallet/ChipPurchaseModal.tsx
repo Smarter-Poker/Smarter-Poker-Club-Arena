@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { callClubArenaApi } from '../../services/clubArenaApi';
+import { loadStoreCatalog, type ChipPackage } from '../../pages/marketplace/marketplaceShared';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './ChipPurchaseModal.css';
@@ -39,21 +40,12 @@ interface PurchaseChipsResponse {
   destination?: string;
 }
 
-interface ChipPackage {
-  id: string;
-  chips: number;
-  diamonds: number;
-  bonus?: number;
-  popular?: boolean;
-}
-
-const CHIP_PACKAGES: ChipPackage[] = [
-  { id: 'small', chips: 1000, diamonds: 10 },
-  { id: 'medium', chips: 5000, diamonds: 45, bonus: 10 },
-  { id: 'large', chips: 10000, diamonds: 80, bonus: 20, popular: true },
-  { id: 'mega', chips: 50000, diamonds: 350, bonus: 30 },
-  { id: 'ultra', chips: 100000, diamonds: 600, bonus: 50 },
-];
+/**
+ * Packages come from /api/club-arena/store-catalog — the same source the
+ * marketplace uses. The hard-coded table here claimed +10/20/30/50% while the
+ * server's real value premium is +11/25/43/67%, so the Cashier and the
+ * Marketplace advertised different numbers for the same purchase.
+ */
 
 export function ChipPurchaseModal({
   isOpen,
@@ -66,6 +58,18 @@ export function ChipPurchaseModal({
   const navigate = useNavigate();
   const toast = useToast();
   const [purchasing, setPurchasing] = useState<string | null>(null);
+  const [packages, setPackages] = useState<ChipPackage[]>([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let alive = true;
+    loadStoreCatalog().then((c) => {
+      if (alive) setPackages(c.chipPackages);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [isOpen]);
   const isMounted = useIsMounted();
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -74,7 +78,7 @@ export function ChipPurchaseModal({
     animTimers.current.forEach(clearTimeout);
     animTimers.current = [];
     if (isOpen) {
-      CHIP_PACKAGES.forEach((_, i) => {
+      packages.forEach((_, i) => {
         const t = setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
         animTimers.current.push(t);
       });
@@ -85,7 +89,7 @@ export function ChipPurchaseModal({
       animTimers.current.forEach(clearTimeout);
       animTimers.current = [];
     };
-  }, [isOpen]);
+  }, [isOpen, packages]);
 
   const handlePurchase = async (pkg: ChipPackage) => {
     if (!user?.id) return;
@@ -163,7 +167,7 @@ export function ChipPurchaseModal({
         </div>
 
         <div className="chip-purchase__packages">
-          {CHIP_PACKAGES.map((pkg, i) => (
+          {packages.map((pkg, i) => (
             <div
               key={pkg.id}
               className={`package ${pkg.popular ? 'popular' : ''}`}
@@ -174,7 +178,9 @@ export function ChipPurchaseModal({
               }}
             >
               {pkg.popular && <span className="popular-badge">BEST VALUE</span>}
-              {pkg.bonus && <span className="bonus-badge">+{pkg.bonus}% Bonus</span>}
+              {(pkg.valuePct ?? pkg.bonus) ? (
+                <span className="bonus-badge">+{pkg.valuePct ?? pkg.bonus}% value</span>
+              ) : null}
 
               <div className="package__chips">
                 <span className="value">{pkg.chips.toLocaleString()}</span>

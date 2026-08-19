@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { useToast } from '../../components/common/Toast';
 import { masterBus } from '../../core/MasterBus';
-import { fmtChips } from '../../utils/format';
+import { fmt, fmtChips } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
 import {
   CATEGORIES,
@@ -137,6 +137,13 @@ export default function StoreTab({
       onPurchased(typeof data.newBalance === 'number' ? data.newBalance : null);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
+      // A stale card (sold out, or already owned in another tab) must not leave
+      // the confirm modal sitting open over data we now know is wrong.
+      const flags = (err as { data?: { soldOut?: boolean; alreadyOwned?: boolean } })?.data;
+      if (flags?.soldOut || flags?.alreadyOwned) {
+        setBuyTarget(null);
+        onPurchased(null);
+      }
     } finally {
       setProcessing(false);
     }
@@ -208,16 +215,16 @@ export default function StoreTab({
             <div className={styles.priceBox}>
               <div className={styles.priceItem}>
                 <span className={styles.priceLabel}>Item Price</span>
-                <span className={styles.priceValueRed}>{fmtChips(buyTarget.price)}</span>
+                <span className={styles.priceValueRed}>{fmt(buyTarget.price)}</span>
               </div>
               <div className={styles.priceItem}>
                 <span className={styles.priceLabel}>Your Balance</span>
-                <span className={styles.priceValueGreen}>{fmtChips(balance)}</span>
+                <span className={styles.priceValueGreen}>{fmt(balance)}</span>
               </div>
             </div>
             {balance < buyTarget.price && (
               <div className={styles.insufficientFunds}>
-                Insufficient chips. You need {fmtChips(buyTarget.price - balance)} more.{' '}
+                Insufficient chips. You need {fmt(buyTarget.price - balance)} more.{' '}
                 <button className={styles.inlineLink} onClick={onGoChips}>
                   Get Chips
                 </button>

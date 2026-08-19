@@ -99,18 +99,27 @@ export default function ClubDashboard() {
   }, [clubId, dateRange]);
 
   // Leaderboard player stagger animation (with cleanup to prevent zombie timeouts)
+  //
+  // Keyed on a CONTENT signature, not on the topPlayers array identity. Every
+  // refresh builds a fresh array, so an identity dep re-ran this on each one:
+  // visiblePlayers was cleared and all rows faded back in from nothing. With
+  // refreshes arriving about once a second the leaderboard was permanently
+  // mid-animation, which is the visible half of "it keeps resetting".
+  // Now a refresh that returns the same players in the same order is a no-op.
+  const topPlayersSignature = topPlayers.map((p: any) => `${p?.id ?? p?.user_id ?? ''}`).join('|');
   useEffect(() => {
     setVisiblePlayers(new Set());
     // Clear previous stagger timers before starting new ones
     staggerTimersRef.current.forEach((t) => clearTimeout(t));
-    staggerTimersRef.current = topPlayers.map((_, i) =>
+    staggerTimersRef.current = topPlayersRefRef.current.map((_, i) =>
       setTimeout(() => setVisiblePlayers((prev) => new Set(prev).add(i)), i * 60)
     );
     return () => {
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = [];
     };
-  }, [topPlayers]);
+     
+  }, [topPlayersSignature]);
 
   // Real-time subscription for table, member, and hand changes
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
@@ -131,7 +140,7 @@ export default function ClubDashboard() {
     table: 'tables',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
-    onPayload: () => loadDashboardData(),
+    onPayload: () => loadDashboardData(true),
     enabled: !!resolvedClubId,
   });
 
@@ -141,7 +150,7 @@ export default function ClubDashboard() {
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
-    onPayload: () => loadDashboardData(),
+    onPayload: () => loadDashboardData(true),
     enabled: !!resolvedClubId,
   });
 
@@ -154,29 +163,53 @@ export default function ClubDashboard() {
 
   // ── Bus Listeners: cross-page event reactivity (debounced, scoped by clubId) ──
   useEffect(() => {
+    // ONE debounce shared by every event, not one per event type.
+    //
+    // subscribeDebounced debounces each event NAME independently, so fifteen
+    // subscriptions meant fifteen independent timers: a club taking hands,
+    // seating players and moving chips at once could out-run all of them and
+    // reload several times a second. SHARK CLUB has 578 members and the engine
+    // deals roughly three hands a second, so HAND_COMPLETED alone at a 1s
+    // debounce guaranteed a reload every single second.
+    //
+    // A dashboard does not need per-second numbers. Coalescing to one trailing
+    // timer means a burst of twenty events across five types costs ONE reload.
+    const COALESCE_MS = 2000;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
+
     const reload = (payload?: any) => {
       if (payload?.clubId && payload.clubId !== clubId) return;
-      loadDashboardData();
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        if (!disposed) loadDashboardData(true); // silent: no loading skeleton
+      }, COALESCE_MS);
     };
-    const unsubs = [
-      masterBus.subscribeDebounced('CLUB_UPDATED', reload, 500),
-      masterBus.subscribeDebounced('CLUB_JOINED', reload, 500),
-      masterBus.subscribeDebounced('CLUB_LEFT', reload, 500),
-      masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 500),
-      masterBus.subscribeDebounced('TABLE_SEATED', reload, 500),
-      masterBus.subscribeDebounced('TABLE_LEFT', reload, 500),
-      masterBus.subscribeDebounced('TABLE_CREATED', reload, 500),
-      masterBus.subscribeDebounced('CHIPS_ADDED', reload, 500),
-      masterBus.subscribeDebounced('CHIPS_WITHDRAWN', reload, 500),
-      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 500),
-      masterBus.subscribeDebounced('HAND_COMPLETED', reload, 1000),
-      masterBus.subscribeDebounced('SETTLEMENT_CYCLE_COMPLETED', reload, 1000),
-      masterBus.subscribeDebounced('COLLUSION_DETECTED', reload, 2000),
+
+    const EVENTS = [
+      'CLUB_UPDATED',
+      'CLUB_JOINED',
+      'CLUB_LEFT',
+      'BALANCE_UPDATED',
+      'TABLE_SEATED',
+      'TABLE_LEFT',
+      'TABLE_CREATED',
+      'CHIPS_ADDED',
+      'CHIPS_WITHDRAWN',
+      'ANNOUNCEMENT_CHANGED',
+      'HAND_COMPLETED',
+      'SETTLEMENT_CYCLE_COMPLETED',
+      'COLLUSION_DETECTED',
       // Level recompute: role promotions trigger SQL level recalc
-      masterBus.subscribeDebounced('AGENT_UPDATED', reload, 500),
-      masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', reload, 500),
-    ];
+      'AGENT_UPDATED',
+      'MEMBER_ROLE_CHANGED',
+    ] as const;
+    const unsubs = EVENTS.map((evt) => masterBus.subscribe(evt, reload));
+
     return () => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
       unsubs.forEach((unsub) => unsub());
     };
   }, [clubId]);
@@ -213,12 +246,22 @@ export default function ClubDashboard() {
     }
   };
 
-  const loadDashboardData = async () => {
+  /**
+   * @param silent  Background refresh triggered by a realtime/bus event rather
+   *   than by the user arriving. Skips setLoading(true).
+   *
+   *   Every bus-driven refresh used to flip the page into its full loading
+   *   state. On a busy club that fires about once a second (see the coalesced
+   *   reload below), so the dashboard spent its life re-entering "loading"
+   *   and never settled — reported as "it just keeps resetting over and over".
+   *   The data still refreshes; only the skeleton is suppressed.
+   */
+  const loadDashboardData = async (silent = false) => {
     if (!clubId) return;
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoadError(false);
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       // Load club info
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);

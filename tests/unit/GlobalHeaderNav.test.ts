@@ -1,0 +1,140 @@
+/**
+ * THE HEADER'S WAY OUT (2026-08-19).
+ *
+ * Dan: "the club arena needs a back button and hub button inside the global
+ * header, and the global header should stretch across the top of the page."
+ *
+ * All three faults were invisible to every test that existed, because none of
+ * them are logic:
+ *
+ *   - Back was rendered only when `pageDepth >= 2`, so the lobby never had one.
+ *   - Hub had a handler, `handleHubClick`, and no button anywhere that called
+ *     it. Written, wired to nothing, shipped.
+ *   - The bar shrank to the width of its own icons, because it sits in a
+ *     `align-items: center` flex column and nothing told it to stretch.
+ *
+ * These assertions read the source rather than rendering it, and that is a
+ * deliberate trade. Rendering GlobalHeader means standing up react-router, two
+ * zustand stores, the MasterBus and a Supabase-backed auth hook — the same
+ * import-time Supabase client that already leaves 71 files failing in this
+ * suite. A test that cannot run is worth less than one that pins the exact
+ * three things that were wrong. What it cannot catch is a button that renders
+ * but is invisible or unclickable; that is what the screenshot check is for.
+ *
+ * The asset checks are not padding. These buttons are images with no text
+ * fallback, so a renamed or missing PNG is a blank space in the header that
+ * nothing else in CI would notice.
+ */
+import { describe, it, expect } from 'vitest';
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+const exists = (rel: string) => existsSync(fileURLToPath(new URL(rel, import.meta.url)));
+
+const TSX = read('../../src/components/navigation/GlobalHeader.tsx');
+const CSS = read('../../src/components/navigation/GlobalHeader.module.css');
+const LAYOUT = read('../../src/components/layouts/AppLayout.tsx');
+
+/**
+ * Comments explain the bugs by name, so "the word is gone" is the wrong
+ * question — "the identifier is gone" is the right one. Strip block and line
+ * comments before asking.
+ */
+const stripComments = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+const TSX_CODE = stripComments(TSX);
+const LAYOUT_CODE = stripComments(LAYOUT);
+
+/** The declaration block for a single class selector, e.g. `.header { ... }`. */
+function ruleBody(css: string, selector: string): string {
+  const start = css.indexOf(`${selector} {`);
+  expect(start, `no rule for ${selector}`).toBeGreaterThan(-1);
+  const end = css.indexOf('}', start);
+  return css.slice(start, end);
+}
+
+describe('the bar stretches across the top', () => {
+  const header = ruleBody(CSS, '.header');
+
+  it.each([
+    ['align-self: stretch', 'overrides the parent flex column centring the bar'],
+    ['width: 100%', 'covers parents that are not flex containers'],
+    ['box-sizing: border-box', 'keeps the horizontal padding inside the 100%'],
+  ])('.header declares %s — %s', (decl) => {
+    expect(header).toContain(decl);
+  });
+
+  it('still spreads its three groups apart', () => {
+    expect(header).toContain('justify-content: space-between');
+  });
+
+  it('is not capped by a max-width anywhere in the file', () => {
+    // A max-width on .header would reinstate the floating pill by another route.
+    expect(ruleBody(CSS, '.header')).not.toContain('max-width');
+  });
+});
+
+describe('both ways out are always there', () => {
+  it('renders a Back button', () => {
+    expect(TSX).toContain('aria-label="Go back"');
+  });
+
+  it('renders a Hub button', () => {
+    expect(TSX).toContain('aria-label="Go to the Hub"');
+  });
+
+  it('neither is behind a page-depth condition any more', () => {
+    // The exact shape of the old bug: `{isSubPage && (<button ... Go back`.
+    expect(TSX_CODE).not.toContain('isSubPage');
+    expect(TSX_CODE).not.toContain('pageDepth');
+  });
+
+  it('AppLayout no longer passes a depth the header ignores', () => {
+    expect(LAYOUT_CODE).not.toContain('pageDepth');
+  });
+});
+
+describe('no handler is left wired to nothing', () => {
+  it.each(['handleHubClick', 'handleBackClick', 'handleMenuToggle'])(
+    '%s is both defined and used in an onClick',
+    (fn) => {
+      expect(TSX_CODE, `${fn} is not defined`).toContain(`const ${fn} =`);
+      expect(TSX_CODE, `${fn} is defined but never wired to a button`).toContain(
+        `onClick={${fn}}`
+      );
+    }
+  );
+
+  it('Back goes back through the browser, not just the router', () => {
+    // Dan's choice: one step down the history stack, even out of Club Arena.
+    expect(TSX_CODE).toContain('window.history.back()');
+  });
+
+  it('Hub leaves for /hub rather than routing inside Club Arena', () => {
+    expect(TSX_CODE).toMatch(/navigateToHub\(\s*'\/hub'\s*\)/);
+  });
+});
+
+describe('the button artwork exists', () => {
+  const IMAGES = ['btn-hamburger-v4.png', 'btn-back.png', 'btn-hub-v4.png'] as const;
+
+  it.each(IMAGES)('%s is referenced by the header', (file) => {
+    expect(TSX).toContain(`images/${file}`);
+  });
+
+  it.each(IMAGES)('%s is actually in public/images', (file) => {
+    // These buttons are images with no text fallback. A missing file is a hole
+    // in the header, and nothing else in CI would say a word about it.
+    expect(exists(`../../public/images/${file}`)).toBe(true);
+  });
+
+  it('every header image reference resolves to a real file', () => {
+    const referenced = [...TSX.matchAll(/\$\{BASE\}images\/([A-Za-z0-9._-]+)/g)].map((m) => m[1]);
+    expect(referenced.length).toBeGreaterThanOrEqual(IMAGES.length);
+    for (const file of referenced) {
+      expect(exists(`../../public/images/${file}`), `missing public/images/${file}`).toBe(true);
+    }
+  });
+});

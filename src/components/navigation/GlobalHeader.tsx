@@ -19,17 +19,24 @@ import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 const BASE = MEDIA_BASE;
 
-interface GlobalHeaderProps {
-  pageDepth?: number;
-  showSearch?: boolean;
-  onSearchClick?: () => void;
-}
-
-export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
+/*
+ * Dan 2026-08-19: "the club arena needs a back button and hub button inside the
+ * global header."
+ *
+ * Neither was reaching the screen. Back existed but was gated behind
+ * `pageDepth >= 2`, so the lobby — the page you are on when you most want a way
+ * out — never showed it. Hub was worse: handleHubClick was written, and then
+ * nothing ever rendered a button that called it. AppLayout's own comment
+ * promised "Lobby (/) = pageDepth 1 (HUB button)", which had never been true.
+ *
+ * Both are now unconditional, so there is no state in which the header offers
+ * no way out of Club Arena. That makes pageDepth meaningless, and showSearch /
+ * onSearchClick were already declared and never read, so all three props are
+ * gone rather than left sitting there looking like they do something.
+ */
+export default function GlobalHeader() {
   const navigate = useNavigate();
   const location = useLocation();
-  const prevPathRef = useRef(location.pathname);
-  const inAppNavCountRef = useRef(0);
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
 
@@ -52,13 +59,6 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
     },
     { debounce: 200 }
   );
-
-  useEffect(() => {
-    if (prevPathRef.current !== location.pathname) {
-      inAppNavCountRef.current++;
-      prevPathRef.current = location.pathname;
-    }
-  }, [location.pathname]);
 
   useEffect(() => {
     const handleKeyboard = (e: KeyboardEvent) => {
@@ -90,8 +90,6 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
       window.removeEventListener('touchend', handleTouchEnd);
     };
   }, []);
-
-  const isSubPage = pageDepth >= 2;
 
   useEffect(() => {
     if (!authUser?.id) return;
@@ -150,12 +148,13 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
     return () => window.removeEventListener('message', handleIframeMessage);
   }, []);
 
+  /**
+   * Dan's choice, 2026-08-19: Back is the browser's Back, always — one step
+   * down the history stack even when that step leaves Club Arena entirely.
+   * Not a router-scoped back that stops at the app boundary.
+   */
   const handleBackClick = () => {
-    if (inAppNavCountRef.current > 0) {
-      navigate(-1);
-    } else {
-      navigate('/', { replace: true });
-    }
+    window.history.back();
   };
 
   const navigateToHub = useCallback((path: string) => {
@@ -192,26 +191,38 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
       </Suspense>
 
       <header className={styles.header} style={headerStyle}>
-        {/* LEFT: Back button (sub-pages) + Hamburger always visible */}
+        {/* LEFT: Hamburger, then Back and Hub sitting immediately left of the
+            brand. All three are always rendered — see the note on the component. */}
         <div className={styles.headerLeft}>
-          {isSubPage && (
-            <button
-              onClick={handleBackClick}
-              className={`${styles.headerImgBtn} ${styles.headerNavBtn}`}
-              aria-label="Go back"
-            >
-              <img
-                src={`${BASE}images/btn-back.png`}
-                alt="Back"
-                style={{ height: '100%', width: '100%', objectFit: 'contain' }}
-              />
-            </button>
-          )}
           <button onClick={handleMenuToggle} className={styles.hamburgerBtn} aria-label="Open Menu">
             <img
               src={`${BASE}images/btn-hamburger-v4.png`}
               alt="Menu"
               style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          </button>
+          <button
+            onClick={handleBackClick}
+            className={`${styles.headerImgBtn} ${styles.headerNavBtn}`}
+            aria-label="Go back"
+            title="Back"
+          >
+            <img
+              src={`${BASE}images/btn-back.png`}
+              alt="Back"
+              style={{ height: '100%', width: '100%', objectFit: 'contain' }}
+            />
+          </button>
+          <button
+            onClick={handleHubClick}
+            className={`${styles.headerImgBtn} ${styles.headerNavBtn}`}
+            aria-label="Go to the Hub"
+            title="Hub"
+          >
+            <img
+              src={`${BASE}images/btn-hub-v4.png`}
+              alt="Hub"
+              style={{ height: '100%', width: '100%', objectFit: 'contain' }}
             />
           </button>
         </div>

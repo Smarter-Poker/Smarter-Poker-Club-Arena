@@ -3,7 +3,7 @@
  * Main shell layout with navigation
  * ═══════════════════════════════════════════════════════════════════════════════
  * GLOBAL COMPONENTS WIRED:
- * - GlobalHeader: Contains HUB button and navigation icons
+ * - GlobalHeader: Hamburger, Back, Hub and the navigation orbs
  * - NotificationDropdown: Real-time notification center in header
  * - ClubAnnouncementBanner: Important announcements at top of content
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -62,9 +62,10 @@ export default function AppLayout() {
         <CompleteProfileModal isOpen={showProfileModal} onComplete={finishProfile} />
       )}
 
-      {/* Global Header — Always visible except on active table pages */}
-      {/* Lobby (/) = pageDepth 1 (HUB button), Sub-pages = pageDepth 2 (Back button) */}
-      {showGlobalHeader && <GlobalHeader pageDepth={location.pathname === '/' ? 1 : 2} />}
+      {/* Global Header — Always visible except on active table pages.
+          It carries Back and Hub on every page now, so there is no longer a
+          depth to tell it about. */}
+      {showGlobalHeader && <GlobalHeader />}
 
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
       <ClubAnnouncementBanner />

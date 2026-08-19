@@ -8048,3 +8048,44 @@ no stale-closure bug there.
 DB migration mirror: supabase/migrations/20260819j_leaderboard_correctness_pass.sql
 (dumped from the live catalog). Staging tables _lb_backfill_daily and
 _lb_hands_daily dropped after reconciliation.
+
+## 2026-08-19 (final pass) — leaderboard polish + union parity (Cowork/Claude)
+
+Second audit of the leaderboard work. Pipeline verified intact after other
+agents' migrations landed on the same tables (my trigger, RPCs and the
+fail-closed loss gate all still present and accruing: +267 seat-hands and
+matching win/loss deltas over a 25s sample).
+
+Fixed / added:
+- Podium places were missing the treatment the list rows already had: no
+  keyboard operability, no hand-count context, no unranked marker. Podium is
+  now role=button + tabIndex + Enter/Space with the same context line.
+- Players ranked below the visible cut had a rank number in the sticky card and
+  no row to place it against. Their own row is now pinned under a "Your
+  position" divider.
+- CSV export now carries the Hands column, so an exported ROI board can be
+  interpreted (an ROI without volume is not a ranking).
+- Union board brought to parity: fn_union_leaderboard_period_v2 (migration
+  20260819k). v1 had the same two defects fixed elsewhere earlier today - ROI
+  ordered by profit, and hands read from the rakeback-owned hands_played. The
+  union path is unreferenced by the client today, so this is pre-emptive.
+  getUnionLeaderboard now calls v2; the dead client-side union_clubs query and
+  its now-unused UnionClubRow type were removed.
+
+Checked, no action needed:
+- TablePage's in-table leaderboard calls getClubLeaderboard('profit') and maps
+  entry.value, so it inherited the real-profit fix with no change required.
+- A new third trigger on hand_history (trg_hand_history_club_member_stats,
+  another agent's club dashboard work) does NOT touch player_stats, so there is
+  no double-count with the leaderboard pipeline.
+
+FLAGGED, not fixed (different surface, another agent actively working it):
+club_member_daily_stats.profit is computed from stack deltas and does not
+reconcile. Against that feature's own club_hand_daily rake rollup, the sum of
+all players' profit should equal -(rake + bbj) for the day; it is off by
++139,681 on 08-18 and +123,756 on 08-19, and correlates with the leaderboard's
+per-player profit at r=0.0036 (459 of 461 players disagree by >1 chip). The
+leaderboard definition (winnings - contributions) satisfies chip conservation
+by construction and was measured at 100.05%/99.9999% of expected. Two
+surfaces will show contradictory profit for the same player until one is
+changed.

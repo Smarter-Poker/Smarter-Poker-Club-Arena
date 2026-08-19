@@ -487,6 +487,10 @@ export default function LeaderboardPage() {
       <div
         className={`podium-place ${cls}`}
         onClick={() => navigate(`/profile/${entry.userId}`)}
+        onKeyDown={rowKeyActivate(entry.userId)}
+        role="button"
+        tabIndex={0}
+        aria-label={`Place ${place}, ${entry.username}, ${formatValue(entry.value, metric)}`}
       >
         {place === 1 && <div className="podium-crown">{'♛'}</div>}
         <PlayerAvatar
@@ -507,6 +511,7 @@ export default function LeaderboardPage() {
         )}
         <span className="podium-name">{entry.username}</span>
         <span className={`podium-value ${textCls}`}>{formatValue(entry.value, metric)}</span>
+        {renderRowContext(entry)}
         <span className="podium-rank-emoji">{PODIUM_MEDALS[place - 1]}</span>
         <div className={`podium-bar ${barCls}`}></div>
       </div>
@@ -619,6 +624,7 @@ export default function LeaderboardPage() {
                     key: 'value',
                     label: METRIC_OPTIONS.find((m) => m.value === metric)?.label || 'Value',
                   },
+                  { key: 'hands', label: 'Hands' },
                   { key: 'change', label: 'Change' },
                   { key: 'userId', label: 'User ID' },
                 ]);
@@ -787,6 +793,39 @@ export default function LeaderboardPage() {
                 </div>
               </div>
             ))}
+
+            {/* Ranked, but below the visible cut - pin their own row so the number
+                in the sticky card has something to sit against. */}
+            {userRank && !entries.some((e) => e.userId === user?.id) && (
+              <>
+                <div className="rankings-divider">
+                  <span>Your position</span>
+                </div>
+                <div
+                  className="leaderboard-entry current-user pinned-self"
+                  onClick={() => user?.id && navigate(`/profile/${user.id}`)}
+                  onKeyDown={user?.id ? rowKeyActivate(user.id) : undefined}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Your position, ${getRankLabel(userRank.rank)}, ${formatValue(userRank.value, metric)}`}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <span className="entry-rank">{getRankLabel(userRank.rank)}</span>
+                  <div className="entry-avatar">
+                    <span>{'\u2605'}</span>
+                  </div>
+                  <div className="entry-info">
+                    <span className="entry-name">You</span>
+                    <span className="entry-subline">
+                      of {userRank.total.toLocaleString('en-US')} ranked
+                    </span>
+                  </div>
+                  <div className={`entry-value ${userRank.value >= 0 ? 'positive' : 'negative'}`}>
+                    {formatValue(userRank.value, metric)}
+                  </div>
+                </div>
+              </>
+            )}
           </>
         ) : activeTab === 'tournaments' && tournamentStats.length > 0 ? (
           <>

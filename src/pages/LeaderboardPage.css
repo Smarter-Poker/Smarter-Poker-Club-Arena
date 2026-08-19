@@ -1953,3 +1953,9 @@
   font-size: 0.72rem;
   opacity: 0.8;
 }
+
+/* Pinned "you" row for players ranked below the visible cut */
+.leaderboard-entry.pinned-self {
+  border: 1px dashed rgba(65, 105, 225, 0.55);
+  background: rgba(65, 105, 225, 0.08);
+}

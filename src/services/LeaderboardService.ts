@@ -49,10 +49,6 @@ interface ProfileRow {
   tier?: string;
 }
 
-interface UnionClubRow {
-  club_id: string;
-}
-
 export type LeaderboardPeriod = 'daily' | 'weekly' | 'monthly' | 'all_time';
 export type LeaderboardMetric =
   | 'profit'
@@ -279,6 +275,14 @@ export const LeaderboardService = {
   /**
    * Get leaderboard for a union (all member clubs combined)
    */
+  /**
+   * Get leaderboard for a union (all member clubs combined).
+   *
+   * AUDIT 2026-08-19: routed to fn_union_leaderboard_period_v2, which shares the
+   * club board's semantics - hands from hands_dealt, ROI ordered by real ROI with
+   * a volume qualifier, and a true rank_change. The v1 function ordered the ROI
+   * board by profit and read the rakeback-owned hands_played column.
+   */
   async getUnionLeaderboard(
     unionId: string,
     metric: LeaderboardMetric = 'profit',
@@ -286,52 +290,19 @@ export const LeaderboardService = {
     limit: number = 20
   ): Promise<LeaderboardEntry[]> {
     try {
-      const isRatio = metric === 'vpip' || metric === 'pfr';
-      const usePeriod = !isRatio && period !== 'all_time';
-
-      let statsData: PlayerStatsRow[] | null = null;
-
-      if (usePeriod) {
-        const { data, error } = await supabase.rpc('fn_union_leaderboard_period', {
-          p_union_id: unionId,
-          p_metric: metric,
-          p_period: period,
-          p_limit: limit,
-        });
-        if (error || !data) {
-          reportError(error, 'LeaderboardService.getUnionLeaderboard_rpc');
-          return [];
-        }
-        statsData = data as PlayerStatsRow[];
-      } else {
-        const { data: unionClubs } = await supabase
-          .from('union_clubs')
-          .select('club_id')
-          .eq('union_id', unionId);
-        if (!unionClubs || unionClubs.length === 0) return [];
-        const clubIds = unionClubs.map((uc: UnionClubRow) => uc.club_id);
-        const metricToColumn: Record<string, string> = {
-          profit: 'total_winnings',
-          hands_played: 'hands_played',
-          vpip: 'vpip',
-          pfr: 'pfr',
-          tournaments_won: 'tournaments_won',
-          roi: 'total_winnings',
-        };
-        const orderCol = metricToColumn[metric] || 'total_winnings';
-        const { data, error } = await supabase
-          .from('player_stats')
-          .select(
-            'user_id, hands_played, total_winnings, total_losses, vpip, pfr, tournaments_played, tournaments_won'
-          )
-          .in('club_id', clubIds)
-          .order(orderCol, { ascending: false })
-          .limit(limit);
-        if (error || !data) return [];
-        statsData = data as PlayerStatsRow[];
+      // vpip/pfr are per-club ratios with no meaningful cross-club aggregate.
+      if (metric === 'vpip' || metric === 'pfr') return [];
+      const { data, error } = await supabase.rpc('fn_union_leaderboard_period_v2', {
+        p_union_id: unionId,
+        p_metric: metric,
+        p_period: period,
+        p_limit: limit,
+      });
+      if (error || !data) {
+        reportError(error, 'LeaderboardService.getUnionLeaderboard');
+        return [];
       }
-
-      return await decorateWithProfiles(statsData, metric);
+      return await decorateWithProfiles(data as PlayerStatsRow[], metric);
     } catch (err: unknown) {
       reportError(err, 'LeaderboardService.getUnionLeaderboard_err');
       return [];

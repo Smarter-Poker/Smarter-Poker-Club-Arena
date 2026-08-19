@@ -548,6 +548,20 @@ const SNG_CONFIGS: SNGConfig[] = [
   },
 ];
 
+/**
+ * Dan 2026-08-19: "SPINS ARE ALWAYS 3 HANDED."
+ *
+ * Not a per-config choice. A Spin & Go is a three-handed hyper by definition —
+ * its multipliers, blind structure and prize maths are all built around exactly
+ * three players — so the seat count belongs to the FORMAT, not to any one
+ * tournament's config. Every SPIN_CONFIG already says 3; this is what stops one
+ * that does not from slipping through.
+ *
+ * SNGs are NOT this. They carry their own max_players (6 in production) and
+ * must keep reading it from their config.
+ */
+export const SPIN_SEATS = 3;
+
 const SPIN_CONFIGS: SpinConfig[] = [
   {
     name: '1 Chip Spin NLH',
@@ -1316,6 +1330,19 @@ export class TournamentRecurringService {
     config: SpinConfig
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
+      // A Spin is three-handed by definition. The seat count is forced below
+      // regardless, but a config that disagrees is a bug in that config and
+      // must not pass unnoticed.
+      if (config.maxPlayers !== SPIN_SEATS || (config.minPlayers ?? SPIN_SEATS) !== SPIN_SEATS) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] Spin config "${config.name}" declares ` +
+              `${config.maxPlayers}/${config.minPlayers} players; Spins are always ` +
+              `${SPIN_SEATS}-handed. Forcing ${SPIN_SEATS}.`
+          ),
+          'TournamentRecurring.spin_seat_count_override'
+        );
+      }
       const startTime = new Date(Date.now() + 60 * 1000);
       const multiplier = this.rollSpinMultiplier(config.spinMultipliers);
 
@@ -1339,8 +1366,10 @@ export class TournamentRecurringService {
           guaranteed_prize: 0, // Will be calculated after registrations
           spin_multiplier: multiplier,
           starting_chips: config.startingStack,
-          max_players: config.maxPlayers,
-          min_players: config.minPlayers || 3,
+          // Forced, not read from the config — a Spin is 3-handed by
+          // definition. See SPIN_SEATS.
+          max_players: SPIN_SEATS,
+          min_players: SPIN_SEATS,
           current_players: 0,
           status: 'REGISTERING',
           blind_structure: config.blindStructure,

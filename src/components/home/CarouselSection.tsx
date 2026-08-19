@@ -124,20 +124,16 @@ export default function CarouselSection({
   }, [orderedClubs]);
 
   // Auto-scroll to center the Shark Club card on initial mount only
-  // Dep array is [] — hasScrolledRef prevents re-scroll; orderedClubs is not needed
   useEffect(() => {
     if (hasScrolledRef.current) return;
-    const timeout = setTimeout(() => {
-      if (sharkCardRef.current && carouselRef.current) {
-        sharkCardRef.current.scrollIntoView({
-          behavior: 'smooth',
-          inline: 'center',
-          block: 'nearest',
-        });
-        hasScrolledRef.current = true;
-      }
-    }, 400);
-    return () => clearTimeout(timeout);
+    if (sharkCardRef.current && carouselRef.current) {
+      sharkCardRef.current.scrollIntoView({
+        behavior: 'auto', // Instant scroll so it doesn't "snap to center" visibly
+        inline: 'center',
+        block: 'nearest',
+      });
+      hasScrolledRef.current = true;
+    }
   }, []);
 
   // Enhancement #7: Haptic on scroll snap

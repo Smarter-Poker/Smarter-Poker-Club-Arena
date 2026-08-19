@@ -79,7 +79,23 @@ export abstract class ServerTableEngineBase {
   protected tableFSM: StateMachine<TableStatus> = createTableStateMachine('empty');
   /** Bible V8 §3.2: Formal Turn State Machine — unifies timer/timebank/preaction/disconnect */
   protected turnFSM: StateMachine<TurnFSMState> = createTurnStateMachine('waiting');
+  /**
+   * GLOBAL HAND NUMBER of the hand currently being dealt (2026-08-18).
+   *
+   * This used to be a per-table counter starting at 0, which is why "Hand #196"
+   * existed simultaneously on many tables — across the most recent 20,000 hands
+   * there were only 7,468 distinct numbers. It now holds a value allocated from
+   * the database sequence `global_hand_number_seq`, so a hand number identifies
+   * exactly one hand platform-wide, forever.
+   *
+   * The name is kept because ~30 call sites use it to mean "which hand is
+   * this"; those are all correct unchanged. Anywhere that genuinely means
+   * "how many hands" uses `handsDealtThisSession` instead.
+   */
   protected handCount: number = 0;
+
+  /** How many hands this engine has dealt since it started (a COUNT, not an id). */
+  protected handsDealtThisSession: number = 0;
   protected handController: HandController | null = null;
 
   // ── ADDITIVE (flag-gated, default OFF) — event-sourcing shadow / observability / integrity ──
@@ -735,7 +751,9 @@ export abstract class ServerTableEngineBase {
     // Bible V8 §3.1: Table FSM — closing → closed (cleanup complete)
     this.tableFSM.transition('closed');
 
-    console.log(`[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handCount} hands.`);
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handsDealtThisSession} hands.`
+    );
   }
 
   /**
@@ -821,7 +839,7 @@ export abstract class ServerTableEngineBase {
     reportError(
       new Error('Engine self-terminating for restart: ' + reason),
       'ServerTableEngine.' + this.tableId + '.watchdog_kill',
-      { handCount: this.handCount }
+      { handCount: this.handsDealtThisSession, currentHandNumber: this.handCount }
     );
     this.recordRecoveryEvent('watchdog_kill_rebuild', reason);
     this.running = false;
@@ -838,6 +856,57 @@ export abstract class ServerTableEngineBase {
   isRunning(): boolean {
     return this.running;
   }
+  /**
+   * Allocate this hand's GLOBAL hand number (2026-08-18).
+   *
+   * One `nextval` per hand, at deal time. Deliberately NOT batched into
+   * per-table blocks: a block would let table A hold 1,000,100-1,000,199 while
+   * table B deals 1,000,200, so the numbers would no longer ascend in the order
+   * hands were actually dealt — which is the property that makes them useful
+   * for investigating "what happened next".
+   *
+   * ON FAILURE IT REFUSES TO DEAL, by design. A hand that cannot be numbered
+   * also cannot be settled, raked, recorded to history, or paid a jackpot —
+   * every one of those needs the same database. Dealing an unnumbered ghost
+   * hand would produce real money movement that no number can ever identify,
+   * which is precisely the situation this work exists to end. Failing here
+   * stalls one hand; dealing anyway corrupts the audit trail permanently.
+   */
+  protected async allocateGlobalHandNumber(): Promise<number> {
+    const MAX_ATTEMPTS = 3;
+    let lastErr: unknown = null;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const { data, error } = await supabase.rpc('fn_next_hand_number');
+        if (error) throw error;
+        const n = Number(data);
+        // A sequence never returns 0, NULL or anything below its MINVALUE, so
+        // any of those means we did not get a real allocation.
+        if (Number.isFinite(n) && n >= 1000000) return n;
+        throw new Error(`allocator returned an unusable value: ${JSON.stringify(data)}`);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, 100 * attempt));
+        }
+      }
+    }
+
+    reportError(
+      new Error(
+        `[HandNumber] Could not allocate a global hand number for table ${this.tableId} ` +
+          `after ${MAX_ATTEMPTS} attempts — refusing to deal. A hand that cannot be numbered ` +
+          `cannot be settled or audited. Underlying error: ${String(
+            (lastErr as { message?: string })?.message ?? lastErr
+          )}`
+      ),
+      'ServerTableEngine.hand_number_allocation_failed'
+    );
+    throw new Error('hand number allocation failed');
+  }
+
+  /** Hands dealt by this engine (a count). NOT the global hand number. */
   getHandCount(): number {
     return this.handCount;
   }
@@ -1086,7 +1155,7 @@ export abstract class ServerTableEngineBase {
           table_id: this.tableId,
           event,
           detail: detail.slice(0, 500),
-          hand_count: this.handCount,
+          hand_count: this.handsDealtThisSession,
         })
       )
         .then(({ error }) => {
@@ -1529,11 +1598,14 @@ export abstract class ServerTableEngineBase {
       }
 
       const last = Number((data as { hand_number?: number } | null)?.hand_number ?? 0);
-      // Never move the counter backwards.
-      if (Number.isFinite(last) && last > this.handCount) {
-        this.handCount = last;
+      // 2026-08-18: hand numbers now come from the global sequence, allocated
+      // fresh at each deal, so there is no counter to "resume" — the next hand
+      // cannot collide with anything no matter what this engine last saw. This
+      // is kept only to log where the table left off, which is genuinely useful
+      // when reading a crash trail.
+      if (Number.isFinite(last) && last > 0) {
         console.log(
-          `[ServerTableEngine:${this.tableId}] Hand counter resumed at #${this.handCount} (next hand: #${this.handCount + 1})`
+          `[ServerTableEngine:${this.tableId}] Last persisted hand on this table: #${last}`
         );
       }
     } catch (err) {

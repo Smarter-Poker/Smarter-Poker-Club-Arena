@@ -313,7 +313,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected async dealHand(players: SeatedPlayer[]): Promise<void> {
     if (!this.tableInfo) return;
 
-    this.handCount++;
+    // GLOBAL HAND NUMBER (2026-08-18). Allocated from the database sequence at
+    // the moment the hand is dealt, so numbers ascend in true deal order across
+    // every table, club, union, cash game and tournament, and can never repeat.
+    // Was `this.handCount++` — a per-table counter that reset on every engine
+    // restart and produced the same "Hand #196" on dozens of tables at once.
+    this.handCount = await this.allocateGlobalHandNumber();
+    this.handsDealtThisSession++;
     const handNumber = this.handCount;
     const handStartMs = Date.now(); // FIX 149: Capture hand start time for telemetry
     this.currentHandWentToFlop = false;

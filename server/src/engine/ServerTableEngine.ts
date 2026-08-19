@@ -31,7 +31,6 @@ import { ServerTableEngineHandEvents } from './ServerTableEngineHandEvents.js';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export class ServerTableEngine extends ServerTableEngineHandEvents {
-
   // ═════════════════════════════════════════════════════════════════════════════
   // Bible V8 §6.15: OBSERVER PERMISSIONS
   // ═════════════════════════════════════════════════════════════════════════════
@@ -231,13 +230,24 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           state.players ?? []
         );
         return (state.players ?? []).map((p) => {
-          let showCards = false;
-          if (state.stage === 'showdown' && !p.is_folded) {
-            const isWinner = this.currentHandWinnerIds.includes(p.user_id);
-            const voluntarilyShowing = this.showHandPlayers?.has(p.user_id) ?? false;
-            const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true;
-            showCards = isWinner || voluntarilyShowing || !autoMuckEnabled;
-          }
+          // ── Dan 2026-08-18: at showdown every hand still in it is face up ──
+          //
+          // This is the path that actually puts opponents' cards on the table:
+          // mapEngineSnapshot turns `cards` into the seat's holeCards. (The
+          // separate `showdown_cards_revealed` event is re-emitted onto
+          // MasterBus by TablePage but has no subscriber, so it renders
+          // nothing - this snapshot is the whole story.)
+          //
+          // It used to apply the auto-muck gate: winner, or voluntary shower,
+          // or auto_muck disabled. Every one of the 56,052 tables has
+          // auto_muck_enabled true, so only the winner's cards were ever sent.
+          // Measured over 10,165 hands that reached a full five-card board:
+          // 1.08 holdings shown on average.
+          //
+          // The `!p.is_folded` guard is what keeps this safe and it stays. A
+          // player who folded is never included, so a fold is never exposed;
+          // only players who took the hand to showdown are turned over.
+          const showCards = state.stage === 'showdown' && !p.is_folded;
           return {
             seat: p.seat,
             user_id: p.user_id,

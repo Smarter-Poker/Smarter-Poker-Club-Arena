@@ -99,7 +99,19 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
   });
 
   const toggleSetting = (key: keyof TableSettings) => {
-    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+    setSettings((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      // Turning Run It Twice ON tightens the seat cap (three boards have to
+      // come out of what the deal left behind). Pull a now-illegal seat count
+      // down with it, or the create call would be rejected server-side with a
+      // number the user can still see selected.
+      if (key === 'run_it_twice') {
+        setMaxPlayers((seats) =>
+          String(clampSeatsForVariant(variant, Number(seats), { runItTwice: next.run_it_twice }))
+        );
+      }
+      return next;
+    });
   };
 
   const applyStakePreset = (preset: (typeof STAKE_PRESETS)[0]) => {
@@ -219,7 +231,13 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                     // Switching to a tighter variant must pull the seat count
                     // down with it; otherwise a 9 chosen under NLH survives
                     // into PLO6 and the create call is rejected server-side.
-                    setMaxPlayers((prev) => String(clampSeatsForVariant(next, Number(prev))));
+                    setMaxPlayers((prev) =>
+                      String(
+                        clampSeatsForVariant(next, Number(prev), {
+                          runItTwice: settings.run_it_twice,
+                        })
+                      )
+                    );
                   }}
                 >
                   {VARIANTS.map((v) => (
@@ -238,11 +256,14 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                   value={maxPlayers}
                   onChange={(e) => setMaxPlayers(e.target.value)}
                 >
-                  {/* Dan 2026-08-19: "ITS ALWAYS 6 MAX FOR PLO 6 AND 7 MAX FOR
-                      PLO5". This list used to be the same three options for
-                      every game, so a PLO6 table could be built at 9-max in one
-                      click — 54 hole cards plus a 5-card board out of 52. */}
-                  {seatOptionsForVariant(variant).map((o) => (
+                  {/* Dan 2026-08-19: the list used to be the same three options
+                      for every game, so a PLO6 table could be built at 9-max in
+                      one click — 54 hole cards plus a board out of 52. The cap
+                      is tighter again when Run It Twice is on, because three
+                      boards have to come out of what the deal left behind. */}
+                  {seatOptionsForVariant(variant, {
+                    runItTwice: settings.run_it_twice,
+                  }).map((o) => (
                     <option key={o.value} value={String(o.value)}>
                       {o.label}
                     </option>

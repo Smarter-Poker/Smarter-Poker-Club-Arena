@@ -140,15 +140,25 @@ class TableService {
     maxPlayers: number = 9,
     settings?: Partial<TableSettings>
   ): Promise<PokerTable> {
-    // Dan 2026-08-19: "ITS ALWAYS 6 MAX FOR PLO 6 AND 7 MAX FOR PLO5".
-    // Enforced HERE, not only in the modal, so every caller is covered — a
-    // PLO6 table at 9-max would need 59 cards out of a 52-card deck and
-    // PokerEngine.deal() throws rather than degrading.
-    const seatCap = maxSeatsForVariant(gameVariant);
+    // Dan 2026-08-19. Two rules, and the tighter one wins:
+    //   "ITS ALWAYS 6 MAX FOR PLO 6 AND 7 MAX FOR PLO5"        (house)
+    //   "...ALLOW FOR RUNNING IT MULTIPLE TIMES... OR 3 TIMES" (deck)
+    //   "...ONLY IF THE TABLE IS A RUN IT TWICE OR THREE TIMES TABLE, IF ITS
+    //    NOT THEN YOU CAN GO TO MAX POSSIBLE PLAYERS"
+    //
+    // So the deck constraint only binds when this table actually offers Run It
+    // Twice — three boards have to come out of what the deal left behind, and
+    // the worst case is a preflop all-in where every run needs a full five
+    // cards. Enforced HERE rather than only in the modal so every caller is
+    // covered; PokerEngine.deal() throws rather than degrading, so an
+    // over-seated table fails mid-hand.
+    const runItTwice = settings?.run_it_twice !== false;
+    const seatCap = maxSeatsForVariant(gameVariant, { runItTwice });
     if (maxPlayers > seatCap) {
       throw new Error(
-        `${String(gameVariant).toUpperCase()} tables are capped at ${seatCap} seats ` +
-          `(requested ${maxPlayers}).`
+        `${String(gameVariant).toUpperCase()} tables are capped at ${seatCap} seats` +
+          (runItTwice ? ' with Run It Twice enabled' : '') +
+          ` (requested ${maxPlayers}).`
       );
     }
     const defaultSettings: TableSettings = {

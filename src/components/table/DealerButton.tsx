@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import { dealerButtonPosition } from './tableGeometry';
 
 export interface DealerButtonProps {
   /** Index of the dealer seat (visual index, 0-based) */
@@ -29,18 +30,11 @@ export function DealerButton({ dealerVisualIndex, seatPositions, isVisible }: De
 
   const pos = seatPositions[dealerVisualIndex];
 
-  // Offset the button slightly toward the center of the table
-  // so it doesn't overlap the player avatar
-  const centerX = 50;
-  const centerY = 50;
-  // v10 mockup: the button tucks IN toward the felt horizontally, but stays
-  // close to its player vertically — the table is much taller than it is wide,
-  // so an equal y-factor would fling the button far up/down the felt and away
-  // from the seat it belongs to.
-  const offsetFactorX = 0.28;
-  const offsetFactorY = 0.16;
-  const btnX = pos.x + (centerX - pos.x) * offsetFactorX;
-  const btnY = pos.y + (centerY - pos.y) * offsetFactorY;
+  // Offset the button slightly toward the center of the table so it doesn't
+  // overlap the player avatar. The factors live in tableGeometry so the bet
+  // chips can position themselves relative to the button rather than guessing
+  // at it — see betChipFactor().
+  const { x: btnX, y: btnY } = dealerButtonPosition(pos);
 
   // Only position is inlined — every other visual property lives on the
   // `.dealer-button` CSS class so theme tokens, drop-in animation, and the

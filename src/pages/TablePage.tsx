@@ -214,6 +214,7 @@ import { tableService } from '../services/TableService';
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
 import { potSizedRaiseTo } from '../components/table/ActionPanel';
+import { betChipFactor } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
@@ -7488,14 +7489,22 @@ export default function TablePage({
             // Mockup v3 spec: bet/call/raise chip rests ~22% of the way from the
             // seat toward center — CLOSE to the player, not near the middle.
             // Convert the percent delta into scaler-space px (scaler ~300x462).
+            //
+            // Dan 2026-08-19, bug list item 8: "chips must always be in front of
+            // the user (in front of the button if they're the button)." The
+            // dealer button travels 0.28 of the way toward centre horizontally
+            // while the chips travelled a flat 0.22, so on the side seats the
+            // BUTTON stood further out on the felt than the chips it was
+            // supposed to stand behind. The seat holding the button now steps
+            // its chips PAST it — see betChipFactor() in tableGeometry.
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
-            // 22% of the way from the seat toward centre, in real scaler px.
             // pos.x/pos.y are percentages of the scaler, so one percent equals
             // scalerSize.w / 100 px horizontally and .h / 100 px vertically.
-            const BET_TRAVEL = 0.22;
-            const betOffsetX = Math.round((dx * scalerSize.w * BET_TRAVEL) / 100);
-            const betOffsetY = Math.round((dy * scalerSize.h * BET_TRAVEL) / 100);
+            const isDealerSeat = idx === dealerVisualIndex;
+            const betTravel = betChipFactor(isDealerSeat);
+            const betOffsetX = Math.round((dx * scalerSize.w * betTravel.x) / 100);
+            const betOffsetY = Math.round((dy * scalerSize.h * betTravel.y) / 100);
             // Bible V8 §1.16 — on collect, bet chips fly from their resting
             // spot the rest of the way toward the pot (~2x current offset).
             const collectDx = betOffsetX * 2;

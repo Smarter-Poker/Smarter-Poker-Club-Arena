@@ -206,7 +206,7 @@ export default function ClubActivityFeed({
           if (err) reportError(err?.message || err, 'ClubActivityFeed._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[ClubActivityFeed] ⏱️ Realtime channel timed out');
+          console.warn('[ClubActivityFeed] Realtime channel timed out');
         }
       });
 

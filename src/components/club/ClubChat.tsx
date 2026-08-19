@@ -141,7 +141,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
           if (err) reportError(err?.message || err, 'ClubChat._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[ClubChat] ⏱️ Realtime channel timed out');
+          console.warn('[ClubChat] Realtime channel timed out');
         }
       });
 
@@ -243,7 +243,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
           cursor: 'pointer',
         }}
       >
-        <span style={{ color: FB.text, fontSize: 13, fontWeight: 700 }}>💬 Club Chat</span>
+        <span style={{ color: FB.text, fontSize: 13, fontWeight: 700 }}>Club Chat</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {unread > 0 && (
             <span

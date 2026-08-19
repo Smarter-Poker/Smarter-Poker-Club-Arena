@@ -407,7 +407,7 @@ export default function ClubDashboard() {
               fontWeight: 600,
             }}
           >
-            🔄 Retry
+            Retry
           </button>
         </div>
         {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
@@ -465,19 +465,19 @@ export default function ClubDashboard() {
             ➕ New Table
           </Link>
           <Link to={`/clubs/${clubId}/financials`} className={styles.actionBtn}>
-            💰 Financials
+            Financials
           </Link>
           <Link to={`/clubs/${clubId}/disputes`} className={styles.actionBtn}>
-            ⚠️ Disputes
+            Disputes
           </Link>
           <Link to={`/clubs/${clubId}/announcements`} className={styles.actionBtn}>
             Announce
           </Link>
           <Link to={`/financial-health`} className={styles.actionBtn}>
-            🩺 Health
+            Health
           </Link>
           <Link to={`/financial-admin`} className={styles.actionBtn}>
-            🏦 Admin Hub
+            Admin Hub
           </Link>
           <Link to={`/clubs/${clubId}/settings`} className={styles.actionBtn}>
             Settings
@@ -494,7 +494,7 @@ export default function ClubDashboard() {
               }}
               disabled={isRecalculating}
             >
-              {isRecalculating ? '🔄 Processing...' : '🔄 Recalculate Level'}
+              {isRecalculating ? 'Processing...' : 'Recalculate Level'}
             </button>
           )}
         </div>
@@ -520,7 +520,7 @@ export default function ClubDashboard() {
       <nav className={styles.tabNav}>
         {[
           { id: 'overview', label: ' Overview', icon: '' },
-          { id: 'activity', label: '📡 Activity', icon: '📡' },
+          { id: 'activity', label: 'Activity', icon: '◉' },
           { id: 'players', label: ' Players', icon: '' },
           { id: 'tables', label: ' Tables', icon: '' },
         ].map((tab) => (
@@ -586,7 +586,7 @@ export default function ClubDashboard() {
 
             {/* Quick Activity Preview */}
             <section className={styles.activityPreview}>
-              <h2>📡 Recent Activity</h2>
+              <h2>Recent Activity</h2>
               {clubId && <ClubActivityFeed clubId={clubId} limit={5} />}
               <Link to={`/clubs/${clubId}/dashboard?tab=activity`} className={styles.viewAllLink}>
                 View All Activity →
@@ -597,7 +597,7 @@ export default function ClubDashboard() {
 
         {activeTab === 'activity' && (
           <div className={styles.activityFull}>
-            <h2>📡 Club Activity Feed</h2>
+            <h2>Club Activity Feed</h2>
             {clubId && <ClubActivityFeed clubId={clubId} limit={50} />}
           </div>
         )}

@@ -15,6 +15,12 @@ interface ChipPurchaseModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentDiamonds: number;
+  /**
+   * Club the chips are for. Chips live on club_members.chip_balance, so
+   * WITHOUT this the server credits the global player wallet, which the club
+   * shop, buy-ins and cashier cannot spend. See fn_purchase_club_chips.
+   */
+  clubId?: string | null;
   onPurchase?: (chipAmount: number) => void;
 }
 
@@ -38,6 +44,7 @@ export function ChipPurchaseModal({
   isOpen,
   onClose,
   currentDiamonds,
+  clubId,
   onPurchase,
 }: ChipPurchaseModalProps) {
   const { user } = useAuthUser();
@@ -70,6 +77,10 @@ export function ChipPurchaseModal({
       toast.error('Insufficient diamonds');
       return;
     }
+    if (!clubId) {
+      toast.error('Open the cashier from a club — chips are held per club');
+      return;
+    }
 
     setPurchasing(pkg.id);
     try {
@@ -80,7 +91,7 @@ export function ChipPurchaseModal({
       // service_role-only and those parameter names do not exist on it.)
       // The route holds the authoritative package table, charges the diamonds
       // and credits the chips atomically, and is idempotent against double-taps.
-      await callClubArenaApi('purchase-chips', { packageId: pkg.id });
+      await callClubArenaApi('purchase-chips', { packageId: pkg.id, clubId });
 
       if (!isMounted.current) return;
       toast.success(`${pkg.chips.toLocaleString()} chips added to your wallet!`);
@@ -127,7 +138,7 @@ export function ChipPurchaseModal({
               <button
                 className="package__buy"
                 onClick={() => handlePurchase(pkg)}
-                disabled={purchasing !== null || currentDiamonds < pkg.diamonds}
+                disabled={purchasing !== null || currentDiamonds < pkg.diamonds || !clubId}
               >
                 {purchasing === pkg.id ? '...' : `${pkg.diamonds} `}
               </button>

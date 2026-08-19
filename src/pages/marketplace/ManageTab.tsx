@@ -26,7 +26,9 @@ import {
 interface ManageTabProps {
   clubId: string;
   /** category -> grant mapping from /api/club-arena/store-catalog */
-  categories?: ShopCategoryInfo[];
+  categories: ShopCategoryInfo[];
+  /** false when the catalog request failed and we are on bundled defaults */
+  catalogFromServer: boolean;
   onShopChanged: () => void;
 }
 
@@ -36,9 +38,16 @@ interface EditDraft {
   description: string;
   category: string;
   imageUrl: string;
+  grantQty: string;
+  grantRef: string;
 }
 
-export default function ManageTab({ clubId, categories, onShopChanged }: ManageTabProps) {
+export default function ManageTab({
+  clubId,
+  categories,
+  catalogFromServer,
+  onShopChanged,
+}: ManageTabProps) {
   const toast = useToast();
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -46,6 +55,7 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [processing, setProcessing] = useState(false);
   const [grantQty, setGrantQty] = useState('1');
+  const [grantRef, setGrantRef] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [desc, setDesc] = useState('');
@@ -71,7 +81,8 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
       setTotalRevenue(Number(data.totalRevenue) || 0);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load shop items';
-      setItems([]);
+      // Keep whatever was already listed: blanking the catalogue on a transient
+      // failure is worse than showing slightly stale rows behind a banner.
       setLoadError(msg);
       toast.error(msg);
     } finally {
@@ -86,7 +97,13 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
   }, [loadItems]);
 
   // What the selected category will grant when a member redeems it.
-  const grantInfo = (categories || []).find((c) => c.name === category);
+  const grantInfo = categories.find((c) => c.name === category);
+  // Table skins and avatars need an id, or every one a club sells collapses to
+  // the same theme/avatar (and avatar_unlocks dedupes, granting nothing).
+  const secondsPerUse = categories.find((c) => c.grantType === 'time_bank')?.secondsPerUse ?? 20;
+  const grantNeedsRef = grantInfo?.grantType === 'table_skin' || grantInfo?.grantType === 'avatar';
+  const categoryNames =
+    categories.length > 0 ? categories.map((c) => c.name) : CATEGORIES.filter((c) => c !== 'All');
 
   const stats = {
     total: items.length,
@@ -127,8 +144,13 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
         description: desc.trim() || null,
         category,
         imageUrl: imageUrl.trim() || null,
-        grantType: grantInfo?.grantType,
-        grantQty: grantInfo?.grantUnit ? Math.max(1, Number(grantQty) || 1) : undefined,
+        // Only assert a grant type when the catalog is server-truth. On the
+        // bundled fallback we omit it so the SERVER derives it from category --
+        // sending a fabricated 'none' silently created items that granted
+        // nothing while still displaying as Time Banks/Throwables.
+        grantType: catalogFromServer ? grantInfo?.grantType : undefined,
+        grantQty: grantInfo?.grantUnit ? Math.max(1, Math.floor(Number(grantQty) || 1)) : undefined,
+        grantRef: grantNeedsRef ? grantRef.trim() || undefined : undefined,
       });
       toast.success('Item created');
       setName('');
@@ -136,6 +158,8 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
       setDesc('');
       setImageUrl('');
       setCategory('Time Banks');
+      setGrantQty('1');
+      setGrantRef('');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
@@ -151,8 +175,12 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
       name: item.name,
       price: String(item.price),
       description: item.description || '',
-      category: item.category && CATEGORIES.includes(item.category) ? item.category : 'Time Banks',
+      // Preserve an unrecognised category rather than silently rewriting it to
+      // 'Time Banks' and then persisting that rewrite on save.
+      category: item.category || 'Time Banks',
       imageUrl: item.image_url || '',
+      grantQty: String(item.grant_spec?.qty ?? 1),
+      grantRef: item.grant_spec?.avatar_id || item.grant_spec?.theme_id || '',
     });
   };
 
@@ -162,6 +190,10 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
     if (numPrice == null) return;
     setProcessing(true);
     try {
+      // The grant MUST travel with the category. Updating category alone left
+      // e.g. a time-bank grant on a row now labelled "Avatars", so the card
+      // advertised table time and redeeming granted time bank seconds.
+      const nextGrant = categories.find((c) => c.name === draft.category);
       await callClubArenaApi('manage-shop', {
         action: 'update',
         clubId,
@@ -171,6 +203,11 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
         description: draft.description.trim(),
         category: draft.category,
         imageUrl: draft.imageUrl.trim() || null,
+        grantType: nextGrant?.grantType,
+        grantQty: nextGrant?.grantUnit
+          ? Math.max(1, Math.floor(Number(draft.grantQty) || 1))
+          : undefined,
+        grantRef: draft.grantRef.trim() || undefined,
       });
       toast.success('Item updated');
       setEditingId(null);
@@ -200,6 +237,7 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
   };
 
   const handleDelete = async (item: MarketplaceItem) => {
+    if (processing) return;
     if ((item.purchase_count || 0) > 0) {
       toast.error(
         'This item has sales. Deleting it would erase its purchase history — hide it instead.'
@@ -286,8 +324,9 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             className={styles.formSelect}
+            aria-label="Item category"
           >
-            {CATEGORIES.filter((c) => c !== 'All').map((cat) => (
+            {categoryNames.map((cat) => (
               <option key={cat} value={cat}>
                 {cat}
               </option>
@@ -317,6 +356,25 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
               {grantInfo.grantType === 'time_bank'
                 ? `= ${(Number(grantQty) || 1) * (grantInfo.secondsPerUse || 20)}s of table time`
                 : `${Number(grantQty) || 1} free ${grantInfo.grantUnit}`}
+            </span>
+          </div>
+        )}
+        {grantNeedsRef && (
+          <div className={styles.formRow}>
+            <input
+              value={grantRef}
+              onChange={(e) => setGrantRef(e.target.value)}
+              placeholder={
+                grantInfo?.grantType === 'avatar'
+                  ? 'Avatar id (e.g. shark)'
+                  : 'Theme id (e.g. royal_gold)'
+              }
+              aria-label={grantInfo?.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
+              className={styles.formInput}
+              maxLength={64}
+            />
+            <span className={styles.grantHint}>
+              Unique per item — two items sharing an id unlock the same thing.
             </span>
           </div>
         )}
@@ -375,8 +433,10 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
                     {item.purchase_count || 0} sold
                     {item.revenue ? ` - ${fmtChips(item.revenue)} earned` : ''}
                   </div>
-                  {describeGrant(item.grant_spec) && (
-                    <div className={styles.grantHint}>Grants: {describeGrant(item.grant_spec)}</div>
+                  {describeGrant(item.grant_spec, secondsPerUse) && (
+                    <div className={styles.grantHint}>
+                      Grants: {describeGrant(item.grant_spec, secondsPerUse)}
+                    </div>
                   )}
                 </div>
                 <div className={styles.adminActions}>
@@ -448,8 +508,12 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
                       value={draft.category}
                       onChange={(e) => setDraft({ ...draft, category: e.target.value })}
                       className={styles.formSelect}
+                      aria-label="Item category"
                     >
-                      {CATEGORIES.filter((c) => c !== 'All').map((cat) => (
+                      {(categoryNames.includes(draft.category)
+                        ? categoryNames
+                        : [draft.category, ...categoryNames]
+                      ).map((cat) => (
                         <option key={cat} value={cat}>
                           {cat}
                         </option>
@@ -462,6 +526,36 @@ export default function ManageTab({ clubId, categories, onShopChanged }: ManageT
                       className={styles.formInput}
                     />
                   </div>
+                  {(() => {
+                    const g = categories.find((c) => c.name === draft.category);
+                    if (!g) return null;
+                    return (
+                      <div className={styles.formRow}>
+                        {g.grantUnit && (
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={draft.grantQty}
+                            onChange={(e) => setDraft({ ...draft, grantQty: e.target.value })}
+                            placeholder={`How many ${g.grantUnit}?`}
+                            aria-label={`Number of ${g.grantUnit} granted`}
+                            className={styles.formInput}
+                          />
+                        )}
+                        {(g.grantType === 'avatar' || g.grantType === 'table_skin') && (
+                          <input
+                            value={draft.grantRef}
+                            onChange={(e) => setDraft({ ...draft, grantRef: e.target.value })}
+                            placeholder={g.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
+                            aria-label={g.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
+                            className={styles.formInput}
+                            maxLength={64}
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className={styles.formRow}>
                     <button
                       className={styles.btnPrimary}

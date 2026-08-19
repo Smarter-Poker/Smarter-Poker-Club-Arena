@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../../lib/supabase';
+import { reportError } from '../../utils/errorReporter';
 
 /* ═══ Types ═══ */
 
@@ -39,19 +40,22 @@ export interface MarketplaceItem {
   revenue?: number;
 }
 
-/** Seconds of table time granted per time-bank use (fn_time_bank_allowance). */
-export const SECONDS_PER_TIME_BANK_USE = 20;
+/** Fallback seconds per time-bank use; the server catalog is authoritative. */
+const DEFAULT_SECONDS_PER_TIME_BANK_USE = 20;
 
 /**
  * Human-readable summary of what redeeming an item gives you.
  * Returns null when the item grants nothing automatically.
  */
-export function describeGrant(spec?: GrantSpec | null): string | null {
+export function describeGrant(
+  spec?: GrantSpec | null,
+  secondsPerUse: number = DEFAULT_SECONDS_PER_TIME_BANK_USE
+): string | null {
   if (!spec || spec.type === 'none') return null;
-  const qty = Math.max(1, Number(spec.qty) || 1);
+  const qty = Math.max(1, Math.floor(Number(spec.qty) || 1));
   switch (spec.type) {
     case 'time_bank':
-      return `+${qty * SECONDS_PER_TIME_BANK_USE}s table time (${qty} uses)`;
+      return `+${qty * secondsPerUse}s table time (${qty} uses)`;
     case 'throwable':
       return `${qty} free ${qty === 1 ? 'throw' : 'throws'}`;
     case 'emote_pack':
@@ -111,10 +115,14 @@ export const EMPTY_WALLET: WalletInfo = Object.freeze({
  * offer a Buy button for something My Items is showing as owned.
  */
 export function isOwnedRow(row: { status?: string | null }): boolean {
+  // Vocabulary written today: 'owned' | 'redeemed' (fn_deliver_shop_purchase /
+  // fn_redeem_shop_item). Fail-safe: anything not explicitly redeemed still
+  // belongs to the player. A future 'refunded'/'revoked' status MUST be added
+  // here, or those rows become permanently un-rebuyable.
   return row.status !== 'redeemed';
 }
 
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
 
 /** Only https or same-origin paths may be used as an item image. */
@@ -122,6 +130,8 @@ export function safeImageUrl(raw?: string | null): string | null {
   if (!raw) return null;
   const v = String(raw).trim();
   if (!v) return null;
+  // '//evil.example/x.gif' starts with '/' but resolves to a THIRD PARTY.
+  if (v.startsWith('//')) return null;
   if (v.startsWith('/')) return v;
   try {
     return new URL(v).protocol === 'https:' ? v : null;
@@ -307,6 +317,67 @@ export async function storeFetch<T = Record<string, unknown>>(
   return data as T;
 }
 
+/* ═══ Entitlements a player currently holds (what redemption granted) ═══ */
+
+export interface Entitlements {
+  timeBankUses: number;
+  timeBankSeconds: number;
+  throwables: number;
+  emotePack: boolean;
+  themeUnlock: boolean;
+  avatars: string[];
+  loaded: boolean;
+}
+
+export const EMPTY_ENTITLEMENTS: Entitlements = Object.freeze({
+  timeBankUses: 0,
+  timeBankSeconds: 0,
+  throwables: 0,
+  emotePack: false,
+  themeUnlock: false,
+  avatars: [],
+  loaded: false,
+});
+
+/**
+ * Read the player's live entitlement balances. Both tables are RLS-scoped to
+ * the caller (feature_purchases_select_own / "Users can view their own
+ * unlocks"), so this is a safe direct read.
+ */
+export async function loadEntitlements(
+  userId: string,
+  secondsPerUse = DEFAULT_SECONDS_PER_TIME_BANK_USE
+): Promise<Entitlements> {
+  const nowIso = new Date().toISOString();
+  const [fp, av] = await Promise.all([
+    supabase
+      .from('feature_purchases')
+      .select('feature, uses_remaining, expires_at')
+      .eq('user_id', userId),
+    supabase.from('avatar_unlocks').select('avatar_id').eq('user_id', userId),
+  ]);
+  if (fp.error) throw fp.error;
+
+  const live = (fp.data || []).filter((r) => !r.expires_at || r.expires_at > nowIso);
+  const sumUses = (feature: string) =>
+    live
+      .filter((r) => r.feature === feature)
+      .reduce((n, r) => n + (Number(r.uses_remaining) || 0), 0);
+  const hasPermanent = (feature: string) =>
+    live.some((r) => r.feature === feature && r.uses_remaining == null);
+
+  const timeBankUses = sumUses('time_bank_seconds');
+  return {
+    timeBankUses,
+    timeBankSeconds: timeBankUses * secondsPerUse,
+    throwables: sumUses('throwable'),
+    emotePack: hasPermanent('emoji_pack'),
+    themeUnlock: hasPermanent('theme_unlock'),
+    avatars: (av.data || []).map((r) => String(r.avatar_id)),
+    loaded: true,
+  };
+}
+
 /** Load diamond balance + VIP status in one call. */
 export async function loadWalletInfo(): Promise<WalletInfo> {
   const data = await storeFetch<{
@@ -370,19 +441,62 @@ export interface StoreCatalog {
   fromServer: boolean;
 }
 
+/**
+ * Mirrors GRANT_TYPE_BY_CATEGORY in pages/api/club-arena/manage-shop.js.
+ * Previously every fallback category mapped to 'none', so a failed catalog
+ * fetch made the admin form silently create items that granted NOTHING.
+ */
+const FALLBACK_SHOP_CATEGORIES: ShopCategoryInfo[] = [
+  { name: 'Time Banks', grantType: 'time_bank', grantUnit: 'uses', secondsPerUse: 20 },
+  { name: 'Table Skins', grantType: 'table_skin', grantUnit: null },
+  { name: 'Throwables', grantType: 'throwable', grantUnit: 'throws' },
+  { name: 'Emotes', grantType: 'emote_pack', grantUnit: null },
+  { name: 'Avatars', grantType: 'avatar', grantUnit: null },
+  { name: 'Exclusive', grantType: 'none', grantUnit: null },
+];
+
+/** Shape guards — the server response is `any` until proven otherwise. */
+const isChipPkg = (p: unknown): p is ChipPackage =>
+  !!p &&
+  typeof (p as ChipPackage).id === 'string' &&
+  Number.isFinite((p as ChipPackage).chips) &&
+  Number.isFinite((p as ChipPackage).diamonds);
+
+const isDiamondPkg = (p: unknown): p is DiamondPackage =>
+  !!p &&
+  typeof (p as DiamondPackage).id === 'string' &&
+  Number.isFinite((p as DiamondPackage).diamonds) &&
+  Number.isFinite((p as DiamondPackage).priceUsd);
+
+const isVipPlan = (p: unknown): p is VipPlan =>
+  !!p &&
+  typeof (p as VipPlan).id === 'string' &&
+  Number.isFinite((p as VipPlan).priceDiamonds) &&
+  Array.isArray((p as VipPlan).features);
+
+const isCategory = (c: unknown): c is ShopCategoryInfo =>
+  !!c &&
+  typeof (c as ShopCategoryInfo).name === 'string' &&
+  typeof (c as ShopCategoryInfo).grantType === 'string';
+
+function pick<T>(raw: unknown, guard: (v: unknown) => v is T, fallback: T[]): T[] {
+  if (!Array.isArray(raw)) return fallback;
+  const valid = raw.filter(guard);
+  return valid.length > 0 ? valid : fallback;
+}
+
 export const FALLBACK_CATALOG: StoreCatalog = {
   chipPackages: FALLBACK_CHIP_PACKAGES,
   diamondPackages: FALLBACK_DIAMOND_PACKAGES,
   vipPlans: FALLBACK_VIP_PLANS,
-  shopCategories: CATEGORIES.filter((c) => c !== 'All').map((name) => ({
-    name,
-    grantType: 'none' as GrantSpec['type'],
-    grantUnit: null,
-  })),
+  shopCategories: FALLBACK_SHOP_CATEGORIES,
   fromServer: false,
 };
 
 let catalogCache: StoreCatalog | null = null;
+let catalogFetchedAt = 0;
+/** Matches the route's s-maxage so a long-lived tab cannot show stale prices. */
+const CATALOG_TTL_MS = 300_000;
 
 /**
  * Load the package/plan catalog from the server so displayed prices can never
@@ -390,31 +504,25 @@ let catalogCache: StoreCatalog | null = null;
  * tables if the request fails, so the storefront still renders offline.
  */
 export async function loadStoreCatalog(): Promise<StoreCatalog> {
-  if (catalogCache) return catalogCache;
+  if (catalogCache && Date.now() - catalogFetchedAt < CATALOG_TTL_MS) return catalogCache;
   try {
     const res = await fetch('/api/club-arena/store-catalog');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!data?.success) throw new Error(data?.error || 'catalog unavailable');
     catalogCache = {
-      chipPackages:
-        Array.isArray(data.chipPackages) && data.chipPackages.length
-          ? data.chipPackages
-          : FALLBACK_CHIP_PACKAGES,
-      diamondPackages:
-        Array.isArray(data.diamondPackages) && data.diamondPackages.length
-          ? data.diamondPackages
-          : FALLBACK_DIAMOND_PACKAGES,
-      vipPlans:
-        Array.isArray(data.vipPlans) && data.vipPlans.length ? data.vipPlans : FALLBACK_VIP_PLANS,
-      shopCategories:
-        Array.isArray(data.shopCategories) && data.shopCategories.length
-          ? data.shopCategories
-          : FALLBACK_CATALOG.shopCategories,
+      chipPackages: pick(data.chipPackages, isChipPkg, FALLBACK_CHIP_PACKAGES),
+      diamondPackages: pick(data.diamondPackages, isDiamondPkg, FALLBACK_DIAMOND_PACKAGES),
+      vipPlans: pick(data.vipPlans, isVipPlan, FALLBACK_VIP_PLANS),
+      shopCategories: pick(data.shopCategories, isCategory, FALLBACK_SHOP_CATEGORIES),
       fromServer: true,
     };
+    catalogFetchedAt = Date.now();
     return catalogCache;
-  } catch {
+  } catch (err) {
+    // Must be reported: a silent failure here used to make the admin form
+    // create items that granted nothing, with zero telemetry.
+    reportError(err, 'marketplaceShared.loadStoreCatalog');
     return FALLBACK_CATALOG;
   }
 }

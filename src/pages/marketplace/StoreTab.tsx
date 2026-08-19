@@ -14,6 +14,7 @@ import {
   describeGrant,
   safeImageUrl,
   type MarketplaceItem,
+  type ShopCategoryInfo,
   type SortMode,
 } from './marketplaceShared';
 
@@ -25,6 +26,8 @@ interface StoreTabProps {
   isAdmin: boolean;
   /** true while the shop is still loading — do NOT claim the shop is empty */
   loading: boolean;
+  /** server catalog categories (drives the filter chips + grant wording) */
+  categories: ShopCategoryInfo[];
   onGoManage: () => void;
   onGoChips: () => void;
   onPurchased: (newBalance: number | null) => void;
@@ -37,11 +40,19 @@ export default function StoreTab({
   balance,
   isAdmin,
   loading,
+  categories,
   onGoManage,
   onGoChips,
   onPurchased,
 }: StoreTabProps) {
   const toast = useToast();
+  // Server-truth seconds per time-bank use, so the card and the Manage preview
+  // can never disagree.
+  const secondsPerUse = categories.find((c) => c.grantType === 'time_bank')?.secondsPerUse ?? 20;
+  const grantText = (item: MarketplaceItem) => describeGrant(item.grant_spec, secondsPerUse);
+  // L18: category chips come from the server catalog when it is available.
+  const categoryNames =
+    categories.length > 0 ? ['All', ...categories.map((c) => c.name)] : CATEGORIES;
   const [buyTarget, setBuyTarget] = useState<MarketplaceItem | null>(null);
   const [processing, setProcessing] = useState(false);
   const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -82,20 +93,31 @@ export default function StoreTab({
   }, [items, categoryFilter, searchFilter, sortMode]);
 
   // Modal a11y: Escape to close, initial focus on Confirm, background locked.
+  // Scroll lock + initial focus: keyed on the target only, so a busy-state
+  // toggle cannot yank focus back to Confirm mid-interaction.
+  useEffect(() => {
+    if (!buyTarget) return;
+    const prevOverflow = document.body.style.overflow;
+    const trigger = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = 'hidden';
+    confirmBtnRef.current?.focus();
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      trigger?.focus?.();
+    };
+  }, [buyTarget]);
+
+  // Escape needs the live `processing` value, so it gets its own effect.
   useEffect(() => {
     if (!buyTarget) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !processing) setBuyTarget(null);
     };
     document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    confirmBtnRef.current?.focus();
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
+    return () => document.removeEventListener('keydown', onKey);
   }, [buyTarget, processing]);
+
+  const modalImg = buyTarget ? safeImageUrl(buyTarget.image_url) : null;
 
   const handlePurchase = async () => {
     if (!buyTarget || processing) return;
@@ -159,9 +181,9 @@ export default function StoreTab({
             </h2>
             <div className={styles.purchasePreview}>
               <div className={styles.purchaseImage}>
-                {safeImageUrl(buyTarget.image_url) ? (
+                {modalImg ? (
                   <img
-                    src={safeImageUrl(buyTarget.image_url) as string}
+                    src={modalImg}
                     alt={buyTarget.name}
                     className={styles.itemImg}
                     referrerPolicy="no-referrer"
@@ -174,10 +196,8 @@ export default function StoreTab({
               <div>
                 <div className={styles.itemName}>{buyTarget.name}</div>
                 <div className={styles.itemDesc}>{buyTarget.description}</div>
-                {describeGrant(buyTarget.grant_spec) && (
-                  <div className={styles.grantLine}>
-                    Grants on redeem: {describeGrant(buyTarget.grant_spec)}
-                  </div>
+                {grantText(buyTarget) && (
+                  <div className={styles.grantLine}>Grants on redeem: {grantText(buyTarget)}</div>
                 )}
               </div>
             </div>
@@ -222,7 +242,7 @@ export default function StoreTab({
 
       {/* Category filters */}
       <div className={styles.categoryFilters}>
-        {CATEGORIES.map((cat) => (
+        {categoryNames.map((cat) => (
           <button
             key={cat}
             className={`${styles.categoryBtn} ${categoryFilter === cat ? styles.categoryBtnActive : ''}`}
@@ -275,12 +295,13 @@ export default function StoreTab({
         <div className={styles.itemGrid}>
           {filteredItems.map((item) => {
             const alreadyOwned = ownedItemIds.has(item.id);
+            const img = safeImageUrl(item.image_url);
             return (
               <div key={item.id} className={styles.itemCard}>
                 <div className={styles.itemImageArea}>
-                  {safeImageUrl(item.image_url) ? (
+                  {img ? (
                     <img
-                      src={safeImageUrl(item.image_url) as string}
+                      src={img}
                       alt={item.name}
                       className={styles.itemCover}
                       referrerPolicy="no-referrer"
@@ -299,9 +320,7 @@ export default function StoreTab({
                   <div className={styles.itemDesc}>
                     {item.description || 'No description available.'}
                   </div>
-                  {describeGrant(item.grant_spec) && (
-                    <div className={styles.grantBadge}>{describeGrant(item.grant_spec)}</div>
-                  )}
+                  {grantText(item) && <div className={styles.grantBadge}>{grantText(item)}</div>}
                   <div className={styles.itemFooter}>
                     <div>
                       <span className={styles.itemPrice}>{fmtChips(item.price)} chips</span>

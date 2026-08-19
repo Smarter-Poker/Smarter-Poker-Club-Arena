@@ -37,12 +37,15 @@ import { fmt } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import styles from './MarketplacePage.module.css';
 import {
+  EMPTY_ENTITLEMENTS,
   EMPTY_WALLET,
   FALLBACK_CATALOG,
   isOwnedRow,
   isUuid,
+  loadEntitlements,
   loadStoreCatalog,
   loadWalletInfo,
+  type Entitlements,
   type InventoryRow,
   type MarketplaceItem,
   type ShopPurchase,
@@ -84,6 +87,7 @@ export default function MarketplacePage() {
   const [shopError, setShopError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [catalog, setCatalog] = useState<StoreCatalog>(FALLBACK_CATALOG);
+  const [entitlements, setEntitlements] = useState<Entitlements>(EMPTY_ENTITLEMENTS);
 
   const mountedRef = useIsMounted();
   // Monotonic request token: only the newest load may write state. Replaces the
@@ -92,6 +96,16 @@ export default function MarketplacePage() {
   const reqRef = useRef(0);
   // Mirrors clubId for the init effect without adding it as a dependency.
   const clubIdRef = useRef<string | null>(null);
+
+  /** Drop everything scoped to a club (switch, invalid link, or no club). */
+  const resetClubState = useCallback(() => {
+    setItems([]);
+    setPurchases([]);
+    setInventory([]);
+    setBalance(0);
+    setRole('player');
+    setShopError(null);
+  }, []);
 
   // Server-owned package/plan catalog so displayed prices cannot drift.
   useEffect(() => {
@@ -152,13 +166,17 @@ export default function MarketplacePage() {
         // Always report. Silent refreshes previously failed with no toast, no
         // Sentry event and no state change -- the shop just went quietly stale.
         reportError(err, 'MarketplacePage.loadShop');
-        if (mountedRef.current && myReq === reqRef.current) setShopError(msg);
-        if (!silent) toast.error(msg);
+        if (mountedRef.current && myReq === reqRef.current) {
+          setShopError(msg);
+          // Toast only for the current request: a superseded club-A failure
+          // must not pop an error over club B's freshly loaded shop.
+          if (!silent) toast.error(msg);
+        }
       } finally {
         if (mountedRef.current && myReq === reqRef.current) setLoading(false);
       }
     },
-    [clubId, user] // eslint-disable-line react-hooks/exhaustive-deps
+    [clubId, user?.id] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   /* ═══ Diamond balance + VIP status ═══ */
@@ -179,30 +197,56 @@ export default function MarketplacePage() {
         }));
       }
     }
-  }, [user, mountedRef]);
+  }, [user?.id, mountedRef]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ═══ Live entitlement balances (what redemption actually granted) ═══ */
+  const secondsPerUse =
+    catalog.shopCategories.find((c) => c.grantType === 'time_bank')?.secondsPerUse ?? 20;
+
+  const loadEnt = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const e = await loadEntitlements(user.id, secondsPerUse);
+      if (mountedRef.current) setEntitlements(e);
+    } catch (err) {
+      reportError(err, 'MarketplacePage.loadEntitlements');
+    }
+  }, [user?.id, secondsPerUse, mountedRef]);
+
+  useEffect(() => {
+    if (tab === 'my_items') loadEnt();
+  }, [tab, loadEnt]);
 
   /* ═══ Delivered inventory (loaded eagerly — ownership state depends on it) ═══ */
-  const loadInventory = useCallback(async () => {
-    if (!clubId || !user) return;
-    try {
-      // supabase-js resolves (never rejects) on RLS/network failure, so the
-      // error MUST be destructured -- otherwise a failure looked exactly like
-      // "you own nothing" and invited the user to re-buy what they already had.
-      const { data, error } = await supabase
-        .from('club_shop_inventory')
-        .select('id, item_id, item_name, category, price_paid, status, acquired_at')
-        .eq('club_id', clubId)
-        .eq('user_id', user.id)
-        .order('acquired_at', { ascending: false });
-      if (error) throw error;
-      if (mountedRef.current) setInventory(data || []);
-    } catch (err) {
-      reportError(err, 'MarketplacePage.loadInventory');
-      if (mountedRef.current) {
-        toast.error('Could not load your items. Pull to refresh or tap Refresh.');
+  const invReqRef = useRef(0);
+  const loadInventory = useCallback(
+    async (cId?: string, silent = true) => {
+      const target = cId || clubId;
+      if (!target || !user) return;
+      const myReq = ++invReqRef.current;
+      try {
+        // supabase-js resolves (never rejects) on RLS/network failure, so the
+        // error MUST be destructured -- otherwise a failure looked exactly like
+        // "you own nothing" and invited the user to re-buy what they already had.
+        const { data, error } = await supabase
+          .from('club_shop_inventory')
+          .select('id, item_id, item_name, category, price_paid, status, acquired_at')
+          .eq('club_id', target)
+          .eq('user_id', user.id)
+          .order('acquired_at', { ascending: false });
+        if (error) throw error;
+        // Same stale-response guard as loadShop: on a club switch the older
+        // query can resolve last, and ownership state drives the Buy buttons.
+        if (mountedRef.current && myReq === invReqRef.current) setInventory(data || []);
+      } catch (err) {
+        reportError(err, 'MarketplacePage.loadInventory');
+        if (!silent && mountedRef.current) {
+          toast.error('Could not load your items. Tap Refresh to try again.');
+        }
       }
-    }
-  }, [clubId, user, mountedRef]); // eslint-disable-line react-hooks/exhaustive-deps
+    },
+    [clubId, user?.id, mountedRef] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   /* ═══ Init + react to ?club= changes (club quick links navigate in place) ═══ */
   useEffect(() => {
@@ -229,7 +273,11 @@ export default function MarketplacePage() {
       }
       if (!isMounted) return;
       if (targetClub && !isUuid(targetClub)) {
+        // Do NOT keep browsing the previous club's shop behind an invalid URL.
         toast.error('That club link looks invalid.');
+        setClubId(null);
+        clubIdRef.current = null;
+        resetClubState();
         setLoading(false);
         loadWallet();
         return;
@@ -238,18 +286,15 @@ export default function MarketplacePage() {
         // Reset club-scoped state OUTSIDE the setState updater -- updaters must
         // be pure, and React 19 StrictMode double-invokes them.
         setClubId((prev) => (prev === targetClub ? prev : targetClub));
-        if (clubIdRef.current && clubIdRef.current !== targetClub) {
-          setItems([]);
-          setPurchases([]);
-          setInventory([]);
-          setBalance(0);
-          setRole('player');
-          setShopError(null);
-        }
+        if (clubIdRef.current && clubIdRef.current !== targetClub) resetClubState();
         clubIdRef.current = targetClub;
         loadShop(targetClub);
+        loadInventory(targetClub);
       } else {
         toast.error('No club found. Join a club to use the club shop.');
+        setClubId(null);
+        clubIdRef.current = null;
+        resetClubState();
         setLoading(false);
       }
       loadWallet();
@@ -258,7 +303,7 @@ export default function MarketplacePage() {
     return () => {
       isMounted = false;
     };
-  }, [user, qClubParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.id, qClubParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ═══ React to ?tab= changes from external navigation ═══ */
   useEffect(() => {
@@ -268,9 +313,10 @@ export default function MarketplacePage() {
     }
   }, [qTabParam]);
 
-  /* ═══ Inventory loads as soon as we know the club ═══ */
+  /* ═══ Inventory: the init effect loads it for the resolved club; this keeps
+   * it fresh if clubId is set by any other route. ═══ */
   useEffect(() => {
-    if (clubId) loadInventory();
+    if (clubId) loadInventory(clubId);
   }, [clubId, loadInventory]);
 
   /* ═══ Stripe Checkout return handling (?purchase=success|canceled) ═══
@@ -279,15 +325,28 @@ export default function MarketplacePage() {
    * never fired and users came back from Stripe seeing a stale balance.
    * The latch below survives the navigation. */
   const purchaseResult = searchParams.get('purchase');
-  const handledPurchaseRef = useRef<string | null>(null);
+  const purchaseHandledRef = useRef(false);
+  const pollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // Always call the freshest loadWallet without making it an effect dependency
+  // (`user` is a new object on every auth-store write, so depending on the
+  // callback identity tore the timers down repeatedly).
+  const loadWalletRef = useRef(loadWallet);
+  loadWalletRef.current = loadWallet;
 
   useEffect(() => {
-    if (!purchaseResult) return;
-    if (handledPurchaseRef.current === purchaseResult) return;
-    handledPurchaseRef.current = purchaseResult;
+    if (!purchaseResult || purchaseHandledRef.current) return;
+    purchaseHandledRef.current = true;
 
     if (purchaseResult === 'success') {
       toast.success('Payment received. Your balance will update momentarily.');
+      // Webhook fulfilment lags checkout by seconds. These timers are stored in
+      // a ref and cleared ONLY on unmount: the previous version scheduled them
+      // in an effect keyed on `purchaseResult`, and stripping the param below
+      // changed that key, so the cleanup killed every timer within ~10ms and
+      // the buyer was left staring at a stale balance.
+      pollTimersRef.current = [1500, 5000, 12000].map((ms) =>
+        setTimeout(() => loadWalletRef.current(), ms)
+      );
     } else if (purchaseResult === 'canceled') {
       toast.error('Checkout canceled. You have not been charged.');
     }
@@ -298,14 +357,7 @@ export default function MarketplacePage() {
     setSearchParams(next, { replace: true });
   }, [purchaseResult]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Webhook fulfilment can lag checkout by a few seconds: poll the wallet a few
-  // times after a successful return. Lives in its own effect so the URL cleanup
-  // above cannot cancel it.
-  useEffect(() => {
-    if (purchaseResult !== 'success') return;
-    const timers = [1500, 5000, 12000].map((ms) => setTimeout(() => loadWallet(), ms));
-    return () => timers.forEach(clearTimeout);
-  }, [purchaseResult, loadWallet]);
+  useEffect(() => () => pollTimersRef.current.forEach(clearTimeout), []);
 
   /* ═══ Live refresh: bus events + tab visibility ═══ */
   useEffect(() => {
@@ -359,7 +411,11 @@ export default function MarketplacePage() {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await Promise.all([loadShop(clubId || undefined), loadWallet(), loadInventory()]);
+      await Promise.all([
+        loadShop(clubId || undefined, true),
+        loadWallet(),
+        loadInventory(clubId || undefined, false),
+      ]);
     } finally {
       if (mountedRef.current) setRefreshing(false);
     }
@@ -450,12 +506,14 @@ export default function MarketplacePage() {
             balance={balance}
             isAdmin={isAdmin}
             loading={loading}
+            categories={catalog.shopCategories}
             onGoManage={() => switchTab('manage')}
             onGoChips={() => switchTab('chips')}
             onPurchased={(newBalance) => {
+              // The BALANCE_UPDATED bus subscription reloads the shop + wallet;
+              // only the optimistic balance and the inventory are needed here.
               if (typeof newBalance === 'number') setBalance(newBalance);
-              loadShop(clubId, true);
-              loadInventory();
+              loadInventory(clubId);
             }}
           />
         )}
@@ -474,7 +532,7 @@ export default function MarketplacePage() {
             packages={catalog.chipPackages}
             onGoDiamonds={() => switchTab('diamonds')}
             onPurchased={() => {
-              loadShop(clubId || undefined, true);
+              // BALANCE_UPDATED already triggers the shop + wallet refresh.
               loadWallet();
             }}
           />
@@ -494,11 +552,13 @@ export default function MarketplacePage() {
           <MyItemsTab
             inventory={inventory}
             purchases={purchases}
+            entitlements={entitlements}
             onGoStore={() => switchTab('store')}
             onRedeemed={() => {
-              loadInventory();
+              loadInventory(clubId || undefined);
               // Redeeming may re-enable Buy for that item in the Store tab
               loadShop(clubId || undefined, true);
+              loadEnt();
             }}
           />
         )}
@@ -507,6 +567,7 @@ export default function MarketplacePage() {
             key={clubId}
             clubId={clubId}
             categories={catalog.shopCategories}
+            catalogFromServer={catalog.fromServer}
             onShopChanged={() => loadShop(clubId, true)}
           />
         )}

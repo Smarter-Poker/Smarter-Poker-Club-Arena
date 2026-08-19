@@ -11,11 +11,18 @@ import { reportError } from '../../utils/errorReporter';
 import { fmtChips, timeAgo } from '../../utils/format';
 import { useState } from 'react';
 import styles from '../MarketplacePage.module.css';
-import { isOwnedRow, type InventoryRow, type ShopPurchase } from './marketplaceShared';
+import {
+  isOwnedRow,
+  type Entitlements,
+  type InventoryRow,
+  type ShopPurchase,
+} from './marketplaceShared';
 
 interface MyItemsTabProps {
   inventory: InventoryRow[];
   purchases: ShopPurchase[];
+  /** live balances granted by redemption (time bank, throws, unlocks) */
+  entitlements: Entitlements;
   onGoStore: () => void;
   onRedeemed: () => void;
 }
@@ -23,6 +30,7 @@ interface MyItemsTabProps {
 export default function MyItemsTab({
   inventory,
   purchases,
+  entitlements,
   onGoStore,
   onRedeemed,
 }: MyItemsTabProps) {
@@ -74,20 +82,49 @@ export default function MyItemsTab({
     }
   };
 
+  const ent = entitlements;
+  const entitlementChips = ent.loaded
+    ? [
+        ent.timeBankSeconds > 0 ? `${ent.timeBankSeconds}s table time` : null,
+        ent.throwables > 0 ? `${ent.throwables} throws` : null,
+        ent.emotePack ? 'Emote pack' : null,
+        ent.themeUnlock ? 'Table theme' : null,
+        ent.avatars.length > 0
+          ? `${ent.avatars.length} avatar${ent.avatars.length > 1 ? 's' : ''}`
+          : null,
+      ].filter(Boolean)
+    : [];
+
+  const entitlementStrip =
+    entitlementChips.length > 0 ? (
+      <div className={styles.entitlementStrip}>
+        <span className={styles.entitlementLabel}>You currently hold:</span>
+        {entitlementChips.map((c) => (
+          <span key={c as string} className={styles.entitlementChip}>
+            {c}
+          </span>
+        ))}
+      </div>
+    ) : null;
+
   if (inventory.length === 0 && purchases.length === 0) {
     return (
-      <div className={styles.emptyState}>
-        <span className={styles.emptyIcon}>◇</span>
-        <span className={styles.emptyText}>You have not purchased any items yet.</span>
-        <button className={styles.emptyButton} onClick={onGoStore}>
-          Browse Store
-        </button>
-      </div>
+      <>
+        {entitlementStrip}
+        <div className={styles.emptyState}>
+          <span className={styles.emptyIcon}>◇</span>
+          <span className={styles.emptyText}>You have not purchased any items yet.</span>
+          <button className={styles.emptyButton} onClick={onGoStore}>
+            Browse Store
+          </button>
+        </div>
+      </>
     );
   }
 
   return (
     <>
+      {entitlementStrip}
       {inventory.length > 0 ? (
         <div className={styles.tableScroll}>
           <table className={styles.dataTable}>

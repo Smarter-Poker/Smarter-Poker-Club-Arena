@@ -1240,15 +1240,7 @@ export default function CashierPage() {
         CATEGORY_LABELS[tx.category] ||
         (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase();
 
-      return [
-        date,
-        time,
-        typeText,
-        categoryText,
-        tx.amount,
-        tx.wallet_type,
-        tx.description || '',
-      ]
+      return [date, time, typeText, categoryText, tx.amount, tx.wallet_type, tx.description || '']
         .map(csvCell)
         .join(',');
     });
@@ -1321,6 +1313,7 @@ export default function CashierPage() {
             isOpen={buyChipsOpen}
             onClose={() => setBuyChipsOpen(false)}
             currentDiamonds={diamondBalance}
+            clubId={clubId}
             onPurchase={(chips) => {
               if (user?.id) notifyWalletChange(user.id, chips);
             }}

@@ -1423,3 +1423,35 @@
     width: 100%;
   }
 }
+
+/* ─── Entitlement balances (what redemption actually granted) ─── */
+
+.entitlementStrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: rgba(49, 162, 76, 0.07);
+  border: 1px solid rgba(49, 162, 76, 0.25);
+}
+
+.entitlementLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8b8d91;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.entitlementChip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4ade80;
+  background: rgba(49, 162, 76, 0.14);
+  border: 1px solid rgba(49, 162, 76, 0.3);
+}

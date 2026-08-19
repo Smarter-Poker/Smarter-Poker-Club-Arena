@@ -21,6 +21,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { uuid } from '../pages/marketplace/marketplaceShared';
 
 export interface ClubArenaApiOptions {
   /**
@@ -56,7 +57,9 @@ export async function callClubArenaApi<T = Record<string, unknown>>(
     'Content-Type': 'application/json',
   };
   if (opts.idempotent !== false) {
-    headers['X-Idempotency-Key'] = crypto.randomUUID();
+    // crypto.randomUUID is undefined on http origins and Safari < 15.4; every
+    // purchase/mutation goes through here, so it must not throw there.
+    headers['X-Idempotency-Key'] = uuid();
   }
 
   const response = await fetch(`/api/club-arena/${endpoint}`, {

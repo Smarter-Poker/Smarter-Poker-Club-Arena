@@ -524,3 +524,19 @@
     animation: none;
   }
 }
+
+/* Delete-impact disclosure. tables and club_wallets CASCADE from clubs, so
+   the modal states exactly what would be destroyed before it arms. */
+.delete-impact {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-secondary, #6a7a8a);
+}
+.delete-impact--blocked {
+  list-style: none;
+  padding-left: 0;
+  color: #ffb020;
+  font-weight: 600;
+}

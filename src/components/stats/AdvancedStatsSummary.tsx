@@ -144,21 +144,23 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         buildStats(cached);
       }
 
-      const { data, error } = await supabase
-        .from('player_stats')
-        .select('total_hands:hands_played, total_winnings, total_losses, vpip, pfr')
-        .eq('user_id', uid)
-        .maybeSingle();
+      // Read the same RPC the parent uses. The previous query hit player_stats
+      // with .maybeSingle() filtered only by user_id — which ERRORS the moment a
+      // player has rows in more than one club (the original cause of the empty
+      // stats page) — and it selected none of the advanced columns this panel
+      // exists to show, so the standalone render was six zeroed cards.
+      const { data, error } = await supabase.rpc('ca_player_stats_full', { p_user: uid });
 
       if (!mountedRef.current) return;
 
-      if (error || !data) {
+      const overall = (data as any)?.overall;
+      if (error || !overall) {
         buildStats(null);
         return;
       }
 
-      setCache(uid, data);
-      buildStats(data);
+      setCache(uid, overall);
+      buildStats(overall);
     } catch (err) {
       reportError(err, 'AdvancedStatsSummary.Failed_to_load');
       if (mountedRef.current) buildStats(null);

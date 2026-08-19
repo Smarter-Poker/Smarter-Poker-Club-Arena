@@ -49,6 +49,8 @@ function setCache(uid: string, data: any) {
 
 interface BankrollDataPoint {
   date: string;
+  /** Epoch ms of the session, so the period filter can use a real time window. */
+  ts?: number;
   bankroll: number;
   dayProfit: number;
 }
@@ -99,6 +101,9 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
           month: 'numeric',
           day: 'numeric',
         }),
+        // Kept so the period filter can select an actual time window rather
+        // than a count of entries.
+        ts: new Date(s.date).getTime(),
         bankroll: cumulative,
         dayProfit: pl,
       };
@@ -186,7 +191,12 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
     if (allData.length === 0) return [];
     if (period === 'all') return allData;
     const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
-    return allData.slice(-days);
+    // Filter by TIME, not by entry count. Each point is one session, so the old
+    // slice(-days) meant "last N sessions" — for a weekend player "Last 7 Days"
+    // could span months, and every stat below inherited that wrong window.
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    const windowed = allData.filter((d) => typeof d.ts !== 'number' || d.ts >= cutoff);
+    return windowed.length > 0 ? windowed : [];
   }, [allData, period]);
 
   // Calculate moving average
@@ -202,7 +212,9 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
 
   // Statistics
   const current = chartData.length > 0 ? chartData[chartData.length - 1].bankroll : 0;
-  const previous = chartData.length > 0 ? chartData[0].bankroll : 0;
+  // Baseline is the bankroll BEFORE the first point in the window; using the
+  // point itself silently dropped that session's P/L from "Period P/L".
+  const previous = chartData.length > 0 ? chartData[0].bankroll - chartData[0].dayProfit : 0;
   const peak = chartData.length > 0 ? Math.max(...chartData.map((d) => d.bankroll)) : 0;
   const trough = chartData.length > 0 ? Math.min(...chartData.map((d) => d.bankroll)) : 0;
   const totalProfit = current - previous;
@@ -246,7 +258,8 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
   };
 
   const getChangePercent = (): string => {
-    if (previous === 0) return totalProfit === 0 ? '0.0' : totalProfit > 0 ? '+∞' : '-∞';
+    // No baseline to divide by — render a dash instead of a literal infinity.
+    if (previous === 0) return '--';
     return (((current - previous) / Math.abs(previous)) * 100).toFixed(1);
   };
 
@@ -313,7 +326,10 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
             <span className="change-sign">{totalProfit > 0 ? '+' : ''}</span>
             <span className="change-amount">{totalProfit.toLocaleString()}</span>
           </div>
-          <span className="change-pct">{getChangePercent()}%</span>
+          <span className="change-pct">
+            {getChangePercent()}
+            {getChangePercent() === '--' ? '' : '%'}
+          </span>
         </div>
       </div>
 

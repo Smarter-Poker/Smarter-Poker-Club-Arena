@@ -87,7 +87,12 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
 
   // Map raw session data to SessionRecord
   const mapSessions = (data: any[]): SessionRecord[] => {
-    return data.map((s) => {
+    // Newest first. The streak and the timeline both assume descending order,
+    // and the parent-supplied array bypasses this component's own .order().
+    const sorted = [...data].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    return sorted.map((s) => {
       const dur = s.duration_minutes || 0;
       const pl = s.profit_loss || 0;
       return {
@@ -206,10 +211,13 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
 
   // ── Streak calculation ──
   const streak = useMemo(() => {
-    if (sessions.length === 0) return { count: 0, type: 'none' as const };
-    const isWin = sessions[0].profitLoss > 0;
+    // Break-even sessions are neutral: they used to extend a losing streak and
+    // break a winning one, because `profitLoss > 0` collapsed 0 into "loss".
+    const decided = sessions.filter((s) => s.profitLoss !== 0);
+    if (decided.length === 0) return { count: 0, type: 'none' as const };
+    const isWin = decided[0].profitLoss > 0;
     let count = 0;
-    for (const s of sessions) {
+    for (const s of decided) {
       if (s.profitLoss > 0 === isWin) {
         count++;
       } else {
@@ -223,10 +231,13 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
   const getWinningSessions = () => sessions.filter((s) => s.profitLoss > 0).length;
   const getWinRate = () =>
     sessions.length > 0 ? ((getWinningSessions() / sessions.length) * 100).toFixed(1) : '0';
-  const getAverageHourlyRate = () =>
-    sessions.length > 0
-      ? (sessions.reduce((sum, s) => sum + s.hourlyRate, 0) / sessions.length).toFixed(2)
-      : '0';
+  // Time-weighted, not a mean of per-session rates: a 5-minute +50 heater used
+  // to count as much as an 8-hour grind and dominated the average.
+  const getAverageHourlyRate = () => {
+    const totalMinutes = sessions.reduce((sum, s) => sum + (s.duration || 0), 0);
+    if (totalMinutes <= 0) return '0';
+    return ((getTotalProfit() / totalMinutes) * 60).toFixed(2);
+  };
 
   const formatDuration = (minutes: number): string => {
     if (minutes < 60) return `${minutes}m`;

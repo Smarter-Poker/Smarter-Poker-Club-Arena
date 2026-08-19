@@ -104,6 +104,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
   const [statsData, setStatsData] = useState<PositionStats[]>(DEFAULT_STATS);
   const [visiblePositions, setVisiblePositions] = useState<Set<number>>(new Set());
   const [hoveredPosition, setHoveredPosition] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const mountedRef = useRef(true);
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -135,15 +136,13 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
         return {
           ...defPos,
           handsPlayed: hp,
-          vpip: hp > 0 ? (live.vpip_count / hp) * 100 : 0,
-          pfr: hp > 0 ? (live.pfr_count / hp) * 100 : 0,
+          vpip: hp > 0 ? ((live.vpip_count || 0) / hp) * 100 : 0,
+          pfr: hp > 0 ? ((live.pfr_count || 0) / hp) * 100 : 0,
           threeBet: hp > 0 ? ((live.three_bet_count || 0) / hp) * 100 : 0,
-          winRate:
-            typeof live.bb100 === 'number'
-              ? live.bb100
-              : hp > 0
-                ? ((live.hands_won || 0) / hp) * 100
-                : 0,
+          // bb/100 only. The old fallback put a hands-won PERCENTAGE in a field
+          // labelled and colour-banded as bb/100, so an ordinary 18% win rate
+          // rendered as "18.00 bb/100 - Exceptional" with the bar pegged.
+          winRate: typeof live.bb100 === 'number' ? live.bb100 : 0,
           totalProfit: live.total_profit || 0,
         };
       }
@@ -155,6 +154,9 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
   useEffect(() => {
     if (initialPositions && initialPositions.length > 0) {
       setStatsData(mapRows(initialPositions));
+      setLoaded(true);
+    } else if (initialPositions) {
+      setLoaded(true);
     }
   }, [initialPositions, mapRows]);
 
@@ -176,6 +178,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
       if (!error && posData && posData.length > 0) {
         setStatsData(mapRows(posData));
       }
+      setLoaded(true);
     } catch (err) {
       reportError(err, 'PositionWinRates.Failed_to_load');
     }
@@ -326,21 +329,6 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
                   {pos.winRate.toFixed(2)}
                 </text>
 
-                {/* Hover tooltip background */}
-                {isHovered && (
-                  <g>
-                    <rect
-                      x={x - 55}
-                      y={y - 75}
-                      width="110"
-                      height="120"
-                      rx="8"
-                      fill="rgba(10, 10, 20, 0.95)"
-                      stroke={getPositionColor(pos.winRate)}
-                      strokeWidth="1.5"
-                    />
-                  </g>
-                )}
               </g>
             );
           })}
@@ -385,7 +373,10 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
         )}
       </div>
 
-      {/* Position callouts */}
+      {/* Position callouts. Rendered only with real hands behind them: with an
+          empty data set both reduce() seeds land on the same zero row, and the
+          UI asserted "Strongest: UTG 0.00" and "Weakest: UTG 0.00" at once. */}
+      {activeStats.length > 0 && (
       <div className="position-callouts">
         <div className="callout strongest">
           <span className="callout-icon">▲</span>
@@ -404,6 +395,18 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
           </div>
         </div>
       </div>
+      )}
+
+      {!loaded && (
+        <div className="position-subtitle" style={{ textAlign: 'center', padding: '8px 0' }}>
+          Loading position stats...
+        </div>
+      )}
+      {loaded && activeStats.length === 0 && (
+        <div className="position-subtitle" style={{ textAlign: 'center', padding: '8px 0' }}>
+          No position data yet — play some hands and this fills in automatically.
+        </div>
+      )}
 
       {/* Detailed stats grid */}
       <div className="position-stats-grid">

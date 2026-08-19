@@ -141,12 +141,21 @@
 }
 
 /* ── Quick Stats ── */
+/* Dan 2026-08-19: grew from 5 stats to 9 (added $/Hr, VPIP, PFR, Win%,
+   BB/Hr). A single flex row squeezed them into unreadable slivers, so the
+   grid wraps into even columns instead. */
 .sh-quick-stats {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px 6px;
   background: rgba(0, 0, 0, 0.2);
   border-radius: 8px;
-  padding: 12px;
+  padding: 12px 10px;
+}
+@media (max-width: 420px) {
+  .sh-quick-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .sh-qstat {

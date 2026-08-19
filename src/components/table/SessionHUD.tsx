@@ -144,6 +144,17 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
 
   if (!isOpen || !stats) return null;
 
+  /**
+   * Dan 2026-08-19 session-stat additions. Hours are floored at one minute so
+   * a session that is seconds old cannot divide by ~0 and print a nonsense
+   * hourly rate.
+   */
+  const hoursElapsed = Math.max((Date.now() - stats.sessionStartTime) / 3_600_000, 1 / 60);
+  const profitPerHour = stats.profitLoss / hoursElapsed;
+  const bbPerHour = stats.bigBlindsWon / hoursElapsed;
+  const winRatePercent =
+    stats.handsPlayed > 0 ? Math.round((stats.handsWon / stats.handsPlayed) * 100) : 0;
+
   const plClass = stats.profitLoss >= 0 ? 'sh-positive' : 'sh-negative';
 
   return (
@@ -200,6 +211,31 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
                 : '0.0'}
             </span>
             <span className="sh-qstat-label">BB/100</span>
+          </div>
+          {/* Dan 2026-08-19: the headline numbers a grinder actually reads.
+              VPIP and PFR were buried behind the advanced toggle; profit per
+              hour and win rate did not exist at all. */}
+          <div className="sh-qstat">
+            <span className={`sh-qstat-value ${plClass}`}>{formatPL(profitPerHour)}</span>
+            <span className="sh-qstat-label">$/Hr</span>
+          </div>
+          <div className="sh-qstat">
+            <span className="sh-qstat-value">{stats.vpipPercent}%</span>
+            <span className="sh-qstat-label">VPIP</span>
+          </div>
+          <div className="sh-qstat">
+            <span className="sh-qstat-value">{stats.pfrPercent}%</span>
+            <span className="sh-qstat-label">PFR</span>
+          </div>
+          <div className="sh-qstat">
+            <span className="sh-qstat-value">{winRatePercent}%</span>
+            <span className="sh-qstat-label">Win%</span>
+          </div>
+          <div className="sh-qstat">
+            <span className={`sh-qstat-value ${bbPerHour >= 0 ? 'sh-pos' : 'sh-neg'}`}>
+              {bbPerHour.toFixed(1)}
+            </span>
+            <span className="sh-qstat-label">BB/Hr</span>
           </div>
         </div>
 

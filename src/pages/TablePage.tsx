@@ -5371,9 +5371,27 @@ export default function TablePage({
 
         // Bible V8 §4.19: Show/muck prompt when hero wins without showdown
         // Skip if autoMuckWinners is enabled (user prefers silent muck)
+        //
+        // ── Dan 2026-08-18: this prompt was appearing AT showdown ──
+        //
+        // The `boardStage !== 'showdown'` test is the right intent reading the
+        // wrong source. boardStage is only moved to 'showdown' by setTableState
+        // in the SHOWDOWN handler, and tableStateRef is synced to tableState
+        // inside a useEffect - so the ref only catches up after React commits
+        // a render. The server emits SHOWDOWN and POT_WIN back to back, so
+        // when this line runs the ref still says 'river', the test passes, and
+        // the hero is asked "Show or Muck?" on a hand that already went to
+        // showdown. That is the Show Cards button at showdown Dan reported.
+        //
+        // heroHandOutcomeRef.showdown is the same fact recorded synchronously
+        // (set in the SHOWDOWN case, reset per hand at HAND_START), so it is
+        // already true by the time POT_WIN lands. Test it first, and keep the
+        // boardStage check as a fallback for any path that sets the stage
+        // without emitting SHOWDOWN.
         if (
           winnerIds.length > 0 &&
           winnerIds.includes(userId) &&
+          !heroHandOutcomeRef.current.showdown &&
           tableStateRef.current.boardStage !== 'showdown' &&
           !userSettingsRef.current.autoMuckWinners
         ) {

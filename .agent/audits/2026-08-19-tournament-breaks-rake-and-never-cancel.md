@@ -168,6 +168,31 @@ break_started_at 05:55:00   break_ends_at 06:00:51   on_break true → false
 
 Last hands took 51s, then a full 5 minutes of silence: **5m51s** total.
 
+**Re-verified on the next hour (06:55), with the two reaper commits deployed
+(`a13049234` second-reaper guard, `45989915a` `MAX_HEALTHY_PAUSE_MS` ceiling):**
+
+```
+06:52  40 hands     normal play
+06:53  32 hands     normal play
+06:54  30 hands     normal play
+06:55   9 hands     LAST HAND announced 06:55:00, hands finishing
+06:56   0           break
+06:57   0           break
+06:58   0           break
+06:59   0           break
+07:00  12 hands     play resumed 07:00:19
+07:01  24 hands     normal
+07:02  39 hands     normal
+
+break_started_at 06:55:00   break_ends_at 07:00:19   on_break true → false
+```
+
+Last hands took **19s** this window versus 51s the previous one, giving 5m19s
+versus 5m51s. That variance is the spec working as intended — the clock does
+not start until the slowest table finishes, so the total is 5 minutes plus
+however long the last hand runs. Hand rate returned to normal immediately
+after the resume, confirming the reaper ceiling did not wedge any table.
+
 ---
 
 ## 5. Other verified guarantees
@@ -180,6 +205,22 @@ Last hands took 51s, then a full 5 minutes of silence: **5m51s** total.
 | Payout mismatches         | 0 (every tournament paid exactly its prize pool)              |
 | Level progression         | Spin 3.2 avg final level / SNG 6.2 / MTT 9.7                  |
 | Registration → table      | auto-opens the player's table when a `table_id` appears       |
+
+**Final snapshot at 07:03 UTC** (3.5h after the last cancel-path removal):
+
+| Metric                             | Value                                    |
+| ---------------------------------- | ---------------------------------------- |
+| Cancellations, last 6h             | 34 — all ≤ 03:39:32, i.e. before the fix |
+| Cancellations since 03:39:32       | **0**                                    |
+| Completed, last 6h                 | 134                                      |
+| Tournament rake rows, last 3h      | 706                                      |
+| Tournament rake collected, last 3h | 357.80                                   |
+| Open tables                        | 152                                      |
+| Hands, last 2 min                  | 407                                      |
+| Synchronized breaks confirmed      | 2 consecutive windows (05:55, 06:55)     |
+
+The hourly cancel rate before the fix was steady at 9–15 per hour for at least
+twelve hours (19:00 through 03:00). It is zero for every hour since.
 
 Note: Spin & Go prize pools are a MULTIPLIER of the buy-in, not the sum of
 buy-ins (a 2x collects 15 and pays 10; a 10x pays 50). Expected value across
@@ -209,4 +250,4 @@ mismatches and policy violations that a mocked Supabase client would happily
 accept (it takes any column name), so mocking would have asserted the mock
 rather than the behaviour.
 
-Suite: **1,876 tests across 158 files**, tsc clean on client and server.
+Suite: **1,926 tests across 159 files**, tsc clean on client and server.

@@ -775,6 +775,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.preciseTimer.clearTable(this.tableId);
         this.actionValidator.clearTable(this.tableId);
         this.handController = null;
+        this.runoutRevealActive = false;
         resolve();
       }, HAND_SAFETY_TIMEOUT_MS);
 
@@ -814,12 +815,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           }
 
           this.handController = null;
+          // ANIMATION AUDIT 2026-08-19: end of the all-in reveal window.
+          this.runoutRevealActive = false;
           resolve();
         }
       });
 
       // Start the hand!
       try {
+        // ANIMATION AUDIT 2026-08-19: defensive — a fresh hand must never
+        // inherit a stale all-in reveal flag from an abnormal exit.
+        this.runoutRevealActive = false;
         this.handController!.start();
 
         // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery.

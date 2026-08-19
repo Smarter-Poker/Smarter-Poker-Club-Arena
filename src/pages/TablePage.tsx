@@ -378,6 +378,14 @@ import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
 // ═══════════════════════════════════════════════════════════════════════════════
 const _horsesLoadedForTable: Record<string, boolean> = {};
 const _win = window as any;
+
+/**
+ * ANIMATION AUDIT 2026-08-19: single source of truth for where chip flights
+ * land. Mirrors `.pot-area` in TablePage.css (top: 32.99%, left: 49.9% of the
+ * table scaler) — the flights used to aim at {50, 45} and consistently landed
+ * below the pot. If .pot-area moves, move this with it.
+ */
+const POT_ANCHOR_PCT = { x: 49.9, y: 33 };
 if (!_win.__pokerLocks) {
   _win.__pokerLocks = {
     handActive: false,
@@ -549,7 +557,13 @@ export default function TablePage({
   const [username, setUsername] = useState<string>('Player');
   const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
-  const [boardStageKey, setBoardStageKey] = useState(0); // Trigger board transitions
+  // ANIMATION AUDIT 2026-08-19: boardStageKey is GONE. It re-keyed (and so
+  // unmounted + remounted) the whole .community-area on every stage change —
+  // one frame after CommunityCards had marked the new cards as newly dealt.
+  // The fresh instance re-seeded its refs to the current counts, so the flop
+  // flip / turn / river reveal classes were never applied and board cards
+  // "just appeared". CommunityCards handles its own per-street animation;
+  // it must stay mounted to do so.
 
   // Initialize user on mount
   const isMounted = useIsMounted();
@@ -683,11 +697,51 @@ export default function TablePage({
         }
         return sp;
       });
+      // ── ANIMATION AUDIT 2026-08-19: board regression guard ──
+      // During an all-in runout the engine deals streets via dealNextStreet,
+      // and (before the matching server fix) state.stage lagged at 'preflop'
+      // while community_cards grew. The snapshot then overwrote the stage the
+      // discrete COMMUNITY_CARDS_DEALT event had just set, and the board
+      // rendered zero cards (visibleCount is stage-derived). Rules:
+      //  1. Within the same hand the board never shrinks.
+      //  2. The stage is never behind what the card count proves.
+      //  3. Within the same hand the stage never moves backward.
+      const STAGE_RANK: Record<string, number> = {
+        waiting: -1,
+        preflop: 0,
+        flop: 1,
+        turn: 2,
+        river: 3,
+        showdown: 4,
+      };
+      const sameHand = mapped.handNumber > 0 && mapped.handNumber === prev.handNumber;
+      let nextCards = mapped.communityCards as Card[];
+      if (sameHand && nextCards.length < prev.communityCards.length) {
+        nextCards = prev.communityCards;
+      }
+      let nextStage = mapped.boardStage as BoardStage;
+      const n = nextCards.length;
+      const derivedStage = n >= 5 ? 'river' : n === 4 ? 'turn' : n >= 3 ? 'flop' : null;
+      if (derivedStage && (STAGE_RANK[nextStage] ?? 0) < (STAGE_RANK[derivedStage] ?? 0)) {
+        nextStage = derivedStage as BoardStage;
+      }
+      if (sameHand && (STAGE_RANK[nextStage] ?? 0) < (STAGE_RANK[prev.boardStage] ?? 0)) {
+        nextStage = prev.boardStage;
+      }
+      // While a seat's chips are mid-collect (cpCollect), a snapshot that
+      // zeroes its bet would unmount ChipPhysics and cut the sweep short.
+      // Hold the previous amount for the collect window; the sweep's own
+      // timer zeroes it when the animation completes.
+      const nextBets = mapped.lastBetAmounts.map((amt, i) =>
+        collectingChipSeatsRef.current[i] && !(amt > 0) && prev.lastBetAmounts[i] > 0
+          ? prev.lastBetAmounts[i]
+          : amt
+      );
       return {
         ...prev,
         pot: mapped.pot,
-        communityCards: mapped.communityCards as Card[],
-        boardStage: mapped.boardStage as BoardStage,
+        communityCards: nextCards,
+        boardStage: nextStage,
         dealerSeat: mapped.dealerSeat,
         currentPlayerSeat: mapped.currentPlayerSeat,
         // AUDIT FIX 2026-07-19: the authoritative WS merge dropped handNumber, so
@@ -698,7 +752,7 @@ export default function TablePage({
         players: nextPlayers,
         positions: mapped.positions as PositionBadge[],
         lastActions: mapped.lastActions as LastAction[],
-        lastBetAmounts: mapped.lastBetAmounts,
+        lastBetAmounts: nextBets,
         currentBet: mapped.currentBet,
         minRaise: mapped.minRaise,
         lastRaise: mapped.lastRaise,
@@ -1530,6 +1584,31 @@ export default function TablePage({
     Array(9).fill(false)
   );
   const collectSeatsTimerRef = useRef<number | null>(null);
+  // ANIMATION AUDIT 2026-08-19: mirror of collectingChipSeats readable inside
+  // the snapshot-merge effect. A snapshot arriving mid-collect used to zero
+  // lastBetAmounts, which unmounted ChipPhysics and killed the cpCollect
+  // sweep mid-flight — chips teleported instead of flying to the pot.
+  const collectingChipSeatsRef = useRef<boolean[]>(Array(9).fill(false));
+  useEffect(() => {
+    collectingChipSeatsRef.current = collectingChipSeats;
+  }, [collectingChipSeats]);
+  // ANIMATION AUDIT 2026-08-19: per-seat bets recorded from the discrete
+  // PLAYER_ACTION / BLINDS_POSTED events. The chips-to-pot sweep used to
+  // build its mask from tableStateRef.lastBetAmounts, but the engine's
+  // snapshot (applied synchronously, before the deferred event handler runs)
+  // zeroes those on every new street — so the sweep usually never fired.
+  // This ref survives the snapshot and is cleared only when the sweep runs.
+  const streetBetsRef = useRef<number[]>(Array(9).fill(0));
+  // ANIMATION AUDIT 2026-08-19: showdown losers' cards fly to the muck
+  // instead of blinking out of existence at the 3s reset.
+  const [muckingSeats, setMuckingSeats] = useState<boolean[]>(() => Array(9).fill(false));
+  const muckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (muckTimerRef.current) clearTimeout(muckTimerRef.current);
+    },
+    []
+  );
   // Cancel the pending chip-collect timer if the component unmounts so we
   // don't invoke setState after unmount (React warning + stale clear).
   useEffect(
@@ -3791,10 +3870,14 @@ export default function TablePage({
     const unsubscribe = roomService.onMessage(tableId, (msg: RoomMessage) => {
       switch (msg.type) {
         case 'PLAYER_JOINED':
-          // Handle player joining
+          // ANIMATION/SOUND AUDIT 2026-08-19: these cases were empty — a
+          // player joining or leaving the table produced zero audio feedback
+          // on the room-message path. (The seat-INSERT path at handleSeatInsert
+          // covers DB inserts but skips the hero and misses this bus.)
+          if (soundService.isEnabled()) soundService.playSeatTaken();
           break;
         case 'PLAYER_LEFT':
-          // Handle player leaving
+          if (soundService.isEnabled()) soundService.playPlayerLeft();
           break;
         case 'PLAYER_ACTION': {
           // DISABLED: Engine WS now handles PLAYER_ACTION (line ~3805).
@@ -4591,6 +4674,9 @@ export default function TablePage({
 
         // Step 1: Action label (immediate, persists until next action / new street)
         if (seatIdx >= 0) {
+          // ANIMATION AUDIT 2026-08-19: record the wager where the snapshot
+          // cannot erase it, so the chips-to-pot sweep always has a mask.
+          if (actionAmount > 0) streetBetsRef.current[seatIdx] = actionAmount;
           setTableState((prev) => {
             const newActions = [...prev.lastActions];
             newActions[seatIdx] = action as any;
@@ -4654,7 +4740,10 @@ export default function TablePage({
           // chips off the felt on desktop. Use the measured scaler rect.
           const seatPct = seatPositions[seatIdx] || { x: 50, y: 90 };
           const fromPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
-          const potPos = seatPctToViewportPx(tableScalerRef.current, { x: 50, y: 45 });
+          // ANIMATION AUDIT 2026-08-19: chips used to aim at scaler y:45 while
+          // .pot-area sits at 49.9%/32.99% — every flight landed ~12% of the
+          // table height BELOW the pot. Aim at the pot's real anchor.
+          const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
           const id = `pa_${Date.now()}_${seatIdx}_${Math.random().toString(36).slice(2, 6)}`;
           setChipAnimations((prev) => [
             ...prev,
@@ -4691,6 +4780,32 @@ export default function TablePage({
           clearTimeout(potCollectTimerRef.current);
           potCollectTimerRef.current = null;
         }
+        // ANIMATION AUDIT 2026-08-19: the previous hand's 3s reset timer was
+        // NEVER cancelled here. The server's fold-win inter-hand gap is
+        // 2000ms, so on every fold-win that stale timer fired ~1s INTO the
+        // new hand and blanked the fresh pot/board/winner state. Cancel every
+        // cross-hand animation timer at the hand boundary.
+        if (handCompleteTimerRef.current) {
+          clearTimeout(handCompleteTimerRef.current);
+          handCompleteTimerRef.current = null;
+        }
+        if (collectSeatsTimerRef.current) {
+          window.clearTimeout(collectSeatsTimerRef.current);
+          collectSeatsTimerRef.current = null;
+        }
+        setCollectingChipSeats(Array(9).fill(false));
+        streetBetsRef.current = Array(9).fill(0);
+        if (muckTimerRef.current) {
+          clearTimeout(muckTimerRef.current);
+          muckTimerRef.current = null;
+        }
+        setMuckingSeats(Array(9).fill(false));
+        // The Show/Muck prompt belongs to the finished hand — close it.
+        if (handRevealTimerRef.current) {
+          clearTimeout(handRevealTimerRef.current);
+          handRevealTimerRef.current = null;
+        }
+        setShowHandRevealModal(false);
         // Fresh hand → reset the accumulated achievement outcome.
         // Dan 2026-08-18: show-card picks are per hand. Clear them here so a
         // card marked last hand is not still marked when the new one is dealt.
@@ -4717,9 +4832,18 @@ export default function TablePage({
         }
         // Reset visual state instantly so the new hand starts crisp.
         setTableState((prev) => {
-          const players = prev.players.map((p) =>
-            p && p.id === userId ? { ...p, holeCards: [], showCards: false } : p
-          );
+          // ANIMATION AUDIT 2026-08-19: 'folded' is per-hand state. It was
+          // never reset here, so DealAnimation (which mounts off this event,
+          // often before the first snapshot of the new hand arrives) skipped
+          // every seat that folded LAST hand — those players visibly got no
+          // cards. sitting_out/away/disconnected persist untouched.
+          const players = prev.players.map((p) => {
+            if (!p) return p;
+            const unfolded = p.status === 'folded' ? { ...p, status: 'active' as const } : p;
+            return unfolded.id === userId
+              ? { ...unfolded, holeCards: [], showCards: false }
+              : unfolded;
+          });
           return {
             ...prev,
             players,
@@ -4797,10 +4921,12 @@ export default function TablePage({
           ((evt.data as any).postings as Array<{ seat: number; type: string; amount: number }>) ||
           [];
         // 2026-08-04 FIX: scaler-relative percentages, not viewport (see PLAYER_ACTION)
-        const potPos = seatPctToViewportPx(tableScalerRef.current, { x: 50, y: 45 });
+        const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
         for (const p of postings) {
           if (p.seat > 0 && p.amount > 0) {
             const seatIdx = p.seat - 1;
+            // ANIMATION AUDIT 2026-08-19: blinds count toward the sweep mask.
+            streetBetsRef.current[seatIdx] = p.amount;
             const seatPct = seatPositions[seatIdx] || { x: 50, y: 90 };
             const fromPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
             const id = `blind_${Date.now()}_${seatIdx}_${Math.random().toString(36).slice(2, 6)}`;
@@ -4857,22 +4983,43 @@ export default function TablePage({
         // the board, sweep every non-zero bet off the felt into the pot with
         // the cpCollect keyframe (~450ms). After the animation, clear the
         // per-seat bet amounts so the next street starts with empty felt.
+        // ANIMATION AUDIT 2026-08-19: the mask used to come solely from
+        // tableStateRef.lastBetAmounts — but the engine snapshot (applied
+        // synchronously, before this deferred handler runs) zeroes bets on
+        // every new street, so `anyToCollect` was usually false and the
+        // chips-to-pot sweep never fired. streetBetsRef is written from the
+        // discrete PLAYER_ACTION/BLINDS_POSTED events and survives snapshots.
         const currentBets = tableStateRef.current.lastBetAmounts || [];
-        const collectMask = currentBets.map((amt) => (amt || 0) > 0);
+        const recorded = streetBetsRef.current;
+        const collectMask = Array.from({
+          length: Math.max(currentBets.length, recorded.length),
+        }).map((_, i) => (currentBets[i] || 0) > 0 || (recorded[i] || 0) > 0);
         const anyToCollect = collectMask.some(Boolean);
 
         if (anyToCollect) {
+          // Re-seed any bet the snapshot already zeroed so ChipPhysics is
+          // mounted for the sweep it is about to run.
+          setTableState((prev) => ({
+            ...prev,
+            lastBetAmounts: prev.lastBetAmounts.map((amt, i) =>
+              collectMask[i] && !(amt > 0) ? recorded[i] || 0 : amt
+            ),
+          }));
           setCollectingChipSeats(collectMask);
           if (collectSeatsTimerRef.current) {
             window.clearTimeout(collectSeatsTimerRef.current);
           }
+          // cpCollect runs 550ms + 100ms stack stagger; the old 450ms window
+          // unmounted the chips at 82% of the keyframe.
           collectSeatsTimerRef.current = window.setTimeout(() => {
+            collectSeatsTimerRef.current = null;
             setCollectingChipSeats(Array(collectMask.length).fill(false));
+            streetBetsRef.current = Array(9).fill(0);
             setTableState((prev) => ({
               ...prev,
               lastBetAmounts: prev.lastBetAmounts.map(() => 0),
             }));
-          }, 450);
+          }, 700);
         }
 
         setTableState((prev) => ({
@@ -4880,9 +5027,10 @@ export default function TablePage({
           communityCards: board,
           boardStage: stage as BoardStage,
         }));
-        // Audio cue — Bible V8 §5.3: community card reveal sound (distinct from deal)
-        // #175 gated for multi-table: only play on the active tab
-        if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playCommunityCard();
+        // ANIMATION/SOUND AUDIT 2026-08-19: the community-card sound here
+        // double-fired with CommunityCards' own stage-transition effect,
+        // which plays the nicer per-street stagger (3 snaps on the flop).
+        // The component owns the sound now.
         break;
       }
       case 'HOLE_CARDS_UNAVAILABLE': {
@@ -5055,20 +5203,50 @@ export default function TablePage({
         }
         // Bible V8 §1.16 — final river bets still on felt must sweep into
         // pot BEFORE the pot-to-winner animation fires (POT_WIN case).
+        // ANIMATION AUDIT 2026-08-19: same snapshot-race + short-window fixes
+        // as the COMMUNITY_CARDS_DEALT sweep (see that case).
         const finalBets = tableStateRef.current.lastBetAmounts || [];
-        const finalMask = finalBets.map((amt) => (amt || 0) > 0);
+        const finalRecorded = streetBetsRef.current;
+        const finalMask = Array.from({
+          length: Math.max(finalBets.length, finalRecorded.length),
+        }).map((_, i) => (finalBets[i] || 0) > 0 || (finalRecorded[i] || 0) > 0);
         if (finalMask.some(Boolean)) {
+          setTableState((prev) => ({
+            ...prev,
+            lastBetAmounts: prev.lastBetAmounts.map((amt, i) =>
+              finalMask[i] && !(amt > 0) ? finalRecorded[i] || 0 : amt
+            ),
+          }));
           setCollectingChipSeats(finalMask);
           if (collectSeatsTimerRef.current) {
             window.clearTimeout(collectSeatsTimerRef.current);
           }
           collectSeatsTimerRef.current = window.setTimeout(() => {
+            collectSeatsTimerRef.current = null;
             setCollectingChipSeats(Array(finalMask.length).fill(false));
+            streetBetsRef.current = Array(9).fill(0);
             setTableState((prev) => ({
               ...prev,
               lastBetAmounts: prev.lastBetAmounts.map(() => 0),
             }));
-          }, 450);
+          }, 700);
+        }
+        // ANIMATION AUDIT 2026-08-19: showdown losers' cards used to simply
+        // vanish at the 3s reset — no muck animation existed for them. Fly
+        // them to the muck during the last ~600ms of the winner display.
+        {
+          const st = tableStateRef.current;
+          const winners = winnerInfoRef.current?.playerIds || [];
+          const loserMask = st.players.map(
+            (p) => !!(p && !p.isHero && p.showCards && !winners.includes(p.id))
+          );
+          if (loserMask.some(Boolean)) {
+            if (muckTimerRef.current) clearTimeout(muckTimerRef.current);
+            muckTimerRef.current = setTimeout(() => {
+              muckTimerRef.current = null;
+              setMuckingSeats(loserMask);
+            }, 2400);
+          }
         }
         // Bible V8 §5.1 — winner display persists 2.5–3s before the table
         // resets to idle. Clear community board, pot, side pots and the
@@ -5088,6 +5266,7 @@ export default function TablePage({
           setAllInEquities([]);
           setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
           setWinnerParticle((prev) => ({ ...prev, active: false }));
+          setMuckingSeats(Array(9).fill(false));
         }, 3000);
         break;
       }
@@ -5179,8 +5358,9 @@ export default function TablePage({
                 tableEl.classList.add('table-page--shake');
                 setTimeout(() => tableEl.classList.remove('table-page--shake'), 600);
               }
-              // #175 gated for multi-table: only play on the active tab
-              if (ambientSoundsAllowed) soundService.playBigWin();
+              // ANIMATION/SOUND AUDIT 2026-08-19: playBigWin fired here AND
+              // inside playWinSound (called below) — double celebration.
+              // playWinSound owns the escalation now.
             }
           }
           // Bible V8 §5.1: Particle burst from first winner's seat position
@@ -5259,10 +5439,9 @@ export default function TablePage({
           // 2026-08-04 FIX: scaler-relative percentages, not viewport. The old
           // window.innerWidth/Height math stranded pot-win chips at the screen
           // edges on desktop (split pots parked one chip on EACH edge).
-          const potPos = seatPctToViewportPx(tableScalerRef.current, { x: 50, y: 45 });
+          const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
           // Resolve each winner's seat from the current player list (rotated
           // positions already account for hero-at-bottom view).
-          const sharePerWinner = potAmount / winnerIds.length;
           const events: ChipAnimationEvent[] = [];
           for (const wid of winnerIds) {
             // SeatPlayer.id is the userId — players[] index = seatNumber - 1.
@@ -5271,9 +5450,14 @@ export default function TablePage({
             // AUDIT FIX 2026-07-19: physical-seat index — no +1 (see above).
             const seatPct = seatPositions[seatIdx] || { x: 50, y: 50 };
             const winnerPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
+            // ANIMATION AUDIT 2026-08-19: use the ACCURATE per-winner amount
+            // (server winners[] map, mirrored synchronously above) — an even
+            // potAmount/n split labelled side-pot chops with wrong numbers.
+            const share =
+              winnerInfoRef.current?.amounts?.[wid] ?? potAmount / (winnerIds.length || 1);
             // createPotToWinnerEvent already returns a fan of 3-8 chips with
             // bezier arc, staggered 40ms each, 600ms duration — spec match.
-            events.push(...createPotToWinnerEvent(potPos, winnerPos, sharePerWinner));
+            events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
           }
           if (events.length > 0) {
             setChipAnimations((prev) => [...prev, ...events]);
@@ -5343,7 +5527,9 @@ export default function TablePage({
         break;
       }
       case 'BBJ_HIT': {
-        if (soundService.isEnabled()) soundService.playBigWin();
+        // ANIMATION/SOUND AUDIT 2026-08-19: was playBigWin — the dedicated
+        // jackpot fanfare existed and was never wired to the engine event.
+        if (soundService.isEnabled()) soundService.playBadBeatJackpot();
         import('../services/HapticService').then(({ haptic }) => haptic.heavy());
         masterBus.emit('BBJ_HIT', evt.data as any);
         break;
@@ -5877,7 +6063,9 @@ export default function TablePage({
     if (!tableId || !userId || timeBanksRemaining <= 0) return;
     // Server-authoritative: just send the request; server manages countdown
     setTimeBankActive(true);
-    soundService.playChips();
+    // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
+    // dedicated time-bank cue existed and was only wired to the REMOTE event.
+    soundService.playTimeBankActivated();
     GameServerAPI.activateTimeBank(tableId, userId).catch((e) =>
       reportError(e, 'TablePage.activateTimeBank')
     );
@@ -6221,7 +6409,9 @@ export default function TablePage({
             const clamped = Math.min(amount, heroStack);
             if (clamped <= 0) return;
             if (!validateAndExecuteAction('raise', clamped)) return;
-            soundService.playRaise(); // SoundService handles haptic (medium) per Bible V8 §5.4
+            // SOUND AUDIT 2026-08-19: pass amount + BB so the Bible V8 §5.3
+            // "louder for larger raises" scaling actually engages.
+            soundService.playRaise(clamped, safeBB(tableStateRef.current.blinds, 1)); // haptic (medium) per §5.4
             {
               const revert = applyOptimisticHeroAction('raise', clamped);
               if (tableId) {
@@ -6282,7 +6472,8 @@ export default function TablePage({
     setShowRaiseSlider(false);
     try {
       //Local engine call removed — server is authoritative
-      soundService.playRaise(); // SoundService handles haptic (medium) per Bible V8 §5.4
+      // SOUND AUDIT 2026-08-19: amount-scaled raise sound (Bible V8 §5.3).
+      soundService.playRaise(clampedRaise, safeBB(tableStateRef.current.blinds, 1)); // haptic (medium) per §5.4
       // BUG 026: optimistic update for instant visual feedback
       const revert = applyOptimisticHeroAction('raise', clampedRaise);
       if (tableId) {
@@ -6457,8 +6648,15 @@ export default function TablePage({
         if (prev.length === 0) return prev;
         const cutoff = Date.now() - 5000;
         const fresh = prev.filter((a) => {
-          const ts = parseInt(a.id.split('_')[1] || '0', 10);
-          return ts > cutoff;
+          // ANIMATION AUDIT 2026-08-19: ids come in TWO formats — underscore
+          // (pa_<ts>_..., blind_<ts>_...) and hyphen (pot-to-winner-<ts>-<i>,
+          // chip-to-pot-<ts>-<i>). The old `split('_')[1]` parsed the hyphen
+          // ids to 0, so every pot-ship fan alive at a 5s tick was deleted
+          // MID-FLIGHT. Extract the epoch-millis token regardless of format.
+          const m = a.id.match(/(\d{13,})/);
+          const ts = m ? parseInt(m[1], 10) : 0;
+          // Unparseable id → keep (never destroy an animation we can't date).
+          return ts === 0 || ts > cutoff;
         });
         return fresh.length === prev.length ? prev : fresh;
       });
@@ -6499,19 +6697,9 @@ export default function TablePage({
   // is still mirrored to the server (effect above) and cleared at hand end
   // (effect below).
 
-  // Trigger board animation + sounds on stage transition
-  const prevBoardStageRef = useRef<string>('preflop');
-  useEffect(() => {
-    setBoardStageKey((prev) => prev + 1);
-
-    const prevStage = prevBoardStageRef.current;
-    const newStage = tableState.boardStage;
-    prevBoardStageRef.current = newStage;
-
-    // Community card and showdown sounds are now triggered by discrete engine
-    // events (COMMUNITY_CARDS_DEALT, SHOWDOWN) in the main event handler above.
-    // No fallback sound here — avoids double-playing on transitions.
-  }, [tableState.boardStage]);
+  // ANIMATION AUDIT 2026-08-19: the stage-change effect that bumped
+  // boardStageKey is gone with the key itself (see the state declaration).
+  // CommunityCards owns all per-street animation and sound.
 
   // Clear pre-action if game state changes significantly (new hand, someone raises after preaction set, etc)
   useEffect(() => {
@@ -7006,7 +7194,7 @@ export default function TablePage({
                     felt masthead shifts down via data-boards (see
                     .table-page[data-boards] in TablePage.css) so the cards
                     can never cover the date / club / game / hand line. */}
-                <div className="community-area" key={`board-${boardStageKey}`}>
+                <div className="community-area">
                   <CommunityCards
                     cards={tableState.communityCards}
                     stage={tableState.boardStage}
@@ -7306,6 +7494,16 @@ export default function TablePage({
                     '--bet-offset-y': `${betOffsetY}px`,
                     '--collect-dx': `${collectDx}px`,
                     '--collect-dy': `${collectDy}px`,
+                    /* ANIMATION AUDIT 2026-08-19: cardDealIn and cardFoldOut
+                       have always taken direction from --deal-from-x/y and
+                       --fold-to-x/y, and NOTHING ever set them — every seat's
+                       cards dropped straight down on the deal and floated
+                       straight up on the fold. Deal FROM the table centre
+                       (the dealer), muck TOWARD it. */
+                    '--deal-from-x': `${Math.round((dx * scalerSize.w) / 100)}px`,
+                    '--deal-from-y': `${Math.round((dy * scalerSize.h) / 100)}px`,
+                    '--fold-to-x': `${Math.round((dx * scalerSize.w * 0.55) / 100)}px`,
+                    '--fold-to-y': `${Math.round((dy * scalerSize.h * 0.55) / 100)}px`,
                   } as React.CSSProperties
                 }
               >
@@ -7409,6 +7607,7 @@ export default function TablePage({
                     }
                   }}
                   isDealing={isSeatDealing}
+                  isMucking={muckingSeats[idx] || false}
                 />
 
                 {/* FIX 89: All-In Equity Overlay — shown per seat during all-in */}
@@ -7420,26 +7619,16 @@ export default function TablePage({
                     );
                     if (!eq) return null;
                     const isAhead = eq.equity >= 50;
+                    /* ANIMATION AUDIT 2026-08-19: styling moved to
+                       TablePage.css (.equity-overlay) — the inline block had
+                       no transition, so 72.4% snapped to 13.1% with zero
+                       emphasis. The value is keyed so each street's new
+                       percentage replays the pop, and ahead/behind colors
+                       cross-fade via CSS. */
                     return (
                       <div
+                        key={`eq-${eq.equity}`}
                         className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}`}
-                        style={{
-                          position: 'absolute',
-                          bottom: '-18px',
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: '10px',
-                          backgroundColor: isAhead
-                            ? 'rgba(46, 204, 113, 0.9)'
-                            : 'rgba(231, 76, 60, 0.9)',
-                          color: '#fff',
-                          whiteSpace: 'nowrap',
-                          zIndex: 50,
-                          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-                        }}
                       >
                         {eq.equity}%
                       </div>

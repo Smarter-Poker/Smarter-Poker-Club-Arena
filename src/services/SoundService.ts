@@ -63,6 +63,12 @@ export const haptic = {
   /** Check if vibrations are enabled (reads from localStorage) */
   _isEnabled() {
     try {
+      // ANIMATION/SOUND AUDIT 2026-08-19: the in-table vibration switch
+      // (useTableSound) writes 'ca_vibration_enabled' while this only ever
+      // read 'vibrationsEnabled' (written by SoundSettings). The table
+      // toggle therefore did nothing. Honour BOTH keys — either switch
+      // being off silences haptics.
+      if (localStorage.getItem('ca_vibration_enabled') === 'false') return false;
       return localStorage.getItem('vibrationsEnabled') !== 'false';
     } catch {
       return true;
@@ -231,9 +237,45 @@ class SoundService {
     } catch (e: unknown) {
       console.warn('[SoundService] Web Audio API not supported');
     }
+    // ANIMATION/SOUND AUDIT 2026-08-19: mobile autoplay unlock. This context
+    // is constructed at module import time — on iOS Safari / Chrome mobile it
+    // is born 'suspended' and no play* call ever awaited resume(), so the
+    // first N table sounds were scheduled against a dead clock and dropped.
+    // Resume on the FIRST user gesture (the only place browsers allow it),
+    // and again whenever the tab returns to the foreground.
+    this.installUnlockListeners();
   }
 
   // ─── Context Management ──────────────────────────────────────────────
+
+  private unlockInstalled = false;
+
+  private installUnlockListeners(): void {
+    if (this.unlockInstalled || typeof window === 'undefined') return;
+    this.unlockInstalled = true;
+    const unlock = () => {
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {
+          /* resume can only succeed inside a gesture — retry on the next one */
+        });
+      }
+      if (this.ctx && this.ctx.state === 'running') {
+        window.removeEventListener('pointerdown', unlock);
+        window.removeEventListener('touchstart', unlock);
+        window.removeEventListener('keydown', unlock);
+      }
+    };
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('touchstart', unlock, { passive: true });
+    window.addEventListener('keydown', unlock);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {
+          /* best-effort — the gesture listeners above are the fallback */
+        });
+      }
+    });
+  }
 
   private ensureContext(): boolean {
     if (!this.ctx || !this.masterGain) return false;
@@ -893,6 +935,24 @@ class SoundService {
     osc.start(now);
     osc.stop(now + 0.15);
     haptic.light();
+  }
+
+  /**
+   * Player Left — descending two-note chime, the mirror of playSeatTaken.
+   * ANIMATION/SOUND AUDIT 2026-08-19: the PLAYER_LEFT room event had an
+   * empty case in TablePage — a seat emptied with zero feedback.
+   */
+  playPlayerLeft() {
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    const now = this.ctx!.currentTime;
+    const gain = this.createGain(0.1);
+    const osc = this.ctx!.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1100, now);
+    osc.frequency.setValueAtTime(820, now + 0.08);
+    osc.connect(gain);
+    osc.start(now);
+    osc.stop(now + 0.15);
   }
 
   /**

@@ -369,8 +369,18 @@ export function RunItTwiceResult({
             <div className="rit-board__cards">
               {board.map((raw, ci) => {
                 const card = parseRitCard(raw);
+                /* ANIMATION AUDIT 2026-08-19: all 10-15 cards used to appear
+                   in one frame. Each card now flips in with a stagger — board
+                   1 first, board 2 after it, so the runs read as separate
+                   deals (see .rit-board__card animation in RunItTwice.css). */
                 return card ? (
-                  <span key={`c-${bi}-${ci}`} className="rit-board__card">
+                  <span
+                    key={`c-${bi}-${ci}`}
+                    className="rit-board__card"
+                    style={
+                      { animationDelay: `${bi * 900 + ci * 140}ms` } as React.CSSProperties
+                    }
+                  >
                     <CardImage card={toCardImage(card)} size="xs" />
                   </span>
                 ) : null;

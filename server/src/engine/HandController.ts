@@ -822,6 +822,12 @@ export class HandController {
     // RAKE LEAK FIX 2026-08-18: same as runOutCommunityCards - the insurance
     // per-street path deals the flop without marking it seen.
     if (stage === 'flop') this.state.sawFlop = true;
+    // ANIMATION AUDIT 2026-08-19: unlike advanceStage, this path never moved
+    // state.stage — during a paced all-in runout every broadcastCurrentState
+    // still said 'preflop' while community_cards grew, so the client's
+    // stage-derived board rendered ZERO cards (five placeholders) for the
+    // whole runout. Advance the stage with the street.
+    this.transitionStage(stage as HandStage);
     this.state.communityCards.push(...cards);
     this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards });
 

@@ -34,6 +34,18 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected allInPreShowdownPauseMs = 1200;
 
   /**
+   * ANIMATION AUDIT 2026-08-19: true from the moment an all-in runout begins
+   * until the hand completes. While set, broadcastCurrentState reveals every
+   * non-folded player's hole cards (ServerTableEngine.ts) — standard poker:
+   * once betting is complete and hands are tabled, everyone sees them. Before
+   * this flag, cards were only revealed at stage === 'showdown', i.e. AFTER
+   * the paced runout finished — players watched equity percentages change for
+   * five seconds next to face-DOWN cards. Cleared by the HAND_COMPLETE
+   * listener and at hand start (ServerTableEngineDealing.ts).
+   */
+  protected runoutRevealActive = false;
+
+  /**
    * FIX 95: Bible V8 §4.20 + Dan's rules: Respond to a Run It Twice offer.
    *
    * Two-phase flow:
@@ -283,6 +295,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     // Pause all timers during insurance/RIT decision window
     this.clearTurnTimer();
+
+    // ANIMATION AUDIT 2026-08-19: table the hands. All betting is complete —
+    // every remaining hand is turned face up for the runout (see the field's
+    // doc comment). Must be set BEFORE the broadcast below so the reveal and
+    // the first equity percentages land together.
+    if (allInPlayers.length >= 2) {
+      this.runoutRevealActive = true;
+    }
 
     // Broadcast current state so clients see the all-in board
     this.broadcastCurrentState();
@@ -962,16 +982,44 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
         });
       }
     } catch {
-      // Degraded fallback: synchronous Monte-Carlo (fewer iters, no offload).
-      const numOpponents = valid.length - 1;
+      // Degraded fallback (pool unavailable).
+      // ANIMATION AUDIT 2026-08-19: this used to call monteCarloEquity, which
+      // simulates RANDOM opponents instead of the KNOWN all-in hands and has
+      // no Omaha branch — its numbers were wrong for PLO and noisy everywhere.
+      // insuranceEquity is exact vs the known hands and variant-aware
+      // (flop/turn enumerate <=990 boards; preflop samples 6,000 seeded).
+      const variantName = this.tableInfo?.game_variant || 'nlh';
       for (const player of valid) {
-        const equity = monteCarloEquity(player.cards || [], board, numOpponents, 1000, isShortDeck);
-        equities.push({
-          userId: player.user_id,
-          username: player.username || 'Unknown',
-          equity: Math.round(equity * 10) / 10,
-          seat: player.seat,
-        });
+        try {
+          const opponents = valid
+            .filter((o) => o.user_id !== player.user_id)
+            .map((o) => o.cards || []);
+          const r = insuranceEquity(player.cards || [], opponents, board, variantName, isShortDeck);
+          equities.push({
+            userId: player.user_id,
+            username: player.username || 'Unknown',
+            equity: Math.round(r.equity * 10) / 10,
+            seat: player.seat,
+          });
+        } catch {
+          // Last resort for this one player: NLH-only Monte-Carlo, but never
+          // for Omaha (no evaluator — better to omit than to lie).
+          if (!isOmaha) {
+            const equity = monteCarloEquity(
+              player.cards || [],
+              board,
+              valid.length - 1,
+              1000,
+              isShortDeck
+            );
+            equities.push({
+              userId: player.user_id,
+              username: player.username || 'Unknown',
+              equity: Math.round(equity * 10) / 10,
+              seat: player.seat,
+            });
+          }
+        }
       }
     }
 
@@ -1015,6 +1063,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     allInPlayers: import('../types.js').SeatPlayer[],
     pot: number
   ): Promise<void> {
+    if (!this.handController) return;
+
+    // ANIMATION AUDIT 2026-08-19: give the CURRENT board + percentages a
+    // readable beat before the next card lands. The insurance flow used to
+    // rely entirely on the 15s offer window for pacing — but when no offer is
+    // created (tied hands) or the horse leader answers in ~1s, streets fired
+    // back-to-back with no gap at all.
+    await this.sleep(this.allInStreetPauseMs);
     if (!this.handController) return;
 
     // Deal the next street
@@ -1174,10 +1230,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           // ALL players declined for hand — per-street pause is void.
           // Deal remaining streets instantly and finalize.
           console.log(
-            `[ServerTableEngine:${this.tableId}] All players declined insurance for hand — switching to instant runout`
+            `[ServerTableEngine:${this.tableId}] All players declined insurance for hand — switching to paced runout`
           );
+          // ANIMATION AUDIT 2026-08-19: was continueRunout() — the INSTANT
+          // synchronous loop. Declining insurance must not also skip the
+          // watchable street-by-street runout with equity updates; the paced
+          // path finishes with safeContinueRunout itself.
           if (this.handController) {
-            this.handController.continueRunout();
+            void this.pacedAllInRunout(allInPlayers, pot);
           }
         } else {
           // At least one player eligible — continue per-street pause

@@ -13,7 +13,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
-import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../../utils/clubIdResolver';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import styles from './ClubActivityFeed.module.css';
 import { reportError } from '../../utils/errorReporter';
@@ -55,7 +55,10 @@ export default function ClubActivityFeed({
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<ActivityType | 'all'>('all');
-  const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  // Keyed by activity id, NOT by list index: the rendered list is the FILTERED
+  // array, so index-keyed visibility left rows stuck at opacity 0 whenever a
+  // filter shifted their position — selecting a filter blanked the feed.
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
   const isMounted = useIsMounted();
 
   // Track stagger timeouts for cleanup on unmount
@@ -96,8 +99,14 @@ export default function ClubActivityFeed({
     loadingRef.current = true;
     if (withSpinner) setLoading(true);
     try {
-      // Resolve club UUID — clubId prop may be an integer club code from URL
+      // Resolve club UUID — clubId prop may be an integer club code from URL.
+      // resolveClubUUID returns its input unchanged when it cannot resolve, and
+      // feeding a non-uuid to a uuid-typed RPC throws 22P02, so bail instead.
       const resolvedUuid = await resolveClubUUID(clubId);
+      if (!isUUID(resolvedUuid)) {
+        if (isMounted.current) setActivities([]);
+        return;
+      }
 
       const { data, error } = await supabase.rpc('ca_club_activity', {
         p_club_id: resolvedUuid,
@@ -119,18 +128,18 @@ export default function ClubActivityFeed({
       if (!isMounted.current) return;
       setActivities(items);
       if (withSpinner) {
-        setVisibleItems(new Set());
+        setVisibleIds(new Set());
         staggerTimersRef.current.forEach((t) => clearTimeout(t));
-        staggerTimersRef.current = items.map((_, i) =>
+        staggerTimersRef.current = items.map((item, i) =>
           setTimeout(() => {
             if (isMounted.current) {
-              setVisibleItems((prev) => new Set(prev).add(i));
+              setVisibleIds((prev) => new Set(prev).add(item.id));
             }
           }, i * 60)
         );
       } else {
         // Silent refresh — show everything immediately, no re-stagger
-        setVisibleItems(new Set(items.map((_, i) => i)));
+        setVisibleIds(new Set(items.map((item) => item.id)));
       }
     } catch (error) {
       reportError(error, 'ClubActivityFeed.Failed_to_load_activities');
@@ -192,13 +201,13 @@ export default function ClubActivityFeed({
         ) : filteredActivities.length === 0 ? (
           <div className={styles.empty}>No activity yet</div>
         ) : (
-          filteredActivities.map((activity, i) => (
+          filteredActivities.map((activity) => (
             <div
               key={activity.id}
               className={styles.item}
               style={{
-                opacity: visibleItems.has(i) ? 1 : 0,
-                transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
+                opacity: visibleIds.has(activity.id) ? 1 : 0,
+                transform: visibleIds.has(activity.id) ? 'translateY(0)' : 'translateY(8px)',
                 transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
               }}
             >

@@ -1,0 +1,165 @@
+import { describe, it, expect } from 'vitest';
+import {
+  sinceForRange,
+  rangeLabel,
+  rankPlayers,
+  formatChips,
+  formatInt,
+  formatSigned,
+  csvEscape,
+  leaderboardToCsv,
+  isAuthzError,
+  isLiveTableStatus,
+  tableStatusLabel,
+  type RankablePlayer,
+} from '../../src/utils/clubDashboard';
+
+const mk = (over: Partial<RankablePlayer>): RankablePlayer => ({
+  userId: over.userId ?? 'u',
+  displayName: over.displayName ?? 'Player',
+  isHorse: over.isHorse ?? false,
+  totalProfit: over.totalProfit ?? 0,
+  totalWon: over.totalWon ?? 0,
+  handsPlayed: over.handsPlayed ?? 0,
+  handsWon: over.handsWon ?? 0,
+  biggestPotWon: over.biggestPotWon ?? 0,
+  winRate: over.winRate ?? 0,
+  rank: over.rank ?? 0,
+});
+
+describe('sinceForRange', () => {
+  const now = Date.UTC(2026, 7, 19, 15, 30, 0); // 2026-08-19T15:30:00Z
+
+  it('returns null for "all" so the RPC applies no lower bound', () => {
+    expect(sinceForRange('all', now)).toBeNull();
+  });
+
+  it('anchors "today" to UTC midnight, matching how stat_date is bucketed', () => {
+    expect(sinceForRange('today', now)).toBe('2026-08-19T00:00:00.000Z');
+  });
+
+  it('goes back exactly 7 and 30 days for week/month', () => {
+    expect(sinceForRange('week', now)).toBe('2026-08-12T15:30:00.000Z');
+    expect(sinceForRange('month', now)).toBe('2026-07-20T15:30:00.000Z');
+  });
+
+  it('never returns a future timestamp', () => {
+    (['today', 'week', 'month'] as const).forEach((r) => {
+      expect(new Date(sinceForRange(r, now)!).getTime()).toBeLessThanOrEqual(now);
+    });
+  });
+});
+
+describe('rangeLabel', () => {
+  it('reads naturally in an empty state sentence', () => {
+    expect(rangeLabel('all')).toBe('all time');
+    expect(rangeLabel('week')).toBe('this week');
+  });
+});
+
+describe('rankPlayers', () => {
+  const players = [
+    mk({ userId: 'a', totalProfit: 10, handsPlayed: 5, winRate: 50, biggestPotWon: 3 }),
+    mk({ userId: 'b', totalProfit: 50, handsPlayed: 1, winRate: 10, biggestPotWon: 99, isHorse: true }),
+    mk({ userId: 'c', totalProfit: -5, handsPlayed: 90, winRate: 80, biggestPotWon: 1 }),
+  ];
+
+  it('sorts by profit descending by default', () => {
+    expect(rankPlayers(players, 'profit', false).map((p) => p.userId)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('supports hands, win rate and biggest pot orderings', () => {
+    expect(rankPlayers(players, 'hands', false).map((p) => p.userId)).toEqual(['c', 'a', 'b']);
+    expect(rankPlayers(players, 'winrate', false).map((p) => p.userId)).toEqual(['c', 'a', 'b']);
+    expect(rankPlayers(players, 'biggest', false).map((p) => p.userId)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('excludes horses when humans-only is on', () => {
+    const out = rankPlayers(players, 'profit', true);
+    expect(out.map((p) => p.userId)).toEqual(['a', 'c']);
+    expect(out.every((p) => !p.isHorse)).toBe(true);
+  });
+
+  it('assigns contiguous ranks AFTER filtering, so positions never skip', () => {
+    expect(rankPlayers(players, 'profit', true).map((p) => p.rank)).toEqual([1, 2]);
+  });
+
+  it('does not mutate the input array', () => {
+    const before = players.map((p) => p.userId);
+    rankPlayers(players, 'hands', false);
+    expect(players.map((p) => p.userId)).toEqual(before);
+  });
+
+  it('handles an empty roster', () => {
+    expect(rankPlayers([], 'profit', false)).toEqual([]);
+  });
+});
+
+describe('chip formatting', () => {
+  it('always shows two decimals with thousands separators', () => {
+    expect(formatChips(1234.5)).toBe('1,234.50');
+    expect(formatInt(1234.9)).toBe('1,234');
+  });
+
+  it('truncates rather than rounds, so a loss never rounds into a win', () => {
+    expect(formatChips(0.999)).toBe('0.99');
+  });
+
+  it('prefixes sign from the value, and does not emit "-0.00"', () => {
+    expect(formatSigned(12.3)).toBe('+12.30');
+    expect(formatSigned(-12.3)).toBe('-12.30');
+    expect(formatSigned(0)).toBe('0.00');
+    expect(formatSigned(-0.004)).toBe('0.00');
+  });
+});
+
+describe('CSV export', () => {
+  it('escapes quotes and commas in player names', () => {
+    expect(csvEscape('Bob "The Rock", Jr')).toBe('"Bob ""The Rock"", Jr"');
+  });
+
+  it('emits a header plus one line per player', () => {
+    const csv = leaderboardToCsv([
+      mk({ userId: 'a', displayName: 'Ann', totalProfit: 12.5, handsPlayed: 3, rank: 1 }),
+    ]);
+    const lines = csv.split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('rank,player,is_horse');
+    expect(lines[1]).toContain('"Ann"');
+    expect(lines[1]).toContain('12.5');
+  });
+
+  it('produces only a header for an empty leaderboard', () => {
+    expect(leaderboardToCsv([]).split('\n')).toHaveLength(1);
+  });
+});
+
+describe('isAuthzError', () => {
+  it('detects the membership rejection by code and by message', () => {
+    expect(isAuthzError({ code: '42501' })).toBe(true);
+    expect(isAuthzError({ message: 'not authorized for this club' })).toBe(true);
+  });
+
+  it('does not swallow unrelated failures', () => {
+    expect(isAuthzError({ code: '22P02', message: 'invalid input syntax for type uuid' })).toBe(
+      false
+    );
+    expect(isAuthzError(null)).toBe(false);
+  });
+});
+
+describe('table status', () => {
+  it('treats running/waiting/active as live', () => {
+    expect(isLiveTableStatus('running')).toBe(true);
+    expect(isLiveTableStatus('waiting')).toBe(true);
+    expect(isLiveTableStatus('closed')).toBe(false);
+    expect(isLiveTableStatus(null)).toBe(false);
+  });
+
+  it('labels known statuses and title-cases unknown ones', () => {
+    expect(tableStatusLabel('running')).toBe('Running');
+    expect(tableStatusLabel('closed')).toBe('Closed');
+    expect(tableStatusLabel('paused')).toBe('Paused');
+    expect(tableStatusLabel('')).toBe('Unknown');
+  });
+});

@@ -1,0 +1,165 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  CLUB DASHBOARD — pure helpers
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * Extracted from ClubDashboard.tsx so the range maths, leaderboard ordering and
+ * CSV encoding are unit-testable without mounting the page.
+ */
+
+export type RangeId = 'today' | 'week' | 'month' | 'all';
+export type SortId = 'profit' | 'hands' | 'winrate' | 'biggest';
+
+export interface RankablePlayer {
+  userId: string;
+  displayName: string;
+  isHorse: boolean;
+  totalProfit: number;
+  totalWon: number;
+  handsPlayed: number;
+  handsWon: number;
+  biggestPotWon: number;
+  winRate: number;
+  rank: number;
+}
+
+/**
+ * Maps the Time Range filter to the `p_since` argument of the dashboard RPCs.
+ * 'all' is null (no lower bound). 'today' is UTC midnight because the server
+ * buckets stat_date in UTC — using local midnight would shift the boundary by
+ * the viewer's offset and make "Today" disagree with the stats table.
+ */
+export function sinceForRange(range: RangeId, now: number = Date.now()): string | null {
+  switch (range) {
+    case 'today': {
+      const d = new Date(now);
+      d.setUTCHours(0, 0, 0, 0);
+      return d.toISOString();
+    }
+    case 'week':
+      return new Date(now - 7 * 86400000).toISOString();
+    case 'month':
+      return new Date(now - 30 * 86400000).toISOString();
+    case 'all':
+    default:
+      return null;
+  }
+}
+
+/** Human-readable suffix for empty states and captions. */
+export function rangeLabel(range: RangeId): string {
+  return range === 'all' ? 'all time' : `this ${range}`;
+}
+
+/**
+ * Filters horses out (optional) and orders the leaderboard, then assigns
+ * contiguous ranks so rank always matches displayed position — ranking before
+ * filtering would leave visible gaps like #1, #4, #7.
+ */
+export function rankPlayers<T extends RankablePlayer>(
+  players: T[],
+  sortBy: SortId,
+  hideHorses: boolean
+): T[] {
+  const filtered = hideHorses ? players.filter((p) => !p.isHorse) : players;
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sortBy) {
+      case 'hands':
+        return b.handsPlayed - a.handsPlayed;
+      case 'winrate':
+        return b.winRate - a.winRate;
+      case 'biggest':
+        return b.biggestPotWon - a.biggestPotWon;
+      case 'profit':
+      default:
+        return b.totalProfit - a.totalProfit;
+    }
+  });
+  return sorted.map((p, i) => ({ ...p, rank: i + 1 }));
+}
+
+/** Chip formatting: two decimals, truncated (never rounds a loss into a win). */
+export function formatChips(num: number): string {
+  const v = Math.trunc(num * 100) / 100;
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export function formatInt(num: number): string {
+  return Math.trunc(num).toLocaleString('en-US');
+}
+
+/**
+ * Signed chip amount. Takes the sign from the value and formats the magnitude,
+ * so a tiny negative like -0.004 renders "0.00" rather than the "-0.00" that
+ * truncation-then-prefix produced.
+ */
+export function formatSigned(num: number): string {
+  const v = Math.trunc(num * 100) / 100;
+  const sign = v > 0 ? '+' : v < 0 ? '-' : '';
+  return `${sign}${formatChips(Math.abs(v))}`;
+}
+
+/** RFC4180-ish CSV escaping: wrap in quotes and double any embedded quote. */
+export function csvEscape(value: unknown): string {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
+export function leaderboardToCsv(players: RankablePlayer[]): string {
+  const header = [
+    'rank',
+    'player',
+    'is_horse',
+    'hands_played',
+    'hands_won',
+    'win_rate_pct',
+    'total_won',
+    'profit',
+    'biggest_pot_won',
+  ];
+  const lines = [
+    header.join(','),
+    ...players.map((p) =>
+      [
+        p.rank,
+        csvEscape(p.displayName),
+        p.isHorse,
+        p.handsPlayed,
+        p.handsWon,
+        p.winRate,
+        p.totalWon,
+        p.totalProfit,
+        p.biggestPotWon,
+      ].join(',')
+    ),
+  ];
+  return lines.join('\n');
+}
+
+/** Postgres raises 42501 when the caller is not a member of the club. */
+export function isAuthzError(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | null;
+  if (!e) return false;
+  return e.code === '42501' || /not authorized for this club/i.test(e.message || '');
+}
+
+/** Live table statuses — a table can be 'running' while flagged deleted. */
+export const LIVE_TABLE_STATUSES = ['running', 'waiting', 'active'] as const;
+
+export function isLiveTableStatus(status: string | null | undefined): boolean {
+  return LIVE_TABLE_STATUSES.includes((status || '') as (typeof LIVE_TABLE_STATUSES)[number]);
+}
+
+export function tableStatusLabel(status: string): string {
+  switch (status) {
+    case 'running':
+      return 'Running';
+    case 'waiting':
+      return 'Waiting';
+    case 'active':
+      return 'Active';
+    case 'finished':
+    case 'closed':
+      return 'Closed';
+    default:
+      return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
+  }
+}

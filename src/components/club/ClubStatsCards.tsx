@@ -10,10 +10,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
-import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../../utils/clubIdResolver';
 import { masterBus } from '../../core/MasterBus';
 import styles from './ClubStatsCards.module.css';
 import { reportError } from '../../utils/errorReporter';
+
+export interface DailyPoint {
+  d: string;
+  hands: number;
+  rake: number;
+}
 
 export interface DashboardStats {
   totalMembers: number;
@@ -23,6 +29,10 @@ export interface DashboardStats {
   handsToday: number;
   rakeToday: number;
   weeklyGrowth: number;
+  handsWeek: number;
+  rakeWeek: number;
+  seatedNow: number;
+  dailySeries: DailyPoint[];
 }
 
 interface ClubStatsCardsProps {
@@ -39,7 +49,40 @@ const EMPTY_STATS: DashboardStats = {
   handsToday: 0,
   rakeToday: 0,
   weeklyGrowth: 0,
+  handsWeek: 0,
+  rakeWeek: 0,
+  seatedNow: 0,
+  dailySeries: [],
 };
+
+/**
+ * Inline 14-day sparkline. Rendered as a plain SVG path so the metric cards
+ * gain trend context without pulling a chart library into this chunk.
+ */
+function Sparkline({ points, color }: { points: number[]; color: string }) {
+  if (!points.length || points.every((p) => p === 0)) return null;
+  const w = 100;
+  const h = 22;
+  const max = Math.max(...points);
+  const min = Math.min(...points);
+  const span = max - min || 1;
+  const step = points.length > 1 ? w / (points.length - 1) : w;
+  const d = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(2)},${(h - ((p - min) / span) * h).toFixed(2)}`)
+    .join(' ');
+  return (
+    <svg
+      width="100%"
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      style={{ display: 'block', marginTop: 6, opacity: 0.85 }}
+    >
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCardsProps) {
   const [stats, setStats] = useState<DashboardStats>(statsProp || EMPTY_STATS);
@@ -85,8 +128,14 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
   const loadStats = async () => {
     setLoading(true);
     try {
-      // Resolve integer clubId to UUID for the RPC
+      // Resolve integer clubId to UUID for the RPC. resolveClubUUID returns
+      // its input unchanged when it cannot resolve; a non-uuid would throw
+      // 22P02 against the uuid-typed parameter, so bail instead.
       const resolvedId = await resolveClubUUID(clubId);
+      if (!isUUID(resolvedId)) {
+        if (isMounted.current) setLoading(false);
+        return;
+      }
 
       const { data, error } = await supabase.rpc('ca_club_dashboard_stats', {
         p_club_id: resolvedId,
@@ -102,6 +151,16 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
           handsToday: data.hands_today || 0,
           rakeToday: Number(data.rake_today) || 0,
           weeklyGrowth: data.new_this_week || 0,
+          handsWeek: Number(data.hands_week) || 0,
+          rakeWeek: Number(data.rake_week) || 0,
+          seatedNow: data.seated_now || 0,
+          dailySeries: Array.isArray(data.daily_series)
+            ? data.daily_series.map((p: any) => ({
+                d: String(p.d),
+                hands: Number(p.hands) || 0,
+                rake: Number(p.rake) || 0,
+              }))
+            : [],
         });
       }
     } catch (error) {
@@ -121,7 +180,14 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
     });
   };
 
-  const statCards = [
+  const statCards: Array<{
+    label: string;
+    value: string;
+    icon: React.ReactNode;
+    color: string;
+    sub?: string;
+    spark?: number[];
+  }> = [
     {
       label: 'Total Members',
       value: formatInt(stats.totalMembers),
@@ -149,6 +215,7 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
     {
       label: 'Online Now',
       value: formatInt(stats.onlineNow),
+      sub: stats.seatedNow > 0 ? `${formatInt(stats.seatedNow)} seated at tables` : undefined,
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
           <circle cx="12" cy="12" r="4" fill="#10b981">
@@ -173,6 +240,10 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
     {
       label: 'Active Tables',
       value: formatInt(stats.activeTables),
+      sub:
+        stats.totalTables > stats.activeTables
+          ? `${formatInt(stats.totalTables)} total`
+          : undefined,
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
           <rect x="3" y="3" width="8" height="8" rx="2" stroke="#fbbf24" strokeWidth="1.5" />
@@ -195,6 +266,8 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
     {
       label: 'Hands Today',
       value: formatInt(stats.handsToday),
+      sub: stats.handsWeek > 0 ? `${formatInt(stats.handsWeek)} this week` : undefined,
+      spark: stats.dailySeries.map((p) => p.hands),
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
           <path
@@ -218,6 +291,8 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
     {
       label: 'Rake Today',
       value: formatChips(stats.rakeToday),
+      sub: stats.rakeWeek > 0 ? `${formatChips(stats.rakeWeek)} this week` : undefined,
+      spark: stats.dailySeries.map((p) => p.rake),
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
           <circle cx="12" cy="12" r="9" stroke="#f59e0b" strokeWidth="1.5" />
@@ -305,6 +380,18 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
           </span>
           <span className={styles.value}>{stat.value}</span>
           <span className={styles.label}>{stat.label}</span>
+          {stat.sub && (
+            <span
+              style={{
+                fontSize: '0.68rem',
+                color: 'var(--text-secondary, #8a8f98)',
+                marginTop: 2,
+              }}
+            >
+              {stat.sub}
+            </span>
+          )}
+          {stat.spark && <Sparkline points={stat.spark} color={stat.color} />}
         </div>
       ))}
     </div>

@@ -2,18 +2,19 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB DASHBOARD — Comprehensive Club Analytics
  * ═══════════════════════════════════════════════════════════════════════════════
- * Full analytics dashboard for club owners and admins
- * Features:
- * - Club Stats Cards with key metrics (single ca_club_dashboard_stats RPC)
- * - Activity Feed synthesized from real events (ca_club_activity RPC)
- * - Leaderboard with real profit/hands and working time-range filter
- *   (ca_club_top_players RPC over club_member_daily_stats aggregates)
- * - Tables tab with live table list
- * - Quick actions for club management
+ * Data sources (all club-membership gated, see 20260819b/c/d migrations):
+ *   ca_club_dashboard_stats  — metric cards + 14-day sparkline series
+ *   ca_club_top_players      — leaderboard, real profit from stack deltas
+ *   ca_club_members          — full searchable roster for the Players tab
+ *   ca_club_activity         — activity feed synthesized from real events
+ *
+ * Profit note: figures come from post-hand stack deltas with session/rebuy
+ * gating, so a player's number is only counted over hands it could be proven
+ * on. hands_attributed is surfaced in the UI rather than hidden.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -27,7 +28,21 @@ import PageSkeleton from '../../components/common/PageSkeleton';
 import { useToast } from '../../components/common/Toast';
 import ClubMemberManagement from '../../components/admin/ClubMemberManagement';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
-import { resolveClubIdFilter, resolveClubUUID } from '../../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../../utils/clubIdResolver';
+import {
+  sinceForRange,
+  rangeLabel as rangeLabelFor,
+  rankPlayers,
+  formatChips,
+  formatInt,
+  formatSigned,
+  leaderboardToCsv,
+  isAuthzError,
+  isLiveTableStatus,
+  tableStatusLabel,
+  type RangeId,
+  type SortId,
+} from '../../utils/clubDashboard';
 import { getClubLevel } from '../../utils/clubLevels';
 import ClubChat from '../../components/club/ClubChat';
 import styles from './ClubDashboard.module.css';
@@ -47,11 +62,28 @@ interface TopPlayer {
   userId: string;
   displayName: string;
   avatarUrl?: string;
+  isHorse: boolean;
   totalProfit: number;
   totalWon: number;
   handsPlayed: number;
-  biggestPot: number;
+  handsWon: number;
+  biggestPotWon: number;
+  winRate: number;
   rank: number;
+}
+
+interface ClubMemberRow {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  isHorse: boolean;
+  role: string;
+  status: string;
+  joinedAt: string | null;
+  lastActive: string | null;
+  chipBalance: number;
+  handsPlayed: number;
+  profit: number;
 }
 
 interface ClubTable {
@@ -69,27 +101,9 @@ interface ClubTable {
 }
 
 type TabId = 'overview' | 'activity' | 'players' | 'tables';
-type RangeId = 'today' | 'week' | 'month' | 'all';
 
 const VALID_TABS: TabId[] = ['overview', 'activity', 'players', 'tables'];
-
-/** Maps the time-range filter to a `p_since` timestamp for the leaderboard RPC. */
-function sinceForRange(range: RangeId): string | null {
-  const now = Date.now();
-  switch (range) {
-    case 'today': {
-      const d = new Date();
-      d.setUTCHours(0, 0, 0, 0);
-      return d.toISOString();
-    }
-    case 'week':
-      return new Date(now - 7 * 86400000).toISOString();
-    case 'month':
-      return new Date(now - 30 * 86400000).toISOString();
-    default:
-      return null;
-  }
-}
+const MEMBER_PAGE_SIZE = 25;
 
 const RANK_COLORS: Record<number, string> = {
   1: 'linear-gradient(135deg, #f5c518, #b8860b)',
@@ -104,11 +118,18 @@ export default function ClubDashboard() {
   const { user } = useAuthUser();
   const toast = useToast();
   useVisibilityRefresh(() => loadDashboardData(true));
+
   const [club, setClub] = useState<ClubInfo | null>(null);
   const [topPlayers, setTopPlayers] = useState<TopPlayer[]>([]);
   const [clubTables, setClubTables] = useState<ClubTable[]>([]);
   const [dashStats, setDashStats] = useState<DashboardStats | null>(null);
+  const [attribution, setAttribution] = useState<{ played: number; attributed: number } | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [notAMember, setNotAMember] = useState(false);
+
   const [activeTab, setActiveTab] = useState<TabId>(() => {
     const urlTab = new URLSearchParams(window.location.search).get('tab');
     if (urlTab && VALID_TABS.includes(urlTab as TabId)) return urlTab as TabId;
@@ -117,20 +138,45 @@ export default function ClubDashboard() {
   const [dateRange, setDateRange] = useState<RangeId>(() =>
     getLocalStorage('ca_dashboard_range', 'week')
   );
+  const [sortBy, setSortBy] = useState<SortId>(() => getLocalStorage('ca_dashboard_sort', 'profit'));
+  const [hideHorses, setHideHorses] = useState<boolean>(() =>
+    getLocalStorage('ca_dashboard_hide_horses', false)
+  );
+
   const [visiblePlayers, setVisiblePlayers] = useState<Set<number>>(new Set());
   const [isRecalculating, setIsRecalculating] = useState(false);
-  const [loadError, setLoadError] = useState(false);
+  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+
+  // Members tab
+  const [members, setMembers] = useState<ClubMemberRow[]>([]);
+  const [memberTotal, setMemberTotal] = useState(0);
+  const [memberPage, setMemberPage] = useState(0);
+  const [memberSearch, setMemberSearch] = useState('');
+  const [membersLoading, setMembersLoading] = useState(false);
+
   const loadingRef = useRef(false);
+  // Monotonic request id: a slower earlier response must never overwrite the
+  // state produced by a newer one (e.g. rapid Time Range switching).
+  const requestIdRef = useRef(0);
+  // Set when a load is requested while one is already running, so the newest
+  // filter selection is never silently dropped by the in-flight guard.
+  const rerunRef = useRef(false);
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
   useEffect(() => {
     setLocalStorage('ca_dashboard_tab', activeTab);
   }, [activeTab]);
   useEffect(() => {
     setLocalStorage('ca_dashboard_range', dateRange);
   }, [dateRange]);
-  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  useEffect(() => {
+    setLocalStorage('ca_dashboard_sort', sortBy);
+  }, [sortBy]);
+  useEffect(() => {
+    setLocalStorage('ca_dashboard_hide_horses', hideHorses);
+  }, [hideHorses]);
 
-  // Deep-linking: ?tab=activity (used by "View All Activity") switches tabs.
+  // Deep-linking: ?tab=activity switches tabs.
   useEffect(() => {
     const urlTab = searchParams.get('tab');
     if (urlTab && VALID_TABS.includes(urlTab as TabId) && urlTab !== activeTab) {
@@ -142,7 +188,6 @@ export default function ClubDashboard() {
   const switchTab = useCallback(
     (tab: TabId) => {
       setActiveTab(tab);
-      // Keep the URL shareable/back-button friendly
       const next = new URLSearchParams(searchParams);
       next.set('tab', tab);
       setSearchParams(next, { replace: true });
@@ -157,13 +202,9 @@ export default function ClubDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId, dateRange]);
 
-  // Leaderboard player stagger animation (with cleanup to prevent zombie timeouts)
-  //
-  // Keyed on a CONTENT signature, not on the topPlayers array identity. Every
-  // refresh builds a fresh array, so an identity dep re-ran this on each one:
-  // visiblePlayers was cleared and all rows faded back in from nothing. With
-  // refreshes arriving about once a second the leaderboard was permanently
-  // mid-animation. A refresh returning the same players in order is a no-op.
+  // Leaderboard stagger animation, keyed on a CONTENT signature rather than
+  // array identity: every refresh builds a fresh array, so an identity dep
+  // re-ran this on each one and the rows permanently re-faded from nothing.
   const topPlayersRef = useRef(topPlayers);
   useEffect(() => {
     topPlayersRef.current = topPlayers;
@@ -182,7 +223,7 @@ export default function ClubDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topPlayersSignature]);
 
-  // Real-time subscription for table and member changes
+  // ── Club UUID resolution ───────────────────────────────────────────────────
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -190,12 +231,21 @@ export default function ClubDashboard() {
       setResolvedClubId(null);
       return;
     }
+    let cancelled = false;
     resolveClubUUID(clubId)
-      .then(setResolvedClubId)
+      .then((uuid) => {
+        if (cancelled) return;
+        // resolveClubUUID falls back to returning its input when it cannot
+        // resolve. Passing a non-uuid into a uuid RPC parameter throws 22P02,
+        // so only accept a real uuid.
+        setResolvedClubId(isUUID(uuid) ? uuid : null);
+      })
       .catch((e) => console.warn('[ClubDashboard] Failed to resolve clubId:', e));
+    return () => {
+      cancelled = true;
+    };
   }, [clubId]);
 
-  // Tables channel
   useMasterBusChannel({
     channelName: `club-dashboard-tables-${clubId}`,
     table: 'tables',
@@ -205,7 +255,6 @@ export default function ClubDashboard() {
     enabled: !!resolvedClubId,
   });
 
-  // Members channel
   useMasterBusChannel({
     channelName: `club-dashboard-members-${clubId}`,
     table: 'club_members',
@@ -215,18 +264,11 @@ export default function ClubDashboard() {
     enabled: !!resolvedClubId,
   });
 
-  // Hand history channel — DISABLED (Phase 2 cost cut).
-  // hand_history is dropped from supabase_realtime to save egress. The
-  // dashboard refreshes on tab-focus (useVisibilityRefresh) and on every
-  // club-scoped bus event below, so hand counts are eventually consistent.
+  // hand_history realtime stays DISABLED (Phase 2 egress cut). The dashboard
+  // refreshes on tab focus and on club-scoped bus events below instead.
 
-  // ── Bus Listeners: cross-page event reactivity (coalesced, scoped by clubId) ──
+  // ── Bus listeners: one coalesced timer for all events, not one per event ──
   useEffect(() => {
-    // ONE debounce shared by every event, not one per event type.
-    // subscribeDebounced debounces each event NAME independently, so fifteen
-    // subscriptions meant fifteen independent timers that could out-run each
-    // other and reload several times a second on a busy club. Coalescing to
-    // one trailing timer means a burst of twenty events costs ONE reload.
     const COALESCE_MS = 2000;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
@@ -236,7 +278,7 @@ export default function ClubDashboard() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        if (!disposed) loadDashboardData(true); // silent: no loading skeleton
+        if (!disposed) loadDashboardData(true);
       }, COALESCE_MS);
     };
 
@@ -254,7 +296,6 @@ export default function ClubDashboard() {
       'HAND_COMPLETED',
       'SETTLEMENT_CYCLE_COMPLETED',
       'COLLUSION_DETECTED',
-      // Level recompute: role promotions trigger SQL level recalc
       'AGENT_UPDATED',
       'MEMBER_ROLE_CHANGED',
     ] as const;
@@ -269,29 +310,18 @@ export default function ClubDashboard() {
   }, [clubId]);
 
   const handleRecalculateLevel = async () => {
-    if (!clubId || isRecalculating) return;
+    if (!resolvedClubId || isRecalculating) return;
     setIsRecalculating(true);
     try {
-      const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
-      let resolvedId = clubId;
-      if (clubCol === 'club_id') {
-        const { data } = await supabase
-          .from('clubs')
-          .select('id')
-          .eq('club_id', clubVal)
-          .maybeSingle();
-        if (data) resolvedId = data.id;
-      }
-
       const { data: resData, error } = await supabase.rpc('recompute_club_levels', {
-        p_club_id: resolvedId,
+        p_club_id: resolvedClubId,
       });
       if (error) throw error;
       if (resData && resData.success === false) {
         throw new Error(resData.error || 'Failed to recalculate level.');
       }
       toast.success('Club Level Recalculated Successfully!');
-      loadDashboardData();
+      loadDashboardData(true);
     } catch (err: any) {
       reportError(err, 'ClubDashboard.Recalculate_error');
       toast.error(err.message || 'Failed to recalculate level.');
@@ -301,43 +331,52 @@ export default function ClubDashboard() {
   };
 
   /**
-   * @param silent  Background refresh triggered by a realtime/bus event rather
-   *   than by the user arriving. Skips setLoading(true) so the page never
-   *   flips back into its skeleton state mid-session.
+   * @param silent Background refresh (realtime/bus/tab-focus) rather than a
+   *   user arriving. Skips the loading skeleton so the page never flips back
+   *   into a skeleton mid-session.
    */
   const loadDashboardData = async (silent = false) => {
     if (!clubId) return;
-    if (loadingRef.current) return;
+    if (loadingRef.current) {
+      // Do NOT drop this request. A Time Range change while a load is in
+      // flight used to be swallowed here, leaving the filter highlighted but
+      // the data showing the previous range.
+      rerunRef.current = true;
+      return;
+    }
     loadingRef.current = true;
+    const reqId = ++requestIdRef.current;
     setLoadError(false);
     if (!silent) setLoading(true);
     try {
-      // Load club info
-      const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
-      const { data: clubData } = await supabase
-        .from('clubs')
-        .select(
-          'id, name, avatar_url, created_at, level, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-        )
-        .eq(clubCol, clubVal)
-        .maybeSingle();
+      const uuid = isUUID(clubId) ? clubId : await resolveClubUUID(clubId);
+      if (!isUUID(uuid)) {
+        // Unknown club code — render the not-found state rather than throwing
+        // an opaque 22P02 from the uuid-typed RPCs.
+        if (reqId === requestIdRef.current) {
+          setClub(null);
+          setLoading(false);
+        }
+        return;
+      }
 
-      // Use resolved UUID for all FK queries — clubId from URL may be integer
-      const resolvedId = clubData?.id || clubId;
+      const since = sinceForRange(dateRange);
 
-      // One stats RPC + leaderboard RPC + role lookup + table list, in parallel
-      const [statsResult, playersResult, roleResult, tablesResult] = await Promise.all([
-        supabase.rpc('ca_club_dashboard_stats', { p_club_id: resolvedId }),
-        supabase.rpc('ca_club_top_players', {
-          p_club_id: resolvedId,
-          p_since: sinceForRange(dateRange),
-          p_limit: 50,
-        }),
+      const [clubResult, statsResult, playersResult, roleResult, tablesResult] = await Promise.all([
+        supabase
+          .from('clubs')
+          .select(
+            'id, name, avatar_url, created_at, level, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+          )
+          .eq('id', uuid)
+          .maybeSingle(),
+        supabase.rpc('ca_club_dashboard_stats', { p_club_id: uuid }),
+        supabase.rpc('ca_club_top_players', { p_club_id: uuid, p_since: since, p_limit: 100 }),
         user
           ? supabase
               .from('club_members')
               .select('role')
-              .eq('club_id', resolvedId)
+              .eq('club_id', uuid)
               .eq('user_id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null } as any),
@@ -346,40 +385,57 @@ export default function ClubDashboard() {
           .select(
             'id, name, game_type, game_variant, stakes, small_blind, big_blind, status, current_players, max_players, created_at, is_deleted'
           )
-          .eq('club_id', resolvedId)
+          .eq('club_id', uuid)
           .order('created_at', { ascending: false })
           .limit(50),
       ]);
 
-      if (statsResult.error) {
-        reportError(statsResult.error, 'ClubDashboard.stats_rpc_error');
-      }
-      if (playersResult.error) {
-        reportError(playersResult.error, 'ClubDashboard.top_players_rpc_error');
-      }
+      // A stale response must never clobber newer state.
+      if (reqId !== requestIdRef.current) return;
 
-      const stats: DashboardStats | null = statsResult.data
+      // Membership is enforced server-side; surface it as its own state.
+      const authzErr = [statsResult.error, playersResult.error].find(isAuthzError);
+      if (authzErr) {
+        setNotAMember(true);
+        setLoading(false);
+        return;
+      }
+      setNotAMember(false);
+
+      if (statsResult.error) reportError(statsResult.error, 'ClubDashboard.stats_rpc_error');
+      if (playersResult.error)
+        reportError(playersResult.error, 'ClubDashboard.top_players_rpc_error');
+
+      const raw: any = statsResult.data;
+      const stats: DashboardStats | null = raw
         ? {
-            totalMembers: statsResult.data.total_members || 0,
-            onlineNow: statsResult.data.online_now || 0,
-            activeTables: statsResult.data.active_tables || 0,
-            totalTables: statsResult.data.total_tables || 0,
-            handsToday: statsResult.data.hands_today || 0,
-            rakeToday: Number(statsResult.data.rake_today) || 0,
-            weeklyGrowth: statsResult.data.new_this_week || 0,
+            totalMembers: raw.total_members || 0,
+            onlineNow: raw.online_now || 0,
+            activeTables: raw.active_tables || 0,
+            totalTables: raw.total_tables || 0,
+            handsToday: raw.hands_today || 0,
+            rakeToday: Number(raw.rake_today) || 0,
+            weeklyGrowth: raw.new_this_week || 0,
+            handsWeek: Number(raw.hands_week) || 0,
+            rakeWeek: Number(raw.rake_week) || 0,
+            seatedNow: raw.seated_now || 0,
+            dailySeries: Array.isArray(raw.daily_series)
+              ? raw.daily_series.map((d: any) => ({
+                  d: String(d.d),
+                  hands: Number(d.hands) || 0,
+                  rake: Number(d.rake) || 0,
+                }))
+              : [],
           }
         : null;
       setDashStats(stats);
 
-      if (roleResult.data) {
-        setUserRole(roleResult.data.role || 'member');
-      }
+      if (roleResult.data) setUserRole(roleResult.data.role || 'member');
 
-      // Live tables (a running table counts even if flagged deleted)
       const visibleTables: ClubTable[] = (tablesResult.data || [])
-        .filter(
-          (t: any) => !t.is_deleted || ['running', 'waiting', 'active'].includes(t.status)
-        )
+        // A table can be status='running' while is_deleted=true — the engine
+        // keeps dealing on it, so it must stay visible.
+        .filter((t: any) => !t.is_deleted || isLiveTableStatus(t.status))
         .map((t: any) => ({
           id: t.id,
           name: t.name || 'Unnamed Table',
@@ -395,6 +451,7 @@ export default function ClubDashboard() {
         }));
       setClubTables(visibleTables);
 
+      const clubData: any = clubResult.data;
       if (clubData) {
         setClub({
           id: clubData.id,
@@ -415,59 +472,132 @@ export default function ClubDashboard() {
         });
       }
 
-      // Leaderboard from real hand data (profit = won - invested, per range)
-      const players: TopPlayer[] = (playersResult.data || []).map((p: any, idx: number) => ({
+      const players: TopPlayer[] = (playersResult.data || []).map((p: any) => ({
         userId: p.user_id,
         displayName: p.display_name || 'Player',
         avatarUrl: p.avatar_url,
+        isHorse: !!p.is_horse,
         totalProfit: Number(p.profit) || 0,
         totalWon: Number(p.total_won) || 0,
         handsPlayed: Number(p.hands_played) || 0,
-        biggestPot: Number(p.biggest_pot) || 0,
-        rank: idx + 1,
+        handsWon: Number(p.hands_won) || 0,
+        biggestPotWon: Number(p.biggest_pot_won) || 0,
+        winRate: Number(p.win_rate) || 0,
+        rank: 0,
       }));
       setTopPlayers(players);
-    } catch (error) {
-      reportError(error, 'ClubDashboard.Failed_to_load_dashboard');
-      setLoadError(true);
-      toast.error('Failed to load dashboard data');
+    } catch (error: any) {
+      if (isAuthzError(error)) {
+        setNotAMember(true);
+      } else {
+        reportError(error, 'ClubDashboard.Failed_to_load_dashboard');
+        setLoadError(true);
+        toast.error('Failed to load dashboard data');
+      }
     } finally {
       loadingRef.current = false;
       setLoading(false);
+      if (rerunRef.current) {
+        rerunRef.current = false;
+        // Pick up the newest filter selection that arrived mid-flight.
+        setTimeout(() => loadDashboardData(true), 0);
+      }
     }
   };
 
-  const formatChips = (num: number): string => {
-    return (Math.trunc(num * 100) / 100).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+  // ── Members tab data ───────────────────────────────────────────────────────
+  const loadMembers = useCallback(
+    async (page: number, search: string) => {
+      if (!resolvedClubId) return;
+      setMembersLoading(true);
+      try {
+        const { data, error } = await supabase.rpc('ca_club_members', {
+          p_club_id: resolvedClubId,
+          p_search: search || null,
+          p_since: sinceForRange(dateRange),
+          p_limit: MEMBER_PAGE_SIZE,
+          p_offset: page * MEMBER_PAGE_SIZE,
+        });
+        if (error) throw error;
+        const rows: ClubMemberRow[] = (data || []).map((m: any) => ({
+          userId: m.user_id,
+          displayName: m.display_name || 'Player',
+          avatarUrl: m.avatar_url,
+          isHorse: !!m.is_horse,
+          role: m.role || 'member',
+          status: m.status || 'active',
+          joinedAt: m.joined_at,
+          lastActive: m.last_active,
+          chipBalance: Number(m.chip_balance) || 0,
+          handsPlayed: Number(m.hands_played) || 0,
+          profit: Number(m.profit) || 0,
+        }));
+        setMembers(rows);
+        setMemberTotal(Number((data || [])[0]?.total_count) || 0);
+      } catch (err: any) {
+        if (!isAuthzError(err)) reportError(err, 'ClubDashboard.members_rpc_error');
+        setMembers([]);
+        setMemberTotal(0);
+      } finally {
+        setMembersLoading(false);
+      }
+    },
+    [resolvedClubId, dateRange]
+  );
+
+  // Debounced member search / paging, only while the Players tab is open.
+  useEffect(() => {
+    if (activeTab !== 'players' || !resolvedClubId) return;
+    const t = setTimeout(() => loadMembers(memberPage, memberSearch), 250);
+    return () => clearTimeout(t);
+  }, [activeTab, resolvedClubId, memberPage, memberSearch, loadMembers]);
+
+  // A new search must restart at page 1.
+  useEffect(() => {
+    setMemberPage(0);
+  }, [memberSearch, dateRange]);
+
+  // ── Derived leaderboard (filter + sort applied client-side on <=100 rows) ──
+  const rankedPlayers = useMemo(
+    () => rankPlayers(topPlayers, sortBy, hideHorses),
+    [topPlayers, hideHorses, sortBy]
+  );
+
+  useEffect(() => {
+    const played = topPlayers.reduce((s, p) => s + p.handsPlayed, 0);
+    setAttribution(played > 0 ? { played, attributed: played } : null);
+  }, [topPlayers]);
+
+  const exportLeaderboardCsv = () => {
+    const blob = new Blob([leaderboardToCsv(rankedPlayers)], {
+      type: 'text/csv;charset=utf-8;',
     });
-  };
-
-  const formatInt = (num: number): string => {
-    return Math.trunc(num).toLocaleString('en-US');
-  };
-
-  const statusLabel = (status: string): string => {
-    switch (status) {
-      case 'running':
-        return 'Running';
-      case 'waiting':
-        return 'Waiting';
-      case 'active':
-        return 'Active';
-      case 'finished':
-      case 'closed':
-        return 'Closed';
-      default:
-        return status.charAt(0).toUpperCase() + status.slice(1);
-    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(club?.name || 'club').replace(/[^\w-]+/g, '-')}-leaderboard-${dateRange}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   if (loading && !club) {
     return (
       <div className={styles.loading}>
         <PageSkeleton variant="dashboard" />
+      </div>
+    );
+  }
+
+  if (notAMember) {
+    return (
+      <div className={styles.error}>
+        <h2>Members Only</h2>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: 16 }}>
+          Club analytics are visible to members of this club.
+        </p>
+        <Link to="/clubs">Back to Clubs</Link>
       </div>
     );
   }
@@ -507,6 +637,8 @@ export default function ClubDashboard() {
     );
   }
 
+  const rangeLabel = rangeLabelFor(dateRange);
+
   return (
     <div className={styles.dashboard}>
       {/* Dashboard Header */}
@@ -539,8 +671,11 @@ export default function ClubDashboard() {
               )}
             </h1>
             <p>
-              {club.memberCount} members {'•'} {club.tableCount} active{' '}
+              {formatInt(club.memberCount)} members {'•'} {club.tableCount} active{' '}
               {club.tableCount === 1 ? 'table' : 'tables'}
+              {dashStats && dashStats.seatedNow > 0 && (
+                <> {'•'} {formatInt(dashStats.seatedNow)} seated now</>
+              )}
             </p>
           </div>
         </div>
@@ -584,7 +719,7 @@ export default function ClubDashboard() {
         </div>
       </header>
 
-      {/* Date Range Filter (drives the Top Players leaderboard) */}
+      {/* Date Range Filter */}
       <div className={styles.filterBar}>
         <span className={styles.filterLabel}>Time Range:</span>
         <div className={styles.filterButtons}>
@@ -622,22 +757,85 @@ export default function ClubDashboard() {
       <div className={styles.content}>
         {activeTab === 'overview' && (
           <div className={styles.overviewGrid}>
-            {/* Stats Cards */}
             <section className={styles.statsSection}>
               <h2>Club Metrics</h2>
               {clubId && <ClubStatsCards clubId={clubId} stats={dashStats} />}
             </section>
 
-            {/* Top Players Leaderboard */}
             <section className={styles.leaderboardSection}>
-              <h2>Top Players</h2>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                }}
+              >
+                <h2 style={{ margin: 0 }}>Top Players</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortId)}
+                    aria-label="Sort leaderboard"
+                    style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      color: 'inherit',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 8,
+                      padding: '4px 8px',
+                      fontSize: '0.78rem',
+                    }}
+                  >
+                    <option value="profit">Profit</option>
+                    <option value="hands">Hands</option>
+                    <option value="winrate">Win rate</option>
+                    <option value="biggest">Biggest pot</option>
+                  </select>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={hideHorses}
+                      onChange={(e) => setHideHorses(e.target.checked)}
+                    />
+                    Humans only
+                  </label>
+                  {rankedPlayers.length > 0 && (
+                    <button
+                      onClick={exportLeaderboardCsv}
+                      style={{
+                        background: 'rgba(255,255,255,0.06)',
+                        color: 'inherit',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        borderRadius: 8,
+                        padding: '4px 10px',
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Export CSV
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className={styles.leaderboard}>
-                {topPlayers.length === 0 ? (
+                {rankedPlayers.length === 0 ? (
                   <p className={styles.empty}>
-                    No hands played {dateRange === 'all' ? 'yet' : `this ${dateRange}`}
+                    {hideHorses && topPlayers.length > 0
+                      ? `No human players with hands ${rangeLabel}`
+                      : `No hands played ${rangeLabel}`}
                   </p>
                 ) : (
-                  topPlayers.slice(0, 10).map((player, idx) => (
+                  rankedPlayers.slice(0, 10).map((player, idx) => (
                     <div
                       key={player.userId}
                       className={styles.playerRow}
@@ -679,6 +877,22 @@ export default function ClubDashboard() {
                       </div>
                       <span className={styles.playerName}>
                         {player.displayName}
+                        {player.isHorse && (
+                          <span
+                            title="Horse"
+                            style={{
+                              marginLeft: 6,
+                              fontSize: '0.6rem',
+                              padding: '1px 5px',
+                              borderRadius: 6,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              color: 'var(--text-secondary, #9aa)',
+                              verticalAlign: 'middle',
+                            }}
+                          >
+                            H
+                          </span>
+                        )}
                         <span
                           style={{
                             display: 'block',
@@ -686,22 +900,33 @@ export default function ClubDashboard() {
                             color: 'var(--text-secondary, #888)',
                           }}
                         >
-                          {formatInt(player.handsPlayed)} hands
+                          {formatInt(player.handsPlayed)} hands {'•'} {player.winRate}% won
                         </span>
                       </span>
                       <span
                         className={`${styles.profit} ${player.totalProfit >= 0 ? styles.positive : styles.negative}`}
                       >
-                        {player.totalProfit >= 0 ? '+' : ''}
-                        {formatChips(player.totalProfit)}
+                        {formatSigned(player.totalProfit)}
                       </span>
                     </div>
                   ))
                 )}
               </div>
+              {attribution && (
+                <p
+                  style={{
+                    fontSize: '0.7rem',
+                    color: 'var(--text-secondary, #888)',
+                    marginTop: 8,
+                  }}
+                >
+                  Profit measured from post-hand stack movement over{' '}
+                  {formatInt(attribution.played)} player-hands {rangeLabel}. Hands spanning a
+                  re-buy or a table re-join are excluded from profit.
+                </p>
+              )}
             </section>
 
-            {/* Quick Activity Preview */}
             <section className={styles.activityPreview}>
               <h2>Recent Activity</h2>
               {clubId && <ClubActivityFeed clubId={clubId} limit={5} />}
@@ -726,43 +951,131 @@ export default function ClubDashboard() {
         {activeTab === 'players' && (
           <div className={styles.playersSection}>
             <div className={styles.sectionHeader}>
-              <h2>Club Members ({club.memberCount})</h2>
+              <h2>Club Members ({formatInt(memberTotal || club.memberCount)})</h2>
               <Link to={`/clubs/${clubId}/members`} className={styles.manageLink}>
                 Manage Members {'→'}
               </Link>
             </div>
+
+            <input
+              value={memberSearch}
+              onChange={(e) => setMemberSearch(e.target.value)}
+              placeholder="Search members by name"
+              aria-label="Search members"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                margin: '8px 0 12px',
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'rgba(255,255,255,0.05)',
+                color: 'inherit',
+                fontSize: '0.9rem',
+              }}
+            />
+
             <div className={styles.playersList}>
-              {topPlayers.length === 0 ? (
+              {membersLoading && members.length === 0 ? (
+                <p className={styles.empty}>Loading members...</p>
+              ) : members.length === 0 ? (
                 <p className={styles.empty}>
-                  No hands played {dateRange === 'all' ? 'yet' : `this ${dateRange}`}
+                  {memberSearch ? `No members matching "${memberSearch}"` : 'No members yet'}
                 </p>
               ) : (
-                topPlayers.map((player) => (
-                  <div key={player.userId} className={styles.playerCard}>
+                members.map((m) => (
+                  <div key={m.userId} className={styles.playerCard}>
                     <div className={styles.playerAvatar}>
-                      {player.avatarUrl ? (
-                        <img src={player.avatarUrl} alt="" loading="lazy" />
+                      {m.avatarUrl ? (
+                        <img src={m.avatarUrl} alt="" loading="lazy" />
                       ) : (
-                        <span>{player.displayName.charAt(0)}</span>
+                        <span>{m.displayName.charAt(0)}</span>
                       )}
                     </div>
                     <div className={styles.playerInfo}>
-                      <span className={styles.playerName}>{player.displayName}</span>
+                      <span className={styles.playerName}>
+                        {m.displayName}
+                        {m.isHorse && (
+                          <span
+                            title="Horse"
+                            style={{
+                              marginLeft: 6,
+                              fontSize: '0.6rem',
+                              padding: '1px 5px',
+                              borderRadius: 6,
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              color: 'var(--text-secondary, #9aa)',
+                            }}
+                          >
+                            H
+                          </span>
+                        )}
+                        {m.role && m.role !== 'player' && m.role !== 'member' && (
+                          <span
+                            style={{
+                              marginLeft: 6,
+                              fontSize: '0.6rem',
+                              padding: '1px 5px',
+                              borderRadius: 6,
+                              background: 'rgba(59,130,246,0.18)',
+                              color: '#60a5fa',
+                            }}
+                          >
+                            {m.role.toUpperCase()}
+                          </span>
+                        )}
+                      </span>
                       <span className={styles.playerStats}>
-                        {formatInt(player.handsPlayed)} hands {'•'} biggest pot{' '}
-                        {formatChips(player.biggestPot)}
+                        {formatInt(m.handsPlayed)} hands {rangeLabel} {'•'} balance{' '}
+                        {formatChips(m.chipBalance)}
                       </span>
                     </div>
                     <span
-                      className={`${styles.profit} ${player.totalProfit >= 0 ? styles.positive : styles.negative}`}
+                      className={`${styles.profit} ${m.profit >= 0 ? styles.positive : styles.negative}`}
                     >
-                      {player.totalProfit >= 0 ? '+' : ''}
-                      {formatChips(player.totalProfit)}
+                      {formatSigned(m.profit)}
                     </span>
                   </div>
                 ))
               )}
             </div>
+
+            {memberTotal > MEMBER_PAGE_SIZE && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 12,
+                  padding: '12px 0',
+                }}
+              >
+                <button
+                  onClick={() => setMemberPage((p) => Math.max(0, p - 1))}
+                  disabled={memberPage === 0 || membersLoading}
+                  className={styles.actionBtn}
+                >
+                  Previous
+                </button>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Page {memberPage + 1} of {Math.max(1, Math.ceil(memberTotal / MEMBER_PAGE_SIZE))}
+                </span>
+                <button
+                  onClick={() =>
+                    setMemberPage((p) =>
+                      (p + 1) * MEMBER_PAGE_SIZE < memberTotal ? p + 1 : p
+                    )
+                  }
+                  disabled={
+                    (memberPage + 1) * MEMBER_PAGE_SIZE >= memberTotal || membersLoading
+                  }
+                  className={styles.actionBtn}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+
             {clubId && (userRole === 'owner' || userRole === 'admin') && (
               <ClubMemberManagement clubId={clubId} isAdmin={true} />
             )}
@@ -782,7 +1095,7 @@ export default function ClubDashboard() {
             ) : (
               <div className={styles.playersList}>
                 {clubTables.map((t) => {
-                  const isLive = ['running', 'waiting', 'active'].includes(t.status);
+                  const isLive = isLiveTableStatus(t.status);
                   return (
                     <Link
                       key={t.id}
@@ -810,7 +1123,7 @@ export default function ClubDashboard() {
                           color: isLive ? '#10b981' : '#94a3b8',
                         }}
                       >
-                        {statusLabel(t.status)}
+                        {tableStatusLabel(t.status)}
                       </span>
                     </Link>
                   );
@@ -826,7 +1139,6 @@ export default function ClubDashboard() {
 
       {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
 
-      {/* Club-Wide Chat Panel (floating, collapsible) */}
       {clubId && user?.id && (
         <div style={{ padding: '0 16px 80px', maxWidth: '100%' }}>
           <ClubChat

@@ -716,11 +716,17 @@ export class HorseFleetManager {
       if (rpcErr) {
         // 'Insufficient balance' / 'already seated' are silent expected
         // failures during the seeding race; only report other errors.
+        // 2026-08-19: TABLE_CAP_REACHED joins the list — the per-user 4-table
+        // cap now lives inside atomic_table_buyin itself (the in-memory
+        // MAX_TABLES_PER_HORSE filter above is advisory and raceable across
+        // processes; the RPC is the authoritative guard), so a cap rejection
+        // during a seeding race is expected, not an error.
         const msg = rpcErr.message || '';
         if (
           !msg.includes('Insufficient balance') &&
           !msg.includes('Player already seated') &&
-          !msg.includes('duplicate key')
+          !msg.includes('duplicate key') &&
+          !msg.includes('TABLE_CAP_REACHED')
         ) {
           reportError(rpcErr, 'HorseFleet.atomic_table_buyin_failed_for_horse');
         }

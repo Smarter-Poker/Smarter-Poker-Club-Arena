@@ -333,6 +333,15 @@ export class RakebackSettlerService {
       // Previously the weekly rakeback settlement + credit-invoice generation
       // lived only in the browser (FinancialCronService/SettlementCronService
       // setInterval), so they fired ONLY while an admin had a tab open.
+      // AUDIT PASS 3 [ORDER + CADENCE]: the union's weekly 90% must land BEFORE
+      // runWeeklyFinancialClose() pays player rakeback, because player rakeback
+      // is now funded from clubs.chip_treasury and the union payback is what
+      // replenishes it — running them the other way round deferred every
+      // player payout by a week on the first close. It also runs EVERY cycle
+      // rather than inside the once-a-week gate: the RPC is idempotent and
+      // no-ops mid-week, so a close that fails (or an engine outage spanning a
+      // Monday) is retried within 30 minutes instead of 7 days.
+      await this.runUnionWeeklyRakeback();
       await this.runWeeklyFinancialClose();
       // SWEEP #6: post-tournament money-conservation sentinel. Scans every
       // tournament that reached COMPLETED since the last cycle and asserts the
@@ -574,6 +583,40 @@ export class RakebackSettlerService {
     }
   }
 
+  /**
+   * AUDIT PASS 3 — Union weekly 90/10 rakeback, run every settler cycle.
+   *
+   * Dan's spec: rake is HELD in union_wallets.rake_wallet during the week; at
+   * close, 90% goes back to each member club's chip_treasury and the union
+   * keeps 10%. fn_union_weekly_rakeback_close_all closes EVERY unclosed lapsed
+   * ISO week, so any missed Monday self-heals. Treasury-funded, idempotent per
+   * (union, period), service_role only; insufficient-treasury rejections raise
+   * durable financial_alerts inside the RPC. Mid-week this is a no-op.
+   */
+  private async runUnionWeeklyRakeback(): Promise<void> {
+    let result: unknown = null;
+    let rpcError: unknown = null;
+    try {
+      const res = await supabase.rpc('fn_union_weekly_rakeback_close_all', {});
+      result = res.data;
+      rpcError = res.error;
+    } catch (e) {
+      rpcError = e;
+    }
+    if (rpcError) {
+      reportError(
+        new Error(`fn_union_weekly_rakeback_close_all failed: ${JSON.stringify(rpcError)}`),
+        'RakebackSettler.weekly_union_rakeback'
+      );
+      return;
+    }
+    const r = (Array.isArray(result) ? result[0] : result) as Record<string, unknown> | null;
+    const closes = (r?.closes ?? []) as unknown[];
+    if (closes.length > 0) {
+      console.log(`[RakebackSettler] Union weekly rakeback: ${JSON.stringify(closes)}`);
+    }
+  }
+
   private async runWeeklyFinancialClose(): Promise<void> {
     const WEEKLY_KEY = 'weekly_financial_close';
     try {
@@ -611,41 +654,6 @@ export class RakebackSettlerService {
             new Error(`settle_club_rakeback failed for club ${clubId}: ${JSON.stringify(error)}`),
             'RakebackSettler.weekly_settle_club'
           );
-        }
-      }
-
-      // 1.5 Union weekly 90/10 rakeback (Dan's spec, 2026-08-19): rake is HELD
-      // in union_wallets.rake_wallet during the week; at close 90% goes back to
-      // each member club's chip_treasury and the union keeps 10%. AUDIT PASS 2:
-      // fn_union_weekly_rakeback_close_all closes EVERY unclosed lapsed ISO
-      // week (not just the most recent), so an engine outage spanning any
-      // number of Mondays self-heals on the next run. Treasury-funded,
-      // idempotent per (union, period), service_role only; insufficient-
-      // treasury rejections raise durable financial_alerts inside the RPC.
-      {
-        let result: unknown = null;
-        let rpcError: unknown = null;
-        try {
-          const res = await supabase.rpc('fn_union_weekly_rakeback_close_all', {});
-          result = res.data;
-          rpcError = res.error;
-        } catch (e) {
-          rpcError = e;
-        }
-        if (rpcError) {
-          reportError(
-            new Error(`fn_union_weekly_rakeback_close_all failed: ${JSON.stringify(rpcError)}`),
-            'RakebackSettler.weekly_union_rakeback'
-          );
-        } else {
-          const r = (Array.isArray(result) ? result[0] : result) as Record<
-            string,
-            unknown
-          > | null;
-          const closes = (r?.closes ?? []) as unknown[];
-          if (closes.length > 0) {
-            console.log(`[RakebackSettler] Union weekly rakeback: ${JSON.stringify(closes)}`);
-          }
         }
       }
 

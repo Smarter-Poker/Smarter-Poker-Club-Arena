@@ -1,0 +1,43 @@
+-- APPLIED TO PRODUCTION 2026-08-19 via Supabase MCP as
+-- `bbj_retire_unsafe_rpcs_sweep_audit_parity_and_conservation_baseline`.
+-- Mirror only.
+--
+-- AUDIT PASS 3 — BBJ integrity hardening.
+--
+-- FINDING #10 [LIVE SECURITY HOLE]: add_bbj_contribution's 9-arg bigint
+--   overload was granted to `authenticated` and takes CALLER-SUPPLIED
+--   main/backup/promo portions, writing them straight into bbj_pools with NO
+--   bbj_contributions ledger row, NO idempotency, ignoring the 100k pivot, and
+--   touching the dead pool_amount column. Any logged-in user could inflate the
+--   promo bank, which the sweep moves into the union promo wallet and promo
+--   rain pays out — a money-minting vector. Both code callers are DEAD
+--   (BBJService.recordContribution has no callers; World Hub
+--   src/lib/poker-engine/LobbyManager.js is referenced by no page/route).
+--   All three overloads now RAISE; authenticated grants revoked.
+--   bbj_record_contribution is the sole contribution path.
+--
+--   get_union_bbj_status also returned a hardcoded {balance: 0, active: false}
+--   to every authenticated caller — a lie that reads as "no jackpot". It now
+--   returns the real pool figures.
+--
+-- FINDING #11 [AUDIT HOLE]: fn_sweep_bbj_promo (single-club) wrote NO
+--   union_wallet_transactions row when the destination was a union — only
+--   fn_sweep_bbj_promo_all did. Union-destination sweeps through that path
+--   moved money with no ledger entry anywhere, which is how historical sweeps
+--   became unauditable. Now writes the same audit row.
+--
+-- FINDING #12 [MEASURED, HISTORICAL, FROZEN]: BBJ pool conservation
+--     Sum(contributions) + funded - jackpot payouts - promo swept - promo paid
+--   exceeds current pool balances by 59,510.86. Measured three times over
+--   ~90 minutes of live traffic: IDENTICAL to the cent each time while
+--   inflow/outflow/balances all moved — i.e. current paths conserve exactly and
+--   this is pre-existing history (manual promo sweeps predating audit rows,
+--   incl. the known one-time 47,607.05, plus pool consolidations). Zero orphan
+--   pool rows exist (verified: every bbj_contributions.pool_id resolves).
+--   Rather than fabricate a correction, the delta is RECORDED as data in
+--   bbj_conservation_baseline and the sentinel alerts only when the gap MOVES,
+--   which is the condition that actually indicates new money loss.
+--
+-- Also: bbj_pools.merged_into_pool_id records the 2026-08-19 JAQK->union merge
+-- lineage (counters moved; contribution rows keep their original pool_id so
+-- history is never rewritten).

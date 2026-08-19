@@ -9,9 +9,11 @@
  * kind of knowledge that evaporates when an 8,700-line file gets rewritten, and
  * when it does, seats land on the felt or off the table entirely.
  *
- * Pure data plus two tiny functions, so the geometry can be tested directly:
+ * Pure data plus small functions, so the geometry can be tested directly:
  * every ring has hero at slot 0, every seat sits inside the frame, and no table
- * size can index past the end of its ring.
+ * size can index past the end of its ring. The rotation and pixel projection at
+ * the foot of the file are the same idea one step later — where each seat
+ * actually lands on screen once the hero is put at the bottom.
  */
 import type { SeatPlayer } from '../components/table/SeatSlot';
 
@@ -108,3 +110,90 @@ export function seatLayoutFor(maxPlayers: number): Array<{ x: number; y: number 
 export const createEmptySeats = (count: 6 | 9): (SeatPlayer | null)[] => {
   return Array(count).fill(null);
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SEAT ROTATION + PIXEL PROJECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+// Moved out of TablePage.tsx on 2026-08-19, second pass. Both of these were
+// inline useMemo bodies. They are the last step between a measured ring above
+// and what a player actually sees, and both have a history: the rotation has
+// been applied twice by mistake (dealer button landed on the wrong seat), and
+// the pixel projection replaced a hardcoded 800x500 ellipse that matched
+// nothing on screen.
+
+export interface SeatPos {
+  x: number;
+  y: number;
+}
+
+/** A physical seat's screen position plus the visual slot it rotated into. */
+export interface RotatedSeat {
+  pos: SeatPos;
+  visualIndex: number;
+}
+
+/**
+ * Rotate a ring so the hero's physical seat renders at slot 0 (bottom-centre).
+ *
+ * Indexed by PHYSICAL seat index: `rotateSeatsForHero(ring, heroSeat)[i]` is
+ * where physical seat i+1 should be drawn. Anything reading this array is
+ * therefore already rotated and must not rotate again.
+ *
+ * `heroSeat` is 1-indexed; 0 means the hero is not seated, and the ring is left
+ * in its natural orientation.
+ *
+ * The `% maxP` on the hero index is a guard, not decoration. Without it a hero
+ * seat larger than the ring (seat 9 while `maxPlayers` still reads its initial
+ * 6, which is exactly what a slow table-row fetch produces) drives
+ * `(physIdx - heroIdx + maxP) % maxP` negative — JavaScript's remainder keeps
+ * the sign of the dividend — and `ring[-2]` is `undefined`. The seat renderer
+ * then reads `pos.y` off nothing and the whole table white-screens. The
+ * finite/floor guard covers the same failure from the other direction — a
+ * fractional or Infinite seat number also indexes nothing. All of it only
+ * touches inputs that could not render at all, so no working case moves.
+ */
+export function rotateSeatsForHero(ring: SeatPos[], heroSeat: number): RotatedSeat[] {
+  const maxP = ring.length;
+  if (maxP === 0) return [];
+  const raw = Number.isFinite(heroSeat) && heroSeat > 0 ? Math.floor(heroSeat) - 1 : 0;
+  const heroIdx = raw % maxP;
+  return ring.map((_, physIdx) => {
+    // Visual slot: rotate so hero's physical index maps to slot 0.
+    const visualIdx = (physIdx - heroIdx + maxP) % maxP;
+    return { pos: ring[visualIdx], visualIndex: visualIdx };
+  });
+}
+
+/**
+ * Percentages of the table scaler -> pixels inside that same scaler, keyed by
+ * 1-indexed seat number (what ThrowEvent.fromSeat/toSeat use).
+ *
+ * Dan 2026-08-15 — THROWABLE GEOMETRY (item 4). Throws used to be positioned by
+ * useTableAnimations.getSeatPositions(), which invented a hardcoded 800x500
+ * ellipse (centre 400,250 / radii 300,150) that corresponds to nothing on
+ * screen. The real table is a 341:609 PORTRAIT box, so the projectile launched
+ * and landed at arbitrary points — never on the villain's avatar. Every other
+ * animation on this table (dealer button, deal, chip flights) drives off the
+ * hero-rotated percentage map that the seats themselves render from, so throws
+ * do too.
+ *
+ * Scaler-relative rather than viewport pixels on purpose: MultiTablePage puts a
+ * `transform` on its container, so a position:fixed overlay would re-anchor to
+ * that transformed strip and land the throw in the wrong tab. .table-scaler is
+ * position:relative, so an absolutely-positioned child inside it shares exactly
+ * the seats' geometry and follows the table through any resize or rescale.
+ */
+export function seatPixelMap(
+  seatPositions: Array<SeatPos | null | undefined>,
+  scaler: { w: number; h: number }
+): Map<number, { x: number; y: number }> {
+  const map = new Map<number, { x: number; y: number }>();
+  seatPositions.forEach((pct, physIdx) => {
+    if (!pct) return;
+    map.set(physIdx + 1, {
+      x: (pct.x / 100) * scaler.w,
+      y: (pct.y / 100) * scaler.h,
+    });
+  });
+  return map;
+}

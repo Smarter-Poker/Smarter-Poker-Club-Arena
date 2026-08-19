@@ -24,6 +24,8 @@ import {
   SEAT_POSITIONS_9MAX,
   seatLayoutFor,
   createEmptySeats,
+  rotateSeatsForHero,
+  seatPixelMap,
 } from '../../src/lib/tableSeatGeometry';
 
 const SIZES = [2, 3, 4, 5, 6, 7, 8, 9] as const;
@@ -103,5 +105,154 @@ describe('createEmptySeats', () => {
     const a = createEmptySeats(9);
     const b = createEmptySeats(9);
     expect(a).not.toBe(b);
+  });
+});
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * SEAT ROTATION (2026-08-19, second pass).
+ *
+ * The rotation decides which chair on screen belongs to which player. Getting
+ * it wrong does not throw — it silently seats the wrong avatar in the wrong
+ * place, or puts the dealer button one seat off, and the only way anyone finds
+ * out is a player saying the table looks scrambled.
+ *
+ * The failure that WOULD throw is the one these tests care about most: a hero
+ * seat larger than the ring makes the modular arithmetic go negative, every
+ * position comes back undefined, and the table white-screens.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+const RING6 = SEAT_POSITIONS_6MAX;
+
+describe('rotateSeatsForHero', () => {
+  it('returns one entry per chair', () => {
+    for (const n of SIZES) {
+      expect(rotateSeatsForHero(seatLayoutFor(n), 1)).toHaveLength(n);
+    }
+  });
+
+  it.each([1, 2, 3, 4, 5, 6])('puts the hero in seat %i at the bottom-centre slot', (seat) => {
+    const rotated = rotateSeatsForHero(RING6, seat);
+    const hero = rotated[seat - 1];
+    expect(hero.visualIndex).toBe(0);
+    expect(hero.pos).toBe(RING6[0]);
+  });
+
+  it('leaves the ring alone when the hero is not seated', () => {
+    const rotated = rotateSeatsForHero(RING6, 0);
+    expect(rotated.map((r) => r.visualIndex)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(rotated.map((r) => r.pos)).toEqual(RING6);
+  });
+
+  it('hands out every visual slot exactly once', () => {
+    for (const n of SIZES) {
+      const ring = seatLayoutFor(n);
+      for (let seat = 1; seat <= n; seat++) {
+        const slots = rotateSeatsForHero(ring, seat).map((r) => r.visualIndex);
+        expect([...slots].sort((a, b) => a - b)).toEqual([...Array(n).keys()]);
+      }
+    }
+  });
+
+  it('preserves who sits next to whom — it rotates, it does not reshuffle', () => {
+    // Walking the physical seats in order must walk the visual slots in order
+    // too, wrapping exactly once.
+    for (let seat = 1; seat <= 6; seat++) {
+      const slots = rotateSeatsForHero(RING6, seat).map((r) => r.visualIndex);
+      for (let i = 1; i < slots.length; i++) {
+        expect(slots[i]).toBe((slots[i - 1] + 1) % 6);
+      }
+    }
+  });
+
+  it('never returns a seat with no position, for any seat on any ring', () => {
+    for (const n of SIZES) {
+      const ring = seatLayoutFor(n);
+      for (let seat = 0; seat <= n; seat++) {
+        for (const r of rotateSeatsForHero(ring, seat)) {
+          expect(r.pos, `size ${n} seat ${seat}`).toBeDefined();
+          expect(Number.isFinite(r.pos.x)).toBe(true);
+          expect(Number.isFinite(r.pos.y)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it.each([7, 9, 12, 99])(
+    'survives hero seat %i on a 6-chair ring — the white-screen regression',
+    (seat) => {
+      // maxPlayers starts at 6 and the table row can arrive after the seat
+      // does. Before the guard, (physIdx - heroIdx + 6) % 6 went NEGATIVE and
+      // every pos came back undefined; the seat renderer then read pos.y off
+      // nothing and took the whole table down.
+      const rotated = rotateSeatsForHero(RING6, seat);
+      expect(rotated).toHaveLength(6);
+      for (const r of rotated) {
+        expect(r.pos).toBeDefined();
+        expect(r.visualIndex).toBeGreaterThanOrEqual(0);
+        expect(r.visualIndex).toBeLessThan(6);
+      }
+    }
+  );
+
+  it.each([-1, -99, NaN, Infinity, 1.5])('does not crash on the nonsense seat %p', (seat) => {
+    const rotated = rotateSeatsForHero(RING6, seat as number);
+    expect(rotated).toHaveLength(6);
+    expect(rotated.every((r) => !!r.pos)).toBe(true);
+  });
+
+  it('does not mutate the ring it was handed', () => {
+    const ring = RING6.map((p) => ({ ...p }));
+    const copy = JSON.parse(JSON.stringify(ring));
+    rotateSeatsForHero(ring, 4);
+    expect(ring).toEqual(copy);
+  });
+
+  it('returns nothing for an empty ring rather than throwing', () => {
+    expect(rotateSeatsForHero([], 3)).toEqual([]);
+  });
+});
+
+describe('seatPixelMap', () => {
+  const scaler = { w: 300, h: 600 };
+
+  it('keys by 1-indexed seat number, not array index', () => {
+    const map = seatPixelMap([{ x: 50, y: 50 }], scaler);
+    expect(map.has(1)).toBe(true);
+    expect(map.has(0)).toBe(false);
+  });
+
+  it('turns percentages into scaler pixels', () => {
+    const map = seatPixelMap([{ x: 50, y: 50 }, { x: 10, y: 90 }], scaler);
+    expect(map.get(1)).toEqual({ x: 150, y: 300 });
+    expect(map.get(2)).toEqual({ x: 30, y: 540 });
+  });
+
+  it('skips seats with no position instead of mapping them to 0,0', () => {
+    const map = seatPixelMap([{ x: 50, y: 50 }, null, undefined, { x: 0, y: 0 }], scaler);
+    expect([...map.keys()].sort((a, b) => a - b)).toEqual([1, 4]);
+  });
+
+  it('is empty for an empty ring', () => {
+    expect(seatPixelMap([], scaler).size).toBe(0);
+  });
+
+  it('produces real numbers even before the scaler has been measured', () => {
+    const map = seatPixelMap([{ x: 50, y: 93.5 }], { w: 0, h: 0 });
+    expect(map.get(1)).toEqual({ x: 0, y: 0 });
+    expect(Number.isNaN(map.get(1)!.x)).toBe(false);
+  });
+
+  it('covers every chair of a real rotated ring', () => {
+    const positions = rotateSeatsForHero(seatLayoutFor(9), 5).map((r) => r.pos);
+    const map = seatPixelMap(positions, scaler);
+    expect(map.size).toBe(9);
+    for (let seat = 1; seat <= 9; seat++) {
+      const px = map.get(seat)!;
+      expect(px.x).toBeGreaterThanOrEqual(0);
+      expect(px.x).toBeLessThanOrEqual(scaler.w);
+      expect(px.y).toBeGreaterThanOrEqual(0);
+      expect(px.y).toBeLessThanOrEqual(scaler.h);
+    }
   });
 });

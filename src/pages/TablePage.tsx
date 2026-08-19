@@ -172,7 +172,7 @@ import { handPersistenceService } from '../services/HandPersistenceService';
 import { handHistoryService } from '../services/HandHistoryService';
 // Dan 2026-08-15: the real rake schedule (byte-identical mirror of the
 // server's), used so the Game Rules modal states the rake actually taken.
-import { getRakeConfig } from '../config/RakeConfig';
+import { resolveDisplayRake } from '../lib/rakeOverride';
 // Dan 2026-08-15: two distinct HandRecord shapes exist — the snake_case
 // Supabase row from the service, and the camelCase view-model the panel
 // renders. Alias both so adaptServiceHandToPanel below reads unambiguously.
@@ -361,7 +361,12 @@ import {
   sortCardsByRank,
   getGameVariantLabel,
 } from '../lib/tableCardDisplay';
-import { seatLayoutFor, createEmptySeats } from '../lib/tableSeatGeometry';
+import {
+  seatLayoutFor,
+  createEmptySeats,
+  rotateSeatsForHero,
+  seatPixelMap,
+} from '../lib/tableSeatGeometry';
 import { resolveSkin, resolveBackground } from '../lib/tableTheme';
 import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
 
@@ -5580,97 +5585,32 @@ export default function TablePage({
   // fleet) used to fall into the 6-seat ring and seats 7-8 had no position.
   const baseSeatPositions = seatLayoutFor(tableState.maxPlayers);
 
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // SEAT AUTO-ROTATION — Hero always appears at bottom-center (position 0)
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // Maps physical seat numbers (1-indexed) to visual screen positions.
-  // When the hero sits at seat N, all visual positions rotate so seat N
-  // renders at the bottom-center slot. Other players shift accordingly,
-  // preserving their relative seating order around the table.
-  //
-  // seatRotationMap[physicalSeatIndex] = { pos, visualIndex }
-  // where pos is the screen {x,y} and visualIndex is the rotated slot.
-  const seatRotationMap = useMemo(() => {
-    const maxP = baseSeatPositions.length;
-    const heroIdx = tableState.heroSeat > 0 ? tableState.heroSeat - 1 : 0; // 0-indexed
-    return baseSeatPositions.map((_, physIdx) => {
-      // Visual slot: rotate so hero's physical index maps to slot 0 (bottom-center)
-      const visualIdx = (physIdx - heroIdx + maxP) % maxP;
-      return { pos: baseSeatPositions[visualIdx], visualIndex: visualIdx };
-    });
-  }, [baseSeatPositions, tableState.heroSeat]);
+  // SEAT AUTO-ROTATION — hero always renders at bottom-centre.
+  // seatRotationMap[physicalSeatIndex] = { pos, visualIndex }. Already rotated:
+  // anything indexing it must NOT rotate again (that bug put the dealer button
+  // on the wrong seat). See rotateSeatsForHero.
+  const seatRotationMap = useMemo(
+    () => rotateSeatsForHero(baseSeatPositions, tableState.heroSeat),
+    [baseSeatPositions, tableState.heroSeat]
+  );
 
-  // Expose the flat positions array for legacy references (same length, rotated)
-  // ═══════════════════════════════════════════════════════════════════════
-  // Dan 2026-08-15 — THE GAME RULES MODAL WAS MISSTATING THE RAKE.
-  //
-  // TableModalsLayer renders `rakePercentage={rakePercent ?? 5}` and
-  // `rakeCap={rakeCap ?? 3}`. Those props were fed from
-  // `tableState.rakePercent` / `tableState.rakeCap` — fields that are DECLARED
-  // on the state interface and passed through, but never assigned anywhere.
-  // The engine snapshot carries no rake data at all (mapEngineSnapshot has
-  // zero rake references), so both were permanently undefined and the modal
-  // always fell through to its placeholders.
-  //
-  // Net effect: every player, at every stake, was told "Rake 5% (Cap $3)".
-  // The server actually takes 10% with tier caps from $3 up to $15
-  // (server/src/config/RakeConfig.ts RAKE_SCHEDULE). At 10/25 we displayed a
-  // $3 cap against a real $15 one — a five-fold understatement of the rake.
-  //
-  // src/config/RakeConfig.ts already holds a byte-identical copy of the
-  // server's RAKE_SCHEDULE and exports getRakeConfig(). Use it, so the number
-  // shown to players is the number actually taken. A CI guard keeps the two
-  // schedules from drifting (scripts/ci/check-rake-schedule-parity.mjs).
-  //
-  // Display only — all money movement remains server-authoritative.
-  // ═══════════════════════════════════════════════════════════════════════
-  const displayRakeConfig = useMemo(() => {
-    const parts = (tableState.blinds || '').split('/');
-    const sb = parseFloat(parts[0]);
-    const bb = parseFloat(parts[1]);
-    if (!Number.isFinite(bb) || bb <= 0) {
-      // Blinds not loaded yet — send undefined rather than a wrong number, so
-      // the modal shows its placeholder instead of asserting a false rake.
-      return { rakePercent: undefined, rakeCap: undefined };
-    }
-    const cfg = getRakeConfig(bb, tableState.gameType || 'nlh', Number.isFinite(sb) ? sb : null);
-    return { rakePercent: cfg.rakePercent, rakeCap: cfg.rakeCap };
-  }, [tableState.blinds, tableState.gameType]);
+  // The rake the Game Rules modal falls back to when nothing overrides it.
+  // Display only, and it must stay equal to what the server takes — the full
+  // story of why lives with resolveDisplayRake in src/lib/rakeOverride.ts.
+  const displayRakeConfig = useMemo(
+    () => resolveDisplayRake(tableState.blinds, tableState.gameType),
+    [tableState.blinds, tableState.gameType]
+  );
 
   const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // Dan 2026-08-15 — THROWABLE GEOMETRY (item 4).
-  //
-  // Throws used to be positioned by useTableAnimations.getSeatPositions(),
-  // which invented a hardcoded 800x500 ellipse (centre 400,250 / radii
-  // 300,150) that corresponds to nothing on screen. The real table is a
-  // 341:609 PORTRAIT box, so the projectile launched and landed at arbitrary
-  // points — never on the villain's avatar. Every other animation on this
-  // table (dealer button, deal, chip flights) drives off `seatPositions`,
-  // the hero-rotated percentage map that the seats themselves render from.
-  //
-  // Convert those same percentages into pixels RELATIVE TO .table-scaler and
-  // mount the animation layer inside it. Scaler-relative rather than viewport
-  // pixels on purpose: MultiTablePage puts a `transform` on its container, so
-  // a position:fixed overlay would re-anchor to that transformed strip and
-  // land the throw in the wrong tab. .table-scaler is position:relative, so an
-  // absolutely-positioned child inside it shares exactly the seats' geometry
-  // and follows the table through any resize or rescale.
-  //
-  // Keyed by 1-indexed seat number to match ThrowEvent.fromSeat/toSeat.
-  // ═══════════════════════════════════════════════════════════════════════
-  const throwSeatPositions = useMemo(() => {
-    const map = new Map<number, { x: number; y: number }>();
-    seatPositions.forEach((pct, physIdx) => {
-      if (!pct) return;
-      map.set(physIdx + 1, {
-        x: (pct.x / 100) * scalerSize.w,
-        y: (pct.y / 100) * scalerSize.h,
-      });
-    });
-    return map;
-  }, [seatPositions, scalerSize]);
+  // Throw targets in scaler pixels, keyed by 1-indexed seat number to match
+  // ThrowEvent.fromSeat/toSeat. The animation layer must be mounted INSIDE
+  // .table-scaler for these to line up — see seatPixelMap for why.
+  const throwSeatPositions = useMemo(
+    () => seatPixelMap(seatPositions, scalerSize),
+    [seatPositions, scalerSize]
+  );
 
   // ── Dealer Button seat index ──
   // AUDIT FIX 2026-07-19: DealerButton indexes `seatPositions`, which is ALREADY

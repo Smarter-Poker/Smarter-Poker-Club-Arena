@@ -1120,10 +1120,18 @@
      Anchoring to half the avatar token centres the row on the avatar itself and
      stays correct at every breakpoint and hand size, because the 50% translate
      is of the ROW's own height. */
-  left: calc(100% + var(--sp-hero-gap));
-  bottom: auto;
-  top: calc(var(--seat-avatar-size, 84px) / 2);
-  transform: translateY(-50%);
+  /* Dan 2026-08-19, bug list item 1: "hero must be centered directly above
+     their player box, not offset." The row used to hang off the RIGHT of the
+     seat (left: 100% + gap), which is what made the hero read as off-centre -
+     and it is also what forced PLO hands to be tiny, because everything to the
+     right of the seat had to fit in the ~100px of felt left over. Centring the
+     row over the seat replaces that ~100px budget with the full width of the
+     scaler, which is what makes item 3 (PLO cards 50% larger) fit at all. */
+  left: 50%;
+  right: auto;
+  bottom: calc(100% + var(--sp-hero-gap));
+  top: auto;
+  transform: translateX(-50%);
   display: flex;
   align-items: flex-end;
   justify-content: flex-start;
@@ -1230,19 +1238,19 @@
      PLO5  38 + 4 x 18 = 110px
      PLO6  36 + 5 x 15 = 111px */
 .seat__cards--hero:has(.seat__card:nth-child(4)) {
-  --sp-hero-card-w: 40px;
-  --sp-hero-card-h: 56px;
-  --sp-hero-card-step: 23px;
+  --sp-hero-card-w: 60px;
+  --sp-hero-card-h: 84px;
+  --sp-hero-card-step: 25px;
 }
 .seat__cards--hero:has(.seat__card:nth-child(5)) {
-  --sp-hero-card-w: 38px;
-  --sp-hero-card-h: 53px;
-  --sp-hero-card-step: 18px;
+  --sp-hero-card-w: 57px;
+  --sp-hero-card-h: 80px;
+  --sp-hero-card-step: 23px;
 }
 .seat__cards--hero:has(.seat__card:nth-child(6)) {
-  --sp-hero-card-w: 36px;
-  --sp-hero-card-h: 50px;
-  --sp-hero-card-step: 15px;
+  --sp-hero-card-w: 54px;
+  --sp-hero-card-h: 75px;
+  --sp-hero-card-step: 21px;
 }
 
 .seat__cards--hero .seat__card--face {
@@ -2028,25 +2036,26 @@
     --sp-hero-gap: 8px;
     top: auto;
     right: auto;
-    bottom: var(--sp-hero-box-half);
-    transform: translateY(50%);
+    left: 50%;
+    bottom: calc(100% + var(--sp-hero-gap));
+    transform: translateX(-50%);
   }
 
   /* PLO4/5/6 at the tablet breakpoint — all land on a ~104px row. */
   .seat__cards--hero:has(.seat__card:nth-child(4)) {
-    --sp-hero-card-w: 38px;
-    --sp-hero-card-h: 53px;
-    --sp-hero-card-step: 22px;
+    --sp-hero-card-w: 57px;
+    --sp-hero-card-h: 80px;
+    --sp-hero-card-step: 24px;
   }
   .seat__cards--hero:has(.seat__card:nth-child(5)) {
-    --sp-hero-card-w: 36px;
-    --sp-hero-card-h: 50px;
-    --sp-hero-card-step: 17px;
+    --sp-hero-card-w: 54px;
+    --sp-hero-card-h: 75px;
+    --sp-hero-card-step: 22px;
   }
   .seat__cards--hero:has(.seat__card:nth-child(6)) {
-    --sp-hero-card-w: 34px;
-    --sp-hero-card-h: 47px;
-    --sp-hero-card-step: 14px;
+    --sp-hero-card-w: 51px;
+    --sp-hero-card-h: 71px;
+    --sp-hero-card-step: 20px;
   }
 
   .seat__position-chip {
@@ -2123,25 +2132,26 @@
     --sp-hero-gap: 7px;
     top: auto;
     right: auto;
-    bottom: var(--sp-hero-box-half);
-    transform: translateY(50%);
+    left: 50%;
+    bottom: calc(100% + var(--sp-hero-gap));
+    transform: translateX(-50%);
   }
 
   /* PLO4/5/6 at the phone breakpoint — all land on a 100px row. */
   .seat__cards--hero:has(.seat__card:nth-child(4)) {
-    --sp-hero-card-w: 34px;
-    --sp-hero-card-h: 47px;
+    --sp-hero-card-w: 51px;
+    --sp-hero-card-h: 71px;
     --sp-hero-card-step: 22px;
   }
   .seat__cards--hero:has(.seat__card:nth-child(5)) {
-    --sp-hero-card-w: 32px;
-    --sp-hero-card-h: 45px;
-    --sp-hero-card-step: 17px;
+    --sp-hero-card-w: 48px;
+    --sp-hero-card-h: 68px;
+    --sp-hero-card-step: 20px;
   }
   .seat__cards--hero:has(.seat__card:nth-child(6)) {
-    --sp-hero-card-w: 30px;
-    --sp-hero-card-h: 42px;
-    --sp-hero-card-step: 14px;
+    --sp-hero-card-w: 45px;
+    --sp-hero-card-h: 63px;
+    --sp-hero-card-step: 19px;
   }
 
   .seat__position-chip {
@@ -2212,25 +2222,26 @@
     --sp-hero-gap: 6px;
     top: auto;
     right: auto;
-    bottom: var(--sp-hero-box-half);
-    transform: translateY(50%);
+    left: 50%;
+    bottom: calc(100% + var(--sp-hero-gap));
+    transform: translateX(-50%);
   }
 
   /* PLO4/5/6 at the small phone breakpoint — all land on a ~90px row. */
   .seat__cards--hero:has(.seat__card:nth-child(4)) {
-    --sp-hero-card-w: 30px;
-    --sp-hero-card-h: 42px;
-    --sp-hero-card-step: 20px;
+    --sp-hero-card-w: 45px;
+    --sp-hero-card-h: 63px;
+    --sp-hero-card-step: 19px;
   }
   .seat__cards--hero:has(.seat__card:nth-child(5)) {
-    --sp-hero-card-w: 28px;
-    --sp-hero-card-h: 39px;
-    --sp-hero-card-step: 16px;
+    --sp-hero-card-w: 42px;
+    --sp-hero-card-h: 59px;
+    --sp-hero-card-step: 18px;
   }
   .seat__cards--hero:has(.seat__card:nth-child(6)) {
-    --sp-hero-card-w: 26px;
-    --sp-hero-card-h: 36px;
-    --sp-hero-card-step: 13px;
+    --sp-hero-card-w: 39px;
+    --sp-hero-card-h: 55px;
+    --sp-hero-card-step: 16px;
   }
 
   .seat__position-chip {

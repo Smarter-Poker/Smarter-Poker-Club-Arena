@@ -1,0 +1,135 @@
+/**
+ * Dan 2026-08-19, bug list items 1 and 3:
+ *   (1) "hero must be centered directly above their player box, not offset"
+ *   (3) "PLO4/PLO5/PLO6 cards ~50% larger"
+ *
+ * These two are the same layout problem. The hero hole-card row used to hang
+ * off the RIGHT of the seat (`left: calc(100% + gap)`), which is what made the
+ * hero read as off-centre AND what kept PLO cards small: everything to the
+ * right of the seat had to fit in the ~100px of felt left over on a phone, so
+ * a six-card hand was squeezed to 30x42. Centring the row over the seat
+ * replaces that ~100px budget with the full width of the scaler, which is what
+ * makes a 50% size increase fit at all.
+ *
+ * This spec renders the real SeatSlot.css against the seat markup SeatSlot.tsx
+ * emits, at all four breakpoints, and measures the result. It needs no dev
+ * server and no login - it is pure geometry, so it can never go stale against
+ * a running game.
+ */
+import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
+
+const css = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/table/SeatSlot.css'),
+  'utf8'
+);
+
+const seatHtml = (n: number) => `
+<div class="table-scaler">
+  <div class="seat seat--hero seat--in-hand">
+    <div class="seat__avatar-wrap"><div class="seat__avatar"></div></div>
+    <div class="seat__info"><span class="seat__name">HERO</span><span class="seat__stack">1,000</span></div>
+    <div class="seat__cards seat__cards--hero">
+      ${Array.from({ length: n }, () => '<div class="seat__card seat__card--face"></div>').join('')}
+    </div>
+  </div>
+</div>`;
+
+// Stand-ins for the pieces SeatSlot does not own: the felt the row must stay
+// inside, and the avatar/name-plate boxes. Animations are disabled because the
+// deal-in keyframe starts at rotateY(90deg), which would measure as zero width.
+const harnessCss = `
+  * { box-sizing: border-box; animation: none !important; }
+  body { margin: 0; }
+  .table-scaler { position: relative; width: min(320px, 100vw); height: 560px; margin: 0 auto; }
+  .seat { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); }
+  .seat__avatar { width: var(--seat-avatar-size, 84px); height: var(--seat-avatar-size, 84px); border-radius: 50%; }
+  .seat__info { width: 100%; height: 34px; }
+`;
+
+const BREAKPOINTS = [
+  { label: 'desktop', width: 1280 },
+  { label: 'tablet', width: 640 },
+  { label: 'phone', width: 480 },
+  { label: 'small phone', width: 375 },
+];
+
+async function measure(page: import('@playwright/test').Page, n: number) {
+  await page.setContent(`<style>${css}\n${harnessCss}</style>${seatHtml(n)}`);
+  return page.evaluate(() => {
+    const q = (s: string) => document.querySelector(s)!.getBoundingClientRect();
+    const scaler = q('.table-scaler');
+    const seat = q('.seat');
+    const row = q('.seat__cards--hero');
+    const card = q('.seat__card');
+    return {
+      feltLeft: scaler.left,
+      feltRight: scaler.right,
+      seatCentreX: seat.left + seat.width / 2,
+      seatTop: seat.top,
+      rowLeft: row.left,
+      rowRight: row.right,
+      rowCentreX: row.left + row.width / 2,
+      rowBottom: row.bottom,
+      cardW: card.width,
+      cardH: card.height,
+    };
+  });
+}
+
+for (const bp of BREAKPOINTS) {
+  test.describe(`hero hole-card row @ ${bp.label} (${bp.width}px)`, () => {
+    test.use({ viewport: { width: bp.width, height: 900 } });
+
+    for (const n of [2, 4, 5, 6]) {
+      test(`${n} cards: centred above the player box, inside the felt`, async ({ page }) => {
+        const m = await measure(page, n);
+
+        // Item 1: centred on the seat, not offset to one side.
+        expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
+
+        // Directly ABOVE the box, not overlapping it.
+        expect(m.rowBottom).toBeLessThanOrEqual(m.seatTop);
+
+        // Never escapes the felt on either side.
+        expect(m.rowLeft).toBeGreaterThanOrEqual(m.feltLeft);
+        expect(m.rowRight).toBeLessThanOrEqual(m.feltRight);
+
+        // Cards are actually rendered.
+        expect(m.cardW).toBeGreaterThan(0);
+        expect(m.cardH).toBeGreaterThan(0);
+      });
+    }
+
+    test('PLO cards are 50% larger than a hold-em card row was sized for', async ({ page }) => {
+      // The pre-2026-08-19 PLO token sets, per breakpoint, as [w, h].
+      const BEFORE: Record<string, Record<number, [number, number]>> = {
+        desktop: { 4: [40, 56], 5: [38, 53], 6: [36, 50] },
+        tablet: { 4: [38, 53], 5: [36, 50], 6: [34, 47] },
+        phone: { 4: [34, 47], 5: [32, 45], 6: [30, 42] },
+        'small phone': { 4: [30, 42], 5: [28, 39], 6: [26, 36] },
+      };
+      for (const n of [4, 5, 6]) {
+        const m = await measure(page, n);
+        const [beforeW, beforeH] = BEFORE[bp.label][n];
+        // "~50% larger" - the token values are whole pixels, so the ratio
+        // lands within a pixel of 1.5 rather than exactly on it (e.g. PLO5 at
+        // desktop is 53 -> 80, a ratio of 1.509).
+        expect(m.cardW / beforeW).toBeCloseTo(1.5, 1);
+        expect(m.cardH / beforeH).toBeCloseTo(1.5, 1);
+      }
+    });
+
+    test('hold-em hole cards are NOT resized', async ({ page }) => {
+      const HOLDEM: Record<string, [number, number]> = {
+        desktop: [44, 62],
+        tablet: [42, 58],
+        phone: [36, 50],
+        'small phone': [32, 44],
+      };
+      const m = await measure(page, 2);
+      expect([m.cardW, m.cardH]).toEqual(HOLDEM[bp.label]);
+    });
+  });
+}

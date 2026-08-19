@@ -452,6 +452,8 @@ interface TableState {
   }[];
   handNumber?: number;
   clubName?: string;
+  /** Union the club belongs to, shown beside the club on the felt masthead. */
+  unionName?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1562,6 +1564,9 @@ export default function TablePage({
   const [bbjAmount, setBbjAmount] = useState(0);
   // Resolved pool id — the last-5-jackpots modal reads its history from this.
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
+  // Pinned once per table session so the felt masthead does not silently
+  // re-date itself on every render (2026-08-18).
+  const tableSessionDate = useMemo(() => new Date(), []);
 
   // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
   const [showBBJCelebration, setShowBBJCelebration] = useState(false);
@@ -3333,17 +3338,26 @@ export default function TablePage({
         setActualClubIdLoaded(true); // Signal observer chat permission check
         setActionTimeSeconds(table.action_time_seconds || 15);
 
-        // Fetch club name for table header display
+        // Fetch club name (and the union it belongs to) for the felt masthead.
+        // Dan 2026-08-18: the union name must sit next to the club name when
+        // the club is attached to one. Joined in the same query rather than a
+        // follow-up round trip.
         if (table.club_id) {
           supabase
             .from('clubs')
-            .select('name')
+            .select('name, unions:union_id (name)')
             .eq('id', table.club_id)
             .maybeSingle()
             .then(({ data: clubData }) => {
-              if (clubData?.name) {
-                setTableState((prev) => ({ ...prev, clubName: clubData.name }));
-              }
+              if (!clubData?.name) return;
+              const rawUnion = (clubData as { unions?: { name?: string } | { name?: string }[] })
+                .unions;
+              const unionName = Array.isArray(rawUnion) ? rawUnion[0]?.name : rawUnion?.name;
+              setTableState((prev) => ({
+                ...prev,
+                clubName: clubData.name,
+                unionName: unionName || undefined,
+              }));
             });
         }
 
@@ -7106,7 +7120,12 @@ export default function TablePage({
                       used to float alone in the top-right corner. */}
                   <div className="table-brand__meta">
                     <span className="table-brand__line">
-                      {new Date().toLocaleDateString(undefined, {
+                      {/* Dan 2026-08-18: this was `new Date()` evaluated on every
+                          render, so the felt always showed TODAY rather than the
+                          day the hand was played — wrong on any replay or
+                          screenshot, which is exactly where this masthead is
+                          read. Now pinned to when this table session started. */}
+                      {tableSessionDate.toLocaleDateString(undefined, {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric',
@@ -7114,7 +7133,17 @@ export default function TablePage({
                       {tableState.clubName && (
                         <>
                           {' \u00B7 '}
-                          <span className="table-brand__club">{tableState.clubName}</span>
+                          <span className="table-brand__club">
+                            {tableState.clubName}
+                            {/* Union name sits beside the club when the club is
+                                attached to one (Dan 2026-08-18). */}
+                            {tableState.unionName && (
+                              <span className="table-brand__union">
+                                {' \u2022 '}
+                                {tableState.unionName}
+                              </span>
+                            )}
+                          </span>
                         </>
                       )}
                       {' \u00B7 '}

@@ -2454,3 +2454,12 @@ body.ca-raising .bankroll-widget {
   pointer-events: none;
   transition: opacity 0.15s ease;
 }
+
+/* Union name beside the club on the felt masthead (Dan 2026-08-18).
+   Slightly dimmer than the club so the hierarchy reads club-then-union at a
+   glance, and it never wraps the line on a 375px felt. */
+.table-brand__union {
+  opacity: 0.72;
+  font-weight: 500;
+  white-space: nowrap;
+}

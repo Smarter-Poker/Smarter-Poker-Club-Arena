@@ -7939,3 +7939,35 @@ serving assets/index-CZDNUkT--v6.js.
 - [P2] FindPlayerModal: user input now escaped before PostgREST .or(ilike)
   filters (commas/parens broke the filter; %/\_ matched everything); suggestion
   dropdown gained ArrowUp/Down + Enter keyboard navigation.
+
+
+## 2026-08-19 — Rake/BBJ audit pass 3: ordering, security, conservation guard
+
+Full write-up: `.agent/audits/2026-08-19-rake-bbj-union-treasury-audit.md`.
+
+9.  ORDER BUG (introduced by pass 2, caught before it could fire): player
+    rakeback is now funded from clubs.chip_treasury, but the settler paid
+    players BEFORE the union's weekly 90% replenished that treasury. Every
+    payout would have deferred a week at the first close. The union close now
+    runs FIRST, and runs EVERY settler cycle instead of inside the once-a-week
+    gate, so a failed close or an outage spanning a Monday retries in 30
+    minutes rather than 7 days.
+10. SECURITY: `add_bbj_contribution` was live and granted to `authenticated`,
+    accepting caller-supplied pool splits with no ledger row and no
+    idempotency — a promo-bank minting vector. All three overloads retired,
+    grants revoked (both code callers were already dead).
+    `get_union_bbj_status` stopped returning hardcoded zeros.
+11. AUDIT HOLE: `fn_sweep_bbj_promo` wrote no union_wallet_transactions row for
+    union-destination sweeps (only the _all variant did) — the reason historical
+    sweeps are unauditable. Parity restored.
+12. BBJ pool conservation measured: inflow − outflow − balances = 59,510.86,
+    identical to the cent across three measurements under live traffic (so
+    current paths conserve exactly; the delta is pre-existing history from
+    manual sweeps that predate audit rows). Recorded in the new
+    `bbj_conservation_baseline` table; `fn_bbj_conservation_check()` folded into
+    the sentinel alerts only on MOVEMENT from that baseline. Live drift: 0.00.
+13. New `fn_union_money_report()` — one call returning wallets, week-to-date
+    rake, the projected 90/10 close per club, BBJ state, recent closes, open
+    alerts and the live selftest. Powers the union dashboard + Dan's artifact.
+
+DB migration mirrors: 20260819g, 20260819h.

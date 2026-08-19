@@ -91,6 +91,11 @@ export class GameServer {
   private feeReconcileTimer: NodeJS.Timeout | null = null;
   private breakResumeTimer: NodeJS.Timeout | null = null;
   private static readonly BREAK_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+  /**
+   * Dan 2026-08-19: breaks start at the :55 mark of every hour and last five
+   * minutes, so play resumes exactly on the hour.
+   */
+  private static readonly BREAK_START_MINUTE = 55;
 
   async start(): Promise<void> {
     this.running = true;
@@ -458,15 +463,27 @@ export class GameServer {
   // ═════════════════════════════════════════════════════════════════════════════
 
   private scheduleSynchronizedBreaks(): void {
-    // Calculate ms until next top of the hour
+    /**
+     * Dan 2026-08-19: "BREAKS START AT THE 55 MINUTE MARK OF EVERY HOUR AND
+     * LAST FOR 5 MINUTES." So the break window is :55 → :00, and play resumes
+     * exactly on the hour. This previously fired at the TOP of the hour
+     * (:00 → :05), which put the break at the wrong end of the hour.
+     *
+     * Verified broken on production before this change: with two MTTs running
+     * and a stable engine, MTT hands ran straight through 04:00 (03:59=17,
+     * 04:00=12, 04:01=1, 04:02=10) — and through 01:00, 02:00 and 03:00 too.
+     */
     const now = new Date();
-    const nextHour = new Date(now);
-    nextHour.setMinutes(0, 0, 0);
-    nextHour.setHours(nextHour.getHours() + 1);
-    const msUntilNextHour = nextHour.getTime() - now.getTime();
+    const nextBreak = new Date(now);
+    nextBreak.setMinutes(GameServer.BREAK_START_MINUTE, 0, 0);
+    // Already past :55 this hour — go to :55 of the next hour.
+    if (nextBreak.getTime() <= now.getTime()) {
+      nextBreak.setHours(nextBreak.getHours() + 1);
+    }
+    const msUntilNextBreak = nextBreak.getTime() - now.getTime();
 
     console.log(
-      `[GameServer] Synchronized break scheduled in ${Math.round(msUntilNextHour / 60000)} minutes (top of next hour)`
+      `[GameServer] Synchronized break scheduled in ${Math.round(msUntilNextBreak / 60000)} minutes (:${GameServer.BREAK_START_MINUTE} of the hour, ${GameServer.BREAK_DURATION_MS / 60000} min long)`
     );
 
     this.breakTimer = setTimeout(() => {
@@ -478,7 +495,7 @@ export class GameServer {
         },
         60 * 60 * 1000
       ); // Every hour
-    }, msUntilNextHour);
+    }, msUntilNextBreak);
   }
 
   /**

@@ -1526,19 +1526,50 @@ export class TournamentRecurringService {
 
       if (!horses || horses.length === 0) return 0;
 
+      /**
+       * Dan 2026-08-19: horses BUY IN like everyone else — this used to be a
+       * raw INSERT into tournament_players.
+       *
+       * That INSERT skipped every money step the human path performs: no
+       * wallet debit, no rake_records row, no prize_pool contribution. Measured
+       * before the fix: in 90 minutes, cash games booked 12,506.44 of rake
+       * across 5,657 records while tournaments booked ONE record. Prize pools
+       * were still paid in full, so tournaments minted roughly 27,000-30,000
+       * chips a day out of nothing.
+       *
+       * fn_register_horse_for_tournament is fn_register_for_tournament with the
+       * caller passed in rather than read from auth.uid() (which the engine has
+       * no way to satisfy), and is locked to horses and service_role. Same
+       * entry split, same debit, same rake row, same pool updates — so rake is
+       * real and the prize pool is funded by actual buy-ins.
+       */
       let registered = 0;
+      const failures = new Map<string, number>();
       for (const horse of horses) {
-        const { error: regError } = await supabase.from('tournament_players').insert({
-          tournament_id: tournamentId,
-          user_id: horse.id,
-          username: horse.use_real_name
-            ? horse.display_name || horse.username || 'Horse'
-            : horse.username || horse.display_name || 'Horse',
-          status: 'registered',
-          chips: 0,
-        });
+        const { data: res, error: regError } = await supabase.rpc(
+          'fn_register_horse_for_tournament',
+          { p_tournament_id: tournamentId, p_user_id: horse.id }
+        );
 
-        if (!regError) registered++;
+        if (regError) {
+          failures.set(regError.message, (failures.get(regError.message) || 0) + 1);
+          continue;
+        }
+        const ok = (res as { ok?: boolean } | null)?.ok === true;
+        if (ok) {
+          registered++;
+        } else {
+          const reason = (res as { reason?: string } | null)?.reason || 'unknown';
+          // 'tournament_full' / 'already_registered' are benign races.
+          failures.set(reason, (failures.get(reason) || 0) + 1);
+        }
+      }
+
+      if (failures.size > 0) {
+        const summary = [...failures.entries()].map(([r, n]) => `${r} x${n}`).join(', ');
+        console.warn(
+          `[TournamentRecurring] Horse registration: ${registered} seated, skipped — ${summary}`
+        );
       }
 
       return registered;

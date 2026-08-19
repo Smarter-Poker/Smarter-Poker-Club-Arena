@@ -133,6 +133,25 @@ export abstract class TournamentManagerBase {
       `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK — ${Math.round(breakDurationMs / 60000)} minutes`
     );
 
+    /**
+     * Dan 2026-08-19: persist the break. It used to live only on this instance,
+     * so a break was invisible to the database, unverifiable after the fact,
+     * and lost entirely if the engine restarted mid-break.
+     */
+    try {
+      const endsAt = new Date(Date.now() + breakDurationMs).toISOString();
+      await supabase
+        .from('tournaments')
+        .update({
+          on_break: true,
+          break_started_at: new Date().toISOString(),
+          break_ends_at: endsAt,
+        })
+        .eq('id', this.tournamentId);
+    } catch (err) {
+      reportError(err, 'TournamentManagerBase.pauseForBreak_persist');
+    }
+
     const blindStructure = this.tournamentCache?.blind_structure || [];
     const nextLevel = blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)];
     await this.broadcast('tournament_break', {
@@ -175,6 +194,17 @@ export abstract class TournamentManagerBase {
     this.onBreak = false;
 
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
+
+    // Clear the persisted break state (see pauseForBreak).
+    try {
+      await supabase
+        .from('tournaments')
+        .update({ on_break: false, break_ends_at: null })
+        .eq('id', this.tournamentId);
+    } catch (err) {
+      reportError(err, 'TournamentManagerBase.resumeFromBreak_persist');
+    }
+
     await this.broadcast('break_ended', { level: this.currentLevel });
 
     // Undo the pause taken in pauseForBreak. Hand-for-hand owns the pause state
@@ -791,6 +821,19 @@ export abstract class TournamentManagerBase {
 
   protected async reviveDeadTableEngines(): Promise<void> {
     if (this.revivingTables) return;
+    /**
+     * Dan 2026-08-19: NEVER revive during a synchronized break.
+     *
+     * A break is five minutes of deliberate silence, but this sweep rebuilt any
+     * engine idle for more than 180 SECONDS. So three minutes into every break
+     * it declared every paused table "dead", tore it down and replaced it with
+     * a FRESH engine — and a fresh engine is not paused, so it started dealing
+     * again. The sweep was fighting the break and winning.
+     *
+     * Paused is not dead. Skip the sweep entirely while on break; it resumes
+     * its normal duty the moment play does.
+     */
+    if (this.onBreak) return;
     this.revivingTables = true;
     try {
       for (const [tableId, engine] of this.tableEngines) {

@@ -343,3 +343,37 @@ masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', async () => {
     console.debug('[AchievementTrigger] Friend-added challenge update failed:', err);
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// AUTO-WIRE: tournaments_played challenge trigger via bus event
+//
+// onTournamentComplete() — the only thing that increments 'tournaments_played'
+// — had ZERO production call sites (only tests referenced it). Every tournament
+// challenge was therefore unwinnable: tourney_1, tourney_2, tourney_3,
+// weekly_tourneys_10 and monthly_tourneys_50 could be assigned, shown with a
+// progress bar, and never move. With 5 daily challenges drawn from a pool that
+// guarantees one per activity type, a tournament challenge appears EVERY day.
+//
+// TOURNAMENT_REGISTERED is the correct signal: the challenge copy is "Play N
+// tournaments today", which is entering, not finishing. It also fires once per
+// entrant with the userId in the payload, so it works for every player rather
+// than only the one whose client happens to run the completion path.
+// ════════════════════════════════════════════════════════════════════════════════════
+masterBus.subscribe('TOURNAMENT_REGISTERED', async (payload: any) => {
+  try {
+    let userId: string | undefined = payload?.userId;
+    if (!userId) {
+      const {
+        data: { user },
+      } = await getAuthUser();
+      userId = user?.id;
+    }
+    if (!userId) return;
+    const res = await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
+    if (res.completed.length > 0) {
+      masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'tournament_registered' });
+    }
+  } catch (err) {
+    console.debug('[AchievementTrigger] Tournament challenge update failed:', err);
+  }
+});

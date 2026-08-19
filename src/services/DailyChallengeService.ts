@@ -319,122 +319,87 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
 
 class DailyChallengeServiceClass {
   /**
-   * Get today's challenges for a user
-   * Assigns 3 random challenges if not already assigned
+   * Fetch (and assign, if needed) the rows for one period.
+   *
+   * SERVER-AUTHORITATIVE (2026-08-19). The client used to INSERT its own rows
+   * and UPDATE its own progress. That required INSERT/UPDATE grants on
+   * user_daily_challenges, and the UPDATE policy had no WITH CHECK — so any
+   * logged-in user could PATCH {progress: 999999, completed: true} and claim,
+   * or INSERT unlimited rows of the highest-paying challenge at made-up period
+   * keys. Those grants are now revoked; assignment goes through the
+   * assign_user_challenges RPC, which validates every id against
+   * daily_challenge_catalog and enforces the period-key shape.
+   *
+   * The RPC is idempotent: it only inserts when the period is empty, and it
+   * always returns the canonical rows, so two tabs racing get the same set.
    */
-  async getTodaysChallenges(userId: string): Promise<UserDailyChallenge[]> {
-    const today = this.getTodayKey();
-
-    // Check if challenges already assigned
+  private async fetchOrAssign(
+    userId: string,
+    periodKey: string,
+    pool: DailyChallenge[],
+    count: number,
+    context: string
+  ): Promise<any[]> {
     const { data: existing, error: existErr } = await supabase
       .from('user_daily_challenges')
       .select('*')
       .eq('user_id', userId)
-      .eq('assigned_date', today);
-    if (existErr) reportError(existErr, 'DailyChallengeService.getTodaysChallenges_fetch_error');
+      .eq('assigned_date', periodKey);
+    if (existErr) reportError(existErr, `DailyChallengeService.${context}_fetch_error`);
 
-    if (existing && existing.length > 0) {
-      return existing.map(this.mapToUserChallenge);
-    }
+    if (existing && existing.length > 0) return existing;
 
-    // Assign new challenges — use ignoreDuplicates to handle TOCTOU race:
-    // If two tabs call this simultaneously, both SELECT returns empty, both INSERT.
-    // With ignoreDuplicates, the second insert silently skips existing rows.
-    const todaysChallenges = this.selectDailyChallenges(5);
-    const inserts = todaysChallenges.map((c) => ({
-      user_id: userId,
-      challenge_id: c.id,
-      assigned_date: today,
-      progress: 0,
-      completed: false,
-    }));
+    const chosen =
+      pool === CHALLENGE_POOL
+        ? this.selectDailyChallenges(count)
+        : this.selectChallenges(pool, count, periodKey);
 
-    const { error: insertErr } = await supabase.from('user_daily_challenges').upsert(inserts, {
-      onConflict: 'user_id,challenge_id,assigned_date',
-      ignoreDuplicates: true,
+    const { data: assigned, error: rpcErr } = await supabase.rpc('assign_user_challenges', {
+      p_assigned_date: periodKey,
+      p_challenge_ids: chosen.map((c) => c.id),
     });
-    if (insertErr)
-      reportError(insertErr, 'DailyChallengeService.Failed_to_assign_daily_challenges');
 
-    // Always re-fetch from DB to get canonical rows (handles race condition correctly)
-    const { data: canonical } = await supabase
-      .from('user_daily_challenges')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assigned_date', today);
-
-    if (canonical && canonical.length > 0) {
-      return canonical.map(this.mapToUserChallenge);
+    if (rpcErr) {
+      reportError(rpcErr, `DailyChallengeService.${context}_assign_error`);
+      // Re-read: another tab may have won the assignment race.
+      const { data: retry } = await supabase
+        .from('user_daily_challenges')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('assigned_date', periodKey);
+      return retry || [];
     }
 
-    // Final fallback: return in-memory data if DB is unreachable
-    return todaysChallenges.map((c) => ({
-      id: `${userId}-${c.id}-${today}`,
-      challengeId: c.id,
+    return assigned || [];
+  }
+
+  /**
+   * Get today's challenges for a user. Assigns a fresh, seeded set if the day
+   * has not been assigned yet.
+   */
+  async getTodaysChallenges(userId: string): Promise<UserDailyChallenge[]> {
+    const rows = await this.fetchOrAssign(
       userId,
-      progress: 0,
-      completed: false,
-      claimed: false,
-      tier: 'daily' as const,
-      challenge: c,
-    }));
+      this.getTodayKey(),
+      CHALLENGE_POOL,
+      5,
+      'getTodaysChallenges'
+    );
+    return rows.map((r) => this.mapToUserChallenge(r));
   }
 
   /**
    * Get this week's challenges for a user
    */
   async getWeeklyChallenges(userId: string): Promise<(UserDailyChallenge & { tier: 'weekly' })[]> {
-    const weekKey = this.getWeekKey();
-
-    const { data: existing, error: wkErr } = await supabase
-      .from('user_daily_challenges')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assigned_date', weekKey);
-    if (wkErr) reportError(wkErr, 'DailyChallengeService.getWeeklyChallenges_fetch_error');
-
-    if (existing && existing.length > 0) {
-      return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'weekly' as const }));
-    }
-
-    // Assign new weekly challenges — ignoreDuplicates handles TOCTOU race
-    const weeklyChallenges = this.selectChallenges(WEEKLY_CHALLENGE_POOL, 3, weekKey);
-    const inserts = weeklyChallenges.map((c) => ({
-      user_id: userId,
-      challenge_id: c.id,
-      assigned_date: weekKey,
-      progress: 0,
-      completed: false,
-    }));
-
-    const { error: insertErr } = await supabase.from('user_daily_challenges').upsert(inserts, {
-      onConflict: 'user_id,challenge_id,assigned_date',
-      ignoreDuplicates: true,
-    });
-    if (insertErr)
-      reportError(insertErr, 'DailyChallengeService.Failed_to_assign_weekly_challenges');
-
-    // Re-fetch canonical rows from DB
-    const { data: canonical } = await supabase
-      .from('user_daily_challenges')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assigned_date', weekKey);
-
-    if (canonical && canonical.length > 0) {
-      return canonical.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'weekly' as const }));
-    }
-
-    return weeklyChallenges.map((c) => ({
-      id: `${userId}-${c.id}-${weekKey}`,
-      challengeId: c.id,
+    const rows = await this.fetchOrAssign(
       userId,
-      progress: 0,
-      completed: false,
-      claimed: false,
-      tier: 'weekly' as const,
-      challenge: c,
-    }));
+      this.getWeekKey(),
+      WEEKLY_CHALLENGE_POOL,
+      3,
+      'getWeeklyChallenges'
+    );
+    return rows.map((r) => ({ ...this.mapToUserChallenge(r), tier: 'weekly' as const }));
   }
 
   /**
@@ -443,60 +408,14 @@ class DailyChallengeServiceClass {
   async getMonthlyChallenges(
     userId: string
   ): Promise<(UserDailyChallenge & { tier: 'monthly' })[]> {
-    const monthKey = this.getMonthKey();
-
-    const { data: existing, error: moErr } = await supabase
-      .from('user_daily_challenges')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assigned_date', monthKey);
-    if (moErr) reportError(moErr, 'DailyChallengeService.getMonthlyChallenges_fetch_error');
-
-    if (existing && existing.length > 0) {
-      return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'monthly' as const }));
-    }
-
-    // Assign new monthly challenges — ignoreDuplicates handles TOCTOU race
-    const monthlyChallenges = this.selectChallenges(MONTHLY_CHALLENGE_POOL, 2, monthKey);
-    const inserts = monthlyChallenges.map((c) => ({
-      user_id: userId,
-      challenge_id: c.id,
-      assigned_date: monthKey,
-      progress: 0,
-      completed: false,
-    }));
-
-    const { error: insertErr } = await supabase.from('user_daily_challenges').upsert(inserts, {
-      onConflict: 'user_id,challenge_id,assigned_date',
-      ignoreDuplicates: true,
-    });
-    if (insertErr)
-      reportError(insertErr, 'DailyChallengeService.Failed_to_assign_monthly_challenges');
-
-    // Re-fetch canonical rows from DB
-    const { data: canonical } = await supabase
-      .from('user_daily_challenges')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('assigned_date', monthKey);
-
-    if (canonical && canonical.length > 0) {
-      return canonical.map((row) => ({
-        ...this.mapToUserChallenge(row),
-        tier: 'monthly' as const,
-      }));
-    }
-
-    return monthlyChallenges.map((c) => ({
-      id: `${userId}-${c.id}-${monthKey}`,
-      challengeId: c.id,
+    const rows = await this.fetchOrAssign(
       userId,
-      progress: 0,
-      completed: false,
-      claimed: false,
-      tier: 'monthly' as const,
-      challenge: c,
-    }));
+      this.getMonthKey(),
+      MONTHLY_CHALLENGE_POOL,
+      2,
+      'getMonthlyChallenges'
+    );
+    return rows.map((r) => ({ ...this.mapToUserChallenge(r), tier: 'monthly' as const }));
   }
 
   /**
@@ -533,9 +452,20 @@ class DailyChallengeServiceClass {
 
       if (!challenge || challenge.type !== type) continue;
 
-      // Try atomic RPC first (eliminates read-then-write race condition)
-      let newProgress: number;
-      let isComplete: boolean;
+      // The RPC is the ONLY way progress moves. The client has no UPDATE grant
+      // on user_daily_challenges (revoked 2026-08-19 — see fetchOrAssign).
+      //
+      // The old direct-UPDATE fallback is gone: it could not work post-lockdown,
+      // and it was actively harmful before it. PostgREST reports no error for an
+      // UPDATE that matches zero rows, so when the RPC declined (row missing, or
+      // auth.uid() mismatch) the fallback "succeeded" against nothing and then
+      // pushed a fabricated entry onto `completed[]` — firing a
+      // "Challenge complete!" toast and a CHALLENGE_PROGRESS_UPDATED bus event
+      // for a challenge that had not advanced.
+      //
+      // p_requirement is still sent for signature compatibility with clients
+      // mid-rollout; the server ignores it and reads the catalog instead
+      // (passing p_requirement:1 used to complete any challenge instantly).
       const { data: rpcResult, error: rpcErr } = await supabase.rpc(
         'increment_challenge_progress',
         {
@@ -546,31 +476,17 @@ class DailyChallengeServiceClass {
         }
       );
 
-      if (!rpcErr && rpcResult?.updated) {
-        // Atomic RPC succeeded
-        newProgress = rpcResult.progress;
-        isComplete = rpcResult.completed;
-      } else {
-        // Fallback: direct UPDATE (for environments where RPC not yet deployed)
-        if (rpcErr && !rpcErr.message.includes('Could not find')) {
-          console.warn('[DailyChallenge] RPC error (using fallback):', rpcErr.message);
-        }
-        newProgress = Math.min(uc.progress + amount, challenge.requirement);
-        isComplete = newProgress >= challenge.requirement;
-
-        const { error: progErr } = await supabase
-          .from('user_daily_challenges')
-          .update({
-            progress: newProgress,
-            completed: isComplete,
-            completed_at: isComplete ? new Date().toISOString() : null,
-          })
-          .eq('id', uc.id);
-        if (progErr) {
-          reportError(progErr, 'DailyChallengeService.Progress_update_failed');
-          continue;
-        }
+      if (rpcErr) {
+        reportError(rpcErr, 'DailyChallengeService.Progress_rpc_failed');
+        continue;
       }
+      if (!rpcResult?.updated) {
+        // Not an error: the row was already complete, or belongs to someone else.
+        continue;
+      }
+
+      const newProgress: number = rpcResult.progress;
+      const isComplete: boolean = rpcResult.completed;
 
       if (isComplete) {
         completed.push({
@@ -597,8 +513,17 @@ class DailyChallengeServiceClass {
     challengeRowId: string,
     rewardAmount: number
   ): Promise<boolean> {
-    // retryAsync retries transient network errors (fetch/timeout/503)
-    // Inner throw converts Supabase { error } responses into thrown errors
+    // Rows that only exist client-side (offline fallback) have a synthetic id,
+    // not a uuid. Sending one produces a raw Postgres 22P02 in the user's face.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeRowId)) {
+      throw new Error('This challenge is not ready to claim yet. Refresh and try again.');
+    }
+
+    // retryAsync retries transient network errors (fetch/timeout/503).
+    // The RPC is idempotent: a second claim of an already-claimed row returns
+    // false rather than raising, so a commit whose response was lost to a
+    // network blip no longer surfaces "Challenge already claimed" as an error
+    // for chips the player actually received.
     await retryAsync(async () => {
       const result = await supabase.rpc('claim_daily_challenge', {
         p_user_id: userId,
@@ -606,24 +531,20 @@ class DailyChallengeServiceClass {
         p_reward_amount: rewardAmount,
       });
       if (result.error) {
+        if (/already claimed/i.test(result.error.message || '')) return result; // treat as success
         reportError(result.error, 'DailyChallengeService.RPC_claim_error');
         throw new Error(result.error.message);
       }
       return result;
     }, 3);
 
-    try {
-      await WalletService.logTransaction(
-        userId,
-        'PLAYER',
-        rewardAmount,
-        'credit',
-        'bonus',
-        `Manual Claim: Daily Challenge Reward`
-      );
-    } catch (logErr) {
-      console.warn('[DailyChallenge] Transaction log failed (claim still valid):', logErr);
-    }
+    // NOTE: no client-side ledger write here. claim_daily_challenge credits via
+    // atomic_credit_wallet_and_log under the idempotency key
+    // 'challenge_claim:<row id>', which already writes the transaction record.
+    // The previous WalletService.logTransaction call double-logged with the
+    // CLIENT-supplied amount, which the RPC deliberately ignores in favour of
+    // the catalog value — so any drift made the audit trail disagree with the
+    // wallet, and a retry logged the same reward twice.
     masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId });
     return true;
   }
@@ -638,11 +559,15 @@ class DailyChallengeServiceClass {
     nextMilestone: number;
     milestoneReward: number;
   }> {
+    // ORDER BY is load-bearing: an unordered LIMIT returns an arbitrary subset
+    // in Postgres, so once a user passed QUERY_LIMITS.MODERATE completions the
+    // streak scan below walked a random slice and collapsed to a wrong value.
     const { data, error: statErr } = await supabase
       .from('user_daily_challenges')
-      .select('challenge_id, completed, assigned_date')
+      .select('challenge_id, completed, claimed, assigned_date')
       .eq('user_id', userId)
       .eq('completed', true)
+      .order('assigned_date', { ascending: false })
       .limit(QUERY_LIMITS.MODERATE);
     if (statErr) reportError(statErr, 'DailyChallengeService.getStats_error');
 
@@ -660,6 +585,9 @@ class DailyChallengeServiceClass {
     let totalChipsEarned = 0;
 
     for (const uc of data) {
+      // Only CLAIMED rewards are money the player actually has. Counting
+      // completed-but-unclaimed rows made "Chips Earned" overstate the balance.
+      if (!uc.claimed) continue;
       const challenge =
         CHALLENGE_POOL.find((c) => c.id === uc.challenge_id) ||
         WEEKLY_CHALLENGE_POOL.find((c) => c.id === uc.challenge_id) ||
@@ -679,13 +607,21 @@ class DailyChallengeServiceClass {
     const dates = [...new Set(dailyDates)].sort().reverse();
     let currentStreak = 0;
     const today = this.getTodayKey();
+    const yesterday = this.subtractDays(today, 1);
 
-    for (const date of dates) {
-      const expectedDate = this.subtractDays(today, currentStreak);
-      if (date === expectedDate) {
-        currentStreak++;
-      } else {
-        break;
+    // Anchor the walk at today OR yesterday. Anchoring only at today meant a
+    // player with a 30-day streak saw "0 day streak" from 00:00 UTC until they
+    // completed something — the streak looked broken at the exact moment the
+    // UI is trying to persuade them to keep it alive.
+    const anchor = dates[0] === today ? today : dates[0] === yesterday ? yesterday : null;
+    if (anchor) {
+      for (const date of dates) {
+        const expectedDate = this.subtractDays(anchor, currentStreak);
+        if (date === expectedDate) {
+          currentStreak++;
+        } else {
+          break;
+        }
       }
     }
 
@@ -809,15 +745,33 @@ class DailyChallengeServiceClass {
     return new Date().toISOString().split('T')[0];
   }
 
+  /**
+   * Monday of the current UTC week.
+   *
+   * The old form was `date - getUTCDay() + 1`, which is correct Mon-Sat but
+   * wrong on Sunday: getUTCDay() returns 0 there, so it produced
+   * `date + 1` = tomorrow, i.e. the Monday that STARTS THE NEXT WEEK. A player
+   * grinding on Sunday saw their weekly bar stuck at 0 all day while the
+   * progress silently accrued to next week's row, and Sunday could hand out a
+   * fresh weekly set that "expired" 24h later.
+   */
   private getWeekKey(): string {
     const d = new Date();
-    d.setUTCDate(d.getUTCDate() - d.getUTCDay() + 1); // Monday
+    const day = d.getUTCDay(); // 0 = Sunday
+    d.setUTCDate(d.getUTCDate() - (day === 0 ? 6 : day - 1));
     return `W${d.toISOString().split('T')[0]}`;
   }
 
+  /**
+   * Month key, zero-padded. Unpadded ('M2026-8') sorted lexically as
+   * 'M2026-10' < 'M2026-3' < 'M2026-9', which silently corrupts any ordering,
+   * MIN/MAX or range filter over assigned_date. Existing unpadded rows were
+   * backfilled by migration daily_challenges_lockdown_and_catalog_parity, and
+   * assign_user_challenges now rejects the unpadded shape outright.
+   */
   private getMonthKey(): string {
     const d = new Date();
-    return `M${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`;
+    return `M${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   }
 
   /**

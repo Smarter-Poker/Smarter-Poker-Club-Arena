@@ -23,7 +23,6 @@ import { MembershipService } from '../services/MembershipService';
 import { AgentService, type Agent } from '../services/AgentService';
 import { useToast } from '../components/common/Toast';
 import { ClubsService } from '../services/ClubsService';
-import DailyChallengesWidget from '../components/rewards/DailyChallengesWidget';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import ConfirmModal from '../components/common/ConfirmModal';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -1318,11 +1317,30 @@ export default function ClubDetailPage() {
               </ul>
             </div>
 
-            {/* Daily Challenges */}
+            {/* Daily Challenges — link, not a second copy of the feature.
+                This card used to embed DailyChallengesWidget, which loaded all
+                three challenge tiers and carried its own claim guard, duplicating
+                both the dedicated /challenges page and the panel that used to sit
+                on ProfilePage. One surface owns claiming now; this is a way in. */}
             <div className={styles.card}>
-              <CardErrorBoundary label="Daily Challenges">
-                <DailyChallengesWidget />
-              </CardErrorBoundary>
+              <h3 style={{ margin: '0 0 8px', fontSize: '0.95rem' }}>Daily Challenges</h3>
+              <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#8a9aaa' }}>
+                A fresh set of challenges every day, plus weekly and monthly goals.
+              </p>
+              <button
+                onClick={() => navigate('/challenges')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(0,212,255,0.35)',
+                  background: 'rgba(0,212,255,0.1)',
+                  color: '#00d4ff',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                View Challenges
+              </button>
             </div>
 
             {/* Club Activity Heatmap */}

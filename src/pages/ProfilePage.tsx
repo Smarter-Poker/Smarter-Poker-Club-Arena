@@ -27,7 +27,6 @@ import StreakMultiplier from '../components/gamification/StreakMultiplier';
 import FinancialAchievementBadge from '../components/gamification/FinancialAchievementBadge';
 import CircularGauge from '../components/common/CircularGauge';
 import DiamondRainEffect from '../components/effects/DiamondRainEffect';
-import MissionsPanel, { Mission } from '../components/gamification/MissionsPanel';
 import GamificationLeaderboard from '../components/gamification/GamificationLeaderboard';
 import PlayerActivityFeed from '../components/social/PlayerActivityFeed';
 import ReferralDashboard from '../components/social/ReferralDashboard';
@@ -35,7 +34,6 @@ import PerformanceTrends from '../components/stats/PerformanceTrends';
 import StakeLevelComparison from '../components/stats/StakeLevelComparison';
 import PlayerStyleRadar from '../components/stats/PlayerStyleRadar';
 import PromotionsList from '../components/promotions/PromotionsList';
-import { dailyChallengeService, type UserDailyChallenge } from '../services/DailyChallengeService';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
@@ -218,8 +216,6 @@ export default function ProfilePage() {
   const isMountedRef = useIsMounted();
 
   const toast = useToast();
-  // Double-claim guard: prevents duplicate RPC calls on rapid button clicks
-  const claimingMissionsRef = useRef<Set<string>>(new Set());
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const { user: storeUser } = useAuthUser();
   useVisibilityRefresh(async () => {
@@ -257,7 +253,6 @@ export default function ProfilePage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<PokerStats>(DEFAULT_STATS);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
-  const [missions, setMissions] = useState<Mission[]>([]);
   const [diamonds, setDiamonds] = useState(0);
   const [isVIP, setIsVIP] = useState(false);
   const [dailyStreak, setDailyStreak] = useState(0);
@@ -378,8 +373,11 @@ export default function ProfilePage() {
           }
         }
 
-        // ── Batch: achievements + missions + transactions in parallel ──
-        const [achievementsResult, missionsResult, transactionsResult] = await Promise.allSettled([
+        // ── Batch: achievements + transactions in parallel ──
+        // Challenges are NOT loaded here any more: this page links to
+        // /challenges instead of rendering them, so fetching all three tiers on
+        // every profile visit was pure waste (9 round trips on a fresh day).
+        const [achievementsResult, transactionsResult] = await Promise.allSettled([
           // Achievements
           retryFetch(
             () =>
@@ -391,8 +389,6 @@ export default function ProfilePage() {
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMountedRef }
           ),
-          // Missions (daily + weekly + monthly)
-          dailyChallengeService.getAllChallenges(authUser.id),
           // Transaction history
           retryFetch(
             () =>
@@ -424,27 +420,6 @@ export default function ProfilePage() {
           );
         } else {
           setAchievements([]);
-        }
-
-        // Process missions
-        if (missionsResult.status === 'fulfilled') {
-          const { daily, weekly, monthly } = missionsResult.value;
-          const allMissions = [...daily, ...weekly, ...monthly];
-          setMissions(
-            allMissions.map((mc) => ({
-              id: mc.id,
-              tier: ('tier' in mc ? mc.tier : 'daily') as 'daily' | 'weekly' | 'monthly',
-              title: mc.challenge.name,
-              description: mc.challenge.description,
-              icon: mc.challenge.icon,
-              current: mc.progress,
-              target: mc.challenge.requirement,
-              rewardAmount: mc.challenge.chipReward,
-              rewardType: 'chips' as const,
-              completed: mc.completed,
-              claimed: mc.claimed,
-            }))
-          );
         }
 
         // Process transactions
@@ -669,46 +644,6 @@ export default function ProfilePage() {
       500
     );
 
-    // Auto-refresh missions when progress is updated in-game
-    const unsubChallengeProgress = masterBus.subscribeDebounced(
-      'CHALLENGE_PROGRESS_UPDATED',
-      () => {
-        if (!isMounted) return;
-        supabase.auth
-          .getUser()
-          .then(({ data: { user: authUser } }) => {
-            if (authUser && isMounted) {
-              dailyChallengeService
-                .getAllChallenges(authUser.id)
-                .then(({ daily, weekly, monthly }) => {
-                  if (!isMounted) return;
-                  const allMissions = [...daily, ...weekly, ...monthly];
-                  setMissions(
-                    allMissions.map((mc) => ({
-                      id: mc.id,
-                      tier: ('tier' in mc ? mc.tier : 'daily') as 'daily' | 'weekly' | 'monthly',
-                      title: mc.challenge.name,
-                      description: mc.challenge.description,
-                      icon: mc.challenge.icon,
-                      current: mc.progress,
-                      target: mc.challenge.requirement,
-                      rewardAmount: mc.challenge.chipReward,
-                      rewardType: 'chips' as const,
-                      completed: mc.completed,
-                      claimed: mc.claimed,
-                    }))
-                  );
-                })
-                .catch((e) => console.warn('[Profile] Refreshing mission progress failed:', e));
-            }
-          })
-          .catch((e) =>
-            console.warn('[Profile] Fetching auth user for mission progress failed:', e)
-          );
-      },
-      1000
-    );
-
     return () => {
       isMounted = false;
       unsubProfile();
@@ -718,7 +653,6 @@ export default function ProfilePage() {
       unsubDailyReward();
       unsubMissionClaim();
       unsubWheelSpin();
-      unsubChallengeProgress();
     };
   }, []);
 
@@ -973,52 +907,19 @@ export default function ProfilePage() {
         </button>
       </section>
 
-      {/* Daily Missions */}
+      {/* Daily Challenges — single source of truth lives at /challenges.
+          This page used to render a full MissionsPanel with its own copy of the
+          load + claim logic, duplicating the widget on ClubDetailPage and the
+          dedicated page. Three surfaces meant three independent claim guards
+          over the same rows and three sets of queries per visit. */}
       <section className={styles.contentSection}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 16,
-          }}
+        <button
+          className={styles.bonusButton}
+          onClick={() => navigate('/challenges')}
+          style={{ width: '100%' }}
         >
-          <h3 style={{ margin: 0, fontSize: '0.875rem', color: '#8a9aaa', fontWeight: 600 }}>
-            Daily Missions
-          </h3>
-        </div>
-        <MissionsPanel
-          missions={missions}
-          onClaim={async (missionId) => {
-            if (!user?.id) return;
-            // Double-claim guard — rapid clicks can fire onClaim twice
-            if (claimingMissionsRef.current.has(missionId)) return;
-            claimingMissionsRef.current.add(missionId);
-            const targetMission = missions.find((m) => m.id === missionId);
-            if (!targetMission) {
-              claimingMissionsRef.current.delete(missionId);
-              return;
-            }
-            try {
-              await dailyChallengeService.claimChallenge(
-                user.id,
-                targetMission.id,
-                targetMission.rewardAmount
-              );
-              if (isMountedRef.current) {
-                setMissions((prev) =>
-                  prev.map((m) => (m.id === missionId ? { ...m, claimed: true } : m))
-                );
-              }
-              toast.success('Mission reward claimed!');
-            } catch (err: any) {
-              reportError(err, 'ProfilePage.Failed_to_claim_mission');
-              toast.error(err.message || 'Failed to claim mission reward');
-            } finally {
-              claimingMissionsRef.current.delete(missionId);
-            }
-          }}
-        />
+          Daily Challenges
+        </button>
       </section>
 
       {/* Gamification Leaderboard */}

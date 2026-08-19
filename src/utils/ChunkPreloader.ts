@@ -85,6 +85,7 @@ export function preloadRoute(path: string): void {
     '/wallet': () => import('../pages/PlayerWalletPage'),
     '/hand-history': () => import('../pages/HandHistoryPage'),
     '/cashier': () => import('../pages/CashierPage'),
+    '/marketplace': () => import('../pages/MarketplacePage'),
     '/notifications': () => import('../pages/NotificationsPage'),
     '/messages': () => import('../pages/MessagesPage'),
     '/leaderboard': () => import('../pages/LeaderboardPage'),

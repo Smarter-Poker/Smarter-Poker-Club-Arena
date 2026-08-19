@@ -16,8 +16,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import haptic from '../../services/HapticService';
+import { useAuthUser } from '../../hooks/useAuthUser';
+import { preloadRoute } from '../../utils/ChunkPreloader';
 import type { LobbyTile } from '../../config/lobbyTiles.config';
-import type { QuickLinkClub } from '../../utils/clubQuickLink';
+import { fetchClubChipBalances, type QuickLinkClub } from '../../utils/clubQuickLink';
 import styles from '../../pages/HomePage.module.css';
 
 const LONG_PRESS_MS = 500;
@@ -34,6 +36,8 @@ interface ClubQuickLinkTileProps<T extends QuickLinkClub> {
   onSelect: (club: T) => void;
   /** Tap behavior when the user has no eligible clubs. */
   onEmpty: () => void;
+  /** Optional ChunkPreloader route to warm on hover/press (e.g. '/cashier'). */
+  preloadPath?: string;
 }
 
 export default function ClubQuickLinkTile<T extends QuickLinkClub>({
@@ -43,15 +47,38 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   menuTitle,
   onSelect,
   onEmpty,
+  preloadPath,
 }: ClubQuickLinkTileProps<T>) {
+  const { user } = useAuthUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [balances, setBalances] = useState<Map<string, number> | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
+  const preloaded = useRef(false);
 
   const hasSwitch = clubs.length > 1;
+
+  // Warm the destination chunk the first time the user shows intent
+  const handlePreload = useCallback(() => {
+    if (preloaded.current || !preloadPath) return;
+    preloaded.current = true;
+    preloadRoute(preloadPath);
+  }, [preloadPath]);
+
+  // Per-club chip balances — lazy-loaded when the popover opens
+  useEffect(() => {
+    if (!menuOpen || !user?.id) return;
+    let live = true;
+    fetchClubChipBalances(user.id).then((b) => {
+      if (live) setBalances(b);
+    });
+    return () => {
+      live = false;
+    };
+  }, [menuOpen, user?.id]);
 
   const openMenu = useCallback(() => {
     const selected = targetClub ? clubs.findIndex((c) => c.id === targetClub.id) : 0;
@@ -138,7 +165,12 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
       <button
         className={styles.tileCard}
         onClick={handleTileClick}
-        onPointerDown={handlePointerDown}
+        onPointerEnter={handlePreload}
+        onFocus={handlePreload}
+        onPointerDown={() => {
+          handlePreload();
+          handlePointerDown();
+        }}
         onPointerUp={clearLongPress}
         onPointerLeave={clearLongPress}
         onContextMenu={(e) => {
@@ -229,7 +261,16 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
                     {(club.name || '?').charAt(0).toUpperCase()}
                   </span>
                 )}
-                <span className={styles.cashierSwitchItemName}>{club.name || 'Unnamed Club'}</span>
+                <span className={styles.cashierSwitchItemText}>
+                  <span className={styles.cashierSwitchItemName}>
+                    {club.name || 'Unnamed Club'}
+                  </span>
+                  {balances?.has(club.id) && (
+                    <span className={styles.cashierSwitchItemBalance}>
+                      {(balances.get(club.id) as number).toLocaleString()} chips
+                    </span>
+                  )}
+                </span>
               </button>
             ))}
           </div>

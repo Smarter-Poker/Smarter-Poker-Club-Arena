@@ -1289,7 +1289,8 @@ function HomePageInner() {
 
   const cashierEmpty = useCallback(() => {
     haptic.light();
-    toast.info('Join a club first to access the cashier');
+    toast.info('Join a club to access the cashier');
+    setShowJoinModal(true);
   }, [toast]);
 
   const marketplaceEmpty = useCallback(() => {
@@ -1504,6 +1505,7 @@ function HomePageInner() {
                 menuTitle={tile.alt === 'Cashier' ? 'Open Cashier For' : 'Open Marketplace For'}
                 onSelect={tile.alt === 'Cashier' ? openClubCashier : openClubMarketplace}
                 onEmpty={tile.alt === 'Cashier' ? cashierEmpty : marketplaceEmpty}
+                preloadPath={tile.alt === 'Cashier' ? '/cashier' : '/marketplace'}
               />
             ) : (
               <button

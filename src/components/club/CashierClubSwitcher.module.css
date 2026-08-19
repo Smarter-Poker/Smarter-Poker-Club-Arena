@@ -161,11 +161,26 @@
   background: rgba(69, 153, 255, 0.08);
 }
 
+.itemText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .itemName {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+.itemBalance {
+  font-size: 10px;
+  font-weight: 600;
+  color: #b0b3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 480px) {

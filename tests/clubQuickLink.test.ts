@@ -3,13 +3,26 @@
  * Marketplace tiles, keyboard shortcuts 4/5, and the in-cashier switcher.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+const eqMock = vi.fn();
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({ eq: eqMock })),
+    })),
+  },
+}));
+
 import {
   eligibleQuickLinkClubs,
   resolveTargetClub,
   readLastClubId,
   rememberLastClub,
   clubParamToUuid,
+  fetchClubChipBalances,
+  fetchQuickLinkClubs,
+  clearClubChipBalanceCache,
 } from '../src/utils/clubQuickLink';
 import { STORAGE_KEYS } from '../src/lib/storage';
 
@@ -24,6 +37,8 @@ const U = {
 
 beforeEach(() => {
   localStorage.clear();
+  clearClubChipBalanceCache();
+  eqMock.mockReset();
 });
 
 describe('eligibleQuickLinkClubs', () => {
@@ -69,6 +84,54 @@ describe('rememberLastClub / readLastClubId', () => {
   it('refuses non-UUID values', () => {
     rememberLastClub('11111');
     expect(readLastClubId()).toBeNull();
+  });
+});
+
+describe('fetchClubChipBalances', () => {
+  const USER = 'dddddddd-0000-0000-0000-000000000042';
+
+  it('maps club_members rows to a club_id → balance map', async () => {
+    eqMock.mockResolvedValue({
+      data: [
+        { club_id: A.id, chip_balance: 1234.5 },
+        { club_id: B.id, chip_balance: 0 },
+      ],
+      error: null,
+    });
+    const balances = await fetchClubChipBalances(USER);
+    expect(balances.get(A.id)).toBe(1234.5);
+    expect(balances.get(B.id)).toBe(0);
+  });
+
+  it('memoizes within the TTL — second call does not requery', async () => {
+    eqMock.mockResolvedValue({ data: [{ club_id: A.id, chip_balance: 7 }], error: null });
+    await fetchClubChipBalances(USER);
+    await fetchClubChipBalances(USER);
+    expect(eqMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns empty map on query error without throwing', async () => {
+    eqMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    const balances = await fetchClubChipBalances(USER);
+    expect(balances.size).toBe(0);
+  });
+});
+
+describe('fetchQuickLinkClubs', () => {
+  const USER = 'dddddddd-0000-0000-0000-000000000042';
+
+  it('unwraps joined club rows', async () => {
+    eqMock.mockResolvedValue({
+      data: [{ club: A }, { club: [B] }, { club: null }],
+      error: null,
+    });
+    const clubs = await fetchQuickLinkClubs(USER);
+    expect(clubs.map((c) => c.id)).toEqual([A.id, B.id]);
+  });
+
+  it('returns empty list on error without throwing', async () => {
+    eqMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    expect(await fetchQuickLinkClubs(USER)).toEqual([]);
   });
 });
 

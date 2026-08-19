@@ -2582,11 +2582,26 @@
   outline-offset: -2px;
 }
 
+.cashierSwitchItemText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .cashierSwitchItemName {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+.cashierSwitchItemBalance {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cashierSwitchLogo {

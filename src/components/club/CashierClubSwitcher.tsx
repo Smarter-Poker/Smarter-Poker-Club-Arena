@@ -17,10 +17,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import haptic from '../../services/HapticService';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import { STORAGE_KEYS } from '../../lib/storage';
 import {
   eligibleQuickLinkClubs,
   clubParamToUuid,
+  fetchClubChipBalances,
+  fetchQuickLinkClubs,
   type QuickLinkClub,
 } from '../../utils/clubQuickLink';
 import styles from './CashierClubSwitcher.module.css';
@@ -45,12 +48,41 @@ function readCachedClubs(): QuickLinkClub[] {
 
 export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwitcherProps) {
   const navigate = useNavigate();
+  const { user } = useAuthUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [balances, setBalances] = useState<Map<string, number> | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const clubs = useMemo(() => readCachedClubs(), []);
+  const cachedClubs = useMemo(() => readCachedClubs(), []);
+  const [fetchedClubs, setFetchedClubs] = useState<QuickLinkClub[] | null>(null);
+  const clubs = fetchedClubs ?? cachedClubs;
+
+  // Cold-cache fallback — a deep link straight into the cashier means the
+  // lobby never populated CLUBS_CACHE; fetch memberships so switching works
+  useEffect(() => {
+    if (cachedClubs.length > 0 || !user?.id) return;
+    let live = true;
+    fetchQuickLinkClubs(user.id).then((list) => {
+      if (live && list.length > 0) setFetchedClubs(list);
+    });
+    return () => {
+      live = false;
+    };
+  }, [cachedClubs.length, user?.id]);
+
+  // Per-club chip balances — lazy-loaded when the dropdown opens
+  useEffect(() => {
+    if (!menuOpen || !user?.id) return;
+    let live = true;
+    fetchClubChipBalances(user.id).then((b) => {
+      if (live) setBalances(b);
+    });
+    return () => {
+      live = false;
+    };
+  }, [menuOpen, user?.id]);
   const currentUuid = useMemo(() => clubParamToUuid(clubId), [clubId]);
   const currentClub = useMemo(
     () => clubs.find((c) => c.id === currentUuid || String(c.club_id) === clubId) || null,
@@ -187,7 +219,14 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
                 onClick={() => handleSelect(club)}
               >
                 {logo(club, club.name || '')}
-                <span className={styles.itemName}>{club.name || 'Unnamed Club'}</span>
+                <span className={styles.itemText}>
+                  <span className={styles.itemName}>{club.name || 'Unnamed Club'}</span>
+                  {balances?.has(club.id) && (
+                    <span className={styles.itemBalance}>
+                      {(balances.get(club.id) as number).toLocaleString()} chips
+                    </span>
+                  )}
+                </span>
               </button>
             ))}
           </div>

@@ -7,6 +7,8 @@ interface VIPStatusCardProps {
   nextTierPoints?: number;
   benefits: string[];
   memberSince?: Date;
+  /** What the points number represents (e.g. "VIP Points" or "Diamonds") */
+  pointsLabel?: string;
 }
 
 const TIER_CONFIG = {
@@ -23,6 +25,7 @@ export const VIPStatusCard: React.FC<VIPStatusCardProps> = ({
   nextTierPoints,
   benefits,
   memberSince,
+  pointsLabel = 'VIP Points',
 }) => {
   const config = TIER_CONFIG[tier];
   const progress = nextTierPoints ? Math.min((currentPoints / nextTierPoints) * 100, 100) : 100;
@@ -47,7 +50,7 @@ export const VIPStatusCard: React.FC<VIPStatusCardProps> = ({
       <div className="points-section">
         <div className="points-display">
           <span className="points-value">{currentPoints.toLocaleString()}</span>
-          <span className="points-label">VIP Points</span>
+          <span className="points-label">{pointsLabel}</span>
         </div>
 
         {nextTierPoints && (
@@ -58,7 +61,7 @@ export const VIPStatusCard: React.FC<VIPStatusCardProps> = ({
             <span className="progress-text">
               {currentPoints >= nextTierPoints
                 ? 'Max tier reached!'
-                : `${(nextTierPoints - currentPoints).toLocaleString()} points to next tier`}
+                : `${(nextTierPoints - currentPoints).toLocaleString()} ${pointsLabel.toLowerCase()} to next tier`}
             </span>
           </div>
         )}

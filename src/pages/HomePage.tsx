@@ -811,7 +811,7 @@ function HomePageInner() {
       switch (key) {
         case '1':
           haptic.light();
-          navigate('/profile'); // Daily Challenges
+          navigate('/challenges'); // Daily Challenges
           break;
         case '2':
           haptic.light();

@@ -21,7 +21,7 @@ const LOBBY_TILES: LobbyTile[] = [
   {
     img: `${BASE}images/tiles/daily-challenges.webp`,
     alt: 'Daily Challenges',
-    route: '/profile',
+    route: '/challenges',
     shortcutKey: '1',
   },
   {

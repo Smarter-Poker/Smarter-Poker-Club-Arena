@@ -80,6 +80,7 @@ export function preloadRoute(path: string): void {
     '/': () => import('../pages/HomePage'),
     '/clubs': () => import('../pages/ClubCarouselPage'),
     '/profile': () => import('../pages/ProfilePage'),
+    '/challenges': () => import('../pages/DailyChallengesPage'),
     '/settings': () => import('../pages/SettingsPage'),
     '/wallet': () => import('../pages/PlayerWalletPage'),
     '/hand-history': () => import('../pages/HandHistoryPage'),

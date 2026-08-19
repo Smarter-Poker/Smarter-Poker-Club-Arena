@@ -951,6 +951,7 @@ export default function ProfilePage() {
                 <VIPStatusCard
                   tier={currentTier.tier}
                   currentPoints={diamonds}
+                  pointsLabel="Diamonds"
                   nextTierPoints={nextTierPoints}
                   benefits={[
                     '6% Leaderboard Boost',

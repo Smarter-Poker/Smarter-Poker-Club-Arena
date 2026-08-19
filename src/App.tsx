@@ -65,6 +65,7 @@ const TournamentResultsPage = lazy(() => import('./pages/tournament/TournamentRe
 const TablePage = lazy(() => import('./pages/TablePage'));
 const MultiTablePage = lazy(() => import('./pages/MultiTablePage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const DailyChallengesPage = lazy(() => import('./pages/DailyChallengesPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const UnionsPage = lazy(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazy(() => import('./pages/UnionDetailPage'));
@@ -609,6 +610,16 @@ export default function App() {
                 />
 
                 {/* User */}
+                <Route
+                  path="challenges"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Daily Challenges">
+                        <DailyChallengesPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="profile"
                   element={

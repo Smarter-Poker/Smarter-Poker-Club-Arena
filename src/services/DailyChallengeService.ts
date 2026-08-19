@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 📆 DAILY CHALLENGE SERVICE — Rotating Challenge Engine
+ * DAILY CHALLENGE SERVICE — Rotating Challenge Engine
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Provides rotating daily challenges that refresh each day.
@@ -81,6 +81,42 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     chipReward: 200,
     icon: '',
   },
+  {
+    id: 'hands_15',
+    name: 'Card Shark',
+    description: 'Play 15 hands today',
+    type: 'hands_played',
+    requirement: 15,
+    chipReward: 75,
+    icon: '',
+  },
+  {
+    id: 'hands_40',
+    name: 'Table Regular',
+    description: 'Play 40 hands today',
+    type: 'hands_played',
+    requirement: 40,
+    chipReward: 160,
+    icon: '',
+  },
+  {
+    id: 'hands_75',
+    name: 'Session Beast',
+    description: 'Play 75 hands today',
+    type: 'hands_played',
+    requirement: 75,
+    chipReward: 300,
+    icon: '',
+  },
+  {
+    id: 'hands_100',
+    name: 'Century Club',
+    description: 'Play 100 hands today',
+    type: 'hands_played',
+    requirement: 100,
+    chipReward: 400,
+    icon: '',
+  },
 
   // Win Challenges
   {
@@ -99,7 +135,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 5,
     chipReward: 150,
-    icon: '✋',
+    icon: '',
   },
   {
     id: 'wins_10',
@@ -108,6 +144,24 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 10,
     chipReward: 300,
+    icon: '',
+  },
+  {
+    id: 'wins_7',
+    name: 'Lucky Seven',
+    description: 'Win 7 hands today',
+    type: 'hands_won',
+    requirement: 7,
+    chipReward: 200,
+    icon: '',
+  },
+  {
+    id: 'wins_15',
+    name: 'Rush Mode',
+    description: 'Win 15 hands today',
+    type: 'hands_won',
+    requirement: 15,
+    chipReward: 450,
     icon: '',
   },
 
@@ -130,6 +184,24 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     chipReward: 120,
     icon: '',
   },
+  {
+    id: 'showdown_8',
+    name: 'All The Way',
+    description: 'Reach 8 showdowns today',
+    type: 'showdowns',
+    requirement: 8,
+    chipReward: 200,
+    icon: '',
+  },
+  {
+    id: 'showdown_10',
+    name: 'Fearless',
+    description: 'Reach 10 showdowns today',
+    type: 'showdowns',
+    requirement: 10,
+    chipReward: 260,
+    icon: '',
+  },
 
   // Tournament Challenges
   {
@@ -148,6 +220,15 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 3,
     chipReward: 300,
+    icon: '',
+  },
+  {
+    id: 'tourney_2',
+    name: 'Double Entry',
+    description: 'Play 2 tournaments today',
+    type: 'tournaments_played',
+    requirement: 2,
+    chipReward: 200,
     icon: '',
   },
 
@@ -259,7 +340,7 @@ class DailyChallengeServiceClass {
     // Assign new challenges — use ignoreDuplicates to handle TOCTOU race:
     // If two tabs call this simultaneously, both SELECT returns empty, both INSERT.
     // With ignoreDuplicates, the second insert silently skips existing rows.
-    const todaysChallenges = this.selectDailyChallenges(3);
+    const todaysChallenges = this.selectDailyChallenges(5);
     const inserts = todaysChallenges.map((c) => ({
       user_id: userId,
       challenge_id: c.id,
@@ -649,12 +730,7 @@ class DailyChallengeServiceClass {
   private selectDailyChallenges(count: number): DailyChallenge[] {
     // Use date-based seed for consistent challenges across all users
     const seed = this.getTodayKey().replace(/-/g, '');
-    const shuffled = [...CHALLENGE_POOL].sort((a, b) => {
-      const hashA = this.simpleHash(seed + a.id);
-      const hashB = this.simpleHash(seed + b.id);
-      return hashA - hashB;
-    });
-    return shuffled.slice(0, count);
+    return this.seededDiverseSelect(CHALLENGE_POOL, count, seed);
   }
 
   private selectChallenges(
@@ -666,12 +742,64 @@ class DailyChallengeServiceClass {
     // when multiple tabs/instances call this simultaneously before DB insert.
     // Each pool (weekly/monthly) gets a unique seed prefix to avoid collisions.
     const seed = periodKey.replace(/[^a-zA-Z0-9]/g, '');
-    const shuffled = [...pool].sort((a, b) => {
-      const hashA = this.simpleHash(seed + a.id);
-      const hashB = this.simpleHash(seed + b.id);
-      return hashA - hashB;
-    });
-    return shuffled.slice(0, count);
+    return this.seededDiverseSelect(pool, count, seed);
+  }
+
+  /**
+   * Deterministic seeded selection with type diversity.
+   *
+   * Shuffles the pool with a well-mixed hash (the old simpleHash barely
+   * avalanched: changing the last seed digit shifted every hash by nearly the
+   * same amount, so consecutive days produced near-identical sets, and ids
+   * with common prefixes clustered — e.g. three tournament challenges the
+   * same day). Then greedily picks one challenge per type before allowing a
+   * second of any type, so each day's set spans different activities.
+   * Fully deterministic per seed — identical across all users/tabs.
+   */
+  private seededDiverseSelect(
+    pool: DailyChallenge[],
+    count: number,
+    seed: string
+  ): DailyChallenge[] {
+    const shuffled = [...pool].sort(
+      (a, b) => this.mixedHash(`${seed}|${a.id}`) - this.mixedHash(`${seed}|${b.id}`)
+    );
+
+    const picked: DailyChallenge[] = [];
+    const usedTypes = new Set<ChallengeType>();
+
+    // Pass 1: one per type, in shuffle order
+    for (const c of shuffled) {
+      if (picked.length >= count) break;
+      if (!usedTypes.has(c.type)) {
+        usedTypes.add(c.type);
+        picked.push(c);
+      }
+    }
+    // Pass 2: fill remaining slots in shuffle order
+    for (const c of shuffled) {
+      if (picked.length >= count) break;
+      if (!picked.includes(c)) picked.push(c);
+    }
+    return picked;
+  }
+
+  /**
+   * FNV-1a 32-bit with murmur3 finalizer — strong avalanche so a one-character
+   * seed change reorders the whole pool.
+   */
+  private mixedHash(str: string): number {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    h ^= h >>> 16;
+    h = Math.imul(h, 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+    return h >>> 0;
   }
 
   /**

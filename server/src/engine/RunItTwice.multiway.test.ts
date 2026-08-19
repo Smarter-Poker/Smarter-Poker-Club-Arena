@@ -51,6 +51,13 @@ function mkEngine(players: SeatPlayer[], hc: HandController | null) {
   }));
   engine.runItTwiceEngine.configure(TABLE, { enabled: true, autoDeclineTimeout: 10, maxRuns: 3 });
   engine.insuranceEngine.configure(TABLE, { enabled: false });
+  // 2026-08-19 (Dan item 16): an all-in run-out is now PACED - one street at a
+  // time with the equity percentages refreshed between cards, ~4.6s end to end
+  // at production timings. These tests are about RIT's decision flow, not that
+  // pacing, so they run it at test speed instead of racing a wall clock.
+  engine.allInFirstPauseMs = 1;
+  engine.allInStreetPauseMs = 1;
+  engine.allInPreShowdownPauseMs = 1;
   return engine;
 }
 
@@ -239,8 +246,9 @@ describe('decline → the pot runs ONCE (full flow through the real wait)', () =
     engine.respondToRIT(chooser, undefined, 2);
     engine.respondToRIT(responder, 'decline');
 
-    // waitForRITResponse polls every 250ms → single-board runout completes.
-    await new Promise((r) => setTimeout(r, 600));
+    // waitForRITResponse polls every 250ms, then the paced single-board runout
+    // deals its streets (at test pacing, see mkEngine) and completes.
+    await new Promise((r) => setTimeout(r, 900));
     const complete = events.find((e) => e.type === 'HAND_COMPLETE');
     expect(complete).toBeDefined();
     const st = (hc as unknown as { state: { players: SeatPlayer[]; communityCards: Card[] } })

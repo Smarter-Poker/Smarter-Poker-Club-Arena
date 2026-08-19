@@ -22,6 +22,18 @@ import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   /**
+   * All-in run-out pacing (Dan 2026-08-19, item 16). Chosen so a player can
+   * actually read a percentage change between cards without the table feeling
+   * stalled: roughly the cadence of a live dealer pausing on each street.
+   *
+   * Instance fields, not statics, so a test can drive the ORDERING of the
+   * run-out without also spending its real-world seconds.
+   */
+  protected allInFirstPauseMs = 1000;
+  protected allInStreetPauseMs = 1400;
+  protected allInPreShowdownPauseMs = 1200;
+
+  /**
    * FIX 95: Bible V8 §4.20 + Dan's rules: Respond to a Run It Twice offer.
    *
    * Two-phase flow:
@@ -426,13 +438,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             // ═══════════════════════════════════════════════════════════════
             this.dealAndResolveRIT(allInPlayers);
           } else if (this.handController) {
-            // Declined — normal single runout
-            this.handController.continueRunout();
+            // Declined — normal single runout, paced (Dan item 16).
+            void this.pacedAllInRunout(allInPlayers, pot);
           }
         });
       } else {
-        // NO INSURANCE, NO RIT: Instant full runout (standard behavior)
-        this.handController.continueRunout();
+        // NO INSURANCE, NO RIT. This used to be an INSTANT full runout: the
+        // flop, turn and river all landed inside one synchronous while-loop in
+        // HandController.runOutCommunityCards, in a single tick, and the hand
+        // completed immediately after. Dan item 16 — the run-out is paced now.
+        void this.pacedAllInRunout(allInPlayers, pot);
       }
     }
   }
@@ -445,6 +460,76 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * Force a parked runout to finish. The terminal fallback on every path that
    * would otherwise leave a hand waiting on a callback that died.
    */
+  /**
+   * Deal an all-in run-out ONE STREET AT A TIME, with the equity percentages
+   * refreshed between streets.
+   *
+   * Dan 2026-08-19, bug list item 16: "when players are all-in before all cards
+   * are out, show win percentages, slow the action down (turn card ->
+   * percentages change -> river -> winning hand identified -> pot pushed)."
+   *
+   * The percentages already existed and were already broadcast - but only ONCE,
+   * at the moment of the all-in. The run-out itself went through
+   * HandController.runOutCommunityCards, which is a synchronous `while (board <
+   * 5)` loop: flop, turn and river were dealt in the same tick and the hand
+   * completed immediately after. Every card appeared at once, so there was no
+   * moment at which a percentage could change and nothing to watch.
+   *
+   * The machinery to do this properly was already here - the INSURANCE tables
+   * have paced per-street dealing with an equity re-broadcast on every street.
+   * Ordinary all-ins simply never used it. This is that same loop without the
+   * offer step.
+   *
+   * Deliberately NOT used by safeContinueRunout: that is the "something died,
+   * finish the hand now" path, and it must stay instant.
+   */
+  protected async pacedAllInRunout(
+    allInPlayers: import('../types.js').SeatPlayer[],
+    pot: number
+  ): Promise<void> {
+    const controller = this.handController;
+    if (!controller) return;
+
+    try {
+      // A beat on the all-in board itself, so the starting percentages that
+      // were broadcast when the players got it in are actually readable.
+      await this.sleep(this.allInFirstPauseMs);
+
+      // Guard every iteration: the table can be torn down, or the hand
+      // replaced, while we are sleeping between streets.
+      while (
+        this.running &&
+        this.handController === controller &&
+        controller.getCommunityCards().length < 5
+      ) {
+        const result = controller.dealNextStreet();
+        this.broadcastCurrentState();
+
+        if (allInPlayers.length >= 2) {
+          await this.broadcastAllInEquity(allInPlayers, result.board, pot);
+        }
+
+        if (result.complete) break;
+        await this.sleep(this.allInStreetPauseMs);
+      }
+
+      // Let the final percentages and the completed board sit for a moment
+      // before the hand resolves and the pot ships.
+      if (this.running && this.handController === controller) {
+        await this.sleep(this.allInPreShowdownPauseMs);
+      }
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.paced_runout_failed');
+    }
+
+    // Always finish the hand, on every path. With the board already complete,
+    // continueRunout's loop body does not execute - it goes straight to
+    // showdown and completeHand, which is exactly what we want.
+    if (this.handController === controller) {
+      this.safeContinueRunout('paced_runout_complete');
+    }
+  }
+
   protected safeContinueRunout(reason: string): void {
     try {
       this.handController?.continueRunout();

@@ -123,15 +123,28 @@ export function getPlayerCountCaps(fullCap: number): { players: number; cap: num
   ];
 }
 
-// BBJ Pool Allocation — FIX 212: Updated to match actual pivot-based allocation in logBBJCollection.
-// STANDARD allocation (main pool < $100k): 50% Main / 25% Backup / 25% Promo
-// PIVOT allocation (main pool >= $100k): 30% Main / 40% Backup / 30% Promo (see FIX 140 in supabase.ts)
-// This constant reflects the STANDARD (default) allocation shown to clients.
+// BBJ POOL ALLOCATION (Dan, 2026-08-18 — authoritative)
+//   STANDARD (main pool < 100k):  50% Main / 25% Back Up / 25% Promo
+//   PIVOT    (main pool >= 100k): 25% Main / 25% Back Up / 50% Promo
+// Past the pivot the jackpot is already large, so new rake is steered into the
+// promo wallet rather than growing main further; the Back Up share is held flat
+// at 25% because its job is to reseed main after a full hit, not to grow.
+// This constant is the STANDARD split; the pivot split is applied at banking
+// time in logBBJCollection against the LIVE main balance.
 export const BBJ_POOL_ALLOCATION = {
   mainBBJ: 0.5, // 50% of BBJ rake goes to Main BBJ pool (standard)
   backUpBBJ: 0.25, // 25% goes to Back Up BBJ pool (standard)
   promotional: 0.25, // 25% goes to Promotional fund (standard)
 } as const;
+
+/** Applied once the main pool reaches BBJ_PIVOT_THRESHOLD (100,000). */
+export const BBJ_POOL_ALLOCATION_PIVOT = {
+  mainBBJ: 0.25,
+  backUpBBJ: 0.25,
+  promotional: 0.5,
+} as const;
+
+export const BBJ_PIVOT_THRESHOLD = 100000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // STAKES TIERS — Fallback for custom/non-standard stakes

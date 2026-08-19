@@ -20,7 +20,10 @@ import { reportError } from '../errorReporter.js';
  * BBJ pool ownership: union-level (if club is in union) or club-level (standalone).
  * FIX 140: Pivot-based allocation matching Bible V8 §4.13 / BBJService spec:
  *   STANDARD (<100k main pool): 50% Main, 25% Backup, 25% Promo
- *   PIVOT (≥100k main pool): 30% Main, 40% Backup, 30% Promo
+ *   PIVOT (>=100k main pool): 25% Main, 25% Backup, 50% Promo
+ *   (Dan 2026-08-18: past the pivot, steer new rake to promo; the Back Up
+ *    share stays flat at 25% because its job is to reseed main after a full
+ *    hit, not to grow. Was 30/40/30.)
  *
  * A5 FIX (2026-08-08): returns whether the fee is DURABLY BANKED — `true` only
  * once bbj_record_contribution has committed (or there was nothing to
@@ -52,7 +55,7 @@ export async function logBBJCollection(
   const BBJ_PIVOT_THRESHOLD = 100000; // 100,000 chips
   const BBJ_ALLOCATION = {
     STANDARD: { MAIN: 0.5, BACKUP: 0.25, PROMO: 0.25 },
-    PIVOT: { MAIN: 0.3, BACKUP: 0.4, PROMO: 0.3 },
+    PIVOT: { MAIN: 0.25, BACKUP: 0.25, PROMO: 0.5 },
   };
 
   try {
@@ -161,7 +164,14 @@ export async function logBBJCollection(
 
     const mainPortion = Math.round(bbjAmount * ratios.MAIN * 100) / 100;
     const backupPortion = Math.round(bbjAmount * ratios.BACKUP * 100) / 100;
-    const promoPortion = Math.round(bbjAmount * 100) / 100 - mainPortion - backupPortion;
+    // Promo takes the remainder so the three portions always re-sum to the fee.
+    // ROUND IT: in binary floating point the subtraction can land a hair below
+    // zero (measured -1.7e-18), which would bank a negative promo portion —
+    // harmless arithmetically, but it is a negative money value written to the
+    // ledger, and that is the kind of thing a CHECK constraint or an invariant
+    // trips over later.
+    const promoPortion =
+      Math.round((Math.round(bbjAmount * 100) / 100 - mainPortion - backupPortion) * 100) / 100;
 
     // Use bbj_record_contribution RPC — atomically updates pool balances + logs contribution
     // hand_id is nullable (migration 20260325) since server uses hand_history not hands table

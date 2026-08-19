@@ -40,6 +40,22 @@ const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
  * MAX_DRAIN_BATCHES, so this only removes dead waiting.
  */
 const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
+/**
+ * How many per-player credits to hand the server in one batched call.
+ *
+ * MEASURED 2026-08-19: the settler was LOSING GROUND — over a 56-minute
+ * window the durable cursor advanced 14.1 minutes of history while 56 minutes
+ * of new history arrived, and the backlog grew from 286,049 to 287,786 rows.
+ * The database was never the constraint: a 2,000-row page issued ONE HTTP
+ * round trip PER PLAYER PER HAND, twice (commission + player_stats), i.e.
+ * ~24,000 sequential PostgREST calls at a measured ~6/sec. That is over an
+ * hour of pure network latency for a page whose SQL takes seconds.
+ *
+ * The credits now go server-side in chunks, so a page costs a handful of
+ * round trips. 500 keeps each request body small and each server transaction
+ * short while removing ~99.8% of the latency.
+ */
+const CREDIT_BATCH_SIZE = 500;
 const DAEMON_KEY = 'rakeback_settler';
 
 /**
@@ -988,6 +1004,7 @@ export class RakebackSettlerService {
     let agentCreditsAttempted = 0;
     let agentCreditsFailed = 0;
     let agentCreditsSkippedNoHand = 0;
+    const commissionItems: Record<string, unknown>[] = [];
     for (const row of rows as RakeRecordRow[]) {
       if (!row.player_contributions) continue;
       // Round 73: skip pre-R38-backfill rake_records that have no hand_id —
@@ -1017,21 +1034,47 @@ export class RakebackSettlerService {
       );
       for (const [userId] of dealtIn) {
         agentCreditsAttempted++;
-        const { error: rpcErr } = await this.supabaseRpc('credit_agent_commission_from_rake', {
-          p_agent_user_id: userId,
-          p_club_id: row.club_id,
-          p_rake_credit: shares.get(userId) ?? 0,
-          p_source_type: sourceType,
+        commissionItems.push({
+          user_id: userId,
+          club_id: row.club_id,
+          rake_credit: shares.get(userId) ?? 0,
+          source_type: sourceType,
           // Round 43: link the commission audit row + club_wallet_transactions
           // commission_out audit row back to the originating hand for
           // ledger reconciliation. For hands, sourceId is hand_history.id
           // (Round 38 FK); for tournament fees it is the rake_records.id.
-          p_source_id: sourceId,
-          p_notes: `RakebackSettler ${sourceType} at ${row.created_at}`,
+          source_id: sourceId,
+          notes: `RakebackSettler ${sourceType} at ${row.created_at}`,
         });
-        if (rpcErr) {
-          agentCreditsFailed++;
+      }
+    }
+
+    // Ship the page's credits server-side in chunks. Identical semantics: the
+    // batch function calls the SAME idempotent per-item function, and wraps
+    // each element in its own exception block, so one bad element is isolated
+    // exactly as a failed single call used to be.
+    for (let i = 0; i < commissionItems.length; i += CREDIT_BATCH_SIZE) {
+      const chunk = commissionItems.slice(i, i + CREDIT_BATCH_SIZE);
+      try {
+        const { data, error } = await supabase.rpc('fn_credit_agent_commissions_batch', {
+          p_items: chunk,
+        });
+        if (error) {
+          agentCreditsFailed += chunk.length;
+          reportError(
+            new Error(`fn_credit_agent_commissions_batch failed: ${error.message}`),
+            'RakebackSettler.commission_batch'
+          );
+        } else {
+          const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+          agentCreditsFailed += Number(r?.failed ?? 0);
         }
+      } catch (e) {
+        agentCreditsFailed += chunk.length;
+        reportError(
+          new Error((e as { message?: string })?.message || String(e)),
+          'RakebackSettler.commission_batch_threw'
+        );
       }
     }
     if (agentCreditsAttempted > 0 || agentCreditsSkippedNoHand > 0) {
@@ -1057,6 +1100,7 @@ export class RakebackSettlerService {
     // with the increment for correctness.)
     let psApplied = 0;
     let psFailures = 0;
+    const statsItems: Record<string, unknown>[] = [];
     for (const row of rows as RakeRecordRow[]) {
       if (!row.player_contributions) continue;
       const rrId = (row as { id?: string }).id;
@@ -1069,18 +1113,39 @@ export class RakebackSettlerService {
         dealtIn.map(([uid]) => uid)
       );
       for (const [userId] of dealtIn) {
-        const { error } = await this.supabaseRpc('apply_rakeback_player_stats', {
-          p_rake_record_id: rrId,
-          p_user_id: userId,
-          p_club_id: row.club_id,
-          p_hands: 1,
-          p_rake: psShares.get(userId) ?? 0,
+        statsItems.push({
+          rake_record_id: rrId,
+          user_id: userId,
+          club_id: row.club_id,
+          hands: 1,
+          rake: psShares.get(userId) ?? 0,
+        });
+      }
+    }
+
+    for (let i = 0; i < statsItems.length; i += CREDIT_BATCH_SIZE) {
+      const chunk = statsItems.slice(i, i + CREDIT_BATCH_SIZE);
+      try {
+        const { data, error } = await supabase.rpc('fn_apply_rakeback_player_stats_batch', {
+          p_items: chunk,
         });
         if (error) {
-          psFailures++;
+          psFailures += chunk.length;
+          reportError(
+            new Error(`fn_apply_rakeback_player_stats_batch failed: ${error.message}`),
+            'RakebackSettler.player_stats_batch'
+          );
         } else {
-          psApplied++;
+          const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+          psApplied += Number(r?.ok ?? 0);
+          psFailures += Number(r?.failed ?? 0);
         }
+      } catch (e) {
+        psFailures += chunk.length;
+        reportError(
+          new Error((e as { message?: string })?.message || String(e)),
+          'RakebackSettler.player_stats_batch_threw'
+        );
       }
     }
     if (psApplied > 0 || psFailures > 0) {

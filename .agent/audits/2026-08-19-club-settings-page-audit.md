@@ -325,3 +325,55 @@ has to be built first. Left as the one open item, on purpose.
 
 Suite: 168 files / 2100 tests, of which 1 file (ChipPurchaseModal, 5 tests) was
 already failing on the base commit before these changes — verified by stashing.
+
+## Pass 9 — a regression of my own, and a money question for Dan
+
+1. **Pass 8's Load more was undone by any background refresh.** `loadAuditLog`
+   is a stable `useCallback`, so it could not close over the current page size:
+   every realtime INSERT and every ADMIN_ACTION re-fetched the default 200 and
+   silently collapsed a list the user had expanded. Page size now lives in a
+   ref, and resets on club change.
+
+2. **Checked that pass-5..7 validation did not lock any real owner out.** The
+   Save button is gated on `formError`, so a club whose stored data already
+   violated the rules would be unable to save anything. Production: 0 clubs
+   with an inverted or out-of-range buy-in, 0 with an over-long name, out of 3.
+   No one is locked out.
+
+3. **OPEN QUESTION FOR DAN — the rake cap override can exceed the house
+   schedule.** `getFullRakeConfig` (server AND client) computes
+   `rakeCap = overrideCap ?? scheduleCap`, where
+   `overrideCap = clamp(capBB, 0, MAX_RAKE_CAP_BB=10) * bigBlind`. There is no
+   `min()` against the schedule cap, so the club Rake Cap field on this page
+   can set a per-pot cap well above the published house cap:
+
+   | stake | house cap | 10 BB override | multiple |
+   |-------|-----------|----------------|----------|
+   | 1/2   | $5        | $20            | 4x       |
+   | 5/10  | $12.50    | $100           | 8x       |
+   | 10/25 | $15       | $250           | 16.7x    |
+
+   The function's own doc comment says the override "lets a table or club take
+   LESS than the schedule. It can never take more." The percent path honours
+   that (MAX_RAKE_PERCENT = 10 = the schedule rate everywhere). The cap path
+   does not. But `RakeConfig.override.test.ts` deliberately asserts
+   `rakeCapBB: 999 -> MAX_RAKE_CAP_BB * 2 = $20` at 1/2, under a describe block
+   titled "an owner can take less, never more", with the comment "999 BB would
+   mean the cap never binds at all" — i.e. the clamp was written to stop an
+   ABSURD cap, not to hold the cap to the schedule.
+
+   So the code and its prose disagree, and both readings are defensible: either
+   the schedule is a ceiling (bug — needs `Math.min(overrideCap, scheduleCap)`
+   in both copies plus a test change), or the schedule is a default and 10 BB is
+   the real ceiling (no bug — the doc comment should be reworded). This is a
+   revenue-policy decision, so it is NOT being changed unilaterally in engine
+   money code.
+
+   Exposure today is nil: all 3 clubs and all tables sit on the -1 inherit
+   sentinel, so nothing is currently overriding anything.
+
+   What IS unambiguous is that the owner could not see the consequence. The
+   Rake Cap hint now translates the setting into money —
+   "Currently 3 BB — that is $6.00 per pot at 1/2 and $30.00 at 5/10."
+
+Suite: 33 rules tests; tsc, build and eslint clean.

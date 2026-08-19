@@ -65,6 +65,11 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const [hasMore, setHasMore] = useState(false);
   const [loadedLimit, setLoadedLimit] = useState(AUDIT_PAGE_SIZE);
+  // loadAuditLog is a stable useCallback, so it cannot close over the current
+  // page size. Without this ref every background refresh (realtime INSERT,
+  // ADMIN_ACTION) re-fetched the default page and silently collapsed a list
+  // the user had expanded with Load more.
+  const loadedLimitRef = useRef(AUDIT_PAGE_SIZE);
   const [loadingMore, setLoadingMore] = useState(false);
   const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -90,7 +95,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
         )
         .eq('club_id', resolvedId)
         .order('created_at', { ascending: false })
-        .limit(opts?.limit ?? AUDIT_PAGE_SIZE);
+        .limit(opts?.limit ?? loadedLimitRef.current);
 
       const { data, error } = await query;
       if (error) {
@@ -182,8 +187,10 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
 
       if (!isMounted.current) return;
       // A full page back means there is probably another page behind it.
-      setHasMore(mapped.length >= (opts?.limit ?? AUDIT_PAGE_SIZE));
-      setLoadedLimit(opts?.limit ?? AUDIT_PAGE_SIZE);
+      const effectiveLimit = opts?.limit ?? loadedLimitRef.current;
+      setHasMore(mapped.length >= effectiveLimit);
+      loadedLimitRef.current = effectiveLimit;
+      setLoadedLimit(effectiveLimit);
       setEntries(mapped);
       setVisibleItems(new Set());
 
@@ -203,7 +210,8 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   }, [clubId, isMounted]);
 
   useEffect(() => {
-    loadAuditLog();
+    loadedLimitRef.current = AUDIT_PAGE_SIZE;
+    loadAuditLog({ limit: AUDIT_PAGE_SIZE });
     return () => {
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
     };

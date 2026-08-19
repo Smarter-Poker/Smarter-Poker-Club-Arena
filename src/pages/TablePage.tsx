@@ -1045,6 +1045,15 @@ export default function TablePage({
   const [showTimeBank, setShowTimeBank] = useState(false);
   const [timeBankActive, setTimeBankActive] = useState(false);
   const [timeBanksRemaining, setTimeBanksRemaining] = useState(4);
+  /** Guards the diamond charge in handleBuyTimeBank against a double-tap. */
+  const buyingTimeBankRef = useRef(false);
+  /**
+   * Real diamond price of one time-bank extension, read from `feature_pricing`
+   * (the same row `fn_purchase_feature` prices from, so the button cannot
+   * advertise a number the server will not charge). The TimeBank component
+   * used to hard-code 5; the actual price is 1.
+   */
+  const [timeBankDiamondCost, setTimeBankDiamondCost] = useState(1);
   const [timeBankTimeRemaining, setTimeBankTimeRemaining] = useState(15);
 
   // FIX 126: Cross-tab BroadcastChannel for multi-table time bank warnings
@@ -6112,11 +6121,74 @@ export default function TablePage({
     );
   }, [tableId, userId, timeBanksRemaining]);
 
-  // Handle buying a time bank extension (VIP quota or diamond purchase)
+  /**
+   * Buy one time-bank extension with diamonds.
+   *
+   * Dan 2026-08-19, bug list item 9: "'buy more time banks' does nothing when
+   * clicked." It did nothing because it never bought anything - it called
+   * GameServerAPI.activateTimeBank, the same endpoint as USING a bank. With no
+   * banks left (the only state in which the Buy button is shown) the engine
+   * refreshed from the DB, found nothing new because no purchase had been
+   * made, and returned "No time bank uses remaining". The button round-tripped
+   * to the server and changed nothing, every time.
+   *
+   * Everything needed already existed and was simply never called:
+   *   - `fn_purchase_feature` prices server-side from `feature_pricing`
+   *     ('time_bank_seconds', 1 diamond, per_use), charges diamonds through
+   *     `deduct_diamonds`, and writes the `feature_purchases` row. It is
+   *     granted to `authenticated` and refuses to buy for anyone but the
+   *     caller, so the client cannot name its own price or its own user.
+   *   - `fn_time_bank_allowance` already counts purchased uses at 20s each.
+   *   - The engine already calls `refreshTimeBankFromDb` when a player
+   *     activates with an empty bank, so a purchase made mid-session is picked
+   *     up without re-seating.
+   *
+   * So this only has to make the purchase and reflect it. The count is bumped
+   * optimistically by the one use that was bought, which is what the engine
+   * will independently derive from the DB on the next activation.
+   */
+  useEffect(() => {
+    let alive = true;
+    void supabase
+      .from('feature_pricing')
+      .select('diamond_cost')
+      .eq('feature', 'time_bank_seconds')
+      .maybeSingle()
+      .then(({ data }) => {
+        const cost = Number((data as { diamond_cost?: number } | null)?.diamond_cost);
+        if (alive && Number.isFinite(cost) && cost >= 0) setTimeBankDiamondCost(cost);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const handleBuyTimeBank = useCallback(async () => {
-    if (!tableId || !userId) return;
-    // Server-authoritative: request time bank extension via API
-    await GameServerAPI.activateTimeBank(tableId, userId);
+    if (!tableId || !userId || userId === 'guest') return;
+    if (buyingTimeBankRef.current) return; // no double-charge on a double-tap
+    buyingTimeBankRef.current = true;
+    try {
+      const { data, error } = await supabase.rpc('fn_purchase_feature', {
+        p_user_id: userId,
+        p_feature: 'time_bank_seconds',
+      });
+      if (error) throw error;
+      const result = (data ?? {}) as { success?: boolean; error?: string; cost?: number };
+      if (!result.success) {
+        toast?.error?.(result.error || 'Could not buy a time bank');
+        return;
+      }
+      setTimeBanksRemaining((n) => n + 1);
+      const cost = result.cost ?? 0;
+      toast?.success?.(
+        cost > 0 ? `Time bank added (${cost} diamond${cost === 1 ? '' : 's'})` : 'Time bank added'
+      );
+    } catch (err) {
+      reportError(err, 'TablePage.buyTimeBank');
+      toast?.error?.('Could not buy a time bank');
+    } finally {
+      buyingTimeBankRef.current = false;
+    }
   }, [tableId, userId]);
 
   //Validation moved to server — client does basic guard only
@@ -7317,6 +7389,7 @@ export default function TablePage({
                 timeRemaining={timeBankTimeRemaining}
                 onActivate={handleActivateTimeBank}
                 onBuyMore={handleBuyTimeBank}
+                diamondCost={timeBankDiamondCost}
               />
             </div>
           )}

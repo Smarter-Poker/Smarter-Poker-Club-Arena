@@ -33,7 +33,10 @@ export function TimeBank({
   timeRemaining,
   onActivate,
   onBuyMore,
-  diamondCost = 5,
+  // Fallback only. TablePage passes the real price from `feature_pricing`,
+  // which is the same row fn_purchase_feature charges from. 5 was wrong: a
+  // time-bank extension costs 1 diamond.
+  diamondCost = 1,
 }: TimeBankProps) {
   if (!isVisible && banksRemaining === 0 && !onBuyMore) return null;
 

@@ -7991,3 +7991,37 @@ so every profit/ROI leaderboard showed 0.00 for all 1,398 players and the
 - Verified live: winnings/losses accruing in real time (+692/+711 in a 20s
   window, delta = rake) and weekly club/global RPCs returning real ranked
   profits.
+
+## 2026-08-19 — Create/Find/Join Club audit (Cowork session)
+
+Full line-by-line audit of Create a Club, Find a Player, Join a Club.
+Deployed as club-arena c01e7a365 → WH sync 9aef9ec4f0; production verified
+serving assets/index-CZDNUkT--v6.js.
+
+- [P0] Club code format mismatch: all 3 create paths (CreateClubPage,
+  CreateClubModal, ClubsService.createClub) generated 6-digit club_id
+  (100000-999999) while the Join modal only accepted 5 digits — every newly
+  created club was unjoinable by code. All prod clubs are 5-digit. Create now
+  generates 5-digit; Join modal accepts 5-6 for any legacy rows.
+- [P0] "10,000 club chips" first-club bonus was a UI promise with NO
+  implementation. Migration 20260819_first_club_creation_bonus.sql (applied to
+  prod, version 20260819194940): AFTER INSERT trigger on club_members owner
+  rows credits 10,000 to chip_balance once per user ever, tracked in new
+  club_creation_bonuses table, exception-safe. No backfill for the 3
+  pre-existing owners (intentional).
+- [P1] Join flow ignored fn_join_club's status='pending' for
+  requires_approval clubs — toasted "Successfully joined!" + optimistic card
+  that vanished on refresh. Now shows pending message, skips optimistic card;
+  already-member check is status-aware; 4-club limit prechecked; join buttons
+  get busy-state; club name shown in the confirm step.
+- [P1] CreateClubPage default-icon clubs wrote only the legacy `logo` column;
+  every consumer reads logo_url/avatar_url/card_image_url → no logo rendered.
+  Now writes all three; custom upload also writes logo_url so the baked-card
+  backfill can run.
+- [P1] CreateClubModal: window.location.reload() after create destroyed the
+  SPA navigation to the new club (removed — bus events handle refresh);
+  isCreating now set before first await (double-click race during dup-check);
+  entrance-animation timers guarded on isOpen and cleaned up.
+- [P2] FindPlayerModal: user input now escaped before PostgREST .or(ilike)
+  filters (commas/parens broke the filter; %/_ matched everything); suggestion
+  dropdown gained ArrowUp/Down + Enter keyboard navigation.

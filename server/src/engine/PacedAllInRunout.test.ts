@@ -80,14 +80,7 @@ describe('pacedAllInRunout', () => {
     await engine.pacedAllInRunout(PLAYERS, 1000);
 
     const order = timeline.filter((e) => e.what !== 'complete').map((e) => e.what);
-    expect(order).toEqual([
-      'deal:flop',
-      'equity',
-      'deal:turn',
-      'equity',
-      'deal:river',
-      'equity',
-    ]);
+    expect(order).toEqual(['deal:flop', 'equity', 'deal:turn', 'equity', 'deal:river', 'equity']);
   });
 
   it('completes the hand once, at the end', async () => {

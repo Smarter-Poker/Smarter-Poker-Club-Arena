@@ -14,6 +14,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
+import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   SeatSlot,
@@ -1186,6 +1187,30 @@ export default function TablePage({
 
   // Hand Reveal (show/muck after winning without showdown)
   const [showHandRevealModal, setShowHandRevealModal] = useState(false);
+
+  /**
+   * Dan 2026-08-18: "a user should be able to click on any card in their hand,
+   * and when clicked that card or cards always get shown after the hand is
+   * over." Indexes of the hero's own hole cards marked for reveal at hand end.
+   * Cleared per hand - a pick belongs to the hand it was made in.
+   */
+  const [shownCardIndexes, setShownCardIndexes] = useState<number[]>([]);
+
+  const handleToggleShowCard = useCallback(
+    (cardIndex: number) => {
+      setShownCardIndexes((prev) => {
+        const next = prev.includes(cardIndex)
+          ? prev.filter((i) => i !== cardIndex)
+          : [...prev, cardIndex].sort((a, b) => a - b);
+        // Fire-and-forget: the engine stores the full selection each time, so
+        // an un-click is expressed by sending the smaller list. A failure here
+        // costs a reveal, never the hand, so it must not block the UI.
+        if (tableId) void setShownCards(tableId, next);
+        return next;
+      });
+    },
+    [tableId]
+  );
   const [handRevealWinnerId, setHandRevealWinnerId] = useState('');
   const [handRevealWinnerName, setHandRevealWinnerName] = useState('');
   const [handRevealCards, setHandRevealCards] = useState<
@@ -4934,6 +4959,9 @@ export default function TablePage({
           potCollectTimerRef.current = null;
         }
         // Fresh hand → reset the accumulated achievement outcome.
+        // Dan 2026-08-18: show-card picks are per hand. Clear them here so a
+        // card marked last hand is not still marked when the new one is dealt.
+        setShownCardIndexes([]);
         heroHandOutcomeRef.current = {
           dealtIn: false,
           showdown: false,
@@ -5469,7 +5497,13 @@ export default function TablePage({
           const heroPlayer = tableStateRef.current.players.find((p) => p?.id === userId);
           setHandRevealWinnerId(userId);
           setHandRevealWinnerName(heroPlayer?.name || 'You');
-          setHandRevealCards(heroPlayer?.holeCards || []);
+          // Dan 2026-08-18: holeCards may contain nulls (cards the player did
+          // not elect to show). This modal only ever displays the hero's OWN
+          // hand, which is always fully populated, so drop the null slots
+          // rather than widen the modal's type.
+          setHandRevealCards(
+            (heroPlayer?.holeCards || []).filter((c): c is NonNullable<typeof c> => c != null)
+          );
           setHandRevealHandId(`${tableStateRef.current.handNumber || Date.now()}`);
           setShowHandRevealModal(true);
           // Auto-close after 6s if no action taken
@@ -7610,6 +7644,9 @@ export default function TablePage({
                 <SeatSlot
                   seatNumber={seatNumber}
                   player={displayPlayer}
+                  /* Dan 2026-08-18: only the hero can mark their own cards. */
+                  showPickedCardIndexes={displayPlayer?.isHero ? shownCardIndexes : undefined}
+                  onToggleShowCard={displayPlayer?.isHero ? handleToggleShowCard : undefined}
                   position={tableState.positions[idx] || null}
                   /* Always on: the acting seat is always marked active. The
                      v8Settings.highlight_active_players gate is gone — see the

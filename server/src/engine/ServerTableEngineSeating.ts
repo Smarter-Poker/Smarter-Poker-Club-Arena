@@ -15,14 +15,11 @@ import {
   processLeavePending,
   supabase,
 } from '../services/supabase.js';
-import type {
-  SeatedPlayer,
-} from '../types.js';
+import type { SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 
 export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
-
   /**
    * AUDIT FIX 2026-07-19: `POST /addchips` previously credited the stack with
    * NO wallet debit and no buy-in cap — a seated player could mint chips. Now
@@ -556,7 +553,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * Bible V8 §4.21: Player chooses to show hand at showdown (even if not required).
    * Auto-muck: losing hands are hidden unless player explicitly shows.
    */
-  public showHand(userId: string): { success: boolean; error?: string } {
+  public showHand(
+    userId: string,
+    cardIndexes?: readonly number[]
+  ): { success: boolean; error?: string; shownCardIndexes?: number[] } {
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
     }
@@ -569,7 +569,17 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     }
 
     const state = this.handController.getState();
-    if (state.stage !== 'showdown') {
+
+    // ── Dan 2026-08-18: picking individual cards, any time in the hand ──
+    //
+    // The whole-hand form still requires showdown: revealing everything while
+    // betting is live would leak information mid-hand.
+    //
+    // Picking SPECIFIC cards is different. The player clicks a card while they
+    // are still holding it, and the promise is that it gets shown "after the
+    // hand is over" - nothing is exposed at the moment of the click. So the
+    // stage gate does not apply to that form; only the deferred reveal does.
+    if (!cardIndexes && state.stage !== 'showdown') {
       return { success: false, error: 'Can only show hand during showdown' };
     }
 
@@ -580,6 +590,34 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
     if (player.is_folded) {
       return { success: false, error: 'Cannot show a folded hand' };
+    }
+
+    if (cardIndexes) {
+      // Per-card selection. Validate every index against the hand this player
+      // is actually holding, so a crafted request cannot name a card that does
+      // not exist (or a negative/fractional index) and desync the reveal.
+      const heldCount = player.cards?.length ?? 0;
+      if (heldCount === 0) {
+        return { success: false, error: 'No cards to show' };
+      }
+      const valid = cardIndexes.filter((i) => Number.isInteger(i) && i >= 0 && i < heldCount);
+      if (valid.length === 0) {
+        return { success: false, error: 'No valid card indexes' };
+      }
+
+      if (!this.showHandCards) {
+        this.showHandCards = new Map<string, Set<number>>();
+      }
+      // Replace rather than merge: the client sends the player's full current
+      // selection, so un-clicking a card has to be able to take it back off
+      // the list. Selection is only additive at REVEAL time, never destructive
+      // to what the showdown rules already expose.
+      this.showHandCards.set(userId, new Set(valid));
+
+      // Deliberately NOT broadcasting the picks. Telling the table which cards
+      // someone intends to show, while betting is still live, is itself a tell.
+      // The reveal happens at hand end through the normal state broadcast.
+      return { success: true, shownCardIndexes: [...valid].sort((a, b) => a - b) };
     }
 
     // Mark this player as voluntarily showing their hand

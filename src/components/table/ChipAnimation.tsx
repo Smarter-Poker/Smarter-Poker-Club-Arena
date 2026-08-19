@@ -157,7 +157,7 @@ export default function ChipAnimation({
       if (animRef.current) cancelAnimationFrame(animRef.current);
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onComplete is
+     
     // intentionally read through onCompleteRef; see CHIP-GLITCH FIX above.
   }, [from, to, duration, delay, useArc, arcHeight]);
 

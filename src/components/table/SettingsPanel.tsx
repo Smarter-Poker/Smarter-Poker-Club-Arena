@@ -217,16 +217,23 @@ export function SettingsPanel({
           >
             <h3 className="settings-section__title">Gameplay</h3>
 
-            <SettingToggle
-              label="Auto-muck losing hands"
-              description="Automatically fold losing hands at showdown"
-              checked={settings.autoMuckLosers}
-              onChange={() => handleToggle('autoMuckLosers')}
-            />
+            {/* ── Dan 2026-08-18: auto-muck covers UNCONTESTED pots only ──
+                "Auto-muck losing hands / Automatically fold losing hands at
+                showdown" is gone. It was a dead switch - it wrote the
+                `autoMuck` key, which nothing at the table ever read - and as of
+                today it also promised the opposite of how the game behaves: a
+                showdown turns EVERY hand face up, so there is no such thing as
+                auto-mucking a loser any more. A toggle that says it will hide
+                your cards at showdown and then shows them is worse than no
+                toggle at all.
 
+                What remains is the one case where hiding is genuinely the
+                player's call: winning when everyone folds. No showdown
+                happened, so nobody is entitled to see the hand. The label says
+                so explicitly, and says what it does NOT cover. */}
             <SettingToggle
-              label="Auto-muck winning hands"
-              description="Don't show cards when winning uncontested"
+              label="Auto-muck uncontested wins"
+              description="When everyone folds, take the pot without showing. Showdowns always reveal."
               checked={settings.autoMuckWinners}
               onChange={() => handleToggle('autoMuckWinners')}
             />

@@ -2433,3 +2433,62 @@
   --seat-avatar-size: 56px;
   --sp-bust-scale: 1.15;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PER-CARD SHOW PICKER  (Dan 2026-08-18)
+   "a user should be able to click on any card in their hand, and when clicked
+    that card or cards always get shown after the hand is over."
+
+   The marker has to read as a deliberate, reversible choice made mid-hand -
+   not as a reveal. Nothing here exposes the card; it only tells the owner
+   which of their cards is queued to be turned over when the hand ends.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.seat__card-pick {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+  border-radius: 6px;
+  /* Keep the hero fan geometry identical to before the wrapper existed. */
+  line-height: 0;
+  transition:
+    transform 0.16s ease,
+    filter 0.16s ease;
+}
+.seat__card-pick:hover {
+  transform: translateY(-3px);
+}
+.seat__card-pick:focus-visible {
+  outline: 2px solid #4a9eff;
+  outline-offset: 2px;
+}
+
+/* Marked = will be shown at hand end. Gold, matching the winner language. */
+.seat__card-pick--marked {
+  transform: translateY(-6px);
+  filter: drop-shadow(0 0 6px rgba(255, 200, 60, 0.85));
+}
+.seat__card-pick--marked::after {
+  content: '\1F441'; /* eye */
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffd34d, #e0a112);
+  color: #26200a;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+  font-weight: 800;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat__card-pick,
+  .seat__card-pick--marked {
+    transition: none;
+    transform: none;
+  }
+}

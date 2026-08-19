@@ -241,15 +241,48 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
 
         // Bible V8 §4.23: Formal cleanup timing between hands.
-        // Phase 1 (1.5s): Result display — winners, amounts, hand names visible to all players.
-        // Phase 2 (0.5s): Board clear — community cards, pot chips swept away.
-        // Total: 2 seconds of deterministic inter-hand pause. No randomness.
+        //
+        // ── Dan 2026-08-18: "stop rushing the showdowns" ──
+        //
+        // This was a flat 1.5s of result display for every hand. That is fine
+        // for "everyone folded, one player wins", where there is nothing to
+        // read - but nowhere near enough for a showdown, where a player is
+        // trying to take in several opponents' hole cards, the winning hand
+        // name and the pot shipping inside the same window. It got worse the
+        // same day: showdowns now turn EVERY hand face up instead of only the
+        // winner's, so there is strictly more to look at than when 1.5s was
+        // chosen.
+        //
+        // The pause is now split by what actually happened. A showdown gets
+        // time proportional to how many hands there are to read; a fold-win
+        // keeps the original brisk pace, because stretching that one out only
+        // slows the game for no benefit. Still fully deterministic - no
+        // randomness - so hands-per-hour stays predictable.
         if (this.running) {
+          // currentHandShowdownResults is populated on the SHOWDOWN event with
+          // one entry per player who reached it. 2+ means a real showdown with
+          // cards face up; 0 or 1 means the pot was never contested to the end.
+          const showdownHands = this.currentHandShowdownResults.length;
+          const wentToShowdown = showdownHands >= 2;
+
+          const RESULT_DISPLAY_FOLD_MS = 1500;
+          const SHOWDOWN_BASE_MS = 2600; // heads-up showdown
+          const SHOWDOWN_PER_EXTRA_HAND_MS = 700; // each additional hand to read
+          const SHOWDOWN_MAX_MS = 6000; // a big multiway pot must not stall the table
+
+          const resultDisplayMs = wentToShowdown
+            ? Math.min(
+                SHOWDOWN_MAX_MS,
+                SHOWDOWN_BASE_MS + (showdownHands - 2) * SHOWDOWN_PER_EXTRA_HAND_MS
+              )
+            : RESULT_DISPLAY_FOLD_MS;
+
           // Phase 1: Result display time (clients show winner popups during this window)
-          await this.sleep(1500);
-          // Phase 2: Board clear (clients animate card/chip sweep)
+          await this.sleep(resultDisplayMs);
+          // Phase 2: Board clear (clients animate card/chip sweep). Given more
+          // room after a showdown too - 500ms was clipping the sweep.
           this.broadcastCurrentState(); // Sends clean state (no hand in progress)
-          await this.sleep(500);
+          await this.sleep(wentToShowdown ? 900 : 500);
         }
       } catch (err) {
         const errMsg =
@@ -370,6 +403,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandRabbitCards = []; // Rabbit Hunt: Reset remaining deck
     this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
+    // Dan 2026-08-18: per-card reveal picks are per-hand intent too. If this
+    // were not cleared, a card clicked on hand 12 would keep being exposed
+    // on every later hand that happened to deal the same index.
+    this.showHandCards = null;
 
     console.log(
       `[ServerTableEngine:${this.tableId}] Hand #${handNumber} — ${players.length} players`

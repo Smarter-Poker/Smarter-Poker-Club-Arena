@@ -276,6 +276,33 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           // player who folded is never included, so a fold is never exposed;
           // only players who took the hand to showdown are turned over.
           const showCards = state.stage === 'showdown' && !p.is_folded;
+
+          // ── Dan 2026-08-18: per-card voluntary reveal ──
+          //
+          // "a user should be able to click on any card in their hand, and
+          //  when clicked that card or cards always get shown after the hand
+          //  is over."
+          //
+          // A player who clicked individual cards gets those - and only those -
+          // turned over once the hand is done, even if they folded and even if
+          // the hand never reached showdown. That is the whole point: it is how
+          // you show a bluff after taking the pot uncontested.
+          //
+          // Unpicked slots are sent as null rather than dropped, so the client
+          // still knows how many cards were held and renders a back in the
+          // gaps. A real showdown (showCards) already reveals everything, so
+          // this branch only ever ADDS to what is visible.
+          const picked = this.showHandCards?.get(p.user_id);
+          const handIsOver = state.stage === 'showdown' || this.currentHandWinnerIds.length > 0;
+          const partialReveal =
+            !showCards && handIsOver && !!picked && picked.size > 0 && (p.cards?.length ?? 0) > 0;
+
+          const cardsOut = showCards
+            ? (p.cards ?? [])
+            : partialReveal
+              ? (p.cards ?? []).map((c, i) => (picked!.has(i) ? c : null))
+              : [];
+
           return {
             seat: p.seat,
             user_id: p.user_id,
@@ -283,7 +310,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             stack: p.stack,
             bet: p.bet ?? 0,
             totalInvested: p.totalInvested ?? 0, // Bible V8 §2.3
-            cards: showCards ? (p.cards ?? []) : [],
+            cards: cardsOut,
             is_folded: p.is_folded ?? false,
             is_all_in: p.is_all_in ?? false,
             is_sitting_out: p.is_sitting_out ?? false,

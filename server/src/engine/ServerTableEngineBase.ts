@@ -314,6 +314,25 @@ export abstract class ServerTableEngineBase {
   protected timeBankActivatedThisTurn: boolean = false;
   protected showHandPlayers: Set<string> | null = null; // Bible V8 §4.21: players who voluntarily show hand
 
+  /**
+   * ── Dan 2026-08-18: per-CARD voluntary reveal ──
+   * "a user should be able to click on any card in their hand, and when
+   *  clicked that card or cards always get shown after the hand is over."
+   *
+   * showHandPlayers is all-or-nothing and only accepts input during showdown.
+   * This map holds the finer-grained intent: userId -> the set of hole-card
+   * INDEXES that player elected to expose. It is deliberately writable at any
+   * point in the hand, because the click happens while the player is still
+   * holding the cards - only the reveal is deferred to hand end.
+   *
+   * It never hides anything that would otherwise be shown; it only adds. A
+   * player already revealed by the showdown rule shows everything regardless,
+   * and a folded player is still never exposed.
+   *
+   * Reset per hand alongside showHandPlayers.
+   */
+  protected showHandCards: Map<string, Set<number>> | null = null;
+
   // ── Step 4: Ported Core Modules ──
   protected preciseTimer: PreciseActionTimer;
   protected actionValidator: ServerActionValidator;

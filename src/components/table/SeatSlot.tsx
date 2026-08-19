@@ -59,7 +59,13 @@ export interface SeatPlayer {
   avatar?: string;
   stack: number;
   status: PlayerStatus;
-  holeCards?: Card[];
+  /**
+   * Dan 2026-08-18: a slot may be null. When a player reveals only SOME of
+   * their cards (per-card show), the engine sends the hand with null in the
+   * positions that stay face down, so the seat still renders the right number
+   * of cards with backs in the gaps.
+   */
+  holeCards?: (Card | null)[];
   showCards: boolean;
   isHero: boolean;
 }
@@ -141,6 +147,14 @@ export interface SeatSlotProps {
   turnDeadlineMs?: number;
   /** Wall-clock time the current turn started (server-authoritative). */
   turnStartTimeMs?: number;
+  /**
+   * Dan 2026-08-18: "a user should be able to click on any card in their hand,
+   * and when clicked that card or cards always get shown after the hand is
+   * over." Indexes of the hero's own hole cards currently marked to be shown.
+   */
+  showPickedCardIndexes?: readonly number[];
+  /** Toggle one of the hero's cards in/out of the show-after-hand selection. */
+  onToggleShowCard?: (cardIndex: number) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -210,7 +224,7 @@ function HoleCard({
   deckStyle,
   cardBack = 'classic_blue',
 }: {
-  card?: Card;
+  card?: Card | null;
   hidden?: boolean;
   index: number;
   isHero?: boolean;
@@ -298,6 +312,8 @@ export const SeatSlot = memo(
       isDealing = false,
       turnDeadlineMs,
       turnStartTimeMs,
+      showPickedCardIndexes,
+      onToggleShowCard,
     } = props;
 
     // Animated stack change — flash green/red when stack changes
@@ -602,7 +618,10 @@ export const SeatSlot = memo(
                   <HoleCard
                     key={i}
                     card={card}
-                    hidden={!player.showCards}
+                    /* Dan 2026-08-18: null = this specific card was not among
+                       the ones the player chose to show, so it stays down even
+                       though the seat itself is revealed. */
+                    hidden={!player.showCards || card == null}
                     index={i}
                     isWinner={isWinner}
                     deckStyle={deckStyle}
@@ -791,16 +810,53 @@ export const SeatSlot = memo(
             }}
           >
             {player.holeCards.map((card, i) => (
-              <HoleCard
+              /* ── Dan 2026-08-18: click a card to show it after the hand ──
+                 Wrapping rather than putting the handler on HoleCard keeps the
+                 card renderer presentational and shared with opponents. The
+                 marker class is what tells the player the click registered -
+                 nothing is exposed at the table until the hand ends. */
+              <span
                 key={i}
-                card={card}
-                hidden={false}
-                index={i}
-                isHero={true}
-                isWinner={isWinner}
-                deckStyle={deckStyle}
-                cardBack={cardBack}
-              />
+                className={
+                  'seat__card-pick' +
+                  (showPickedCardIndexes?.includes(i) ? ' seat__card-pick--marked' : '')
+                }
+                role={onToggleShowCard ? 'button' : undefined}
+                tabIndex={onToggleShowCard ? 0 : undefined}
+                aria-pressed={onToggleShowCard ? !!showPickedCardIndexes?.includes(i) : undefined}
+                aria-label={
+                  onToggleShowCard
+                    ? showPickedCardIndexes?.includes(i)
+                      ? `Card ${i + 1} will be shown after the hand. Activate to keep it hidden.`
+                      : `Show card ${i + 1} after the hand`
+                    : undefined
+                }
+                onClick={(e) => {
+                  if (!onToggleShowCard) return;
+                  // The container above owns press-to-peek; stop this click
+                  // from also being read as a peek gesture.
+                  e.stopPropagation();
+                  onToggleShowCard(i);
+                }}
+                onKeyDown={(e) => {
+                  if (!onToggleShowCard) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onToggleShowCard(i);
+                  }
+                }}
+              >
+                <HoleCard
+                  card={card}
+                  hidden={false}
+                  index={i}
+                  isHero={true}
+                  isWinner={isWinner}
+                  deckStyle={deckStyle}
+                  cardBack={cardBack}
+                />
+              </span>
             ))}
           </div>
         )}
@@ -924,7 +980,15 @@ export const SeatSlot = memo(
     } else if (!ph || !nh || ph.length !== nh.length) return false;
     else {
       for (let i = 0; i < ph.length; i++) {
-        if (ph[i].rank !== nh[i].rank || ph[i].suit !== nh[i].suit) return false;
+        // Dan 2026-08-18: a slot can be null now (partial per-card reveal), so
+        // compare identity first and only read fields when both are present.
+        // Treating null vs card as "equal" here would freeze a seat on its old
+        // backs at the moment the reveal lands.
+        const a = ph[i];
+        const b = nh[i];
+        if (a === b) continue;
+        if (!a || !b) return false;
+        if (a.rank !== b.rank || a.suit !== b.suit) return false;
       }
     }
 

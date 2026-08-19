@@ -35,6 +35,17 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return { ...actual, useNavigate: () => navigateMock };
 });
 
+// The package list is no longer hardcoded in the component — it is fetched
+// from the shared store catalog, so the catalog is stubbed here.
+vi.mock('@/pages/marketplace/marketplaceShared', () => ({
+  loadStoreCatalog: async () => ({
+    chipPackages: [
+      { id: 'small', chips: 1000, diamonds: 10 },
+      { id: 'large', chips: 10000, diamonds: 80, popular: true },
+    ],
+  }),
+}));
+
 import { ChipPurchaseModal } from '@/components/wallet/ChipPurchaseModal';
 
 const CLUB = 'aaaaaaaa-0000-0000-0000-000000000001';
@@ -57,7 +68,7 @@ describe('ChipPurchaseModal', () => {
     render(
       <ChipPurchaseModal isOpen onClose={vi.fn()} currentDiamonds={500} clubId={CLUB} />
     );
-    await user.click(screen.getAllByRole('button', { name: /Buy 1,000 chips/ })[0]);
+    await user.click(await screen.findByRole('button', { name: /Buy 1,000 chips/ }));
     expect(callApiMock).toHaveBeenCalledWith('purchase-chips', {
       packageId: 'small',
       clubId: CLUB,
@@ -67,7 +78,7 @@ describe('ChipPurchaseModal', () => {
   it('omits clubId entirely when there is no club (legacy global behaviour)', async () => {
     const user = userEvent.setup();
     render(<ChipPurchaseModal isOpen onClose={vi.fn()} currentDiamonds={500} />);
-    await user.click(screen.getAllByRole('button', { name: /Buy 1,000 chips/ })[0]);
+    await user.click(await screen.findByRole('button', { name: /Buy 1,000 chips/ }));
     expect(callApiMock).toHaveBeenCalledWith('purchase-chips', { packageId: 'small' });
   });
 
@@ -83,7 +94,7 @@ describe('ChipPurchaseModal', () => {
         onPurchase={onPurchase}
       />
     );
-    await user.click(screen.getAllByRole('button', { name: /Buy 1,000 chips/ })[0]);
+    await user.click(await screen.findByRole('button', { name: /Buy 1,000 chips/ }));
     // chips credited, then the authoritative post-purchase diamond balance.
     // Subtracting the CHIP count from the diamond balance (the previous
     // caller-side guess) would have produced a nonsense figure.
@@ -96,19 +107,19 @@ describe('ChipPurchaseModal', () => {
     render(
       <ChipPurchaseModal isOpen onClose={vi.fn()} currentDiamonds={500} clubId={CLUB} />
     );
-    await user.click(screen.getAllByRole('button', { name: /Buy 1,000 chips/ })[0]);
+    await user.click(await screen.findByRole('button', { name: /Buy 1,000 chips/ }));
     expect(toastError).toHaveBeenCalledWith('Insufficient diamonds');
   });
 
-  it('states the price is in diamonds', () => {
+  it('states the price is in diamonds', async () => {
     render(<ChipPurchaseModal isOpen onClose={vi.fn()} currentDiamonds={500} clubId={CLUB} />);
-    expect(screen.getByText('10 diamonds')).toBeInTheDocument();
+    expect(await screen.findByText('10 diamonds')).toBeInTheDocument();
   });
 
   it('the Get Diamonds button actually goes somewhere', async () => {
     const user = userEvent.setup();
     render(<ChipPurchaseModal isOpen onClose={vi.fn()} currentDiamonds={500} clubId={CLUB} />);
-    await user.click(screen.getByRole('button', { name: /Get Diamonds/ }));
+    await user.click(await screen.findByRole('button', { name: /Get Diamonds/ }));
     expect(navigateMock).toHaveBeenCalledWith('/vip');
   });
 

@@ -227,9 +227,21 @@ export default function DynamicWallet({
       });
   }, [clubId]);
 
-  // Auto-detect effective variant: if the club is in a union AND parent passed 'owner',
-  // auto-upgrade to 'union' so the wallet always shows correct labels.
-  const effectiveVariant: WalletVariant = isClubInUnion && variant === 'owner' ? 'union' : variant;
+  // Effective variant.
+  //
+  // This used to upgrade to 'union' whenever `isClubInUnion` was true, which is
+  // derived purely from clubs.union_id — it says the club BELONGS to a union,
+  // not that this VIEWER owns that union. So every ordinary club owner inside a
+  // union was shown the union's whole treasury as their own primary balance,
+  // labelled "Union Bank", with a "+ Mint Chips" button attached — and minting
+  // is union-locked for member clubs, so that button could never work. It also
+  // overrode the parents (CashierPage, ClubHomePage), which already compute the
+  // union variant correctly from isUnionOwner.
+  //
+  // `data.scope` comes from fn_club_money_panel and is the server's own answer
+  // to "what is this caller permitted to see", so it is the right gate.
+  const effectiveVariant: WalletVariant =
+    variant === 'owner' && data.scope === 'union' ? 'union' : variant;
 
   // Animated values
   const animDiamonds = useAnimatedCounter(data.diamonds);

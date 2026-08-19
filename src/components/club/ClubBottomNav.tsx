@@ -209,7 +209,12 @@ export default function ClubBottomNav({
           <span className={styles.label}>Data</span>
         </Link>
 
-        {/* Admin - Always visible */}
+        {/* Admin — staff only.
+            `hasAdminAccess` was computed and then never referenced, so this
+            link rendered unconditionally and every ordinary member saw an
+            Admin tab into /settings. That also made the `userRole` prop dead
+            and `.navItem.disabled` dead CSS. */}
+        {hasAdminAccess && (
         <Link
           to={`/clubs/${clubId}/settings`}
           className={`${styles.navItem} ${activeTab === 'admin' ? styles.active : ''}`}
@@ -224,6 +229,7 @@ export default function ClubBottomNav({
           </svg>
           <span className={styles.label}>Admin</span>
         </Link>
+        )}
       </div>
     </nav>
   );

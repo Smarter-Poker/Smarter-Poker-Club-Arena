@@ -342,14 +342,29 @@ export default function CashoutRequestModal({
     if (isMounted.current) setIsSubmitting(false);
   };
 
+  // Tracks the cashout currently being cancelled. Without it a double tap on
+  // mobile fired two cancel-my-cashout calls for the same request.
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
   const handleCancel = async (cashoutId: string) => {
+    if (cancellingId) return;
+    setCancellingId(cashoutId);
     try {
       await cashoutService.cancelCashout(cashoutId, playerId);
       triggerHaptic(15);
       loadPendingCashouts();
       onComplete?.();
     } catch (err: any) {
-      if (isMounted.current) setError(err.message || 'Failed to cancel cashout');
+      // The inline error element only renders inside the `!success` branch, so
+      // after a successful request a later cancel failure was invisible.
+      // Clearing `success` puts the form back on screen with the error on it.
+      const msg = err?.message || 'Failed to cancel cashout';
+      if (isMounted.current) {
+        setSuccess(false);
+        setError(msg);
+      }
+    } finally {
+      if (isMounted.current) setCancellingId(null);
     }
   };
 
@@ -367,7 +382,8 @@ export default function CashoutRequestModal({
         {/* Bottom-sheet drag handle */}
         <div className="cashout-drag-handle" />
         <div className="modal-header">
-          <h2> Request Cashout</h2>
+          {/* id added: aria-labelledby="cashout-modal-title" pointed at nothing */}
+          <h2 id="cashout-modal-title">Request Cashout</h2>
           <button className="close-btn" onClick={onClose}>
             ×
           </button>
@@ -394,8 +410,13 @@ export default function CashoutRequestModal({
                       <span className="pending-time">{formatTime(cashout.createdAt)}</span>
                     </div>
                     <CashoutStepTracker status={cashout.status} createdAt={cashout.createdAt} />
-                    <button className="cancel-btn" onClick={() => handleCancel(cashout.id)}>
-                      Cancel
+                    <button
+                      type="button"
+                      className="cancel-btn"
+                      disabled={cancellingId === cashout.id}
+                      onClick={() => handleCancel(cashout.id)}
+                    >
+                      {cancellingId === cashout.id ? 'Cancelling...' : 'Cancel'}
                     </button>
                   </div>
                 ))}

@@ -2450,3 +2450,129 @@
     animation: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CASHIER QUICK LINK — club name on tile + multi-club quick-switch popover
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.cashierTileWrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 160px;
+}
+
+/* Inner tile fills the wrapper; keep the 4th-tile stagger delay */
+.cashierTileWrap .tileCard {
+  width: 100%;
+  max-width: none;
+  animation-delay: 640ms;
+}
+
+.tileClubName {
+  display: block;
+  margin-top: 2px;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: none;
+  color: rgba(0, 212, 255, 0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cashierSwitchBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 212, 255, 0.5);
+  background: rgba(6, 12, 24, 0.85);
+  color: rgba(0, 212, 255, 0.95);
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.cashierSwitchBtn:hover {
+  background: rgba(0, 212, 255, 0.2);
+  transform: scale(1.08);
+}
+
+.cashierSwitchBtn:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.cashierSwitchOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  background: transparent;
+}
+
+.cashierSwitchMenu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 960;
+  min-width: 160px;
+  max-width: 230px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: rgba(10, 16, 28, 0.97);
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cashierSwitchTitle {
+  padding: 6px 10px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.cashierSwitchItem {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cashierSwitchItem:hover {
+  background: rgba(0, 212, 255, 0.15);
+}
+
+.cashierSwitchItemActive {
+  color: #00d4ff;
+  background: rgba(0, 212, 255, 0.1);
+}

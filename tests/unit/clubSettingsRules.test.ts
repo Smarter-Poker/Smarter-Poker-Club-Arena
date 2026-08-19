@@ -8,11 +8,14 @@ import { describe, it, expect } from 'vitest';
 import {
   BUYIN_BB_CEILING,
   BUYIN_BB_FLOOR,
+  CLUB_NAME_MAX,
   WATCHED_COLUMNS,
   clampBuyin,
   csvSafeCell,
+  sanitizationWouldAlter,
   toCSV,
   validateBuyinRange,
+  validateClubName,
 } from '../../src/utils/clubSettingsRules';
 
 describe('clampBuyin', () => {
@@ -104,5 +107,38 @@ describe('WATCHED_COLUMNS', () => {
     // membership trigger; reacting to them refetched the page nonstop.
     expect(WATCHED_COLUMNS).not.toContain('chip_pool');
     expect(WATCHED_COLUMNS).not.toContain('member_count');
+  });
+});
+
+describe('validateClubName', () => {
+  it('accepts a normal name', () => {
+    expect(validateClubName('Midway Union')).toBeNull();
+  });
+
+  it('rejects empty and whitespace-only names', () => {
+    // The bug: clubs.name is NOT NULL but has no CHECK against '', and the
+    // page had no validation — a blank name saved fine, and then armed the
+    // delete confirmation with an empty input box.
+    expect(validateClubName('')).toMatch(/cannot be empty/);
+    expect(validateClubName('   ')).toMatch(/cannot be empty/);
+  });
+
+  it('rejects a name that is empty only AFTER sanitising', () => {
+    expect(validateClubName('<b></b>', '')).toMatch(/cannot be empty/);
+  });
+
+  it('rejects an over-long name', () => {
+    expect(validateClubName('x'.repeat(CLUB_NAME_MAX + 1))).toMatch(/cannot exceed/);
+    expect(validateClubName('x'.repeat(CLUB_NAME_MAX))).toBeNull();
+  });
+});
+
+describe('sanitizationWouldAlter', () => {
+  it('detects silent stripping', () => {
+    expect(sanitizationWouldAlter('Friday <8pm>', 'Friday')).toBe(true);
+  });
+
+  it('ignores pure whitespace differences', () => {
+    expect(sanitizationWouldAlter('  Midway  ', 'Midway')).toBe(false);
   });
 });

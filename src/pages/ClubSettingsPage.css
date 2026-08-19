@@ -423,3 +423,104 @@
   font-size: 0.88rem;
   margin: 0 0 20px;
 }
+
+/* ── Unsaved-changes bar ───────────────────────────────────────────────────
+   Was a fixed row of four inline-styled children with no wrapping: at 375px
+   the field list alone reserved 200px and the bar overflowed the viewport.
+   Mobile-first (Working Rule 7): stack and wrap by default, single row from
+   480px up. */
+.unsaved-bar {
+  position: fixed;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 0.65rem 1rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), rgba(139, 92, 246, 0.1));
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 15px rgba(0, 212, 255, 0.2);
+  animation: slideUpFade 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.unsaved-bar__count {
+  color: #00d4ff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.unsaved-bar__fields {
+  color: #6a7a8a;
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 190px;
+}
+.unsaved-bar__discard,
+.unsaved-bar__save {
+  flex-shrink: 0;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  /* 32px keeps the tap target usable on a phone without making the bar tall */
+  min-height: 32px;
+  padding: 0.4rem 0.9rem;
+}
+.unsaved-bar__discard {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #aaa;
+}
+.unsaved-bar__save {
+  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  border: none;
+  color: #000;
+  font-weight: 700;
+}
+.unsaved-bar__save:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 420px) {
+  /* Field list is the first thing to go when space is tight — the count and
+     the two actions matter more than the names of the changed fields. */
+  .unsaved-bar__fields {
+    display: none;
+  }
+  .unsaved-bar {
+    gap: 0.5rem;
+    padding: 0.6rem 0.8rem;
+  }
+}
+
+/* The bar has always animated with `slideUpFade`, but the keyframes were
+   never defined anywhere in the codebase — the animation silently did
+   nothing. Defined here, and disabled for reduced-motion users. */
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unsaved-bar {
+    animation: none;
+  }
+}

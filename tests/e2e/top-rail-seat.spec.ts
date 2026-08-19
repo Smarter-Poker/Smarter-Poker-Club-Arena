@@ -24,12 +24,39 @@ const seatCss = fs.readFileSync(
   path.join(process.cwd(), 'src/components/table/SeatSlot.css'),
   'utf8'
 );
-const tsx = fs.readFileSync(path.join(process.cwd(), 'src/pages/TablePage.tsx'), 'utf8');
+/**
+ * The y the app actually ships for the top-centre seat. Read from source, never
+ * hardcoded — but read from WHEREVER the rings live.
+ *
+ * 2026-08-19: the seat rings were moved out of TablePage.tsx into
+ * src/lib/tableSeatGeometry.ts by a refactor, and this spec kept reading the old
+ * file. The regex stopped matching, TOP_CENTRE_Y became NaN, and three checks
+ * failed — the item-10 guard had quietly stopped guarding anything. Searching
+ * the candidate files instead of naming one means the next move cannot silently
+ * disarm it, and a miss is now a loud failure rather than a NaN.
+ */
+const RING_SOURCES = [
+  'src/lib/tableSeatGeometry.ts',
+  'src/pages/TablePage.tsx',
+  'src/utils/tableGeometry.ts',
+];
 
-/** The y the app actually ships for the top-centre seat. Read, not hardcoded. */
-const TOP_CENTRE_Y = Number(
-  /\{ x: 50, y: ([\d.]+) \}, \/\/ Seat 4 \(top-center/.exec(tsx)?.[1] ?? 'NaN'
-);
+function readTopCentreY(): number {
+  for (const rel of RING_SOURCES) {
+    const full = path.join(process.cwd(), rel);
+    if (!fs.existsSync(full)) continue;
+    const src = fs.readFileSync(full, 'utf8');
+    const m = /\{\s*x:\s*50,\s*y:\s*([\d.]+)\s*\}[^\n]*top-center/i.exec(src);
+    if (m) return Number(m[1]);
+  }
+  throw new Error(
+    'top-centre seat position not found in any of: ' +
+      RING_SOURCES.join(', ') +
+      ' — the seat rings moved again and this spec must be pointed at them.'
+  );
+}
+
+const TOP_CENTRE_Y = readTopCentreY();
 
 const SCALER_H = 1000;
 const FELT_TOP_PCT = 8.9;

@@ -7971,3 +7971,18 @@ Full write-up: `.agent/audits/2026-08-19-rake-bbj-union-treasury-audit.md`.
     alerts and the live selftest. Powers the union dashboard + Dan's artifact.
 
 DB migration mirrors: 20260819g, 20260819h.
+
+14. SETTLER BACKLOG (measured 2026-08-19 21:5x): the rakeback settler's durable
+    cursor was at 2026-08-17 10:34 with 284,965 unprocessed rake_records, while
+    only ~2,900 arrive per hour — i.e. it had ample capacity and was idling.
+    Cause: a cycle that hits MAX_DRAIN_BATCHES stops and waits the FULL 30-minute
+    interval before resuming, so a backlog drains at 3 batches per half hour no
+    matter how far behind it is (and every engine restart resumes from the last
+    saved batch cursor). Fixed: when a cycle ends with backlog outstanding the
+    settler re-arms in 60s (`scheduleCatchUp`) instead of sleeping. Identical
+    work and identical batch semantics — only the dead waiting is removed; the
+    30-minute interval remains as the floor, a single timer is ever pending, it
+    is unref'd, cleared on stop(), and the run goes through the same isSettling
+    re-entrancy guard. NOTE: this lag never risked money — rake is banked at
+    hand time by atomic_distribute_rake; what lagged was per-player rakeback
+    attribution and agent commission crediting.

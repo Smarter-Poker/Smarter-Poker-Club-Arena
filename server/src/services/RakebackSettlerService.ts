@@ -34,6 +34,12 @@ import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 
 const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+/**
+ * How soon to resume when a cycle ended with backlog still outstanding.
+ * Deliberately short: the work is identical and already bounded per cycle by
+ * MAX_DRAIN_BATCHES, so this only removes dead waiting.
+ */
+const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
 const DAEMON_KEY = 'rakeback_settler';
 
 /**
@@ -197,6 +203,16 @@ export class RakebackSettlerService {
   // unique position in rake_records, so it could not express "resume after
   // THIS row" when several rows share one created_at.
   private cursor: RakeCursor | null = null;
+  /**
+   * AUDIT PASS 3 — backlog catch-up timer. When a cycle stops because it hit
+   * MAX_DRAIN_BATCHES there is still backlog on disk, and waiting the full
+   * 30-minute interval to resume is what let the cursor fall days behind
+   * (measured 2026-08-19: cursor at 2026-08-17 10:34 with 284,965 unprocessed
+   * rake_records against only ~2,900 arriving per hour — the daemon had ample
+   * capacity and was simply idling between batches). Instead we re-arm in
+   * CATCH_UP_DELAY_MS. Same work, same batch semantics, just sooner.
+   */
+  private catchUpHandle: ReturnType<typeof setTimeout> | null = null;
 
   start(): void {
     if (this.isRunning) {
@@ -227,8 +243,41 @@ export class RakebackSettlerService {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
     }
+    if (this.catchUpHandle) {
+      clearTimeout(this.catchUpHandle);
+      this.catchUpHandle = null;
+    }
     this.isRunning = false;
     console.log('[RakebackSettler] Stopped');
+  }
+
+  /**
+   * AUDIT PASS 3 — re-arm quickly while backlog remains.
+   *
+   * Only ever ONE pending catch-up (cleared and re-set each time), it is a
+   * no-op unless the last cycle actually hit the drain cap, and the run it
+   * triggers goes through the same `isSettling` re-entrancy guard as the
+   * interval tick — so this cannot double-process or stack timers. The regular
+   * 30-minute interval keeps running underneath as the floor.
+   */
+  private scheduleCatchUp(backlogRemains: boolean): void {
+    if (this.catchUpHandle) {
+      clearTimeout(this.catchUpHandle);
+      this.catchUpHandle = null;
+    }
+    if (!backlogRemains || !this.isRunning) return;
+    this.catchUpHandle = setTimeout(() => {
+      this.catchUpHandle = null;
+      if (!this.isRunning) return;
+      this.runSettlement().catch((e: any) =>
+        reportError(
+          new Error(e?.message || JSON.stringify(e) || String(e)),
+          'RakebackSettler.catch_up_run'
+        )
+      );
+    }, CATCH_UP_DELAY_MS);
+    // Never hold the process open for a catch-up tick.
+    (this.catchUpHandle as unknown as { unref?: () => void }).unref?.();
   }
 
   /**
@@ -318,17 +367,21 @@ export class RakebackSettlerService {
       // before returning 'more', so each pass through this loop starts strictly
       // after the last row of the previous one — an interruption anywhere in
       // the loop resumes correctly rather than replaying.
+      let backlogRemains = false;
       for (let batch = 1; ; batch++) {
         const result = await this._runSettlementInner();
         if (result !== 'more') break;
         if (batch >= MAX_DRAIN_BATCHES) {
+          backlogRemains = true;
           console.warn(
             `[RakebackSettler] drain cap reached after ${batch} full batches ` +
-              `(${batch * FETCH_LIMIT} records) — backlog REMAINS and will continue next cycle`
+              `(${batch * FETCH_LIMIT} records) — backlog REMAINS, resuming in ` +
+              `${CATCH_UP_DELAY_MS / 1000}s instead of waiting the full interval`
           );
           break;
         }
       }
+      this.scheduleCatchUp(backlogRemains);
       // RAKE-AUDIT 2026-07-24: weekly financial close now runs SERVER-SIDE.
       // Previously the weekly rakeback settlement + credit-invoice generation
       // lived only in the browser (FinancialCronService/SettlementCronService

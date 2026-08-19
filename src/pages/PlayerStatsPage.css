@@ -705,3 +705,28 @@
 .tournament-item-net.negative {
   color: #ef4444;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ANALYSIS-WINDOW / STALENESS NOTICES
+   Shown when the RPC capped the analysis window, or when a refresh failed and
+   the page is still showing the last good payload. Never let a truncated or
+   stale figure read as a current lifetime total.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.stats-notice {
+  margin: 10px 0 0;
+  padding: 8px 14px;
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(0, 212, 255, 0.07);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.stats-notice-warn {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.09);
+  color: #fbbf24;
+}

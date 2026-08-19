@@ -324,6 +324,21 @@ positions AS (
   FROM scored WHERE position <> 'UNK'
   GROUP BY position
 ),
+stakes AS (
+  -- Cash results grouped by big blind, so a player can see which game size is
+  -- actually carrying (or bleeding) their results rather than one blended number.
+  SELECT big_blind,
+         count(*)::int AS hands,
+         count(*) FILTER (WHERE is_winner)::int AS hands_won,
+         round(coalesce(sum(profit), 0), 2) AS profit,
+         CASE WHEN count(*) > 0
+              THEN round(coalesce(sum(profit / NULLIF(big_blind, 0)), 0) / count(*) * 100, 2)
+              ELSE 0 END AS bb100
+  FROM scored
+  WHERE is_cash AND big_blind > 0
+  GROUP BY big_blind
+  ORDER BY big_blind DESC
+),
 variants AS (
   SELECT game_variant,
          count(*)::int AS hands,
@@ -427,6 +442,12 @@ SELECT jsonb_build_object(
       'hands_won', hands_won,
       'profit', profit,
       'bb100', bb100)) FROM variants), '[]'::jsonb),
+  'stakes', coalesce((SELECT jsonb_agg(jsonb_build_object(
+      'big_blind', big_blind,
+      'hands', hands,
+      'hands_won', hands_won,
+      'profit', profit,
+      'bb100', bb100) ORDER BY big_blind DESC) FROM stakes), '[]'::jsonb),
   'tournaments', (SELECT jsonb_build_object(
       'entries', entries,
       'cashes', cashes,

@@ -13,7 +13,7 @@
  *    per-club rows instead of .maybeSingle()).
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -93,6 +93,11 @@ interface OverallStats {
   biggest_hand_loss: number;
   bb_per_100: number;
   hours_played: number;
+  // Analysis window. The RPC scores the player's most recent `hand_cap` hands;
+  // `hands_capped` is true when that limit actually bit, so the UI can say so
+  // instead of presenting a truncated total as a lifetime figure.
+  hand_cap: number;
+  hands_capped: boolean;
   first_hand_at?: string;
   last_hand_at?: string;
 }
@@ -133,6 +138,14 @@ interface VariantRow {
   bb100: number;
 }
 
+interface StakeRow {
+  big_blind: number;
+  hands: number;
+  hands_won: number;
+  profit: number;
+  bb100: number;
+}
+
 interface TournamentSummary {
   entries: number;
   cashes: number;
@@ -161,11 +174,24 @@ interface FullStats {
   sessions: SessionRow[];
   positions: PositionRow[];
   variants: VariantRow[];
+  stakes: StakeRow[];
   tournaments: TournamentSummary;
   recent_tournaments: RecentTournament[];
 }
 
 type StatCategory = 'overview' | 'performance' | 'positions' | 'tournaments' | 'analysis';
+
+// Single source of truth for the tabs: the swipe handler and the pill row both
+// read this, so they can never drift out of sync.
+const TABS: StatCategory[] = ['overview', 'performance', 'positions', 'tournaments', 'analysis'];
+
+const TAB_LABELS: Record<StatCategory, string> = {
+  overview: 'Overview',
+  performance: 'Performance',
+  positions: 'Positions',
+  tournaments: 'Tournaments',
+  analysis: 'Analysis',
+};
 
 const CHART_COLORS = ['#4169E1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#10b981'];
 
@@ -192,6 +218,8 @@ const EMPTY_OVERALL: OverallStats = {
   biggest_hand_loss: 0,
   bb_per_100: 0,
   hours_played: 0,
+  hand_cap: 0,
+  hands_capped: false,
 };
 
 const EMPTY_FULL: FullStats = {
@@ -200,6 +228,7 @@ const EMPTY_FULL: FullStats = {
   sessions: [],
   positions: [],
   variants: [],
+  stakes: [],
   tournaments: {
     entries: 0,
     cashes: 0,
@@ -213,6 +242,117 @@ const EMPTY_FULL: FullStats = {
   },
   recent_tournaments: [],
 };
+
+// ── RPC payload hardening ──────────────────────────────────────────────────
+// Every number the UI formats goes through `num()`. A spread over defaults only
+// fills in MISSING keys — an explicit null (which Postgres aggregates can
+// produce) would survive it and blow up the first .toFixed()/.toLocaleString()
+// in the hero, taking the whole page down rather than one tile.
+const num = (v: unknown, fallback = 0): number =>
+  typeof v === 'number' && Number.isFinite(v)
+    ? v
+    : typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))
+      ? Number(v)
+      : fallback;
+
+const str = (v: unknown, fallback = ''): string =>
+  typeof v === 'string' && v.length > 0 ? v : fallback;
+
+function normalizeFull(data: any): FullStats {
+  const o = data?.overall ?? {};
+  const t = data?.tournaments ?? {};
+  const arr = (v: unknown): any[] => (Array.isArray(v) ? v : []);
+
+  return {
+    overall: {
+      total_hands: num(o.total_hands),
+      cash_hands: num(o.cash_hands),
+      tourney_hands: num(o.tourney_hands),
+      tournaments_with_hands: num(o.tournaments_with_hands),
+      hands_won: num(o.hands_won),
+      hands_lost: num(o.hands_lost),
+      vpip: num(o.vpip),
+      pfr: num(o.pfr),
+      three_bet_percent: num(o.three_bet_percent),
+      fold_to_three_bet: num(o.fold_to_three_bet),
+      cbet_flop: num(o.cbet_flop),
+      aggression_factor: num(o.aggression_factor),
+      showdowns_total: num(o.showdowns_total),
+      showdowns_won: num(o.showdowns_won),
+      wtsd: num(o.wtsd),
+      total_profit: num(o.total_profit),
+      total_winnings: num(o.total_winnings),
+      total_invested: num(o.total_invested),
+      biggest_pot_won: num(o.biggest_pot_won),
+      biggest_hand_loss: num(o.biggest_hand_loss),
+      bb_per_100: num(o.bb_per_100),
+      hours_played: num(o.hours_played),
+      hand_cap: num(o.hand_cap),
+      hands_capped: o.hands_capped === true,
+      first_hand_at: o.first_hand_at ?? undefined,
+      last_hand_at: o.last_hand_at ?? undefined,
+    },
+    daily: arr(data?.daily).map((d) => ({
+      date: str(d?.date),
+      hands: num(d?.hands),
+      profit: num(d?.profit),
+    })),
+    sessions: arr(data?.sessions).map((x) => ({
+      id: num(x?.id),
+      date: str(x?.date),
+      ended: str(x?.ended),
+      duration_minutes: num(x?.duration_minutes),
+      hands_played: num(x?.hands_played),
+      buy_in: num(x?.buy_in),
+      cash_out: num(x?.cash_out),
+      profit_loss: num(x?.profit_loss),
+    })),
+    positions: arr(data?.positions).map((x) => ({
+      position: str(x?.position, 'UNK'),
+      hands_played: num(x?.hands_played),
+      vpip_count: num(x?.vpip_count),
+      pfr_count: num(x?.pfr_count),
+      three_bet_count: num(x?.three_bet_count),
+      hands_won: num(x?.hands_won),
+      total_profit: num(x?.total_profit),
+      bb100: num(x?.bb100),
+    })),
+    variants: arr(data?.variants).map((x) => ({
+      variant: str(x?.variant, 'unknown'),
+      hands: num(x?.hands),
+      hands_won: num(x?.hands_won),
+      profit: num(x?.profit),
+      bb100: num(x?.bb100),
+    })),
+    stakes: arr(data?.stakes).map((x) => ({
+      big_blind: num(x?.big_blind),
+      hands: num(x?.hands),
+      hands_won: num(x?.hands_won),
+      profit: num(x?.profit),
+      bb100: num(x?.bb100),
+    })),
+    tournaments: {
+      entries: num(t.entries),
+      cashes: num(t.cashes),
+      wins: num(t.wins),
+      best_finish: typeof t.best_finish === 'number' ? t.best_finish : null,
+      itm_percent: num(t.itm_percent),
+      total_buyins: num(t.total_buyins),
+      total_winnings: num(t.total_winnings),
+      net_profit: num(t.net_profit),
+      roi: num(t.roi),
+    },
+    recent_tournaments: arr(data?.recent_tournaments).map((x) => ({
+      name: str(x?.name, 'Tournament'),
+      start_time: x?.start_time ?? null,
+      variant: x?.variant ?? null,
+      finish_rank: typeof x?.finish_rank === 'number' ? x.finish_rank : null,
+      status: x?.status ?? null,
+      prize: num(x?.prize),
+      buyin: num(x?.buyin),
+    })),
+  };
+}
 
 // ── Animated counter hook ──
 function useCountUpNumber(target: number, duration: number = 400) {
@@ -236,21 +376,29 @@ function useCountUpNumber(target: number, duration: number = 400) {
   return display;
 }
 
-// ── Win Rate Gauge SVG ──
-function WinRateGauge({ winRate }: { winRate: number }) {
+// ── Hands-won gauge ──
+// Share of hands won sits around 10-20% in real poker (you fold most hands).
+// This was previously labelled "Win Rate" and banded at 35/45/55, so every
+// honest player rendered red on a near-empty arc. Bands are now calibrated to
+// hands-won, and the arc is scaled against a 40% ceiling so typical values
+// produce a readable sweep instead of a sliver.
+const HANDS_WON_ARC_CEILING = 40;
+
+function HandsWonGauge({ handsWonPct }: { handsWonPct: number }) {
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
-  const fillPercent = Math.min(100, Math.max(0, winRate));
-  const dashOffset = circumference - (fillPercent / 100) * circumference;
+  const value = Math.min(100, Math.max(0, handsWonPct));
+  const arcPercent = Math.min(100, (value / HANDS_WON_ARC_CEILING) * 100);
+  const dashOffset = circumference - (arcPercent / 100) * circumference;
 
   const getColor = () => {
-    if (fillPercent >= 55) return '#10b981';
-    if (fillPercent >= 45) return '#00d4ff';
-    if (fillPercent >= 35) return '#f59e0b';
+    if (value >= 22) return '#10b981';
+    if (value >= 15) return '#00d4ff';
+    if (value >= 10) return '#f59e0b';
     return '#ef4444';
   };
 
-  const countedRate = useCountUpNumber(Math.floor(fillPercent), 800);
+  const countedRate = useCountUpNumber(Math.floor(value), 800);
 
   return (
     <div className="hero-gauge">
@@ -271,7 +419,7 @@ function WinRateGauge({ winRate }: { winRate: number }) {
         <span className="gauge-value" style={{ color: getColor() }}>
           {countedRate}%
         </span>
-        <span className="gauge-label">Win Rate</span>
+        <span className="gauge-label">Hands Won</span>
       </div>
     </div>
   );
@@ -323,10 +471,12 @@ export default function PlayerStatsPage() {
   const targetUserId = userId || user?.id;
   const [full, setFull] = useState<FullStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [servingCache, setServingCache] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [category, setCategory] = useState<StatCategory>('overview');
   const statsSwipeHandlers = useSwipeTabs({
-    tabs: ['overview', 'performance', 'positions', 'tournaments', 'analysis'] as StatCategory[],
+    tabs: TABS,
     activeTab: category,
     onTabChange: setCategory,
   });
@@ -334,52 +484,21 @@ export default function PlayerStatsPage() {
   const isMounted = useIsMounted();
   const hasStatsRef = useRef(false);
   const statsLoadingRef = useRef(false);
-  useVisibilityRefresh(() => loadAllData());
-
-  // SWR: show cached stats instantly on mount
-  useEffect(() => {
-    if (!targetUserId) return;
-    const cached = getCachedFull(targetUserId);
-    if (cached) {
-      setFull(cached);
-      hasStatsRef.current = true;
-      setLoading(false);
-    }
-  }, [targetUserId]);
-
-  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
-  // (10s: the RPC itself may take several seconds for very high-volume players)
-  useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 10000);
-    return () => clearTimeout(timeout);
-  }, []);
-
-  useEffect(() => {
-    if (targetUserId) loadAllData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetUserId]);
-
-  // ── Bus Listeners: debounced refresh from engine events ──
-  useEffect(() => {
-    const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => loadAllData(), 2000);
-    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadAllData(), 2000);
-    const unsubChips = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', () => loadAllData(), 2000);
-    const unsubCashout = masterBus.subscribeDebounced('CASHOUT_APPROVED', () => loadAllData(), 2000);
-    const unsubCredit = masterBus.subscribeDebounced('CREDIT_UPDATED', () => loadAllData(), 2000);
-    return () => {
-      unsubHand();
-      unsubBalance();
-      unsubChips();
-      unsubCashout();
-      unsubCredit();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetUserId]);
+  // A refresh arriving while one is in flight is remembered and replayed once
+  // instead of dropped: the bus events are debounced, not queued, so a discarded
+  // HAND_COMPLETED used to leave the page stale until some later event.
+  const pendingRefreshRef = useRef(false);
+  // The index refresh is a WRITE. Un-throttled it fired on every bus refresh and
+  // every tab-visibility change, i.e. repeatedly during active play.
+  const lastIndexRefreshRef = useRef(0);
 
   // ── Single RPC pulls everything from hand_history server-side ──
-  const loadAllData = async () => {
+  const loadAllData = useCallback(async (): Promise<void> => {
     if (!targetUserId) return;
-    if (statsLoadingRef.current) return;
+    if (statsLoadingRef.current) {
+      pendingRefreshRef.current = true;
+      return;
+    }
     statsLoadingRef.current = true;
     if (!hasStatsRef.current) setLoading(true);
 
@@ -395,14 +514,11 @@ export default function PlayerStatsPage() {
       if (!isMounted.current) return;
 
       if (!error && data && data.overall) {
-        const resolved: FullStats = {
-          ...EMPTY_FULL,
-          ...data,
-          overall: { ...EMPTY_OVERALL, ...data.overall },
-          tournaments: { ...EMPTY_FULL.tournaments, ...(data.tournaments || {}) },
-        };
+        const resolved = normalizeFull(data);
         setFull(resolved);
         hasStatsRef.current = true;
+        setLoadError(false);
+        setServingCache(false);
         setCachedFull(targetUserId, resolved);
 
         // Fire-and-forget: advance the player->hand index past the hands played
@@ -411,9 +527,14 @@ export default function PlayerStatsPage() {
         // without it, this only keeps it fast.
         // Batch is sized to finish inside the 8s statement_timeout on the
         // `authenticated` role; concurrent callers no-op via an advisory lock.
-        void supabase
-          .rpc('ca_refresh_hand_player_index', { p_max_hands: 3000 })
-          .then(() => undefined, () => undefined);
+        const nowMs = Date.now();
+        if (nowMs - lastIndexRefreshRef.current > 5 * 60 * 1000) {
+          lastIndexRefreshRef.current = nowMs;
+          void supabase.rpc('ca_refresh_hand_player_index', { p_max_hands: 3000 }).then(
+            () => undefined,
+            () => undefined
+          );
+        }
       } else {
         // Legacy fallback (aggregates per-club rows; never .maybeSingle())
         const legacy = await loadLegacyStats(targetUserId);
@@ -421,31 +542,99 @@ export default function PlayerStatsPage() {
         if (legacy) {
           setFull(legacy);
           hasStatsRef.current = true;
-        } else if (!hasStatsRef.current) {
-          setFull(EMPTY_FULL);
+          setLoadError(false);
+        } else if (hasStatsRef.current) {
+          // Something is already on screen (cache or an earlier load). Keep it,
+          // but say it is stale rather than pretending it is current.
+          setServingCache(true);
+        } else {
+          setFull(null);
+          setLoadError(true);
         }
         if (error) reportError(error, 'PlayerStatsPage.rpc_ca_player_stats_full');
       }
-    } catch (error) {
-      reportError(error, 'PlayerStatsPage.Failed_to_load_stats');
-      if (isMounted.current && !hasStatsRef.current) {
-        setFull(EMPTY_FULL);
-        toast.error('Failed to load player stats');
+    } catch (err: any) {
+      // retryFetch throws when the component goes away mid-flight; that is a
+      // navigation, not an application error worth reporting.
+      const unmounted = err instanceof Error && /unmounted/i.test(err.message || '');
+      if (!unmounted) {
+        reportError(err, 'PlayerStatsPage.Failed_to_load_stats');
+        if (isMounted.current) {
+          if (hasStatsRef.current) {
+            setServingCache(true);
+          } else {
+            setFull(null);
+            setLoadError(true);
+            toast.error('Failed to load player stats');
+          }
+        }
       }
     } finally {
       if (isMounted.current) setLoading(false);
       statsLoadingRef.current = false;
+      if (pendingRefreshRef.current && isMounted.current) {
+        pendingRefreshRef.current = false;
+        void loadAllData();
+      }
     }
-  };
+    // toast comes from context and isMounted is a ref wrapper: both stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetUserId]);
+
+  useVisibilityRefresh(loadAllData);
+
+  // SWR: show cached stats instantly on mount
+  useEffect(() => {
+    if (!targetUserId) return;
+    const cached = getCachedFull(targetUserId);
+    if (cached) {
+      setFull(cached);
+      hasStatsRef.current = true;
+      setLoading(false);
+    }
+  }, [targetUserId]);
+
+  // Safety net so a hung auth/Supabase call cannot pin the skeleton forever.
+  // 20s, not 10s: retryFetch does up to 3 attempts with 1s + 2s backoff and a
+  // first call for a high-volume account takes a few seconds — the old 10s fired
+  // MID-RETRY and showed "No Stats Yet" while the request was still in flight.
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (!isMounted.current) return;
+      setLoading(false);
+      if (!hasStatsRef.current) setLoadError(true);
+    }, 20000);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetUserId]);
+
+  useEffect(() => {
+    if (targetUserId) void loadAllData();
+  }, [targetUserId, loadAllData]);
+
+  // ── Bus Listeners: debounced refresh from engine events ──
+  useEffect(() => {
+    const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => loadAllData(), 2000);
+    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadAllData(), 2000);
+    const unsubChips = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', () => loadAllData(), 2000);
+    const unsubCashout = masterBus.subscribeDebounced('CASHOUT_APPROVED', () => loadAllData(), 2000);
+    const unsubCredit = masterBus.subscribeDebounced('CREDIT_UPDATED', () => loadAllData(), 2000);
+    return () => {
+      unsubHand();
+      unsubBalance();
+      unsubChips();
+      unsubCashout();
+      unsubCredit();
+    };
+  }, [loadAllData]);
+
 
   const overall = full?.overall ?? EMPTY_OVERALL;
   const tourn = full?.tournaments ?? EMPTY_FULL.tournaments;
 
-  const winRate = useMemo(
+  const handsWonPct = useMemo(
     () =>
-      overall.total_hands > 0
-        ? ((overall.hands_won / overall.total_hands) * 100).toFixed(1)
-        : '0.0',
+      overall.total_hands > 0 ? ((overall.hands_won / overall.total_hands) * 100).toFixed(1) : '0.0',
     [overall]
   );
 
@@ -499,7 +688,10 @@ export default function PlayerStatsPage() {
     [overall]
   );
 
-  const sessionRows = full?.sessions || [];
+  // Memoised: this array is the `initialSessions` prop for both SessionHistory
+  // and BankrollTracker, whose effects key on prop identity. A fresh [] every
+  // render made both children re-run their effects on every tab click.
+  const sessionRows = useMemo(() => full?.sessions ?? [], [full]);
 
   // ── Send stats to the Personal Assistant (server-side leak detection) ──
   const sendToAssistant = async () => {
@@ -557,17 +749,41 @@ export default function PlayerStatsPage() {
 
   const exportOverviewCSV = () => {
     try {
-      const rows = Object.entries({
+      // The RPC returns rates as fractions. Export them the way the page shows
+      // them (percentages, with a unit column) so CSV and screen agree.
+      const RATE_FIELDS = new Set([
+        'vpip',
+        'pfr',
+        'three_bet_percent',
+        'fold_to_three_bet',
+        'cbet_flop',
+        'wtsd',
+        'itm_percent',
+        'roi',
+      ]);
+      const source: Record<string, unknown> = {
         ...overall,
         tournament_entries: tourn.entries,
         tournament_cashes: tourn.cashes,
         tournament_wins: tourn.wins,
+        tournament_best_finish: tourn.best_finish ?? '',
+        tournament_total_buyins: tourn.total_buyins,
+        tournament_total_winnings: tourn.total_winnings,
         tournament_net_profit: tourn.net_profit,
-        tournament_roi: tourn.roi,
-      }).map(([k, v]) => ({ stat: k, value: String(v ?? '') }));
+        itm_percent: tourn.itm_percent,
+        roi: tourn.roi,
+      };
+      const rows = Object.entries(source).map(([k, v]) => {
+        if (RATE_FIELDS.has(k)) {
+          return { stat: k, value: (num(v) * 100).toFixed(2), unit: '%' };
+        }
+        if (typeof v === 'boolean') return { stat: k, value: v ? 'yes' : 'no', unit: '' };
+        return { stat: k, value: String(v ?? ''), unit: '' };
+      });
       exportToCSV(rows, 'player_stats_overview.csv', [
         { key: 'stat', label: 'Stat' },
         { key: 'value', label: 'Value' },
+        { key: 'unit', label: 'Unit' },
       ]);
     } catch (e) {
       reportError(e, 'PlayerStatsPage.exportOverviewCSV');
@@ -582,13 +798,53 @@ export default function PlayerStatsPage() {
     );
   }
 
+  // Nothing loaded and nothing cached: say so and offer a retry. The old code
+  // fell through to "No Stats Yet", telling a player with thousands of hands
+  // that they had never played.
+  if (loadError && !full) {
+    return (
+      <div className="stats-page">
+        <div className="stats-empty-state">
+          <span className="empty-icon">{'!'}</span>
+          <span className="empty-title">Couldn't Load Your Stats</span>
+          <span className="empty-description">
+            Your statistics are still there — we just could not reach them right now.
+          </span>
+          <button
+            className="empty-cta"
+            onClick={() => {
+              setLoadError(false);
+              setLoading(true);
+              void loadAllData();
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const hasData = overall.total_hands > 0 || tourn.entries > 0;
+
+  const emptyState = (
+    <div className="stats-empty-state">
+      <span className="empty-icon">{'♠'}</span>
+      <span className="empty-title">No Stats Yet</span>
+      <span className="empty-description">
+        Play some hands at the tables and your statistics will appear here automatically.
+      </span>
+      <button className="empty-cta" onClick={() => navigate('/')}>
+        Go to Lobby
+      </button>
+    </div>
+  );
 
   return (
     <div className="stats-page">
       {/* ── HERO SECTION ── */}
       <div className="stats-hero">
-        <WinRateGauge winRate={parseFloat(winRate)} />
+        <HandsWonGauge handsWonPct={parseFloat(handsWonPct)} />
         <div className="hero-stats">
           <div className="hero-stat">
             <span className="hero-stat-label">Total Hands</span>
@@ -614,44 +870,37 @@ export default function PlayerStatsPage() {
         </div>
       </div>
 
+      {/* Analysis-window and staleness notices: never present a truncated or
+          stale figure as though it were a current lifetime total. */}
+      {hasData && overall.hands_capped && (
+        <div className="stats-notice">
+          Based on your most recent {overall.hand_cap.toLocaleString()} hands.
+        </div>
+      )}
+      {servingCache && (
+        <div className="stats-notice stats-notice-warn">
+          Showing your last loaded stats — the refresh did not go through.
+        </div>
+      )}
+
       {/* ── PILL TABS ── */}
       <div className="stats-pill-tabs">
-        {(
-          ['overview', 'performance', 'positions', 'tournaments', 'analysis'] as StatCategory[]
-        ).map((cat) => (
+        {TABS.map((cat) => (
           <button
             key={cat}
             className={category === cat ? 'active' : ''}
             onClick={() => setCategory(cat)}
           >
-            {cat === 'overview'
-              ? 'Overview'
-              : cat === 'performance'
-                ? 'Performance'
-                : cat === 'positions'
-                  ? 'Positions'
-                  : cat === 'tournaments'
-                    ? 'Tournaments'
-                    : 'Analysis'}
+            {TAB_LABELS[cat]}
           </button>
         ))}
       </div>
 
       {/* ── STATS CONTENT ── */}
       <div className="stats-content" {...statsSwipeHandlers}>
-        {/* EMPTY STATE */}
-        {!hasData && category === 'overview' && (
-          <div className="stats-empty-state">
-            <span className="empty-icon">{'♠'}</span>
-            <span className="empty-title">No Stats Yet</span>
-            <span className="empty-description">
-              Play some hands at the tables and your statistics will appear here automatically.
-            </span>
-            <button className="empty-cta" onClick={() => navigate('/')}>
-              Go to Lobby
-            </button>
-          </div>
-        )}
+        {/* EMPTY STATE — shown on EVERY tab. Previously only Overview had one,
+            so a player with no hands saw a wall of 0.0% rows and empty charts. */}
+        {!hasData && emptyState}
 
         {/* ── OVERVIEW TAB ── */}
         {category === 'overview' && hasData && (
@@ -700,7 +949,7 @@ export default function PlayerStatsPage() {
                 </div>
                 {(full?.variants || []).map((v) => (
                   <div className="variant-row" key={v.variant}>
-                    <span className="variant-name">{v.variant.toUpperCase()}</span>
+                    <span className="variant-name">{String(v.variant).toUpperCase()}</span>
                     <span>{v.hands.toLocaleString()}</span>
                     <span>{v.hands_won.toLocaleString()}</span>
                     <span className={v.profit >= 0 ? 'positive' : 'negative'}>
@@ -709,6 +958,34 @@ export default function PlayerStatsPage() {
                     </span>
                     <span className={v.bb100 >= 0 ? 'positive' : 'negative'}>
                       {v.bb100.toFixed(1)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Per-stake breakdown: which game size is actually carrying (or
+                bleeding) the results, instead of one blended number. */}
+            {(full?.stakes?.length ?? 0) > 1 && (
+              <div className="variant-table">
+                <div className="variant-row variant-head">
+                  <span>Stake</span>
+                  <span>Hands</span>
+                  <span>Won</span>
+                  <span>Profit</span>
+                  <span>BB/100</span>
+                </div>
+                {(full?.stakes || []).map((st) => (
+                  <div className="variant-row" key={`stake-${st.big_blind}`}>
+                    <span className="variant-name">{st.big_blind} BB</span>
+                    <span>{st.hands.toLocaleString()}</span>
+                    <span>{st.hands_won.toLocaleString()}</span>
+                    <span className={st.profit >= 0 ? 'positive' : 'negative'}>
+                      {st.profit >= 0 ? '+' : ''}
+                      {st.profit.toLocaleString()}
+                    </span>
+                    <span className={st.bb100 >= 0 ? 'positive' : 'negative'}>
+                      {st.bb100.toFixed(1)}
                     </span>
                   </div>
                 ))}
@@ -731,7 +1008,7 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── PERFORMANCE TAB ── */}
-        {category === 'performance' && (
+        {category === 'performance' && hasData && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* Preflop */}
             <div>
@@ -830,7 +1107,7 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── POSITIONS TAB ── */}
-        {category === 'positions' && (
+        {category === 'positions' && hasData && (
           <div
             style={{
               opacity: 1,
@@ -843,7 +1120,7 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── TOURNAMENTS TAB ── */}
-        {category === 'tournaments' && (
+        {category === 'tournaments' && hasData && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div>
               <div className="stats-section-header">
@@ -922,10 +1199,10 @@ export default function PlayerStatsPage() {
                           {t.finish_rank ? `#${t.finish_rank}` : (t.status || '-')}
                         </span>
                         <span
-                          className={`tournament-item-net ${t.prize - t.buyin >= 0 ? 'positive' : 'negative'}`}
+                          className={`tournament-item-net ${num(t.prize) - num(t.buyin) >= 0 ? 'positive' : 'negative'}`}
                         >
-                          {t.prize - t.buyin >= 0 ? '+' : ''}
-                          {(t.prize - t.buyin).toLocaleString()}
+                          {num(t.prize) - num(t.buyin) >= 0 ? '+' : ''}
+                          {(num(t.prize) - num(t.buyin)).toLocaleString()}
                         </span>
                       </div>
                     </div>
@@ -944,7 +1221,7 @@ export default function PlayerStatsPage() {
         )}
 
         {/* ── ANALYSIS TAB ── */}
-        {category === 'analysis' && (
+        {category === 'analysis' && hasData && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* Advanced Stats */}
             <div>

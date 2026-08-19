@@ -22,6 +22,11 @@ import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
 import { formatCurrency } from '../lib/utils';
 import { RAKE_INHERIT } from '../config/RakeConfig';
+import { tournamentService } from '../services/TournamentService';
+import {
+  buildTournamentConfig,
+  canRunAsTournament as gameTypeCanRunAsTournament,
+} from '../lib/tournamentFromTableConfig';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -615,6 +620,8 @@ export default function TableConfigPage() {
   };
 
   // FIX: Accept resolved UUID — raw clubId from URL params may not be a UUID
+  const canRunAsTournament = gameTypeCanRunAsTournament(gameType);
+
   const buildTableData = (resolvedClubId?: string) => ({
     club_id: resolvedClubId || clubId,
     name: config.name,
@@ -795,11 +802,60 @@ export default function TableConfigPage() {
     }
   };
 
+  /**
+   * SNG / MTT: create a real tournament and go to the tournament list.
+   *
+   * Deliberately does NOT start it. Starting is the engine's job — the
+   * discovery loop picks up a REGISTERING tournament and starts an SNG when it
+   * fills, or an MTT at its start time once the minimum field is present. The
+   * client-side startTournament() path exists but duplicates the engine's
+   * seating with hardcoded 9-max, so it is not used here.
+   */
+  const handleStartTournament = async () => {
+    setStarting(true);
+    try {
+      const created = await tournamentService.createTournament(
+        clubId || '',
+        buildTournamentConfig(config, gameType)
+      );
+      toast.success(
+        config.gameMode === 'sng'
+          ? 'Sit & Go created — it starts as soon as it fills.'
+          : 'Tournament created — registration is open.'
+      );
+      const createdId = (created as { id?: string } | null)?.id;
+      if (createdId) {
+        masterBus.emit('TOURNAMENT_UPDATED', { tournamentId: createdId, status: 'REGISTERING' });
+      }
+      navigate(`/clubs/${clubId}/tournaments`);
+    } catch (error) {
+      reportError(error, 'TableConfigPage.Failed_to_create_tournament');
+      toast.error(error instanceof Error ? error.message : 'Failed to create tournament');
+    } finally {
+      setStarting(false);
+    }
+  };
+
   const handleStart = async () => {
     if (!config.name.trim()) {
-      toast.error('Please enter a table name');
+      toast.error(
+        config.gameMode === 'regular' ? 'Please enter a table name' : 'Please enter a name'
+      );
       return;
     }
+
+    // 2026-08-19: the SNG and MTT tabs used to fall through to the cash-table
+    // insert below and produce an ordinary ring game. They build a tournament
+    // now. The union rule differs between the two: a club inside a union may
+    // not create either, but that is enforced server-side by
+    // fn_can_create_games (and by the tables RLS policy), so the tournament
+    // path does not need the local guard — it would only produce a worse
+    // message than the server's.
+    if (config.gameMode !== 'regular') {
+      await handleStartTournament();
+      return;
+    }
+
     // UNION GUARD: double-check at start time (defense-in-depth)
     if (isInUnion || checkingUnion) {
       toast.error('Union clubs cannot create standalone tables.');
@@ -866,7 +922,11 @@ export default function TableConfigPage() {
         <h1 className="config-title">{gameInfo.name}</h1>
       </div>
 
-      {/* Game Mode Tabs */}
+      {/* Game Mode Tabs.
+          The SNG and MTT tabs only appear for game types the tournament engine
+          can actually deal. HandController maps an unknown variant to 2 cards
+          and a full deck, so offering a Limit Hold'em or Mixed tournament would
+          silently run No Limit Hold'em instead. */}
       <div className="mode-tabs">
         <button
           className={`mode-tab ${config.gameMode === 'regular' ? 'active' : ''}`}
@@ -874,18 +934,22 @@ export default function TableConfigPage() {
         >
           Regular
         </button>
-        <button
-          className={`mode-tab ${config.gameMode === 'sng' ? 'active' : ''}`}
-          onClick={() => updateConfig('gameMode', 'sng')}
-        >
-          SNG
-        </button>
-        <button
-          className={`mode-tab ${config.gameMode === 'mtt' ? 'active' : ''}`}
-          onClick={() => updateConfig('gameMode', 'mtt')}
-        >
-          MTT
-        </button>
+        {canRunAsTournament && (
+          <>
+            <button
+              className={`mode-tab ${config.gameMode === 'sng' ? 'active' : ''}`}
+              onClick={() => updateConfig('gameMode', 'sng')}
+            >
+              SNG
+            </button>
+            <button
+              className={`mode-tab ${config.gameMode === 'mtt' ? 'active' : ''}`}
+              onClick={() => updateConfig('gameMode', 'mtt')}
+            >
+              MTT
+            </button>
+          </>
+        )}
       </div>
 
       {/* Template Selector - At TOP for easy duplication */}
@@ -927,6 +991,15 @@ export default function TableConfigPage() {
 
       {/* Scrollable Options */}
       <div className="config-options">
+        {/* 2026-08-19: everything from here to the tournament options is
+            CASH-TABLE configuration. It writes `tables` columns, and a
+            tournament does not use a `tables` row of its own — TournamentManager
+            creates its tables with a fixed settings payload when the tournament
+            starts. Leaving these on the SNG/MTT tabs meant an owner could set
+            blinds, buy-in caps, bomb pots and straddle rules for a tournament
+            and have every one of them silently ignored. */}
+        {config.gameMode === 'regular' && (
+          <>
         {/* SECTION: Basic Settings */}
         <Toggle
           label="Private Game"
@@ -1215,6 +1288,8 @@ export default function TableConfigPage() {
             </label>
           </div>
         </div>
+          </>
+        )}
 
         {/* SNG/MTT SPECIFIC OPTIONS */}
         {(config.gameMode === 'sng' || config.gameMode === 'mtt') && (
@@ -1242,13 +1317,6 @@ export default function TableConfigPage() {
               </div>
             )}
 
-            <Toggle
-              label="Next Step (Satellite)"
-              value={config.nextStepSatellite}
-              onChange={(v) => updateConfig('nextStepSatellite', v)}
-              tooltip="Winner advances to next tournament"
-            />
-
             <Slider
               label="Buy-in"
               value={config.buyIn}
@@ -1256,12 +1324,6 @@ export default function TableConfigPage() {
               min={10}
               max={1000}
               step={10}
-            />
-
-            <Toggle
-              label="Custom Buy-in"
-              value={config.customBuyIn}
-              onChange={(v) => updateConfig('customBuyIn', v)}
             />
 
             {/* Blind Structure Radio */}
@@ -1350,37 +1412,6 @@ export default function TableConfigPage() {
         {/* MTT-ONLY OPTIONS */}
         {config.gameMode === 'mtt' && (
           <>
-            {/* Short Description */}
-            <div className="config-textarea">
-              <label className="textarea-label">Short Description</label>
-              <textarea
-                className="config-textarea-input"
-                placeholder="Write a short description of the tournament."
-                value={config.shortDescription}
-                onChange={(e) => updateConfig('shortDescription', e.target.value)}
-                rows={3}
-              />
-            </div>
-
-            <Toggle
-              label="Accelerated MTT"
-              value={config.acceleratedMtt}
-              onChange={(v) => updateConfig('acceleratedMtt', v)}
-              tooltip="Faster blind increases"
-            />
-            <Toggle
-              label="All-in or Fold"
-              value={config.allInOrFold}
-              onChange={(v) => updateConfig('allInOrFold', v)}
-              tooltip="Only all-in or fold allowed"
-            />
-
-            {/* Rebuy/Re-entry Options */}
-            <Toggle
-              label="Custom Rebuy/Re-entry Cost"
-              value={config.customRebuyReentryCost}
-              onChange={(v) => updateConfig('customRebuyReentryCost', v)}
-            />
             <Slider
               label="Number of Rebuys/Re-entries"
               value={config.numberOfRebuysReentries}
@@ -1399,48 +1430,12 @@ export default function TableConfigPage() {
               step={0.5}
               suffix="x"
             />
-            <Toggle
-              label="Custom Add-on"
-              value={config.customAddOn}
-              onChange={(v) => updateConfig('customAddOn', v)}
-            />
-            <Slider
-              label="Add-on Break Length"
-              value={config.addOnBreakLengthMinutes}
-              onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
-              min={1}
-              max={10}
-              suffix=" min"
-            />
-
             {/* Tournament Features */}
             <Toggle
               label="KOBounty"
               value={config.koBounty}
               onChange={(v) => updateConfig('koBounty', v)}
             />
-            <Toggle
-              label="GTD Prize Pool"
-              value={config.gtdPrizePool}
-              onChange={(v) => updateConfig('gtdPrizePool', v)}
-            />
-            <Toggle
-              label="Final Table Deal"
-              value={config.finalTableDeal}
-              onChange={(v) => updateConfig('finalTableDeal', v)}
-              tooltip="Allow deal at final table"
-            />
-            <Toggle
-              label="Big Blind Ante"
-              value={config.bigBlindAnte}
-              onChange={(v) => updateConfig('bigBlindAnte', v)}
-            />
-            <Toggle
-              label="Authorized to Register"
-              value={config.authorizedToRegister}
-              onChange={(v) => updateConfig('authorizedToRegister', v)}
-            />
-
             {/* Registration & Players */}
             <Slider
               label="Late Registration"
@@ -1450,25 +1445,6 @@ export default function TableConfigPage() {
               max={20}
               suffix=" level"
             />
-            <Toggle
-              label="Early Bird Registration"
-              value={config.earlyBirdRegistration}
-              onChange={(v) => updateConfig('earlyBirdRegistration', v)}
-              tooltip="Early registration bonus"
-            />
-            <Toggle
-              label="Bubble Protection"
-              value={config.bubbleProtection}
-              onChange={(v) => updateConfig('bubbleProtection', v)}
-              tooltip="Protect players on bubble"
-            />
-            <Toggle
-              label="Featured Tournament"
-              value={config.featuredTournament}
-              onChange={(v) => updateConfig('featuredTournament', v)}
-              tooltip="Feature at top of list"
-            />
-
             {/* Player Number Range */}
             <div className="config-slider">
               <div className="slider-header">
@@ -1496,20 +1472,6 @@ export default function TableConfigPage() {
               </div>
             </div>
 
-            {/* Scheduling */}
-            <Toggle
-              label="Multi-Day MTT"
-              value={config.multiDayMtt}
-              onChange={(v) => updateConfig('multiDayMtt', v)}
-              tooltip="Tournament spans multiple days"
-            />
-            <Toggle
-              label="Save the Start Time"
-              value={config.saveStartTime}
-              onChange={(v) => updateConfig('saveStartTime', v)}
-              tooltip="Remember start time"
-            />
-
             {/* Start Time */}
             <div className="config-toggle">
               <span className="toggle-label">Start Time</span>
@@ -1521,26 +1483,15 @@ export default function TableConfigPage() {
               />
             </div>
 
-            <Toggle
-              label="Restart the Tournament every..."
-              value={config.restartTournamentEvery}
-              onChange={(v) => updateConfig('restartTournamentEvery', v)}
-              tooltip="Auto-restart after completion"
-            />
-            <Toggle
-              label="Tournament Schedule"
-              value={config.tournamentSchedule}
-              onChange={(v) => updateConfig('tournamentSchedule', v)}
-            />
-            <Toggle
-              label="Synchronized Breaks"
-              value={config.synchronizedBreaks}
-              onChange={(v) => updateConfig('synchronizedBreaks', v)}
-              tooltip="Sync breaks across all tables"
-            />
           </>
         )}
 
+        {/* Rake, security and game length are cash-table settings for the same
+            reason as the block above: a tournament is raked once at entry (a
+            flat 10% of the buy-in, enforced in fn_create_tournament) and never
+            per hand, so a per-pot rake override has nothing to act on. */}
+        {config.gameMode === 'regular' && (
+          <>
         {/* SECTION: Rake Settings
             Both sliders sit at -1 ("Schedule") by default, which means the
             published rake schedule decides — 10% with a cash cap that varies by
@@ -1635,6 +1586,8 @@ export default function TableConfigPage() {
           max={24}
           suffix=" hour"
         />
+          </>
+        )}
       </div>
 
       {/* Footer Buttons */}

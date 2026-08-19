@@ -81,7 +81,94 @@ describe('synchronized breaks run :55 -> :00', () => {
   });
 
   it('still pauses the tables themselves', () => {
-    expect(BASE).toContain('engine.pauseAfterHand()');
+    expect(BASE).toMatch(/engine\.pauseAfterHand\(/);
+  });
+});
+
+/**
+ * Dan 2026-08-19: "AT THE 55 OF THE HOUR, THE LAST HAND IS DEALT FOR ALL
+ * TOURNAMENT TABLES, ONCE THE LAST HAND ON EVERY TABLE IS COMPLETED, THE 5
+ * MINUTE BREAK STARTS... SO IT CAN BE UP TO LIKE A 6 MINUTE BREAK."
+ *
+ * The break is TWO phases. Starting the five-minute timer at :55 (as the code
+ * did) silently shortened every break by however long the final hand ran.
+ */
+describe('the break is two phases: last hand, THEN five minutes', () => {
+  const trigger = GAME_SERVER.slice(
+    GAME_SERVER.indexOf('private async triggerSynchronizedBreak'),
+    GAME_SERVER.indexOf('private async waitForAllTablesParked')
+  );
+
+  it(':55 announces the last hand rather than starting the clock', () => {
+    expect(trigger).toMatch(/LAST HAND/);
+    expect(trigger).toMatch(/pauseForBreak\(GameServer\.BREAK_DURATION_MS\)/);
+  });
+
+  it('waits for every table across every tournament before counting down', () => {
+    expect(trigger).toMatch(/await this\.waitForAllTablesParked\(mttEngines\)/);
+    const waitAt = trigger.indexOf('waitForAllTablesParked');
+    const countdownAt = trigger.indexOf('beginBreakCountdown');
+    const resumeTimerAt = trigger.indexOf('breakResumeTimer');
+    expect(waitAt).toBeGreaterThan(-1);
+    // Order matters: wait -> start countdown -> schedule the resume.
+    expect(waitAt).toBeLessThan(countdownAt);
+    expect(countdownAt).toBeLessThan(resumeTimerAt);
+  });
+
+  it('the five minutes are measured from AFTER the last hand', () => {
+    // The resume timer must be armed after the wait, not at :55.
+    const waitAt = trigger.indexOf('waitForAllTablesParked');
+    const timerAt = trigger.indexOf('setTimeout');
+    expect(waitAt).toBeLessThan(timerAt);
+  });
+
+  it('a wedged table cannot hold the break open forever', () => {
+    const waiter = GAME_SERVER.slice(GAME_SERVER.indexOf('private async waitForAllTablesParked'));
+    expect(waiter).toMatch(/LAST_HAND_GRACE_MS/);
+    expect(waiter).toMatch(/deadline/);
+  });
+
+  it('all-tables-parked reads the real between-hands park signal', () => {
+    const parked = BASE.slice(BASE.indexOf('areAllTablesParked'));
+    expect(parked).toMatch(/isWaitingForHandForHand\(\)/);
+    // A tournament with no tables must not block everyone else.
+    expect(parked).toMatch(/engines\.length === 0\) return true/);
+  });
+
+  it('break_ends_at is left NULL until the countdown actually starts', () => {
+    const pause = BASE.slice(
+      BASE.indexOf('async pauseForBreak'),
+      BASE.indexOf('areAllTablesParked')
+    );
+    expect(pause).toMatch(/break_ends_at:\s*null/);
+    const begin = BASE.slice(BASE.indexOf('async beginBreakCountdown'));
+    expect(begin).toMatch(/break_ends_at:\s*endsAt/);
+  });
+});
+
+describe('the engine pause outlasts the break', () => {
+  const ENGINE = readFileSync(
+    resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
+    'utf8'
+  );
+  const DEALING = readFileSync(
+    resolve(__dirname, '../../server/src/engine/ServerTableEngineDealing.ts'),
+    'utf8'
+  );
+
+  it('the park no longer self-resumes after a hard-coded 120s', () => {
+    // 120s is shorter than a 5-minute break: every table used to resume mid-break.
+    expect(DEALING).toMatch(/this\.pauseMaxWaitMs \?\? 120000/);
+    expect(DEALING).not.toMatch(/\}, 120000\);/);
+  });
+
+  it('the break asks for a budget covering the last hand plus the break', () => {
+    expect(BASE).toMatch(/breakDurationMs \+ TournamentManagerBase\.LAST_HAND_GRACE_MS/);
+  });
+
+  it('the extended budget is released on resume', () => {
+    const resume = ENGINE.slice(ENGINE.indexOf('resumeDealing()'));
+    expect(resume).toMatch(/pauseMaxWaitMs = null/);
   });
 });
 

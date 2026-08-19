@@ -40,6 +40,12 @@ export abstract class TournamentManagerBase {
   protected isFinalTable: boolean = false;
   // Synchronized break state
   protected onBreak: boolean = false;
+  /**
+   * How long the last hand is allowed to take after :55 before the break
+   * countdown starts regardless. Sized so a slow all-in-with-runouts hand still
+   * finishes, while a genuinely wedged table cannot stall the break forever.
+   */
+  static readonly LAST_HAND_GRACE_MS = 2 * 60 * 1000;
   protected savedBlindTimerRemaining: number = 0;
   protected blindTimerStartedAt: number = 0;
   // Hand-for-hand sync
@@ -137,15 +143,19 @@ export abstract class TournamentManagerBase {
      * Dan 2026-08-19: persist the break. It used to live only on this instance,
      * so a break was invisible to the database, unverifiable after the fact,
      * and lost entirely if the engine restarted mid-break.
+     *
+     * break_ends_at is deliberately NULL here. At :55 we only announce the LAST
+     * HAND — the five minutes do not start until every table has finished it.
+     * beginBreakCountdown() fills in the end time once that happens, which is
+     * why a break runs a little over five minutes end to end.
      */
     try {
-      const endsAt = new Date(Date.now() + breakDurationMs).toISOString();
       await supabase
         .from('tournaments')
         .update({
           on_break: true,
           break_started_at: new Date().toISOString(),
-          break_ends_at: endsAt,
+          break_ends_at: null,
         })
         .eq('id', this.tournamentId);
     } catch (err) {
@@ -181,11 +191,58 @@ export abstract class TournamentManagerBase {
     // current hand is played to the end and no new hand is dealt.
     for (const engine of this.tableEngines.values()) {
       try {
-        engine.pauseAfterHand();
+        // Budget the pause for the WHOLE break: the last hand still has to
+        // finish, then five minutes run on top of that. The engine's default
+        // 120s safety timeout would otherwise resume dealing mid-break.
+        engine.pauseAfterHand(breakDurationMs + TournamentManagerBase.LAST_HAND_GRACE_MS);
       } catch (err) {
         reportError(err, 'TournamentManagerBase.pauseForBreak_pause_engine');
       }
     }
+  }
+
+  /**
+   * Dan 2026-08-19: "ONCE THE LAST HAND ON EVERY TABLE IS COMPLETED, THE 5
+   * MINUTE BREAK STARTS."
+   *
+   * True once every table of this tournament has finished the hand that was in
+   * progress at :55 and is parked between hands. A tournament with no tables
+   * counts as parked so it can never hold the whole platform's break hostage.
+   */
+  areAllTablesParked(): boolean {
+    const engines = Array.from(this.tableEngines.values());
+    if (engines.length === 0) return true;
+    return engines.every((e) => {
+      try {
+        return e.isWaitingForHandForHand();
+      } catch {
+        // An engine we cannot interrogate must not block the break.
+        return true;
+      }
+    });
+  }
+
+  /**
+   * Called once the last hand has landed on every table across every
+   * tournament. Writes the real end time so the countdown players see reflects
+   * when the break ACTUALLY started, not when the last hand was announced.
+   */
+  async beginBreakCountdown(breakDurationMs: number): Promise<void> {
+    if (!this.onBreak) return;
+    const endsAt = new Date(Date.now() + breakDurationMs).toISOString();
+    try {
+      await supabase
+        .from('tournaments')
+        .update({ break_ends_at: endsAt })
+        .eq('id', this.tournamentId);
+    } catch (err) {
+      reportError(err, 'TournamentManagerBase.beginBreakCountdown_persist');
+    }
+    await this.broadcast('tournament_break_started', {
+      level: this.currentLevel,
+      breakEndsAt: endsAt,
+      synchronized: true,
+    });
   }
 
   /** Resume from synchronized break: restart blind timer with remaining time */

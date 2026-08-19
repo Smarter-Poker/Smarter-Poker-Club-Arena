@@ -230,13 +230,26 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           );
           await new Promise<void>((resolve) => {
             this.handForHandResolve = resolve;
-            // Safety timeout: resume after 2 minutes if something goes wrong
+            /**
+             * Safety timeout so a table can never wedge forever.
+             *
+             * Dan 2026-08-19: this was hard-coded to 120 seconds. A
+             * synchronized break is five minutes measured from AFTER the last
+             * hand completes, so every table silently self-resumed two minutes
+             * in and dealt through the rest of the break. The budget now comes
+             * from whoever requested the pause (pauseAfterHand), defaulting to
+             * the original two minutes for hand-for-hand.
+             */
+            const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
             setTimeout(() => {
               if (this.handForHandResolve === resolve) {
+                console.warn(
+                  `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(maxWaitMs / 1000)}s — resuming to avoid a wedged table`
+                );
                 this.handForHandResolve = null;
                 resolve();
               }
-            }, 120000);
+            }, maxWaitMs);
           });
         }
 

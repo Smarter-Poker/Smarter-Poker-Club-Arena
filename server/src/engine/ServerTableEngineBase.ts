@@ -261,6 +261,12 @@ export abstract class ServerTableEngineBase {
   /** Last time the paused-too-long alarm fired, so it reports once per window. */
   protected lastPauseAlarmAtMs: number = 0;
   protected handForHandResolve: (() => void) | null = null;
+  /**
+   * Safety-timeout budget for the current pause, in ms. null = the default
+   * hand-for-hand budget. Set by pauseAfterHand() so a synchronized break can
+   * outlast the short hand-for-hand window without self-resuming.
+   */
+  protected pauseMaxWaitMs: number | null = null;
 
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
@@ -1015,9 +1021,23 @@ export abstract class ServerTableEngineBase {
     this.handCompleteCallback = callback;
   }
 
-  /** Pause dealing after current hand finishes (for hand-for-hand) */
-  pauseAfterHand(): void {
+  /**
+   * Pause dealing after the current hand finishes.
+   *
+   * Used by hand-for-hand (pauses measured in seconds) and by synchronized
+   * breaks (pauses measured in minutes).
+   *
+   * Dan 2026-08-19: the park inside the deal loop carries a safety timeout so a
+   * table can never wedge forever. It was hard-coded to 120 SECONDS — right for
+   * hand-for-hand, fatally short for a break, which runs five minutes AFTER the
+   * last hand lands. Every table would silently resume dealing two minutes into
+   * the break no matter what the manager wanted. Callers that need a longer
+   * pause now say so; the safety net still exists, it is just sized to the
+   * pause being requested.
+   */
+  pauseAfterHand(maxWaitMs?: number): void {
     this.handForHandPaused = true;
+    this.pauseMaxWaitMs = maxWaitMs && maxWaitMs > 0 ? maxWaitMs : null;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
@@ -1026,6 +1046,10 @@ export abstract class ServerTableEngineBase {
     this.handForHandPaused = false;
     this.pausedSinceMs = 0;
     this.lastPauseAlarmAtMs = 0;
+    // Drop the extended pause budget granted for a break, so the next
+    // hand-for-hand pause gets its own short safety window rather than
+    // inheriting a multi-minute one.
+    this.pauseMaxWaitMs = null;
     // Bible V8 §3.1: Table FSM — paused → running
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');

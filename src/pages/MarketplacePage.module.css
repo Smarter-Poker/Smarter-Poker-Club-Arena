@@ -902,3 +902,347 @@
     transform: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2026-08-19 REBUILD — wallet bar, package grids (chips/diamonds), VIP plans
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.walletBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.walletPill,
+.walletPillDiamond,
+.vipPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.walletPill {
+  color: #f7c52a;
+  background: rgba(247, 197, 42, 0.1);
+  border: 1px solid rgba(247, 197, 42, 0.25);
+}
+
+.walletPillDiamond {
+  color: #4599ff;
+  background: rgba(69, 153, 255, 0.1);
+  border: 1px solid rgba(69, 153, 255, 0.25);
+}
+
+.vipPill {
+  color: #18191a;
+  background: linear-gradient(135deg, #ffd700, #b8860b);
+  border: 1px solid rgba(255, 215, 0, 0.6);
+}
+
+.inlineLink {
+  background: none;
+  border: none;
+  color: #4599ff;
+  font-weight: 700;
+  font-size: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.inlineLink:hover {
+  color: #6fb1ff;
+}
+
+.sectionIntro {
+  margin-bottom: 20px;
+}
+
+.sectionTitle {
+  font-size: 20px;
+  font-weight: 800;
+  color: #e4e6eb;
+  margin: 0 0 6px;
+}
+
+.sectionSub {
+  font-size: 13px;
+  color: #b0b3b8;
+  margin: 0;
+  max-width: 640px;
+  line-height: 1.5;
+}
+
+/* ─── Package grid (chips + diamonds) ─── */
+
+.pkgGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.pkgCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 22px 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(30, 32, 42, 0.95), rgba(20, 22, 30, 0.95));
+  border: 1px solid rgba(58, 59, 60, 0.6);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.pkgCard:hover {
+  border-color: rgba(69, 153, 255, 0.5);
+  transform: translateY(-2px);
+}
+
+.pkgCardPopular {
+  border-color: rgba(69, 153, 255, 0.55);
+  box-shadow: 0 0 18px rgba(69, 153, 255, 0.12);
+}
+
+.pkgRibbon {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: #18191a;
+  background: linear-gradient(135deg, #ffd700, #f7931a);
+  white-space: nowrap;
+}
+
+.pkgBonus {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #4ade80;
+  background: rgba(49, 162, 76, 0.15);
+}
+
+.pkgAmount {
+  font-size: 24px;
+  font-weight: 900;
+  color: #e4e6eb;
+  margin-top: 8px;
+}
+
+.pkgLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #8b8d91;
+  margin-bottom: 10px;
+}
+
+.pkgBuy {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: none;
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(135deg, #1877f2, #0d5dc7);
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.pkgBuy:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.pkgBuy:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.crossSell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(24, 25, 26, 0.6);
+  border: 1px solid rgba(58, 59, 60, 0.5);
+  font-size: 13px;
+  color: #b0b3b8;
+}
+
+.infoNote {
+  margin-top: 20px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(69, 153, 255, 0.06);
+  border: 1px solid rgba(69, 153, 255, 0.18);
+  font-size: 12px;
+  color: #b0b3b8;
+  line-height: 1.5;
+}
+
+/* ─── VIP membership plans ─── */
+
+.vipStatusActive,
+.vipStatusInactive {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vipStatusActive {
+  color: #ffd700;
+  background: rgba(255, 215, 0, 0.07);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+}
+
+.vipStatusInactive {
+  color: #b0b3b8;
+  background: rgba(24, 25, 26, 0.6);
+  border: 1px solid rgba(58, 59, 60, 0.5);
+}
+
+.vipStatusBadge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  color: #18191a;
+  background: linear-gradient(135deg, #ffd700, #b8860b);
+}
+
+.planGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.planCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 26px 20px 20px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(30, 32, 42, 0.95), rgba(20, 22, 30, 0.95));
+  border: 1px solid rgba(58, 59, 60, 0.6);
+}
+
+.planCardFeatured {
+  border-color: rgba(255, 215, 0, 0.45);
+  box-shadow: 0 0 22px rgba(255, 215, 0, 0.08);
+}
+
+.planName {
+  font-size: 15px;
+  font-weight: 800;
+  color: #e4e6eb;
+}
+
+.planPrice {
+  font-size: 26px;
+  font-weight: 900;
+  color: #4599ff;
+  margin-top: 4px;
+}
+
+.planCardFeatured .planPrice {
+  color: #ffd700;
+}
+
+.planPeriod {
+  font-size: 12px;
+  color: #8b8d91;
+  margin-bottom: 10px;
+}
+
+.planFeatures {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.planFeatures li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: #b0b3b8;
+  line-height: 1.45;
+}
+
+.planFeatures li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #31a24c;
+  font-weight: 900;
+}
+
+.btnGhostWide {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4599ff;
+  background: rgba(69, 153, 255, 0.08);
+  border: 1px solid rgba(69, 153, 255, 0.3);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btnGhostWide:hover:not(:disabled) {
+  background: rgba(69, 153, 255, 0.16);
+}
+
+.btnGhostWide:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Plan cards: primary button full width */
+.planCard .btnPrimary {
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .pkgGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .planGrid {
+    grid-template-columns: 1fr;
+  }
+}

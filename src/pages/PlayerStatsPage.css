@@ -547,3 +547,161 @@
     padding: 0.4rem 0.6rem;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   2026-08-19 REBUILD — action row, assistant export, variants, tournaments
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.stats-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+  align-items: stretch;
+}
+
+.stats-action-row .view-hands-btn {
+  width: auto;
+  flex: 1 1 160px;
+  margin-top: 0;
+}
+
+.assistant-export-btn {
+  flex: 1 1 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 182, 212, 0.12) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 12px;
+  color: #34d399;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.assistant-export-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(6, 182, 212, 0.22) 100%);
+  border-color: rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.15);
+  transform: translateY(-1px);
+}
+
+.assistant-export-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* Variant breakdown table */
+.variant-table {
+  margin-top: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(14, 14, 28, 0.5);
+}
+
+.variant-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 0.8fr 1.1fr 1fr;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  align-items: center;
+}
+
+.variant-row:last-child {
+  border-bottom: none;
+}
+
+.variant-row.variant-head {
+  background: rgba(0, 212, 255, 0.06);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.variant-name {
+  color: #00d4ff;
+  font-weight: 700;
+}
+
+.variant-row .positive {
+  color: #10b981;
+}
+
+.variant-row .negative {
+  color: #ef4444;
+}
+
+/* Recent tournaments list */
+.tournament-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tournament-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(14, 14, 28, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.tournament-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tournament-item-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tournament-item-date {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.tournament-item-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.tournament-item-rank {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #f59e0b;
+}
+
+.tournament-item-net {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.tournament-item-net.positive {
+  color: #10b981;
+}
+
+.tournament-item-net.negative {
+  color: #ef4444;
+}

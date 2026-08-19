@@ -95,9 +95,12 @@ const DEFAULT_STATS: PositionStats[] = [
 
 interface PositionWinRatesProps {
   userId?: string;
+  // Pre-fetched rows from parent (ca_player_stats_full RPC positions payload;
+  // same shape as player_position_stats rows plus optional bb100)
+  initialPositions?: any[];
 }
 
-const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId }) => {
+const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPositions }) => {
   const [statsData, setStatsData] = useState<PositionStats[]>(DEFAULT_STATS);
   const [visiblePositions, setVisiblePositions] = useState<Set<number>>(new Set());
   const [hoveredPosition, setHoveredPosition] = useState<number | null>(null);
@@ -124,7 +127,39 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId }) => {
     }
   }, [userId]);
 
+  const mapRows = useCallback((posData: any[]): PositionStats[] => {
+    return DEFAULT_STATS.map((defPos) => {
+      const live = posData.find((p) => p.position === defPos.position);
+      if (live) {
+        const hp = live.hands_played || 0;
+        return {
+          ...defPos,
+          handsPlayed: hp,
+          vpip: hp > 0 ? (live.vpip_count / hp) * 100 : 0,
+          pfr: hp > 0 ? (live.pfr_count / hp) * 100 : 0,
+          threeBet: hp > 0 ? ((live.three_bet_count || 0) / hp) * 100 : 0,
+          winRate:
+            typeof live.bb100 === 'number'
+              ? live.bb100
+              : hp > 0
+                ? ((live.hands_won || 0) / hp) * 100
+                : 0,
+          totalProfit: live.total_profit || 0,
+        };
+      }
+      return defPos;
+    });
+  }, []);
+
+  // Parent-provided data (dedup: skips the player_position_stats fetch)
+  useEffect(() => {
+    if (initialPositions && initialPositions.length > 0) {
+      setStatsData(mapRows(initialPositions));
+    }
+  }, [initialPositions, mapRows]);
+
   const loadPositionStats = useCallback(async () => {
+    if (initialPositions && initialPositions.length > 0) return;
     try {
       const uid = await resolveUserId();
       if (!uid || !mountedRef.current) return;
@@ -139,28 +174,12 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId }) => {
       if (!mountedRef.current) return;
 
       if (!error && posData && posData.length > 0) {
-        const updatedStats = DEFAULT_STATS.map((defPos) => {
-          const live = posData.find((p) => p.position === defPos.position);
-          if (live) {
-            const hp = live.hands_played || 0;
-            return {
-              ...defPos,
-              handsPlayed: hp,
-              vpip: hp > 0 ? (live.vpip_count / hp) * 100 : 0,
-              pfr: hp > 0 ? (live.pfr_count / hp) * 100 : 0,
-              threeBet: hp > 0 ? ((live.three_bet_count || 0) / hp) * 100 : 0,
-              winRate: hp > 0 ? ((live.hands_won || 0) / hp) * 100 : 0,
-              totalProfit: live.total_profit || 0,
-            };
-          }
-          return defPos;
-        });
-        setStatsData(updatedStats);
+        setStatsData(mapRows(posData));
       }
     } catch (err) {
       reportError(err, 'PositionWinRates.Failed_to_load');
     }
-  }, [resolveUserId]);
+  }, [resolveUserId, initialPositions, mapRows]);
 
   useEffect(() => {
     loadPositionStats();

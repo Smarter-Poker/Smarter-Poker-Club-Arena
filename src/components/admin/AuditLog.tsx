@@ -8,6 +8,8 @@ import { formatDateTime as formatTime } from '../../lib/date';
 import { supabase } from '../../lib/supabase';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
+import { masterBus } from '../../core/MasterBus';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './AuditLog.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -53,10 +55,16 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
     staggerTimersRef.current = [];
 
     try {
+      // club_id is a uuid column but the route param may be the 6-digit
+      // integer club code — filtering the uuid column with it is a 22P02
+      // error and the log silently rendered empty for those URLs.
+      const resolvedId = await resolveClubUUID(clubId);
       const query = supabase
         .from('audit_trail')
-        .select('id, action, actor_id, target_type, target_id, details:after_state, ip_address, created_at')
-        .eq('club_id', clubId)
+        .select(
+          'id, action, actor_id, target_type, target_id, before_state, details:after_state, ip_address, created_at'
+        )
+        .eq('club_id', resolvedId)
         .order('created_at', { ascending: false })
         .limit(200);
 
@@ -95,10 +103,38 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
 
       const mapped: AuditEntry[] = (data || []).map((row: any) => {
         const meta = row.details || {};
-        const detailStr =
-          meta.description ||
-          meta.reason ||
-          (meta.amount != null ? `Amount: ${meta.amount}` : (row.action || '').replace(/_/g, ' '));
+        const before = row.before_state || {};
+        // 2026-08-19: settings rows carry the changed-fields diff in
+        // before_state/after_state. Falling through to meta.description here
+        // printed the club's new DESCRIPTION text as the log line.
+        const fmtVal = (v: unknown) => {
+          if (v === null || v === undefined) return 'unset';
+          if (typeof v === 'boolean') return v ? 'on' : 'off';
+          const str = String(v);
+          return str.length > 24 ? `${str.slice(0, 24)}…` : str;
+        };
+        const diffLine = (keys: string[]) =>
+          keys
+            .map((k) => `${k.replace(/_/g, ' ')}: ${fmtVal(before[k])} → ${fmtVal(meta[k])}`)
+            .join(', ');
+        let detailStr: string;
+        if (row.action === 'update_club_settings') {
+          const keys = Object.keys(meta);
+          const shown = keys.slice(0, 3);
+          const extra = keys.length - shown.length;
+          detailStr = keys.length > 0
+            ? diffLine(shown) + (extra > 0 ? ` (+${extra} more)` : '')
+            : 'Settings updated';
+        } else if (row.action === 'role_change' || row.action === 'member_status_change') {
+          detailStr = diffLine(Object.keys(meta)) || (row.action || '').replace(/_/g, ' ');
+        } else if (row.action === 'kick_member' || row.action === 'member_left') {
+          detailStr = before.role ? `was ${fmtVal(before.role)} (${fmtVal(before.status)})` : (row.action || '').replace(/_/g, ' ');
+        } else {
+          detailStr =
+            meta.description ||
+            meta.reason ||
+            (meta.amount != null ? `Amount: ${meta.amount}` : (row.action || '').replace(/_/g, ' '));
+        }
         return {
           id: row.id,
           action: row.action || '',
@@ -106,13 +142,14 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
             id: row.actor_id || 'system',
             username: profileMap[row.actor_id] || 'System',
           },
-          target: row.target_id
-            ? {
-                type: row.target_type || 'user',
-                id: row.target_id,
-                name: profileMap[row.target_id] || row.target_id.slice(0, 8),
-              }
-            : undefined,
+          target:
+            row.target_id && row.target_type !== 'club'
+              ? {
+                  type: row.target_type || 'user',
+                  id: row.target_id,
+                  name: profileMap[row.target_id] || row.target_id.slice(0, 8),
+                }
+              : undefined,
           details: detailStr,
           ipAddress: row.ip_address || '',
           timestamp: row.created_at,
@@ -149,6 +186,37 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   useMasterBusSubscription('ADMIN_ACTION', () => {
     if (isMounted.current) loadAuditLog();
   });
+
+  // Realtime: rows written by other admins / other devices appear without a
+  // manual refresh. audit_trail is in the supabase_realtime publication and
+  // postgres_changes applies the owner-read RLS policy server-side.
+  useEffect(() => {
+    let cancelled = false;
+    const channelKey = `audit-log-${clubId}`;
+    (async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (cancelled) return;
+      masterBus
+        .getOrCreateChannel(channelKey)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'audit_trail',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
+            if (isMounted.current) loadAuditLog();
+          }
+        )
+        .subscribe();
+    })().catch((e) => console.warn('[AuditLog] Realtime setup failed:', e));
+    return () => {
+      cancelled = true;
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [clubId, loadAuditLog, isMounted]);
 
   const getActionIcon = (action: string) => {
     if (action.includes('banned')) return '⊘';

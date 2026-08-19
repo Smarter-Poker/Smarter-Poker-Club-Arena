@@ -74,6 +74,8 @@ export default function TournamentDetails() {
   const [activeTab, setActiveTab] = useState<TabId>('detail');
   const [entries, setEntries] = useState<TournamentEntry[]>([]);
   const [isRegistered, setIsRegistered] = useState(false);
+  /** Fires the auto-open-my-table navigation exactly once per tournament. */
+  const autoOpenedTableRef = useRef(false);
   const [tables, setTables] = useState<TournamentTable[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showSignUpModal, setShowSignUpModal] = useState(false);
@@ -153,6 +155,34 @@ export default function TournamentDetails() {
     const id = setInterval(() => setClockTick((n) => (n + 1) % 3600), 1000);
     return () => clearInterval(id);
   }, [tournament?.status]);
+
+  /**
+   * Dan 2026-08-19: registering for a tournament must TAKE YOU TO IT the moment
+   * it starts. Until now the page only rendered a manual "go to table" link
+   * once the entry flipped to 'playing' — a registered player watching the
+   * countdown was left sitting on the details screen while their table dealt
+   * without them, blinding off.
+   *
+   * The realtime subscription below already streams both the tournament status
+   * and this player's tournament_players row, so the moment the engine seats
+   * them (a table_id appears) we open that table. Guarded by a ref so it fires
+   * exactly once per tournament — re-navigating on every realtime tick would
+   * trap the player on the table route and break the back button.
+   */
+  useEffect(() => {
+    if (tournament?.status !== 'RUNNING') return;
+    if (!user?.id) return;
+    if (autoOpenedTableRef.current) return;
+
+    const myEntry = entries.find((e) => e.user_id === user.id);
+    if (!myEntry?.table_id) return;
+    // Only seat-bound states: an eliminated or finished player must never be
+    // yanked into a table they are no longer sitting at.
+    if (myEntry.status !== 'playing' && myEntry.status !== 'registered') return;
+
+    autoOpenedTableRef.current = true;
+    navigate(`/table/${myEntry.table_id}`);
+  }, [tournament?.status, entries, user?.id, navigate]);
 
   // ── Realtime subscription: live tournament updates ──
   useEffect(() => {

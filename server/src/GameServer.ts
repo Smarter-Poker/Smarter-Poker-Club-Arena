@@ -848,6 +848,7 @@ export class GameServer {
         .eq('status', 'RUNNING');
 
       let cancelledCount = 0;
+      let resumableCount = 0;
       for (const t of runningSngSpins || []) {
         const isSngOrSpin =
           t.variant === 'sng' ||
@@ -855,6 +856,51 @@ export class GameServer {
           t.tournament_type === 'SNG' ||
           t.tournament_type === 'SPIN';
         if (isSngOrSpin) {
+          /**
+           * Dan 2026-08-19 (P0): this sweep used to cancel EVERY running
+           * SNG/Spin on boot, on the premise that they "can't survive a server
+           * restart". That premise is false, and has been for a long time:
+           * discoverTournaments() explicitly looks for RUNNING tournaments with
+           * no engine and calls TournamentManager.resume(), which reloads the
+           * tournament, rebuilds a ServerTableEngine per surviving table,
+           * restores the blind level and resumes the level clock mid-level.
+           *
+           * Because the engine redeploys on every push touching server/**, this
+           * sweep fired constantly and destroyed live games. Measured on
+           * production: 563 CANCELLED vs 243 COMPLETED over two days, with
+           * cancellations arriving in same-second pairs — the signature of a
+           * boot sweep, not organic under-filling. Dan registered for a 9-max
+           * SNG that filled 9/9, started at 03:14:13 and was cancelled at
+           * 03:14:28: alive for FIFTEEN SECONDS, with its table still open and
+           * all nine seats occupied.
+           *
+           * A tournament is only genuinely unrecoverable once it has no table
+           * left to resume onto. Check that before killing it; anything with a
+           * waiting/running table is left for the resume path.
+           */
+          const { data: resumableTables, error: resumableErr } = await supabase
+            .from('tables')
+            .select('id')
+            .eq('tournament_id', t.id)
+            .in('status', ['waiting', 'running'])
+            .limit(1);
+
+          if (resumableErr) {
+            // Fail CLOSED: if we cannot prove the tournament is dead, do not
+            // kill it. A cancel refunds and closes tables — far more damaging
+            // than leaving a tournament for the next discovery pass.
+            console.warn(
+              `[GameServer] Skipping restart-cancel for "${t.name}" — could not check for resumable tables: ${resumableErr.message}`
+            );
+            resumableCount++;
+            continue;
+          }
+
+          if (resumableTables && resumableTables.length > 0) {
+            resumableCount++;
+            continue;
+          }
+
           const { count: cancelUpdated } = await supabase
             .from('tournaments')
             .update({ status: 'CANCELLED', ended_at: new Date().toISOString() }, { count: 'exact' })
@@ -875,7 +921,12 @@ export class GameServer {
       }
       if (cancelledCount > 0) {
         console.log(
-          `[GameServer] Cancelled ${cancelledCount} orphaned SNG/Spin RUNNING tournaments`
+          `[GameServer] Cancelled ${cancelledCount} orphaned SNG/Spin RUNNING tournaments (no resumable table)`
+        );
+      }
+      if (resumableCount > 0) {
+        console.log(
+          `[GameServer] Left ${resumableCount} running SNG/Spin tournament(s) alive for the resume path — they still have open tables`
         );
       }
 

@@ -626,17 +626,32 @@ export class GameServer {
       // rebuilds its table from table_seats on boot, which is the whole point
       // of persisting them). Genuinely orphaned human seats are still handled
       // by HorseLifecycleManager's 4-hour sweep, which has activity guards.
-      const { data: horseRows } = await supabase.from('profiles').select('id').eq('is_horse', true);
+      const { data: horseRows, error: horseErr } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('is_horse', true);
       const horseIdList = (horseRows || []).map((h: { id: string }) => h.id);
+
+      // FAIL CLOSED (2026-08-19 audit). The first version of this guard applied
+      // the horse filter only `if (horseIdList.length > 0)`, so a failed or
+      // empty profiles query silently dropped the filter and the sweep went
+      // straight back to cashing out and DELETING every human seat — the exact
+      // P0 this guard exists to prevent, reintroduced as a failure mode. If we
+      // cannot prove which seats belong to horses, we sweep nothing.
+      if (horseErr || horseIdList.length === 0) {
+        console.warn(
+          '[GameServer] Stale-seat sweep SKIPPED — could not resolve the horse list:',
+          horseErr?.message ?? '(no horses returned)'
+        );
+        return;
+      }
 
       let seatsQuery = supabase
         .from('table_seats')
         .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
         .is('left_at', null)
-        .is('tables.tournament_id', null);
-      if (horseIdList.length > 0) {
-        seatsQuery = seatsQuery.in('user_id', horseIdList);
-      }
+        .is('tables.tournament_id', null)
+        .in('user_id', horseIdList);
       if (protectedTableId) {
         seatsQuery = seatsQuery.neq('table_id', protectedTableId);
       }

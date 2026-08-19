@@ -72,6 +72,111 @@ function roundToChip(amount: number, smallestChip: number, min: number, max: num
   return Math.max(min, Math.min(max, clean));
 }
 
+export interface RaisePreset {
+  label: string;
+  /** Pre-round, pre-clamp value. Kept for debugging and tests. */
+  raw: number;
+  /** The amount the button actually raises TO. */
+  value: number;
+  /** True when the ceiling, not the sizing rule, decided this value. */
+  cappedByMax: boolean;
+}
+
+export interface RaisePresetInput {
+  isPreflop: boolean;
+  bigBlind: number;
+  /** Highest bet on the current street, as a raise-TO absolute. */
+  currentBet: number;
+  /** What hero still owes to call. */
+  callAmount: number;
+  /** Pot in the middle, EXCLUDING hero's outstanding call. */
+  pot: number;
+  /** Minimum legal raise-TO. */
+  minRaise: number;
+  /**
+   * Maximum legal raise-TO. The caller already makes this game-correct: in
+   * pot-limit it is the pot cap, in no-limit it is hero's all-in. Presets must
+   * never exceed it, and must never independently invent a different ceiling.
+   */
+  maxRaise: number;
+}
+
+/**
+ * The pot-sized raise-TO: call the outstanding bet, then raise by the pot as it
+ * stands after that call.
+ *
+ *   raiseTo = currentBet + (pot + callAmount)
+ *
+ * `pot` excludes hero's own outstanding call, so `pot + callAmount` is the pot
+ * hero would be raising into. This is the single definition of a pot-sized
+ * raise on the client; `TablePage` uses it for the pot-limit ceiling and the
+ * POT preset uses it for its amount, so the button and the cap can never drift
+ * apart.
+ */
+export function potSizedRaiseTo(currentBet: number, pot: number, callAmount: number): number {
+  return currentBet + pot + callAmount;
+}
+
+/**
+ * Bet-size preset buttons.
+ *
+ * Dan 2026-08-19, two rules the previous implementation broke:
+ *
+ *   (7) "4X/3X/2X raises must be multiples of the last bet, or the BB if not
+ *       facing action."  The baseline is `max(currentBet, bigBlind)` - facing
+ *       an open to 15, 3X is a raise TO 45; unopened, 3X is 3 big blinds.
+ *
+ *  (14) "3X/4X/5X raises must round to the next whole number without exceeding
+ *       the pot."  Rounding went through `roundToChip`, which snaps to the
+ *       NEAREST half-blind - so it rounded DOWN as readily as up, and a 1/2
+ *       game produced amounts like 22.5. Presets now ceil to a whole number.
+ *
+ *       The "without exceeding the pot" half is enforced by `maxRaise`, which
+ *       the caller already sets to the pot cap in pot-limit games. Presets
+ *       deliberately do NOT impose a pot ceiling of their own: in no-limit a
+ *       4X open is a normal bet that has nothing to do with the pot, and
+ *       capping it there would collapse 2X/3X/4X/5X onto one number preflop -
+ *       the exact dead-buttons bug fixed in August. The ceiling is floored to a
+ *       whole number first, so ceiling a preset can never push it past the cap.
+ */
+export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
+  const { isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise } = input;
+
+  // Whole-number bounds. Floor the ceiling and ceil the floor so that every
+  // value we can emit is both whole AND legal.
+  const capWhole = Math.floor(maxRaise);
+  const minWhole = Math.ceil(minRaise);
+
+  const finalize = (label: string, raw: number): RaisePreset => {
+    // If the legal minimum is already above the ceiling, hero has no raise
+    // room left; the only legal raise-TO is the ceiling itself.
+    if (minWhole > capWhole) return { label, raw, value: maxRaise, cappedByMax: true };
+    const whole = Math.ceil(raw);
+    const capped = Math.min(whole, capWhole);
+    return { label, raw, value: Math.max(minWhole, capped), cappedByMax: capped < whole };
+  };
+
+  if (isPreflop) {
+    // The bet being faced. Unopened pot -> the big blind.
+    const base = Math.max(currentBet, bigBlind) || bigBlind || 1;
+    return [2, 3, 4, 5].map((n) => finalize(`${n}X`, base * n));
+  }
+
+  // Postflop fractions are "bet f x the pot I'd be raising into", as raise-TO
+  // absolutes: currentBet + f * (pot + callAmount). At f = 1 this is exactly
+  // potSizedRaiseTo. The previous formula added `callAmount` a second time, so
+  // facing a bet the POT button offered MORE than a pot-sized raise - invisible
+  // in PLO because maxRaise clamped it back, but real money in no-limit.
+  const potToRaiseInto = pot + callAmount;
+  const fractions: Array<[string, number]> = [
+    ['33%', 0.33],
+    ['50%', 0.5],
+    ['75%', 0.75],
+    ['POT', 1],
+  ];
+  return fractions.map(([label, f]) => finalize(label, currentBet + potToRaiseInto * f));
+}
+
 export default function ActionPanel({
   canFold,
   canCheck,
@@ -167,58 +272,22 @@ export default function ActionPanel({
   // desktop/tablet where there's room to breathe.
   const effectiveVerticalSlider = verticalSlider && isDesktop;
 
-  // Phase 2 T1-02 + T1-09: PokerBros §5.2 + §5.5 ("MUST IMPROVE").
-  //   Preflop:  BB multipliers (2X / 3X / 4X) per §5.2 OBSERVED.
-  //   Postflop: 33% / 50% / 75% / POT GTO Wizard quartet per §5.5 — replaces
-  //             the 1/2 / 2/3 / POT trio with 4 presets so users get
-  //             smaller-bet flexibility on the bottom end and 100% pot at top.
-  //
-  // 2026-08-15 ROOT-CAUSE FIX (Dan: "when hero is facing a bet and you click
-  // 3X 4X 5X etc it's not calculating or changing the bet amount").
-  //
-  // The old math was `bigBlind * N`, then clamped into [minRaise, maxRaise].
-  // Facing a raise, minRaise is already well above 4 big blinds — e.g. against
-  // an open to 3BB the min raise-TO is 6BB — so 2X, 3X AND 4X all clamped to
-  // the identical minRaise value. Every multiplier produced the same number and
-  // the displayed amount never moved. That is precisely the reported symptom.
-  //
-  // A multiplier preset is a multiple of the BET BEING FACED, not of the blind.
-  // Unopened, the bet being faced IS the big blind, so an opening raise still
-  // reads 2X/3X/4X/5X of the BB exactly as before. Facing an open to 15, "3X"
-  // now correctly means raise TO 45.
-  //
-  // Postflop presets are raise-TO absolutes too, so when hero is facing a bet a
-  // "POT" raise is `currentBet + callAmount + (pot + callAmount)` — the standard
-  // pot-sized-raise identity — not a bare fraction of the pot, which would have
-  // been below the minimum and clamped into the same dead value.
-  //
-  const presets = useMemo(() => {
-    const clamp = (raw: number) => roundToChip(raw, smallestChip, minRaise, maxRaise);
-
-    if (isPreflop) {
-      // Baseline: the live bet to beat. Unopened pot -> the big blind.
-      const base = Math.max(currentBet, bigBlind) || bigBlind || 1;
-      return [2, 3, 4, 5].map((n) => ({
-        label: `${n}X`,
-        raw: base * n,
-        value: clamp(base * n),
-      }));
-    }
-
-    // Postflop. `pot` excludes hero's call, so the true pot after hero calls is
-    // pot + callAmount; a pot-sized raise tops that with the call itself.
-    const potAfterCall = pot + callAmount;
-    const fractions: Array<[string, number]> = [
-      ['33%', 0.33],
-      ['50%', 0.5],
-      ['75%', 0.75],
-      ['POT', 1],
-    ];
-    return fractions.map(([label, f]) => {
-      const raw = currentBet + callAmount + potAfterCall * f;
-      return { label, raw, value: clamp(raw) };
-    });
-  }, [isPreflop, bigBlind, currentBet, callAmount, pot, smallestChip, minRaise, maxRaise]);
+  // Preset sizing lives in `computeRaisePresets` above - a pure function so the
+  // rules Dan set (multiples of the bet being faced; whole numbers; never past
+  // the legal ceiling) are unit-testable instead of trapped inside a render.
+  const presets = useMemo(
+    () =>
+      computeRaisePresets({
+        isPreflop,
+        bigBlind,
+        currentBet,
+        callAmount,
+        pot,
+        minRaise,
+        maxRaise,
+      }),
+    [isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise]
+  );
 
   // Track last slider value for haptic snap feedback
   const lastSnapRef = useRef<number>(minRaise);
@@ -254,9 +323,14 @@ export default function ActionPanel({
       setPendingAllIn(true);
       return;
     }
-    onAction('allin', maxRaise);
+    // AUDIT 2026-08-19: was maxRaise, which in POT-LIMIT is the pot cap, not
+    // the stack - an "ALL IN" tap would report a pot-sized amount. The server
+    // derives the real all-in from the stack so no chips were ever wrong, but
+    // sending an amount that contradicts the action is a trap for anything
+    // that reads it (optimistic UI, telemetry).
+    onAction('allin', allInThreshold);
     setIsRaiseMode(false);
-  }, [maxRaise, onAction, confirmAllIn]);
+  }, [allInThreshold, onAction, confirmAllIn]);
 
   const adjustRaise = useCallback(
     (delta: number) => {
@@ -351,7 +425,7 @@ export default function ActionPanel({
             style={{ backgroundColor: '#D32F2F', height: '64px', fontSize: '20px' }}
             onClick={() => {
               haptic.strong();
-              onAction('allin', maxRaise);
+              onAction('allin', allInThreshold);
               setPendingAllIn(false);
               setIsRaiseMode(false);
             }}

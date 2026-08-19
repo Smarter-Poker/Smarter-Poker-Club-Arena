@@ -213,6 +213,7 @@ import { GTOQueryService, type GTOSolution } from '../services/GTOQueryService';
 import { tableService } from '../services/TableService';
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
+import { potSizedRaiseTo } from '../components/table/ActionPanel';
 import PreActionBar from '../components/table/PreActionBar';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
@@ -4706,10 +4707,25 @@ export default function TablePage({
           });
 
           // Keep heroSeatRef in sync too (used by the sit/leave guards).
+          //
+          // AUDIT 2026-08-19: the previous version cleared the hero's claim
+          // whenever the snapshot listed ANY player but not the hero. That is
+          // wrong — `players` here is the CURRENT HAND's player list, and a
+          // player who has bought in but has not yet been dealt in is legally
+          // absent from it (that is the whole "Seat Reserved, you'll be dealt
+          // in next hand" state). The old rule would have evicted their own
+          // seat claim and toasted "you are no longer seated" at them every
+          // hand while they waited. Clear ONLY on proof: someone else now
+          // occupies the seat the hero believes is theirs.
+          const claimed = heroSeatRef.current;
+          const seatStolen =
+            claimed > 0 &&
+            serverPlayers.some(
+              (sp: { seat?: number; user_id?: string }) =>
+                sp?.seat === claimed && sp.user_id && sp.user_id !== userId
+            );
           if (syncedHeroSeat > 0) heroSeatRef.current = syncedHeroSeat;
-          // Dan 2026-08-18: seat vanished server-side — drop the local claim so
-          // the seat renders as OPEN (not "YOUR SEAT") and say so once.
-          else if (heroSeatRef.current > 0 && updatedPlayers.some((pl) => pl)) {
+          else if (seatStolen) {
             heroSeatRef.current = 0;
             toast.info('You are no longer seated at this table. Tap a seat to rejoin.');
           }
@@ -4736,12 +4752,10 @@ export default function TablePage({
             // "Seat Reserved" while the player was not in the game at all.
             // A snapshot that DID enumerate players and does not contain the
             // hero is authoritative: the seat is gone, so clear it.
-            heroSeat:
-              syncedHeroSeat > 0
-                ? syncedHeroSeat
-                : updatedPlayers.some((pl) => pl)
-                  ? 0
-                  : prev.heroSeat,
+            // AUDIT 2026-08-19: only surrender the seat on proof it was taken
+            // (see the heroSeatRef note above) — a hero waiting to be dealt in
+            // is deliberately absent from this hand-scoped player list.
+            heroSeat: syncedHeroSeat > 0 ? syncedHeroSeat : seatStolen ? 0 : prev.heroSeat,
           };
         });
         break;
@@ -7702,7 +7716,11 @@ export default function TablePage({
                   const isPotLimit = gameVariant.startsWith('plo'); // FIX 116: 'flo' dead variant removed
                   // Pot-limit raise-TO cap = currentBet + (pot + toCall). Matches
                   // engine FIX 142 (never over-offer past the server's clamp).
-                  const potLimitRaiseTo = serverCurrentBet + tableState.pot + callAmount;
+                  const potLimitRaiseTo = potSizedRaiseTo(
+                    serverCurrentBet,
+                    tableState.pot,
+                    callAmount
+                  );
                   const maxRaise = isPotLimit ? Math.min(allInTo, potLimitRaiseTo) : allInTo;
 
                   return (

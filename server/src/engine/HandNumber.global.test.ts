@@ -27,10 +27,21 @@ function makeEngine() {
   return engine;
 }
 
-let rpcSpy: ReturnType<typeof vi.spyOn>;
+// `ReturnType<typeof vi.spyOn>` resolves to the UN-parameterised mock type,
+// MockInstance<(this: unknown, ...args: unknown[]) => unknown>, which the real
+// typed spy on supabase.rpc is not assignable to - rpc's first parameter is a
+// string function name, not unknown. That is a hard TS2322, and because the
+// Hetzner workflow gates on "Server tests must pass before anything is
+// deployed", it blocked EVERY engine deploy rather than just failing this
+// file. Deriving the type from the actual call keeps full type safety.
+function createRpcSpy() {
+  return vi.spyOn(supabaseModule.supabase, 'rpc');
+}
+
+let rpcSpy: ReturnType<typeof createRpcSpy>;
 
 beforeEach(() => {
-  rpcSpy = vi.spyOn(supabaseModule.supabase, 'rpc');
+  rpcSpy = createRpcSpy();
 });
 
 afterEach(() => {
@@ -47,7 +58,10 @@ describe('global hand number allocation', () => {
 
   it('never reuses a number across consecutive hands on the same table', async () => {
     let n = 1000000;
-    rpcSpy.mockImplementation(async () => ({ data: ++n, error: null }) as never);
+    // Cast the whole implementation, not its return value: supabase.rpc is
+    // typed to return a PostgrestFilterBuilder (thenable, but not a Promise),
+    // so `async () => x as never` is Promise<never> and fails TS2740.
+    rpcSpy.mockImplementation((() => Promise.resolve({ data: ++n, error: null })) as never);
     const e = makeEngine();
     const seen = new Set<number>();
     for (let i = 0; i < 25; i++) {
@@ -60,7 +74,10 @@ describe('global hand number allocation', () => {
 
   it('ascends — a later hand always outranks an earlier one', async () => {
     let n = 1000000;
-    rpcSpy.mockImplementation(async () => ({ data: ++n, error: null }) as never);
+    // Cast the whole implementation, not its return value: supabase.rpc is
+    // typed to return a PostgrestFilterBuilder (thenable, but not a Promise),
+    // so `async () => x as never` is Promise<never> and fails TS2740.
+    rpcSpy.mockImplementation((() => Promise.resolve({ data: ++n, error: null })) as never);
     const e = makeEngine();
     let prev = 0;
     for (let i = 0; i < 10; i++) {

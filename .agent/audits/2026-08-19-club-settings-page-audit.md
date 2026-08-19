@@ -126,3 +126,50 @@ member_count churn never invokes the function, and lets club admins
   (club_assets_bucket_and_policies + club_delete_audit_and_logo_watch)
   because the single-transaction version deadlocked against live engine
   traffic on clubs; the repo file 20260819c contains the combined content.
+
+## Pass 4 — deep re-audit of the shipped code
+
+Bugs found in the code shipped by passes 1-3 and in surviving legacy paths:
+
+1. **Silent save failure.** `.update(...).eq(...)` with no `.select()` returns
+   NO error when it matches zero rows. Verified against production: a
+   non-owner UPDATE on `clubs` is rejected by RLS with 0 rows and no error —
+   so if `isOwner` was ever stale (ownership transferred, club deleted, user
+   switched) the page reported "Settings saved!" while nothing was written.
+   The save now `.select('id')` and throws when no row comes back, and the
+   real message reaches the toast instead of a generic string.
+2. **A nonexistent club rendered a blank, editable settings form.** When the
+   lookup returned no row, the whole `if (data)` block was skipped: no error,
+   no state, loading -> false. Added a `notFound` state and a real
+   "Club not found" panel.
+3. **No club id = skeleton forever.** The fetch effect is gated on `clubId`,
+   so reaching the page without one left `loading` true permanently. Now
+   renders a "No club selected" state.
+4. **Delete confirmation quoted the UNSAVED name.** It compared and displayed
+   `settings.name`, so editing the name without saving made the modal demand
+   the unsaved text and advertise a name the club does not have. Now uses the
+   saved baseline name.
+5. **Buy-in fields could not be retyped.** Clamping on every keystroke turned
+   a backspaced-empty field into 1000 (or 1) mid-edit. The value may now go
+   transiently empty — `validateBuyinRange` already blocks the save and
+   explains why — and clamps on blur.
+6. **Realtime refetch storm.** The `clubs` UPDATE subscription fired on every
+   write to the row, including `chip_pool` (rake waterfall) and `member_count`
+   (membership trigger), refetching this page continuously on a busy club. It
+   now compares the payload against WATCHED_COLUMNS and ignores churn.
+7. **Audit log flashed a skeleton** on every realtime/bus refresh; refreshes
+   are silent now.
+8. **Audit filter categories missed real actions**: `delete_club` and
+   `member_left` matched no category and appeared only under All.
+9. **Empty export downloaded a 0-byte file** and claimed success. Now reports
+   "No members/hands to export" and the success toast carries a row count.
+10. **`.in('table_id', [...1000 uuids])`** builds a ~37 KB URL (414 risk);
+    capped to the 200 newest tables, roster export capped at 5000.
+11. Pending-logo blob URL leaked on unmount; a logo uploaded just before a
+    failed row update was left orphaned in the bucket (now removed).
+
+**Upgrade:** the pure rules (buy-in clamp/validation, watched columns, CSV
+encoding incl. the formula-injection guard) moved out of the components into
+`src/utils/clubSettingsRules.ts` and are covered by
+`tests/unit/clubSettingsRules.test.ts` — 13 tests, each pinning a bug that
+actually shipped. Full suite: 2011 passing.

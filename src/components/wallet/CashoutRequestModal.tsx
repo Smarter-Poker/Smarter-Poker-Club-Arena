@@ -33,11 +33,11 @@ const REVERSAL_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 // ═══════════════════════════════════════════════════════════════════
 
 const CASHOUT_STEPS = [
-  { key: 'requested', label: 'Requested', icon: '▣' },
-  { key: 'escrowed', label: 'Escrow Locked', icon: '◈' },
-  { key: 'reviewing', label: 'Agent Review', icon: '◉' },
-  { key: 'sending', label: 'Payment Sent', icon: '→' },
-  { key: 'complete', label: 'Complete', icon: '✓' },
+  { key: 'requested', label: 'Requested', icon: '📝' },
+  { key: 'escrowed', label: 'Escrow Locked', icon: '🔒' },
+  { key: 'reviewing', label: 'Agent Review', icon: '👤' },
+  { key: 'sending', label: 'Payment Sent', icon: '💸' },
+  { key: 'complete', label: 'Complete', icon: '✅' },
 ];
 
 function CashoutStepTracker({ status, createdAt }: { status: string; createdAt?: string }) {
@@ -104,7 +104,7 @@ function CashoutStepTracker({ status, createdAt }: { status: string; createdAt?:
             letterSpacing: '0.3px',
           }}
         >
-          Cancel window: {Math.floor(remainingMs / 60000)}m{' '}
+          ⏱ Cancel window: {Math.floor(remainingMs / 60000)}m{' '}
           {Math.floor((remainingMs % 60000) / 1000)}s remaining
         </div>
       )}
@@ -261,7 +261,7 @@ export default function CashoutRequestModal({
           if (err) reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[CashoutRequestModal] Realtime channel timed out');
+          console.warn('[CashoutRequestModal] ⏱️ Realtime channel timed out');
         }
       });
 
@@ -311,7 +311,7 @@ export default function CashoutRequestModal({
     try {
       const lockResult = await checkSettlementLock(clubId);
       if (lockResult.locked) {
-        if (isMounted.current) setError('Settlement in progress — cashout requests frozen');
+        if (isMounted.current) setError('🔒 Settlement in progress — cashout requests frozen');
         if (isMounted.current) setIsSubmitting(false);
         return;
       }
@@ -414,15 +414,18 @@ export default function CashoutRequestModal({
           ) : (
             <div className="cashout-form">
               <div className="form-group">
-                <label>Amount</label>
+                <label htmlFor="cashout-amount">Amount</label>
                 <div className="amount-input-wrapper">
                   <input
+                    id="cashout-amount"
                     type="number"
                     placeholder="0"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     max={currentBalance}
                     min={1}
+                    step={1}
+                    inputMode="numeric"
                   />
                   <span className="chip-label">chips</span>
                 </div>
@@ -430,19 +433,21 @@ export default function CashoutRequestModal({
                   {[25, 50, 100].map((pct) => (
                     <button
                       key={pct}
+                      type="button"
                       className="quick-btn"
-                      onClick={() =>
-                        setAmount(
-                          (Math.trunc(((currentBalance * pct) / 100) * 100) / 100).toString()
-                        )
-                      }
+                      // Math.floor, not a 2-decimal truncation: chips are held
+                      // in an INTEGER column and the server rejects fractional
+                      // amounts outright, so "25%" of 1,234 used to produce
+                      // 308.5 and a guaranteed rejection.
+                      onClick={() => setAmount(String(Math.floor((currentBalance * pct) / 100)))}
                     >
                       {pct}%
                     </button>
                   ))}
                   <button
+                    type="button"
                     className="quick-btn"
-                    onClick={() => setAmount(currentBalance.toString())}
+                    onClick={() => setAmount(String(Math.floor(currentBalance)))}
                   >
                     Max
                   </button>
@@ -450,8 +455,9 @@ export default function CashoutRequestModal({
               </div>
 
               <div className="form-group">
-                <label>Note (optional)</label>
+                <label htmlFor="cashout-note">Note (optional)</label>
                 <textarea
+                  id="cashout-note"
                   placeholder="Any message for your agent..."
                   value={note}
                   onChange={(e) => setNote(e.target.value)}

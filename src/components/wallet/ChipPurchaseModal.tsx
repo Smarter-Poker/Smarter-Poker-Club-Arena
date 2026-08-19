@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { callClubArenaApi } from '../../services/clubArenaApi';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -16,12 +17,26 @@ interface ChipPurchaseModalProps {
   onClose: () => void;
   currentDiamonds: number;
   /**
-   * Club the chips are for. Chips live on club_members.chip_balance, so
-   * WITHOUT this the server credits the global player wallet, which the club
-   * shop, buy-ins and cashier cannot spend. See fn_purchase_club_chips.
+   * Club whose chip balance should be credited.
+   *
+   * Chips are held PER CLUB (club_members.chip_balance) and are not
+   * interchangeable. The purchase-chips route branches on this: with a clubId
+   * it calls fn_purchase_club_chips (credits that club), without it the legacy
+   * fn_purchase_chips credits the GLOBAL player wallet — which the shop,
+   * buy-ins and the cashier never read. The route was made club-scoped on
+   * 2026-08-19 but this component never sent the id, so every purchase still
+   * charged diamonds and credited a balance nothing spends.
    */
   clubId?: string | null;
-  onPurchase?: (chipAmount: number) => void;
+  /** Called with the chips credited and the server's post-purchase diamond balance. */
+  onPurchase?: (chipAmount: number, diamondBalanceAfter?: number) => void;
+}
+
+interface PurchaseChipsResponse {
+  chipsCredited?: number;
+  diamondsCharged?: number;
+  diamondBalanceAfter?: number;
+  destination?: string;
 }
 
 interface ChipPackage {
@@ -48,6 +63,7 @@ export function ChipPurchaseModal({
   onPurchase,
 }: ChipPurchaseModalProps) {
   const { user } = useAuthUser();
+  const navigate = useNavigate();
   const toast = useToast();
   const [purchasing, setPurchasing] = useState<string | null>(null);
   const isMounted = useIsMounted();
@@ -77,10 +93,6 @@ export function ChipPurchaseModal({
       toast.error('Insufficient diamonds');
       return;
     }
-    if (!clubId) {
-      toast.error('Open the cashier from a club — chips are held per club');
-      return;
-    }
 
     setPurchasing(pkg.id);
     try {
@@ -91,27 +103,61 @@ export function ChipPurchaseModal({
       // service_role-only and those parameter names do not exist on it.)
       // The route holds the authoritative package table, charges the diamonds
       // and credits the chips atomically, and is idempotent against double-taps.
-      await callClubArenaApi('purchase-chips', { packageId: pkg.id, clubId });
+      // clubId is required for the chips to land in the club the user is
+      // actually playing in — see the prop docs above.
+      const result = (await callClubArenaApi('purchase-chips', {
+        packageId: pkg.id,
+        ...(clubId ? { clubId } : {}),
+      })) as PurchaseChipsResponse;
 
       if (!isMounted.current) return;
-      toast.success(`${pkg.chips.toLocaleString()} chips added to your wallet!`);
-      onPurchase?.(pkg.chips);
+      const credited = result?.chipsCredited ?? pkg.chips;
+      toast.success(`${credited.toLocaleString()} chips added to this club`);
+      onPurchase?.(credited, result?.diamondBalanceAfter);
       onClose();
     } catch (error) {
-      if (isMounted.current) toast.error('Purchase failed');
+      // The API layer throws with the server's own message (insufficient
+      // diamonds, not a member, rate limited, settlement locked). Replacing
+      // all of it with "Purchase failed" told the user nothing actionable.
+      if (isMounted.current) {
+        toast.error(error instanceof Error ? error.message : 'Purchase failed');
+      }
     }
     if (isMounted.current) setPurchasing(null);
   };
 
   if (!isOpen) return null;
 
+  // Never dismiss while a purchase is in flight — diamonds may already be spent
+  const closeIfIdle = () => {
+    if (!purchasing) onClose();
+  };
+
   return (
-    <div className="chip-purchase-overlay" onClick={onClose}>
-      <div className="chip-purchase" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="chip-purchase-overlay"
+      onClick={closeIfIdle}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="chip-purchase-title"
+    >
+      <div
+        className="chip-purchase"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') closeIfIdle();
+        }}
+      >
         <div className="chip-purchase__header">
-          <h3> Buy Chips</h3>
-          <span className="diamond-balance"> {currentDiamonds.toLocaleString()}</span>
-          <button className="close-btn" onClick={onClose}>
+          <h3 id="chip-purchase-title">Buy Chips</h3>
+          <span className="diamond-balance">{currentDiamonds.toLocaleString()} diamonds</span>
+          <button
+            type="button"
+            className="close-btn"
+            onClick={closeIfIdle}
+            disabled={!!purchasing}
+            aria-label="Close"
+          >
             ×
           </button>
         </div>
@@ -136,11 +182,16 @@ export function ChipPurchaseModal({
               </div>
 
               <button
+                type="button"
                 className="package__buy"
                 onClick={() => handlePurchase(pkg)}
-                disabled={purchasing !== null || currentDiamonds < pkg.diamonds || !clubId}
+                disabled={purchasing !== null || currentDiamonds < pkg.diamonds}
+                aria-label={`Buy ${pkg.chips.toLocaleString()} chips for ${pkg.diamonds} diamonds`}
               >
-                {purchasing === pkg.id ? '...' : `${pkg.diamonds} `}
+                {/* The price used to render as a bare number with a trailing
+                    space (residue of a stripped emoji), so nothing on screen
+                    said what the user was being charged in. */}
+                {purchasing === pkg.id ? '...' : `${pkg.diamonds} diamonds`}
               </button>
             </div>
           ))}
@@ -148,7 +199,19 @@ export function ChipPurchaseModal({
 
         <div className="chip-purchase__footer">
           <span>Need more diamonds?</span>
-          <button className="buy-diamonds">Get Diamonds →</button>
+          {/* This button had no onClick at all — a visible, styled, inert
+              control in the top-up path. Routed to the VIP/diamond page. */}
+          <button
+            type="button"
+            className="buy-diamonds"
+            disabled={!!purchasing}
+            onClick={() => {
+              onClose();
+              navigate('/vip');
+            }}
+          >
+            Get Diamonds →
+          </button>
         </div>
       </div>
     </div>

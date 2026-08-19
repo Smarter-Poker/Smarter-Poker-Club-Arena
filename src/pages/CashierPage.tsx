@@ -42,6 +42,8 @@ import {
   resolveTargetClub,
   readCachedQuickLinkClubs,
   fetchQuickLinkClubs,
+  fetchClubChipBalances,
+  clearClubChipBalanceCache,
 } from '../utils/clubQuickLink';
 import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
@@ -272,6 +274,27 @@ export default function CashierPage() {
   const [buyChipsOpen, setBuyChipsOpen] = useState(false);
   const [diamondBalance, setDiamondBalance] = useState(0);
   const [loadingDiamonds, setLoadingDiamonds] = useState(false);
+
+  // ── This user's chip balance IN THIS CLUB ─────────────────────────────────
+  // Chips are per club. The cashout modal was being handed
+  // balances.PLAYER.available — the GLOBAL wallet — while the server debits
+  // club_members.chip_balance for this club, so the same screen showed two
+  // different "chip balance" figures and the modal's Max button could prefill
+  // an amount the server always rejects.
+  const [myClubChips, setMyClubChips] = useState<number | null>(null);
+  const [clubChipsNonce, setClubChipsNonce] = useState(0);
+  useEffect(() => {
+    if (!user?.id || !clubId) return;
+    let live = true;
+    (async () => {
+      const resolved = (await resolveClubUUID(clubId)) || clubId;
+      const map = await fetchClubChipBalances(user.id);
+      if (live && isMounted.current) setMyClubChips(map.get(resolved) ?? 0);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [user?.id, clubId, clubChipsNonce, isMounted]);
   const [loadingTx, setLoadingTx] = useState(false);
   const [txFilter, setTxFilter] = useState('all');
   const [txPage, setTxPage] = useState(1);
@@ -934,9 +957,14 @@ export default function CashierPage() {
   // unclamped the tablist had no selected tab (every roving tabindex was -1,
   // so Tab could not reach it) and the Send panel rendered for someone with
   // no permission to use it and an always-empty recipient list.
+  // Gated on loadingContext: userRole starts at 'member', so for the first
+  // moments of every visit `tabs` is the player set. Clamping during that
+  // window moved an owner off Send onto Buy-In and left them there once the
+  // real role arrived. Only correct an impossible tab once the role is known.
   useEffect(() => {
+    if (loadingContext) return;
     if (tabs.length > 0 && !tabs.includes(action)) setAction(tabs[0]);
-  }, [tabs, action]);
+  }, [tabs, action, loadingContext]);
 
   const tabLabels: Record<CashierAction, string> = {
     send: 'Send',
@@ -1207,7 +1235,14 @@ export default function CashierPage() {
             return;
           }
 
+          // Stamp the rate limiter for this money action too. Moving the stamp
+          // out of the top of handleAction (so a rejected submit no longer
+          // locked out the retry) left cashout — the one path that actually
+          // moves money from here — with no 2s throttle at all.
+          lastActionRef.current = now;
+
           // Call CashoutService directly for unified audit logging, notifications, and DB RPC logic
+          let cashoutFailed = false;
           try {
             if (!clubId) throw new Error('Club ID is missing');
             await cashoutService.requestCashout(user.id, clubId!, value);
@@ -1220,12 +1255,20 @@ export default function CashierPage() {
             loadPendingCashouts();
             notifyWalletChange(user.id, value);
           } catch (err: unknown) {
+            cashoutFailed = true;
             if (isMounted.current)
               setMessage({
                 type: 'error',
                 text:
                   (err instanceof Error ? err.message : String(err)) || 'Cashout request failed.',
               });
+          }
+          // A failed cashout used to fall through to the blanket setAmount('')
+          // below, wiping what the user typed while showing them an error they
+          // are meant to retry.
+          if (cashoutFailed) {
+            if (isMounted.current) setIsProcessing(false);
+            return;
           }
         }
       }
@@ -1469,11 +1512,16 @@ export default function CashierPage() {
             onClose={() => setBuyChipsOpen(false)}
             currentDiamonds={diamondBalance}
             clubId={clubId}
-            onPurchase={(chips) => {
+            onPurchase={(chips, diamondBalanceAfter) => {
               if (user?.id) notifyWalletChange(user.id, chips);
-              // Diamonds were just spent — drop the stale figure so reopening
-              // the modal does not show the pre-purchase balance.
-              setDiamondBalance((d) => Math.max(0, d - chips));
+              // Use the server's post-purchase diamond figure. My previous
+              // version subtracted the CHIP count from the DIAMOND balance —
+              // buying 10,000 chips for 80 diamonds drove the displayed
+              // diamond balance to 0 and made every package look unaffordable
+              // until a reload.
+              if (typeof diamondBalanceAfter === 'number') {
+                setDiamondBalance(diamondBalanceAfter);
+              }
             }}
           />
         </div>
@@ -2274,10 +2322,13 @@ export default function CashierPage() {
           onClose={() => setShowCashoutModal(false)}
           playerId={user.id}
           clubId={clubId}
-          currentBalance={balances.PLAYER.available}
+          // Per-club chips, matching what request-cashout.js actually checks.
+          currentBalance={myClubChips ?? 0}
           onComplete={() => {
             loadBalances(user.id);
             loadPendingCashouts();
+            clearClubChipBalanceCache();
+            setClubChipsNonce((n) => n + 1);
           }}
         />
       )}

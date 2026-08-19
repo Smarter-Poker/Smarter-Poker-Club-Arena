@@ -74,20 +74,9 @@ interface WalletData {
   bbjPool: number;
   chipBalance: number;
   clubBank: number;
-  clubTreasury: number;
   agentBalance: number;
   promoBalance: number;
   unionBank: number;
-  /**
-   * Dan 2026-08-19: union-level ledgers. The union variant previously rendered
-   * CLUB/AGENT columns in its union rows, so "Rake Treasury" showed
-   * clubs.chip_treasury and "Promo Wallet" showed
-   * club_agents.promo_wallet_balance. Both read near-zero while the real union
-   * ledger held the money — the rake and the promo split were being collected
-   * correctly the whole time, the panel was reporting the wrong source.
-   */
-  unionRake: number;
-  unionPromo: number;
   backupBBJ: number;
 }
 
@@ -133,7 +122,11 @@ function useAnimatedCounter(target: number, duration = 400): number {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function formatBalance(num: number): string {
-  return Math.abs(num).toLocaleString('en-US', {
+  // Math.abs() was applied here, so an agent wallet of -25,000 rendered
+  // identically to +25,000 — the sign of a debt was invisible on a money
+  // surface. Negatives are now shown as negatives.
+  const safe = Number.isFinite(num) ? num : 0;
+  return safe.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -156,12 +149,9 @@ export default function DynamicWallet({
     bbjPool: 0,
     chipBalance: 0,
     clubBank: 0,
-    clubTreasury: 0,
     agentBalance: 0,
     promoBalance: 0,
     unionBank: 0,
-    unionRake: 0,
-    unionPromo: 0,
     backupBBJ: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -173,7 +163,6 @@ export default function DynamicWallet({
   const [resolvedId, setResolvedId] = useState<string | null>(null);
   // Fetch version counter to discard stale responses on rapid club switching
   const fetchVersionRef = useRef(0);
-
   // Tracked union_id for union_wallets RT channel
   const currentUnionIdRef = useRef<string | null>(null);
   // Reconnect tracking
@@ -213,13 +202,8 @@ export default function DynamicWallet({
   const animRow2 = useAnimatedCounter(
     effectiveVariant === 'union' ? data.clubBank : data.agentBalance
   );
-  const animRow3 = useAnimatedCounter(
-    effectiveVariant === 'union' ? data.unionPromo : data.promoBalance
-  );
+  const animRow3 = useAnimatedCounter(data.promoBalance);
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
-  const animTreasury = useAnimatedCounter(
-    effectiveVariant === 'union' ? data.unionRake : data.clubTreasury
-  );
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
   const fetchData = useCallback(async () => {
@@ -237,30 +221,19 @@ export default function DynamicWallet({
           .eq('club_id', resolvedId)
           .eq('user_id', userId)
           .maybeSingle(),
-        // UNION-FIX + OPTIMISED 2026-08-18: the jackpot for a club inside a
-        // union lives in the UNION's bbj_pools row (the row the engine funds).
-        // Resolving by club_id alone showed every union-club member a $0 or
-        // stale jackpot. fn_bbj_pool_for_club owns that rule server-side, so
-        // this stays ONE parallel call — no serial clubs lookup first, and no
-        // fourth copy of the union rule to get wrong.
-        supabase.rpc('fn_bbj_pool_for_club', { p_club_id: resolvedId }),
+        supabase
+          .from('bbj_pools')
+          .select('main_balance, backup_balance')
+          .eq('club_id', resolvedId)
+          .maybeSingle(),
         supabase
           .from('agents')
           .select('agent_wallet_balance, promo_wallet_balance')
           .eq('club_id', resolvedId)
           .eq('user_id', userId)
           .maybeSingle(),
-        // Club balances for owner variant. TWO DISTINCT ACCOUNTS (audit s24's
-        // naming trap): chip_pool is the distributable club bank that
-        // mint_club_chips/distribute_chips move; chip_treasury is the rake
-        // treasury credit_club_rake_to_treasury feeds. This widget used to
-        // show ONLY chip_treasury while the Mint button moved chip_pool -- an
-        // owner minted and watched nothing change.
-        supabase
-          .from('clubs')
-          .select('chip_pool, chip_treasury, union_id')
-          .eq('id', resolvedId)
-          .maybeSingle(),
+        // Club treasury for owner variant
+        supabase.from('clubs').select('chip_treasury, union_id').eq('id', resolvedId).maybeSingle(),
       ]);
 
       // Discard stale response if a newer fetch has started
@@ -268,18 +241,14 @@ export default function DynamicWallet({
 
       // Fetch union bank balance when the club is in a union
       let unionBankBalance = 0;
-      let unionRakeBalance = 0;
-      let unionPromoBalance = 0;
       const unionId = clubRes.data?.union_id;
       if (unionId) {
         const { data: uwData } = await supabase
           .from('union_wallets')
-          .select('chip_balance, rake_wallet, promo_wallet')
+          .select('chip_balance')
           .eq('union_id', unionId)
           .maybeSingle();
         unionBankBalance = Number(uwData?.chip_balance) || 0;
-        unionRakeBalance = Number(uwData?.rake_wallet) || 0;
-        unionPromoBalance = Number(uwData?.promo_wallet) || 0;
       }
 
       // Double-check version after second await + isMounted
@@ -292,21 +261,11 @@ export default function DynamicWallet({
         diamonds: Number(profileRes.data?.diamonds) || 0,
         chipBalance: Number(memberRes.data?.chip_balance) || 0,
         promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
-        bbjPool:
-          Number((Array.isArray(bbjRes.data) ? bbjRes.data[0] : bbjRes.data)?.main_balance) || 0,
-        // AUDIT 2026-08-19: fn_bbj_pool_for_club RETURNS TABLE, so PostgREST
-        // hands back an ARRAY -- bbjPool above unwrapped it but this line did
-        // not, rendering Backup BBJ as 0.00 for every club.
-        backupBBJ:
-          Number(
-            (Array.isArray(bbjRes.data) ? bbjRes.data[0] : bbjRes.data)?.backup_balance
-          ) || 0,
+        bbjPool: Number(bbjRes.data?.main_balance) || 0,
+        backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
         agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
-        clubBank: Number(clubRes.data?.chip_pool) || 0,
-        clubTreasury: Number(clubRes.data?.chip_treasury) || 0,
+        clubBank: Number(clubRes.data?.chip_treasury) || 0,
         unionBank: unionBankBalance,
-        unionRake: unionRakeBalance,
-        unionPromo: unionPromoBalance,
       });
       // Auto-detect union membership from clubs.union_id
       setIsClubInUnion(!!unionId);
@@ -405,13 +364,7 @@ export default function DynamicWallet({
           event: 'UPDATE',
           schema: 'public',
           table: 'bbj_pools',
-          // Must follow the SAME scope the fetch used (union pool for union
-          // clubs) or this would watch a row the widget never reads. Uses the
-          // union id from the most recent fetchData — the effect re-runs when
-          // isClubInUnion flips, exactly like the union_wallets channel below.
-          filter: currentUnionIdRef.current
-            ? `union_id=eq.${currentUnionIdRef.current}`
-            : `club_id=eq.${resolvedId}`,
+          filter: `club_id=eq.${resolvedId}`,
         },
         (p) => {
           if (isMounted.current) {
@@ -451,7 +404,7 @@ export default function DynamicWallet({
           scheduleReconnect();
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[DynamicWallet] Realtime channel timed out');
+          console.warn('[DynamicWallet] ⏱️ Realtime channel timed out');
           scheduleReconnect();
         }
       });
@@ -470,15 +423,10 @@ export default function DynamicWallet({
         (p) => {
           if (!isMounted.current) return;
           // Update club bank immediately from RT payload
-          if (p.new?.chip_pool !== undefined || p.new?.chip_treasury !== undefined) {
+          if (p.new?.chip_treasury !== undefined) {
             setData((prev) => ({
               ...prev,
-              clubBank:
-                p.new.chip_pool !== undefined ? Number(p.new.chip_pool) || 0 : prev.clubBank,
-              clubTreasury:
-                p.new.chip_treasury !== undefined
-                  ? Number(p.new.chip_treasury) || 0
-                  : prev.clubTreasury,
+              clubBank: Number(p.new.chip_treasury) || 0,
             }));
           }
           // If union_id changed (club joined or left a union), do a full refetch
@@ -507,23 +455,10 @@ export default function DynamicWallet({
             filter: `union_id=eq.${unionId}`,
           },
           (p) => {
-            // Dan 2026-08-19: keep the rake treasury and promo wallet live too.
-            // Previously only chip_balance was mirrored, so even once the union
-            // rows read the right columns they would sit on their first value
-            // while rake poured in.
-            if (isMounted.current && p.new) {
+            if (isMounted.current && p.new?.chip_balance !== undefined) {
               setData((prev) => ({
                 ...prev,
-                unionBank:
-                  p.new.chip_balance !== undefined
-                    ? Number(p.new.chip_balance) || 0
-                    : prev.unionBank,
-                unionRake:
-                  p.new.rake_wallet !== undefined ? Number(p.new.rake_wallet) || 0 : prev.unionRake,
-                unionPromo:
-                  p.new.promo_wallet !== undefined
-                    ? Number(p.new.promo_wallet) || 0
-                    : prev.unionPromo,
+                unionBank: Number(p.new.chip_balance) || 0,
               }));
             }
           }
@@ -541,21 +476,19 @@ export default function DynamicWallet({
   // ── Role-specific row config ───────────────────────────────────────────────
   const ROW_CONFIG: Record<WalletVariant, { label: string; icon: string; value: number }[]> = {
     player: [
-      { label: 'Chip Balance', icon: '◉', value: animRow1 },
-      { label: 'Agent Wallet', icon: '▲', value: animRow2 },
-      { label: 'Promo Wallet', icon: '◈', value: animRow3 },
+      { label: 'Chip Balance', icon: '🪙', value: animRow1 },
+      { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
+      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
     ],
     owner: [
-      { label: 'Club Bank', icon: '▦', value: animRow1 },
-      { label: 'Rake Treasury', icon: '◆', value: animTreasury },
-      { label: 'Agent Wallet', icon: '▲', value: animRow2 },
-      { label: 'Promo Wallet', icon: '◈', value: animRow3 },
+      { label: 'Club Bank', icon: '🏦', value: animRow1 },
+      { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
+      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
     ],
     union: [
-      { label: 'Union Bank', icon: '▦', value: animRow1 },
-      { label: 'Rake Treasury', icon: '◆', value: animTreasury },
-      { label: 'Clubs Wallet', icon: '▲', value: animRow2 },
-      { label: 'Promo Wallet', icon: '◈', value: animRow3 },
+      { label: 'Union Bank', icon: '🏦', value: animRow1 },
+      { label: 'Clubs Wallet', icon: '🅰️', value: animRow2 },
+      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
     ],
   };
 
@@ -601,7 +534,7 @@ export default function DynamicWallet({
           aria-label="Retry loading wallet data"
           title="Failed to load — tap to retry"
         >
-          Tap to retry
+          ⚠️ Tap to retry
         </button>
       )}
 
@@ -623,7 +556,7 @@ export default function DynamicWallet({
         {/* Diamond Balance */}
         <div className="dw__row dw__row--diamond">
           <span className="dw__row-icon" aria-hidden="true">
-            ◆
+            💎
           </span>
           <span className="dw__row-value">{formatBalance(animDiamonds)}</span>
           {onBuyDiamonds && (
@@ -670,7 +603,7 @@ export default function DynamicWallet({
         {effectiveVariant === 'union' && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon" aria-hidden="true">
-              ◈
+              🛡️
             </span>
             <span className="dw__row-label">Backup BBJ</span>
             <span className="dw__row-value">

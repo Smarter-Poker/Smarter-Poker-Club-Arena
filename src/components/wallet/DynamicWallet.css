@@ -217,6 +217,7 @@
    PLUS ACTION BUTTON — Compact green circle
 ═══════════════════════════════════════════════════════════════════════════════ */
 .dw__plus {
+  position: relative;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -244,6 +245,20 @@
 
 .dw__plus:active {
   transform: scale(0.95);
+}
+
+/* The visible pill stays 22px, but the tap target is extended to the 44px
+   guideline via a transparent overlay. These are the "Buy Diamonds" and
+   "Mint Chips" controls on a 375px-first money screen — at 22px they were
+   half the minimum and sat next to balance figures. */
+.dw__plus::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

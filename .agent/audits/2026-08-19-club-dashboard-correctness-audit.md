@@ -307,3 +307,36 @@ re-run during a quieter moment came back exact (29,905 = 29,905). Past days are
 immutable and safe to rewrite; today is owned by the trigger and exact from the
 first hand, so overwriting it can only lose data. The current day is now
 guarded behind an explicit p_force. Verified: today refused, past day allowed.
+
+## 12. Fourth pass — members heading, tables ordering, backfill completion
+
+### Members heading lied on an empty search
+
+`memberTotal || club.memberCount` fell back to the full roster whenever the
+count was 0 — and 0 is exactly what a search matching nothing returns. The
+heading read "Club Members (327)" directly above "No members matching X". The
+same expression also labelled a filtered count as though it were the club
+total. The heading now distinguishes filtered from unfiltered, and a
+`membersReady` flag separates "not loaded yet" from a genuine zero.
+
+### Tables tab buried live tables
+
+The query orders by `created_at` alone, so a running table sat beneath dead
+ones — the opposite of what a club owner opens the tab for. Extracted
+`sortClubTables` (live first, then fullest, then newest) with tests, and added
+a live/seated summary to the tab heading.
+
+### Backfill completed
+
+- `club_hand_daily` now covers the full 14-day sparkline window for all three
+  clubs (Midway Union has 4 days because the club only started dealing on
+  2026-08-16; the earlier days genuinely have no hands).
+- Attribution coverage after further rebuild batches:
+  Club JAQK 55.1% -> **69.2%**, SHARK CLUB 39.9% -> **66.9%**,
+  Midway Union 89.1% -> **94.3%**.
+
+### Verification
+
+tsc clean; 29 dashboard unit tests (4 new for table ordering); full suite 1984
+assertions across 162 files, the single failing file still the pre-existing
+`@sentry/node` server dep; production build green.

@@ -11,6 +11,7 @@ import {
   formatAgo,
   isAuthzError,
   isLiveTableStatus,
+  sortClubTables,
   tableStatusLabel,
   type RankablePlayer,
 } from '../../src/utils/clubDashboard';
@@ -176,6 +177,45 @@ describe('isAuthzError', () => {
       false
     );
     expect(isAuthzError(null)).toBe(false);
+  });
+});
+
+describe('sortClubTables', () => {
+  const t = (status: string, currentPlayers: number, createdAt: string) => ({
+    status,
+    currentPlayers,
+    createdAt,
+  });
+
+  it('puts live tables above dead ones however old they are', () => {
+    const out = sortClubTables([
+      t('closed', 9, '2026-08-19T10:00:00Z'),
+      t('running', 2, '2026-01-01T10:00:00Z'),
+    ]);
+    expect(out[0].status).toBe('running');
+  });
+
+  it('orders live tables by how full they are', () => {
+    const out = sortClubTables([
+      t('running', 2, '2026-08-19T10:00:00Z'),
+      t('waiting', 7, '2026-08-19T09:00:00Z'),
+    ]);
+    expect(out[0].currentPlayers).toBe(7);
+  });
+
+  it('falls back to newest when liveness and seats tie', () => {
+    const out = sortClubTables([
+      t('running', 3, '2026-08-01T00:00:00Z'),
+      t('running', 3, '2026-08-19T00:00:00Z'),
+    ]);
+    expect(out[0].createdAt).toBe('2026-08-19T00:00:00Z');
+  });
+
+  it('does not mutate the input', () => {
+    const input = [t('closed', 1, '2026-08-01T00:00:00Z'), t('running', 1, '2026-08-02T00:00:00Z')];
+    const before = input.map((x) => x.status);
+    sortClubTables(input);
+    expect(input.map((x) => x.status)).toEqual(before);
   });
 });
 

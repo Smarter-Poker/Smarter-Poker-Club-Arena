@@ -166,6 +166,27 @@ export function isLiveTableStatus(status: string | null | undefined): boolean {
   return LIVE_TABLE_STATUSES.includes((status || '') as (typeof LIVE_TABLE_STATUSES)[number]);
 }
 
+export interface SortableTable {
+  status: string;
+  currentPlayers: number;
+  createdAt: string;
+}
+
+/**
+ * Tables tab ordering: live first, then fullest, then newest. The underlying
+ * query is ordered by created_at alone, which buries a running table beneath
+ * dead ones — the opposite of what a club owner opens the tab to see.
+ */
+export function sortClubTables<T extends SortableTable>(tables: T[]): T[] {
+  return [...tables].sort((a, b) => {
+    const aLive = isLiveTableStatus(a.status) ? 1 : 0;
+    const bLive = isLiveTableStatus(b.status) ? 1 : 0;
+    if (aLive !== bLive) return bLive - aLive;
+    if (a.currentPlayers !== b.currentPlayers) return b.currentPlayers - a.currentPlayers;
+    return (b.createdAt || '').localeCompare(a.createdAt || '');
+  });
+}
+
 export function tableStatusLabel(status: string): string {
   switch (status) {
     case 'running':

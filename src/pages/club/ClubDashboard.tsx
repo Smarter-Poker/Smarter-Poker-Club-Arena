@@ -40,6 +40,7 @@ import {
   formatAgo,
   isAuthzError,
   isLiveTableStatus,
+  sortClubTables,
   tableStatusLabel,
   type RangeId,
   type SortId,
@@ -603,6 +604,7 @@ export default function ClubDashboard() {
         }));
         setMembers(rows);
         setMemberTotal(Number((data || [])[0]?.total_count) || 0);
+        setMembersReady(true);
       } catch (err: any) {
         if (reqId !== memberRequestIdRef.current) return;
         if (!isAuthzError(err)) reportError(err, 'ClubDashboard.members_rpc_error');
@@ -644,6 +646,24 @@ export default function ClubDashboard() {
     () => rankPlayers(topPlayers, sortBy, hideHorses),
     [topPlayers, hideHorses, sortBy]
   );
+
+  // Tables tab: live tables first, then fullest, then newest. The raw query is
+  // ordered by created_at alone, which buries a running table under dead ones.
+  const sortedTables = useMemo(() => sortClubTables(clubTables), [clubTables]);
+  const liveTableCount = useMemo(
+    () => clubTables.filter((t) => isLiveTableStatus(t.status)).length,
+    [clubTables]
+  );
+  const seatedAcrossTables = useMemo(
+    () =>
+      clubTables.reduce((s, t) => (isLiveTableStatus(t.status) ? s + t.currentPlayers : s), 0),
+    [clubTables]
+  );
+
+  // True once the roster RPC has answered at least once, so the heading can
+  // tell "not loaded yet" apart from a genuine zero.
+  const [membersReady, setMembersReady] = useState(false);
+  const memberFiltered = memberSearch.trim().length > 0 || memberRole !== '';
 
   // Derived from the RANKED set, so with "Humans only" on the caption
   // describes the rows actually on screen rather than quietly including the
@@ -1156,7 +1176,16 @@ export default function ClubDashboard() {
         {activeTab === 'players' && (
           <div className={styles.playersSection}>
             <div className={styles.sectionHeader}>
-              <h2>Club Members ({formatInt(memberTotal || club.memberCount)})</h2>
+              {/* `memberTotal || club.memberCount` was wrong on two counts: a
+                  search matching nothing gives 0, which is falsy, so the
+                  heading fell back to the full roster size and read "Club
+                  Members (327)" directly above "No members matching"; and with
+                  a filter applied the total describes the filtered set, not the
+                  club. Say which one is being counted. */}
+              <h2>
+                {memberFiltered ? 'Matching Members' : 'Club Members'} (
+                {formatInt(membersReady ? memberTotal : club.memberCount)})
+              </h2>
               <Link to={`/clubs/${clubId}/members`} className={styles.manageLink}>
                 Manage Members {'→'}
               </Link>
@@ -1223,7 +1252,11 @@ export default function ClubDashboard() {
                 </button>
               )}
               <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #8a8f98)' }}>
-                {membersLoading ? 'Loading...' : `${formatInt(memberTotal)} shown`}
+                {membersLoading
+                  ? 'Loading...'
+                  : memberFiltered
+                    ? `${formatInt(memberTotal)} of ${formatInt(club.memberCount)} match`
+                    : `${formatInt(memberTotal)} members`}
               </span>
             </div>
 
@@ -1359,7 +1392,21 @@ export default function ClubDashboard() {
         {activeTab === 'tables' && (
           <div className={styles.tablesSection}>
             <div className={styles.sectionHeader}>
-              <h2>Club Tables ({clubTables.length})</h2>
+              <h2>
+                Club Tables ({sortedTables.length})
+                {liveTableCount > 0 && (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      color: '#10b981',
+                    }}
+                  >
+                    {liveTableCount} live {'•'} {seatedAcrossTables} seated
+                  </span>
+                )}
+              </h2>
               <Link to={`/clubs/${clubId}/create-table`} className={styles.createBtn}>
                 + Create Table
               </Link>
@@ -1368,7 +1415,7 @@ export default function ClubDashboard() {
               <p className={styles.empty}>No tables yet. Create one to get the club playing.</p>
             ) : (
               <div className={styles.playersList}>
-                {clubTables.map((t) => {
+                {sortedTables.map((t) => {
                   const isLive = isLiveTableStatus(t.status);
                   return (
                     <Link

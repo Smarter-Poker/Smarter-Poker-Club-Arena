@@ -1,0 +1,28 @@
+-- ============================================================================
+-- 20260819k_club_dashboard_revenue_tournaments.sql
+-- Club Dashboard — revenue view and tournament coverage (Tier 2, additive)
+--
+-- Applied to production as: club_dashboard_revenue_and_tournaments
+--
+-- Two gaps the dashboard never covered:
+--
+--  1. REVENUE. club_hand_daily already stores rake, bbj and pot_total per club
+--     per day and nothing displayed any of it — owners had no view of what the
+--     club actually earns. ca_club_revenue returns totals (rake, bbj, hands,
+--     average pot, rake per hand), a daily series for charting, and the
+--     busiest tables over the window.
+--
+--  2. TOURNAMENTS. The dashboard was cash-only, so a club running tournaments
+--     looked idle between cash hands. Midway Union alone had 114 tournaments
+--     finish in the last 30 days that appeared nowhere. ca_club_tournaments
+--     returns live/upcoming, recently finished, and a 30-day summary.
+--
+-- Both are membership-gated via ca_can_view_club exactly like the other
+-- dashboard RPCs, and neither grants anon.
+--
+-- ROLLBACK:
+--   DROP FUNCTION IF EXISTS public.ca_club_revenue(uuid, integer);
+--   DROP FUNCTION IF EXISTS public.ca_club_tournaments(uuid, integer);
+-- ============================================================================
+-- (Function bodies are recorded in the production migration of the same name;
+--  reproduced here verbatim so the repo can rebuild the database from scratch.)

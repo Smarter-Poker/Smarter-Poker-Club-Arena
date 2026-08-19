@@ -14,7 +14,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -105,9 +105,65 @@ interface ClubTable {
   createdAt: string;
 }
 
-type TabId = 'overview' | 'activity' | 'players' | 'tables';
+// Recharts is ~390KB; keep it out of the dashboard's initial chunk and pull it
+// in only when a tab that actually plots something is opened.
+const ClubActivityChart = lazy(() => import('../../components/club/ClubActivityChart'));
 
-const VALID_TABS: TabId[] = ['overview', 'activity', 'players', 'tables'];
+type TabId = 'overview' | 'activity' | 'players' | 'tables' | 'revenue' | 'tournaments';
+
+const VALID_TABS: TabId[] = [
+  'overview',
+  'activity',
+  'players',
+  'tables',
+  'revenue',
+  'tournaments',
+];
+
+interface RevenueData {
+  totals: {
+    hands: number;
+    rake: number;
+    bbj: number;
+    pot_total: number;
+    avg_pot: number;
+    rake_per_hand: number;
+  };
+  daily: Array<{ d: string; hands: number; rake: number; bbj: number; pot_total: number }>;
+  by_table: Array<{
+    table_id: string;
+    name: string;
+    status: string;
+    stakes: string;
+    hands: number;
+    players: number;
+  }>;
+}
+
+interface TournamentData {
+  live: Array<{
+    id: string;
+    name: string;
+    status: string;
+    variant: string;
+    buy_in: number;
+    prize_pool: number;
+    players: number;
+    max_players: number;
+    start_time: string;
+  }>;
+  recent: Array<{
+    id: string;
+    name: string;
+    status: string;
+    variant: string;
+    buy_in: number;
+    prize_pool: number;
+    players: number;
+    ended_at: string;
+  }>;
+  summary: { live_count: number; completed_30d: number; prize_pool_30d: number };
+}
 const MEMBER_PAGE_SIZE = 25;
 const LEADERBOARD_VISIBLE = 10;
 type MemberSortId = 'hands' | 'profit' | 'name' | 'joined' | 'last_active';
@@ -660,6 +716,59 @@ export default function ClubDashboard() {
     [clubTables]
   );
 
+  // ── Revenue + tournaments: loaded only when their tab is opened ──────────
+  const [revenue, setRevenue] = useState<RevenueData | null>(null);
+  const [revenueLoading, setRevenueLoading] = useState(false);
+  const [tournaments, setTournaments] = useState<TournamentData | null>(null);
+  const [tournamentsLoading, setTournamentsLoading] = useState(false);
+
+  const revenueDays = useMemo(
+    () => (dateRange === 'today' ? 1 : dateRange === 'week' ? 7 : dateRange === 'month' ? 30 : 90),
+    [dateRange]
+  );
+
+  useEffect(() => {
+    if (activeTab !== 'revenue' || !resolvedClubId) return;
+    let cancelled = false;
+    setRevenueLoading(true);
+    supabase
+      .rpc('ca_club_revenue', { p_club_id: resolvedClubId, p_days: revenueDays })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          if (!isAuthzError(error)) reportError(error, 'ClubDashboard.revenue_rpc_error');
+          setRevenue(null);
+        } else {
+          setRevenue(data as RevenueData);
+        }
+        setRevenueLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, resolvedClubId, revenueDays]);
+
+  useEffect(() => {
+    if (activeTab !== 'tournaments' || !resolvedClubId) return;
+    let cancelled = false;
+    setTournamentsLoading(true);
+    supabase
+      .rpc('ca_club_tournaments', { p_club_id: resolvedClubId, p_limit: 25 })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          if (!isAuthzError(error)) reportError(error, 'ClubDashboard.tournaments_rpc_error');
+          setTournaments(null);
+        } else {
+          setTournaments(data as TournamentData);
+        }
+        setTournamentsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, resolvedClubId]);
+
   // True once the roster RPC has answered at least once, so the heading can
   // tell "not loaded yet" apart from a genuine zero.
   const [membersReady, setMembersReady] = useState(false);
@@ -882,6 +991,8 @@ export default function ClubDashboard() {
             { id: 'activity', label: 'Activity' },
             { id: 'players', label: 'Players' },
             { id: 'tables', label: 'Tables' },
+            { id: 'revenue', label: 'Revenue' },
+            { id: 'tournaments', label: 'Tournaments' },
           ] as const
         ).map((tab, i, arr) => (
           <button
@@ -957,6 +1068,29 @@ export default function ClubDashboard() {
             <section className={styles.statsSection}>
               <h2>Club Metrics</h2>
               {clubId && <ClubStatsCards clubId={clubId} stats={dashStats} />}
+              {dashStats && dashStats.dailySeries.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <h2 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Last 14 days</h2>
+                  <Suspense
+                    fallback={
+                      <div
+                        style={{
+                          height: 240,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--text-secondary, #8a8f98)',
+                          fontSize: '0.85rem',
+                        }}
+                      >
+                        Loading chart...
+                      </div>
+                    }
+                  >
+                    <ClubActivityChart data={dashStats.dailySeries} />
+                  </Suspense>
+                </div>
+              )}
             </section>
 
             <section className={styles.leaderboardSection}>
@@ -1454,6 +1588,180 @@ export default function ClubDashboard() {
             <Link to={`/clubs/${clubId}/lobby`} className={styles.lobbyLink}>
               View Table Lobby {'→'}
             </Link>
+          </div>
+        )}
+
+        {activeTab === 'revenue' && (
+          <div className={styles.tablesSection}>
+            <div className={styles.sectionHeader}>
+              <h2>Revenue ({rangeLabel})</h2>
+            </div>
+            {revenueLoading && !revenue ? (
+              <p className={styles.empty}>Loading revenue...</p>
+            ) : !revenue ? (
+              <p className={styles.empty}>No revenue data available</p>
+            ) : (
+              <>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                    gap: 10,
+                    marginBottom: 16,
+                  }}
+                >
+                  {[
+                    { label: 'Rake collected', value: formatChips(revenue.totals.rake) },
+                    { label: 'Bad beat drop', value: formatChips(revenue.totals.bbj) },
+                    { label: 'Hands dealt', value: formatInt(revenue.totals.hands) },
+                    { label: 'Rake per hand', value: formatChips(revenue.totals.rake_per_hand) },
+                    { label: 'Average pot', value: formatChips(revenue.totals.avg_pot) },
+                    { label: 'Total pots', value: formatChips(revenue.totals.pot_total) },
+                  ].map((m) => (
+                    <div
+                      key={m.label}
+                      style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: 10,
+                        padding: '10px 12px',
+                      }}
+                    >
+                      <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{m.value}</div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #8a8f98)' }}>
+                        {m.label}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <Suspense fallback={<p className={styles.empty}>Loading chart...</p>}>
+                  <ClubActivityChart
+                    data={revenue.daily.map((d) => ({ d: d.d, hands: d.hands, rake: d.rake }))}
+                    height={260}
+                  />
+                </Suspense>
+
+                <h2 style={{ fontSize: '0.95rem', margin: '18px 0 8px' }}>Busiest tables</h2>
+                <div className={styles.playersList}>
+                  {revenue.by_table.length === 0 ? (
+                    <p className={styles.empty}>No table activity in this period</p>
+                  ) : (
+                    revenue.by_table.map((t) => (
+                      <Link
+                        key={t.table_id}
+                        to={`/table/${t.table_id}`}
+                        className={styles.playerCard}
+                        style={{ textDecoration: 'none', color: 'inherit' }}
+                      >
+                        <div className={styles.playerInfo}>
+                          <span className={styles.playerName}>{t.name}</span>
+                          <span className={styles.playerStats}>
+                            {t.stakes} {'•'} {formatInt(t.players)} players
+                          </span>
+                        </div>
+                        <span className={styles.playerStats}>{formatInt(t.hands)} hands</span>
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'tournaments' && (
+          <div className={styles.tablesSection}>
+            <div className={styles.sectionHeader}>
+              <h2>
+                Tournaments
+                {tournaments && (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      color: 'var(--text-secondary, #8a8f98)',
+                    }}
+                  >
+                    {formatInt(tournaments.summary.completed_30d)} finished in 30d {'•'}{' '}
+                    {formatChips(tournaments.summary.prize_pool_30d)} in prizes
+                  </span>
+                )}
+              </h2>
+            </div>
+            {tournamentsLoading && !tournaments ? (
+              <p className={styles.empty}>Loading tournaments...</p>
+            ) : !tournaments ? (
+              <p className={styles.empty}>No tournament data available</p>
+            ) : (
+              <>
+                <h2 style={{ fontSize: '0.95rem', margin: '4px 0 8px' }}>
+                  Live and upcoming ({tournaments.live.length})
+                </h2>
+                <div className={styles.playersList}>
+                  {tournaments.live.length === 0 ? (
+                    <p className={styles.empty}>Nothing scheduled right now</p>
+                  ) : (
+                    tournaments.live.map((t) => (
+                      <Link
+                        key={t.id}
+                        to={`/tournaments/${t.id}`}
+                        className={styles.playerCard}
+                        style={{ textDecoration: 'none', color: 'inherit' }}
+                      >
+                        <div className={styles.playerInfo}>
+                          <span className={styles.playerName}>{t.name}</span>
+                          <span className={styles.playerStats}>
+                            {(t.variant || 'NLH').toUpperCase()} {'•'} buy-in{' '}
+                            {formatChips(t.buy_in)} {'•'} {formatInt(t.players)}
+                            {t.max_players ? `/${formatInt(t.max_players)}` : ''} entered
+                          </span>
+                        </div>
+                        <span
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 10,
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            background: 'rgba(16,185,129,0.15)',
+                            color: '#10b981',
+                          }}
+                        >
+                          {tableStatusLabel(t.status)}
+                        </span>
+                      </Link>
+                    ))
+                  )}
+                </div>
+
+                <h2 style={{ fontSize: '0.95rem', margin: '18px 0 8px' }}>
+                  Recently finished ({tournaments.recent.length})
+                </h2>
+                <div className={styles.playersList}>
+                  {tournaments.recent.length === 0 ? (
+                    <p className={styles.empty}>No tournaments finished in the last 30 days</p>
+                  ) : (
+                    tournaments.recent.map((t) => (
+                      <Link
+                        key={t.id}
+                        to={`/tournaments/${t.id}`}
+                        className={styles.playerCard}
+                        style={{ textDecoration: 'none', color: 'inherit' }}
+                      >
+                        <div className={styles.playerInfo}>
+                          <span className={styles.playerName}>{t.name}</span>
+                          <span className={styles.playerStats}>
+                            {(t.variant || 'NLH').toUpperCase()} {'•'} {formatInt(t.players)} entered
+                            {'•'} prize pool {formatChips(t.prize_pool)}
+                          </span>
+                        </div>
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -66,6 +66,10 @@ export default function ClubSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const originalSettings = useRef<ClubSettings | null>(null);
+  // Bumped every time originalSettings.current is reassigned. changedFields
+  // reads a ref, so without this a silent rebaseline (tab focus, realtime)
+  // left the unsaved-changes banner listing stale fields.
+  const [baselineVersion, setBaselineVersion] = useState(0);
 
   // Live change detection — compute which fields have been modified
   const changedFields = useMemo(() => {
@@ -84,7 +88,8 @@ export default function ClubSettingsPage() {
     if (settings.min_buyin_bb !== orig.min_buyin_bb) changes.push('Min Buy-in');
     if (settings.max_buyin_bb !== orig.max_buyin_bb) changes.push('Max Buy-in');
     return changes;
-  }, [settings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, baselineVersion]);
   const hasUnsavedChanges = changedFields.length > 0;
 
   // Buy-in bounds were the one numeric pair with no guard at all. The min/max
@@ -174,7 +179,11 @@ export default function ClubSettingsPage() {
     return () => {
       isMounted = false;
     };
-  }, [clubId]);
+    // user?.id: on a cold load the store hydrates async; the first fetch runs
+    // with user=null, computes isOwner=false, and the owner sees a read-only
+    // page. Re-run once the user id is known.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubId, user?.id]);
 
   // ── Realtime: live club settings changes ──
   useEffect(() => {
@@ -221,8 +230,12 @@ export default function ClubSettingsPage() {
   // ── Bus Listeners: cross-page event reactivity (debounced, scoped by clubId) ──
   useEffect(() => {
     let isMounted = true;
-    const handler = (payload?: any) => {
-      if (payload?.clubId && payload.clubId !== clubId) return;
+    const handler = (evt?: any) => {
+      // Handlers get the BusEvent envelope ({type, payload, timestamp}), not
+      // the bare payload — reading .clubId off the envelope made this filter
+      // a no-op and the page refetched on every club's events.
+      const evtClubId = evt?.payload?.clubId ?? evt?.clubId;
+      if (evtClubId && evtClubId !== clubId) return;
       if (isMounted) loadClubSettings(() => isMounted, { silent: true });
     };
     const unsubs = [
@@ -297,10 +310,12 @@ export default function ClubSettingsPage() {
           // Re-baseline so the change list stays honest about what the save
           // would actually alter, and tell the owner the server copy moved.
           originalSettings.current = fromServer;
+          setBaselineVersion((v) => v + 1);
           if (serverMoved) setServerChanged(true);
         } else {
           setSettings(fromServer);
           originalSettings.current = fromServer;
+          setBaselineVersion((v) => v + 1);
           setServerChanged(false);
         }
         const ownerMatch = data.owner_id === user?.id;
@@ -342,29 +357,38 @@ export default function ClubSettingsPage() {
       toast.error(buyinError);
       return;
     }
+    // Sanitize ONCE and use the result for the DB write, the local state and
+    // the diff baseline. Sanitizing only inside the update payload meant the
+    // server held the stripped copy while the baseline held the raw one — the
+    // next background refresh then flagged your own save as a foreign edit.
+    const toSave: ClubSettings = {
+      ...settings,
+      name: sanitizeInput(settings.name),
+      description: sanitizeInput(settings.description),
+    };
     setSaving(true);
     try {
       // Phase 13: Optimistic save — emit events instantly, then confirm with server
       await masterBus.executeOptimistic(
         'SETTINGS_UPDATED',
-        { settings: { clubId, ...settings } },
+        { settings: { clubId, ...toSave } },
         async () => {
           if (clubId) masterBus.emit('CLUB_UPDATED', { clubId });
           if (clubId) masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
           const { error } = await supabase
             .from('clubs')
             .update({
-              name: sanitizeInput(settings.name),
-              description: sanitizeInput(settings.description),
-              is_public: settings.is_public,
-              requires_approval: settings.requires_approval,
-              default_rake_percent: settings.default_rake_percent,
-              rake_cap: settings.rake_cap,
-              allow_straddle: settings.allow_straddle,
-              allow_run_it_twice: settings.allow_run_it_twice,
-              allow_rabbit_hunt: settings.allow_rabbit_hunt,
-              min_buyin_bb: settings.min_buyin_bb,
-              max_buyin_bb: settings.max_buyin_bb,
+              name: toSave.name,
+              description: toSave.description,
+              is_public: toSave.is_public,
+              requires_approval: toSave.requires_approval,
+              default_rake_percent: toSave.default_rake_percent,
+              rake_cap: toSave.rake_cap,
+              allow_straddle: toSave.allow_straddle,
+              allow_run_it_twice: toSave.allow_run_it_twice,
+              allow_rabbit_hunt: toSave.allow_rabbit_hunt,
+              min_buyin_bb: toSave.min_buyin_bb,
+              max_buyin_bb: toSave.max_buyin_bb,
             })
             .eq(resolveClubIdFilter(clubId!).column, resolveClubIdFilter(clubId!).value);
           if (error) throw error;
@@ -377,9 +401,13 @@ export default function ClubSettingsPage() {
         details: { changedFields },
         userId: user?.id,
       });
-      // Update original baseline so diff resets
-      originalSettings.current = { ...settings };
-      navigate(`/clubs/${clubId}`);
+      // Reset the diff baseline to what the server now holds, and clear any
+      // conflict banner our own save raced into existence. Stay on the page:
+      // navigating away hid the audit log entry the save just created.
+      setSettings(toSave);
+      originalSettings.current = { ...toSave };
+      setBaselineVersion((v) => v + 1);
+      setServerChanged(false);
     } catch (error) {
       reportError(error, 'ClubSettingsPage.Failed_to_save_settings');
       toast.error('Failed to save settings');
@@ -392,7 +420,7 @@ export default function ClubSettingsPage() {
   };
 
   const handleDeleteClub = async () => {
-    if (!clubId || confirmText !== settings.name) return;
+    if (!clubId || confirmText.trim() !== settings.name.trim()) return;
 
     setIsDeleting(true);
     try {
@@ -445,6 +473,24 @@ export default function ClubSettingsPage() {
   return (
     <div className="club-settings-page">
       <div className="settings-content">
+        {/* Non-owners used to get a page of silently disabled inputs with no
+            explanation — every control looked broken. Say why, once. */}
+        {!isOwner && (
+          <div
+            role="note"
+            style={{
+              padding: '10px 14px',
+              marginBottom: '16px',
+              borderRadius: '10px',
+              background: 'rgba(0, 212, 255, 0.08)',
+              border: '1px solid rgba(0, 212, 255, 0.25)',
+              color: '#8fb8cc',
+              fontSize: '0.85rem',
+            }}
+          >
+            Read-only view. Only the club owner can change these settings.
+          </div>
+        )}
         {/* Basic Info */}
         <section className="settings-section">
           <h3>Basic Information</h3>
@@ -703,7 +749,12 @@ export default function ClubSettingsPage() {
         )}
 
         {isOwner && (
-          <button className="btn btn-primary save-btn" onClick={saveSettings} disabled={saving}>
+          <button
+            className="btn btn-primary save-btn"
+            onClick={saveSettings}
+            disabled={saving || !hasUnsavedChanges}
+            title={hasUnsavedChanges ? undefined : 'No changes to save'}
+          >
             {saving ? (
               <>
                 <span className="btn-spinner" /> Saving...
@@ -747,7 +798,7 @@ export default function ClubSettingsPage() {
               <button
                 className="btn btn-danger"
                 onClick={handleDeleteClub}
-                disabled={confirmText !== settings.name || isDeleting}
+                disabled={confirmText.trim() !== settings.name.trim() || isDeleting}
               >
                 {isDeleting ? 'Deleting...' : 'Delete Club'}
               </button>

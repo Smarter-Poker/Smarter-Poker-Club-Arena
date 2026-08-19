@@ -154,12 +154,7 @@ export const HoleCardReveal: React.FC<HoleCardRevealProps> = ({ tableId, revealD
                         </div>
                         {/* Front */}
                         <div className="hcr-card__front">
-                          <CardImage
-                            card={card}
-                            deckStyle="4color"
-                            size="md"
-                            isHighlighted={player.isWinner}
-                          />
+                          <CardImage card={card} size="md" isHighlighted={player.isWinner} />
                         </div>
                       </div>
                     </div>

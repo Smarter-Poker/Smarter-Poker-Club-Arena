@@ -365,7 +365,7 @@ export default function HandReplay({
               {player.hole_cards.length > 0 ? (
                 player.hole_cards.map((card, idx) => (
                   <div key={idx} className="card">
-                    <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+                    <CardImage card={toCardImage(card)} size="xs" />
                   </div>
                 ))
               ) : (
@@ -383,7 +383,7 @@ export default function HandReplay({
             <div className="community-cards-row">
               {getVisibleCommunityCards().map((card, idx) => (
                 <div key={idx} className="card small">
-                  <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+                  <CardImage card={toCardImage(card)} size="xs" />
                 </div>
               ))}
             </div>

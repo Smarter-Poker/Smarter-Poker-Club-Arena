@@ -175,7 +175,7 @@ export function HandReveal({
           {revealed && revealedCards ? (
             revealedCards.map((card, i) => (
               <div key={i} className="hand-reveal__card hand-reveal__card--revealed">
-                <CardImage card={toCardImage(card)} deckStyle="4color" size="sm" />
+                <CardImage card={toCardImage(card)} size="sm" />
               </div>
             ))
           ) : mucked ? (

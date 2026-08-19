@@ -173,14 +173,7 @@ export function PlayerCard({
 
         {/* Card Face — Custom PNG Deck Image */}
         <div className="player-card__face">
-          {card && (
-            <CardImage
-              card={card}
-              deckStyle="4color"
-              size={cardImageSize}
-              isHighlighted={isWinner}
-            />
-          )}
+          {card && <CardImage card={card} size={cardImageSize} isHighlighted={isWinner} />}
         </div>
       </div>
 

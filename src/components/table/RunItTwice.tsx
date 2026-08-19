@@ -232,13 +232,13 @@ export function RunItTwiceBoard({
           {/* Current board (faded) */}
           {currentBoard.map((card, i) => (
             <span key={`base-${i}`} className="rit-board__card rit-board__card--base">
-              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+              <CardImage card={toCardImage(card)} size="xs" />
             </span>
           ))}
           {/* Run 1 cards */}
           {run1Cards.map((card, i) => (
             <span key={`run1-${i}`} className="rit-board__card rit-board__card--new">
-              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+              <CardImage card={toCardImage(card)} size="xs" />
             </span>
           ))}
         </div>
@@ -258,13 +258,13 @@ export function RunItTwiceBoard({
           {/* Current board (faded) */}
           {currentBoard.map((card, i) => (
             <span key={`base-${i}`} className="rit-board__card rit-board__card--base">
-              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+              <CardImage card={toCardImage(card)} size="xs" />
             </span>
           ))}
           {/* Run 2 cards */}
           {run2Cards.map((card, i) => (
             <span key={`run2-${i}`} className="rit-board__card rit-board__card--new">
-              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+              <CardImage card={toCardImage(card)} size="xs" />
             </span>
           ))}
         </div>
@@ -371,7 +371,7 @@ export function RunItTwiceResult({
                 const card = parseRitCard(raw);
                 return card ? (
                   <span key={`c-${bi}-${ci}`} className="rit-board__card">
-                    <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+                    <CardImage card={toCardImage(card)} size="xs" />
                   </span>
                 ) : null;
               })}

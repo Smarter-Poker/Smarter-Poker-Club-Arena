@@ -44,10 +44,10 @@ export function CardReveal({ cards, isRevealed, isWinner, handName }: CardReveal
             >
               <div className="card-inner">
                 <div className="card-back">
-                  <CardBack style="classic" size="md" />
+                  <CardBack style="classic_red" size="md" />
                 </div>
                 <div className="card-front">
-                  <CardImage card={card} deckStyle="4color" size="md" isHighlighted={isWinner} />
+                  <CardImage card={card} size="md" isHighlighted={isWinner} />
                 </div>
               </div>
             </div>

@@ -172,7 +172,7 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
                   animationDelay: `${idx * 0.1}s`,
                 }}
               >
-                <CardImage card={toCardImage(card)} deckStyle="4color" size="sm" />
+                <CardImage card={toCardImage(card)} size="sm" />
               </div>
             ))}
             {/* Placeholder for unrevealed */}

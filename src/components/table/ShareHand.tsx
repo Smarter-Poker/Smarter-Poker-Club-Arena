@@ -508,17 +508,17 @@ export function ShareHand({
               <div className="share-hand__cards">
                 {hand.flop.cards.map((card, i) => (
                   <div key={i} className="share-hand__card-img">
-                    <CardImage card={toCard(card)} deckStyle="4color" size="sm" />
+                    <CardImage card={toCard(card)} size="sm" />
                   </div>
                 ))}
                 {hand.turn && (
                   <div className="share-hand__card-img">
-                    <CardImage card={toCard(hand.turn.card)} deckStyle="4color" size="sm" />
+                    <CardImage card={toCard(hand.turn.card)} size="sm" />
                   </div>
                 )}
                 {hand.river && (
                   <div className="share-hand__card-img">
-                    <CardImage card={toCard(hand.river.card)} deckStyle="4color" size="sm" />
+                    <CardImage card={toCard(hand.river.card)} size="sm" />
                   </div>
                 )}
               </div>

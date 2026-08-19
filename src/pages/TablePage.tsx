@@ -2204,33 +2204,36 @@ export default function TablePage({
   // Bible V8 §9.1.3: Frame budget monitoring (dev mode only — warns on >16ms frames)
   useFrameBudgetMonitor();
 
-  // Bible V8 §11.1 + §10.3: skip_animations → override ALL animation durations to instant
+  // ── Dan 2026-08-18: animations are not optional ──
+  //
+  // This effect used to zero out every animation duration when
+  // skip_animations was set. The toggle is gone from the settings list, and
+  // the override goes with it - otherwise anyone whose cached settings still
+  // carry skip_animations: true would keep a permanently animation-free table
+  // with no control left to turn it back on.
+  //
+  // The durations are deliberately CLEARED rather than merely left alone, so a
+  // stale value in the localStorage settings cache (user_table_settings_cache)
+  // cannot leave --deal-duration: 0s stuck on the document from a prior
+  // session. Reduced-motion is still honoured where it belongs: the CSS
+  // prefers-reduced-motion queries in animations.css and ChipAnimations.css,
+  // which are an accessibility setting rather than a gameplay preference.
   useEffect(() => {
     const root = document.documentElement;
-    if (v8Settings.skip_animations) {
-      root.style.setProperty('--animation-speed', '0');
-      // Also override PokerBros-parity animation CSS vars (CardAnimations.css, ChipAnimations.css)
-      root.style.setProperty('--deal-duration', '0s');
-      root.style.setProperty('--flip-duration', '0s');
-      root.style.setProperty('--fold-duration', '0s');
-      root.style.setProperty('--win-glow-duration', '0s');
-      root.style.setProperty('--chip-bet-duration', '0s');
-      root.style.setProperty('--chip-win-duration', '0s');
-      root.style.setProperty('--chip-merge-duration', '0s');
-      root.style.setProperty('--chip-allin-duration', '0s');
+    for (const prop of [
+      '--animation-speed',
+      '--deal-duration',
+      '--flip-duration',
+      '--fold-duration',
+      '--win-glow-duration',
+      '--chip-bet-duration',
+      '--chip-win-duration',
+      '--chip-merge-duration',
+      '--chip-allin-duration',
+    ]) {
+      root.style.removeProperty(prop);
     }
-    return () => {
-      root.style.removeProperty('--animation-speed');
-      root.style.removeProperty('--deal-duration');
-      root.style.removeProperty('--flip-duration');
-      root.style.removeProperty('--fold-duration');
-      root.style.removeProperty('--win-glow-duration');
-      root.style.removeProperty('--chip-bet-duration');
-      root.style.removeProperty('--chip-win-duration');
-      root.style.removeProperty('--chip-merge-duration');
-      root.style.removeProperty('--chip-allin-duration');
-    };
-  }, [v8Settings.skip_animations]);
+  }, []);
 
   // Bible V8 §11.1: enhanced_view → document-level flag so themes and
   // component CSS can branch on body[data-enhanced-view="1"]. Single source

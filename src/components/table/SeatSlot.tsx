@@ -283,7 +283,7 @@ export const SeatSlot = memo(
       playerStyle,
       secondsLeft,
       deckStyle = '4color',
-      cardBack = 'black',
+      cardBack = 'classic_blue',
       showStackInBB = false,
       onSit,
       canSit = true,

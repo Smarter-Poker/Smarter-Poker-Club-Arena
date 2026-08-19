@@ -208,7 +208,7 @@ export function InsuranceModal({
             <div className="insurance-modal__hand-cards">
               {offer.yourCards.map((card, i) => (
                 <span key={i} className="insurance-modal__card">
-                  <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+                  <CardImage card={toCardImage(card)} size="xs" />
                 </span>
               ))}
             </div>
@@ -220,7 +220,7 @@ export function InsuranceModal({
               {offer.opponentCards ? (
                 offer.opponentCards.map((card, i) => (
                   <span key={i} className="insurance-modal__card">
-                    <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+                    <CardImage card={toCardImage(card)} size="xs" />
                   </span>
                 ))
               ) : (
@@ -237,7 +237,7 @@ export function InsuranceModal({
         <div className="insurance-modal__board">
           {offer.board.map((card, i) => (
             <span key={i} className="insurance-modal__board-card">
-              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
+              <CardImage card={toCardImage(card)} size="xs" />
             </span>
           ))}
         </div>

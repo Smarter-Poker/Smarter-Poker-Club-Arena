@@ -457,12 +457,7 @@ export function HandReplayPlayer({
                   <div className="replay-player__hole-cards">
                     {cards.map((card, ci) => (
                       <div key={ci} className="replay-player__card-img">
-                        <CardImage
-                          card={toCard(card)}
-                          deckStyle="4color"
-                          size="sm"
-                          isHighlighted={isWinner}
-                        />
+                        <CardImage card={toCard(card)} size="sm" isHighlighted={isWinner} />
                       </div>
                     ))}
                   </div>
@@ -484,7 +479,7 @@ export function HandReplayPlayer({
         <div className="replay-player__board">
           {board.map((card, idx) => (
             <div key={idx} className="replay-player__board-card-img">
-              <CardImage card={toCard(card)} deckStyle="4color" size="md" />
+              <CardImage card={toCard(card)} size="md" />
             </div>
           ))}
         </div>

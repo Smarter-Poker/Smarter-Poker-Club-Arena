@@ -256,7 +256,7 @@ export default function HandReplayViewer({
           {visibleCards.length > 0 ? (
             visibleCards.map((card, i) => (
               <div key={i} className={styles.cardWrapper}>
-                <CardImage card={parseCard(card)} deckStyle="4color" size="sm" />
+                <CardImage card={parseCard(card)} size="sm" />
               </div>
             ))
           ) : (

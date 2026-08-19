@@ -150,7 +150,7 @@ export default function OddsDisplay({
       <div className="hole-cards-mini">
         {holeCards.map((card, idx) => (
           <div key={idx} className="mini-card">
-            <CardImage card={parseCard(card)} deckStyle="4color" size="xs" />
+            <CardImage card={parseCard(card)} size="xs" />
           </div>
         ))}
       </div>

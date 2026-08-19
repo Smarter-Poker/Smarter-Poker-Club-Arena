@@ -107,7 +107,7 @@ export default function ShareableHighlight({
         <div className="highlight-cards">
           {playerCards.map((card, idx) => (
             <div key={idx} className="highlight-card">
-              <CardImage card={parseCard(card)} deckStyle="4color" size="sm" />
+              <CardImage card={parseCard(card)} size="sm" />
             </div>
           ))}
         </div>
@@ -119,7 +119,7 @@ export default function ShareableHighlight({
         <div className="highlight-board">
           {boardCards.map((card, idx) => (
             <div key={idx} className="highlight-card">
-              <CardImage card={parseCard(card)} deckStyle="4color" size="sm" />
+              <CardImage card={parseCard(card)} size="sm" />
             </div>
           ))}
         </div>

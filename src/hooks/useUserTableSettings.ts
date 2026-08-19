@@ -130,11 +130,15 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
   },
   { key: 'text_message', label: 'Text Message', description: 'Enable text chat at table' },
   { key: 'emoji_enabled', label: 'Emoji', description: 'Enable emoji reactions/throwables' },
-  {
-    key: 'skip_animations',
-    label: 'Skip Animations',
-    description: 'Disable deal/action animations for faster play (Bible V8 §10.3)',
-  },
+  // Dan 2026-08-18: "remove the skip animations toggle, animations are not
+  // optional." This definition list is what renders the switches, so dropping
+  // the entry removes the control everywhere it appeared. The column and the
+  // interface field are deliberately kept - no migration, nothing reading the
+  // type breaks - but nothing writes it any more, and TablePage no longer
+  // applies it: it now actively clears the duration overrides so a stale
+  // cached `true` cannot leave a table permanently un-animated.
+  //
+  // Accessibility is unaffected; prefers-reduced-motion is handled in CSS.
   {
     key: 'use_alias',
     label: 'Use Club Alias',

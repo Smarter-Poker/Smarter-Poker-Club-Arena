@@ -49,7 +49,12 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   autoMuck: false,
   autoMuckWinners: false,
   autoPostBlinds: true,
-  cardBack: 'black',
+  // Dan 2026-08-18: was 'black', which has no `.card-back--black` rule in
+  // CardImage.css - so the DEFAULT card back rendered as a blank rectangle for
+  // every player who never opened the picker. 'classic_blue' is a real design
+  // and matches SeatSlot's own fallback. CardBack normalises unknown ids now
+  // too, so a stale 'black' already sitting in localStorage also recovers.
+  cardBack: 'classic_blue',
   showStackInBB: false,
   autoRebuy: false,
 };

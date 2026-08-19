@@ -158,7 +158,7 @@ export function HandHistoryViewer({
   const renderCards = (cards: string[]) => (
     <span style={{ display: 'inline-flex', gap: '2px', alignItems: 'center' }}>
       {cards.map((c, i) => (
-        <CardImage key={i} card={parseCard(c)} deckStyle="4color" size="xs" />
+        <CardImage key={i} card={parseCard(c)} size="xs" />
       ))}
     </span>
   );

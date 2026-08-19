@@ -10,6 +10,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
+import { useDeckStyle } from '../../hooks/useDeckStyle';
 import './CardImage.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -133,13 +134,27 @@ const SUIT_COLOR: Record<string, string> = {
 
 export function CardImage({
   card,
-  deckStyle = '4color',
+  deckStyle,
   size = 'md',
   isHighlighted = false,
   isFolded = false,
   className = '',
 }: CardImageProps) {
-  const imagePath = getCardImagePath(card, deckStyle);
+  // ── Dan 2026-08-18: make the four-colour deck setting actually apply ──
+  //
+  // deckStyle used to default to the literal '4color'. TablePage threaded the
+  // real preference into SeatSlot and CommunityCards, so the felt obeyed it,
+  // but 27 of the 32 <CardImage> call sites overrode it with a hardcoded
+  // four-colour value - hand replay, insurance, run-it-twice, rabbit hunt,
+  // share-hand, the tournament reveal, the odds display. Turning the setting
+  // off therefore changed the felt and nothing else.
+  //
+  // Resolving it here means every card in the app follows the player by
+  // default, including any component added later. An explicit prop still
+  // wins, which is what the felt passes.
+  const preferredDeckStyle = useDeckStyle();
+  const effectiveDeckStyle = deckStyle ?? preferredDeckStyle;
+  const imagePath = getCardImagePath(card, effectiveDeckStyle);
   const sizeClass = SIZE_CLASSES[size];
 
   // UI-AUDIT #8: track the broken-image state in React (not via manual DOM
@@ -208,15 +223,61 @@ export interface CardBackProps {
   className?: string;
 }
 
-export function CardBack({ style = 'classic_red', size = 'md', className = '' }: CardBackProps) {
+/**
+ * The card back designs that actually exist as `.card-back--<id>` rules in
+ * CardImage.css. Anything not in this list renders an unstyled, invisible div.
+ *
+ * ── Dan 2026-08-18: "make sure the card back designs are working" ──
+ *
+ * They were not, by default, for everyone. The ids being passed around did not
+ * all match the CSS:
+ *   - useTableSettings defaulted cardBack to 'black'   -> no such class
+ *   - SeatSlot's internal default was also 'black'      -> no such class
+ *   - CommunityCards and CardReveal hardcoded 'classic' -> no such class
+ * ('classic_red' and 'classic_blue' exist; bare 'classic' and 'black' never
+ * did.) Each of those produced a blank rectangle where the card back belongs,
+ * which is indistinguishable from "the feature is broken".
+ *
+ * Normalising here means a bad or stale id can never blank a card again -
+ * including ids already sitting in players' localStorage from before this fix.
+ */
+export const CARD_BACK_IDS = [
+  'classic_red',
+  'classic_blue',
+  'diamond',
+  'dragon',
+  'galaxy',
+  'gold',
+  'neon',
+  'royal',
+] as const;
+
+const DEFAULT_CARD_BACK = 'classic_blue';
+
+/** Map legacy/invalid ids onto real designs rather than rendering nothing. */
+const CARD_BACK_ALIASES: Record<string, string> = {
+  classic: 'classic_red',
+  black: 'classic_blue',
+  blue: 'classic_blue',
+  red: 'classic_red',
+};
+
+export function normalizeCardBack(style: string | undefined | null): string {
+  if (!style) return DEFAULT_CARD_BACK;
+  if ((CARD_BACK_IDS as readonly string[]).includes(style)) return style;
+  return CARD_BACK_ALIASES[style] ?? DEFAULT_CARD_BACK;
+}
+
+export function CardBack({ style, size = 'md', className = '' }: CardBackProps) {
   const sizeClass = SIZE_CLASSES[size];
+  const backStyle = normalizeCardBack(style);
   const classes = ['card-image', 'card-image--back', sizeClass, className]
     .filter(Boolean)
     .join(' ');
 
   return (
     <div className={classes}>
-      <div className={`card-back card-back--${style}`} />
+      <div className={`card-back card-back--${backStyle}`} />
     </div>
   );
 }

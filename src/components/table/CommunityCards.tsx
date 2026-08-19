@@ -107,7 +107,7 @@ interface PlaceholderCardProps {
 function PlaceholderCard({ index }: PlaceholderCardProps) {
   return (
     <div className="community-cards__placeholder" style={{ animationDelay: `${index * 100}ms` }}>
-      <CardBack size="lg" style="classic" />
+      <CardBack size="lg" style="classic_red" />
     </div>
   );
 }

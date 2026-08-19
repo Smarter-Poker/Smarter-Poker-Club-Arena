@@ -268,7 +268,7 @@ export default function HandReplayerPage() {
                   <div className="community-cards">
                     {hand.community_cards.map((card, idx) => (
                       <div key={idx} className="card">
-                        <CardImage card={parseCard(card)} deckStyle="4color" size="sm" />
+                        <CardImage card={parseCard(card)} size="sm" />
                       </div>
                     ))}
                   </div>
@@ -291,7 +291,7 @@ export default function HandReplayerPage() {
                     <div className="player-cards">
                       {player.cards.map((card, cIdx) => (
                         <div key={cIdx} className="hole-card">
-                          <CardImage card={parseCard(card)} deckStyle="4color" size="xs" />
+                          <CardImage card={parseCard(card)} size="xs" />
                         </div>
                       ))}
                     </div>

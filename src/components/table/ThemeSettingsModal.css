@@ -359,3 +359,98 @@
 .theme-vip-prompt__btn--cancel:hover {
   background: rgba(255, 255, 255, 0.12);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REAL ASSET PREVIEWS  (Dan 2026-08-18)
+   "the themes and tables should show the actual theme and table layouts not
+    just a color. same for buttons... and same for cards."
+
+   .theme-asset__preview keeps its existing box (aspect-ratio 5/4, radius);
+   these rules fill it with the genuine article instead of a gradient.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.theme-asset__preview {
+  position: relative;
+  overflow: hidden;
+  background: #10131c; /* letterbox behind object-fit, and the empty state */
+}
+
+/* Fallback swatch — only used where no real asset exists for that id. */
+.theme-asset__swatch {
+  position: absolute;
+  inset: 0;
+}
+
+/* Table skins and room backgrounds: the actual artwork. */
+.theme-asset__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Themes tab: a preset is a bundle, so show the table sitting on its room. */
+.theme-asset__scene {
+  position: absolute;
+  inset: 0;
+}
+.theme-asset__scene-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.theme-asset__scene-table {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 82%;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55));
+}
+
+/* Button tab: a real dealer button, painted by the same custom properties
+   TablePage.css sets from [data-button-theme]. */
+.theme-asset__btnstage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(70% 70% at 50% 45%, #1d5b3a 0%, #0d2b1c 100%);
+}
+.theme-asset__dealerbtn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 1rem;
+  background: var(--dealer-btn-bg, linear-gradient(145deg, #fff, #d0d0d0));
+  color: var(--dealer-btn-color, #1a1a1a);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* Cards tab: two real CardBacks on felt. */
+.theme-asset__cardstage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: radial-gradient(70% 70% at 50% 45%, #1d5b3a 0%, #0d2b1c 100%);
+}
+.theme-asset__cardstage .card-image {
+  transform: rotate(-6deg);
+}
+.theme-asset__cardstage .card-image + .card-image {
+  transform: rotate(6deg);
+}

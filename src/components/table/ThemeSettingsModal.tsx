@@ -14,6 +14,8 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { TABLE_SKINS, TABLE_BACKGROUNDS } from '../../assets/tableAssets';
+import { CardBack, normalizeCardBack } from './CardImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -394,6 +396,85 @@ function canAccessAsset(isVip: boolean, vipOnly: boolean): boolean {
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Render a REAL preview for one option.
+ *
+ * Dan 2026-08-18: "the themes and tables should show the actual theme and table
+ * layouts not just a color. same for buttons, show the actual button in the
+ * settings and same for cards."
+ *
+ * Per tab, what "real" means:
+ *   table       the actual 896x1200 skin composite, object-fit cover
+ *   background  the actual room .jpg
+ *   button      a live dealer button carrying data-button-theme, so it picks
+ *               up the very --dealer-btn-bg / --dealer-btn-color the table
+ *               will use (TablePage.css)
+ *   cards       a real <CardBack>, the same component the felt renders
+ *   themes      a composite mini-table: the preset's own table skin with its
+ *               background behind it, which is the only honest way to show
+ *               what a preset actually does (it is a bundle of the others)
+ *
+ * Anything without a real asset falls back to the original gradient rather
+ * than rendering an empty box.
+ */
+function renderAssetPreview(tab: ThemeTab, asset: ThemeAsset) {
+  const fallback = <div className="theme-asset__swatch" style={{ background: asset.thumbnail }} />;
+
+  if (tab === 'table') {
+    const src = TABLE_SKINS[asset.id];
+    return src ? (
+      <img className="theme-asset__img" src={src} alt="" loading="lazy" decoding="async" />
+    ) : (
+      fallback
+    );
+  }
+
+  if (tab === 'background') {
+    const src = TABLE_BACKGROUNDS[asset.id];
+    return src ? (
+      <img className="theme-asset__img" src={src} alt="" loading="lazy" decoding="async" />
+    ) : (
+      fallback
+    );
+  }
+
+  if (tab === 'button') {
+    // The real dealer button, styled by the same attribute the table sets.
+    return (
+      <div className="theme-asset__btnstage" data-button-theme={asset.id}>
+        <span className="theme-asset__dealerbtn">D</span>
+      </div>
+    );
+  }
+
+  if (tab === 'cards') {
+    // The real CardBack component. normalizeCardBack maps the Cards-tab ids
+    // onto actual designs, so a preview can never be a blank rectangle.
+    return (
+      <div className="theme-asset__cardstage">
+        <CardBack style={normalizeCardBack(asset.id)} size="sm" />
+        <CardBack style={normalizeCardBack(asset.id)} size="sm" />
+      </div>
+    );
+  }
+
+  // themes: a preset bundles a table + background, so show both.
+  // THEME_PRESET_BUNDLES holds Partial<ThemeSelection>, so both ids are
+  // optional - a preset may set only some of the five slots.
+  const bundle = THEME_PRESET_BUNDLES[asset.id];
+  const bgSrc = bundle?.background_id ? TABLE_BACKGROUNDS[bundle.background_id] : undefined;
+  const tableSrc = bundle?.table_id ? TABLE_SKINS[bundle.table_id] : undefined;
+  if (!bgSrc && !tableSrc) return fallback;
+  return (
+    <div className="theme-asset__scene">
+      {bgSrc && <img className="theme-asset__scene-bg" src={bgSrc} alt="" loading="lazy" />}
+      {tableSrc && (
+        <img className="theme-asset__scene-table" src={tableSrc} alt="" loading="lazy" />
+      )}
+    </div>
+  );
+}
+
 export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSettingsModalProps) {
   const toast = useToast();
   const navigate = useNavigate();
@@ -584,7 +665,15 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
                 onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
               >
-                <div className="theme-asset__preview" style={{ background: asset.thumbnail }}>
+                <div className="theme-asset__preview">
+                  {/* ── Dan 2026-08-18: show the actual thing, not a colour ──
+                      Every tab used to render `background: asset.thumbnail`,
+                      a hand-written gradient that (in its own words)
+                      "approximates each composite's palette" - so you picked a
+                      table by looking at a colour smear. Each tab now renders
+                      the real asset; the gradient survives only as a fallback
+                      where no real asset exists for that id. */}
+                  {renderAssetPreview(activeTab, asset)}
                   {isLocked && (
                     <div className="theme-asset__lock">
                       <span className="theme-asset__lock-icon">VIP</span>

@@ -14,6 +14,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
+import { TABLE_SKINS, TABLE_BACKGROUNDS } from '../assets/tableAssets';
 import { publishSessionSummary } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -34,24 +35,11 @@ import type { BoardStage } from '../components/table/CommunityCards';
 // public/hub/club-arena/images/. A new file dropped in images/ would never
 // reach production, and git-safe-push.sh's `git clean` sweeps untracked files
 // there — assets/ is explicitly excluded from that clean.
-import skinClassicGreen from '../assets/tables/skin_classic_green.png';
-import skinOceanBlue from '../assets/tables/skin_ocean_blue.png';
-import skinCrimson from '../assets/tables/skin_crimson.png';
-import skinElectricPurple from '../assets/tables/skin_electric_purple.png';
-import skinGoldenSand from '../assets/tables/skin_golden_sand.png';
 // Dan 2026-08-17 — five new composite skins (his renders) + three derived
 // colorways, all sharing the SAME canonical geometry as the original five
 // (felt window 20.3-79.6% x 8.9-89.2% of the 896x1200 frame, measured by
 // felt-edge scan). One asset per skin serves BOTH the darkened page backdrop
 // and the in-scaler table art, so seats always land on the painted rail.
-import skinNeonCity from '../assets/tables/skin_neon_city.png';
-import skinIceCavern from '../assets/tables/skin_ice_cavern.png';
-import skinCarbonRed from '../assets/tables/skin_carbon_red.png';
-import skinArcticWhite from '../assets/tables/skin_arctic_white.png';
-import skinMahoganyRed from '../assets/tables/skin_mahogany_red.png';
-import skinAmethystCavern from '../assets/tables/skin_amethyst_cavern.png';
-import skinCarbonIon from '../assets/tables/skin_carbon_ion.png';
-import skinJadeCity from '../assets/tables/skin_jade_city.png';
 
 /**
  * Canonical skin registry. Every entry is a 896x1200 composite (scene +
@@ -59,38 +47,10 @@ import skinJadeCity from '../assets/tables/skin_jade_city.png';
  * and one felt window work for all of them. Aliases keep older stored
  * table_id values working.
  */
-const TABLE_SKINS: Record<string, string> = {
-  classic_green: skinClassicGreen,
-  'classic-green': skinClassicGreen,
-  ocean_blue: skinOceanBlue,
-  'royal-blue': skinOceanBlue,
-  crimson: skinCrimson,
-  'wine-red': skinCrimson,
-  electric_purple: skinElectricPurple,
-  'purple-haze': skinElectricPurple,
-  golden_sand: skinGoldenSand,
-  emerald: skinGoldenSand,
-  neon_city: skinNeonCity,
-  ice_cavern: skinIceCavern,
-  carbon_red: skinCarbonRed,
-  arctic_white: skinArcticWhite,
-  mahogany_red: skinMahoganyRed,
-  amethyst_cavern: skinAmethystCavern,
-  carbon_ion: skinCarbonIon,
-  jade_city: skinJadeCity,
-  // Legacy ThemeSettingsModal ids (pre-2026-08-17 the modal's table list
-  // never matched the skin switch, so these all silently fell back to
-  // green). Map each to the closest real skin so old saved rows upgrade.
-  'brown-felt': skinMahoganyRed,
-  'neon-blue-felt': skinOceanBlue,
-  'red-leather': skinCrimson,
-  'green-casino': skinClassicGreen,
-  'dark-felt': skinNeonCity,
-};
 
 /** Resolve a stored table/theme id to a skin asset; default stays green. */
 function resolveSkin(tid: string): string {
-  return TABLE_SKINS[tid] || skinClassicGreen;
+  return TABLE_SKINS[tid] || TABLE_SKINS.classic_green;
 }
 
 // Dan 2026-08-18 — INTERCHANGEABLE DESIGNED BACKGROUNDS.
@@ -98,38 +58,9 @@ function resolveSkin(tid: string): string {
 // table"). The page behind the table is now one of ten standalone designed
 // backgrounds, selected on the Theme modal's Background tab and stored in
 // user_theme_settings.background_id. Legacy ids alias to the closest design.
-import bgMidnight from '../assets/backgrounds/bg_midnight.jpg';
-import bgRoyalIndigo from '../assets/backgrounds/bg_royal_indigo.jpg';
-import bgEmeraldRoom from '../assets/backgrounds/bg_emerald_room.jpg';
-import bgCrimsonLounge from '../assets/backgrounds/bg_crimson_lounge.jpg';
-import bgOceanAbyss from '../assets/backgrounds/bg_ocean_abyss.jpg';
-import bgGoldenDusk from '../assets/backgrounds/bg_golden_dusk.jpg';
-import bgGalaxy from '../assets/backgrounds/bg_galaxy.jpg';
-import bgCarbonGrid from '../assets/backgrounds/bg_carbon_grid.jpg';
-import bgIceFrost from '../assets/backgrounds/bg_ice_frost.jpg';
-import bgJadeNeon from '../assets/backgrounds/bg_jade_neon.jpg';
-
-const TABLE_BACKGROUNDS: Record<string, string> = {
-  midnight: bgMidnight,
-  royal_indigo: bgRoyalIndigo,
-  emerald_room: bgEmeraldRoom,
-  crimson_lounge: bgCrimsonLounge,
-  ocean_abyss: bgOceanAbyss,
-  golden_dusk: bgGoldenDusk,
-  galaxy: bgGalaxy,
-  carbon_grid: bgCarbonGrid,
-  ice_frost: bgIceFrost,
-  jade_neon: bgJadeNeon,
-  // Legacy ids saved before 2026-08-18
-  'diamond-pattern': bgMidnight,
-  'stone-concrete': bgCarbonGrid,
-  'galaxy-nebula': bgGalaxy,
-  'hardwood-floor': bgGoldenDusk,
-  'teal-tile': bgJadeNeon,
-};
 
 function resolveBackground(bid: string): string {
-  return TABLE_BACKGROUNDS[bid] || bgMidnight;
+  return TABLE_BACKGROUNDS[bid] || TABLE_BACKGROUNDS.midnight;
 }
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useTableWebSocket } from '../services/TableWebSocket';

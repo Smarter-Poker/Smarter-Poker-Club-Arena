@@ -2425,5 +2425,20 @@
    untouched and keep the full 1.45x.
    ───────────────────────────────────────────────────────────────────────── */
 .seat-wrapper--top {
+  /* Dan 2026-08-19, bug list item 10, and his call on the trade-off: shrink the
+     top row rather than let the avatar climb into the BBJ banner or flip the
+     nameplate above it.
+
+     With the avatar ABOVE the nameplate, a full-size seat simply cannot put its
+     box on the rail. The box sits ~3.9% of the table below the seat's centre,
+     so anchoring the box on the rail band (~8.5%) needs a seat centre near
+     4.6%, which pushes the seat - and the bust art above it - off the top of
+     the table canvas and into the banner. Measured, not guessed.
+
+     A 56px avatar shortens the seat from 112px to 84px, which halves that
+     offset to ~2.5% and lets the box rest on the rail with the whole unit,
+     bust art included, still inside the canvas. The bust scale stays capped
+     because the art is drawn rising from its feet. */
+  --seat-avatar-size: 56px;
   --sp-bust-scale: 1.15;
 }

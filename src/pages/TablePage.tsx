@@ -585,7 +585,7 @@ const SEAT_POSITIONS_6MAX = [
   { x: 50, y: 93.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
   { x: 10.5, y: 66 }, // Seat 2 (lower-left, on rail side)
   { x: 10.5, y: 33 }, // Seat 3 (upper-left, on rail side)
-  { x: 50, y: 8.5 }, // Seat 4 (top-center, ON the measured rail band)
+  { x: 50, y: 6 }, // Seat 4 (top-center; box rests ON the rail band - compact seat)
   { x: 89.5, y: 33 }, // Seat 5 (upper-right, on rail side)
   { x: 89.5, y: 66 }, // Seat 6 (lower-right, on rail side)
 ];
@@ -613,7 +613,7 @@ const SEAT_POSITIONS_9MAX = [
 const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   2: [
     { x: 50, y: 93.5 }, // Hero
-    { x: 50, y: 8.5 }, // Villain, top-center (heads-up), on the rail
+    { x: 50, y: 6 }, // Villain, top-center (heads-up), box on the rail
   ],
   3: [
     { x: 50, y: 93.5 }, // Hero
@@ -623,7 +623,7 @@ const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
   4: [
     { x: 50, y: 93.5 }, // Hero
     { x: 10.5, y: 45 }, // left-middle
-    { x: 50, y: 8.5 }, // top-center, on the rail
+    { x: 50, y: 6 }, // top-center, box on the rail
     { x: 89.5, y: 45 }, // right-middle
   ],
   5: [
@@ -648,7 +648,7 @@ const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
     { x: 19, y: 82.5 }, // lower-left bottom cap
     { x: 10.5, y: 52 }, // left-low
     { x: 10.5, y: 28 }, // left-high
-    { x: 50, y: 8.5 }, // top-center, on the rail
+    { x: 50, y: 6 }, // top-center, box on the rail
     { x: 89.5, y: 28 }, // right-high
     { x: 89.5, y: 52 }, // right-low
     { x: 81, y: 82.5 }, // lower-right bottom cap
@@ -7504,17 +7504,17 @@ export default function TablePage({
             return (
               <div
                 key={seatNumber}
-                /* Dan 2026-08-19, bug list item 10: seats on the TOP rail get a
-                   marker class. Their bust art is scaled 1.45x with a
-                   transform-origin near its feet, so the head rises ~33px
-                   above the avatar slot - which is why the top-centre seats
-                   had been pushed DOWN off the rail into the felt to keep that
-                   art out of the BBJ banner. The seats are back on the rail;
-                   the overhang is capped in CSS instead (see
-                   .seat-wrapper--top in SeatSlot.css). */
+                /* Dan 2026-08-19, bug list item 10: the TOP-CENTRE seat is the
+                   one with nothing above it but the BBJ banner, so it gets the
+                   compact treatment (smaller avatar + capped bust art) that
+                   lets its box rest ON the rail. See .seat-wrapper--top in
+                   SeatSlot.css for the measurements behind it. Top DIAGONAL
+                   seats sit lower on the cap curve and already clear the
+                   banner at full size, so they are deliberately excluded - and
+                   no layout has both, so nothing looks mismatched. */
                 className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
                   isActingSeat ? ' seat-wrapper--spot' : ''
-                }${pos.y < 20 ? ' seat-wrapper--top' : ''}`}
+                }${pos.y < 20 && pos.x === 50 ? ' seat-wrapper--top' : ''}`}
                 style={
                   {
                     left: `${pos.x}%`,

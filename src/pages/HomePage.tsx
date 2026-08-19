@@ -35,7 +35,14 @@ import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 
 import ClubContextMenu from '../components/home/ClubContextMenu';
+import ClubQuickLinkTile from '../components/home/ClubQuickLinkTile';
 import LOBBY_TILES from '../config/lobbyTiles.config';
+import {
+  eligibleQuickLinkClubs,
+  resolveTargetClub,
+  readLastClubId,
+  rememberLastClub,
+} from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevel } from '../utils/clubLevels';
 import { sanitizeInput } from '../utils/sanitizeInput';
@@ -215,15 +222,8 @@ function HomePageInner() {
     null
   );
 
-  // Cashier quick link — target club + quick-switch popover (multi-club users)
-  const [cashierClubId, setCashierClubId] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
-    } catch {
-      return null;
-    }
-  });
-  const [showCashierSwitch, setShowCashierSwitch] = useState(false);
+  // Club quick links (Cashier/Marketplace tiles) — target club selection
+  const [quickLinkClubId, setQuickLinkClubId] = useState<string | null>(() => readLastClubId());
 
   // #12: Seasonal theme
   const seasonalTheme = useMemo(() => getSeasonalTheme(), []);
@@ -834,9 +834,7 @@ function HomePageInner() {
         case '4': {
           haptic.light();
           PremiumSFX.navigate();
-          const lastClub = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
-          const clubs = userClubs.filter((c) => c.entity_type !== 'union');
-          const target = clubs.find((c) => c.id === lastClub) || clubs[0];
+          const target = resolveTargetClub(userClubs);
           if (target) navigate(`/clubs/${target.id}/cashier`);
           else toast.info('Join a club first to access the cashier');
           break;
@@ -844,8 +842,8 @@ function HomePageInner() {
         case '5': {
           haptic.light();
           PremiumSFX.navigate();
-          const mktClub = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
-          navigate(mktClub ? `/marketplace?club=${mktClub}` : '/marketplace');
+          const target = resolveTargetClub(userClubs);
+          navigate(target ? `/marketplace?club=${target.id}` : '/marketplace');
           break;
         }
         case 'j':
@@ -868,7 +866,6 @@ function HomePageInner() {
           setShowFindPlayerModal(false);
           setLeaveConfirm(null);
           setShowShortcutHint(false);
-          setShowCashierSwitch(false);
           break;
       }
     };
@@ -1260,27 +1257,18 @@ function HomePageInner() {
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
   }, [displayClubs.length, displayClubIdsKey]);
 
-  // Cashier quick link — clubs eligible for the cashier (unions excluded)
-  const cashierClubs = useMemo(
-    () => userClubs.filter((c) => c.entity_type !== 'union'),
-    [userClubs]
-  );
-  // Target club: last-used club if still a member, else first club
-  const cashierClub = useMemo(
-    () => cashierClubs.find((c) => c.id === cashierClubId) || cashierClubs[0] || null,
-    [cashierClubs, cashierClubId]
+  // Club quick links — shared resolution (utils/clubQuickLink): last-used
+  // club if still a member, else first club; unions excluded
+  const quickLinkClubs = useMemo(() => eligibleQuickLinkClubs(userClubs), [userClubs]);
+  const quickLinkClub = useMemo(
+    () => resolveTargetClub(quickLinkClubs, quickLinkClubId),
+    [quickLinkClubs, quickLinkClubId]
   );
 
-  // Quick-switch: pick a club from the popover and jump straight to its cashier
-  const handleCashierClubSelect = useCallback(
+  const openClubCashier = useCallback(
     (club: UserClub) => {
-      try {
-        localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
-      } catch {
-        /* storage unavailable — navigation still works */
-      }
-      setCashierClubId(club.id);
-      setShowCashierSwitch(false);
+      rememberLastClub(club.id);
+      setQuickLinkClubId(club.id);
       haptic.light();
       PremiumSFX.navigate();
       navigate(`/clubs/${club.id}/cashier`);
@@ -1288,24 +1276,27 @@ function HomePageInner() {
     [navigate]
   );
 
-  // Tile action handlers (for bottom row tiles using LOBBY_TILES config)
-  const tileActions: Record<string, () => void> = useMemo(
-    () => ({
-      Cashier: () => {
-        haptic.light();
-        PremiumSFX.navigate();
-        if (cashierClub) navigate(`/clubs/${cashierClub.id}/cashier`);
-        else toast.info('Join a club first to access the cashier');
-      },
-      Marketplace: () => {
-        haptic.light();
-        PremiumSFX.navigate();
-        const mktClub = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
-        navigate(mktClub ? `/marketplace?club=${mktClub}` : '/marketplace');
-      },
-    }),
-    [navigate, cashierClub, toast]
+  const openClubMarketplace = useCallback(
+    (club: UserClub) => {
+      rememberLastClub(club.id);
+      setQuickLinkClubId(club.id);
+      haptic.light();
+      PremiumSFX.navigate();
+      navigate(`/marketplace?club=${club.id}`);
+    },
+    [navigate]
   );
+
+  const cashierEmpty = useCallback(() => {
+    haptic.light();
+    toast.info('Join a club first to access the cashier');
+  }, [toast]);
+
+  const marketplaceEmpty = useCallback(() => {
+    haptic.light();
+    PremiumSFX.navigate();
+    navigate('/marketplace');
+  }, [navigate]);
 
   return (
     <div
@@ -1502,77 +1493,18 @@ function HomePageInner() {
                 ═══════════════════════════════════════════════════════════════════════ */}
         <div className={styles.bottomRow} role="navigation" aria-label="Quick actions">
           {LOBBY_TILES.map((tile) =>
-            tile.alt === 'Cashier' ? (
-              /* Cashier — quick link to the target club's cashier, with club name
-                 on the tile and a quick-switch popover for multi-club users */
-              <div key={tile.alt} className={styles.cashierTileWrap}>
-                <button
-                  className={styles.tileCard}
-                  onClick={() => tileActions.Cashier()}
-                  aria-label={
-                    cashierClub
-                      ? `Cashier for ${cashierClub.name || 'your club'} (press ${tile.shortcutKey})`
-                      : `Cashier (press ${tile.shortcutKey})`
-                  }
-                >
-                  <div className={styles.tilePedestal}></div>
-                  <div className={styles.tileImageWrapper}>
-                    <img
-                      src={tile.img}
-                      alt={tile.alt}
-                      className={styles.tileImage}
-                      loading="eager"
-                      width={640}
-                      height={1024}
-                    />
-                    <span className={styles.tileLabel}>
-                      {tile.alt}
-                      {cashierClub?.name && (
-                        <span className={styles.tileClubName}>{cashierClub.name}</span>
-                      )}
-                    </span>
-                  </div>
-                </button>
-                {cashierClubs.length > 1 && (
-                  <button
-                    className={styles.cashierSwitchBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      haptic.light();
-                      setShowCashierSwitch((v) => !v);
-                    }}
-                    aria-label="Switch club cashier"
-                    aria-expanded={showCashierSwitch}
-                    aria-haspopup="menu"
-                    title="Switch club"
-                  >
-                    {'⇄'}
-                  </button>
-                )}
-                {showCashierSwitch && (
-                  <>
-                    <div
-                      className={styles.cashierSwitchOverlay}
-                      onClick={() => setShowCashierSwitch(false)}
-                    />
-                    <div className={styles.cashierSwitchMenu} role="menu" aria-label="Choose club">
-                      <div className={styles.cashierSwitchTitle}>Open Cashier For</div>
-                      {cashierClubs.map((club) => (
-                        <button
-                          key={club.id}
-                          role="menuitem"
-                          className={`${styles.cashierSwitchItem} ${
-                            club.id === cashierClub?.id ? styles.cashierSwitchItemActive : ''
-                          }`}
-                          onClick={() => handleCashierClubSelect(club)}
-                        >
-                          {club.name || 'Unnamed Club'}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+            tile.alt === 'Cashier' || tile.alt === 'Marketplace' ? (
+              /* Club-aware quick links — club name on the tile, quick-switch
+                 popover (tap the corner button or long-press) for multi-club users */
+              <ClubQuickLinkTile
+                key={tile.alt}
+                tile={tile}
+                clubs={quickLinkClubs}
+                targetClub={quickLinkClub}
+                menuTitle={tile.alt === 'Cashier' ? 'Open Cashier For' : 'Open Marketplace For'}
+                onSelect={tile.alt === 'Cashier' ? openClubCashier : openClubMarketplace}
+                onEmpty={tile.alt === 'Cashier' ? cashierEmpty : marketplaceEmpty}
+              />
             ) : (
               <button
                 key={tile.alt}
@@ -1581,8 +1513,6 @@ function HomePageInner() {
                   if (tile.route) {
                     haptic.light();
                     navigate(tile.route);
-                  } else if (tileActions[tile.alt]) {
-                    tileActions[tile.alt]();
                   }
                 }}
                 aria-label={`${tile.alt} (press ${tile.shortcutKey})`}

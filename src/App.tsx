@@ -16,6 +16,7 @@ import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
+import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { addBreadcrumb } from './core/SentryInit';
 
@@ -282,6 +283,7 @@ export default function App() {
     <ErrorBoundary>
       <ToastProvider>
         <GlobalBalanceSync />
+        <LastClubTracker />
         <BusToastBridge />
         <ConfirmHost />
         {/* Dan 2026-08-18: Session Complete now pops in the LOBBY, so its host

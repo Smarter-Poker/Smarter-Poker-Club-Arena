@@ -33,6 +33,7 @@ import { ChipFlowService } from '../services/ChipFlowService';
 import { cashoutService } from '../services/CashoutService';
 import { supabase } from '../lib/supabase';
 import ClubBottomNav from '../components/club/ClubBottomNav';
+import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -1277,6 +1278,9 @@ export default function CashierPage() {
   return (
     <div className={styles.page}>
       {/* Loading context skeleton — shown INSIDE content area, NOT blocking tabs/nav */}
+
+      {/* ── Club context bar — which club's cashier, with multi-club switcher ── */}
+      {clubId && <CashierClubSwitcher clubId={clubId} clubName={clubName} />}
 
       {/* ── Wallet Display — always visible, real-time updates ── */}
       {user?.id && clubId && (

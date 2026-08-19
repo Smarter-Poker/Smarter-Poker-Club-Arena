@@ -2463,11 +2463,19 @@
   max-width: 160px;
 }
 
-/* Inner tile fills the wrapper; keep the 4th-tile stagger delay */
+/* Inner tile fills the wrapper; stagger delays match the tile's row position
+   (wrapping the button in a div breaks the .tileCard:nth-child rules) */
 .cashierTileWrap .tileCard {
   width: 100%;
   max-width: none;
+}
+
+.cashierTileWrap:nth-child(4) .tileCard {
   animation-delay: 640ms;
+}
+
+.cashierTileWrap:nth-child(5) .tileCard {
+  animation-delay: 720ms;
 }
 
 .tileClubName {
@@ -2485,16 +2493,16 @@
 
 .cashierSwitchBtn {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
   z-index: 5;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 1px solid rgba(0, 212, 255, 0.5);
   background: rgba(6, 12, 24, 0.85);
   color: rgba(0, 212, 255, 0.95);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -2553,6 +2561,9 @@
 }
 
 .cashierSwitchItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: none;
   border: none;
   color: rgba(255, 255, 255, 0.9);
@@ -2563,9 +2574,41 @@
   padding: 8px 10px;
   border-radius: 6px;
   cursor: pointer;
+  min-width: 0;
+}
+
+.cashierSwitchItem:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.7);
+  outline-offset: -2px;
+}
+
+.cashierSwitchItemName {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.cashierSwitchLogo {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.cashierSwitchLogoFallback {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 212, 255, 0.15);
+  color: #00d4ff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .cashierSwitchItem:hover {

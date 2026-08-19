@@ -10,6 +10,7 @@
  */
 
 import { useNavigate } from 'react-router-dom';
+import { useEffectiveRake } from '../../hooks/useEffectiveRake';
 import PlayerNotesPanel from '../gameplay/PlayerNotesPanel';
 import HandReplay from '../replay/HandReplay';
 import { GameRulesModal } from './GameRulesModal';
@@ -550,6 +551,11 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     navigate,
   } = props;
 
+  // The rake the engine will actually take at this table (table override ->
+  // club default -> published schedule). Only queried while the Game Rules
+  // modal is open, since this layer is mounted for the whole session.
+  const effectiveRake = useEffectiveRake(tableId, blinds, gameType, showGameRules);
+
   // Per-variant BBJ qualifying rule for the table widget (2026-08-18).
   const bbjInfo = getBBJQualifyingInfo(gameType);
   // Tapping the jackpot banner opens the last-5-jackpots view (Dan, 2026-08-18).
@@ -604,8 +610,8 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         stakes={blinds || '1/2'}
         minBuyIn={safeBB(blinds) * 40}
         maxBuyIn={safeBB(blinds) * 100}
-        rakePercentage={rakePercent}
-        rakeCap={rakeCap}
+        rakePercentage={effectiveRake.rakePercent ?? rakePercent}
+        rakeCap={effectiveRake.rakeCap ?? rakeCap}
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
       />

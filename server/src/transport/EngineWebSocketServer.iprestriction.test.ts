@@ -192,13 +192,29 @@ describe('IP restriction — the switch itself', () => {
     await expect(h.conflict(TABLE_A, BOB, '127.0.0.1')).resolves.toBe(false);
   });
 
-  it('forgetTable drops the cached flag so a re-read happens', () => {
+  it('the cached flag is dropped once the last connection to a table closes', () => {
+    // Otherwise the cache grows for the life of the process, one entry per
+    // table anyone has ever connected to.
     const h = harness();
     h.setRestricted(TABLE_A, true);
-    const cache = (h.server as unknown as { ipRestrictionCache: Map<string, unknown> })
-      .ipRestrictionCache;
-    expect(cache.has(TABLE_A)).toBe(true);
-    h.server.forgetTable(TABLE_A);
-    expect(cache.has(TABLE_A)).toBe(false);
+    const internals = h.server as unknown as {
+      ipRestrictionCache: Map<string, unknown>;
+      forgetTableIfEmpty(tableId: string): void;
+    };
+    expect(internals.ipRestrictionCache.has(TABLE_A)).toBe(true);
+    internals.forgetTableIfEmpty.call(h.server, TABLE_A);
+    expect(internals.ipRestrictionCache.has(TABLE_A)).toBe(false);
+  });
+
+  it('does NOT drop the cached flag while someone is still connected', () => {
+    const h = harness();
+    h.setRestricted(TABLE_A, true);
+    h.seat(TABLE_A, ALICE, '24.15.206.254');
+    const internals = h.server as unknown as {
+      ipRestrictionCache: Map<string, unknown>;
+      forgetTableIfEmpty(tableId: string): void;
+    };
+    internals.forgetTableIfEmpty.call(h.server, TABLE_A);
+    expect(internals.ipRestrictionCache.has(TABLE_A)).toBe(true);
   });
 });

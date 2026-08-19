@@ -75,6 +75,7 @@
     "chip_transactions",
     "clawbot_audit_log",
     "clawbot_task_state",
+    "client_crash_log",
     "clip_library",
     "clip_usage_log",
     "club_agents",

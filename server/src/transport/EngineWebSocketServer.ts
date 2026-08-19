@@ -386,8 +386,17 @@ export class EngineWebSocketServer {
     return false;
   }
 
-  /** Drop a table's cached flag — used when the table closes. */
-  forgetTable(tableId: string): void {
+  /**
+   * Drop a table's cached ip_restriction flag.
+   *
+   * Called from onClose once the last connection to a table goes away, so the
+   * cache cannot grow without bound over the lifetime of a long-running engine
+   * process — an entry is only ever held for a table someone is connected to.
+   */
+  private forgetTableIfEmpty(tableId: string): void {
+    for (const conn of this.connections.values()) {
+      if (conn.tableId === tableId) return; // someone is still here
+    }
     this.ipRestrictionCache.delete(tableId);
   }
 
@@ -527,6 +536,8 @@ export class EngineWebSocketServer {
     const sub = (ws as unknown as { __sub?: HubSubscriber }).__sub;
     if (sub) this.hub.unsubscribe(conn.tableId, sub);
     this.connections.delete(ws);
+    // Delete AFTER removing this connection, so "is anyone left" is accurate.
+    this.forgetTableIfEmpty(conn.tableId);
   }
 
   private heartbeatSweep(): void {

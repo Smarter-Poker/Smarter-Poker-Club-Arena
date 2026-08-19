@@ -9,24 +9,24 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .share-hand-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 700;
-    animation: fadeIn 0.2s ease;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 700;
+  animation: fadeIn 0.2s ease;
 }
 
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
+  from {
+    opacity: 0;
+  }
 
-    to {
-        opacity: 1;
-    }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -34,28 +34,28 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .share-hand-modal {
-    width: 95%;
-    max-width: 420px;
-    background: linear-gradient(180deg, #1C2128 0%, #161B22 100%);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-    animation: slideUp 0.3s ease;
-    overflow: hidden;
-    backdrop-filter: blur(16px) saturate(1.2);
-    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  width: 95%;
+  max-width: 420px;
+  background: linear-gradient(180deg, #1c2128 0%, #161b22 100%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  animation: slideUp 0.3s ease;
+  overflow: hidden;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
 @keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -63,42 +63,44 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .share-hand__header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    background: rgba(0, 0, 0, 0.4);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .share-hand__title {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: #E4E6EB;
-    margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #e4e6eb;
+  margin: 0;
 }
 
 .share-hand__close {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    border-radius: 8px;
-    color: #8B949E;
-    font-size: 1.5rem;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 8px;
+  color: #8b949e;
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .share-hand__close:hover {
-    background: rgba(248, 81, 73, 0.3);
-    color: #F85149;
-    transform: translateY(-2px);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 12px rgba(248, 81, 73, 0.2);
+  background: rgba(248, 81, 73, 0.3);
+  color: #f85149;
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 4px 12px rgba(248, 81, 73, 0.2);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -106,79 +108,120 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .share-hand__preview {
-    margin: 16px;
-    padding: 20px;
-    background: linear-gradient(135deg, #2D333B 0%, #22272E 100%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    text-align: center;
+  margin: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, #2d333b 0%, #22272e 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  text-align: center;
 }
 
 .share-hand__preview-header {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    margin-bottom: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .share-hand__variant {
-    padding: 4px 10px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    background: rgba(24, 119, 242, 0.2);
-    border-radius: 6px;
-    color: #1877F2;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(24, 119, 242, 0.2);
+  border-radius: 6px;
+  color: #1877f2;
 }
 
 .share-hand__stakes {
-    padding: 4px 10px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    font-family: 'JetBrains Mono', monospace;
-    background: rgba(255, 184, 0, 0.2);
-    border-radius: 6px;
-    color: #FFB800;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(255, 184, 0, 0.2);
+  border-radius: 6px;
+  color: #ffb800;
 }
 
 .share-hand__board {
-    margin-bottom: 16px;
+  margin-bottom: 16px;
 }
 
 .share-hand__cards {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
 }
 
 .share-hand__card {
-    padding: 8px 12px;
-    font-size: 1.25rem;
-    font-weight: 800;
-    background: linear-gradient(180deg, #FFFFFF 0%, #F0F0F0 100%);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  padding: 8px 12px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Dan 2026-08-19: the board renders `.share-hand__card-img` wrappers, but the
+   sheet only ever styled `.share-hand__card` — the wrapper had NO rules at
+   all, so flex squeezed each card to fit and the art came out distorted and
+   soft. A shared hand is a graphic people post publicly, so it gets real card
+   sizing that cannot be compressed, and `contain` so a card is never cropped
+   or stretched to fill a box of a different aspect. */
+.share-hand__card-img {
+  flex: 0 0 auto;
+  display: block;
+  line-height: 0;
+  border-radius: 6px;
+  box-shadow:
+    0 6px 14px rgba(0, 0, 0, 0.45),
+    0 1px 0 rgba(255, 255, 255, 0.35) inset;
+}
+
+.share-hand__card-img .card-image {
+  width: 54px;
+  height: 78px;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.share-hand__card-img .card-image__img {
+  object-fit: contain;
+  background: #fff;
+  /* keep the pips crisp when the graphic is scaled up for sharing */
+  image-rendering: -webkit-optimize-contrast;
+}
+
+@media (max-width: 420px) {
+  .share-hand__card-img .card-image {
+    width: 44px;
+    height: 64px;
+  }
+}
+
+.share-hand__cards {
+  flex-wrap: nowrap;
 }
 
 .share-hand__pot {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .share-hand__pot-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #6E7681;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6e7681;
 }
 
 .share-hand__pot-value {
-    font-size: 1.5rem;
-    font-weight: 800;
-    font-family: 'JetBrains Mono', monospace;
-    color: #3FB950;
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  color: #3fb950;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -186,31 +229,31 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .share-hand__tabs {
-    display: flex;
-    padding: 0 16px;
-    background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  padding: 0 16px;
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .share-hand__tab {
-    flex: 1;
-    padding: 12px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    color: #6E7681;
-    cursor: pointer;
-    transition: all 0.15s ease;
+  flex: 1;
+  padding: 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #6e7681;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .share-hand__tab:hover {
-    color: #E4E6EB;
+  color: #e4e6eb;
 }
 
 .share-hand__tab--active {
-    color: #1877F2;
-    border-bottom-color: #1877F2;
+  color: #1877f2;
+  border-bottom-color: #1877f2;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -218,197 +261,203 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .share-hand__content {
-    padding: 20px;
+  padding: 20px;
 }
 
 /* Link Tab */
 .share-hand__link-tab {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .share-hand__url-box {
-    display: flex;
-    gap: 8px;
+  display: flex;
+  gap: 8px;
 }
 
 .share-hand__url-input {
-    flex: 1;
-    padding: 12px 14px;
-    font-size: 0.8125rem;
-    font-family: 'JetBrains Mono', monospace;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 10px;
-    color: #B5BDC6;
-    outline: none;
+  flex: 1;
+  padding: 12px 14px;
+  font-size: 0.8125rem;
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  color: #b5bdc6;
+  outline: none;
 }
 
 .share-hand__copy-btn {
-    width: 48px;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.25rem;
-    background: #1877F2;
-    border: none;
-    border-radius: 10px;
-    color: #FFFFFF;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  background: #1877f2;
+  border: none;
+  border-radius: 10px;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .share-hand__copy-btn:hover {
-    background: #3591FF;
-    transform: translateY(-2px);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 12px rgba(24, 119, 242, 0.3);
+  background: #3591ff;
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 4px 12px rgba(24, 119, 242, 0.3);
 }
 
 .share-hand__copy-btn--success {
-    background: #3FB950;
+  background: #3fb950;
 }
 
 .share-hand__native-share {
-    padding: 14px;
-    font-size: 0.9375rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, #1877F2 0%, #0D5CB8 100%);
-    border: none;
-    border-radius: 12px;
-    color: #FFFFFF;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  padding: 14px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #1877f2 0%, #0d5cb8 100%);
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .share-hand__native-share:hover {
-    transform: translateY(-2px);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 16px rgba(24, 119, 242, 0.4);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 16px rgba(24, 119, 242, 0.4);
 }
 
 /* Social Tab */
 .share-hand__social-tab {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .share-hand__social-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 14px 16px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    color: #E4E6EB;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: #e4e6eb;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .share-hand__social-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 12px rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 4px 12px rgba(255, 255, 255, 0.1);
 }
 
 .share-hand__social-icon {
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1rem;
-    font-weight: 800;
-    border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 800;
+  border-radius: 6px;
 }
 
 .share-hand__social-btn--twitter {
-    border-color: rgba(29, 161, 242, 0.3);
+  border-color: rgba(29, 161, 242, 0.3);
 }
 
 .share-hand__social-btn--twitter:hover {
-    background: rgba(29, 161, 242, 0.2);
+  background: rgba(29, 161, 242, 0.2);
 }
 
 .share-hand__social-btn--twitter .share-hand__social-icon {
-    background: #1DA1F2;
+  background: #1da1f2;
 }
 
 .share-hand__social-btn--facebook {
-    border-color: rgba(24, 119, 242, 0.3);
+  border-color: rgba(24, 119, 242, 0.3);
 }
 
 .share-hand__social-btn--facebook:hover {
-    background: rgba(24, 119, 242, 0.2);
+  background: rgba(24, 119, 242, 0.2);
 }
 
 .share-hand__social-btn--facebook .share-hand__social-icon {
-    background: #1877F2;
+  background: #1877f2;
 }
 
 .share-hand__social-btn--telegram {
-    border-color: rgba(0, 136, 204, 0.3);
+  border-color: rgba(0, 136, 204, 0.3);
 }
 
 .share-hand__social-btn--telegram:hover {
-    background: rgba(0, 136, 204, 0.2);
+  background: rgba(0, 136, 204, 0.2);
 }
 
 .share-hand__social-btn--telegram .share-hand__social-icon {
-    background: #0088CC;
+  background: #0088cc;
 }
 
 .share-hand__social-btn--whatsapp {
-    border-color: rgba(37, 211, 102, 0.3);
+  border-color: rgba(37, 211, 102, 0.3);
 }
 
 .share-hand__social-btn--whatsapp:hover {
-    background: rgba(37, 211, 102, 0.2);
+  background: rgba(37, 211, 102, 0.2);
 }
 
 .share-hand__social-btn--whatsapp .share-hand__social-icon {
-    background: #25D366;
+  background: #25d366;
 }
 
 /* Embed Tab */
 .share-hand__embed-tab {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .share-hand__embed-code {
-    padding: 12px;
-    font-size: 0.75rem;
-    font-family: 'JetBrains Mono', monospace;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    color: #B5BDC6;
-    resize: none;
-    outline: none;
+  padding: 12px;
+  font-size: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: #b5bdc6;
+  resize: none;
+  outline: none;
 }
 
 .share-hand__copy-embed {
-    padding: 12px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 10px;
-    color: #E4E6EB;
-    cursor: pointer;
-    transition: all 0.15s ease;
+  padding: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  color: #e4e6eb;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .share-hand__copy-embed:hover {
-    background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.15);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -416,15 +465,15 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .share-hand__footer {
-    padding: 16px 20px;
-    background: rgba(0, 0, 0, 0.3);
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    text-align: center;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: center;
 }
 
 .share-hand__footer-text {
-    font-size: 0.75rem;
-    color: #6E7681;
+  font-size: 0.75rem;
+  color: #6e7681;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -432,12 +481,12 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 480px) {
-    .share-hand-modal {
-        max-width: 100%;
-        margin: 16px;
-    }
+  .share-hand-modal {
+    max-width: 100%;
+    margin: 16px;
+  }
 
-    .share-hand__social-tab {
-        grid-template-columns: 1fr;
-    }
+  .share-hand__social-tab {
+    grid-template-columns: 1fr;
+  }
 }

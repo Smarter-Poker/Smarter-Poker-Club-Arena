@@ -943,6 +943,35 @@
   gap: 2px;
   width: 100%;
 }
+
+/* ANIMATION AUDIT 2026-08-19: Run-It-Twice extra boards used to pop onto the
+   felt fully formed in one frame. Each extra run's cards now deal in with a
+   left-to-right stagger, run 3 starting after run 2. */
+.community-area__run .community-cards__card {
+  animation: ritRunCardIn calc(0.38s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1)
+    both;
+  animation-delay: calc(
+    var(--rit-run-delay, 0s) + var(--card-index, 0) * 0.12s * var(--animation-speed, 1)
+  );
+}
+/* Run 3 (a second extra board) waits for run 2's cards to land. */
+.community-area__run + .community-area__run {
+  --rit-run-delay: 1s;
+}
+@keyframes ritRunCardIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.7) rotateY(90deg);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.04) rotateY(0deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotateY(0deg);
+  }
+}
 .community-area__run-label {
   font-size: 0.5rem;
   font-weight: 800;
@@ -1085,18 +1114,22 @@
   animation: dealerPuckDrop calc(0.5s * var(--animation-speed, 1)) var(--ease-spring);
 }
 
+/* ANIMATION AUDIT 2026-08-19: the button is centred by an inline
+   transform: translate(-50%, -50%). The keyframe's transform REPLACES that
+   for its 0.5s run, so the puck jumped half its own size at hand start.
+   The centring translate is now part of every keyframe. */
 @keyframes dealerPuckDrop {
   0% {
     opacity: 0;
-    transform: scale(0.3) translateY(-20px);
+    transform: translate(-50%, -50%) scale(0.3) translateY(-20px);
   }
   60% {
     opacity: 1;
-    transform: scale(1.1) translateY(2px);
+    transform: translate(-50%, -50%) scale(1.1) translateY(2px);
   }
   100% {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translate(-50%, -50%) scale(1) translateY(0);
   }
 }
 
@@ -1729,18 +1762,61 @@
   }
 }
 
-/* Slow community card dealing in all-in mode — Bible V8 dramatic runout */
-.table-page--allin-mode .community-cards__card {
-  animation-duration: calc(0.8s * var(--animation-speed, 1));
-}
-.table-page--allin-mode .community-cards__card--dealing {
-  animation-duration: calc(1.2s * var(--animation-speed, 1));
-}
+/* Slow community card dealing in all-in mode — Bible V8 dramatic runout.
+   ANIMATION AUDIT 2026-08-19: the blanket .community-cards__card override
+   stretched ccFlopLand to 0.8s while the two-phase flip's fan-open delay
+   stayed fixed at 0.52s — during an all-in runout the flop fanned open
+   BEFORE it landed. The server's paced runout (1s + 1.4s/street) provides
+   the drama now; the flop keeps its normal, internally-consistent timing.
+   The dead --dealing override (class no component emits) is gone too. */
 .table-page--allin-mode .community-cards__card--turn {
   animation-duration: calc(1s * var(--animation-speed, 1)) !important;
 }
 .table-page--allin-mode .community-cards__card--river {
   animation-duration: calc(1.3s * var(--animation-speed, 1)) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ALL-IN EQUITY BADGE — per-seat win percentage during a runout
+   (styling moved out of TablePage.tsx inline styles, 2026-08-19)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.equity-overlay {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #fff;
+  white-space: nowrap;
+  z-index: 50;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  transition: background-color 0.4s ease;
+  animation: equityPop calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
+}
+.equity-overlay--ahead {
+  background-color: rgba(46, 204, 113, 0.9);
+  box-shadow: 0 0 10px rgba(46, 204, 113, 0.45);
+}
+.equity-overlay--behind {
+  background-color: rgba(231, 76, 60, 0.9);
+  box-shadow: 0 0 10px rgba(231, 76, 60, 0.35);
+}
+@keyframes equityPop {
+  0% {
+    transform: translateX(-50%) scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: translateX(-50%) scale(1.18);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
 }
 
 /* Pot display glows during all-in */

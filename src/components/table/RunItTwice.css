@@ -224,6 +224,25 @@
   font-weight: 800;
   background: linear-gradient(180deg, #ffffff 0%, #e8e8e8 100%);
   border-radius: 4px;
+  /* ANIMATION AUDIT 2026-08-19: staggered flip-in — delay set inline per
+     card (board index * 900ms + card index * 140ms) so the boards deal out
+     one after another instead of appearing in a single frame. */
+  animation: ritCardFlipIn 0.35s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes ritCardFlipIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) rotateY(90deg) scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(1px) rotateY(0deg) scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotateY(0deg) scale(1);
+  }
 }
 
 .rit-board__card--base {

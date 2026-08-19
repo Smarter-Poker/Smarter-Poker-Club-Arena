@@ -138,6 +138,12 @@ export interface SeatSlotProps {
    */
   isDealing?: boolean;
   /**
+   * ANIMATION AUDIT 2026-08-19 — true when this seat LOST a showdown and its
+   * revealed cards should fly to the muck (cardFoldOut) before the table
+   * resets. Set by the parent late in the winner-display window.
+   */
+  isMucking?: boolean;
+  /**
    * 2026-04-15 Bible V8 §6.1 — server-authoritative absolute wall-clock
    * deadline for the CURRENT active seat (ms since epoch). Combined with
    * `turnStartTimeMs` this drives a pure-CSS `@property` animation on the
@@ -310,6 +316,7 @@ export const SeatSlot = memo(
       gesturesEnabled = true,
       isCollectingChips = false,
       isDealing = false,
+      isMucking = false,
       turnDeadlineMs,
       turnStartTimeMs,
       showPickedCardIndexes,
@@ -380,10 +387,13 @@ export const SeatSlot = memo(
         prevActionRef.current = lastAction;
         return () => clearTimeout(timer);
       }
-      // Bible V8 §10.1: card fold animation — cards fly to center/muck
+      // Bible V8 §10.1: card fold animation — cards fly to center/muck.
+      // ANIMATION AUDIT 2026-08-19: window was 350ms but cardFoldOut runs
+      // 380ms + 55ms second-card delay = 435ms — the class was stripped
+      // mid-flight and the second card snapped. 500ms covers it.
       if (lastAction === 'fold' && prevActionRef.current !== 'fold') {
         setIsFolding(true);
-        const timer = setTimeout(() => setIsFolding(false), 350);
+        const timer = setTimeout(() => setIsFolding(false), 500);
         prevActionRef.current = lastAction;
         return () => clearTimeout(timer);
       }
@@ -398,7 +408,9 @@ export const SeatSlot = memo(
       // Trigger 3D flip when showCards transitions false → true
       if (player.showCards && !prevShowCardsRef.current) {
         setIsShowdownFlip(true);
-        const timer = setTimeout(() => setIsShowdownFlip(false), 400);
+        // ANIMATION AUDIT 2026-08-19: was 400ms, but card 2 runs 120ms delay
+        // + 350ms flip = 470ms — it snapped face-up at 85%. 600ms covers it.
+        const timer = setTimeout(() => setIsShowdownFlip(false), 600);
         prevShowCardsRef.current = player.showCards;
         return () => clearTimeout(timer);
       }
@@ -609,9 +621,9 @@ export const SeatSlot = memo(
         {/* Hole Cards — opponents: show card backs for active/all-in players, reveal at showdown.
             Also render during isFolding so the fly-out animation can play before unmount. */}
         {!player.isHero &&
-          (player.status === 'active' || player.status === 'all_in' || isFolding) && (
+          (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) && (
             <div
-              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
             >
               {player.holeCards && player.holeCards.length > 0 ? (
                 player.holeCards.map((card, i) => (
@@ -923,6 +935,8 @@ export const SeatSlot = memo(
     // COMMUNITY_CARDS_DEALT / HAND_COMPLETE — must force a re-render or the
     // cpCollect keyframe never fires and chips teleport into the pot.
     if (prev.isCollectingChips !== next.isCollectingChips) return false;
+    // ANIMATION AUDIT 2026-08-19: showdown-loser muck flag must re-render.
+    if (prev.isMucking !== next.isMucking) return false;
     // UI-AUDIT #13: gesture toggle must take effect on already-mounted seats.
     if (prev.gesturesEnabled !== next.gesturesEnabled) return false;
 

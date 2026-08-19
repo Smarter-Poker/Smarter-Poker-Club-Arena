@@ -18,6 +18,7 @@ import ActivityHeatmap from '../components/common/ActivityHeatmap';
 import { ConfettiEffect } from '../components/gamification/ConfettiEffect';
 import { achievementService } from '../services/AchievementService';
 import { haptic } from '../services/HapticService';
+import { soundService } from '../services/SoundService';
 import './AchievementsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -525,11 +526,11 @@ export default function AchievementsPage() {
   useEffect(() => {
     if (!newUnlock) return;
     haptic.success();
-    // Try to play unlock sound
+    // SOUND AUDIT 2026-08-19: '/sounds/unlock-chime.mp3' never existed —
+    // the request 404'd silently on every unlock. Use the synth achievement
+    // fanfare the rest of the app plays.
     try {
-      const audio = new Audio('/sounds/unlock-chime.mp3');
-      audio.volume = 0.4;
-      audio.play().catch(() => {});
+      soundService.playAchievement();
     } catch (e) {
       reportError(e, 'AchievementsPage.useEffect');
       /* no audio support */

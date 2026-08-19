@@ -243,15 +243,26 @@ function PotDisplayComponent({
     prevSidePotCountRef.current = sidePots.length;
   }, [sidePots.length]);
 
+  // ANIMATION AUDIT 2026-08-19: during the pot-push (collectTo set) a
+  // snapshot may already have zeroed the pot. Show the last real amount for
+  // the slide so the pot travels to the winner still reading its value.
+  const lastNonZeroPotRef = useRef(mainPot);
+  if (mainPot > 0) lastNonZeroPotRef.current = mainPot;
+  const displayPot = mainPot > 0 ? mainPot : collectTo ? lastNonZeroPotRef.current : mainPot;
+
   // Calculate chip visualization
-  const chipBreakdown = useMemo(() => getChipBreakdown(mainPot), [mainPot]);
+  const chipBreakdown = useMemo(() => getChipBreakdown(displayPot), [displayPot]);
 
   // Total pot calculation
   const totalPot = useMemo(() => {
     return mainPot + sidePots.reduce((sum, p) => sum + p.amount, 0);
   }, [mainPot, sidePots]);
 
-  if (mainPot === 0 && sidePots.length === 0) {
+  // ANIMATION AUDIT 2026-08-19: while collectTo is set, the pot is mid-slide
+  // toward the winner (pdCollect). A snapshot zeroing the pot used to hit
+  // this early return and unmount the component, cutting the push short —
+  // the pot number blinked out instead of travelling to the seat.
+  if (mainPot === 0 && sidePots.length === 0 && !collectTo) {
     return null;
   }
 
@@ -273,7 +284,7 @@ function PotDisplayComponent({
       aria-label={`Pot: ${formatAmount(mainPot, currency)}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
     >
       {/* Chip Stacks Visualization */}
-      {showChipAnimation && mainPot > 0 && (
+      {showChipAnimation && displayPot > 0 && (
         <div className="pot-display__chips">
           {chipBreakdown.map((chip, i) => (
             <ChipStack
@@ -295,10 +306,14 @@ function PotDisplayComponent({
         <span className="pot-display__label">POT</span>
         <span className="pot-display__amount">
           {displayMode === 'bb' && bigBlind > 0 ? (
-            <AnimatedNumber value={mainPot} duration={350} format={(n) => formatBB(n, bigBlind)} />
+            <AnimatedNumber
+              value={displayPot}
+              duration={350}
+              format={(n) => formatBB(n, bigBlind)}
+            />
           ) : (
             <AnimatedNumber
-              value={mainPot}
+              value={displayPot}
               duration={350}
               format={(n) => formatAmount(n, currency)}
             />
@@ -355,6 +370,12 @@ export const PotDisplay = memo(PotDisplayComponent, (prev, next) => {
   if (prev.displayMode !== next.displayMode) return false;
   if (JSON.stringify(prev.sidePots) !== JSON.stringify(next.sidePots)) return false;
   if (prev.onToggleDisplayMode !== next.onToggleDisplayMode) return false;
+  // ANIMATION AUDIT 2026-08-19: collectTo was MISSING here — a collectTo
+  // change alone reported "props equal", so the pot-push-to-winner slide
+  // could silently never render. It only worked when the pot amount happened
+  // to change in the same commit.
+  if (prev.collectTo?.dx !== next.collectTo?.dx || prev.collectTo?.dy !== next.collectTo?.dy)
+    return false;
   return true;
 });
 

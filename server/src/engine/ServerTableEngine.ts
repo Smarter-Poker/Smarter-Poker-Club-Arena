@@ -275,7 +275,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           // The `!p.is_folded` guard is what keeps this safe and it stays. A
           // player who folded is never included, so a fold is never exposed;
           // only players who took the hand to showdown are turned over.
-          const showCards = state.stage === 'showdown' && !p.is_folded;
+          // ANIMATION AUDIT 2026-08-19: also reveal during an all-in runout
+          // (runoutRevealActive) — betting is complete, hands are tabled, and
+          // the paced runout is unwatchable with the cards still face down.
+          // The `!p.is_folded` guard stays: a fold is never exposed.
+          const showCards = (state.stage === 'showdown' || this.runoutRevealActive) && !p.is_folded;
 
           // ── Dan 2026-08-18: per-card voluntary reveal ──
           //

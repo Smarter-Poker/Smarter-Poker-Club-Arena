@@ -151,6 +151,8 @@ export default function UnionDashboardPage() {
   } | null>(null);
   const [bbjFundAmount, setBbjFundAmount] = useState('');
   const [recentPeriods, setRecentPeriods] = useState<SettlementPeriod[]>([]);
+  /** Weekly union<->club player win/loss settlements (union_pnl_settlements). */
+  const [pnlSettlements, setPnlSettlements] = useState<any[]>([]);
   const [rakebackHistory, setRakebackHistory] = useState<
     { id: string; period_start: string; period_end: string; total_rakeback: number; executed_at: string }[]
   >([]);
@@ -376,15 +378,39 @@ export default function UnionDashboardPage() {
       .maybeSingle();
     if (mountedRef.current) setBbjPool(poolRow);
 
-    // settlement_periods is a global table (no club_id column) — query by status/date instead
-    const { data: periods } = await supabase
+    // 2026-08-19: the comment here claimed "settlement_periods is a global
+    // table (no club_id column)". That is wrong — it has club_id, and both
+    // union_id and club_id are used by the settlement pipeline. The result was
+    // an unscoped list (every club RLS allowed, from any union) whose Club
+    // column always rendered "Unknown" because club_id was never selected.
+    const unionClubIds = clubIds;
+    let periodQuery = supabase
       .from('settlement_periods')
       .select(
-        'id, period_number, year, start_at, end_at, status, total_rake_collected, total_hands_dealt, settled_at, created_at'
+        'id, club_id, union_id, period_number, year, start_at, end_at, status, total_rake_collected, total_player_winnings, total_player_losses, total_hands_dealt, settled_at, created_at'
       )
       .order('created_at', { ascending: false })
       .limit(30);
+    periodQuery = unionClubIds.length
+      ? periodQuery.in('club_id', unionClubIds)
+      : periodQuery.eq('union_id', uid);
+    const { data: periods } = await periodQuery;
     if (mountedRef.current) setRecentPeriods(periods || []);
+
+    // ── Weekly union<->club player P&L settlements (added 2026-08-19) ──
+    // Until now the weekly square-up had NO readable surface anywhere in the
+    // app: a union admin could not see what was collected, what was paid, or
+    // why a period was parked for review. A money process nobody can inspect
+    // is a money process nobody trusts.
+    const { data: pnlRows } = await supabase
+      .from('union_pnl_settlements')
+      .select(
+        'id, period_start, period_end, status, total_collected, total_paid, total_unpaid, club_results, settled_at'
+      )
+      .eq('union_id', uid)
+      .order('period_start', { ascending: false })
+      .limit(12);
+    if (mountedRef.current) setPnlSettlements(pnlRows || []);
 
     // SWR: cache successful load for instant display on revisit
     if (mountedRef.current) {
@@ -1746,6 +1772,72 @@ export default function UnionDashboardPage() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* ── Weekly Player P&L Settlement (added 2026-08-19) ──
+                The club<->union square-up for player wins and losses. This is
+                the only place it is visible; before this it ran with no
+                surface at all. A period shown as "Review" moved NO chips on
+                purpose: the club nets did not prove zero-sum, so the
+                settlement refused to pay rather than pay a wrong number. */}
+            <h3 className="admin-section-title">Weekly Player P&amp;L Settlement</h3>
+            {pnlSettlements.length === 0 ? (
+              <div className="admin-empty-state">
+                <span className="admin-empty-icon">▦</span>
+                <span>No player P&amp;L settlement has run yet</span>
+              </div>
+            ) : (
+              <div className="admin-table-scroll">
+                <table className="admin-data-table">
+                  <thead>
+                    <tr>
+                      <th>Week of</th>
+                      <th>Status</th>
+                      <th>Collected</th>
+                      <th>Paid</th>
+                      <th>Outstanding</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pnlSettlements.map((s: any) => {
+                      const settled = s.status === 'settled';
+                      const review = s.status === 'needs_review';
+                      return (
+                        <tr key={s.id}>
+                          <td>{new Date(s.period_start).toLocaleDateString()}</td>
+                          <td>
+                            <span
+                              className="admin-badge"
+                              style={{
+                                background: review
+                                  ? 'rgba(245,158,11,0.15)'
+                                  : settled
+                                    ? 'rgba(34,197,94,0.15)'
+                                    : 'rgba(148,163,184,0.15)',
+                                color: review ? '#f59e0b' : settled ? '#22c55e' : '#94a3b8',
+                              }}
+                              title={
+                                review
+                                  ? 'Club nets did not balance to zero across the union — no chips were moved, pending review.'
+                                  : undefined
+                              }
+                            >
+                              {review ? 'Review' : settled ? 'Settled' : s.status}
+                            </span>
+                          </td>
+                          <td>{Number(s.total_collected || 0).toLocaleString()}</td>
+                          <td>{Number(s.total_paid || 0).toLocaleString()}</td>
+                          <td>
+                            {Number(s.total_unpaid || 0) > 0
+                              ? Number(s.total_unpaid).toLocaleString()
+                              : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

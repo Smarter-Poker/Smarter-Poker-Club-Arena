@@ -38,6 +38,16 @@ interface ChipAnimationProps {
   useArc?: boolean;
   /** Size of the arc (-1 to 1, negative = arc upward) */
   arcHeight?: number;
+  /**
+   * Dan 2026-08-19, bug list item 6 ("...showing chip amounts"): a pot going to
+   * one winner is sent as a FAN of 3-8 chips, and every chip was labelled with
+   * its own 1/Nth of the pot. Eight chips reading "125" for a 1,000 pot is not
+   * showing the amount, it is showing eight wrong numbers. Only the lead chip
+   * of a fan carries a label now, and it reads the whole amount being shipped.
+   */
+  showLabel?: boolean;
+  /** What the label reads, when it differs from this chip's own value. */
+  labelAmount?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -69,6 +79,8 @@ export default function ChipAnimation({
   chipColor = 'gold',
   useArc = true,
   arcHeight = -0.4,
+  showLabel = true,
+  labelAmount,
 }: ChipAnimationProps) {
   const [position, setPosition] = useState(from);
   const [opacity, setOpacity] = useState(1);
@@ -171,7 +183,7 @@ export default function ChipAnimation({
       ))}
 
       {/* Amount label */}
-      <span className={styles.amount}>{formatAmount(amount)}</span>
+      {showLabel && <span className={styles.amount}>{formatAmount(labelAmount ?? amount)}</span>}
     </div>
   );
 }
@@ -189,6 +201,10 @@ export interface ChipAnimationEvent {
   delay?: number;
   /** 'to-pot' = arc upward, 'to-winner' = arc with slight lift */
   type?: 'to-pot' | 'to-winner' | 'straight';
+  /** Only the lead chip of a fan is labelled — see ChipAnimationProps. */
+  showLabel?: boolean;
+  /** What that label reads. */
+  labelAmount?: number;
 }
 
 interface ChipAnimationManagerProps {
@@ -213,6 +229,8 @@ export function ChipAnimationManager({
           duration={anim.type === 'to-winner' ? 600 : 400}
           useArc={anim.type !== 'straight'}
           arcHeight={anim.type === 'to-winner' ? -0.3 : -0.4}
+          showLabel={anim.showLabel !== false}
+          labelAmount={anim.labelAmount}
           onComplete={() => onAnimationComplete?.(anim.id)}
         />
       ))}
@@ -266,6 +284,10 @@ export function createPotToWinnerEvent(
     delay: i * 40,
     type: 'to-winner' as const,
     chipColor: getChipColor(amount / chipCount),
+    // One label for the fan, reading the WHOLE amount being shipped to this
+    // winner — not N chips each reading a share of it.
+    showLabel: i === 0,
+    labelAmount: amount,
   }));
 }
 

@@ -1046,6 +1046,17 @@ export default function TablePage({
   const [showTimeBank, setShowTimeBank] = useState(false);
   const [timeBankActive, setTimeBankActive] = useState(false);
   const [timeBanksRemaining, setTimeBanksRemaining] = useState(4);
+  /**
+   * Dan 2026-08-19, bug list item 6: "pot-push animation to the winner after
+   * every hand showing chip amounts, not auto-advancing."
+   *
+   * Pixel offset from the pot's own centre toward the winning seat. While it is
+   * set, PotDisplay slides the whole pot - amount and all - that way and fades,
+   * instead of the number simply blinking out of existence when the hand ends.
+   * Null between hands.
+   */
+  const [potCollectTo, setPotCollectTo] = useState<{ dx: number; dy: number } | null>(null);
+  const potCollectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Guards the diamond charge in handleBuyTimeBank against a double-tap. */
   const buyingTimeBankRef = useRef(false);
   /**
@@ -5492,6 +5503,35 @@ export default function TablePage({
             // #175 gated for multi-table: only play on the active tab
             if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
           }
+
+          // Dan 2026-08-19, bug list item 6: push the POT ITSELF to the winner,
+          // not just a fan of chips. `.pot-display--collect` and its
+          // --collect-dx/--collect-dy properties have been in the stylesheet
+          // all along, documented as "set by JS" — nothing ever set them, so
+          // the pot simply vanished at the end of every hand.
+          //
+          // Single winner only: on a chop there is no one seat to push to, and
+          // the per-winner chip fan above already tells that story.
+          if (winnerIds.length === 1) {
+            const soleSeatIdx = tableStateRef.current.players.findIndex(
+              (p) => p?.id === winnerIds[0]
+            );
+            const soleSeatPct = soleSeatIdx >= 0 ? seatPositions[soleSeatIdx] : null;
+            if (soleSeatPct) {
+              const winnerPx = seatPctToViewportPx(tableScalerRef.current, soleSeatPct);
+              setPotCollectTo({
+                dx: Math.round(winnerPx.x - potPos.x),
+                dy: Math.round(winnerPx.y - potPos.y),
+              });
+              if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
+              // Slightly longer than --pd-collect-duration (0.5s) so the pot is
+              // never yanked back to centre mid-slide.
+              potCollectTimerRef.current = setTimeout(() => {
+                potCollectTimerRef.current = null;
+                setPotCollectTo(null);
+              }, 700);
+            }
+          }
         }
         break;
       }
@@ -6156,6 +6196,13 @@ export default function TablePage({
    * optimistically by the one use that was bought, which is what the engine
    * will independently derive from the DB on the next activation.
    */
+  useEffect(
+    () => () => {
+      if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
+    },
+    []
+  );
+
   useEffect(() => {
     let alive = true;
     void supabase
@@ -7354,6 +7401,7 @@ export default function TablePage({
               bigBlind={safeBB(tableState.blinds, 0)}
               displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
               onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
+              collectTo={potCollectTo}
             />
             {/* AUDIT FIX 2026-07-19: removed the duplicate PremiumPot —
                 it rendered the SAME pot total in the same .pot-area as

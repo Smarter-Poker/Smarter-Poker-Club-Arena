@@ -34,6 +34,19 @@ export interface PotDisplayProps {
   bigBlind?: number;
   displayMode?: PotDisplayMode;
   onToggleDisplayMode?: () => void;
+  /**
+   * Dan 2026-08-19, bug list item 6: "pot-push animation to the winner after
+   * every hand showing chip amounts, not auto-advancing."
+   *
+   * When set, the pot slides toward the winner's seat and fades, carrying its
+   * amount with it, instead of the number simply vanishing when the hand ends.
+   * The offset is in pixels from the pot's own centre toward that seat.
+   *
+   * The `.pot-display--collect` rule and its --collect-dx/--collect-dy
+   * custom properties have existed in the stylesheet all along, documented as
+   * "set by JS" - nothing ever set them, so the animation had never once run.
+   */
+  collectTo?: { dx: number; dy: number } | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -206,6 +219,7 @@ function PotDisplayComponent({
   bigBlind = 0,
   displayMode = 'chips',
   onToggleDisplayMode,
+  collectTo = null,
 }: PotDisplayProps) {
   // Pot update pulse animation — triggers CSS class briefly on change
   const [isPotUpdated, setIsPotUpdated] = useState(false);
@@ -243,7 +257,17 @@ function PotDisplayComponent({
 
   return (
     <div
-      className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}`}
+      className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}${
+        collectTo ? ' pot-display--collect' : ''
+      }`}
+      style={
+        collectTo
+          ? ({
+              '--collect-dx': `${collectTo.dx}px`,
+              '--collect-dy': `${collectTo.dy}px`,
+            } as React.CSSProperties)
+          : undefined
+      }
       role="status"
       aria-live="polite"
       aria-label={`Pot: ${formatAmount(mainPot, currency)}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}

@@ -618,11 +618,25 @@ export class GameServer {
       //    resumed tournament needs. Now only seats at CASH tables
       //    (tables.tournament_id IS NULL) are cashed out, and the delete below
       //    targets exactly the processed seat rows instead of wiping the table.
+      // Dan 2026-08-18 [P0]: this swept EVERY cash seat on EVERY boot, so an
+      // ordinary deploy cashed out and deleted seats belonging to players who
+      // were mid-session — Dan was removed from a live table twice today by
+      // exactly this. Real people are not stale data. Only seats belonging to
+      // HORSES are reaped here; a human's seat survives a restart (the engine
+      // rebuilds its table from table_seats on boot, which is the whole point
+      // of persisting them). Genuinely orphaned human seats are still handled
+      // by HorseLifecycleManager's 4-hour sweep, which has activity guards.
+      const { data: horseRows } = await supabase.from('profiles').select('id').eq('is_horse', true);
+      const horseIdList = (horseRows || []).map((h: { id: string }) => h.id);
+
       let seatsQuery = supabase
         .from('table_seats')
         .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
         .is('left_at', null)
         .is('tables.tournament_id', null);
+      if (horseIdList.length > 0) {
+        seatsQuery = seatsQuery.in('user_id', horseIdList);
+      }
       if (protectedTableId) {
         seatsQuery = seatsQuery.neq('table_id', protectedTableId);
       }

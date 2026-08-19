@@ -18,6 +18,14 @@ interface ActionPanelProps {
   callAmount: number;
   minRaise: number;
   maxRaise: number;
+  /**
+   * Dan 2026-08-18 (PLO bug): the raise-TO amount that actually puts hero
+   * all-in (stack + own bet). In NO-LIMIT this equals maxRaise, so behaviour
+   * is unchanged. In POT-LIMIT maxRaise is the POT CAP — betting the pot is
+   * the largest LEGAL raise but is emphatically NOT all-in, and treating the
+   * two as equal is what made "bet pot" shove the whole stack.
+   */
+  allInTo?: number;
   pot: number;
   bigBlind: number;
   onAction: (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => void;
@@ -73,6 +81,7 @@ export default function ActionPanel({
   callAmount,
   minRaise: rawMinRaise,
   maxRaise: rawMaxRaise,
+  allInTo,
   pot,
   bigBlind,
   onAction,
@@ -87,6 +96,8 @@ export default function ActionPanel({
   const smallestChip = Math.max(bigBlind / 2, 0.01);
   const minRaise = roundToChip(rawMinRaise, smallestChip, rawMinRaise, rawMaxRaise);
   const maxRaise = rawMaxRaise;
+  // Only an amount that reaches the REAL all-in threshold is an all-in.
+  const allInThreshold = allInTo ?? rawMaxRaise;
   const [isRaiseMode, setIsRaiseMode] = useState(false);
   const [pendingAllIn, setPendingAllIn] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(minRaise);
@@ -222,17 +233,20 @@ export default function ActionPanel({
 
   const handleConfirmRaise = useCallback(() => {
     haptic.medium(); // FIX 196: Bible V8 §5.4 — raise = medium haptic (was strong/heavy, reserved for all_in)
-    if (raiseAmount >= maxRaise) {
+    // Dan 2026-08-18: compare against the REAL all-in threshold, not maxRaise.
+    // In PLO maxRaise is the pot cap, so this branch used to fire on every
+    // pot-sized bet and shove the stack.
+    if (raiseAmount >= allInThreshold) {
       if (confirmAllIn) {
         setPendingAllIn(true);
         return;
       }
-      onAction('allin', maxRaise);
+      onAction('allin', allInThreshold);
     } else {
       onAction('raise', raiseAmount);
     }
     setIsRaiseMode(false);
-  }, [raiseAmount, maxRaise, onAction, confirmAllIn]);
+  }, [raiseAmount, allInThreshold, onAction, confirmAllIn]);
 
   const handleAllIn = useCallback(() => {
     haptic.strong();

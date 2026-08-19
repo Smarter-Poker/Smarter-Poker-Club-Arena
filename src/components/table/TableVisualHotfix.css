@@ -44,10 +44,18 @@
   border-color: transparent !important;
   background: transparent !important;
   box-shadow: none !important;
+  /* image fills the whole circle — no inset ring gap */
+  border-width: 0 !important;
 }
-/* Keep the acting-player ring — Bible §5.1 active highlight survives. */
-.table-page .seat--active .seat__avatar {
-  border-color: rgba(255, 215, 0, 0.65) !important;
+/* Dan 2026-08-18: "the yellow circle shouldn't be there, it should just be
+   the profile image". No ring around ANY avatar — not the permanent hero one,
+   not the acting-player one. The photo fills its circle edge to edge. Whose
+   turn it is is still unmistakable: the name plate keeps its neon border and
+   the countdown timer. */
+.table-page .seat--active .seat__avatar,
+.table-page .seat--hero .seat__avatar {
+  border-color: transparent !important;
+  border-width: 0 !important;
 }
 
 /* ── 2. Clip the baked gold nameplate off table-variant bust art ────────── */

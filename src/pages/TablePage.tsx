@@ -1759,6 +1759,13 @@ export default function TablePage({
   // its own state lets the placeholder survive until real data replaces it.
   // ─────────────────────────────────────────────────────────────────
   const [pendingSeat, setPendingSeat] = useState<number | null>(null);
+  /**
+   * Dan 2026-08-18: the stack the hero just bought in for. Between "buy-in
+   * confirmed" and "dealt into a hand" the engine's players array does not
+   * contain the hero yet, so without this the seat rendered EMPTY and the
+   * player watched their own chair sit vacant.
+   */
+  const pendingSeatStackRef = useRef<number>(0);
 
   // ─────────────────────────────────────────────────────────────────
   // Bible V8 §1.16 Real-Time Law — chip-to-pot collection animation.
@@ -4062,6 +4069,21 @@ export default function TablePage({
     setTableState((prev) => ({
       ...prev,
       actionTimerDeadline: payload.deadline,
+      /**
+       * Dan 2026-08-18: the countdown ring drained far faster than the real
+       * 15s clock. SeatSlot computes the ring duration as
+       * (deadline - startTime), but this handler only ever wrote the
+       * DEADLINE — actionTimerStartTime stayed undefined/stale, so the
+       * animation duration collapsed. Record the start alongside it: prefer
+       * the server's own value, else derive it from the deadline and the
+       * table's action clock so the ring always spans the true turn length.
+       */
+      actionTimerStartTime:
+        payload.startTime ??
+        payload.startedAt ??
+        (typeof payload.deadline === 'number'
+          ? payload.deadline - actionTimeSeconds * 1000
+          : Date.now()),
       actionTimerPlayerId: payload.playerId,
     }));
   });
@@ -4071,6 +4093,7 @@ export default function TablePage({
     setTableState((prev) => ({
       ...prev,
       actionTimerDeadline: undefined,
+      actionTimerStartTime: undefined,
       actionTimerPlayerId: undefined,
     }));
   });
@@ -4661,6 +4684,12 @@ export default function TablePage({
 
           // Keep heroSeatRef in sync too (used by the sit/leave guards).
           if (syncedHeroSeat > 0) heroSeatRef.current = syncedHeroSeat;
+          // Dan 2026-08-18: seat vanished server-side — drop the local claim so
+          // the seat renders as OPEN (not "YOUR SEAT") and say so once.
+          else if (heroSeatRef.current > 0 && updatedPlayers.some((pl) => pl)) {
+            heroSeatRef.current = 0;
+            toast.info('You are no longer seated at this table. Tap a seat to rejoin.');
+          }
 
           return {
             ...prev,
@@ -4673,9 +4702,23 @@ export default function TablePage({
             boardStage: (syncData.stage || 'preflop') as BoardStage,
             dealerSeat: syncData.dealer_seat || 0,
             players: updatedPlayers,
-            // Only overwrite heroSeat when the snapshot actually located the hero,
-            // so a partial/empty snapshot never falsely resets a seated player to 0.
-            heroSeat: syncedHeroSeat > 0 ? syncedHeroSeat : prev.heroSeat,
+            // Only overwrite heroSeat when the snapshot actually located the
+            // hero, so a partial/empty snapshot never falsely resets a seated
+            // player to 0.
+            //
+            // Dan 2026-08-18 [P0]: the old rule was one-directional — heroSeat
+            // could only ever go UP. When the server genuinely removed the
+            // seat (a boot sweep did exactly that to Dan), the client kept
+            // claiming it forever: the felt showed "YOUR SEAT" and the footer
+            // "Seat Reserved" while the player was not in the game at all.
+            // A snapshot that DID enumerate players and does not contain the
+            // hero is authoritative: the seat is gone, so clear it.
+            heroSeat:
+              syncedHeroSeat > 0
+                ? syncedHeroSeat
+                : updatedPlayers.some((pl) => pl)
+                  ? 0
+                  : prev.heroSeat,
           };
         });
         break;
@@ -7296,13 +7339,21 @@ export default function TablePage({
             // The seat hero just tapped: show them SITTING immediately, with a
             // pending stack, while the buy-in modal is still open. Replaced by
             // real server data the moment the buy-in lands.
-            if (!displayPlayer && pendingSeat === seatNumber) {
+            // Dan 2026-08-18: the hero occupies their chair from the moment
+            // they tap "+" and STAYS there through buy-in and through the
+            // wait-to-be-dealt-in window. Previously the placeholder covered
+            // only the modal, so the avatar vanished the instant chips were
+            // confirmed and the seat read EMPTY until the next hand.
+            if (
+              !displayPlayer &&
+              (pendingSeat === seatNumber || tableState.heroSeat === seatNumber)
+            ) {
               displayPlayer = {
                 id: userId,
                 name: username || 'You',
                 avatar: heroAvatarUrl || '',
-                stack: 0,
-                status: 'active',
+                stack: pendingSeatStackRef.current || 0,
+                status: 'sitting_out',
                 isHero: true,
                 showCards: false,
               } as any;
@@ -7616,6 +7667,10 @@ export default function TablePage({
                         callAmount={callAmount}
                         minRaise={minRaise}
                         maxRaise={maxRaise}
+                        /* Dan 2026-08-18: in PLO maxRaise is the POT CAP, so
+                           the panel needs the real all-in threshold separately
+                           or a pot-sized bet reads as a shove. */
+                        allInTo={allInTo}
                         pot={tableState.pot}
                         bigBlind={bb}
                         /* Multiplier presets are multiples of the bet being
@@ -8122,6 +8177,7 @@ export default function TablePage({
         onConfirmBuyIn={async (amount, autoRebuy) => {
           if (buyInProcessingRef.current) return;
           buyInProcessingRef.current = true;
+          pendingSeatStackRef.current = amount;
           // Dan 2026-08-15: chips land in the seat on CONFIRM, not on RPC
           // completion. Close the modal and paint the stack in this frame; the
           // duplicate-seat check and atomic_table_buyin RPC run behind it and

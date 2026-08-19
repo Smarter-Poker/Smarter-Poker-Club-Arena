@@ -24,10 +24,15 @@ import { MAX_RAKE_CAP_BB, MAX_RAKE_PERCENT, RAKE_INHERIT } from '../config/RakeC
 import {
   BUYIN_BB_CEILING,
   BUYIN_BB_FLOOR,
+  CLUB_NAME_MAX,
   WATCHED_COLUMNS,
   clampBuyin,
+  sanitizationWouldAlter,
   validateBuyinRange,
+  validateClubName,
 } from '../utils/clubSettingsRules';
+
+const DESCRIPTION_MAX = 500;
 
 interface ClubSettings {
   name: string;
@@ -112,6 +117,11 @@ export default function ClubSettingsPage() {
   // this page never submits one — so "max 10, min 5000" saved happily and every
   // table in the club then had an impossible buy-in range.
   const buyinError = validateBuyinRange(settings.min_buyin_bb, settings.max_buyin_bb);
+  // clubs.name is NOT NULL but has no CHECK against '', and this page had no
+  // name validation at all — a blank name saved happily, leaving a nameless
+  // club whose delete confirmation was armed by an empty box.
+  const nameError = validateClubName(settings.name, sanitizeInput(settings.name));
+  const formError = nameError || buyinError;
 
   // The loaders below run from timers, realtime callbacks and bus events. They
   // close over whatever `hasUnsavedChanges` was when the effect was created, so
@@ -205,12 +215,12 @@ export default function ClubSettingsPage() {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (isOwner && hasUnsavedChanges && !saving) saveSettings();
+        if (isOwner && hasUnsavedChanges && !saving && !formError) saveSettings();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isOwner, hasUnsavedChanges, saving]);
+  }, [isOwner, hasUnsavedChanges, saving, formError]);
 
   useEffect(() => {
     let isMounted = true;
@@ -412,8 +422,8 @@ export default function ClubSettingsPage() {
 
   const saveSettings = async () => {
     if (!isOwner) return;
-    if (buyinError) {
-      toast.error(buyinError);
+    if (formError) {
+      toast.error(formError);
       return;
     }
     // Sanitize ONCE and use the result for the DB write, the local state and
@@ -486,7 +496,16 @@ export default function ClubSettingsPage() {
           }
         }
       );
-      toast.success('Settings saved!');
+      // Saving strips HTML. Silently changing what the owner typed and
+      // showing a plain success toast made the edit look corrupted.
+      if (
+        sanitizationWouldAlter(settings.name, toSave.name) ||
+        sanitizationWouldAlter(settings.description, toSave.description)
+      ) {
+        toast.success('Settings saved. Some formatting characters were removed.');
+      } else {
+        toast.success('Settings saved!');
+      }
       masterBus.emit('ADMIN_ACTION', {
         action: 'settings_updated',
         target: clubId || '',
@@ -565,7 +584,7 @@ export default function ClubSettingsPage() {
   };
 
   const handleDeleteClub = async () => {
-    if (!clubId || confirmText.trim() !== savedClubName.trim()) return;
+    if (!clubId || !savedClubName.trim() || confirmText.trim() !== savedClubName.trim()) return;
 
     setIsDeleting(true);
     try {
@@ -676,24 +695,40 @@ export default function ClubSettingsPage() {
         <section className="settings-section">
           <h3>Basic Information</h3>
           <div className="form-group">
-            <label>Club Name</label>
+            <label htmlFor="club-name">Club Name</label>
             <input
+              id="club-name"
               type="text"
               value={settings.name}
               onChange={(e) => updateSetting('name', e.target.value)}
               disabled={!isOwner}
-              maxLength={50}
+              maxLength={CLUB_NAME_MAX}
+              aria-invalid={!!nameError}
+              aria-describedby="club-name-hint"
             />
+            <small
+              id="club-name-hint"
+              className="form-hint"
+              role={nameError ? 'alert' : undefined}
+              style={nameError ? { color: '#ff6b6b' } : undefined}
+            >
+              {nameError || `${settings.name.length}/${CLUB_NAME_MAX}`}
+            </small>
           </div>
           <div className="form-group">
-            <label>Description</label>
+            <label htmlFor="club-description">Description</label>
             <textarea
+              id="club-description"
               value={settings.description}
               onChange={(e) => updateSetting('description', e.target.value)}
               rows={3}
               disabled={!isOwner}
-              maxLength={500}
+              maxLength={DESCRIPTION_MAX}
+              aria-describedby="club-description-hint"
             />
+            <small id="club-description-hint" className="form-hint">
+              {settings.description.length}/{DESCRIPTION_MAX}
+            </small>
           </div>
           {clubCode != null && (
             <div className="form-group">
@@ -714,6 +749,7 @@ export default function ClubSettingsPage() {
                   className="btn btn-secondary"
                   style={{ padding: '4px 12px', fontSize: '0.75rem' }}
                   onClick={copyClubCode}
+                  aria-label="Copy club code"
                 >
                   Copy
                 </button>
@@ -795,6 +831,10 @@ export default function ClubSettingsPage() {
               <span className="toggle-desc">Anyone can find and request to join</span>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={settings.is_public}
+              aria-label="Public Club"
               className={`toggle-btn ${settings.is_public ? 'on' : ''}`}
               onClick={() => updateSetting('is_public', !settings.is_public)}
               disabled={!isOwner}
@@ -808,6 +848,10 @@ export default function ClubSettingsPage() {
               <span className="toggle-desc">Manually approve new members</span>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={settings.requires_approval}
+              aria-label="Require Approval"
               className={`toggle-btn ${settings.requires_approval ? 'on' : ''}`}
               onClick={() => updateSetting('requires_approval', !settings.requires_approval)}
               disabled={!isOwner}
@@ -833,8 +877,9 @@ export default function ClubSettingsPage() {
               guard is server-side in getFullRakeConfig, since any club admin
               can UPDATE this row directly through RLS. */}
           <div className="form-group">
-            <label>Default Rake (%)</label>
+            <label htmlFor="club-rake-percent">Default Rake (%)</label>
             <input
+              id="club-rake-percent"
               type="number"
               placeholder="Use house schedule"
               value={settings.default_rake_percent < 0 ? '' : settings.default_rake_percent}
@@ -862,8 +907,9 @@ export default function ClubSettingsPage() {
             </small>
           </div>
           <div className="form-group">
-            <label>Rake Cap (BB)</label>
+            <label htmlFor="club-rake-cap">Rake Cap (BB)</label>
             <input
+              id="club-rake-cap"
               type="number"
               placeholder="Use house schedule"
               value={settings.rake_cap < 0 ? '' : settings.rake_cap}
@@ -898,6 +944,10 @@ export default function ClubSettingsPage() {
               <span className="toggle-label">Allow Straddle</span>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={settings.allow_straddle}
+              aria-label="Allow Straddle"
               className={`toggle-btn ${settings.allow_straddle ? 'on' : ''}`}
               onClick={() => updateSetting('allow_straddle', !settings.allow_straddle)}
               disabled={!isOwner}
@@ -910,6 +960,10 @@ export default function ClubSettingsPage() {
               <span className="toggle-label">Run It Twice</span>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={settings.allow_run_it_twice}
+              aria-label="Run It Twice"
               className={`toggle-btn ${settings.allow_run_it_twice ? 'on' : ''}`}
               onClick={() => updateSetting('allow_run_it_twice', !settings.allow_run_it_twice)}
               disabled={!isOwner}
@@ -922,6 +976,10 @@ export default function ClubSettingsPage() {
               <span className="toggle-label">Rabbit Hunt</span>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={settings.allow_rabbit_hunt}
+              aria-label="Rabbit Hunt"
               className={`toggle-btn ${settings.allow_rabbit_hunt ? 'on' : ''}`}
               onClick={() => updateSetting('allow_rabbit_hunt', !settings.allow_rabbit_hunt)}
               disabled={!isOwner}
@@ -936,9 +994,10 @@ export default function ClubSettingsPage() {
           <h3>Buy-in Limits</h3>
           <div className="form-row">
             <div className="form-group">
-              <label>Min (BB)</label>
+              <label htmlFor="club-min-buyin">Min (BB)</label>
               <input
                 type="number"
+                id="club-min-buyin"
                 value={Number.isFinite(settings.min_buyin_bb) ? settings.min_buyin_bb : ''}
                 onChange={(e) => updateSetting('min_buyin_bb', parseInt(e.target.value, 10))}
                 onBlur={() => updateSetting('min_buyin_bb', clampBuyin(settings.min_buyin_bb, BUYIN_BB_FLOOR))}
@@ -948,9 +1007,10 @@ export default function ClubSettingsPage() {
               />
             </div>
             <div className="form-group">
-              <label>Max (BB)</label>
+              <label htmlFor="club-max-buyin">Max (BB)</label>
               <input
                 type="number"
+                id="club-max-buyin"
                 value={Number.isFinite(settings.max_buyin_bb) ? settings.max_buyin_bb : ''}
                 onChange={(e) => updateSetting('max_buyin_bb', parseInt(e.target.value, 10))}
                 onBlur={() => updateSetting('max_buyin_bb', clampBuyin(settings.max_buyin_bb, BUYIN_BB_CEILING))}
@@ -1015,7 +1075,7 @@ export default function ClubSettingsPage() {
           <button
             className="btn btn-primary save-btn"
             onClick={saveSettings}
-            disabled={saving || !hasUnsavedChanges}
+            disabled={saving || !hasUnsavedChanges || !!formError}
             title={hasUnsavedChanges ? undefined : 'No changes to save'}
           >
             {saving ? (
@@ -1039,8 +1099,9 @@ export default function ClubSettingsPage() {
               <strong>{savedClubName}</strong> and remove all members.
             </p>
             <div className="form-group">
-              <label>Type the club name to confirm:</label>
+              <label htmlFor="confirm-club-name">Type the club name to confirm:</label>
               <input
+                id="confirm-club-name"
                 type="text"
                 placeholder={savedClubName}
                 value={confirmText}
@@ -1061,7 +1122,11 @@ export default function ClubSettingsPage() {
               <button
                 className="btn btn-danger"
                 onClick={handleDeleteClub}
-                disabled={confirmText.trim() !== savedClubName.trim() || isDeleting}
+                disabled={
+                  !savedClubName.trim() ||
+                  confirmText.trim() !== savedClubName.trim() ||
+                  isDeleting
+                }
               >
                 {isDeleting ? 'Deleting...' : 'Delete Club'}
               </button>
@@ -1128,76 +1193,29 @@ export default function ClubSettingsPage() {
 
       {/* Live Preview: Unsaved Changes Bar */}
       {hasUnsavedChanges && isOwner && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: clubId ? 72 : 16,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1rem',
-            padding: '0.75rem 1.5rem',
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.15), rgba(139, 92, 246, 0.1))',
-            border: '1px solid rgba(0, 212, 255, 0.3)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 212, 255, 0.2)',
-            animation: 'slideUpFade 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-            maxWidth: '90vw',
-          }}
-        >
-          <span
-            style={{ color: '#00d4ff', fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap' }}
-          >
+        <div className="unsaved-bar" role="status">
+          <span className="unsaved-bar__count">
             {changedFieldsDisplay.length} unsaved change{changedFieldsDisplay.length > 1 ? 's' : ''}
           </span>
-          <span
-            style={{
-              color: '#6a7a8a',
-              fontSize: '0.7rem',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              maxWidth: '200px',
-            }}
-          >
+          <span className="unsaved-bar__fields" title={changedFieldsDisplay.join(', ')}>
             {changedFieldsDisplay.join(', ')}
           </span>
           <button
+            type="button"
+            className="unsaved-bar__discard"
             onClick={() => {
               if (originalSettings.current) setSettings({ ...originalSettings.current });
               clearPendingLogo();
-            }}
-            style={{
-              padding: '0.4rem 0.8rem',
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px',
-              color: '#aaa',
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-              flexShrink: 0,
             }}
           >
             Discard
           </button>
           <button
+            type="button"
+            className="unsaved-bar__save"
             onClick={saveSettings}
-            disabled={saving || !!buyinError}
-            style={{
-              padding: '0.4rem 1rem',
-              background: 'linear-gradient(135deg, #00d4ff, #0099cc)',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#000',
-              fontWeight: 700,
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
+            disabled={saving || !!formError}
+            title={formError || undefined}
           >
             {saving ? 'Saving...' : 'Save'}
           </button>

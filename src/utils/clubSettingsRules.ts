@@ -83,3 +83,39 @@ export function toCSV(rows: Record<string, unknown>[]): string {
   const body = rows.map((row) => headers.map((h) => csvSafeCell(row[h])).join(','));
   return [headers.join(','), ...body].join('\n');
 }
+
+/** Club name bounds. The column is NOT NULL but has no CHECK against an
+ *  empty string, and the page had no validation at all — so an owner could
+ *  blank the name and save a nameless club. Worse, the delete confirmation
+ *  compares typed text against the saved name, so a blank name armed the
+ *  Delete button with an empty box. */
+export const CLUB_NAME_MAX = 50;
+
+/**
+ * Reason the club name is unacceptable, or null when it is fine.
+ * Checks the SANITIZED value, because that is what actually gets stored:
+ * a name of "<b></b>" survives the length check and lands as "".
+ */
+export function validateClubName(rawName: string, sanitized?: string): string | null {
+  const effective = (sanitized ?? rawName ?? '').trim();
+  if (effective.length === 0) return 'Club name cannot be empty.';
+  if (effective.length > CLUB_NAME_MAX) {
+    return `Club name cannot exceed ${CLUB_NAME_MAX} characters.`;
+  }
+  return null;
+}
+
+/**
+ * True when sanitising would silently change what the user typed. The page
+ * strips HTML on save; without this the owner watched their text change
+ * after a save with no explanation.
+ */
+export function sanitizationWouldAlter(raw: string, sanitized: string): boolean {
+  return raw.trim() !== sanitized.trim();
+}
+
+/**
+ * Excel refuses to read a UTF-8 CSV as UTF-8 unless it starts with a byte
+ * order mark, so exported player names with accents arrived mojibake.
+ */
+export const CSV_BOM = '\ufeff';

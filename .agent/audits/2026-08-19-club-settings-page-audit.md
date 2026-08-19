@@ -173,3 +173,41 @@ encoding incl. the formula-injection guard) moved out of the components into
 `src/utils/clubSettingsRules.ts` and are covered by
 `tests/unit/clubSettingsRules.test.ts` — 13 tests, each pinning a bug that
 actually shipped. Full suite: 2011 passing.
+
+## Pass 5 — validation, accessibility, mobile
+
+1. **A club could be saved with an EMPTY name.** `clubs.name` is NOT NULL but
+   has no CHECK against `''`, and the page had no name validation at all.
+   Worse, the delete confirmation compares typed text against the saved name,
+   so a blank name made `'' !== ''` false and **armed the Delete Club button
+   with an empty input box**. Added `validateClubName` (checks the SANITIZED
+   value, so `<b></b>` is caught too), gated every save affordance on it, and
+   made the delete button refuse a blank saved name regardless.
+2. **Silent text mangling.** Saving strips HTML; the owner watched their text
+   change with a plain "Settings saved!". The toast now says when formatting
+   characters were removed.
+3. **Labels were not associated with inputs** — 9 `<label>` elements, 0
+   `htmlFor`. Clicking a label did not focus its field and screen readers
+   announced nothing. All fields now have id/htmlFor, plus `aria-invalid` and
+   `aria-describedby` on the name.
+4. **Toggles were unlabelled buttons** — no `role="switch"`, no
+   `aria-checked`, no `type="button"`. A screen reader could not tell on from
+   off. All five now expose switch semantics.
+5. **The unsaved-changes bar overflowed at 375px** (Working Rule 7 is
+   mobile-first): four fixed children, no wrapping, and the field list alone
+   reserved 200px. Moved to a real class with wrapping, a viewport-bounded
+   max-width, and the field list dropping out below 420px.
+6. **`slideUpFade` was never defined.** The bar has always referenced that
+   animation; no `@keyframes slideUpFade` exists anywhere in the codebase, so
+   it silently did nothing. Defined it — preserving the translateX(-50%)
+   centring the element relies on — and disabled it under
+   `prefers-reduced-motion`.
+7. Character counters on name (50) and description (500), which had hard
+   maxLengths and no feedback, so typing simply stopped.
+
+Rake bounds cross-checked against the database: `MAX_RAKE_PERCENT` and
+`MAX_RAKE_CAP_BB` are both 10, matching the `clubs_default_rake_percent_range`
+and `clubs_rake_cap_range` CHECK constraints (which also allow the -1
+inherit sentinel). No UI value can be rejected by the constraint.
+
+Suite: 165 files / 2038 tests passing (baseline 2032 + 6 new).

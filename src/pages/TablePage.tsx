@@ -259,65 +259,7 @@ import { TableModalsLayer } from '../components/table/TableModalsLayer';
 // RAKE CONFIG HELPER — Derives rake config from official chart
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ENGINE SUIT MAP — Shared constant eliminates 7 duplicate inline declarations
-// ═══════════════════════════════════════════════════════════════════════════════
-const ENGINE_SUIT_MAP: Record<string, 'h' | 'd' | 'c' | 's'> = {
-  hearts: 'h',
-  diamonds: 'd',
-  clubs: 'c',
-  spades: 's',
-};
 
-// Bible V8 §11.1: cards_pre_sort — sort hole cards by rank (high → low)
-const RANK_ORDER: Record<string, number> = {
-  '2': 2,
-  '3': 3,
-  '4': 4,
-  '5': 5,
-  '6': 6,
-  '7': 7,
-  '8': 8,
-  '9': 9,
-  '10': 10,
-  T: 10,
-  J: 11,
-  Q: 12,
-  K: 13,
-  A: 14,
-};
-function sortCardsByRank(cards: Card[]): Card[] {
-  return [...cards].sort((a, b) => (RANK_ORDER[b.rank] ?? 0) - (RANK_ORDER[a.rank] ?? 0));
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// GAME VARIANT LABEL HELPER
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const GAME_VARIANT_LABELS: Record<string, string> = {
-  NLH: "NO LIMIT HOLD'EM",
-  nlh: "NO LIMIT HOLD'EM",
-  PLO4: 'POT LIMIT OMAHA (4)',
-  plo4: 'POT LIMIT OMAHA (4)',
-  PLO5: 'POT LIMIT OMAHA (5)',
-  plo5: 'POT LIMIT OMAHA (5)',
-  PLO6: 'POT LIMIT OMAHA (6)',
-  plo6: 'POT LIMIT OMAHA (6)',
-  PLO8: 'PLO HI-LO (8+)',
-  plo8: 'PLO HI-LO (8+)',
-  SHORT_DECK: 'SHORT DECK 6+',
-  short_deck: 'SHORT DECK 6+',
-  FLH: "FIXED LIMIT HOLD'EM",
-  flh: "FIXED LIMIT HOLD'EM",
-  FLO: 'FIXED LIMIT OMAHA',
-  flo: 'FIXED LIMIT OMAHA',
-  MIXED: 'MIXED GAME',
-  mixed: 'MIXED GAME',
-};
-
-function getGameVariantLabel(gameType: string): string {
-  return GAME_VARIANT_LABELS[gameType] || gameType.toUpperCase().replace(/_/g, ' ');
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -504,114 +446,22 @@ function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): PanelHan
   };
 }
 
-/* Dan 2026-08-17 — RAIL-LOCKED SEAT RING.
-   The skin composites share one canonical geometry (896x1200 frame, felt
-   window x 20.3-79.6% / y 8.9-89.2%, rail ~7% of width thick). The scaler is
-   aspect-locked to 605/1000 and shows the skin with object-fit:cover, which
-   crops the frame to x [9.5%, 90.5%] — so in SCALER coordinates the rail
-   band runs x ~10.5 / ~89.5 at the sides and y ~8.5 at the top cap (verified
-   by overlaying this ring on the neon_city, mahogany_red and ice_cavern
-   composites). Every seat below sits ON that band — villains and the + SIT
-   buttons ride the rail, never the felt.
-   Hero (slot 0) is the ONLY exception: bottom-center, nudged below the rail
-   (Dan 2026-08-15: hero avatar is 1.33x and needs the vertical room). */
-const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 93.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
-  { x: 10.5, y: 66 }, // Seat 2 (lower-left, on rail side)
-  { x: 10.5, y: 33 }, // Seat 3 (upper-left, on rail side)
-  { x: 50, y: 6 }, // Seat 4 (top-center; box rests ON the rail band - compact seat)
-  { x: 89.5, y: 33 }, // Seat 5 (upper-right, on rail side)
-  { x: 89.5, y: 66 }, // Seat 6 (lower-right, on rail side)
-];
 
-const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 93.5 }, // Seat 1 (Hero, bottom-center, hangs below the rail)
-  { x: 19, y: 82.5 }, // Seat 2 (lower-left, bottom cap)
-  { x: 10.5, y: 58 }, // Seat 3 (left-low, on rail side)
-  { x: 10.5, y: 36 }, // Seat 4 (left-high, on rail side)
-  { x: 27, y: 13 }, // Seat 5 (top-left, top cap)
-  { x: 73, y: 13 }, // Seat 6 (top-right, top cap)
-  { x: 89.5, y: 36 }, // Seat 7 (right-high, on rail side)
-  { x: 89.5, y: 58 }, // Seat 8 (right-low, on rail side)
-  { x: 81, y: 82.5 }, // Seat 9 (lower-right, bottom cap)
-];
 
-/* Dan 2026-08-17 — PER-SIZE SEAT RINGS.
-   Production runs 2..9-max tables, but the client only had 6MAX/9MAX rings picked
-   by `maxPlayers === 9`. An 8-max table therefore indexed seats 7-8 past the
-   end of the 6-seat array — no position at all. Every count now has its own
-   ring on the SAME measured rail band (sides x 10.5/89.5, top cap y 8.5,
-   top diagonals on the cap circle, bottom caps (19/81, 82.5)); hero is
-   always slot 0, bottom-center.
-
-   CORRECTION 2026-08-19: this comment used to cite "53 seven-max plo6 + 472
-   eight-max tables live in the fleet" as evidence for the range. Those seat
-   counts are ILLEGAL for that variant — Dan: "ITS ALWAYS 6 MAX FOR PLO 6 AND
-   7 MAX FOR PLO5" — so they were evidence of a missing seat cap, not of a
-   supported configuration, and citing them as normal is what led a later
-   audit to reason from an 8-max PLO6 table that cannot exist. The caps now
-   live in src/config/tableSeating.ts and are enforced in TableService. The
-   rings below still cover 2..9 because other variants legitimately use them
-   and because 10,130 pre-existing rows still carry the old seat counts. */
-const SEAT_LAYOUTS: Record<number, Array<{ x: number; y: number }>> = {
-  2: [
-    { x: 50, y: 93.5 }, // Hero
-    { x: 50, y: 6 }, // Villain, top-center (heads-up), box on the rail
-  ],
-  3: [
-    { x: 50, y: 93.5 }, // Hero
-    { x: 20.5, y: 14 }, // upper-left diagonal, on rail cap circle
-    { x: 79.5, y: 14 }, // upper-right diagonal
-  ],
-  4: [
-    { x: 50, y: 93.5 }, // Hero
-    { x: 10.5, y: 45 }, // left-middle
-    { x: 50, y: 6 }, // top-center, box on the rail
-    { x: 89.5, y: 45 }, // right-middle
-  ],
-  5: [
-    { x: 50, y: 93.5 }, // Hero
-    { x: 10.5, y: 55 }, // left-low
-    { x: 20.5, y: 14 }, // upper-left diagonal
-    { x: 79.5, y: 14 }, // upper-right diagonal
-    { x: 89.5, y: 55 }, // right-low
-  ],
-  6: SEAT_POSITIONS_6MAX,
-  7: [
-    { x: 50, y: 93.5 }, // Hero
-    { x: 10.5, y: 62 }, // left-low
-    { x: 10.5, y: 33 }, // left-high
-    { x: 27, y: 13 }, // top-left diagonal
-    { x: 73, y: 13 }, // top-right diagonal
-    { x: 89.5, y: 33 }, // right-high
-    { x: 89.5, y: 62 }, // right-low
-  ],
-  8: [
-    { x: 50, y: 93.5 }, // Hero
-    { x: 19, y: 82.5 }, // lower-left bottom cap
-    { x: 10.5, y: 52 }, // left-low
-    { x: 10.5, y: 28 }, // left-high
-    { x: 50, y: 6 }, // top-center, box on the rail
-    { x: 89.5, y: 28 }, // right-high
-    { x: 89.5, y: 52 }, // right-low
-    { x: 81, y: 82.5 }, // lower-right bottom cap
-  ],
-  9: SEAT_POSITIONS_9MAX,
-};
-
-/** Ring for a table size; clamps to [2, 9] so unknown sizes never crash. */
-function seatLayoutFor(maxPlayers: number): Array<{ x: number; y: number }> {
-  return SEAT_LAYOUTS[Math.min(9, Math.max(2, maxPlayers || 9))];
-}
 
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
 // Each horse gets a unique colorful avatar derived from their name
 import { generateAvatarSvg } from '../utils/avatarGenerator';
+// 2026-08-19: pure card + seat helpers now live in their own modules. They used
+// to sit inline in this file; the seat rings in particular carry measured rail
+// positions that must not be casually rewritten. See those files for why.
+import {
+  ENGINE_SUIT_MAP,
+  sortCardsByRank,
+  getGameVariantLabel,
+} from '../lib/tableCardDisplay';
+import { seatLayoutFor, createEmptySeats } from '../lib/tableSeatGeometry';
 
-// Create empty player slots for a table
-const createEmptySeats = (count: 6 | 9): (SeatPlayer | null)[] => {
-  return Array(count).fill(null);
-};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load

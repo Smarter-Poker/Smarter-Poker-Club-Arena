@@ -1910,9 +1910,14 @@ class HorseOrchestrator {
         .eq('user_id', horseId)
         .is('left_at', null);
 
-      if (seatsError || !seats) {
-        return [];
+      // Dan 2026-08-19: a failed seats query used to return [] — indistinguishable
+      // from "seated nowhere", so canHorseSitAtTable APPROVED the seat and a DB
+      // hiccup let a horse blow past the 4-table cap. Fail CLOSED: throw, and
+      // every caller's catch treats the horse as unseatable this cycle.
+      if (seatsError) {
+        throw new Error(`table_seats query failed: ${seatsError.message}`);
       }
+      if (!seats) return [];
 
       const tableIds = seats.map((s) => s.table_id);
       if (tableIds.length === 0) return [];
@@ -1923,9 +1928,10 @@ class HorseOrchestrator {
         .select('id, tournament_id')
         .in('id', tableIds);
 
-      if (tableError || !tables) {
-        return [];
+      if (tableError) {
+        throw new Error(`tables query failed: ${tableError.message}`);
       }
+      if (!tables) return [];
 
       return tables.map((t) => ({
         tableId: t.id,
@@ -1933,7 +1939,8 @@ class HorseOrchestrator {
       }));
     } catch (err: any) {
       this.logError(`getActiveTablesForHorse error for ${horseId}: ${err.message}`);
-      return [];
+      // Fail closed — see above. Callers catch and skip the horse.
+      throw err;
     }
   }
 

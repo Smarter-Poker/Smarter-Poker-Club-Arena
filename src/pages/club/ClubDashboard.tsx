@@ -66,6 +66,8 @@ interface TopPlayer {
   totalProfit: number;
   totalWon: number;
   handsPlayed: number;
+  /** Hands the profit figure could actually be proven on — see migration 20260819c. */
+  handsAttributed: number;
   handsWon: number;
   biggestPotWon: number;
   winRate: number;
@@ -480,6 +482,7 @@ export default function ClubDashboard() {
         totalProfit: Number(p.profit) || 0,
         totalWon: Number(p.total_won) || 0,
         handsPlayed: Number(p.hands_played) || 0,
+        handsAttributed: Number(p.hands_attributed) || 0,
         handsWon: Number(p.hands_won) || 0,
         biggestPotWon: Number(p.biggest_pot_won) || 0,
         winRate: Number(p.win_rate) || 0,
@@ -565,7 +568,8 @@ export default function ClubDashboard() {
 
   useEffect(() => {
     const played = topPlayers.reduce((s, p) => s + p.handsPlayed, 0);
-    setAttribution(played > 0 ? { played, attributed: played } : null);
+    const attributed = topPlayers.reduce((s, p) => s + p.handsAttributed, 0);
+    setAttribution(played > 0 ? { played, attributed } : null);
   }, [topPlayers]);
 
   const exportLeaderboardCsv = () => {
@@ -920,9 +924,17 @@ export default function ClubDashboard() {
                     marginTop: 8,
                   }}
                 >
-                  Profit measured from post-hand stack movement over{' '}
-                  {formatInt(attribution.played)} player-hands {rangeLabel}. Hands spanning a
-                  re-buy or a table re-join are excluded from profit.
+                  Profit measured from post-hand stack movement on{' '}
+                  {formatInt(attribution.attributed)} of {formatInt(attribution.played)}{' '}
+                  player-hands {rangeLabel}
+                  {attribution.played > 0 && (
+                    <>
+                      {' '}
+                      ({Math.round((attribution.attributed / attribution.played) * 100)}%)
+                    </>
+                  )}
+                  . Hands spanning a re-buy or a table re-join cannot be attributed and are
+                  excluded.
                 </p>
               )}
             </section>

@@ -21,6 +21,7 @@ const mk = (over: Partial<RankablePlayer>): RankablePlayer => ({
   totalProfit: over.totalProfit ?? 0,
   totalWon: over.totalWon ?? 0,
   handsPlayed: over.handsPlayed ?? 0,
+  handsAttributed: over.handsAttributed ?? over.handsPlayed ?? 0,
   handsWon: over.handsWon ?? 0,
   biggestPotWon: over.biggestPotWon ?? 0,
   winRate: over.winRate ?? 0,
@@ -127,6 +128,16 @@ describe('CSV export', () => {
     expect(lines[0]).toContain('rank,player,is_horse');
     expect(lines[1]).toContain('"Ann"');
     expect(lines[1]).toContain('12.5');
+  });
+
+  it('exports hands_attributed so the profit denominator travels with the data', () => {
+    const csv = leaderboardToCsv([
+      mk({ userId: 'a', displayName: 'Ann', handsPlayed: 10, handsAttributed: 7, rank: 1 }),
+    ]);
+    const [header, row] = csv.split('\n');
+    const idx = header.split(',').indexOf('hands_attributed');
+    expect(idx).toBeGreaterThan(-1);
+    expect(row.split(',')[idx]).toBe('7');
   });
 
   it('produces only a header for an empty leaderboard', () => {

@@ -16,6 +16,7 @@ export interface RankablePlayer {
   totalProfit: number;
   totalWon: number;
   handsPlayed: number;
+  handsAttributed: number;
   handsWon: number;
   biggestPotWon: number;
   winRate: number;
@@ -109,6 +110,7 @@ export function leaderboardToCsv(players: RankablePlayer[]): string {
     'player',
     'is_horse',
     'hands_played',
+    'hands_attributed',
     'hands_won',
     'win_rate_pct',
     'total_won',
@@ -123,6 +125,7 @@ export function leaderboardToCsv(players: RankablePlayer[]): string {
         csvEscape(p.displayName),
         p.isHorse,
         p.handsPlayed,
+        p.handsAttributed,
         p.handsWon,
         p.winRate,
         p.totalWon,

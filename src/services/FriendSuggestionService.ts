@@ -241,30 +241,39 @@ class FriendSuggestionServiceClass {
     try {
       const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
 
-      // Get tables user played at recently
-      const { data: myHands, error: hErr } = await supabase
-        .from('hand_players')
-        .select('hand_id')
+      // 2026-08-19: this read `hand_players`, which has ZERO rows in
+      // production — so "people you recently played with" never returned a
+      // single suggestion. table_seats is the live record of who sat where and
+      // answers the same question directly (and more cheaply: seats, not hands).
+      const { data: mySeats, error: hErr } = await supabase
+        .from('table_seats')
+        .select('table_id')
         .eq('user_id', userId)
-        .gte('created_at', sevenDaysAgo)
+        .gte('joined_at', sevenDaysAgo)
         .limit(QUERY_LIMITS.LIST);
       if (hErr) reportError(hErr, 'FriendSuggestionService.getRecentOpponents_hands_error');
 
-      if (!myHands || myHands.length === 0) return [];
+      if (!mySeats || mySeats.length === 0) return [];
 
-      const handIds = myHands.map((h: { hand_id: string }) => h.hand_id);
+      const tableIds = Array.from(
+        new Set(mySeats.map((s: { table_id: string }) => s.table_id).filter(Boolean))
+      );
+      if (tableIds.length === 0) return [];
 
-      // Get other players from those hands
+      // Other people at those tables. Horses are house AI — suggesting them as
+      // friends would fill the list with opponents who are not people.
       const { data: opponents, error: oErr } = await supabase
-        .from('hand_players')
+        .from('table_seats')
         .select(
           `
           user_id,
-          profiles:user_id(username, display_name, avatar_url, is_online)
+          profiles:user_id!inner(username, display_name, avatar_url, is_online, is_horse)
         `
         )
-        .in('hand_id', handIds)
+        .in('table_id', tableIds)
         .neq('user_id', userId)
+        .gte('joined_at', sevenDaysAgo)
+        .eq('profiles.is_horse', false)
         .limit(50);
       if (oErr) reportError(oErr, 'FriendSuggestionService.getRecentOpponents_opponents_error');
 

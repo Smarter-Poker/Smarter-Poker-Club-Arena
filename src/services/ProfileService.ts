@@ -254,14 +254,27 @@ class ProfileServiceClass {
    * Get player stats
    */
   async getStats(userId: string): Promise<ProfileStats | null> {
-    // Get player hand results from hand_players (joined to hands for variant)
-    const { data } = await supabase
-      .from('hand_players')
-      .select('chips_won, chips_lost, is_winner, hands(game_type)')
-      .eq('user_id', userId)
-      .limit(QUERY_LIMITS.BULK);
+    // 2026-08-19: this read `hand_players`, which has ZERO rows — writes to it
+    // stopped long ago (it is documented elsewhere in this repo as empty in
+    // production). It also joined a `hands` table that this codebase does not
+    // populate. So every player's profile showed 0 hands / 0% win rate /
+    // 0 biggest win, regardless of how much they had actually played.
+    //
+    // ca_player_stats_full is the canonical server-side stats RPC (the same one
+    // the rebuilt player-stats page uses). It derives real hands_won,
+    // total_profit and biggest_pot_won from hand history, so every figure below
+    // is measured rather than inferred from an empty table.
+    const { data, error } = await supabase.rpc('ca_player_stats_full', { p_user: userId });
 
-    if (!data || data.length === 0) {
+    if (error || !data) {
+      if (error) reportError(error, 'ProfileService.getStats');
+      return null;
+    }
+
+    const overall = (data as any).overall || {};
+    const totalHands = Number(overall.total_hands) || 0;
+
+    if (totalHands === 0) {
       return {
         totalHands: 0,
         winRate: 0,
@@ -271,22 +284,31 @@ class ProfileServiceClass {
       };
     }
 
-    const totalHands = data.length;
-    const wins = data.filter((h: any) => h.is_winner).length;
-    const winRate = totalHands > 0 ? (wins / totalHands) * 100 : 0;
-    const profits = data.map((h: any) => (h.chips_won || 0) - (h.chips_lost || 0));
-    const avgProfit =
-      totalHands > 0 ? profits.reduce((sum: number, p: number) => sum + p, 0) / totalHands : 0;
-    const biggestWin = Math.max(...profits, 0);
+    const handsWon = Number(overall.hands_won) || 0;
+    const totalProfit = Number(overall.total_profit) || 0;
+    const winRate = (handsWon / totalHands) * 100;
+    const avgProfit = totalProfit / totalHands;
+    const biggestWin = Number(overall.biggest_pot_won) || 0;
 
-    // Find favorite variant from joined hands data
-    const variantCounts: Record<string, number> = {};
-    data.forEach((h: any) => {
-      const variant = h.hands?.game_type || 'NLH';
-      variantCounts[variant] = (variantCounts[variant] || 0) + 1;
-    });
-    const favoriteVariant =
-      Object.entries(variantCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "No Limit Hold'em";
+    // Favourite variant = most hands played, straight from the RPC's own
+    // per-variant breakdown.
+    const variants: any[] = Array.isArray((data as any).variants) ? (data as any).variants : [];
+    const topVariant = variants
+      .slice()
+      .sort((a, b) => (Number(b?.hands) || 0) - (Number(a?.hands) || 0))[0];
+    const VARIANT_LABELS: Record<string, string> = {
+      nlh: "No Limit Hold'em",
+      plo4: 'Pot Limit Omaha',
+      plo5: 'PLO 5-Card',
+      plo6: 'PLO 6-Card',
+      plo8: 'PLO Hi-Lo',
+      short_deck: 'Short Deck',
+      pineapple: 'Pineapple',
+      mixed: 'Mixed Game',
+    };
+    const favoriteVariant = topVariant?.variant
+      ? VARIANT_LABELS[String(topVariant.variant)] || String(topVariant.variant).toUpperCase()
+      : "No Limit Hold'em";
 
     return {
       totalHands,

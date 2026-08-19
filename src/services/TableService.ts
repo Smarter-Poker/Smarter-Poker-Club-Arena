@@ -900,8 +900,11 @@ class TableService {
    */
   async getTableStats(tableId: string) {
     const [rakeData, handData] = await Promise.all([
+      // 2026-08-19: rake_history stopped receiving writes on 2026-05-01, so
+      // every table's admin stats reported 0 rake regardless of activity.
+      // rake_records is the live ledger and carries the same table_id.
       supabase
-        .from('rake_history')
+        .from('rake_records')
         .select('rake_amount')
         .eq('table_id', tableId)
         .limit(QUERY_LIMITS.AGGREGATE),

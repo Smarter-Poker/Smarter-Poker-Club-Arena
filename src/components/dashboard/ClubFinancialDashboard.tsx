@@ -181,13 +181,17 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       startDate.setHours(0, 0, 0, 0);
 
       const resolvedId = await resolveClubUUID(clubId);
-      // Use rake_history (the server-authoritative rake ledger) so this widget agrees
-      // with the summary cards on ClubFinancialsPage, which also read rake_history.
+      // 2026-08-19: this read rake_history, whose last write was 2026-05-01 —
+      // so this revenue widget has been drawing a flat zero line for three and
+      // a half months. The comment it carried ("so this widget agrees with the
+      // summary cards on ClubFinancialsPage") was accurate and was exactly the
+      // problem: both agreed, and both were wrong. rake_records is the live
+      // ledger, and ClubFinancialsPage now reads it too.
       const { data: records, error } = await supabase
-        .from('rake_history')
-        .select('rake_amount, collected_at')
+        .from('rake_records')
+        .select('rake_amount, created_at')
         .eq('club_id', resolvedId)
-        .gte('collected_at', startDate.toISOString())
+        .gte('created_at', startDate.toISOString())
         .limit(10000);
 
       if (error) throw error;
@@ -195,7 +199,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       const newData = getEmptyRevenueData();
 
       (records || []).forEach((record: any) => {
-        const dateKey = new Date(record.collected_at).toLocaleDateString();
+        const dateKey = new Date(record.created_at).toLocaleDateString();
         const daySlot = newData.find((d) => d.fullDate === dateKey);
 
         if (daySlot) {

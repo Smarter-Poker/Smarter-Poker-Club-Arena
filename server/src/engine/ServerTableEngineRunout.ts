@@ -497,12 +497,16 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
       // Guard every iteration: the table can be torn down, or the hand
       // replaced, while we are sleeping between streets.
-      // Bounded by the most streets a board can ever still need. `dealNextStreet`
-      // returns whatever the deck has left, so an exhausted deck would leave the
-      // board short forever — and unlike the synchronous path, this loop sleeps
-      // 1.4s per turn while re-broadcasting state and equity, so it would spin
-      // and flood clients rather than merely hanging. Reachable: an 8-max PLO6
-      // hand needs 48 hole cards plus 5 board out of 52.
+      // Bounded by the most streets a board can ever still need (three).
+      //
+      // CORRECTION 2026-08-19: an earlier comment here justified this with an
+      // 8-max PLO6 deck exhaustion. That is not a real configuration — PLO6 is
+      // 6-max and PLO5 is 7-max (Dan) — and `deal()` throws rather than
+      // returning short, so the board cannot silently stop growing. The bound
+      // stays because this loop SLEEPS 1.4s per turn and re-broadcasts state
+      // and equity on each one, so an unbounded version is the expensive kind
+      // of mistake to leave lying around; but it guards a state no current code
+      // path can produce.
       let streetsLeft = 3;
       while (
         this.running &&

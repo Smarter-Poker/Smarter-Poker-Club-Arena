@@ -8,6 +8,7 @@ import { tableService } from '../../services/TableService';
 import type { GameVariant, TableSettings } from '../../types/database.types';
 import styles from './CreateTableModal.module.css';
 import { reportError } from '../../utils/errorReporter';
+import { clampSeatsForVariant, seatOptionsForVariant } from '../../config/tableSeating';
 
 interface CreateTableModalProps {
   clubId: string;
@@ -212,7 +213,14 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                 <select
                   className={styles['form-select']}
                   value={variant}
-                  onChange={(e) => setVariant(e.target.value as GameVariant)}
+                  onChange={(e) => {
+                    const next = e.target.value as GameVariant;
+                    setVariant(next);
+                    // Switching to a tighter variant must pull the seat count
+                    // down with it; otherwise a 9 chosen under NLH survives
+                    // into PLO6 and the create call is rejected server-side.
+                    setMaxPlayers((prev) => String(clampSeatsForVariant(next, Number(prev))));
+                  }}
                 >
                   {VARIANTS.map((v) => (
                     <option key={v.value} value={v.value}>
@@ -230,9 +238,15 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                   value={maxPlayers}
                   onChange={(e) => setMaxPlayers(e.target.value)}
                 >
-                  <option value="2">Heads Up (2)</option>
-                  <option value="6">6-Max</option>
-                  <option value="9">Full Ring (9)</option>
+                  {/* Dan 2026-08-19: "ITS ALWAYS 6 MAX FOR PLO 6 AND 7 MAX FOR
+                      PLO5". This list used to be the same three options for
+                      every game, so a PLO6 table could be built at 9-max in one
+                      click — 54 hole cards plus a 5-card board out of 52. */}
+                  {seatOptionsForVariant(variant).map((o) => (
+                    <option key={o.value} value={String(o.value)}>
+                      {o.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

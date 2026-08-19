@@ -14,6 +14,7 @@ import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
 import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
 import { fetchGameCreationAccess } from './GameAccessService';
+import { maxSeatsForVariant } from '../config/tableSeating';
 
 // AUDIT M17: the admin money RPCs return a `reason` for ordinary refusals rather
 // than raising, so the UI can tell "you are not an admin here" apart from "the
@@ -139,6 +140,17 @@ class TableService {
     maxPlayers: number = 9,
     settings?: Partial<TableSettings>
   ): Promise<PokerTable> {
+    // Dan 2026-08-19: "ITS ALWAYS 6 MAX FOR PLO 6 AND 7 MAX FOR PLO5".
+    // Enforced HERE, not only in the modal, so every caller is covered — a
+    // PLO6 table at 9-max would need 59 cards out of a 52-card deck and
+    // PokerEngine.deal() throws rather than degrading.
+    const seatCap = maxSeatsForVariant(gameVariant);
+    if (maxPlayers > seatCap) {
+      throw new Error(
+        `${String(gameVariant).toUpperCase()} tables are capped at ${seatCap} seats ` +
+          `(requested ${maxPlayers}).`
+      );
+    }
     const defaultSettings: TableSettings = {
       straddle_enabled: true,
       straddle_type: 'utg',

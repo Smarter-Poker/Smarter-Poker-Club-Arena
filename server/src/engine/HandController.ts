@@ -935,15 +935,21 @@ export class HandController {
 
   private runOutCommunityCards(): void {
     const deck = this.state.deck as unknown as Deck;
-    // AUDIT 2026-08-19: this loop's ONLY exit was the board reaching 5 cards.
-    // `deck.deal(n)` returns whatever it has left, so an exhausted deck makes
-    // the board stop growing and the condition never becomes false — a
-    // SYNCHRONOUS infinite loop that freezes the entire engine process, not
-    // just this table. It is reachable: an 8-max PLO6 hand needs 48 hole cards
-    // plus 5 board out of 52. Bounded by the most streets a board can ever
-    // need, with a hard stop the moment the board fails to grow, so a short
-    // deck ends the hand on whatever board exists instead of hanging the
-    // server. The showdown/completeHand below still runs on every path.
+    // CORRECTION 2026-08-19 (Dan: "YOU CAN'T HAVE 8 MAX PLO6"). An earlier
+    // version of this comment justified the bound below with a short-deck
+    // scenario that CANNOT HAPPEN, and the claim was wrong twice over:
+    //
+    //   1. Seat caps make it unreachable. PLO6 is 6-max and PLO5 is 7-max, so
+    //      the worst real case is plo5 at 7 seats = 35 + 5 = 40 of 52.
+    //   2. `PokerEngine.deal()` THROWS 'Not enough cards in deck' rather than
+    //      returning a short array, so the board can never quietly stop
+    //      growing — the loop would exit by exception, not spin.
+    //
+    // The bound is kept because it is free and it makes the exit structural
+    // rather than dependent on deal() continuing to throw: a board needs at
+    // most three more streets, so three turns of this loop is all it may ever
+    // take. It is not load-bearing today, and it is not a fix for anything
+    // observed. showdown/completeHand below still runs on every path.
     let guard = 3;
     while (this.state.communityCards.length < 5 && guard-- > 0) {
       const lengthBefore = this.state.communityCards.length;

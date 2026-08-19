@@ -95,3 +95,41 @@ truncation never rounding a loss into a win, no "-0.00", CSV quote escaping,
 authz-error detection, live-table status). Full suite: 1976 passed.
 `TournamentRecurringService.test.ts` fails to load on a missing `@sentry/node`
 server dep — pre-existing, unrelated to this work.
+
+## 7. Addendum — hand_number is not a per-table total order
+
+While building a resumable backfill for the largest legacy tables it turned
+out `hand_history.hand_number` is unique only above 1,000,000 (partial index
+`uq_hand_history_global_hand_number`). Legacy tables carry both the old
+per-table 1..N numbering and the newer global numbering: table `d421a6df` has
+75,211 rows spanning hand_number 1..1,223,543 with 62,906 distinct values.
+
+- The verified rebuild path is unaffected — it orders by
+  `row_number() OVER (ORDER BY hand_number, created_at)` and tests adjacency
+  on that row ordinal, never on hand_number itself. Re-verified after every
+  change: 8,052 fully-attributed hands, **0 non-reconciling**,
+  sum(deltas) -1138.13 == -(rake+bbj) -1138.13.
+- The chunked function keyed on hand_number and was therefore wrong; it was
+  dropped and its partial rows reverted rather than left in production.
+- The live trigger is unaffected for all new hands: hand_number is global and
+  increasing above 1,000,000, which is every hand being dealt now.
+
+**Known limitation.** Tables above roughly 20k hands cannot be rebuilt in a
+single statement within the admin connector's time ceiling; they are logged
+with `rows_written = -1` and skipped. This is historical backfill only, on the
+two largest horse clubs. All new hands, on every club, are attributed by the
+trigger as they land. Midway Union — the club this work was raised against —
+is fully rebuilt and verified.
+
+## 8. Production verification
+
+- Club Arena `main`: 48ba2e2f7, 5477f1c71 (both confirmed ancestors of main).
+- World Hub sync commits: 93e8bfa6d0, ff798c13ad.
+- Production `/api/health` served SHA `ff798c13`.
+- Deployed `ClubDashboard-D1IWPXSI-v6.js` contains `ca_club_members`,
+  `hands_attributed`, `Members Only`, `Humans only`, `Export CSV`.
+- Authorization re-probed post-deploy: outsider BLOCKED on ca_club_top_players
+  and ca_club_members; member gets rows from top_players, members and activity.
+- Suite: 1976 passing, 22 of them new (`tests/unit/clubDashboard.test.ts`).
+  `TournamentRecurringService.test.ts` fails to load on a missing
+  `@sentry/node` server dep — pre-existing, unrelated.

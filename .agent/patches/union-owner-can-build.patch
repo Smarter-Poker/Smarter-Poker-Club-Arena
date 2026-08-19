@@ -1,0 +1,581 @@
+--- a/src/pages/TableConfigPage.tsx
++++ b/src/pages/TableConfigPage.tsx
+@@ -27,6 +27,11 @@
+   buildTournamentConfig,
+   canRunAsTournament as gameTypeCanRunAsTournament,
+ } from '../lib/tournamentFromTableConfig';
++import {
++  gameCreationDeniedMessage,
++  type GameCreationAccess,
++} from '../lib/gameCreationAccess';
++import { fetchGameCreationAccess } from '../services/GameAccessService';
+ 
+ // ═══════════════════════════════════════════════════════════════════════════════
+ // TYPES
+@@ -398,9 +403,17 @@
+   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+   const [savingTemplate, setSavingTemplate] = useState(false);
+ 
+-  // UNION GUARD: Clubs inside a union CANNOT create standalone tables/tournaments.
+-  const [isInUnion, setIsInUnion] = useState(false);
+-  const [checkingUnion, setCheckingUnion] = useState(true);
++  // PERMISSION GATE: who is allowed to build a game for this club.
++  //
++  // 2026-08-19. This used to ask "is this club in a union?" and bounce every
++  // visitor if so. That is not the rule — it locked out the union owner, the
++  // one person who IS supposed to build games for a union's clubs. Now it asks
++  // the same question the database enforces (fn_can_create_games), via
++  // fn_game_creation_access, which also reports WHY and which union owns the
++  // games so the row can be stamped with it.
++  const [access, setAccess] = useState<GameCreationAccess | null>(null);
++  const checkingAccess = access === null;
++  const canCreate = access?.allowed === true;
+ 
+   // ── CRITICAL: Reset per-club state when navigating between clubs ──
+   useEffect(() => {
+@@ -408,38 +421,32 @@
+     setStarting(false);
+     setSelectedTemplateId('');
+     setSavingTemplate(false);
+-    setIsInUnion(false);
+-    setCheckingUnion(true);
++    setAccess(null);
+   }, [clubId]);
+ 
+   useEffect(() => {
+     if (!clubId) {
+-      setCheckingUnion(false);
++      setAccess({ allowed: false, unionId: null, reason: 'unknown_club' });
+       return;
+     }
+     let isMounted = true;
+     (async () => {
++      let result: GameCreationAccess;
+       try {
+         const resolvedId = await resolveClubUUID(clubId);
+-        const { data, error } = await supabase
+-          .from('union_clubs')
+-          .select('union_id')
+-          .eq('club_id', resolvedId)
+-          .limit(1)
+-          .maybeSingle();
+-        if (!isMounted) return;
+-        // Fail-closed: a transient query error must NOT allow a union club to
+-        // slip through and create a standalone table — treat it as blocking.
+-        if (error || data) {
+-          setIsInUnion(true);
+-          toast.error('Union clubs cannot create standalone tables.');
+-          navigate(`/clubs/${clubId}`);
+-        }
++        result = await fetchGameCreationAccess(resolvedId);
+       } catch (e) {
+-        reportError(e, 'TableConfigPage.async');
+-        /* fail-open */
++        // Fail closed: the database would refuse the insert anyway, and a
++        // wrong "yes" here means filling in the whole form for nothing.
++        reportError(e, 'TableConfigPage.gameCreationAccess');
++        result = { allowed: false, unionId: null, reason: 'check_failed' };
++      }
++      if (!isMounted) return;
++      setAccess(result);
++      if (!result.allowed) {
++        toast.error(gameCreationDeniedMessage(result));
++        navigate(`/clubs/${clubId}`);
+       }
+-      if (isMounted) setCheckingUnion(false);
+     })();
+     return () => {
+       isMounted = false;
+@@ -624,6 +631,11 @@
+ 
+   const buildTableData = (resolvedClubId?: string) => ({
+     club_id: resolvedClubId || clubId,
++    // Stamp the owning union when there is one, so a game the union built for a
++    // member club also shows up in the union's own views (getUnionTables).
++    // NULL for a standalone club — matching every existing union table, which
++    // carries BOTH union_id and the member club's club_id.
++    union_id: access?.unionId ?? null,
+     name: config.name,
+     game_type: gameType?.toUpperCase() || 'NLH',
+     game_variant: gameType || 'nlh',
+@@ -754,9 +766,13 @@
+       toast.error('Please enter a table name');
+       return;
+     }
+-    // UNION GUARD: double-check at save time (defense-in-depth)
+-    if (isInUnion || checkingUnion) {
+-      toast.error('Union clubs cannot create standalone tables.');
++    // PERMISSION GATE: re-check at save time (defense-in-depth).
++    if (!canCreate) {
++      toast.error(
++        checkingAccess
++          ? 'Still checking your permission to create games here.'
++          : gameCreationDeniedMessage(access!)
++      );
+       return;
+     }
+ 
+@@ -767,21 +783,7 @@
+       } = await getAuthUser();
+       if (!user) throw new Error('Not authenticated');
+ 
+-      // Runtime union check — prevents race if navigation guard was bypassed
+       const resolvedId = await resolveClubUUID(clubId || '');
+-      const { data: unionCheck, error: unionError } = await supabase
+-        .from('union_clubs')
+-        .select('union_id')
+-        .eq('club_id', resolvedId)
+-        .limit(1)
+-        .maybeSingle();
+-      // Fail-closed: block on a query error too, otherwise a transient failure
+-      // would let a union club create a standalone table.
+-      if (unionError || unionCheck) {
+-        toast.error('Union clubs cannot create standalone tables.');
+-        setSaving(false);
+-        return;
+-      }
+ 
+       const tableData = {
+         ...buildTableData(resolvedId),
+@@ -844,21 +846,25 @@
+       return;
+     }
+ 
+-    // 2026-08-19: the SNG and MTT tabs used to fall through to the cash-table
+-    // insert below and produce an ordinary ring game. They build a tournament
+-    // now. The union rule differs between the two: a club inside a union may
+-    // not create either, but that is enforced server-side by
+-    // fn_can_create_games (and by the tables RLS policy), so the tournament
+-    // path does not need the local guard — it would only produce a worse
+-    // message than the server's.
+-    if (config.gameMode !== 'regular') {
+-      await handleStartTournament();
++    // PERMISSION GATE: re-check at start time (defense-in-depth). This sits
++    // ABOVE the tournament fork because the same rule covers both: cash games
++    // and tournaments are built by the same people. The server enforces it
++    // either way (the tables RLS policy and fn_create_tournament both call
++    // fn_can_create_games); this is only so the message says why.
++    if (!canCreate) {
++      toast.error(
++        checkingAccess
++          ? 'Still checking your permission to create games here.'
++          : gameCreationDeniedMessage(access!)
++      );
+       return;
+     }
+ 
+-    // UNION GUARD: double-check at start time (defense-in-depth)
+-    if (isInUnion || checkingUnion) {
+-      toast.error('Union clubs cannot create standalone tables.');
++    // 2026-08-19: the SNG and MTT tabs used to fall through to the cash-table
++    // insert below and produce an ordinary ring game. They build a real
++    // tournament now.
++    if (config.gameMode !== 'regular') {
++      await handleStartTournament();
+       return;
+     }
+ 
+@@ -869,21 +875,7 @@
+       } = await getAuthUser();
+       if (!user) throw new Error('Not authenticated');
+ 
+-      // Runtime union check — prevents race if navigation guard was bypassed
+       const resolvedId = await resolveClubUUID(clubId || '');
+-      const { data: unionCheck, error: unionError } = await supabase
+-        .from('union_clubs')
+-        .select('union_id')
+-        .eq('club_id', resolvedId)
+-        .limit(1)
+-        .maybeSingle();
+-      // Fail-closed: block on a query error too, otherwise a transient failure
+-      // would let a union club create a standalone table.
+-      if (unionError || unionCheck) {
+-        toast.error('Union clubs cannot create standalone tables.');
+-        setStarting(false);
+-        return;
+-      }
+ 
+       const tableData = {
+         ...buildTableData(resolvedId),
+--- a/src/services/TableService.ts
++++ b/src/services/TableService.ts
+@@ -12,6 +12,8 @@
+ import { QUERY_LIMITS } from '../lib/constants';
+ import { reportError } from '../utils/errorReporter';
+ import { notifyServerLeave } from './GameServerAPI';
++import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
++import { fetchGameCreationAccess } from './GameAccessService';
+ 
+ // AUDIT M17: the admin money RPCs return a `reason` for ordinary refusals rather
+ // than raising, so the UI can tell "you are not an admin here" apart from "the
+@@ -170,29 +172,28 @@
+       ...settings,
+     };
+ 
+-    // Union guard: clubs inside a union cannot create their own tables
++    // Permission gate: the club owner and admins build a standalone club's
++    // games; for a club inside a union, the union's owner and admins do.
++    //
++    // 2026-08-19. This used to refuse ANY club that was in a union, which also
++    // refused the union owner — the one person the rule says may build here.
++    // It now asks the same question the database enforces on the INSERT.
+     const resolvedClubId = await resolveClubUUID(clubId);
+     if (!resolvedClubId) {
+       throw new Error('Invalid club ID provided');
+     }
+-    const { data: unionCheck, error: unionErr } = await supabase
+-      .from('union_clubs')
+-      .select('union_id')
+-      .eq('club_id', resolvedClubId)
+-      .maybeSingle();
+-    if (unionErr) {
+-      throw new Error(`Union membership check failed: ${unionErr.message}`);
+-    }
+-    if (unionCheck) {
+-      throw new Error(
+-        'Clubs inside a union cannot create standalone tables. Tables are managed at the union level.'
+-      );
++    const access = await fetchGameCreationAccess(resolvedClubId);
++    if (!access.allowed) {
++      throw new Error(gameCreationDeniedMessage(access));
+     }
+ 
+     const { data, error } = await supabase
+       .from('tables')
+       .insert({
+         club_id: resolvedClubId,
++        // Stamp the owning union so a game built for a member club also shows
++        // in the union's own views. NULL for a standalone club.
++        union_id: access.unionId,
+         name,
+         game_type: 'cash',
+         game_variant: gameVariant,
+--- a/scripts/ci/supabase-schema-manifest.json
++++ b/scripts/ci/supabase-schema-manifest.json
+@@ -1105,6 +1105,7 @@
+     "fn_cleanup_stale_viewers",
+     "fn_close_settlement_period",
+     "fn_club_leaderboard_period",
++    "fn_club_union_context",
+     "fn_collect_bounty",
+     "fn_columns_manifest",
+     "fn_commander_staff_hash_pin",
+@@ -1182,6 +1183,7 @@
+     "fn_finalize_bounty_pool",
+     "fn_finalize_settlement_period",
+     "fn_flag_garbage_tournaments",
++    "fn_game_creation_access",
+     "fn_generate_all_credit_invoices",
+     "fn_generate_credit_invoice",
+     "fn_generate_recurring_home_games",
+@@ -1278,6 +1280,7 @@
+     "fn_memory_promote_session_to_leaderboard",
+     "fn_merch_set_updated_at",
+     "fn_merge_messenger_preferences",
++    "fn_next_hand_number",
+     "fn_normalize_chart_value",
+     "fn_normalize_username",
+     "fn_notify_agent_on_cashout",
+--- /dev/null
++++ b/src/lib/gameCreationAccess.ts
+@@ -0,0 +1,108 @@
++/**
++ * ═══════════════════════════════════════════════════════════════════════════════
++ *  WHO IS ALLOWED TO BUILD A GAME FOR THIS CLUB
++ * ═══════════════════════════════════════════════════════════════════════════════
++ *
++ * The rule:
++ *   • Standalone club (no union) — the club owner and club admins build its own
++ *     cash games and tournaments.
++ *   • Club inside a union      — only the union owner and union admins build.
++ *     The club itself does not.
++ *
++ * That rule is enforced in the database (the `tables` INSERT policy and
++ * `fn_create_tournament` both go through `fn_can_create_games`). This module is
++ * the UI's way of asking the SAME question before it shows a form, so the page
++ * can explain the answer instead of failing at submit.
++ *
++ * 2026-08-19. Before this, the create-table page asked a DIFFERENT question —
++ * "is this club in a union?" — and if so it bounced EVERY visitor. That locked
++ * out the union owner, who is precisely the person the rule says must be able to
++ * build games for a union's clubs. There was no path at all: the 815 union
++ * tables in production were all written server-side.
++ *
++ * Fails CLOSED. A network error, an unreadable answer, or a signed-out user all
++ * come back as "not allowed" — the database would refuse the insert anyway, and
++ * a wrong "yes" here means the owner fills in a long form for nothing.
++ *
++ * Pure on purpose: no Supabase import, so the fail-closed behaviour can be
++ * tested without booting a client. The call itself lives in
++ * services/GameAccessService.
++ */
++export type GameCreationReason =
++  | 'ok'
++  /** The club belongs to a union; the union builds its games. */
++  | 'union_only'
++  /** Signed in, but not an owner or admin of this club (or its union). */
++  | 'not_owner_or_admin'
++  | 'unknown_club'
++  | 'not_signed_in'
++  /** The check itself failed — treated as a refusal. */
++  | 'check_failed';
++
++export interface GameCreationAccess {
++  allowed: boolean;
++  /**
++   * The union these games belong to, or null for a standalone club. Stamped
++   * onto the created row so the union's own views (UnionDetailPage →
++   * getUnionTables) find a game built through a member club.
++   */
++  unionId: string | null;
++  reason: GameCreationReason;
++}
++
++export const GAME_CREATION_DENIED_MESSAGES: Record<
++  Exclude<GameCreationReason, 'ok'>,
++  string
++> = {
++  union_only: 'This club is part of a union. Cash games and tournaments here are built by the union.',
++  not_owner_or_admin: 'Only the club owner or an admin can create games for this club.',
++  unknown_club: "That club could not be found.",
++  not_signed_in: 'Please sign in to create a game.',
++  check_failed: 'Could not confirm your permission to create games here. Please try again.',
++};
++
++const VALID_REASONS: GameCreationReason[] = [
++  'ok',
++  'union_only',
++  'not_owner_or_admin',
++  'unknown_club',
++  'not_signed_in',
++  'check_failed',
++];
++
++export const GAME_CREATION_DENIED: GameCreationAccess = { allowed: false, unionId: null, reason: 'check_failed' };
++
++/**
++ * Turn whatever `fn_game_creation_access` returned into a value the UI can
++ * trust. Pure, so the fail-closed behaviour is testable without a database.
++ */
++export function parseGameCreationAccess(raw: unknown): GameCreationAccess {
++  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return GAME_CREATION_DENIED;
++  const r = raw as Record<string, unknown>;
++
++  // Only a literal `true` opens the gate. A missing field, a string 'true', or
++  // anything else is a refusal.
++  const allowed = r.allowed === true;
++
++  const reason = VALID_REASONS.includes(r.reason as GameCreationReason)
++    ? (r.reason as GameCreationReason)
++    : allowed
++      ? 'ok'
++      : 'check_failed';
++
++  // An "allowed" answer paired with a denial reason is self-contradictory —
++  // refuse it rather than guess which half is right.
++  if (allowed && reason !== 'ok') return GAME_CREATION_DENIED;
++  if (!allowed && reason === 'ok') return GAME_CREATION_DENIED;
++
++  const unionId = typeof r.union_id === 'string' && r.union_id.length > 0 ? r.union_id : null;
++
++  return { allowed, unionId, reason };
++}
++
++/** The sentence to show someone who is not allowed. */
++export function gameCreationDeniedMessage(access: GameCreationAccess): string {
++  if (access.allowed) return '';
++  const reason = access.reason === 'ok' ? 'check_failed' : access.reason;
++  return GAME_CREATION_DENIED_MESSAGES[reason];
++}
+--- /dev/null
++++ b/src/services/GameAccessService.ts
+@@ -0,0 +1,38 @@
++/**
++ * ═══════════════════════════════════════════════════════════════════════════════
++ *  GAME ACCESS SERVICE — "may this user build a game for this club?"
++ * ═══════════════════════════════════════════════════════════════════════════════
++ *
++ * One call to `fn_game_creation_access`, which answers with the SAME rule the
++ * database enforces on the insert (`fn_can_create_games`, used by the `tables`
++ * RLS policy and by `fn_create_tournament`). Asking here rather than
++ * re-implementing the rule in TypeScript is the whole point — two copies of an
++ * authorisation rule drift, and the copy the UI trusts is the one that is wrong.
++ *
++ * The RPC reads the caller from `auth.uid()`, so the answer cannot be spoofed by
++ * passing someone else's id.
++ *
++ * Everything here fails CLOSED — see src/lib/gameCreationAccess.
++ */
++import { supabase } from '../lib/supabase';
++import {
++  parseGameCreationAccess,
++  GAME_CREATION_DENIED,
++  type GameCreationAccess,
++} from '../lib/gameCreationAccess';
++
++/** Ask the database whether the signed-in user may build games for this club. */
++export async function fetchGameCreationAccess(
++  clubUuid: string | null | undefined
++): Promise<GameCreationAccess> {
++  if (!clubUuid) return { allowed: false, unionId: null, reason: 'unknown_club' };
++  try {
++    const { data, error } = await supabase.rpc('fn_game_creation_access', {
++      p_club_id: clubUuid,
++    });
++    if (error) return GAME_CREATION_DENIED;
++    return parseGameCreationAccess(data);
++  } catch {
++    return GAME_CREATION_DENIED;
++  }
++}
+--- /dev/null
++++ b/tests/unit/GameCreationAccess.test.ts
+@@ -0,0 +1,148 @@
++/**
++ * WHO IS ALLOWED TO BUILD A GAME (2026-08-19).
++ *
++ * The rule Dan set: a standalone club's owner and admins build its own cash
++ * games and tournaments; for a club inside a union, the union owner and union
++ * admins build them and the club does not.
++ *
++ * Before this, the create-table page asked a DIFFERENT question — "is this club
++ * in a union?" — and bounced every visitor if so. That refused the union owner,
++ * the one person the rule says must be able to build for a union's clubs, and
++ * there was no other path in the UI.
++ *
++ * This file pins the part of the answer the UI is responsible for: reading the
++ * database's verdict without ever turning a broken or partial answer into a
++ * "yes". The verdict itself is proved against production data in SQL; what can
++ * go wrong HERE is the parsing, and every failure mode must fail CLOSED.
++ */
++import { describe, it, expect } from 'vitest';
++import {
++  parseGameCreationAccess,
++  gameCreationDeniedMessage,
++  GAME_CREATION_DENIED_MESSAGES,
++  type GameCreationAccess,
++} from '../../src/lib/gameCreationAccess';
++// NOTE: imported from src/lib (pure) and NOT from services/GameAccessService —
++// that module constructs the Supabase client at import time, which would make
++// this suite depend on env vars it has no business needing.
++
++const UNION = 'ddd00000-0000-0000-0000-0000000000a1';
++
++describe('parseGameCreationAccess — the allowed cases', () => {
++  it('lets a standalone club owner through with no union stamp', () => {
++    expect(parseGameCreationAccess({ allowed: true, union_id: null, reason: 'ok' })).toEqual({
++      allowed: true,
++      unionId: null,
++      reason: 'ok',
++    });
++  });
++
++  it('lets the union owner through AND reports the union to stamp on the row', () => {
++    // This is the case the old code got wrong: the club is in a union, and the
++    // answer is still yes because of WHO is asking.
++    expect(parseGameCreationAccess({ allowed: true, union_id: UNION, reason: 'ok' })).toEqual({
++      allowed: true,
++      unionId: UNION,
++      reason: 'ok',
++    });
++  });
++});
++
++describe('parseGameCreationAccess — the refusals keep their reason', () => {
++  it('a club inside a union is refused with union_only, and still reports the union', () => {
++    expect(parseGameCreationAccess({ allowed: false, union_id: UNION, reason: 'union_only' })).toEqual(
++      { allowed: false, unionId: UNION, reason: 'union_only' }
++    );
++  });
++
++  it.each(['not_owner_or_admin', 'unknown_club', 'not_signed_in'] as const)(
++    'passes %s through unchanged',
++    (reason) => {
++      const out = parseGameCreationAccess({ allowed: false, union_id: null, reason });
++      expect(out.allowed).toBe(false);
++      expect(out.reason).toBe(reason);
++    }
++  );
++});
++
++describe('parseGameCreationAccess — every malformed answer fails CLOSED', () => {
++  const junk: [string, unknown][] = [
++    ['null', null],
++    ['undefined', undefined],
++    ['a bare string', 'allowed'],
++    ['a number', 1],
++    ['an array', [{ allowed: true }]],
++    ['an empty object', {}],
++    ['the string "true"', { allowed: 'true', union_id: null, reason: 'ok' }],
++    ['the number 1', { allowed: 1, union_id: null, reason: 'ok' }],
++    ['allowed missing', { union_id: null, reason: 'ok' }],
++  ];
++
++  it.each(junk)('%s is a refusal', (_label, value) => {
++    expect(parseGameCreationAccess(value).allowed).toBe(false);
++  });
++
++  it('a self-contradictory answer — allowed with a denial reason — is refused', () => {
++    // If the two halves disagree, there is no safe way to pick a winner.
++    expect(parseGameCreationAccess({ allowed: true, union_id: UNION, reason: 'union_only' })).toEqual(
++      { allowed: false, unionId: null, reason: 'check_failed' }
++    );
++  });
++
++  it('a refusal labelled "ok" is also refused', () => {
++    expect(parseGameCreationAccess({ allowed: false, union_id: null, reason: 'ok' }).allowed).toBe(
++      false
++    );
++  });
++
++  it('an unrecognised reason on a refusal becomes check_failed rather than leaking through', () => {
++    const out = parseGameCreationAccess({ allowed: false, union_id: null, reason: 'banana' });
++    expect(out.allowed).toBe(false);
++    expect(out.reason).toBe('check_failed');
++  });
++});
++
++describe('parseGameCreationAccess — the union id it hands back', () => {
++  it('an empty-string union id becomes null, never an empty stamp on the row', () => {
++    // `union_id: ''` written to the table would be rejected by the uuid column;
++    // NULL is the correct "no union".
++    expect(parseGameCreationAccess({ allowed: true, union_id: '', reason: 'ok' }).unionId).toBeNull();
++  });
++
++  it('a non-string union id is ignored', () => {
++    expect(parseGameCreationAccess({ allowed: true, union_id: 12345, reason: 'ok' }).unionId).toBeNull();
++  });
++});
++
++describe('gameCreationDeniedMessage', () => {
++  it('explains a union club to its own owner without blaming them', () => {
++    const msg = gameCreationDeniedMessage({
++      allowed: false,
++      unionId: UNION,
++      reason: 'union_only',
++    });
++    expect(msg).toBe(GAME_CREATION_DENIED_MESSAGES.union_only);
++    expect(msg).toMatch(/union/i);
++  });
++
++  it('has a real sentence for every refusal reason — no undefined toasts', () => {
++    const reasons = Object.keys(GAME_CREATION_DENIED_MESSAGES) as Array<
++      keyof typeof GAME_CREATION_DENIED_MESSAGES
++    >;
++    expect(reasons.length).toBeGreaterThan(0);
++    for (const reason of reasons) {
++      const msg = gameCreationDeniedMessage({ allowed: false, unionId: null, reason });
++      expect(typeof msg).toBe('string');
++      expect(msg.trim().length).toBeGreaterThan(10);
++    }
++  });
++
++  it('falls back to a sentence rather than undefined if reason is somehow "ok" while denied', () => {
++    const weird = { allowed: false, unionId: null, reason: 'ok' } as unknown as GameCreationAccess;
++    expect(gameCreationDeniedMessage(weird)).toBe(GAME_CREATION_DENIED_MESSAGES.check_failed);
++  });
++
++  it('says nothing when access was granted', () => {
++    expect(gameCreationDeniedMessage({ allowed: true, unionId: null, reason: 'ok' })).toBe('');
++  });
++});

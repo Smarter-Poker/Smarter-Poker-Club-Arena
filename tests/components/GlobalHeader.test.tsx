@@ -44,7 +44,7 @@ describe('GlobalHeader Component', () => {
   it('renders the brand text image', () => {
     render(
       <MemoryRouter>
-        <GlobalHeader pageDepth={1} />
+        <GlobalHeader />
       </MemoryRouter>
     );
     const brandImage = screen.getByAltText('Smarter.Poker');
@@ -52,45 +52,52 @@ describe('GlobalHeader Component', () => {
     expect(brandImage).toHaveAttribute('src', expect.stringContaining('brand-text-clean.png'));
   });
 
-  // UPDATED: the header's left slot no longer carries a "Return to Hub"
-  // button — GlobalHeader now renders only the hamburger at lobby depth and
-  // adds the Back button on sub-pages (`isSubPage = pageDepth >= 2`).
-  // Hub navigation moved to the right-hand orbs (/hub/*) and the hamburger
-  // menu, so this test now pins the hamburger-only left slot at depth 1.
-  it('renders only the hamburger (no Back button) on the lobby (pageDepth 1)', () => {
+  /*
+   * UPDATED 2026-08-19: these tests previously asserted that Back was hidden at
+   * lobby depth and that Hub did not exist at all. Dan asked for the opposite —
+   * "the club arena needs a back button and hub button inside the global
+   * header" — so GlobalHeader now renders the hamburger, Back and Hub
+   * unconditionally and the `pageDepth` prop is gone (both real callers,
+   * AppLayout and HomePage, already render <GlobalHeader /> with no props).
+   * Depth-conditional assertions would now pin the exact behaviour that was
+   * reported as a bug, so they are replaced with unconditional ones.
+   */
+  it('always renders the hamburger, Back and Hub in the left slot', () => {
     render(
       <MemoryRouter>
-        <GlobalHeader pageDepth={1} />
+        <GlobalHeader />
       </MemoryRouter>
     );
-    const menuBtn = screen.getByRole('button', { name: /Open Menu/i });
-    expect(menuBtn).toBeInTheDocument();
 
-    const img = screen.getByAltText('Menu');
-    expect(img).toBeInTheDocument();
-    expect(img).toHaveAttribute('src', expect.stringContaining('btn-hamburger-v4.png'));
+    expect(screen.getByRole('button', { name: /Open Menu/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go back/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go to the Hub/i })).toBeInTheDocument();
 
-    // Ensures we don't have the Go Back button at lobby depth
-    expect(screen.queryByRole('button', { name: /Go back/i })).not.toBeInTheDocument();
-    expect(screen.queryByAltText('Back')).not.toBeInTheDocument();
-    // ...nor the removed Hub button
-    expect(screen.queryByAltText('Hub')).not.toBeInTheDocument();
+    expect(screen.getByAltText('Menu')).toHaveAttribute(
+      'src',
+      expect.stringContaining('btn-hamburger-v4.png')
+    );
+    expect(screen.getByAltText('Back')).toHaveAttribute(
+      'src',
+      expect.stringContaining('btn-back.png')
+    );
+    expect(screen.getByAltText('Hub')).toHaveAttribute(
+      'src',
+      expect.stringContaining('btn-hub-v4.png')
+    );
   });
 
-  it('renders the Back button image when on a sub-page (pageDepth >= 2)', () => {
+  it('renders the same left slot regardless of route depth', () => {
+    // The reported bug was that a deeper route changed which escape hatches
+    // existed. Rendering at a nested path must produce the identical three.
     render(
-      <MemoryRouter>
-        <GlobalHeader pageDepth={2} />
+      <MemoryRouter initialEntries={['/clubs/abc/tables/xyz']}>
+        <GlobalHeader />
       </MemoryRouter>
     );
-    const btn = screen.getByRole('button', { name: /Go back/i });
-    expect(btn).toBeInTheDocument();
 
-    const img = screen.getByAltText('Back');
-    expect(img).toBeInTheDocument();
-    expect(img).toHaveAttribute('src', expect.stringContaining('btn-back.png'));
-
-    // UPDATED: the hamburger stays alongside the Back button on sub-pages.
     expect(screen.getByRole('button', { name: /Open Menu/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go back/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go to the Hub/i })).toBeInTheDocument();
   });
 });

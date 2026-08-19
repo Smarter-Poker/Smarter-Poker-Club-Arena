@@ -701,6 +701,52 @@ export abstract class TournamentManagerBase {
       // tournament's tables must be rebuildable when their engine dies.
       this.startTableLivenessSweep();
 
+      /**
+       * Dan 2026-08-19: A RESTART MID-BREAK MUST NOT RESUME PLAY.
+       *
+       * The break pause lives on the engine instances. A redeploy throws those
+       * away and resume() builds brand-new ones — which are NOT paused — while
+       * `on_break` is still true in the database. The tournament then deals
+       * straight through the rest of its own break. Observed live: the engine
+       * restarted inside the 04:55 window (platform-wide hand volume dipped to
+       * 89 and recovered the next minute) and both MTTs resumed dealing 13
+       * seconds into a break the database still showed as running.
+       *
+       * Re-pause for whatever is left of the break and re-arm the resume, so
+       * the break survives a deploy the same way its persisted state does.
+       */
+      if (tournament.on_break && tournament.break_ends_at) {
+        const remainingMs = new Date(tournament.break_ends_at).getTime() - Date.now();
+        if (remainingMs > 1000) {
+          this.onBreak = true;
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed DURING a break — re-pausing for the remaining ${Math.round(remainingMs / 1000)}s`
+          );
+          for (const engine of this.tableEngines.values()) {
+            try {
+              engine.pauseAfterHand(remainingMs + TournamentManagerBase.LAST_HAND_GRACE_MS);
+            } catch (err) {
+              reportError(err, 'TournamentManagerBase.resume_rebreak_pause');
+            }
+          }
+          setTimeout(() => {
+            void this.resumeFromBreak();
+          }, remainingMs);
+        } else {
+          // The break already expired while we were down — clear the flag so
+          // the lobby does not show a phantom break.
+          this.onBreak = false;
+          try {
+            await supabase
+              .from('tournaments')
+              .update({ on_break: false, break_ends_at: null })
+              .eq('id', this.tournamentId);
+          } catch (err) {
+            reportError(err, 'TournamentManagerBase.resume_clear_stale_break');
+          }
+        }
+      }
+
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed — ${this.tableEngines.size} tables, level ${this.currentLevel}`
       );

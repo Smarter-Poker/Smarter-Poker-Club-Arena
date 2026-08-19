@@ -146,6 +146,33 @@ describe('the break is two phases: last hand, THEN five minutes', () => {
   });
 });
 
+describe('a restart mid-break does not resume play', () => {
+  const resumeFn = BASE.slice(
+    BASE.indexOf('async resume()'),
+    BASE.indexOf('async pauseForBreak') > BASE.indexOf('async resume()')
+      ? BASE.indexOf('async pauseForBreak')
+      : BASE.length
+  );
+
+  it('re-pauses the rebuilt engines for the remaining break time', () => {
+    expect(resumeFn).toMatch(/tournament\.on_break && tournament\.break_ends_at/);
+    expect(resumeFn).toMatch(/remainingMs/);
+    expect(resumeFn).toMatch(
+      /engine\.pauseAfterHand\(remainingMs \+ TournamentManagerBase\.LAST_HAND_GRACE_MS\)/
+    );
+  });
+
+  it('re-arms the resume for the remainder', () => {
+    expect(resumeFn).toMatch(
+      /setTimeout\([\s\S]{0,80}resumeFromBreak\(\)[\s\S]{0,40}remainingMs\)/
+    );
+  });
+
+  it('clears a break that already expired while the engine was down', () => {
+    expect(resumeFn).toMatch(/on_break: false, break_ends_at: null/);
+  });
+});
+
 describe('the engine pause outlasts the break', () => {
   const ENGINE = readFileSync(
     resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),

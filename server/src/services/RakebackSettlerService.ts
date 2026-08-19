@@ -47,7 +47,32 @@ const DAEMON_KEY = 'rakeback_settler';
  * can build a dataset that genuinely straddles the LIMIT boundary rather than
  * hard-coding a number that could drift away from the real one.
  */
-export const FETCH_LIMIT = 10000;
+export const FETCH_LIMIT = 2000;
+/*
+ * AUDIT PASS 3 (2026-08-19) — page size reduced 10,000 -> 2,000.
+ *
+ * The durable cursor is saved ONCE PER PAGE, at the end, because a page is
+ * processed in phases (aggregate every row into per-player buckets -> credit
+ * agent commissions -> upsert rakeback_periods + player_stats). Saving it
+ * mid-page would risk advancing past rows whose aggregate had not been applied
+ * yet, which loses a player's credit silently — the one direction this daemon
+ * must never fail in. So the page cannot be checkpointed internally; it can
+ * only be made SHORTER.
+ *
+ * That matters because a 10,000-row page takes roughly an hour here: each row
+ * fans out into sequential per-player commission RPCs, measured live at ~6/sec.
+ * Any engine restart inside that hour discarded the whole page's progress and
+ * the next boot restarted the same page from the same cursor. With several
+ * deploys in a day the cursor could therefore never advance at all — verified
+ * live on 2026-08-19: the cursor sat at 2026-08-17 10:34 with 285,000
+ * unprocessed rake_records while cycles ran continuously.
+ *
+ * At 2,000 rows a page completes in ~10-12 minutes, so the cursor advances
+ * several times an hour and a restart costs minutes instead of an hour.
+ * Throughput is unchanged — it is bound by the RPC rate, not the page size —
+ * because scheduleCatchUp() re-arms in 60s whenever backlog remains, so pages
+ * run back-to-back instead of waiting for the 30-minute interval.
+ */
 
 /**
  * AUDIT M6: how many FULL batches one cycle will drain before deferring the

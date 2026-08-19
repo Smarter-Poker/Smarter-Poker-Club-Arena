@@ -7986,3 +7986,18 @@ DB migration mirrors: 20260819g, 20260819h.
     re-entrancy guard. NOTE: this lag never risked money — rake is banked at
     hand time by atomic_distribute_rake; what lagged was per-player rakeback
     attribution and agent commission crediting.
+
+15. SETTLER PAGE SIZE 10,000 -> 2,000 (the actual root cause of #14's backlog).
+    The durable cursor can only be saved at the END of a page, because a page is
+    processed in phases (bucket every row -> credit agent commissions -> upsert
+    rakeback_periods/player_stats); checkpointing mid-page could advance past
+    rows whose aggregate had not been applied, silently losing a player credit.
+    So the page cannot be checkpointed internally — only shortened. A 10,000-row
+    page takes ~1 hour (sequential per-player commission RPCs, measured ~6/sec),
+    so ANY restart inside that hour discarded the entire page and the next boot
+    restarted the same page from the same cursor. With several deploys in a day
+    the cursor could never advance — verified live: stuck at 2026-08-17 10:34
+    with 285,000 rows outstanding while cycles ran continuously. At 2,000 rows a
+    page finishes in ~10-12 min, so the cursor advances several times an hour and
+    a restart costs minutes. Throughput is unchanged (bound by RPC rate, not page
+    size) because #14's 60s catch-up runs pages back-to-back.

@@ -366,37 +366,55 @@ export default function TournamentLobbyPage() {
         .order('start_time', { ascending: false })
         .limit(30);
 
-      // Union-aware filtering: if club is in a union, show ALL union club tournaments
-      let filterClubIds: string[] = clubId ? [clubId] : [];
+      // ── SCOPING (rewritten 2026-08-19) ───────────────────────────────────
+      // This previously listed tournaments with `.in('club_id', <every club in
+      // the union>)`, which exposed each club's PRIVATE tournaments to every
+      // other club in the union. Worse, `/tournaments` and `/tournament-lobby`
+      // mount this page with NO clubId, which made filterClubIds empty and
+      // skipped the filter entirely — a platform-wide listing of every
+      // tournament, private ones included.
+      //
+      // Correct scoping under union governance:
+      //   union club  -> the UNION's tournaments (union_id) + this club's OWN
+      //                  private ones. Sibling clubs' private games never show.
+      //   standalone  -> this club's own tournaments.
+      //   no club     -> nothing club-specific; show only union/public games
+      //                  the viewer can actually reach (never private).
+      let unionId: string | null = null;
+      let resolvedClubId: string | null = null;
       if (clubId) {
         try {
-          const resolvedId = await resolveClubUUID(clubId);
+          resolvedClubId = await resolveClubUUID(clubId);
           const { data: ucRow } = await supabase
             .from('union_clubs')
             .select('union_id')
-            .eq('club_id', resolvedId)
+            .eq('club_id', resolvedClubId)
             .limit(1)
             .maybeSingle();
-          if (ucRow?.union_id) {
-            const { data: allUcRows } = await supabase
-              .from('union_clubs')
-              .select('club_id')
-              .eq('union_id', ucRow.union_id);
-            if (allUcRows && allUcRows.length > 0) {
-              filterClubIds = allUcRows.map((r) => r.club_id);
-            }
-          }
+          unionId = ucRow?.union_id ?? null;
         } catch (e) {
           reportError(e, 'TournamentLobbyPage.map');
-          // Fail-open: just use the single clubId
+          // Fail closed on scope: fall back to this club only.
+          unionId = null;
         }
       }
 
-      if (filterClubIds.length > 0) {
-        activeQuery = activeQuery.in('club_id', filterClubIds);
-        pinnedQuery = pinnedQuery.in('club_id', filterClubIds);
-        completedQuery = completedQuery.in('club_id', filterClubIds);
-      }
+      const applyScope = (q: any) => {
+        if (unionId && resolvedClubId) {
+          return q.or(
+            `union_id.eq.${unionId},and(club_id.eq.${resolvedClubId},is_private.eq.true)`
+          );
+        }
+        if (resolvedClubId) {
+          return q.eq('club_id', resolvedClubId);
+        }
+        // No club context: public/union games only, never private.
+        return q.or('is_private.is.null,is_private.eq.false');
+      };
+
+      activeQuery = applyScope(activeQuery);
+      pinnedQuery = applyScope(pinnedQuery);
+      completedQuery = applyScope(completedQuery);
 
       // Apply status filter
       let data: any[] = [];
@@ -428,7 +446,7 @@ export default function TournamentLobbyPage() {
           .eq('status', 'REGISTERING')
           .order('start_time', { ascending: true })
           .limit(50);
-        if (filterClubIds.length > 0) q = q.in('club_id', filterClubIds);
+        q = applyScope(q);
         const res = await q;
         data = res.data || [];
         error = res.error;
@@ -439,7 +457,7 @@ export default function TournamentLobbyPage() {
           .eq('status', 'RUNNING')
           .order('start_time', { ascending: true })
           .limit(50);
-        if (filterClubIds.length > 0) q = q.in('club_id', filterClubIds);
+        q = applyScope(q);
         const res = await q;
         data = res.data || [];
         error = res.error;
@@ -450,7 +468,7 @@ export default function TournamentLobbyPage() {
           .eq('status', 'COMPLETED')
           .order('start_time', { ascending: false })
           .limit(50);
-        if (filterClubIds.length > 0) q = q.in('club_id', filterClubIds);
+        q = applyScope(q);
         const res = await q;
         data = res.data || [];
         error = res.error;

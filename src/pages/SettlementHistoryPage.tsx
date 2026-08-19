@@ -69,9 +69,13 @@ export default function SettlementHistoryPage() {
         {
           // SWEEP #3 (2026-07-23): club_settlements never existed — the real
           // club settlement record is settlement_invoices (union<->club wires).
+          // 2026-08-19: scope to the invoice type this screen renders, so the
+          // new weekly player-P&L rows do not trigger a full reload of a list
+          // they are not part of.
           event: '*',
           schema: 'public',
           table: 'settlement_invoices',
+          filter: 'invoice_type=eq.union_to_club',
         },
         () => loadHistory()
       )
@@ -103,9 +107,18 @@ export default function SettlementHistoryPage() {
       // onto settlement_invoices. gross_amount = rake collected in the period;
       // net_amount = the union's hold (union tax); breakdown.club_retained =
       // what the club kept.
+      // FIX 2026-08-19: this query had NO invoice_type filter, and the mapper
+      // assumes every row is a union rake-hold invoice (reading
+      // breakdown.union_hold_amount / breakdown.club_retained). A
+      // 'union_club_pnl' row — the new weekly player win/loss settlement — has
+      // neither key and gross_amount == net_amount, so it rendered as
+      // "Rake: X / Fee: -X / Net: 0", i.e. "the union took 100% of your rake",
+      // and it corrupted every summary tile and the chart scale. Scope to the
+      // rake-hold invoices this screen is actually about.
       const { data } = await supabase
         .from('settlement_invoices')
-        .select('id, period_id, gross_amount, net_amount, breakdown, status, created_at')
+        .select('id, period_id, invoice_type, gross_amount, net_amount, breakdown, status, created_at')
+        .eq('invoice_type', 'union_to_club')
         .order('created_at', { ascending: false })
         .limit(50);
 

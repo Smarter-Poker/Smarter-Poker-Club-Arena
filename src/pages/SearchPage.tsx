@@ -137,10 +137,19 @@ export default function SearchPage() {
         }
 
         if (category === 'all' || category === 'tables') {
+          // 2026-08-19: this searched every table on the platform by name with
+          // no filters at all — private club games, soft-deleted rows, closed
+          // tables and tournament sub-tables were all returned as joinable
+          // cash games. RLS now hides other clubs' private games, but the
+          // lobby hygiene filters belong here too.
           const { data: tables } = await supabase
             .from('tables')
             .select('id, name, stakes, current_players, max_players')
             .ilike('name', `%${sanitized}%`)
+            .eq('is_deleted', false)
+            .neq('status', 'closed')
+            .is('tournament_id', null)
+            .or('is_private.is.null,is_private.eq.false')
             .limit(10);
 
           if (tables) {
@@ -161,6 +170,8 @@ export default function SearchPage() {
             .select('id, name, buy_in_amount, status, current_players, max_players')
             .ilike('name', `%${sanitized}%`)
             .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+            // Private club tournaments are not platform-searchable.
+            .or('is_private.is.null,is_private.eq.false')
             .limit(10);
 
           if (tournaments) {

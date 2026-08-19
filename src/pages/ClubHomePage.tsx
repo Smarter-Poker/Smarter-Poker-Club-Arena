@@ -288,6 +288,36 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const channelKey = `club-tables-${clubId}`;
       let channel = masterBus.getOrCreateChannel(channelKey);
 
+      // Realtime admission rules — these MUST mirror the fetch queries below
+      // (the cash-table query and the tournament queries). Realtime `filter:`
+      // only supports single-column equality, so anything more expressive than
+      // that has to be re-checked here or the live list and the fetched list
+      // diverge until the next reload.
+      const belongsInTableList = (row: any): boolean => {
+        if (!row) return false;
+        if (row.tournament_id) return false; // tournament sub-table, not a cash game
+        if (row.is_deleted === true) return false;
+        if (row.status === 'closed' || row.status === 'deleted') return false;
+        if (unionId) {
+          // Union club: the union's tables, plus THIS club's own private games.
+          if (row.union_id === unionId) return true;
+          return row.club_id === resolvedId && row.is_private === true;
+        }
+        return true;
+      };
+
+      const JOINABLE_TOURNAMENT_STATUS = ['REGISTERING', 'RUNNING'];
+      const belongsInTournamentList = (row: any): boolean => {
+        if (!row) return false;
+        if (!JOINABLE_TOURNAMENT_STATUS.includes(String(row.status))) return false;
+        if (unionId) {
+          // Union club: union-owned tournaments, plus this club's own private ones.
+          if (row.union_id === unionId) return true;
+          return row.club_id === resolvedId && row.is_private === true;
+        }
+        return true;
+      };
+
       const handleTableChange = (payload: any) => {
         if (!isMounted) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
@@ -306,6 +336,13 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             setTables((prev) => prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t)));
           }
         } else if (payload.eventType === 'INSERT' && payload.new) {
+          // 2026-08-19: the INSERT branch checked nothing, so rows the fetch
+          // deliberately excludes appeared live and stayed until a reload —
+          // tournament sub-tables shown as joinable cash games, and (for a
+          // union club) the club's own NON-private tables, which this lobby
+          // must not list. Realtime `filter:` is single-column equality and
+          // cannot express that rule, so it is enforced here instead.
+          if (!belongsInTableList(payload.new)) return;
           setTables((prev) => {
             if (prev.some((t) => t.id === payload.new.id)) return prev;
             return [payload.new as any, ...prev];
@@ -318,10 +355,20 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       const handleTournamentChange = (payload: any) => {
         if (!isMounted) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
-          setTournaments((prev) =>
-            prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-          );
+          const updated = payload.new as any;
+          // A tournament leaving a joinable state (CANCELLED/COMPLETED) used to
+          // be merged and left on screen as a clickable card — re-opening the
+          // silent-join bug live, without a refresh. Drop it instead, mirroring
+          // the table handler.
+          if (!belongsInTournamentList(updated)) {
+            setTournaments((prev) => prev.filter((t) => t.id !== updated.id));
+          } else {
+            setTournaments((prev) =>
+              prev.map((t) => (t.id === updated.id ? { ...t, ...updated } : t))
+            );
+          }
         } else if (payload.eventType === 'INSERT' && payload.new) {
+          if (!belongsInTournamentList(payload.new)) return;
           setTournaments((prev) => {
             if (prev.some((t) => t.id === payload.new.id)) return prev;
             return [payload.new as any, ...prev];

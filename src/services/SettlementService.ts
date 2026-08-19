@@ -160,12 +160,21 @@ export const SettlementService = {
   /**
    * Get historical periods
    */
-  async getPeriodHistory(limit: number = 12): Promise<SettlementPeriod[]> {
-    const { data, error } = await supabase
+  async getPeriodHistory(limit: number = 12, clubId?: string): Promise<SettlementPeriod[]> {
+    // 2026-08-19: this had NO club scoping, so a page rendering "this club's
+    // settlement history" actually rendered whatever periods RLS happened to
+    // let the viewer see — for a union admin, every club in the union, mixed
+    // together with no way to tell them apart. RLS contained it, but the list
+    // was still wrong. Callers that know their club should pass it.
+    let query = supabase
       .from('settlement_periods')
       .select(
-        'id, period_number, year, start_at, end_at, status, total_rake_collected, total_bbj_contributions, total_player_winnings, total_player_losses, total_hands_dealt, settled_at, settled_by'
-      )
+        'id, club_id, period_number, year, start_at, end_at, status, total_rake_collected, total_bbj_contributions, total_player_winnings, total_player_losses, total_hands_dealt, settled_at, settled_by'
+      );
+
+    if (clubId) query = query.eq('club_id', clubId);
+
+    const { data, error } = await query
       .order('start_at', { ascending: false })
       .limit(limit);
 

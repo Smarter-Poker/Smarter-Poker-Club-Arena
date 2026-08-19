@@ -10,6 +10,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { SettlementService } from '../services/SettlementService';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 import { exportToCSV } from '../lib/export';
 import styles from './SettlementPage.module.css';
 import '../components/common/ButtonSpinner.css';
@@ -267,8 +268,15 @@ export default function SettlementPage() {
       // Get current period
       const currentPeriod = await SettlementService.getCurrentPeriod();
 
-      // Get period history
-      const periodHistory = await SettlementService.getPeriodHistory(12);
+      // Get period history — scoped to the club this page is showing.
+      // 2026-08-19: this was unscoped, so the /clubs/:clubId/settlement route
+      // rendered whatever periods RLS allowed (for a union admin, every club
+      // in the union) under one club's heading.
+      const resolvedClubId = clubId ? await resolveClubUUID(clubId) : undefined;
+      const periodHistory = await SettlementService.getPeriodHistory(
+        12,
+        resolvedClubId || undefined
+      );
 
       // Map to our internal format
       const mappedPeriods: SettlementPeriod[] = [

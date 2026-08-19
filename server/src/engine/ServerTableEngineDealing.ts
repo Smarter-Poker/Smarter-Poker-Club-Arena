@@ -135,6 +135,36 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           }
         }
 
+        // Dan 2026-08-19, bug list item 17: "when hero busts and adds chips
+        // they're never dealt in - stuck on 'Seat Reserved, You'll Be Dealt In
+        // Next Hand'."
+        //
+        // An add-on requested WHILE A HAND IS RUNNING is debited immediately
+        // but only queued onto `table_pending_addons`; it is applied to the
+        // seat by `processPendingAddOns`, which ran in exactly one place -
+        // settlement step 8e, at the END of a hand. That is a deadlock for the
+        // player who needs it most. Bust, and you are filtered out of the deal
+        // by `stack > 0`. If the table then drops below two funded seats, the
+        // loop parks in the idle branch below: no hand starts, so no
+        // settlement runs, so the queued chips are never applied, so the
+        // player never gets a stack - and the seat sits on "Seat Reserved,
+        // you'll be dealt in next hand" forever. Their money is already
+        // debited and sitting in the ledger the whole time.
+        //
+        // The same hole opens when a hand hits HAND_SAFETY_TIMEOUT: that path
+        // nulls the controller and resolves WITHOUT running settlement, so any
+        // add-on queued during that hand is left unresolved too.
+        //
+        // Sweeping every idle tick closes both. It is a cheap no-op unless a
+        // sweep is actually outstanding (the method returns immediately when
+        // nothing is pending), the RPC is idempotent per ledger row, and it
+        // runs BEFORE the active-player filter below so a player whose chips
+        // land this tick is dealt into THIS hand rather than the next one.
+        // This is the human counterpart of recoverBustedSeatedHorses().
+        if (!this.isTournamentTable()) {
+          await this.processPendingAddOns(this.seatedPlayers);
+        }
+
         // FIX 143: Bible V8 §7.12 — Exclude sitting-out players from the deal.
         // Standard online poker: sitting-out players skip the hand entirely.
         // They miss their blind and owe a dead blind when they return (§4.2).

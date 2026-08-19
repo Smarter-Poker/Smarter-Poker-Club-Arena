@@ -827,12 +827,40 @@
 
 /* Pot Area — Clean centered display. Surface-relative; 30% here lands at
    ~34% of the whole table, sitting above the community cards. */
+/*
+ * Dan 2026-08-19, bug list item 15: "chips/chip animations must never appear
+ * over the POT total."
+ *
+ * They did because of a stacking-context trap. `.pot-area` used to live inside
+ * `.table-surface`, which sets `z-index: 1` and therefore CREATES a stacking
+ * context - so the pot's z-index of 20 could only ever compete with its
+ * siblings inside the felt. The chip-flight layer is a sibling of
+ * `.table-surface` at z-index 1000, so every chip flying to the pot landed on
+ * top of the number, and there was no z-index on the pot that could win.
+ *
+ * `.pot-area` is now a direct child of `.table-scaler`, alongside the chip
+ * layer, so the two can actually be ordered - chips slide UNDER the total.
+ *
+ * The percentages are converted so the pot does not move by a single pixel.
+ * `.table-surface` occupies left 13.3%, top 8.9%, width 73.2%, height 80.3% of
+ * `.table-scaler`, so the old 50%/30% of the FELT is:
+ *      left = 13.3% + 0.732 x 50%  = 49.9%
+ *      top  =  8.9% + 0.803 x 30%  = 32.99%
+ * `.pot-area` is a zero-size anchor: `.pot-display` inside it resolves its own
+ * percentages against a 0x0 box, so this element alone decides where the pot
+ * sits. Verified pixel-identical at four viewport widths by
+ * tests/e2e/pot-above-chips.spec.ts.
+ */
 .pot-area {
   position: absolute;
-  top: 30%;
-  left: 50%;
+  top: 32.99%;
+  left: 49.9%;
   transform: translate(-50%, -50%);
-  z-index: 20;
+  /* Above the chip-flight layer (.manager, 25) so the total is never occluded,
+     and deliberately LOW enough that every modal and celebration overlay still
+     covers it. Raising the pot into the chip layer's old 1000 band would have
+     put it over those instead, trading one occlusion bug for another. */
+  z-index: 30;
 }
 
 /*

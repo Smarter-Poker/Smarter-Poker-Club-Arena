@@ -2228,10 +2228,18 @@ export default function TablePage({
   // session. Reduced-motion is still honoured where it belongs: the CSS
   // prefers-reduced-motion queries in animations.css and ChipAnimations.css,
   // which are an accessibility setting rather than a gameplay preference.
+  // REGRESSION FIX, same day: this list began with '--animation-speed', which
+  // was wrong. That property is not a skip-animations artefact - it is the
+  // live Animation Speed preference, written from saved settings by
+  // useTableSettings' own effect. That hook is called at the top of this
+  // component, so its effect flushes first and this one then deleted the value
+  // it had just written. Net effect: the Animation Speed control did nothing
+  // on any table load, and only appeared to work if changed while a table was
+  // already open. The other eight ARE skip-animations duration overrides and
+  // are correct to clear.
   useEffect(() => {
     const root = document.documentElement;
     for (const prop of [
-      '--animation-speed',
       '--deal-duration',
       '--flip-duration',
       '--fold-duration',
@@ -7222,36 +7230,13 @@ export default function TablePage({
                     )}
                   </div>
                 </div>
-                {/* Pot Display — click to toggle chips/BB */}
-                <div className="pot-area">
-                  <PotDisplay
-                    mainPot={tableState.pot}
-                    sidePots={tableState.sidePots}
-                    bigBlind={safeBB(tableState.blinds, 0)}
-                    displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
-                    onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
-                  />
-                  {/* AUDIT FIX 2026-07-19: removed the duplicate PremiumPot —
-                      it rendered the SAME pot total in the same .pot-area as
-                      PotDisplay, drawing the number twice (stacked). PotDisplay
-                      already shows the amount + a chip stack next to it + side
-                      pots, which is the single authoritative pot display. */}
-                  {/* Phase 2 T1-04 — PokerBros signature: hand strength label
-                   *  floats at pot center for ~1s on ANY win (showdown or not).
-                   *  2026-04-16 fix: removed boardStage === 'showdown' gate —
-                   *  PokerBros shows winning hand name on ALL wins, including
-                   *  when everyone folds. Keyed on hand number + hand name so
-                   *  every new hand re-triggers the animation. */}
-                  {winnerInfo.handName && (
-                    <div
-                      className="pot-hand-strength"
-                      key={`hand-${tableState.handNumber ?? 0}-${winnerInfo.handName}`}
-                      role="status"
-                    >
-                      {winnerInfo.handName}
-                    </div>
-                  )}
-                </div>
+                {/* Dan 2026-08-19 item 15: the pot moved OUT of .table-surface.
+                    That element sets z-index:1 and so creates a stacking
+                    context, which trapped the pot below the chip-flight layer
+                    no matter what z-index it was given - every chip flying to
+                    the pot landed on top of the total. It is now a sibling of
+                    the chip layer (see .pot-area in TablePage.css, whose
+                    percentages are converted so it does not move a pixel). */}
 
                 {/* Community Cards.
                     Dan 2026-08-18: when the hand is run twice or three times,
@@ -7359,6 +7344,37 @@ export default function TablePage({
             animations={chipAnimations}
             onAnimationComplete={handleAnimationComplete}
           />
+
+          {/* Pot Display — click to toggle chips/BB */}
+          <div className="pot-area">
+            <PotDisplay
+              mainPot={tableState.pot}
+              sidePots={tableState.sidePots}
+              bigBlind={safeBB(tableState.blinds, 0)}
+              displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
+              onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
+            />
+            {/* AUDIT FIX 2026-07-19: removed the duplicate PremiumPot —
+                it rendered the SAME pot total in the same .pot-area as
+                PotDisplay, drawing the number twice (stacked). PotDisplay
+                already shows the amount + a chip stack next to it + side
+                pots, which is the single authoritative pot display. */}
+            {/* Phase 2 T1-04 — PokerBros signature: hand strength label
+             *  floats at pot center for ~1s on ANY win (showdown or not).
+             *  2026-04-16 fix: removed boardStage === 'showdown' gate —
+             *  PokerBros shows winning hand name on ALL wins, including
+             *  when everyone folds. Keyed on hand number + hand name so
+             *  every new hand re-triggers the animation. */}
+            {winnerInfo.handName && (
+              <div
+                className="pot-hand-strength"
+                key={`hand-${tableState.handNumber ?? 0}-${winnerInfo.handName}`}
+                role="status"
+              >
+                {winnerInfo.handName}
+              </div>
+            )}
+          </div>
 
           {/* AUDIT FIX 2026-07-19: the TimeBank "engaging" panel (extra-time
               countdown + activate/buy) was imported but never mounted, so when

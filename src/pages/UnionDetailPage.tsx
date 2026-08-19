@@ -228,17 +228,22 @@ export default function UnionDetailPage() {
         if (unionData?.settings?.crossClubTournaments && clubsData && clubsData.length > 0) {
           const clubIds = clubsData.map((c) => c.clubId);
           const [{ data: clubTournaments }, { data: xmttTournaments }] = await Promise.all([
+            // PRIVACY + COMPLETENESS FIX 2026-08-19: the first query listed by
+            // member club id, exposing every club's PRIVATE tournaments
+            // union-wide; the second required is_xmtt, hiding union-owned
+            // non-XMTT games. Both are replaced by one union-scoped query:
+            // union-OWNED tournaments only (private games carry union_id NULL).
             supabase
               .from('tournaments')
               .select('*, clubs(name)')
-              .in('club_id', clubIds)
+              .eq('union_id', unionId)
               .order('start_time', { ascending: true }),
             supabase
               .from('tournaments')
               .select('*, clubs(name)')
               .eq('union_id', unionId)
               .eq('is_xmtt', true)
-              .order('start_time', { ascending: true }),
+              .limit(0),
           ]);
           if (!isMounted) return;
           const allTournaments = [...(clubTournaments || []), ...(xmttTournaments || [])];
@@ -371,17 +376,22 @@ export default function UnionDetailPage() {
           }
           // Fetch both club-hosted and XMTT tournaments (same as initial load)
           const [{ data: clubTournaments }, { data: xmttTournaments }] = await Promise.all([
+            // PRIVACY + COMPLETENESS FIX 2026-08-19: the first query listed by
+            // member club id, exposing every club's PRIVATE tournaments
+            // union-wide; the second required is_xmtt, hiding union-owned
+            // non-XMTT games. Both are replaced by one union-scoped query:
+            // union-OWNED tournaments only (private games carry union_id NULL).
             supabase
               .from('tournaments')
               .select('*, clubs(name)')
-              .in('club_id', clubIds)
+              .eq('union_id', unionId)
               .order('start_time', { ascending: true }),
             supabase
               .from('tournaments')
               .select('*, clubs(name)')
               .eq('union_id', unionId)
               .eq('is_xmtt', true)
-              .order('start_time', { ascending: true }),
+              .limit(0),
           ]);
           const allT = [...(clubTournaments || []), ...(xmttTournaments || [])];
           const seen = new Set<string>();
@@ -1446,17 +1456,18 @@ export default function UnionDetailPage() {
             if (union?.settings?.crossClubTournaments && clubs.length > 0) {
               const clubIds = clubs.map((c) => c.clubId);
               Promise.all([
+                // PRIVACY + COMPLETENESS FIX 2026-08-19 — see note above.
                 supabase
                   .from('tournaments')
                   .select('*, clubs(name)')
-                  .in('club_id', clubIds)
+                  .eq('union_id', unionId)
                   .order('start_time', { ascending: true }),
                 supabase
                   .from('tournaments')
                   .select('*, clubs(name)')
                   .eq('union_id', unionId)
                   .eq('is_xmtt', true)
-                  .order('start_time', { ascending: true }),
+                  .limit(0),
               ]).then(([{ data: clubT }, { data: xmttT }]) => {
                 const allT = [...(clubT || []), ...(xmttT || [])];
                 const seen = new Set<string>();

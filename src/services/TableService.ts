@@ -55,6 +55,9 @@ class TableService {
       .eq('club_id', resolvedId)
       .eq('is_deleted', false)
       .neq('status', 'closed')
+      // Tournament tables are not cash games — they were being listed as
+      // joinable ring games in club lobbies.
+      .is('tournament_id', null)
       .order('created_at', { ascending: false })
       .limit(QUERY_LIMITS.LIST);
 
@@ -77,6 +80,8 @@ class TableService {
       .eq('is_deleted', false)
       .neq('status', 'closed')
       .is('tournament_id', null) // Exclude tournament tables from cash lobby
+      // A private club game must never surface in a platform-wide lobby.
+      .or('is_private.is.null,is_private.eq.false')
       .order('current_players', { ascending: false })
       .limit(limit);
 
@@ -91,7 +96,15 @@ class TableService {
    * Get all active tables in a union
    */
   async getUnionTables(unionId: string): Promise<PokerTable[]> {
-    // Query tables directly by union_id (union tables have club_id=NULL)
+    // Union-owned cash tables. Private club games carry union_id = NULL, so
+    // .eq('union_id', ...) already excludes them.
+    //
+    // REGRESSION FIX 2026-08-19: tournament tables must be excluded here.
+    // Union ownership is now stamped on every non-private game a union club
+    // creates — including the per-tournament tables the engine spawns — so
+    // without this filter the union cash lobby filled up with tournament
+    // tables (31 open ones at the time of the fix). This method never had the
+    // filter; it simply never mattered before union_id was stamped on them.
     const { data, error } = await supabase
       .from('tables')
       .select(
@@ -100,7 +113,9 @@ class TableService {
       .eq('union_id', unionId)
       .eq('is_deleted', false)
       .neq('status', 'closed')
-      .order('created_at', { ascending: false });
+      .is('tournament_id', null)
+      .order('created_at', { ascending: false })
+      .limit(QUERY_LIMITS.LIST);
 
     if (error) {
       reportError(error, 'TableService.getUnionTables');

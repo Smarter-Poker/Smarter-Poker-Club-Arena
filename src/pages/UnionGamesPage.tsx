@@ -148,10 +148,14 @@ export default function UnionGamesPage() {
 
         // Parallel load
         const [{ data: tournData }, { data: tableData }, { data: bbjData }] = await Promise.all([
+          // PRIVACY FIX 2026-08-19: this listed tournaments by member club id,
+          // so every club's PRIVATE tournaments were exposed union-wide. The
+          // union lobby shows union-OWNED games only; private club games carry
+          // union_id = NULL and are visible solely inside their own club.
           supabase
             .from('tournaments')
             .select('*, clubs(name)')
-            .in('club_id', cIds)
+            .eq('union_id', targetUnion)
             .order('start_time', { ascending: false })
             .limit(50),
           supabase
@@ -160,7 +164,12 @@ export default function UnionGamesPage() {
               'id, name, status, game_type, game_variant, small_blind, big_blind, max_players, current_players, club_id, union_id'
             )
             .eq('union_id', targetUnion)
-            .order('current_players', { ascending: false }),
+            // Cash lobby hygiene: no tournament tables, no closed/deleted rows.
+            .is('tournament_id', null)
+            .eq('is_deleted', false)
+            .neq('status', 'closed')
+            .order('current_players', { ascending: false })
+            .limit(200),
           supabase.rpc('get_bbj_pool', { p_union_id: targetUnion }).maybeSingle(),
         ]);
 

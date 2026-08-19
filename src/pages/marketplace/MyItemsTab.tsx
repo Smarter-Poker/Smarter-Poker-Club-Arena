@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { fmtChips, timeAgo } from '../../utils/format';
 import { useState } from 'react';
+import { callClubArenaApi } from '../../services/clubArenaApi';
 import styles from '../MarketplacePage.module.css';
 import {
   isOwnedRow,
@@ -19,6 +20,9 @@ import {
 } from './marketplaceShared';
 
 interface MyItemsTabProps {
+  clubId: string | null;
+  /** owners/admins may reverse a purchase that has not been redeemed */
+  isAdmin: boolean;
   inventory: InventoryRow[];
   purchases: ShopPurchase[];
   /** live balances granted by redemption (time bank, throws, unlocks) */
@@ -28,6 +32,8 @@ interface MyItemsTabProps {
 }
 
 export default function MyItemsTab({
+  clubId,
+  isAdmin,
   inventory,
   purchases,
   entitlements,
@@ -36,6 +42,35 @@ export default function MyItemsTab({
 }: MyItemsTabProps) {
   const toast = useToast();
   const [redeeming, setRedeeming] = useState<string | null>(null);
+  const [refunding, setRefunding] = useState<string | null>(null);
+
+  const handleRefund = async (purchaseId: string, itemName: string) => {
+    if (refunding || !clubId) return;
+    if (
+      !(await confirmDialog({
+        title: 'Refund purchase',
+        message: `Refund "${itemName}"? The chips go back to the buyer and the copy is revoked. Items that have already been redeemed cannot be refunded automatically.`,
+        confirmText: 'Refund',
+        variant: 'danger',
+      }))
+    )
+      return;
+    setRefunding(purchaseId);
+    try {
+      const res = await callClubArenaApi<{ amount: number; alreadyRefunded?: boolean }>(
+        'refund-purchase',
+        { clubId, purchaseId }
+      );
+      toast.success(
+        res.alreadyRefunded ? 'That purchase was already refunded' : `Refunded ${res.amount} chips`
+      );
+      onRedeemed();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Refund failed');
+    } finally {
+      setRefunding(null);
+    }
+  };
   const [showHistory, setShowHistory] = useState(false);
 
   const handleRedeem = async (inventoryId: string) => {
@@ -142,7 +177,9 @@ export default function MyItemsTab({
             </thead>
             <tbody>
               {inventory.map((it) => {
-                const redeemed = !isOwnedRow(it);
+                const spent = !isOwnedRow(it);
+                const refunded = it.status === 'refunded';
+                const redeemed = spent;
                 return (
                   <tr key={it.id}>
                     <td style={{ fontWeight: 700 }}>{it.item_name || 'Unknown Item'}</td>
@@ -164,7 +201,7 @@ export default function MyItemsTab({
                           background: redeemed ? 'rgba(139,141,145,0.12)' : 'rgba(49,162,76,0.12)',
                         }}
                       >
-                        {redeemed ? 'Redeemed' : 'Owned'}
+                        {refunded ? 'Refunded' : redeemed ? 'Redeemed' : 'Owned'}
                       </span>
                     </td>
                     <td>
@@ -209,6 +246,11 @@ export default function MyItemsTab({
                     <th>Category</th>
                     <th>Paid</th>
                     <th>When</th>
+                    {isAdmin && (
+                      <th>
+                        <span className={styles.srOnly}>Actions</span>
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -224,6 +266,17 @@ export default function MyItemsTab({
                       <td style={{ fontSize: '12px', color: '#8b8d91' }}>
                         {timeAgo(p.created_at)}
                       </td>
+                      {isAdmin && (
+                        <td>
+                          <button
+                            className={styles.btnDeleteSmall}
+                            onClick={() => handleRefund(p.id, p.item_name || 'this item')}
+                            disabled={refunding !== null}
+                          >
+                            {refunding === p.id ? '...' : 'Refund'}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

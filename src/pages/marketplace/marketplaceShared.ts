@@ -36,6 +36,15 @@ export interface MarketplaceItem {
   grant_spec?: GrantSpec | null;
   /** remaining units; null/undefined = unlimited, 0 = sold out */
   stock?: number | null;
+  /** consumables may be held several times over; unlocks may not */
+  stackable?: boolean;
+  /** max lifetime purchases per member; null = unlimited */
+  per_user_limit?: number | null;
+  /** discounted price actually charged; null = charge `price` */
+  sale_price?: number | null;
+  available_from?: string | null;
+  available_until?: string | null;
+  sort_order?: number;
   /**
    * Admin view only. /api/club-arena/marketplace-items already filters to
    * is_active=true and does NOT select the column, so it is undefined there.
@@ -44,6 +53,37 @@ export interface MarketplaceItem {
   purchase_count?: number;
   /** admin view only — real revenue from price_paid */
   revenue?: number;
+}
+
+/** What the buyer will actually be charged (sale-aware). Server re-decides. */
+export function effectivePrice(item: { price: number; sale_price?: number | null }): number {
+  const sale = item.sale_price;
+  return sale !== null && sale !== undefined && sale < item.price ? sale : item.price;
+}
+
+export function isOnSale(item: { price: number; sale_price?: number | null }): boolean {
+  return effectivePrice(item) < item.price;
+}
+
+/**
+ * Why an item cannot be bought right now, or null when it can.
+ * Mirrors fn_shop_item_availability so the card and the server agree.
+ */
+export function unavailableReason(
+  item: {
+    stock?: number | null;
+    available_from?: string | null;
+    available_until?: string | null;
+  },
+  owned: boolean,
+  stackable: boolean
+): 'sold_out' | 'not_yet' | 'ended' | 'owned' | null {
+  const now = Date.now();
+  if (item.available_from && now < new Date(item.available_from).getTime()) return 'not_yet';
+  if (item.available_until && now >= new Date(item.available_until).getTime()) return 'ended';
+  if (item.stock !== null && item.stock !== undefined && item.stock <= 0) return 'sold_out';
+  if (owned && !stackable) return 'owned';
+  return null;
 }
 
 /** Fallback seconds per time-bank use; the server catalog is authoritative. */
@@ -120,12 +160,15 @@ export const EMPTY_WALLET: WalletInfo = Object.freeze({
  * future status value ('delivered', 'pending', ...) can never make the Store
  * offer a Buy button for something My Items is showing as owned.
  */
+/** Statuses that mean the player no longer holds the item. */
+const SPENT_STATUSES = new Set(['redeemed', 'refunded', 'revoked', 'expired']);
+
 export function isOwnedRow(row: { status?: string | null }): boolean {
-  // Vocabulary written today: 'owned' | 'redeemed' (fn_deliver_shop_purchase /
-  // fn_redeem_shop_item). Fail-safe: anything not explicitly redeemed still
-  // belongs to the player. A future 'refunded'/'revoked' status MUST be added
-  // here, or those rows become permanently un-rebuyable.
-  return row.status !== 'redeemed';
+  // Vocabulary: 'owned' | 'redeemed' | 'refunded' (fn_deliver_shop_purchase /
+  // fn_redeem_shop_item / fn_refund_shop_purchase). Fail-safe: anything not
+  // explicitly spent still belongs to the player, so the Store can never offer
+  // to re-sell something My Items is calling Owned.
+  return !SPENT_STATUSES.has(String(row.status ?? 'owned'));
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

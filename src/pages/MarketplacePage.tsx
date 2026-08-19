@@ -550,6 +550,8 @@ export default function MarketplacePage() {
         )}
         {tab === 'my_items' && (
           <MyItemsTab
+            clubId={clubId}
+            isAdmin={isAdmin}
             inventory={inventory}
             purchases={purchases}
             entitlements={entitlements}

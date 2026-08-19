@@ -12,7 +12,10 @@ import styles from '../MarketplacePage.module.css';
 import {
   CATEGORIES,
   describeGrant,
+  effectivePrice,
+  isOnSale,
   safeImageUrl,
+  unavailableReason,
   type MarketplaceItem,
   type ShopCategoryInfo,
   type SortMode,
@@ -77,8 +80,7 @@ export default function StoreTab({
       );
     }
     // Sold-out items always sink, whatever the sort.
-    const soldOutRank = (i: MarketplaceItem) =>
-      i.stock !== null && i.stock !== undefined && i.stock <= 0 ? 1 : 0;
+    const soldOutRank = (i: MarketplaceItem) => (unavailableReason(i, false, true) ? 1 : 0);
     switch (sortMode) {
       case 'price-low':
         result.sort((a, b) => a.price - b.price);
@@ -139,8 +141,10 @@ export default function StoreTab({
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
       // A stale card (sold out, or already owned in another tab) must not leave
       // the confirm modal sitting open over data we now know is wrong.
-      const flags = (err as { data?: { soldOut?: boolean; alreadyOwned?: boolean } })?.data;
-      if (flags?.soldOut || flags?.alreadyOwned) {
+      const flags = (
+        err as { data?: { soldOut?: boolean; alreadyOwned?: boolean; limitReached?: boolean } }
+      )?.data;
+      if (flags?.soldOut || flags?.alreadyOwned || flags?.limitReached) {
         setBuyTarget(null);
         onPurchased(null);
       }
@@ -215,16 +219,21 @@ export default function StoreTab({
             <div className={styles.priceBox}>
               <div className={styles.priceItem}>
                 <span className={styles.priceLabel}>Item Price</span>
-                <span className={styles.priceValueRed}>{fmt(buyTarget.price)}</span>
+                <span className={styles.priceValueRed}>
+                  {isOnSale(buyTarget) && (
+                    <span className={styles.strikePrice}>{fmt(buyTarget.price)}</span>
+                  )}
+                  {fmt(effectivePrice(buyTarget))}
+                </span>
               </div>
               <div className={styles.priceItem}>
                 <span className={styles.priceLabel}>Your Balance</span>
                 <span className={styles.priceValueGreen}>{fmt(balance)}</span>
               </div>
             </div>
-            {balance < buyTarget.price && (
+            {balance < effectivePrice(buyTarget) && (
               <div className={styles.insufficientFunds}>
-                Insufficient chips. You need {fmt(buyTarget.price - balance)} more.{' '}
+                Insufficient chips. You need {fmt(effectivePrice(buyTarget) - balance)} more.{' '}
                 <button className={styles.inlineLink} onClick={onGoChips}>
                   Get Chips
                 </button>
@@ -242,7 +251,7 @@ export default function StoreTab({
                 ref={confirmBtnRef}
                 onClick={handlePurchase}
                 className={styles.btnPrimary}
-                disabled={processing || balance < buyTarget.price}
+                disabled={processing || balance < effectivePrice(buyTarget)}
               >
                 {processing ? 'Purchasing...' : 'Confirm Purchase'}
               </button>
@@ -308,7 +317,22 @@ export default function StoreTab({
             const alreadyOwned = ownedItemIds.has(item.id);
             const img = safeImageUrl(item.image_url);
             const limited = item.stock !== null && item.stock !== undefined;
-            const soldOut = limited && (item.stock as number) <= 0;
+            const stackable = !!item.stackable;
+            const blocked = unavailableReason(item, alreadyOwned, stackable);
+            const soldOut = blocked === 'sold_out';
+            const onSale = isOnSale(item);
+            const buyLabel =
+              blocked === 'owned'
+                ? 'Owned'
+                : blocked === 'sold_out'
+                  ? 'Sold out'
+                  : blocked === 'not_yet'
+                    ? 'Coming soon'
+                    : blocked === 'ended'
+                      ? 'Ended'
+                      : stackable && alreadyOwned
+                        ? 'Buy again'
+                        : 'Buy';
             return (
               <div key={item.id} className={styles.itemCard}>
                 <div className={styles.itemImageArea}>
@@ -331,6 +355,7 @@ export default function StoreTab({
                   {limited && !soldOut && (
                     <span className={styles.stockTag}>{item.stock} left</span>
                   )}
+                  {onSale && !soldOut && <span className={styles.saleTag}>SALE</span>}
                 </div>
                 <div className={styles.itemBody}>
                   <div className={styles.itemName}>{item.name}</div>
@@ -340,17 +365,27 @@ export default function StoreTab({
                   {grantText(item) && <div className={styles.grantBadge}>{grantText(item)}</div>}
                   <div className={styles.itemFooter}>
                     <div>
-                      <span className={styles.itemPrice}>{fmtChips(item.price)} chips</span>
+                      <span className={styles.itemPrice}>
+                        {onSale && (
+                          <span className={styles.strikePrice}>{fmtChips(item.price)}</span>
+                        )}
+                        {fmtChips(effectivePrice(item))} chips
+                      </span>
                       {(item.purchase_count || 0) > 0 && (
                         <div className={styles.soldCount}>{item.purchase_count} sold</div>
                       )}
                     </div>
                     <button
                       onClick={() => setBuyTarget(item)}
-                      className={alreadyOwned ? styles.btnOwned : styles.btnPrimary}
-                      disabled={alreadyOwned || processing || soldOut}
+                      className={blocked === 'owned' ? styles.btnOwned : styles.btnPrimary}
+                      disabled={!!blocked || processing}
+                      title={
+                        blocked === 'not_yet' && item.available_from
+                          ? `Available from ${new Date(item.available_from).toLocaleString()}`
+                          : undefined
+                      }
                     >
-                      {alreadyOwned ? 'Owned' : soldOut ? 'Sold out' : 'Buy'}
+                      {buyLabel}
                     </button>
                   </div>
                 </div>

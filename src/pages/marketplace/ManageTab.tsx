@@ -16,6 +16,7 @@ import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { fmtChips } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
+import ShopAnalytics from './ShopAnalytics';
 import {
   CATEGORIES,
   describeGrant,
@@ -59,6 +60,9 @@ export default function ManageTab({
   const [grantQty, setGrantQty] = useState('1');
   const [grantRef, setGrantRef] = useState('');
   const [stock, setStock] = useState('');
+  const [salePrice, setSalePrice] = useState('');
+  const [perUserLimit, setPerUserLimit] = useState('');
+  const [availableUntil, setAvailableUntil] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [desc, setDesc] = useState('');
@@ -155,6 +159,10 @@ export default function ManageTab({
         grantQty: grantInfo?.grantUnit ? Math.max(1, Math.floor(Number(grantQty) || 1)) : undefined,
         grantRef: grantNeedsRef ? grantRef.trim() || undefined : undefined,
         stock: stock.trim() === '' ? null : Math.max(0, Math.floor(Number(stock) || 0)),
+        salePrice: salePrice.trim() === '' ? null : Math.max(0, Math.floor(Number(salePrice) || 0)),
+        perUserLimit:
+          perUserLimit.trim() === '' ? null : Math.max(1, Math.floor(Number(perUserLimit) || 1)),
+        availableUntil: availableUntil.trim() === '' ? null : availableUntil,
       });
       toast.success('Item created');
       setName('');
@@ -165,6 +173,9 @@ export default function ManageTab({
       setGrantQty('1');
       setGrantRef('');
       setStock('');
+      setSalePrice('');
+      setPerUserLimit('');
+      setAvailableUntil('');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
@@ -360,9 +371,39 @@ export default function ManageTab({
             aria-label="Stock quantity, blank for unlimited"
             className={styles.formInput}
           />
-          <span className={styles.grantHint}>
-            Leave blank for unlimited. Set a number to run a limited drop.
-          </span>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={perUserLimit}
+            onChange={(e) => setPerUserLimit(e.target.value)}
+            placeholder="Max per member (blank = no cap)"
+            aria-label="Maximum purchases per member"
+            className={styles.formInput}
+          />
+        </div>
+        <div className={styles.formRow}>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={salePrice}
+            onChange={(e) => setSalePrice(e.target.value)}
+            placeholder="Sale price (blank = none)"
+            aria-label="Discounted sale price"
+            className={styles.formInput}
+          />
+          <input
+            type="datetime-local"
+            value={availableUntil}
+            onChange={(e) => setAvailableUntil(e.target.value)}
+            aria-label="Available until"
+            className={styles.formInput}
+          />
+        </div>
+        <div className={styles.grantHint}>
+          Stock is a limited drop; max-per-member caps lifetime purchases; a sale price is what is
+          actually charged; &quot;available until&quot; ends the offer automatically.
         </div>
         {grantInfo?.grantUnit && (
           <div className={styles.formRow}>
@@ -457,6 +498,14 @@ export default function ManageTab({
                     {item.purchase_count || 0} sold
                     {item.revenue ? ` - ${fmtChips(item.revenue)} earned` : ''}
                     {item.stock !== null && item.stock !== undefined ? ` - ${item.stock} left` : ''}
+                    {item.sale_price !== null && item.sale_price !== undefined
+                      ? ` - on sale at ${fmtChips(item.sale_price)}`
+                      : ''}
+                    {item.per_user_limit ? ` - max ${item.per_user_limit}/member` : ''}
+                    {item.stackable ? ' - stackable' : ''}
+                    {item.available_until
+                      ? ` - ends ${new Date(item.available_until).toLocaleDateString()}`
+                      : ''}
                   </div>
                   {describeGrant(item.grant_spec, secondsPerUse) && (
                     <div className={styles.grantHint}>

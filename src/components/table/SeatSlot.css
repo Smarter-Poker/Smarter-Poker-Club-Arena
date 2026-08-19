@@ -1187,7 +1187,18 @@
   margin-left: calc(var(--sp-hero-card-step) - var(--sp-hero-card-w));
   flex: 0 0 auto;
   transform: none;
-  animation: heroCardPeek 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) backwards;
+  /* Dan 2026-08-19, bug list item 4: "cards glitch once before display - all
+     cards shown at once after being dealt."
+
+     heroCardPeek started each card at rotateY(90deg) - edge-on, and the card is
+     a SINGLE-SIDED element, so at that angle it has no width and nothing to
+     draw. That flash of nothing, followed by the card snapping into place, IS
+     the glitch. It then overshot past its resting size and rocked back, so the
+     card visibly wobbled before settling.
+
+     The hole cards now simply arrive: a short rise and fade, no rotation to be
+     edge-on in, no overshoot to wobble out of. */
+  animation: heroCardDeal 0.26s var(--ease-out, cubic-bezier(0.22, 0.61, 0.36, 1)) backwards;
   transform-style: preserve-3d;
   transform-origin: bottom center;
   box-shadow:
@@ -1202,41 +1213,28 @@
 .seat__cards--hero .seat__card:first-child {
   margin-left: 0;
   transform: none;
-  animation-delay: 0.1s;
 }
 
-.seat__cards--hero .seat__card:nth-child(2) {
-  transform: none;
-  animation-delay: 0.25s;
-}
-
-.seat__cards--hero .seat__card:nth-child(3) {
-  transform: none;
-  animation-delay: 0.4s;
-}
-
-.seat__cards--hero .seat__card:nth-child(4) {
-  transform: none;
-  animation-delay: 0.55s;
-}
-
-.seat__cards--hero .seat__card:nth-child(5) {
-  transform: none;
-  animation-delay: 0.7s;
-}
-
+/* The per-card `transform: none` guards. They exist to beat any inline
+   transform that would put the rejected fan back; they no longer carry a
+   stagger, because Dan asked for the hole cards to arrive together. */
+.seat__cards--hero .seat__card:nth-child(2),
+.seat__cards--hero .seat__card:nth-child(3),
+.seat__cards--hero .seat__card:nth-child(4),
+.seat__cards--hero .seat__card:nth-child(5),
 .seat__cards--hero .seat__card:nth-child(6) {
   transform: none;
-  animation-delay: 0.85s;
 }
 
 /* PLO4 / PLO5 / PLO6 — the lined-up row must not run off the right edge of the
    felt, which on the 341:609 portrait table is much closer than it was on the
    old landscape one. Each guard only retunes the three tokens, so all four hand
    sizes resolve to ~the same total row width:
-     PLO4  40 + 3 x 23 = 109px
-     PLO5  38 + 4 x 18 = 110px
-     PLO6  36 + 5 x 15 = 111px */
+   Sizes are 1.5x since 2026-08-19 (Dan item 3) - affordable because the row is
+   centred over the seat now rather than hanging off its right edge:
+     PLO4  60 + 3 x 25 = 135px
+     PLO5  57 + 4 x 23 = 149px
+     PLO6  54 + 5 x 21 = 159px */
 .seat__cards--hero:has(.seat__card:nth-child(4)) {
   --sp-hero-card-w: 60px;
   --sp-hero-card-h: 84px;
@@ -1273,21 +1271,14 @@
   z-index: 25;
 }
 
-@keyframes heroCardPeek {
+@keyframes heroCardDeal {
   0% {
     opacity: 0;
-    transform: translateY(30px) rotateY(90deg) scale(0.7);
-  }
-  40% {
-    opacity: 0.8;
-    transform: translateY(-5px) rotateY(-10deg) scale(1.05);
-  }
-  70% {
-    transform: translateY(2px) rotateY(3deg) scale(1.01);
+    transform: translateY(14px) scale(0.94);
   }
   100% {
     opacity: 1;
-    transform: translateY(0) rotateY(0deg) scale(1);
+    transform: none;
   }
 }
 

@@ -8089,3 +8089,15 @@ leaderboard definition (winnings - contributions) satisfies chip conservation
 by construction and was measured at 100.05%/99.9999% of expected. Two
 surfaces will show contradictory profit for the same player until one is
 changed.
+
+16. WALLET PANEL (pass 4). Restored the union ledger rows and union-first BBJ
+    resolution that commit 714738896 removed (a union club would have shown a
+    0.00 jackpot against a 14k union pool once rebuilt), and moved the whole
+    rule server-side into fn_club_money_panel so a client edit cannot revert it
+    again. Also: the panel no longer prints 0.00 for union figures the caller is
+    not allowed to read (union_wallets is admin-only by RLS) — it renders "—";
+    "Clubs Wallet" now sums member club banks instead of the selected club's
+    mint ledger; Rake Treasury is shown as the sub-account of Union Bank that it
+    is, with the amount and date of the next 90% payback; club owners see what
+    they are owed at the close; reconnect timers no longer stack; aria-live no
+    longer fires on every animation frame. Migration mirror: 20260819i.

@@ -142,3 +142,36 @@ than 7 days.
 - The historical 59,510.86 BBJ delta is documented and guarded, not "corrected".
   Correcting it would mean inventing chips; the money was moved by real
   historical operations whose audit rows never existed.
+
+
+---
+
+## Pass 4 — the wallet panel itself (the surface Dan was looking at)
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| 13 | CRITICAL (latent regression) | **Commit `714738896` deleted 102 lines from `DynamicWallet`**, removing the Rake Treasury row, the union rake/promo reads and the **union-first BBJ resolver**. Because both club-level BBJ pools were merged into the union pool and *retired* earlier the same day, a union club resolving its jackpot by `club_id` now finds its own permanently-zero retired row — a **0.00 Bad Beat Jackpot on screen with 14k in the pool**. Production was still serving an older, correct bundle, so it never went live. | FIXED |
+| 14 | HIGH (wrong by permission) | `union_wallets` is RLS-restricted to union owners/admins. A **club** owner inside a union read nothing, and the panel printed **"Union Bank 0.00 / Rake Treasury 0.00" as fact**. The panel now knows its permitted scope and renders "—" for what it may not see. | FIXED |
+| 15 | HIGH (wrong source) | The union variant's **"Clubs Wallet" read `clubs.chip_pool` of the one selected club** — the mint-and-distribute ledger, not a union figure at all, and 0.00 for a union whose clubs hold ~800k. Now sums member clubs' operational banks. | FIXED |
+| 16 | MEDIUM (misread by design) | **Rake Treasury is a sub-account of Union Bank**, yet both rendered as sibling rows that appear to sum. Union Bank now shows its unreserved remainder; the treasury row states what leaves it and when. | FIXED |
+| 17 | MEDIUM | Repeated `CHANNEL_ERROR`s **stacked one reconnect timer per event**, each firing its own full refetch — a thundering herd exactly when the connection is already unhealthy. | FIXED |
+| 18 | LOW | `aria-live="polite"` sat on a container whose numbers tick every animation frame — a screen reader announced ~60×/second during every count-up. | FIXED |
+| 19 | LOW | Backup BBJ rendered for union scope only, so a standalone club holding a reserve never saw it; and it was unlabelled, reading as spendable money rather than a reserve that reseeds the main jackpot. | FIXED |
+
+**The structural fix:** all of this now comes from **one** server function,
+`fn_club_money_panel(club_id)`, which resolves the pool union-first exactly as
+the engine banks it, returns the caller's permitted `scope`, and adds what the
+money is *for* (this club's 90% due at the next close, the projected split, the
+close date). A client-side edit can no longer silently un-fix the rule — which
+is precisely how finding #13 happened. It also replaces three reads plus a
+serial second round trip with a single call.
+
+Verified live with simulated identities: union owner → full figures; plain
+member → `scope: 'member'` with **zero** leakage of union bank / rake treasury /
+clubs wallet / club rake; unauthenticated → `authorized: false`.
+
+**Deploy note worth keeping:** the sync commit labelled `cf40c23d0` did not
+contain that SHA's code — its assets lacked `fn_club_money_panel` entirely,
+i.e. it was built from a stale working tree and tagged with current HEAD.
+Always verify a built asset contains the change before calling it shipped:
+`grep -l <new symbol> dist/assets/*.js`.

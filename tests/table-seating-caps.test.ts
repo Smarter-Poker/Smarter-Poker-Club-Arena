@@ -22,81 +22,54 @@ import {
   clampSeatsForVariant,
   deckSizeForVariant,
   holeCardsForVariant,
-  houseMaxSeatsForVariant,
   isSeatCountLegal,
   maxSeatsForVariant,
   remainderAfterDeal,
+  ritHeadroom,
   seatOptionsForVariant,
 } from '../src/config/tableSeating';
 
-const RIT = { runItTwice: true };
-const ONCE = { runItTwice: false };
 const VARIANTS = ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'pineapple', 'short_deck'];
 
-describe("the caps Dan named", () => {
-  it('PLO6 is 5-max with Run It Twice, 6-max without', () => {
-    expect(maxSeatsForVariant('plo6', RIT)).toBe(5);
-    expect(maxSeatsForVariant('plo6', ONCE)).toBe(6);
+describe('the law Dan set (cash games)', () => {
+  it('PLO6 is 6-max', () => expect(maxSeatsForVariant('plo6')).toBe(6));
+  it('PLO5 is 7-max', () => expect(maxSeatsForVariant('plo5')).toBe(7));
+  it('PLO4 is 8-max', () => expect(maxSeatsForVariant('plo4')).toBe(8));
+  it('PLO8 deals four cards like PLO4 and caps the same', () => {
+    expect(holeCardsForVariant('plo8')).toBe(4);
+    expect(maxSeatsForVariant('plo8')).toBe(8);
   });
-
-  it('PLO5 is 6-max with Run It Twice, 7-max without', () => {
-    expect(maxSeatsForVariant('plo5', RIT)).toBe(6);
-    expect(maxSeatsForVariant('plo5', ONCE)).toBe(7);
+  it('everything else is full ring', () => {
+    for (const v of ['nlh', 'short_deck', 'pineapple']) {
+      expect(maxSeatsForVariant(v)).toBe(DEFAULT_MAX_SEATS);
+    }
   });
-
-  it('PLO4 is 8-max with Run It Twice, full ring without', () => {
-    expect(maxSeatsForVariant('plo4', RIT)).toBe(8);
-    expect(maxSeatsForVariant('plo4', ONCE)).toBe(9);
+  it('is one flat number per variant, not a function of any table setting', () => {
+    // Regression guard: the cap briefly depended on run_it_twice, which meant
+    // a seat count that moved when a toggle moved. Dan replaced it with a
+    // single number, and maxSeatsForVariant takes no options at all now.
+    expect(maxSeatsForVariant.length).toBe(1);
   });
-
-  it('the house rule stands on its own, independent of the deck', () => {
-    expect(houseMaxSeatsForVariant('plo6')).toBe(6);
-    expect(houseMaxSeatsForVariant('plo5')).toBe(7);
-    expect(houseMaxSeatsForVariant('nlh')).toBe(DEFAULT_MAX_SEATS);
-  });
-
-  it('assumes Run It Twice when not told — new tables default to it', () => {
-    expect(maxSeatsForVariant('plo6')).toBe(maxSeatsForVariant('plo6', RIT));
-  });
-
   it('is case-insensitive and safe on a missing variant', () => {
-    expect(maxSeatsForVariant('PLO6', RIT)).toBe(5);
+    expect(maxSeatsForVariant('PLO6')).toBe(6);
     expect(maxSeatsForVariant(null)).toBe(DEFAULT_MAX_SEATS);
     expect(maxSeatsForVariant(undefined)).toBe(DEFAULT_MAX_SEATS);
   });
 });
 
-describe('every cap can actually run it three times', () => {
+describe('every cash cap still fits three run-outs', () => {
   for (const v of VARIANTS) {
-    it(`${v} at its RIT cap has cards for ${MAX_RIT_RUNS} full boards`, () => {
-      const seats = maxSeatsForVariant(v, RIT);
-      expect(canRunItNTimes(v, seats, MAX_RIT_RUNS)).toBe(true);
-    });
-
-    it(`${v} at its RIT cap keeps a spare board in reserve`, () => {
-      const seats = maxSeatsForVariant(v, RIT);
-      const left = remainderAfterDeal(v, seats);
-      // 3 runs plus one board of headroom, so rabbit hunt cannot tip it over.
-      expect(left).toBeGreaterThanOrEqual(BOARD_CARDS * MAX_RIT_RUNS + BOARD_CARDS);
-    });
-
-    it(`${v} at its run-once cap still fits a board`, () => {
-      const seats = maxSeatsForVariant(v, ONCE);
-      expect(remainderAfterDeal(v, seats)).toBeGreaterThanOrEqual(BOARD_CARDS);
+    it(`${v} at its cap can deal ${MAX_RIT_RUNS} full boards`, () => {
+      expect(canRunItNTimes(v, maxSeatsForVariant(v), MAX_RIT_RUNS)).toBe(true);
+      // The margin is the thing to watch: plo6 has ONE spare card.
+      expect(ritHeadroom(v)).toBeGreaterThanOrEqual(0);
     });
   }
-});
 
-describe('the numbers behind the caps', () => {
-  it('a PLO6 run-it-3 table leaves 22 cards, not 1', () => {
-    expect(remainderAfterDeal('plo6', 5)).toBe(22);
-    // The rejected cap of 6 cleared three runs by exactly one card.
-    expect(remainderAfterDeal('plo6', 6) - BOARD_CARDS * MAX_RIT_RUNS).toBe(1);
-  });
-
-  it('a PLO5 run-it-3 table leaves 22 cards, not 2', () => {
-    expect(remainderAfterDeal('plo5', 6)).toBe(22);
-    expect(remainderAfterDeal('plo5', 7) - BOARD_CARDS * MAX_RIT_RUNS).toBe(2);
+  it('records how tight the tightest caps really are', () => {
+    expect(ritHeadroom('plo6')).toBe(1);
+    expect(ritHeadroom('plo5')).toBe(2);
+    expect(ritHeadroom('plo4')).toBe(5);
   });
 
   it('PLO6 at 9-max would overdraw the deck outright', () => {
@@ -107,75 +80,64 @@ describe('the numbers behind the caps', () => {
 
   it('short deck is measured against 36 cards, not 52', () => {
     expect(deckSizeForVariant('short_deck')).toBe(36);
-    expect(canRunItNTimes('short_deck', maxSeatsForVariant('short_deck', RIT), 3)).toBe(true);
-  });
-
-  it('plo8 deals four cards like plo4, and caps the same', () => {
-    expect(holeCardsForVariant('plo8')).toBe(4);
-    expect(maxSeatsForVariant('plo8', RIT)).toBe(maxSeatsForVariant('plo4', RIT));
+    expect(remainderAfterDeal('short_deck', 9)).toBe(18);
   });
 });
 
 describe('isSeatCountLegal', () => {
-  it('rejects the configurations found in production', () => {
-    expect(isSeatCountLegal('plo6', 7, RIT)).toBe(false);
-    expect(isSeatCountLegal('plo5', 9, RIT)).toBe(false);
-    expect(isSeatCountLegal('plo5', 8, RIT)).toBe(false);
+  it('rejects the configurations that were live in production', () => {
+    expect(isSeatCountLegal('plo6', 7)).toBe(false);
+    expect(isSeatCountLegal('plo5', 9)).toBe(false);
+    expect(isSeatCountLegal('plo5', 8)).toBe(false);
+    expect(isSeatCountLegal('plo4', 9)).toBe(false);
   });
-
-  it('still rejects them on a run-once table, via the house rule', () => {
-    expect(isSeatCountLegal('plo6', 7, ONCE)).toBe(false);
-    expect(isSeatCountLegal('plo5', 8, ONCE)).toBe(false);
-  });
-
   it('accepts the legal ones', () => {
-    expect(isSeatCountLegal('plo6', 5, RIT)).toBe(true);
-    expect(isSeatCountLegal('plo6', 6, ONCE)).toBe(true);
-    expect(isSeatCountLegal('nlh', 9, RIT)).toBe(true);
+    expect(isSeatCountLegal('plo6', 6)).toBe(true);
+    expect(isSeatCountLegal('plo5', 7)).toBe(true);
+    expect(isSeatCountLegal('plo4', 8)).toBe(true);
+    expect(isSeatCountLegal('nlh', 9)).toBe(true);
   });
-
   it('never allows a table below heads-up', () => {
-    expect(isSeatCountLegal('nlh', 1, RIT)).toBe(false);
+    expect(isSeatCountLegal('nlh', 1)).toBe(false);
   });
 });
 
 describe('clampSeatsForVariant', () => {
-  it('pulls a seat count down when Run It Twice is switched on', () => {
-    expect(clampSeatsForVariant('plo6', 6, RIT)).toBe(5);
-    expect(clampSeatsForVariant('plo5', 7, RIT)).toBe(6);
-    expect(clampSeatsForVariant('plo4', 9, RIT)).toBe(8);
+  it('pulls an over-cap seat count down', () => {
+    expect(clampSeatsForVariant('plo6', 9)).toBe(6);
+    expect(clampSeatsForVariant('plo5', 9)).toBe(7);
+    expect(clampSeatsForVariant('plo4', 9)).toBe(8);
   });
-
-  it('leaves a legal count alone', () => {
-    expect(clampSeatsForVariant('plo6', 5, RIT)).toBe(5);
-    expect(clampSeatsForVariant('nlh', 9, RIT)).toBe(9);
+  it('leaves a SMALLER table alone — the law is a ceiling, not a target', () => {
+    // This is the mistake that inflated 200 Spin & Go tables from 3 to 8.
+    expect(clampSeatsForVariant('plo4', 3)).toBe(3);
+    expect(clampSeatsForVariant('plo4', 6)).toBe(6);
+    expect(clampSeatsForVariant('plo5', 6)).toBe(6);
   });
-
   it('survives rubbish input', () => {
-    expect(clampSeatsForVariant('plo6', NaN, RIT)).toBe(2);
-    expect(clampSeatsForVariant('plo6', 0, RIT)).toBe(2);
+    expect(clampSeatsForVariant('plo6', NaN)).toBe(2);
+    expect(clampSeatsForVariant('plo6', 0)).toBe(2);
   });
 });
 
 describe('seatOptionsForVariant (what the builder may offer)', () => {
-  it('never offers a seat count above the cap, in either mode', () => {
+  it('never offers a seat count above the cap', () => {
     for (const v of VARIANTS) {
-      for (const opts of [RIT, ONCE]) {
-        for (const o of seatOptionsForVariant(v, opts)) {
-          expect(o.value).toBeLessThanOrEqual(maxSeatsForVariant(v, opts));
-        }
+      for (const o of seatOptionsForVariant(v)) {
+        expect(o.value).toBeLessThanOrEqual(maxSeatsForVariant(v));
       }
     }
   });
-
-  it('PLO6 tops out at 5 with Run It Twice and 6 without', () => {
-    const top = (opts: object) => Math.max(...seatOptionsForVariant('plo6', opts).map((o) => o.value));
-    expect(top(RIT)).toBe(5);
-    expect(top(ONCE)).toBe(6);
+  it('PLO6 tops out at 6, PLO5 at 7, PLO4 at 8', () => {
+    const top = (v: string) => Math.max(...seatOptionsForVariant(v).map((o) => o.value));
+    expect(top('plo6')).toBe(6);
+    expect(top('plo5')).toBe(7);
+    expect(top('plo4')).toBe(8);
   });
-
-  it('NLH still offers full ring either way', () => {
-    expect(seatOptionsForVariant('nlh', RIT).map((o) => o.value)).toContain(9);
-    expect(seatOptionsForVariant('nlh', ONCE).map((o) => o.value)).toContain(9);
+  it('still offers small tables, not only the cap', () => {
+    expect(seatOptionsForVariant('plo4').map((o) => o.value)).toContain(2);
+  });
+  it('NLH still offers full ring', () => {
+    expect(seatOptionsForVariant('nlh').map((o) => o.value)).toContain(9);
   });
 });

@@ -99,19 +99,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
   });
 
   const toggleSetting = (key: keyof TableSettings) => {
-    setSettings((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      // Turning Run It Twice ON tightens the seat cap (three boards have to
-      // come out of what the deal left behind). Pull a now-illegal seat count
-      // down with it, or the create call would be rejected server-side with a
-      // number the user can still see selected.
-      if (key === 'run_it_twice') {
-        setMaxPlayers((seats) =>
-          String(clampSeatsForVariant(variant, Number(seats), { runItTwice: next.run_it_twice }))
-        );
-      }
-      return next;
-    });
+    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const applyStakePreset = (preset: (typeof STAKE_PRESETS)[0]) => {
@@ -231,13 +219,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                     // Switching to a tighter variant must pull the seat count
                     // down with it; otherwise a 9 chosen under NLH survives
                     // into PLO6 and the create call is rejected server-side.
-                    setMaxPlayers((prev) =>
-                      String(
-                        clampSeatsForVariant(next, Number(prev), {
-                          runItTwice: settings.run_it_twice,
-                        })
-                      )
-                    );
+                    setMaxPlayers((prev) => String(clampSeatsForVariant(next, Number(prev))));
                   }}
                 >
                   {VARIANTS.map((v) => (
@@ -261,9 +243,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                       one click — 54 hole cards plus a board out of 52. The cap
                       is tighter again when Run It Twice is on, because three
                       boards have to come out of what the deal left behind. */}
-                  {seatOptionsForVariant(variant, {
-                    runItTwice: settings.run_it_twice,
-                  }).map((o) => (
+                  {seatOptionsForVariant(variant).map((o) => (
                     <option key={o.value} value={String(o.value)}>
                       {o.label}
                     </option>

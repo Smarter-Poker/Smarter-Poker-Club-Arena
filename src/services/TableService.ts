@@ -140,27 +140,27 @@ class TableService {
     maxPlayers: number = 9,
     settings?: Partial<TableSettings>
   ): Promise<PokerTable> {
-    // Dan 2026-08-19. Two rules, and the tighter one wins:
-    //   "ITS ALWAYS 6 MAX FOR PLO 6 AND 7 MAX FOR PLO5"        (house)
-    //   "...ALLOW FOR RUNNING IT MULTIPLE TIMES... OR 3 TIMES" (deck)
-    //   "...ONLY IF THE TABLE IS A RUN IT TWICE OR THREE TIMES TABLE, IF ITS
-    //    NOT THEN YOU CAN GO TO MAX POSSIBLE PLAYERS"
+    // Dan 2026-08-19: "PLO5 CARD IS 7 PLAYERS MAX, AND PLO6 CARD IS 6 PLAYERS
+    // MAX BY DEFAULT. PLO4 IS 8 PLAYERS MAX BY DEFAULT. MAKE THIS LAW FOR ALL
+    // GAMES." One number per variant, flat.
     //
-    // So the deck constraint only binds when this table actually offers Run It
-    // Twice — three boards have to come out of what the deal left behind, and
-    // the worst case is a preflop all-in where every run needs a full five
-    // cards. Enforced HERE rather than only in the modal so every caller is
-    // covered; PokerEngine.deal() throws rather than degrading, so an
-    // over-seated table fails mid-hand.
-    const runItTwice = settings?.run_it_twice !== false;
-    const seatCap = maxSeatsForVariant(gameVariant, { runItTwice });
+    // CASH ONLY — "YOU CAN NOT RUN IT TWO OR THREE TIMES IN A TOURNAMENT", and
+    // Run It Twice is the whole reason the cap is tight. This method builds
+    // CASH tables (the club Create Table modal is its only caller). Tournament
+    // tables are created server-side and size themselves from the tournament's
+    // own structure; do not route them through here.
+    //
+    // Enforced HERE rather than only in the modal so every caller is covered.
+    // PokerEngine.deal() throws rather than degrading, so an over-seated table
+    // fails mid-hand instead of quietly dealing a short board.
+    const seatCap = maxSeatsForVariant(gameVariant);
     if (maxPlayers > seatCap) {
       throw new Error(
-        `${String(gameVariant).toUpperCase()} tables are capped at ${seatCap} seats` +
-          (runItTwice ? ' with Run It Twice enabled' : '') +
-          ` (requested ${maxPlayers}).`
+        `${String(gameVariant).toUpperCase()} tables are capped at ${seatCap} seats ` +
+          `(requested ${maxPlayers}).`
       );
     }
+
     const defaultSettings: TableSettings = {
       straddle_enabled: true,
       straddle_type: 'utg',

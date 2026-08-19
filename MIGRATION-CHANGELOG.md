@@ -7905,3 +7905,23 @@ Nine issues from Dan actually playing the game. Root causes, not symptoms:
 - Share hand: the board renders `.share-hand__card-img`, which had NO CSS —
   flex squeezed the cards and object-fit: cover cropped them. Real sizing,
   contain, md artwork.
+
+## 2026-08-19 — Union rake treasury + weekly 90/10 rakeback (Cowork session)
+
+Dan's spec: ALL rake (cash hands + tournament registrations) is held by the
+union wallet under the Rake Treasury; weekly close sends 90% back to member
+clubs, union keeps 10%; BBJ fees split 50/25/25 (main/backup/promo).
+
+- DB (applied via MCP): `union_membership_jaqk_rejoin_and_bbj_pool_merge` —
+  JAQK had union_clubs membership but clubs.union_id NULL, so its rake settled
+  standalone (chip_treasury) and its BBJ fed a separate club pool. union_id set;
+  club BBJ pool (4,722.72/2,691.02/0.59) merged into the union pool and retired;
+  unions.settings.bbj_split metadata corrected 40/30/30 -> 50/25/25.
+- DB (applied via MCP): `fn_union_weekly_rakeback_close` — treasury-funded
+  weekly 90/10 close (idempotent per period; service_role only). Replaces the
+  owner-wallet-funded fn_execute_union_rakeback (now a delegate). The weekly
+  90% had NEVER run: 1,506,446.08 accumulated with total_settlements = 0.
+  Catch-up executed for 2026-04-01..2026-08-17: SHARK paid 980,957.04, union
+  retained 109,528.17, rake_wallet now holds only the current week (417,397.16).
+- Engine: RakebackSettlerService.runWeeklyFinancialClose step 1.5 calls
+  fn_union_weekly_rakeback_close for every union each Monday (lapsed ISO week).

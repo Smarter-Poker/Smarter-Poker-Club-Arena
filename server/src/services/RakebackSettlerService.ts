@@ -577,6 +577,70 @@ export class RakebackSettlerService {
         }
       }
 
+      // 1.5 Union weekly 90/10 rakeback (Dan's spec, 2026-08-19): every member
+      // club's rake is HELD in union_wallets.rake_wallet during the week; at
+      // close, 90% is paid back to each club's chip_treasury and the union
+      // keeps 10% (moves from the rake_wallet sub-account into general
+      // chip_balance). The RPC is treasury-funded, service_role-only, and
+      // idempotent via union_rakeback_log UNIQUE(union_id, period_start,
+      // period_end) - safe to re-run on crash. Period = the just-lapsed ISO
+      // week [previous Monday, this Monday).
+      {
+        const periodEnd = `${currentWeekStart}T00:00:00Z`;
+        const prevMonday = new Date(`${currentWeekStart}T00:00:00Z`);
+        prevMonday.setUTCDate(prevMonday.getUTCDate() - 7);
+        const periodStart = prevMonday.toISOString();
+        const { data: unions, error: unionsErr } = await supabase
+          .from('unions')
+          .select('id');
+        if (unionsErr) {
+          reportError(
+            new Error(`union list read failed for weekly rakeback: ${unionsErr.message}`),
+            'RakebackSettler.weekly_union_rakeback_list'
+          );
+        }
+        for (const u of unions ?? []) {
+          let result: unknown = null;
+          let rpcError: unknown = null;
+          try {
+            const res = await supabase.rpc('fn_union_weekly_rakeback_close', {
+              p_union_id: u.id,
+              p_period_start: periodStart,
+              p_period_end: periodEnd,
+            });
+            result = res.data;
+            rpcError = res.error;
+          } catch (e) {
+            rpcError = e;
+          }
+          if (rpcError) {
+            reportError(
+              new Error(
+                `fn_union_weekly_rakeback_close failed for union ${u.id}: ${JSON.stringify(rpcError)}`
+              ),
+              'RakebackSettler.weekly_union_rakeback'
+            );
+          } else {
+            const r = (Array.isArray(result) ? result[0] : result) as
+              | Record<string, unknown>
+              | null;
+            // already_executed is the idempotency guard, not a failure.
+            if (r && r.success === false && r.error !== 'already_executed') {
+              reportError(
+                new Error(`union weekly rakeback rejected for ${u.id}: ${JSON.stringify(r)}`),
+                'RakebackSettler.weekly_union_rakeback_rejected'
+              );
+            } else if (r && r.success === true) {
+              console.log(
+                `[RakebackSettler] Union weekly rakeback (${u.id}): paid ${String(
+                  r.total_rakeback
+                )} to ${String(r.clubs_paid)} clubs, retained ${String(r.union_retained)}`
+              );
+            }
+          }
+        }
+      }
+
       // 2. Weekly agent credit invoices
       {
         const { error } = await this.supabaseRpc('fn_generate_all_credit_invoices', {});

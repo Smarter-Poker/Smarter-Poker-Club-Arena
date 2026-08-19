@@ -27,6 +27,13 @@ const TablePage = lazy(() => import('./TablePage'));
 // Dan 2026-08-15: the lobby rendered INSIDE a tab, so the in-table "+" can
 // show it without navigating away and unmounting the running games.
 const HomePage = lazy(() => import('./HomePage'));
+/**
+ * Dan 2026-08-19: leaving a table must land on the CLUB lobby (the club's game
+ * list, BBJ banner and wallet rows), not the pre-lobby landing page with
+ * Create/Find/Join. HomePage is the pre-lobby and is now only the fallback for
+ * when we genuinely cannot resolve which club the player came from.
+ */
+const ClubHomePage = lazy(() => import('./ClubHomePage'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -67,6 +74,14 @@ const MAX_TABLES = 4;
 export default function MultiTablePage() {
   const { user } = useAuthUser();
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
+  /**
+   * The club whose lobby the player should return to. Resolved from the tables
+   * they actually sat at, so it survives closing every tab. Kept in state (not
+   * just a ref) because the in-tab lobby renders from it.
+   */
+  const [homeClubId, setHomeClubId] = useState<string | null>(null);
+  const homeClubIdRef = useRef<string | null>(null);
+  const clubLookupCacheRef = useRef<Map<string, string>>(new Map());
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -312,9 +327,9 @@ export default function MultiTablePage() {
     if (e.tableId) {
       setTables((prev) => {
         const newTables = prev.filter((t) => t.id !== e.tableId);
-        // If all tables closed, navigate to lobby
+        // If all tables closed, return to the club lobby they came from.
         if (newTables.length === 0) {
-          navigate('/');
+          goToLobby();
         }
         return newTables;
       });
@@ -433,6 +448,49 @@ export default function MultiTablePage() {
   // a fresh arrow on every render. A new prop identity was re-triggering the
   // child's reporting effect on every parent render — the other half of the loop.
   const tableInfoCbRef = useRef<Map<string, (info: Partial<TableInstance>) => void>>(new Map());
+  /**
+   * Resolve which club the open tables belong to, so leaving lands the player
+   * in that club's lobby. Cached per table id; the value is sticky so closing
+   * the last tab still knows where "home" was.
+   */
+  useEffect(() => {
+    const unresolved = tables
+      .filter((t) => !isLobbyTab(t))
+      .map((t) => t.id)
+      .filter((id) => !clubLookupCacheRef.current.has(id));
+    if (unresolved.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.from('tables').select('id, club_id').in('id', unresolved);
+        if (cancelled || !data) return;
+        for (const row of data as { id: string; club_id: string | null }[]) {
+          if (row.club_id) clubLookupCacheRef.current.set(row.id, row.club_id);
+        }
+        const firstKnown = tables
+          .filter((t) => !isLobbyTab(t))
+          .map((t) => clubLookupCacheRef.current.get(t.id))
+          .find(Boolean);
+        if (firstKnown && homeClubIdRef.current !== firstKnown) {
+          homeClubIdRef.current = firstKnown;
+          setHomeClubId(firstKnown);
+        }
+      } catch {
+        /* lobby routing falls back to the pre-lobby */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tables]);
+
+  /** Where to send a player who has no tables left open. */
+  const goToLobby = useCallback(() => {
+    const club = homeClubIdRef.current;
+    navigate(club ? `/clubs/${club}` : '/');
+  }, [navigate]);
+
   const getTableInfoCb = useCallback(
     (tableId: string) => {
       let cb = tableInfoCbRef.current.get(tableId);
@@ -601,7 +659,7 @@ export default function MultiTablePage() {
     return (
       <div className="multi-table-page multi-table-page--empty">
         <p>No tables open</p>
-        <button onClick={() => navigate('/')}>Go to Lobby</button>
+        <button onClick={goToLobby}>Go to Lobby</button>
       </div>
     );
   }
@@ -715,7 +773,7 @@ export default function MultiTablePage() {
               <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
                 {isLobbyTab(table) ? (
                   <div className="multi-table-page__lobby-tab">
-                    <HomePage />
+                    {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
                   </div>
                 ) : (
                   <TablePage
@@ -778,7 +836,7 @@ export default function MultiTablePage() {
                 >
                   {isLobbyTab(table) ? (
                     <div className="multi-table-page__lobby-tab">
-                      <HomePage />
+                      {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
                     </div>
                   ) : (
                     <TablePage

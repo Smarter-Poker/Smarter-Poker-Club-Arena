@@ -42,6 +42,7 @@ import BBJTicker from '../components/bbj/BBJTicker';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
+import { matchesVariant, matchesTournamentSubFilter } from '../utils/tournamentFilters';
 
 // Shark Club fallback logo — used when DB logo_url is null
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-card-v25.jpg`;
@@ -110,6 +111,15 @@ interface TournamentData {
   current_players: number;
   max_players: number;
   starting_chips: number;
+  /**
+   * Dan 2026-08-19: late-registration state is derived from these, not from a
+   * status string. No tournament has ever carried a 'LATE_REG' status, so the
+   * Late Reg filter matched nothing at all until this was wired up.
+   */
+  late_reg_mins?: number | null;
+  late_reg_levels?: number | null;
+  started_at?: string | null;
+  current_level?: number | null;
 }
 
 interface WalletBalances {
@@ -149,8 +159,16 @@ function tournamentOpenFirst(
   return new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
 }
 
-export default function ClubHomePage() {
-  const { clubId } = useParams<{ clubId: string }>();
+/**
+ * Dan 2026-08-19: `clubIdOverride` lets the club lobby render OUTSIDE its own
+ * route — specifically inside a Club Arena lobby tab after a player leaves a
+ * table. Without it this page could only read clubId from useParams, so the
+ * in-tab lobby fell back to the pre-lobby landing page instead of the actual
+ * club lobby the player came from.
+ */
+export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+  const { clubId: routeClubId } = useParams<{ clubId: string }>();
+  const clubId = clubIdOverride || routeClubId;
   useVisibilityRefresh(() => loadClubData());
   const navigate = useNavigate();
   const isMountedRef = useIsMounted();
@@ -672,7 +690,7 @@ export default function ClubHomePage() {
         supabase
           .from('tournaments')
           .select(
-            'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id'
+            'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, late_reg_mins, late_reg_levels, started_at, current_level'
           )
           .in('club_id', unionClubIds)
           // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
@@ -703,7 +721,7 @@ export default function ClubHomePage() {
               supabase
                 .from('tournaments')
                 .select(
-                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, is_xmtt'
+                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level'
                 )
                 .eq('union_id', unionId)
                 .eq('is_xmtt', true)
@@ -870,39 +888,12 @@ export default function ClubHomePage() {
         .filter((t) => {
           if (activeMainFilter === 'CASH GAMES') return false;
 
-          const isSpin = t.name.toLowerCase().includes('spin');
-          const isSNG = !isSpin && (t.name.toLowerCase().includes('sng') || t.max_players <= 10);
-          const isMTT = !isSpin && !isSNG;
+          // Tournament variant filter (MTT / SN / Spin-It)
+          if (!matchesVariant(t, tournVariant)) return false;
 
-          // Tournament variant filter
-          let passesGameFilter = true;
-          if (tournVariant === 'MTT') passesGameFilter = isMTT;
-          else if (tournVariant === 'SN') passesGameFilter = isSNG;
-          else if (tournVariant === 'Spin-It') passesGameFilter = isSpin;
-
-          if (!passesGameFilter) return false;
-
-          // Tournament status filter (skip if ALL tab is active)
+          // Status sub-filter — skipped while the ALL tab is active.
           if (activeMainFilter === 'ALL') return true;
-          if (tournamentSubFilter === 'all') return true;
-          const status = (t.status || '').toUpperCase();
-          const startTime = new Date(t.start_time).getTime();
-          const now = Date.now();
-          const minutesUntilStart = (startTime - now) / 60000;
-
-          if (tournamentSubFilter === 'running')
-            return status === 'RUNNING' || status === 'IN_PROGRESS';
-          if (tournamentSubFilter === 'registering')
-            return status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING';
-          if (tournamentSubFilter === 'late_reg')
-            return status === 'LATE_REG' || status === 'LATE_REGISTRATION';
-          if (tournamentSubFilter === 'starting_soon')
-            return (
-              (status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING') &&
-              minutesUntilStart > 0 &&
-              minutesUntilStart <= 60
-            );
-          return true;
+          return matchesTournamentSubFilter(t, tournamentSubFilter);
         })
         .sort(tournamentOpenFirst),
     [tournaments, activeMainFilter, tournVariant, tournamentSubFilter]

@@ -78,6 +78,16 @@ interface WalletData {
   agentBalance: number;
   promoBalance: number;
   unionBank: number;
+  /**
+   * Dan 2026-08-19: union-level ledgers. The union variant previously rendered
+   * CLUB/AGENT columns in its union rows, so "Rake Treasury" showed
+   * clubs.chip_treasury and "Promo Wallet" showed
+   * club_agents.promo_wallet_balance. Both read near-zero while the real union
+   * ledger held the money — the rake and the promo split were being collected
+   * correctly the whole time, the panel was reporting the wrong source.
+   */
+  unionRake: number;
+  unionPromo: number;
   backupBBJ: number;
 }
 
@@ -150,6 +160,8 @@ export default function DynamicWallet({
     agentBalance: 0,
     promoBalance: 0,
     unionBank: 0,
+    unionRake: 0,
+    unionPromo: 0,
     backupBBJ: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -201,9 +213,13 @@ export default function DynamicWallet({
   const animRow2 = useAnimatedCounter(
     effectiveVariant === 'union' ? data.clubBank : data.agentBalance
   );
-  const animRow3 = useAnimatedCounter(data.promoBalance);
+  const animRow3 = useAnimatedCounter(
+    effectiveVariant === 'union' ? data.unionPromo : data.promoBalance
+  );
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
-  const animTreasury = useAnimatedCounter(data.clubTreasury);
+  const animTreasury = useAnimatedCounter(
+    effectiveVariant === 'union' ? data.unionRake : data.clubTreasury
+  );
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
   const fetchData = useCallback(async () => {
@@ -252,14 +268,18 @@ export default function DynamicWallet({
 
       // Fetch union bank balance when the club is in a union
       let unionBankBalance = 0;
+      let unionRakeBalance = 0;
+      let unionPromoBalance = 0;
       const unionId = clubRes.data?.union_id;
       if (unionId) {
         const { data: uwData } = await supabase
           .from('union_wallets')
-          .select('chip_balance')
+          .select('chip_balance, rake_wallet, promo_wallet')
           .eq('union_id', unionId)
           .maybeSingle();
         unionBankBalance = Number(uwData?.chip_balance) || 0;
+        unionRakeBalance = Number(uwData?.rake_wallet) || 0;
+        unionPromoBalance = Number(uwData?.promo_wallet) || 0;
       }
 
       // Double-check version after second await + isMounted
@@ -279,6 +299,8 @@ export default function DynamicWallet({
         clubBank: Number(clubRes.data?.chip_pool) || 0,
         clubTreasury: Number(clubRes.data?.chip_treasury) || 0,
         unionBank: unionBankBalance,
+        unionRake: unionRakeBalance,
+        unionPromo: unionPromoBalance,
       });
       // Auto-detect union membership from clubs.union_id
       setIsClubInUnion(!!unionId);
@@ -479,10 +501,23 @@ export default function DynamicWallet({
             filter: `union_id=eq.${unionId}`,
           },
           (p) => {
-            if (isMounted.current && p.new?.chip_balance !== undefined) {
+            // Dan 2026-08-19: keep the rake treasury and promo wallet live too.
+            // Previously only chip_balance was mirrored, so even once the union
+            // rows read the right columns they would sit on their first value
+            // while rake poured in.
+            if (isMounted.current && p.new) {
               setData((prev) => ({
                 ...prev,
-                unionBank: Number(p.new.chip_balance) || 0,
+                unionBank:
+                  p.new.chip_balance !== undefined
+                    ? Number(p.new.chip_balance) || 0
+                    : prev.unionBank,
+                unionRake:
+                  p.new.rake_wallet !== undefined ? Number(p.new.rake_wallet) || 0 : prev.unionRake,
+                unionPromo:
+                  p.new.promo_wallet !== undefined
+                    ? Number(p.new.promo_wallet) || 0
+                    : prev.unionPromo,
               }));
             }
           }

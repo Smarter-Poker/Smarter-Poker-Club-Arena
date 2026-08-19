@@ -54,7 +54,12 @@ interface ClubMember {
   parent_agent_id?: string;
 }
 
-type MemberFilter = 'all' | 'online' | 'agents' | 'admins' | 'horses';
+/**
+ * Dan 2026-08-19: horses are players. There is no "horses" filter, no HORSE
+ * badge, and nothing anywhere in Club Arena that lets a member tell a horse
+ * from a human. Do not reintroduce a horse-only view here.
+ */
+type MemberFilter = 'all' | 'online' | 'agents' | 'admins';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    ROLE HIERARCHY & PERMISSIONS
@@ -479,6 +484,9 @@ export default function ClubMembersPage() {
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
 
   const loadingRef = useRef(false);
+  // Players currently occupying a seat at one of this club's tables. Merged
+  // into onlineUserIds so seated players count as online (see effect below).
+  const seatedUserIdsRef = useRef<Set<string>>(new Set());
 
   // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
   useEffect(() => {
@@ -549,7 +557,7 @@ export default function ClubMembersPage() {
               const chunk = userIds.slice(i, i + chunkSize);
               const { data: profiles } = await supabase
                 .from('profiles')
-                .select('id, username, avatar_url, is_horse')
+                .select('id, username, display_name, avatar_url')
                 .in('id', chunk);
               if (profiles) {
                 for (const p of profiles) profileMap[p.id] = p;
@@ -559,9 +567,15 @@ export default function ClubMembersPage() {
           const mapped = data.map((m: any) => ({
             id: m.user_id,
             user_id: m.user_id,
-            username: profileMap[m.user_id]?.username || 'Unknown',
+            /**
+             * Dan 2026-08-19: `profiles.username` is forced lowercase by the
+             * trg_normalize_username trigger, which is why the roster read as a
+             * wall of "semibluff sal" / "tulsajeff". display_name is the real
+             * display field and carries the intended capitalisation.
+             */
+            username:
+              profileMap[m.user_id]?.display_name || profileMap[m.user_id]?.username || 'Unknown',
             avatar_url: profileMap[m.user_id]?.avatar_url,
-            is_horse: profileMap[m.user_id]?.is_horse || false,
             role: m.role || 'member',
             chip_balance: m.chip_balance || 0,
             joined_at: m.joined_at,
@@ -703,6 +717,60 @@ export default function ClubMembersPage() {
     enabled: !!resolvedClubId,
   });
 
+  /**
+   * Dan 2026-08-19: "Online" used to come from the Realtime presence channel
+   * alone. Presence only tracks connected browser clients, so every
+   * server-driven player was invisible and the roster reported 1 online while
+   * the club had hundreds of members seated in live hands. Anyone occupying a
+   * seat at one of this club's tables is, by any honest definition, online.
+   */
+  useEffect(() => {
+    if (!resolvedClubId) return;
+    let cancelled = false;
+
+    const loadSeated = async () => {
+      try {
+        const { data: clubTables } = await supabase
+          .from('tables')
+          .select('id')
+          .eq('club_id', resolvedClubId)
+          .eq('is_active', true);
+        const tableIds = (clubTables || []).map((t: { id: string }) => t.id);
+        if (cancelled || tableIds.length === 0) return;
+
+        const seated = new Set<string>();
+        const chunkSize = 100;
+        for (let i = 0; i < tableIds.length; i += chunkSize) {
+          const { data: seats } = await supabase
+            .from('table_seats')
+            .select('user_id')
+            .in('table_id', tableIds.slice(i, i + chunkSize))
+            .is('left_at', null);
+          (seats || []).forEach((s: { user_id: string | null }) => {
+            if (s.user_id) seated.add(s.user_id);
+          });
+        }
+        if (cancelled) return;
+
+        seatedUserIdsRef.current = seated;
+        setOnlineUserIds((prev) => {
+          const next = new Set(prev);
+          seated.forEach((id) => next.add(id));
+          return next.size === prev.size ? prev : next;
+        });
+      } catch (err) {
+        reportError(err, 'ClubMembersPage.Seated_online_sync');
+      }
+    };
+
+    loadSeated();
+    const interval = setInterval(loadSeated, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [resolvedClubId]);
+
   // Real-time presence tracking for club members
   useEffect(() => {
     if (!clubId || !user?.id) return;
@@ -717,7 +785,15 @@ export default function ClubMembersPage() {
         Object.values(state).forEach((presences) => {
           (presences as any[]).forEach((p) => onlineIds.add(p.user_id));
         });
-        setOnlineUserIds(onlineIds);
+        // Merge in players we know are seated. Presence only covers browser
+        // clients, so a seated horse never appeared — the roster read "1 online"
+        // while hundreds of members were mid-hand.
+        setOnlineUserIds((prev) => {
+          seatedUserIdsRef.current.forEach((id) => onlineIds.add(id));
+          return onlineIds.size === prev.size && [...onlineIds].every((id) => prev.has(id))
+            ? prev
+            : onlineIds;
+        });
       })
       .subscribe(async (status: string, err?: Error) => {
         if (status === 'SUBSCRIBED') {
@@ -751,7 +827,6 @@ export default function ClubMembersPage() {
         if (filter === 'agents' && !['super_agent', 'agent', 'sub_agent'].includes(m.role))
           return false;
         if (filter === 'admins' && !['owner', 'admin'].includes(m.role)) return false;
-        if (filter === 'horses' && !(m as any).is_horse) return false;
         if (searchQuery && !(m.username || '').toLowerCase().includes(searchQuery.toLowerCase()))
           return false;
         return true;
@@ -797,13 +872,10 @@ export default function ClubMembersPage() {
       </div>
 
       <div className="members-filters">
-        {(['all', 'online', 'agents', 'admins', 'horses'] as MemberFilter[]).map((f) => (
+        {(['all', 'online', 'agents', 'admins'] as MemberFilter[]).map((f) => (
           <button key={f} className={filter === f ? 'active' : ''} onClick={() => setFilter(f)}>
             {f.charAt(0).toUpperCase() + f.slice(1)}
             {f === 'agents' && agentCount > 0 ? ` (${agentCount})` : ''}
-            {f === 'horses'
-              ? ` (${membersWithStatus.filter((m) => (m as any).is_horse).length})`
-              : ''}
           </button>
         ))}
         {filteredMembers.length > 0 && (
@@ -859,9 +931,7 @@ export default function ClubMembersPage() {
                   ? '🛡️'
                   : filter === 'online'
                     ? '🟢'
-                    : filter === 'horses'
-                      ? '🐴'
-                      : '👥'}
+                    : '👥'}
             </span>
             <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
               {filter === 'agents'
@@ -870,9 +940,7 @@ export default function ClubMembersPage() {
                   ? 'No Admins Found'
                   : filter === 'online'
                     ? 'No Members Online'
-                    : filter === 'horses'
-                      ? 'No Horse Players'
-                      : 'No Members Found'}
+                    : 'No Members Found'}
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {filter === 'agents'
@@ -881,11 +949,9 @@ export default function ClubMembersPage() {
                   ? 'No one has admin privileges in this club yet.'
                   : filter === 'online'
                     ? 'No club members are currently online.'
-                    : filter === 'horses'
-                      ? 'No bot players have been added to this club.'
-                      : searchQuery
-                        ? `No results for "${searchQuery}".`
-                        : 'Invite players to grow your club.'}
+                    : searchQuery
+                      ? `No results for "${searchQuery}".`
+                      : 'Invite players to grow your club.'}
             </p>
           </div>
         ) : (
@@ -915,23 +981,6 @@ export default function ClubMembersPage() {
                       {getRoleBadgeIcon(member.role)}
                     </span>{' '}
                     {member.username}
-                    {(member as any).is_horse && (
-                      <span
-                        title="Horse (Bot Player)"
-                        style={{
-                          marginLeft: 4,
-                          fontSize: '0.7em',
-                          padding: '1px 4px',
-                          borderRadius: 4,
-                          background: 'rgba(139, 92, 246, 0.15)',
-                          color: '#a78bfa',
-                          fontWeight: 600,
-                          letterSpacing: '0.02em',
-                        }}
-                      >
-                        HORSE
-                      </span>
-                    )}
                   </span>
                   <span className="member-role" style={{ color: getRoleColor(member.role) }}>
                     {getRoleLabel(member.role)}

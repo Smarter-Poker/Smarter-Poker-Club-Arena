@@ -66,8 +66,15 @@
   justify-content: center;
 }
 .ngc-emblem img {
+  /* Dan 2026-08-19: the emblem box shrinks to as little as 56px (see the clamp
+     above) but the image was pinned to max-width:100px with no object-fit, so
+     on narrow grid tracks the trophy overflowed its box and got clipped by the
+     card padding — the "cut off and distorted" icons. Bound the image to the
+     BOX rather than a fixed pixel width, and preserve its aspect ratio. */
   max-height: 120px;
-  max-width: 100px;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
   filter: drop-shadow(0 7px 11px rgba(0, 0, 0, 0.6));
 }
 
@@ -145,6 +152,12 @@
   flex-wrap: wrap;
 }
 .ngc-fic {
+  /* Dan 2026-08-19: these are flex children of .ngc-badges, and flex items
+     default to flex-shrink:1 — so once two or three feature badges shared a
+     narrow card the browser squeezed their WIDTH below 46px while the height
+     held, distorting each icon. width/height alone do not stop that; the
+     explicit `flex: 0 0 auto` does. */
+  flex: 0 0 auto;
   width: 46px;
   height: 46px;
   object-fit: contain;

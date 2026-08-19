@@ -194,14 +194,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     color: '#aaa',
   },
-  horseBadge: {
-    fontSize: '10px',
-    padding: '1px 6px',
-    borderRadius: '4px',
-    background: 'rgba(139,92,246,0.15)',
-    color: '#8b5cf6',
-    marginLeft: '4px',
-  },
   kickBtn: {
     background: 'rgba(239,68,68,0.1)',
     color: '#ef4444',
@@ -645,7 +637,6 @@ export default function TableOperationsPanel({ clubId }: Props) {
                   players.map((player, pIdx) => {
                     const profile = player.profiles;
                     const name = profile?.display_name || profile?.username || 'Unknown';
-                    const isHorse = profile?.is_horse || false;
                     const playerVisible = visiblePlayers[expandedTable]?.[pIdx];
 
                     return (
@@ -678,7 +669,6 @@ export default function TableOperationsPanel({ clubId }: Props) {
                           <div>
                             <div style={styles.playerName}>
                               Seat {player.seat_number}: {name}
-                              {isHorse && <span style={styles.horseBadge}>HORSE</span>}
                             </div>
                             <div style={styles.playerStack}>Stack: {formatChips(player.stack)}</div>
                           </div>

@@ -4,23 +4,24 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * Full analytics dashboard for club owners and admins
  * Features:
- * - Club Stats Cards with key metrics
- * - Activity Feed with real-time updates
- * - Leaderboard for top players
+ * - Club Stats Cards with key metrics (single ca_club_dashboard_stats RPC)
+ * - Activity Feed synthesized from real events (ca_club_activity RPC)
+ * - Leaderboard with real profit/hands and working time-range filter
+ *   (ca_club_top_players RPC over club_member_daily_stats aggregates)
+ * - Tables tab with live table list
  * - Quick actions for club management
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { getLocalStorage, setLocalStorage } from '../../lib/storage';
-import ClubStatsCards from '../../components/club/ClubStatsCards';
+import ClubStatsCards, { DashboardStats } from '../../components/club/ClubStatsCards';
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
-import LeaderboardCard from '../../components/leaderboard/LeaderboardCard';
 import ClubBottomNav from '../../components/club/ClubBottomNav';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import { useToast } from '../../components/common/Toast';
@@ -47,24 +48,73 @@ interface TopPlayer {
   displayName: string;
   avatarUrl?: string;
   totalProfit: number;
+  totalWon: number;
   handsPlayed: number;
+  biggestPot: number;
   rank: number;
 }
 
+interface ClubTable {
+  id: string;
+  name: string;
+  gameType?: string;
+  gameVariant?: string;
+  stakes?: string;
+  smallBlind: number;
+  bigBlind: number;
+  status: string;
+  currentPlayers: number;
+  maxPlayers: number;
+  createdAt: string;
+}
+
+type TabId = 'overview' | 'activity' | 'players' | 'tables';
+type RangeId = 'today' | 'week' | 'month' | 'all';
+
+const VALID_TABS: TabId[] = ['overview', 'activity', 'players', 'tables'];
+
+/** Maps the time-range filter to a `p_since` timestamp for the leaderboard RPC. */
+function sinceForRange(range: RangeId): string | null {
+  const now = Date.now();
+  switch (range) {
+    case 'today': {
+      const d = new Date();
+      d.setUTCHours(0, 0, 0, 0);
+      return d.toISOString();
+    }
+    case 'week':
+      return new Date(now - 7 * 86400000).toISOString();
+    case 'month':
+      return new Date(now - 30 * 86400000).toISOString();
+    default:
+      return null;
+  }
+}
+
+const RANK_COLORS: Record<number, string> = {
+  1: 'linear-gradient(135deg, #f5c518, #b8860b)',
+  2: 'linear-gradient(135deg, #d7d7d7, #8e8e8e)',
+  3: 'linear-gradient(135deg, #cd7f32, #8b5a2b)',
+};
+
 export default function ClubDashboard() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { clubId: routeClubId } = useParams<{ clubId?: string }>();
   const clubId = routeClubId || searchParams.get('club') || undefined;
   const { user } = useAuthUser();
   const toast = useToast();
-  useVisibilityRefresh(() => loadDashboardData());
+  useVisibilityRefresh(() => loadDashboardData(true));
   const [club, setClub] = useState<ClubInfo | null>(null);
   const [topPlayers, setTopPlayers] = useState<TopPlayer[]>([]);
+  const [clubTables, setClubTables] = useState<ClubTable[]>([]);
+  const [dashStats, setDashStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'players' | 'tables'>(() =>
-    getLocalStorage('ca_dashboard_tab', 'overview')
-  );
-  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>(() =>
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const urlTab = new URLSearchParams(window.location.search).get('tab');
+    if (urlTab && VALID_TABS.includes(urlTab as TabId)) return urlTab as TabId;
+    return getLocalStorage('ca_dashboard_tab', 'overview');
+  });
+  const [dateRange, setDateRange] = useState<RangeId>(() =>
     getLocalStorage('ca_dashboard_range', 'week')
   );
   const [visiblePlayers, setVisiblePlayers] = useState<Set<number>>(new Set());
@@ -80,22 +130,31 @@ export default function ClubDashboard() {
   }, [dateRange]);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
 
-  // Store refs to avoid stale closures in subscription callbacks
-  const clubRefRef = useRef(club);
-  const topPlayersRefRef = useRef(topPlayers);
-
+  // Deep-linking: ?tab=activity (used by "View All Activity") switches tabs.
   useEffect(() => {
-    clubRefRef.current = club;
-  }, [club]);
+    const urlTab = searchParams.get('tab');
+    if (urlTab && VALID_TABS.includes(urlTab as TabId) && urlTab !== activeTab) {
+      setActiveTab(urlTab as TabId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
-  useEffect(() => {
-    topPlayersRefRef.current = topPlayers;
-  }, [topPlayers]);
+  const switchTab = useCallback(
+    (tab: TabId) => {
+      setActiveTab(tab);
+      // Keep the URL shareable/back-button friendly
+      const next = new URLSearchParams(searchParams);
+      next.set('tab', tab);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
 
   useEffect(() => {
     if (clubId) {
       loadDashboardData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId, dateRange]);
 
   // Leaderboard player stagger animation (with cleanup to prevent zombie timeouts)
@@ -104,24 +163,26 @@ export default function ClubDashboard() {
   // refresh builds a fresh array, so an identity dep re-ran this on each one:
   // visiblePlayers was cleared and all rows faded back in from nothing. With
   // refreshes arriving about once a second the leaderboard was permanently
-  // mid-animation, which is the visible half of "it keeps resetting".
-  // Now a refresh that returns the same players in the same order is a no-op.
-  const topPlayersSignature = topPlayers.map((p: any) => `${p?.id ?? p?.user_id ?? ''}`).join('|');
+  // mid-animation. A refresh returning the same players in order is a no-op.
+  const topPlayersRef = useRef(topPlayers);
+  useEffect(() => {
+    topPlayersRef.current = topPlayers;
+  }, [topPlayers]);
+  const topPlayersSignature = topPlayers.map((p) => p.userId).join('|');
   useEffect(() => {
     setVisiblePlayers(new Set());
-    // Clear previous stagger timers before starting new ones
     staggerTimersRef.current.forEach((t) => clearTimeout(t));
-    staggerTimersRef.current = topPlayersRefRef.current.map((_, i) =>
+    staggerTimersRef.current = topPlayersRef.current.map((_, i) =>
       setTimeout(() => setVisiblePlayers((prev) => new Set(prev).add(i)), i * 60)
     );
     return () => {
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = [];
     };
-     
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topPlayersSignature]);
 
-  // Real-time subscription for table, member, and hand changes
+  // Real-time subscription for table and member changes
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -155,25 +216,17 @@ export default function ClubDashboard() {
   });
 
   // Hand history channel — DISABLED (Phase 2 cost cut).
-  // hand_history is being dropped from supabase_realtime to save egress. The
-  // dashboard already refreshes on tab-focus (useVisibilityRefresh at line 60)
-  // and every club-scoped bus event below (TABLE_SEATED, TABLE_LEFT,
-  // CHIPS_ADDED, etc.), so cross-client hand counts become eventually
-  // consistent rather than realtime. Accepted trade-off for a dashboard view.
+  // hand_history is dropped from supabase_realtime to save egress. The
+  // dashboard refreshes on tab-focus (useVisibilityRefresh) and on every
+  // club-scoped bus event below, so hand counts are eventually consistent.
 
-  // ── Bus Listeners: cross-page event reactivity (debounced, scoped by clubId) ──
+  // ── Bus Listeners: cross-page event reactivity (coalesced, scoped by clubId) ──
   useEffect(() => {
     // ONE debounce shared by every event, not one per event type.
-    //
     // subscribeDebounced debounces each event NAME independently, so fifteen
-    // subscriptions meant fifteen independent timers: a club taking hands,
-    // seating players and moving chips at once could out-run all of them and
-    // reload several times a second. SHARK CLUB has 578 members and the engine
-    // deals roughly three hands a second, so HAND_COMPLETED alone at a 1s
-    // debounce guaranteed a reload every single second.
-    //
-    // A dashboard does not need per-second numbers. Coalescing to one trailing
-    // timer means a burst of twenty events across five types costs ONE reload.
+    // subscriptions meant fifteen independent timers that could out-run each
+    // other and reload several times a second on a busy club. Coalescing to
+    // one trailing timer means a burst of twenty events costs ONE reload.
     const COALESCE_MS = 2000;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
@@ -212,6 +265,7 @@ export default function ClubDashboard() {
       if (timer) clearTimeout(timer);
       unsubs.forEach((unsub) => unsub());
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
 
   const handleRecalculateLevel = async () => {
@@ -248,13 +302,8 @@ export default function ClubDashboard() {
 
   /**
    * @param silent  Background refresh triggered by a realtime/bus event rather
-   *   than by the user arriving. Skips setLoading(true).
-   *
-   *   Every bus-driven refresh used to flip the page into its full loading
-   *   state. On a busy club that fires about once a second (see the coalesced
-   *   reload below), so the dashboard spent its life re-entering "loading"
-   *   and never settled — reported as "it just keeps resetting over and over".
-   *   The data still refreshes; only the skeleton is suppressed.
+   *   than by the user arriving. Skips setLoading(true) so the page never
+   *   flips back into its skeleton state mid-session.
    */
   const loadDashboardData = async (silent = false) => {
     if (!clubId) return;
@@ -273,42 +322,86 @@ export default function ClubDashboard() {
         .eq(clubCol, clubVal)
         .maybeSingle();
 
+      // Use resolved UUID for all FK queries — clubId from URL may be integer
+      const resolvedId = clubData?.id || clubId;
+
+      // One stats RPC + leaderboard RPC + role lookup + table list, in parallel
+      const [statsResult, playersResult, roleResult, tablesResult] = await Promise.all([
+        supabase.rpc('ca_club_dashboard_stats', { p_club_id: resolvedId }),
+        supabase.rpc('ca_club_top_players', {
+          p_club_id: resolvedId,
+          p_since: sinceForRange(dateRange),
+          p_limit: 50,
+        }),
+        user
+          ? supabase
+              .from('club_members')
+              .select('role')
+              .eq('club_id', resolvedId)
+              .eq('user_id', user.id)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null } as any),
+        supabase
+          .from('tables')
+          .select(
+            'id, name, game_type, game_variant, stakes, small_blind, big_blind, status, current_players, max_players, created_at, is_deleted'
+          )
+          .eq('club_id', resolvedId)
+          .order('created_at', { ascending: false })
+          .limit(50),
+      ]);
+
+      if (statsResult.error) {
+        reportError(statsResult.error, 'ClubDashboard.stats_rpc_error');
+      }
+      if (playersResult.error) {
+        reportError(playersResult.error, 'ClubDashboard.top_players_rpc_error');
+      }
+
+      const stats: DashboardStats | null = statsResult.data
+        ? {
+            totalMembers: statsResult.data.total_members || 0,
+            onlineNow: statsResult.data.online_now || 0,
+            activeTables: statsResult.data.active_tables || 0,
+            totalTables: statsResult.data.total_tables || 0,
+            handsToday: statsResult.data.hands_today || 0,
+            rakeToday: Number(statsResult.data.rake_today) || 0,
+            weeklyGrowth: statsResult.data.new_this_week || 0,
+          }
+        : null;
+      setDashStats(stats);
+
+      if (roleResult.data) {
+        setUserRole(roleResult.data.role || 'member');
+      }
+
+      // Live tables (a running table counts even if flagged deleted)
+      const visibleTables: ClubTable[] = (tablesResult.data || [])
+        .filter(
+          (t: any) => !t.is_deleted || ['running', 'waiting', 'active'].includes(t.status)
+        )
+        .map((t: any) => ({
+          id: t.id,
+          name: t.name || 'Unnamed Table',
+          gameType: t.game_type,
+          gameVariant: t.game_variant,
+          stakes: t.stakes,
+          smallBlind: Number(t.small_blind) || 0,
+          bigBlind: Number(t.big_blind) || 0,
+          status: t.status || 'unknown',
+          currentPlayers: t.current_players || 0,
+          maxPlayers: t.max_players || 9,
+          createdAt: t.created_at,
+        }));
+      setClubTables(visibleTables);
+
       if (clubData) {
-        // Use resolved UUID for all FK queries — clubId from URL may be integer
-        const resolvedId = clubData.id;
-
-        // Parallelize count queries + user role lookup
-        const [memberResult, tableResult, roleResult] = await Promise.all([
-          supabase
-            .from('club_members')
-            .select('user_id', { count: 'exact', head: true })
-            .eq('club_id', resolvedId),
-          supabase
-            .from('tables')
-            .select('id', { count: 'exact', head: true })
-            .eq('club_id', resolvedId),
-          user
-            ? supabase
-                .from('club_members')
-                .select('role')
-                .eq('club_id', resolvedId)
-                .eq('user_id', user.id)
-                .maybeSingle()
-            : Promise.resolve({ data: null }),
-        ]);
-
-        const memberCount = memberResult.count;
-        const tableCount = tableResult.count;
-        if (roleResult.data) {
-          setUserRole(roleResult.data.role || 'member');
-        }
-
         setClub({
           id: clubData.id,
           name: clubData.name,
           avatarUrl: clubData.avatar_url,
-          memberCount: memberCount || 0,
-          tableCount: tableCount || 0,
+          memberCount: stats?.totalMembers ?? clubData.member_count ?? 0,
+          tableCount: stats?.activeTables ?? visibleTables.length,
           createdAt: clubData.created_at,
           levelInfo: getClubLevel({
             level: clubData.level || 1,
@@ -322,44 +415,18 @@ export default function ClubDashboard() {
         });
       }
 
-      // Load top players by profit (chips_won - chips_lost)
-      // Use resolved club UUID for FK query
-      const resolvedClubId = clubData?.id || clubId;
-      const { data: playersData } = await supabase
-        .from('club_members')
-        .select('user_id, chips_won, chips_lost, hands_played')
-        .eq('club_id', resolvedClubId)
-        .order('chips_won', { ascending: false })
-        .limit(50);
-
-      if (playersData) {
-        // Batch-fetch profiles separately (no FK relationship exists)
-        const playerIds = playersData.map((p: any) => p.user_id);
-        const profileMap: Record<string, any> = {};
-        if (playerIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, display_name, avatar_url, is_horse')
-            .in('id', playerIds);
-          if (profiles) {
-            for (const p of profiles) profileMap[p.id] = p;
-          }
-        }
-
-        const sorted = playersData
-          .map((p: any) => ({
-            userId: p.user_id,
-            displayName: profileMap[p.user_id]?.display_name || 'Player',
-            avatarUrl: profileMap[p.user_id]?.avatar_url,
-            totalProfit: (p.chips_won || 0) - (p.chips_lost || 0),
-            handsPlayed: p.hands_played || 0,
-            rank: 0,
-          }))
-          .sort((a: any, b: any) => b.totalProfit - a.totalProfit)
-          .slice(0, 10)
-          .map((p: any, idx: number) => ({ ...p, rank: idx + 1 }));
-        setTopPlayers(sorted);
-      }
+      // Leaderboard from real hand data (profit = won - invested, per range)
+      const players: TopPlayer[] = (playersResult.data || []).map((p: any, idx: number) => ({
+        userId: p.user_id,
+        displayName: p.display_name || 'Player',
+        avatarUrl: p.avatar_url,
+        totalProfit: Number(p.profit) || 0,
+        totalWon: Number(p.total_won) || 0,
+        handsPlayed: Number(p.hands_played) || 0,
+        biggestPot: Number(p.biggest_pot) || 0,
+        rank: idx + 1,
+      }));
+      setTopPlayers(players);
     } catch (error) {
       reportError(error, 'ClubDashboard.Failed_to_load_dashboard');
       setLoadError(true);
@@ -381,7 +448,23 @@ export default function ClubDashboard() {
     return Math.trunc(num).toLocaleString('en-US');
   };
 
-  if (loading) {
+  const statusLabel = (status: string): string => {
+    switch (status) {
+      case 'running':
+        return 'Running';
+      case 'waiting':
+        return 'Waiting';
+      case 'active':
+        return 'Active';
+      case 'finished':
+      case 'closed':
+        return 'Closed';
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+  };
+
+  if (loading && !club) {
     return (
       <div className={styles.loading}>
         <PageSkeleton variant="dashboard" />
@@ -389,7 +472,7 @@ export default function ClubDashboard() {
     );
   }
 
-  if (loadError && !loading) {
+  if (loadError && !loading && !club) {
     return (
       <div className={styles.dashboard}>
         <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
@@ -419,7 +502,7 @@ export default function ClubDashboard() {
     return (
       <div className={styles.error}>
         <h2>Club Not Found</h2>
-        <Link to="/clubs">← Back to Clubs</Link>
+        <Link to="/clubs">Back to Clubs</Link>
       </div>
     );
   }
@@ -456,7 +539,8 @@ export default function ClubDashboard() {
               )}
             </h1>
             <p>
-              {club.memberCount} members • {club.tableCount} tables
+              {club.memberCount} members {'•'} {club.tableCount} active{' '}
+              {club.tableCount === 1 ? 'table' : 'tables'}
             </p>
           </div>
         </div>
@@ -500,9 +584,9 @@ export default function ClubDashboard() {
         </div>
       </header>
 
-      {/* Date Range Filter */}
+      {/* Date Range Filter (drives the Top Players leaderboard) */}
       <div className={styles.filterBar}>
-        <span className={styles.filterLabel}> Time Range:</span>
+        <span className={styles.filterLabel}>Time Range:</span>
         <div className={styles.filterButtons}>
           {(['today', 'week', 'month', 'all'] as const).map((range) => (
             <button
@@ -519,15 +603,15 @@ export default function ClubDashboard() {
       {/* Tab Navigation */}
       <nav className={styles.tabNav}>
         {[
-          { id: 'overview', label: ' Overview', icon: '' },
-          { id: 'activity', label: 'Activity', icon: '◉' },
-          { id: 'players', label: ' Players', icon: '' },
-          { id: 'tables', label: ' Tables', icon: '' },
+          { id: 'overview', label: 'Overview' },
+          { id: 'activity', label: 'Activity' },
+          { id: 'players', label: 'Players' },
+          { id: 'tables', label: 'Tables' },
         ].map((tab) => (
           <button
             key={tab.id}
             className={`${styles.tab} ${activeTab === tab.id ? styles.active : ''}`}
-            onClick={() => setActiveTab(tab.id as typeof activeTab)}
+            onClick={() => switchTab(tab.id as TabId)}
           >
             {tab.label}
           </button>
@@ -540,18 +624,20 @@ export default function ClubDashboard() {
           <div className={styles.overviewGrid}>
             {/* Stats Cards */}
             <section className={styles.statsSection}>
-              <h2> Club Metrics</h2>
-              {clubId && <ClubStatsCards clubId={clubId} />}
+              <h2>Club Metrics</h2>
+              {clubId && <ClubStatsCards clubId={clubId} stats={dashStats} />}
             </section>
 
             {/* Top Players Leaderboard */}
             <section className={styles.leaderboardSection}>
-              <h2> Top Players</h2>
+              <h2>Top Players</h2>
               <div className={styles.leaderboard}>
                 {topPlayers.length === 0 ? (
-                  <p className={styles.empty}>No player data yet</p>
+                  <p className={styles.empty}>
+                    No hands played {dateRange === 'all' ? 'yet' : `this ${dateRange}`}
+                  </p>
                 ) : (
-                  topPlayers.map((player, idx) => (
+                  topPlayers.slice(0, 10).map((player, idx) => (
                     <div
                       key={player.userId}
                       className={styles.playerRow}
@@ -562,16 +648,47 @@ export default function ClubDashboard() {
                       }}
                     >
                       <span className={styles.rank}>
-                        {player.rank <= 3 ? ['', '', ''][player.rank - 1] : `#${player.rank}`}
+                        {player.rank <= 3 ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '22px',
+                              height: '22px',
+                              borderRadius: '50%',
+                              background: RANK_COLORS[player.rank],
+                              color: '#fff',
+                              fontWeight: 800,
+                              fontSize: '0.75rem',
+                              textShadow: '0 1px 1px rgba(0,0,0,0.4)',
+                            }}
+                          >
+                            {player.rank}
+                          </span>
+                        ) : (
+                          `#${player.rank}`
+                        )}
                       </span>
                       <div className={styles.playerAvatar}>
                         {player.avatarUrl ? (
                           <img src={player.avatarUrl} alt="" loading="lazy" />
                         ) : (
-                          ''
+                          <span>{player.displayName.charAt(0)}</span>
                         )}
                       </div>
-                      <span className={styles.playerName}>{player.displayName}</span>
+                      <span className={styles.playerName}>
+                        {player.displayName}
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: '0.7rem',
+                            color: 'var(--text-secondary, #888)',
+                          }}
+                        >
+                          {formatInt(player.handsPlayed)} hands
+                        </span>
+                      </span>
                       <span
                         className={`${styles.profit} ${player.totalProfit >= 0 ? styles.positive : styles.negative}`}
                       >
@@ -588,9 +705,13 @@ export default function ClubDashboard() {
             <section className={styles.activityPreview}>
               <h2>Recent Activity</h2>
               {clubId && <ClubActivityFeed clubId={clubId} limit={5} />}
-              <Link to={`/clubs/${clubId}/dashboard?tab=activity`} className={styles.viewAllLink}>
-                View All Activity →
-              </Link>
+              <button
+                onClick={() => switchTab('activity')}
+                className={styles.viewAllLink}
+                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                View All Activity {'→'}
+              </button>
             </section>
           </div>
         )}
@@ -598,38 +719,49 @@ export default function ClubDashboard() {
         {activeTab === 'activity' && (
           <div className={styles.activityFull}>
             <h2>Club Activity Feed</h2>
-            {clubId && <ClubActivityFeed clubId={clubId} limit={50} />}
+            {clubId && <ClubActivityFeed clubId={clubId} limit={50} showFilter />}
           </div>
         )}
 
         {activeTab === 'players' && (
           <div className={styles.playersSection}>
             <div className={styles.sectionHeader}>
-              <h2> Club Members ({club.memberCount})</h2>
+              <h2>Club Members ({club.memberCount})</h2>
               <Link to={`/clubs/${clubId}/members`} className={styles.manageLink}>
-                Manage Members →
+                Manage Members {'→'}
               </Link>
             </div>
             <div className={styles.playersList}>
-              {topPlayers.map((player) => (
-                <div key={player.userId} className={styles.playerCard}>
-                  <div className={styles.playerAvatar}>
-                    {player.avatarUrl ? <img src={player.avatarUrl} alt="" loading="lazy" /> : ''}
-                  </div>
-                  <div className={styles.playerInfo}>
-                    <span className={styles.playerName}>{player.displayName}</span>
-                    <span className={styles.playerStats}>
-                      {formatInt(player.handsPlayed)} hands played
+              {topPlayers.length === 0 ? (
+                <p className={styles.empty}>
+                  No hands played {dateRange === 'all' ? 'yet' : `this ${dateRange}`}
+                </p>
+              ) : (
+                topPlayers.map((player) => (
+                  <div key={player.userId} className={styles.playerCard}>
+                    <div className={styles.playerAvatar}>
+                      {player.avatarUrl ? (
+                        <img src={player.avatarUrl} alt="" loading="lazy" />
+                      ) : (
+                        <span>{player.displayName.charAt(0)}</span>
+                      )}
+                    </div>
+                    <div className={styles.playerInfo}>
+                      <span className={styles.playerName}>{player.displayName}</span>
+                      <span className={styles.playerStats}>
+                        {formatInt(player.handsPlayed)} hands {'•'} biggest pot{' '}
+                        {formatChips(player.biggestPot)}
+                      </span>
+                    </div>
+                    <span
+                      className={`${styles.profit} ${player.totalProfit >= 0 ? styles.positive : styles.negative}`}
+                    >
+                      {player.totalProfit >= 0 ? '+' : ''}
+                      {formatChips(player.totalProfit)}
                     </span>
                   </div>
-                  <span
-                    className={`${styles.profit} ${player.totalProfit >= 0 ? styles.positive : styles.negative}`}
-                  >
-                    {player.totalProfit >= 0 ? '+' : ''}
-                    {formatChips(player.totalProfit)}
-                  </span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
             {clubId && (userRole === 'owner' || userRole === 'admin') && (
               <ClubMemberManagement clubId={clubId} isAdmin={true} />
@@ -640,13 +772,53 @@ export default function ClubDashboard() {
         {activeTab === 'tables' && (
           <div className={styles.tablesSection}>
             <div className={styles.sectionHeader}>
-              <h2> Club Tables ({club.tableCount})</h2>
+              <h2>Club Tables ({clubTables.length})</h2>
               <Link to={`/clubs/${clubId}/create-table`} className={styles.createBtn}>
                 + Create Table
               </Link>
             </div>
+            {clubTables.length === 0 ? (
+              <p className={styles.empty}>No tables yet. Create one to get the club playing.</p>
+            ) : (
+              <div className={styles.playersList}>
+                {clubTables.map((t) => {
+                  const isLive = ['running', 'waiting', 'active'].includes(t.status);
+                  return (
+                    <Link
+                      key={t.id}
+                      to={`/table/${t.id}`}
+                      className={styles.playerCard}
+                      style={{ textDecoration: 'none' }}
+                    >
+                      <div className={styles.playerInfo}>
+                        <span className={styles.playerName}>{t.name}</span>
+                        <span className={styles.playerStats}>
+                          {(t.gameVariant || t.gameType || 'NLH').toUpperCase()} {'•'}{' '}
+                          {t.stakes || `${formatChips(t.smallBlind)}/${formatChips(t.bigBlind)}`}{' '}
+                          {'•'} {t.currentPlayers}/{t.maxPlayers} seated
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '10px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          background: isLive
+                            ? 'rgba(16, 185, 129, 0.15)'
+                            : 'rgba(148, 163, 184, 0.15)',
+                          color: isLive ? '#10b981' : '#94a3b8',
+                        }}
+                      >
+                        {statusLabel(t.status)}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
             <Link to={`/clubs/${clubId}/lobby`} className={styles.lobbyLink}>
-              View Table Lobby →
+              View Table Lobby {'→'}
             </Link>
           </div>
         )}

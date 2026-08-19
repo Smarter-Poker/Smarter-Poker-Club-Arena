@@ -1,7 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ACTIVITY FEED — Real-time Club Events
- * Shows recent activity: joins, games, wins, announcements
+ *  CLUB ACTIVITY FEED — Recent Club Events
+ * Shows recent activity: member joins, big pots, announcements, table starts.
+ * Data source: ca_club_activity RPC, which synthesizes the feed from
+ * club_members / hand_history / club_announcements / tables (the standalone
+ * club_activity table was never created — the old query returned nothing).
+ * Refreshes on club-scoped bus events and a 60s poll while visible.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -9,7 +13,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
-import { resolveClubIdFilter } from '../../utils/clubIdResolver';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import styles from './ClubActivityFeed.module.css';
 import { reportError } from '../../utils/errorReporter';
@@ -29,7 +33,6 @@ interface ActivityItem {
   id: string;
   type: ActivityType;
   message: string;
-  data?: Record<string, any>;
   createdAt: string;
   userId?: string;
   userName?: string;
@@ -42,6 +45,8 @@ interface ClubActivityFeedProps {
   showFilter?: boolean;
 }
 
+const POLL_INTERVAL_MS = 60_000;
+
 export default function ClubActivityFeed({
   clubId,
   limit = 20,
@@ -53,166 +58,85 @@ export default function ClubActivityFeed({
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
 
-  // Track whether club_activity table exists (set by loadActivities)
-  const tableExistsRef = useRef(true);
   // Track stagger timeouts for cleanup on unmount
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
+    loadActivities(true);
 
-    (async () => {
-      await loadActivities();
-      // Only subscribe to realtime if component still mounted AND table exists
-      if (!cancelled && tableExistsRef.current) {
-        subscribeToActivities();
+    // Bus events that imply new activity
+    const reload = () => loadActivities(false);
+    const unsubs = [
+      masterBus.subscribeDebounced('CLUB_JOINED', reload, 2000),
+      masterBus.subscribeDebounced('CLUB_LEFT', reload, 2000),
+      masterBus.subscribeDebounced('TABLE_CREATED', reload, 2000),
+      masterBus.subscribeDebounced('HAND_COMPLETED', reload, 5000),
+      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 2000),
+    ];
+
+    // Gentle poll — only when the tab is visible
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadActivities(false);
       }
-    })();
+    }, POLL_INTERVAL_MS);
 
     return () => {
-      cancelled = true;
-      // Clean up stagger animation timeouts
+      unsubs.forEach((unsub) => unsub());
+      clearInterval(interval);
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = [];
-      // Clean up realtime channel (safe even if never created)
-      const channelKey = `club_activity:${clubId}`;
-      masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [clubId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubId, limit]);
 
-  const loadActivities = async () => {
-    setLoading(true);
+  const loadActivities = async (withSpinner: boolean) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    if (withSpinner) setLoading(true);
     try {
-      // Resolve club UUID — clubId prop may be integer from URL params
-      const { column: cCol, value: cVal } = resolveClubIdFilter(clubId);
-      let resolvedUuid = clubId;
-      if (cCol === 'club_id') {
-        // Need to look up the actual UUID first
-        const { data: clubRow } = await supabase
-          .from('clubs')
-          .select('id')
-          .eq(cCol, cVal)
-          .maybeSingle();
-        if (clubRow) resolvedUuid = clubRow.id;
-      }
+      // Resolve club UUID — clubId prop may be an integer club code from URL
+      const resolvedUuid = await resolveClubUUID(clubId);
 
-      const { data, error } = await supabase
-        .from('club_activity')
-        .select(
-          `
-                    id,
-                    activity_type,
-                    message,
-                    data,
-                    created_at,
-                    user_id,
-                    profiles(display_name, avatar_url)
-                `
-        )
-        .eq('club_id', resolvedUuid)
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      const { data, error } = await supabase.rpc('ca_club_activity', {
+        p_club_id: resolvedUuid,
+        p_limit: limit,
+      });
 
-      if (error) {
-        if (error.code === 'PGRST205' || error.code === '42P01') {
-          console.debug('[ClubActivityFeed] club_activity table not yet created — showing empty.');
-          tableExistsRef.current = false;
-          if (isMounted.current) {
-            setActivities([]);
-            setLoading(false);
-          }
-          return;
-        }
-        throw error;
-      }
+      if (error) throw error;
 
       const items: ActivityItem[] = (data || []).map((a: any) => ({
         id: a.id,
-        type: a.activity_type,
+        type: a.activity_type as ActivityType,
         message: a.message,
-        data: a.data,
         createdAt: a.created_at,
         userId: a.user_id,
-        userName: a.profiles?.display_name,
-        userAvatar: a.profiles?.avatar_url,
+        userName: a.display_name,
+        userAvatar: a.avatar_url,
       }));
 
       if (!isMounted.current) return;
       setActivities(items);
-      setVisibleItems(new Set());
-      // Clear previous stagger timers before starting new ones
-      staggerTimersRef.current.forEach((t) => clearTimeout(t));
-      staggerTimersRef.current = items.map((_, i) =>
-        setTimeout(() => {
-          if (isMounted.current) {
-            setVisibleItems((prev) => new Set(prev).add(i));
-          }
-        }, i * 60)
-      );
+      if (withSpinner) {
+        setVisibleItems(new Set());
+        staggerTimersRef.current.forEach((t) => clearTimeout(t));
+        staggerTimersRef.current = items.map((_, i) =>
+          setTimeout(() => {
+            if (isMounted.current) {
+              setVisibleItems((prev) => new Set(prev).add(i));
+            }
+          }, i * 60)
+        );
+      } else {
+        // Silent refresh — show everything immediately, no re-stagger
+        setVisibleItems(new Set(items.map((_, i) => i)));
+      }
     } catch (error) {
       reportError(error, 'ClubActivityFeed.Failed_to_load_activities');
     }
-    if (isMounted.current) setLoading(false);
-  };
-
-  const subscribeToActivities = () => {
-    const channelKey = `club_activity:${clubId}`;
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'club_activity',
-          filter: `club_id=eq.${clubId}`,
-        },
-        async (payload) => {
-          const newActivity = payload.new as any;
-
-          // Fetch user profile
-          let userName = undefined;
-          let userAvatar = undefined;
-          if (newActivity.user_id) {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('display_name, avatar_url')
-              .eq('id', newActivity.user_id)
-              .maybeSingle();
-            userName = profile?.display_name;
-            userAvatar = profile?.avatar_url;
-          }
-
-          setActivities((prev) =>
-            [
-              {
-                id: newActivity.id,
-                type: newActivity.activity_type,
-                message: newActivity.message,
-                data: newActivity.data,
-                createdAt: newActivity.created_at,
-                userId: newActivity.user_id,
-                userName,
-                userAvatar,
-              },
-              ...prev,
-            ].slice(0, limit)
-          );
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'ClubActivityFeed._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[ClubActivityFeed] Realtime channel timed out');
-        }
-      });
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
+    loadingRef.current = false;
+    if (isMounted.current && withSpinner) setLoading(false);
   };
 
   const getActivityIcon = (type: ActivityType): string => {
@@ -246,7 +170,7 @@ export default function ClubActivityFeed({
   return (
     <div className={styles.feed}>
       <div className={styles.header}>
-        <h3> Activity</h3>
+        <h3>Activity</h3>
         {showFilter && (
           <select
             value={filter}
@@ -255,8 +179,7 @@ export default function ClubActivityFeed({
           >
             <option value="all">All Activity</option>
             <option value="member_join">New Members</option>
-            <option value="table_start">Games</option>
-            <option value="tournament_win">Tournament Wins</option>
+            <option value="table_start">Tables</option>
             <option value="big_hand">Big Hands</option>
             <option value="announcement">Announcements</option>
           </select>

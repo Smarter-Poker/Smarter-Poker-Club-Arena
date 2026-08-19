@@ -1,7 +1,9 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB STATS CARDS — Quick Overview Stats
- * Shows key metrics for club performance
+ * Shows key metrics for club performance.
+ * Data source: ca_club_dashboard_stats RPC (single round-trip), either
+ * preloaded by the parent (stats prop) or self-loaded.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -13,10 +15,11 @@ import { masterBus } from '../../core/MasterBus';
 import styles from './ClubStatsCards.module.css';
 import { reportError } from '../../utils/errorReporter';
 
-interface ClubStats {
+export interface DashboardStats {
   totalMembers: number;
   onlineNow: number;
   activeTables: number;
+  totalTables: number;
   handsToday: number;
   rakeToday: number;
   weeklyGrowth: number;
@@ -24,29 +27,40 @@ interface ClubStats {
 
 interface ClubStatsCardsProps {
   clubId: string;
+  /** Preloaded stats from the parent (avoids a duplicate RPC). */
+  stats?: DashboardStats | null;
 }
 
-export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
-  const [stats, setStats] = useState<ClubStats>({
-    totalMembers: 0,
-    onlineNow: 0,
-    activeTables: 0,
-    handsToday: 0,
-    rakeToday: 0,
-    weeklyGrowth: 0,
-  });
-  const [loading, setLoading] = useState(true);
+const EMPTY_STATS: DashboardStats = {
+  totalMembers: 0,
+  onlineNow: 0,
+  activeTables: 0,
+  totalTables: 0,
+  handsToday: 0,
+  rakeToday: 0,
+  weeklyGrowth: 0,
+};
+
+export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCardsProps) {
+  const [stats, setStats] = useState<DashboardStats>(statsProp || EMPTY_STATS);
+  const [loading, setLoading] = useState(!statsProp);
   const isMounted = useIsMounted();
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // statCards moved after format function declarations (see below)
-
+  // Parent-driven mode: mirror the prop whenever it changes.
   useEffect(() => {
+    if (statsProp) {
+      setStats(statsProp);
+      setLoading(false);
+    }
+  }, [statsProp]);
+
+  // Self-loading mode: only when no stats prop is ever provided.
+  useEffect(() => {
+    if (statsProp) return;
     loadStats();
 
-    // Ensure Club Stats stay fresh when users join/leave or tables start/stop
-    // NOTE: Bus-only subscriptions — no Supabase realtime channel needed here.
     const reload = () => {
       loadStats();
     };
@@ -65,74 +79,31 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
     return () => {
       unsubscribes.forEach((unsub) => unsub());
     };
-  }, [clubId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubId, !!statsProp]);
 
   const loadStats = async () => {
     setLoading(true);
     try {
-      // Resolve integer clubId to UUID for FK queries
+      // Resolve integer clubId to UUID for the RPC
       const resolvedId = await resolveClubUUID(clubId);
 
-      // Get member count (all non-banned members)
-      const { count: memberCount } = await supabase
-        .from('club_members')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .not('status', 'in', '("banned","suspended")');
-
-      // Get active tables — tables use status 'running' or 'waiting', not 'active'
-      const { count: tableCount } = await supabase
-        .from('tables')
-        .select('id', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .in('status', ['running', 'waiting', 'active']);
-
-      // Get today's stats
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      let handsToday = 0;
-      let rakeToday = 0;
-
-      // Try club_daily_stats first (may not exist yet — graceful fallback to 0)
-      const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD for DATE column
-      const { data: todayStats, error: statsErr } = await supabase
-        .from('club_daily_stats')
-        .select('hands_played, rake_collected')
-        .eq('club_id', resolvedId)
-        .eq('stat_date', todayStr)
-        .maybeSingle();
-
-      // Silently skip if table doesn't exist (PGRST205 / 42P01)
-      if (todayStats && !statsErr) {
-        handsToday = todayStats.hands_played || 0;
-        rakeToday = todayStats.rake_collected || 0;
-      }
-
-      // Count online members — those active within last 15 minutes
-      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-      const { count: onlineCount } = await supabase
-        .from('club_members')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .gte('last_active', fifteenMinAgo);
-
-      // Get weekly growth (compare to last week)
-      const weekAgo = new Date(Date.now() - 7 * 86400000);
-      const { count: newMembers } = await supabase
-        .from('club_members')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .gte('created_at', weekAgo.toISOString());
-
-      setStats({
-        totalMembers: memberCount || 0,
-        onlineNow: onlineCount || 0,
-        activeTables: tableCount || 0,
-        handsToday: handsToday,
-        rakeToday: rakeToday,
-        weeklyGrowth: newMembers || 0,
+      const { data, error } = await supabase.rpc('ca_club_dashboard_stats', {
+        p_club_id: resolvedId,
       });
+      if (error) throw error;
+
+      if (data && isMounted.current) {
+        setStats({
+          totalMembers: data.total_members || 0,
+          onlineNow: data.online_now || 0,
+          activeTables: data.active_tables || 0,
+          totalTables: data.total_tables || 0,
+          handsToday: data.hands_today || 0,
+          rakeToday: Number(data.rake_today) || 0,
+          weeklyGrowth: data.new_this_week || 0,
+        });
+      }
     } catch (error) {
       reportError(error, 'ClubStatsCards.Failed_to_load_club_stats');
     }
@@ -298,6 +269,7 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = [];
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
   if (loading) {

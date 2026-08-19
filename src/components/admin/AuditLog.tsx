@@ -151,12 +151,12 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   });
 
   const getActionIcon = (action: string) => {
-    if (action.includes('banned')) return '🚫';
-    if (action.includes('table')) return '🎰';
-    if (action.includes('balance') || action.includes('finance')) return '💰';
-    if (action.includes('settings')) return '⚙️';
-    if (action.includes('security') || action.includes('login')) return '🔐';
-    return '📋';
+    if (action.includes('banned')) return '⊘';
+    if (action.includes('table')) return '▦';
+    if (action.includes('balance') || action.includes('finance')) return '◆';
+    if (action.includes('settings')) return '◇';
+    if (action.includes('security') || action.includes('login')) return '◈';
+    return '▤';
   };
 
   const filteredEntries = entries.filter((entry) => {
@@ -181,7 +181,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   return (
     <div className="audit-log">
       <div className="log-header">
-        <h2>📋 Audit Log</h2>
+        <h2>Audit Log</h2>
       </div>
 
       {/* Filters */}
@@ -214,7 +214,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
           </div>
         ) : filteredEntries.length === 0 ? (
           <div className="empty-state">
-            <span>📋</span>
+            <span>▤</span>
             <p>No log entries found</p>
           </div>
         ) : (

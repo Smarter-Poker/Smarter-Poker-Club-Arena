@@ -102,7 +102,7 @@ export default function ClubBottomNav({
           if (err) reportError(err?.message || err, 'ClubBottomNav._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[ClubBottomNav] ⏱️ Realtime channel timed out');
+          console.warn('[ClubBottomNav] Realtime channel timed out');
         }
       });
 

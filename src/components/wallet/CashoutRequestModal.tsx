@@ -33,11 +33,11 @@ const REVERSAL_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 // ═══════════════════════════════════════════════════════════════════
 
 const CASHOUT_STEPS = [
-  { key: 'requested', label: 'Requested', icon: '📝' },
-  { key: 'escrowed', label: 'Escrow Locked', icon: '🔒' },
-  { key: 'reviewing', label: 'Agent Review', icon: '👤' },
-  { key: 'sending', label: 'Payment Sent', icon: '💸' },
-  { key: 'complete', label: 'Complete', icon: '✅' },
+  { key: 'requested', label: 'Requested', icon: '▣' },
+  { key: 'escrowed', label: 'Escrow Locked', icon: '◈' },
+  { key: 'reviewing', label: 'Agent Review', icon: '◉' },
+  { key: 'sending', label: 'Payment Sent', icon: '→' },
+  { key: 'complete', label: 'Complete', icon: '✓' },
 ];
 
 function CashoutStepTracker({ status, createdAt }: { status: string; createdAt?: string }) {
@@ -261,7 +261,7 @@ export default function CashoutRequestModal({
           if (err) reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[CashoutRequestModal] ⏱️ Realtime channel timed out');
+          console.warn('[CashoutRequestModal] Realtime channel timed out');
         }
       });
 
@@ -311,7 +311,7 @@ export default function CashoutRequestModal({
     try {
       const lockResult = await checkSettlementLock(clubId);
       if (lockResult.locked) {
-        if (isMounted.current) setError('🔒 Settlement in progress — cashout requests frozen');
+        if (isMounted.current) setError('Settlement in progress — cashout requests frozen');
         if (isMounted.current) setIsSubmitting(false);
         return;
       }

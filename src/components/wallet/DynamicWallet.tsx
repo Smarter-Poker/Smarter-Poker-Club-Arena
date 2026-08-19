@@ -445,7 +445,7 @@ export default function DynamicWallet({
           scheduleReconnect();
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[DynamicWallet] ⏱️ Realtime channel timed out');
+          console.warn('[DynamicWallet] Realtime channel timed out');
           scheduleReconnect();
         }
       });
@@ -535,21 +535,21 @@ export default function DynamicWallet({
   // ── Role-specific row config ───────────────────────────────────────────────
   const ROW_CONFIG: Record<WalletVariant, { label: string; icon: string; value: number }[]> = {
     player: [
-      { label: 'Chip Balance', icon: '🪙', value: animRow1 },
-      { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
-      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
+      { label: 'Chip Balance', icon: '◉', value: animRow1 },
+      { label: 'Agent Wallet', icon: '▲', value: animRow2 },
+      { label: 'Promo Wallet', icon: '◈', value: animRow3 },
     ],
     owner: [
-      { label: 'Club Bank', icon: '🏦', value: animRow1 },
-      { label: 'Rake Treasury', icon: '🪙', value: animTreasury },
-      { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
-      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
+      { label: 'Club Bank', icon: '▦', value: animRow1 },
+      { label: 'Rake Treasury', icon: '◆', value: animTreasury },
+      { label: 'Agent Wallet', icon: '▲', value: animRow2 },
+      { label: 'Promo Wallet', icon: '◈', value: animRow3 },
     ],
     union: [
-      { label: 'Union Bank', icon: '🏦', value: animRow1 },
-      { label: 'Rake Treasury', icon: '🪙', value: animTreasury },
-      { label: 'Clubs Wallet', icon: '🅰️', value: animRow2 },
-      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
+      { label: 'Union Bank', icon: '▦', value: animRow1 },
+      { label: 'Rake Treasury', icon: '◆', value: animTreasury },
+      { label: 'Clubs Wallet', icon: '▲', value: animRow2 },
+      { label: 'Promo Wallet', icon: '◈', value: animRow3 },
     ],
   };
 
@@ -595,7 +595,7 @@ export default function DynamicWallet({
           aria-label="Retry loading wallet data"
           title="Failed to load — tap to retry"
         >
-          ⚠️ Tap to retry
+          Tap to retry
         </button>
       )}
 
@@ -617,7 +617,7 @@ export default function DynamicWallet({
         {/* Diamond Balance */}
         <div className="dw__row dw__row--diamond">
           <span className="dw__row-icon" aria-hidden="true">
-            💎
+            ◆
           </span>
           <span className="dw__row-value">{formatBalance(animDiamonds)}</span>
           {onBuyDiamonds && (
@@ -664,7 +664,7 @@ export default function DynamicWallet({
         {effectiveVariant === 'union' && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon" aria-hidden="true">
-              🛡️
+              ◈
             </span>
             <span className="dw__row-label">Backup BBJ</span>
             <span className="dw__row-value">

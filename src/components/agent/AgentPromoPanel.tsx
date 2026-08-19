@@ -164,7 +164,7 @@ export default function AgentPromoPanel({
           if (err) reportError(err?.message || err, 'AgentPromoPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[AgentPromoPanel] ⏱️ Realtime channel timed out');
+          console.warn('[AgentPromoPanel] Realtime channel timed out');
         }
       });
 
@@ -202,7 +202,7 @@ export default function AgentPromoPanel({
     try {
       const lockResult = await checkSettlementLock(clubId);
       if (lockResult.locked) {
-        showToast('🔒 Settlement in progress — distributions frozen', 'error');
+        showToast('Settlement in progress — distributions frozen', 'error');
         if (isMounted.current) setDistributing(false);
         return;
       }
@@ -229,7 +229,7 @@ export default function AgentPromoPanel({
         amount: amt,
       });
 
-      showToast(`🎉 ${amt.toLocaleString()} promo chips sent!`);
+      showToast(`${amt.toLocaleString()} promo chips sent`);
       masterBus.emit('DATA_MUTATED', { table: 'agents', action: 'promo_distributed' });
       masterBus.emit('BALANCE_UPDATED', { source: 'promo_distributed', userId: selectedPlayer });
       if (isMounted.current) {
@@ -269,7 +269,7 @@ export default function AgentPromoPanel({
         }}
       >
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: FB.text }}>🎁 Promo Wallet</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: FB.text }}>◈ Promo Wallet</div>
           <div style={{ fontSize: 11, color: FB.dim }}>
             Distribute promotional chips to your players
           </div>
@@ -372,7 +372,7 @@ export default function AgentPromoPanel({
             border: `1px solid ${FB.border}`,
           }}
         >
-          <div style={{ fontSize: 24, marginBottom: 6 }}>🎁</div>
+          <div style={{ fontSize: 24, marginBottom: 6 }}>◈</div>
           <div style={{ fontSize: 13, color: FB.dim, fontWeight: 600 }}>
             No promo chips available
           </div>
@@ -514,7 +514,7 @@ export default function AgentPromoPanel({
               >
                 {distributing
                   ? 'Sending...'
-                  : `🎁 Send ${amount && Math.floor(Number(amount)) > 0 ? Math.floor(Number(amount)).toLocaleString() : '0'} Promo Chips`}
+                  : `Send ${amount && Math.floor(Number(amount)) > 0 ? Math.floor(Number(amount)).toLocaleString() : '0'} Promo Chips`}
               </button>
             </>
           )}

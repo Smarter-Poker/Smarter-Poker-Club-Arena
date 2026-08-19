@@ -86,7 +86,33 @@ function CardFace({ card, index, isHighlighted, isNewlyDealt, stage, deckStyle }
         .join(' ')}
       style={{ animationDelay: `${index * 100}ms`, '--card-index': index } as React.CSSProperties}
     >
-      <CardImage card={card} deckStyle={deckStyle} size="lg" isHighlighted={isHighlighted} />
+      {isFlopDeal ? (
+        /*
+         * Dan 2026-08-19, bug list item 5: "flops must deal 3 cards face down
+         * then fan open (animation), not just appear."
+         *
+         * The old flop animation spun the card in from rotateY(180deg), but
+         * there was only ever ONE element - the FACE. So the first half of that
+         * spin showed the face mirrored, not a card back, and the card was
+         * legible before it landed. It read as "the cards just appear".
+         *
+         * A real flip needs two surfaces. This renders the back and the front
+         * as separate faces of one preserve-3d box with backface-visibility
+         * hidden, so exactly one is ever visible. CSS then runs it in two
+         * phases: all three land face DOWN, and only once they are down do they
+         * fan open left to right. See .community-cards__flip in the stylesheet.
+         */
+        <div className="community-cards__flip">
+          <div className="community-cards__flip-face community-cards__flip-face--back">
+            <CardBack size="lg" />
+          </div>
+          <div className="community-cards__flip-face community-cards__flip-face--front">
+            <CardImage card={card} deckStyle={deckStyle} size="lg" isHighlighted={isHighlighted} />
+          </div>
+        </div>
+      ) : (
+        <CardImage card={card} deckStyle={deckStyle} size="lg" isHighlighted={isHighlighted} />
+      )}
       {/* Highlight Glow */}
       {isHighlighted && <div className="community-cards__highlight-glow" />}
     </div>
@@ -158,7 +184,12 @@ function CommunityCardsComponent({
         newIndices.add(i);
       }
       setNewlyDealtIndices(newIndices);
-      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 700);
+      // 700ms used to be enough, but the two-phase flop (land face down, then
+      // fan open) runs to ~1.22s. Clearing at 700ms tore the flip markup out
+      // mid-flip and the board snapped to face-up. Turn/river animations are
+      // `forwards` and already finished by then, so the longer window costs
+      // them nothing.
+      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 1400);
       prevVisibleCountRef.current = visibleCount;
       return () => clearTimeout(timer);
     }
@@ -171,7 +202,7 @@ function CommunityCardsComponent({
           newIndices.add(i);
         }
         setNewlyDealtIndices(newIndices);
-        const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 700);
+        const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 1400);
         return () => clearTimeout(timer);
       }
     }

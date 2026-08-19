@@ -27,6 +27,11 @@ import {
   buildTournamentConfig,
   canRunAsTournament as gameTypeCanRunAsTournament,
 } from '../lib/tournamentFromTableConfig';
+import {
+  gameCreationDeniedMessage,
+  type GameCreationAccess,
+} from '../lib/gameCreationAccess';
+import { fetchGameCreationAccess } from '../services/GameAccessService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -398,9 +403,17 @@ export default function TableConfigPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [savingTemplate, setSavingTemplate] = useState(false);
 
-  // UNION GUARD: Clubs inside a union CANNOT create standalone tables/tournaments.
-  const [isInUnion, setIsInUnion] = useState(false);
-  const [checkingUnion, setCheckingUnion] = useState(true);
+  // PERMISSION GATE: who is allowed to build a game for this club.
+  //
+  // 2026-08-19. This used to ask "is this club in a union?" and bounce every
+  // visitor if so. That is not the rule — it locked out the union owner, the
+  // one person who IS supposed to build games for a union's clubs. Now it asks
+  // the same question the database enforces (fn_can_create_games), via
+  // fn_game_creation_access, which also reports WHY and which union owns the
+  // games so the row can be stamped with it.
+  const [access, setAccess] = useState<GameCreationAccess | null>(null);
+  const checkingAccess = access === null;
+  const canCreate = access?.allowed === true;
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
@@ -408,38 +421,32 @@ export default function TableConfigPage() {
     setStarting(false);
     setSelectedTemplateId('');
     setSavingTemplate(false);
-    setIsInUnion(false);
-    setCheckingUnion(true);
+    setAccess(null);
   }, [clubId]);
 
   useEffect(() => {
     if (!clubId) {
-      setCheckingUnion(false);
+      setAccess({ allowed: false, unionId: null, reason: 'unknown_club' });
       return;
     }
     let isMounted = true;
     (async () => {
+      let result: GameCreationAccess;
       try {
         const resolvedId = await resolveClubUUID(clubId);
-        const { data, error } = await supabase
-          .from('union_clubs')
-          .select('union_id')
-          .eq('club_id', resolvedId)
-          .limit(1)
-          .maybeSingle();
-        if (!isMounted) return;
-        // Fail-closed: a transient query error must NOT allow a union club to
-        // slip through and create a standalone table — treat it as blocking.
-        if (error || data) {
-          setIsInUnion(true);
-          toast.error('Union clubs cannot create standalone tables.');
-          navigate(`/clubs/${clubId}`);
-        }
+        result = await fetchGameCreationAccess(resolvedId);
       } catch (e) {
-        reportError(e, 'TableConfigPage.async');
-        /* fail-open */
+        // Fail closed: the database would refuse the insert anyway, and a
+        // wrong "yes" here means filling in the whole form for nothing.
+        reportError(e, 'TableConfigPage.gameCreationAccess');
+        result = { allowed: false, unionId: null, reason: 'check_failed' };
       }
-      if (isMounted) setCheckingUnion(false);
+      if (!isMounted) return;
+      setAccess(result);
+      if (!result.allowed) {
+        toast.error(gameCreationDeniedMessage(result));
+        navigate(`/clubs/${clubId}`);
+      }
     })();
     return () => {
       isMounted = false;
@@ -624,6 +631,11 @@ export default function TableConfigPage() {
 
   const buildTableData = (resolvedClubId?: string) => ({
     club_id: resolvedClubId || clubId,
+    // Stamp the owning union when there is one, so a game the union built for a
+    // member club also shows up in the union's own views (getUnionTables).
+    // NULL for a standalone club — matching every existing union table, which
+    // carries BOTH union_id and the member club's club_id.
+    union_id: access?.unionId ?? null,
     name: config.name,
     game_type: gameType?.toUpperCase() || 'NLH',
     game_variant: gameType || 'nlh',
@@ -754,9 +766,13 @@ export default function TableConfigPage() {
       toast.error('Please enter a table name');
       return;
     }
-    // UNION GUARD: double-check at save time (defense-in-depth)
-    if (isInUnion || checkingUnion) {
-      toast.error('Union clubs cannot create standalone tables.');
+    // PERMISSION GATE: re-check at save time (defense-in-depth).
+    if (!canCreate) {
+      toast.error(
+        checkingAccess
+          ? 'Still checking your permission to create games here.'
+          : gameCreationDeniedMessage(access!)
+      );
       return;
     }
 
@@ -767,21 +783,7 @@ export default function TableConfigPage() {
       } = await getAuthUser();
       if (!user) throw new Error('Not authenticated');
 
-      // Runtime union check — prevents race if navigation guard was bypassed
       const resolvedId = await resolveClubUUID(clubId || '');
-      const { data: unionCheck, error: unionError } = await supabase
-        .from('union_clubs')
-        .select('union_id')
-        .eq('club_id', resolvedId)
-        .limit(1)
-        .maybeSingle();
-      // Fail-closed: block on a query error too, otherwise a transient failure
-      // would let a union club create a standalone table.
-      if (unionError || unionCheck) {
-        toast.error('Union clubs cannot create standalone tables.');
-        setSaving(false);
-        return;
-      }
 
       const tableData = {
         ...buildTableData(resolvedId),
@@ -844,21 +846,25 @@ export default function TableConfigPage() {
       return;
     }
 
-    // 2026-08-19: the SNG and MTT tabs used to fall through to the cash-table
-    // insert below and produce an ordinary ring game. They build a tournament
-    // now. The union rule differs between the two: a club inside a union may
-    // not create either, but that is enforced server-side by
-    // fn_can_create_games (and by the tables RLS policy), so the tournament
-    // path does not need the local guard — it would only produce a worse
-    // message than the server's.
-    if (config.gameMode !== 'regular') {
-      await handleStartTournament();
+    // PERMISSION GATE: re-check at start time (defense-in-depth). This sits
+    // ABOVE the tournament fork because the same rule covers both: cash games
+    // and tournaments are built by the same people. The server enforces it
+    // either way (the tables RLS policy and fn_create_tournament both call
+    // fn_can_create_games); this is only so the message says why.
+    if (!canCreate) {
+      toast.error(
+        checkingAccess
+          ? 'Still checking your permission to create games here.'
+          : gameCreationDeniedMessage(access!)
+      );
       return;
     }
 
-    // UNION GUARD: double-check at start time (defense-in-depth)
-    if (isInUnion || checkingUnion) {
-      toast.error('Union clubs cannot create standalone tables.');
+    // 2026-08-19: the SNG and MTT tabs used to fall through to the cash-table
+    // insert below and produce an ordinary ring game. They build a real
+    // tournament now.
+    if (config.gameMode !== 'regular') {
+      await handleStartTournament();
       return;
     }
 
@@ -869,21 +875,7 @@ export default function TableConfigPage() {
       } = await getAuthUser();
       if (!user) throw new Error('Not authenticated');
 
-      // Runtime union check — prevents race if navigation guard was bypassed
       const resolvedId = await resolveClubUUID(clubId || '');
-      const { data: unionCheck, error: unionError } = await supabase
-        .from('union_clubs')
-        .select('union_id')
-        .eq('club_id', resolvedId)
-        .limit(1)
-        .maybeSingle();
-      // Fail-closed: block on a query error too, otherwise a transient failure
-      // would let a union club create a standalone table.
-      if (unionError || unionCheck) {
-        toast.error('Union clubs cannot create standalone tables.');
-        setStarting(false);
-        return;
-      }
 
       const tableData = {
         ...buildTableData(resolvedId),

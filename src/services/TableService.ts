@@ -12,6 +12,8 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
+import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
+import { fetchGameCreationAccess } from './GameAccessService';
 
 // AUDIT M17: the admin money RPCs return a `reason` for ordinary refusals rather
 // than raising, so the UI can tell "you are not an admin here" apart from "the
@@ -170,29 +172,28 @@ class TableService {
       ...settings,
     };
 
-    // Union guard: clubs inside a union cannot create their own tables
+    // Permission gate: the club owner and admins build a standalone club's
+    // games; for a club inside a union, the union's owner and admins do.
+    //
+    // 2026-08-19. This used to refuse ANY club that was in a union, which also
+    // refused the union owner — the one person the rule says may build here.
+    // It now asks the same question the database enforces on the INSERT.
     const resolvedClubId = await resolveClubUUID(clubId);
     if (!resolvedClubId) {
       throw new Error('Invalid club ID provided');
     }
-    const { data: unionCheck, error: unionErr } = await supabase
-      .from('union_clubs')
-      .select('union_id')
-      .eq('club_id', resolvedClubId)
-      .maybeSingle();
-    if (unionErr) {
-      throw new Error(`Union membership check failed: ${unionErr.message}`);
-    }
-    if (unionCheck) {
-      throw new Error(
-        'Clubs inside a union cannot create standalone tables. Tables are managed at the union level.'
-      );
+    const access = await fetchGameCreationAccess(resolvedClubId);
+    if (!access.allowed) {
+      throw new Error(gameCreationDeniedMessage(access));
     }
 
     const { data, error } = await supabase
       .from('tables')
       .insert({
         club_id: resolvedClubId,
+        // Stamp the owning union so a game built for a member club also shows
+        // in the union's own views. NULL for a standalone club.
+        union_id: access.unionId,
         name,
         game_type: 'cash',
         game_variant: gameVariant,

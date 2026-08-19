@@ -14,6 +14,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
+import { publishSessionSummary } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -2611,6 +2612,10 @@ export default function TablePage({
     // Capture hero stack BEFORE leave (seat data may be cleared by leaveTable)
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
     const stackAtLeave = heroPlayer?.stack || 0;
+    // Dan 2026-08-18: TABLE_LEFT now fires here rather than from the summary's
+    // close handler, and by then heroSeat has already been zeroed just below.
+    // Capture it while it is still valid.
+    const seatAtLeave = tableState.heroSeat;
 
     try {
       const result = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
@@ -2631,10 +2636,40 @@ export default function TablePage({
         // Q3: Clear "Playing At" status when leaving table
         playerStatusService.clearPlayingAt(userId);
 
-        // Show session summary instead of navigating immediately
         // P/L = chips returned to wallet minus total chips invested at table
         sessionPLRef.current = (result.chipsReturned || 0) - totalBuyInRef.current;
-        setShowSessionSummary(true);
+
+        // ── Dan 2026-08-18: leaving always lands you in the lobby ──
+        //
+        // This used to open the summary ON the table and defer everything -
+        // TABLE_LEFT, closing the tab, and the navigate - until the player
+        // dismissed it, so you sat looking at a table you had already left.
+        //
+        // Every number in that modal lived in refs owned by THIS component, so
+        // it could not outlive the navigation. Hand the payload to the app-root
+        // host first: it renders over whichever lobby the player lands on
+        // (HomePage, ClubHomePage or ClubLobby) and survives this unmounting.
+        publishSessionSummary({
+          duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
+          handsPlayed: handsPlayedRef.current,
+          handsWon: handsWonRef.current,
+          totalRebuys: totalRebuysRef.current,
+          profitLoss: sessionPLRef.current,
+          biggestPot: biggestPotRef.current,
+          peakStack: peakStackRef.current,
+        });
+
+        // Now actually leave. These three used to fire together from the
+        // modal's close handler, where they raced each other for the
+        // destination (club lobby vs an in-page lobby tab vs '/') and the last
+        // one silently won. Emitting them here, before navigating, keeps the
+        // order deterministic.
+        masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: seatAtLeave });
+        masterBus.emit('TABLE_MENU_ACTION', {
+          tableId: tableId ?? '',
+          action: 'CLOSE_TABLE_TAB',
+        });
+        navigate('/');
 
         // Phase E: Route session end to Notifications tab for async review
         if (userId && userId !== 'guest') {

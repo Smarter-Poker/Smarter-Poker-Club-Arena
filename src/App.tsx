@@ -7,6 +7,7 @@
  */
 
 import { Routes, Route, Link } from 'react-router-dom';
+import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
 import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
@@ -282,6 +283,10 @@ export default function App() {
         <GlobalBalanceSync />
         <BusToastBridge />
         <ConfirmHost />
+        {/* Dan 2026-08-18: Session Complete now pops in the LOBBY, so its host
+          lives outside <Routes> - it has to survive the navigate() off the
+          table, and "the lobby" is HomePage OR ClubHomePage OR ClubLobby. */}
+        <SessionSummaryHost />
         <MilestoneToast />
         <ConnectionStatusBar />
         {/* Accessibility: Skip to main content link */}

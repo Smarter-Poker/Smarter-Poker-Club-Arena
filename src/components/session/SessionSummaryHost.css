@@ -1,0 +1,268 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SESSION SUMMARY POPUP  (Dan 2026-08-18)
+
+   "make this better looking and more dynamic, it looks very boring and basic"
+
+   The old one was a grey card with six grey boxes in it - identical visual
+   weight whether you booked your best session or your worst. This version is
+   led by the result: a win is green and gold and gets a light sweep across the
+   hero panel, a loss is cooler and quieter. The card lands with a spring, the
+   tiles stagger in behind it, and the P/L counts up (that part is in the TSX).
+
+   Everything animated is transform/opacity so it stays on the compositor, and
+   the whole lot collapses to static under prefers-reduced-motion.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ssh-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 8, 14, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: sshFade 0.22s ease both;
+}
+
+.ssh-card {
+  position: relative;
+  width: min(100%, 420px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  padding: 26px 22px 22px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 90% at 50% -20%, var(--ssh-glow) 0%, transparent 62%),
+    linear-gradient(180deg, #1b2030 0%, #12151f 100%);
+  border: 1px solid var(--ssh-edge);
+  box-shadow:
+    0 30px 70px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  animation: sshRise 0.42s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
+}
+
+/* Result-led palette. This is what stops it reading as a generic grey card. */
+.ssh-card--win {
+  --ssh-accent: #34d97b;
+  --ssh-accent-2: #ffd34d;
+  --ssh-glow: rgba(52, 217, 123, 0.22);
+  --ssh-edge: rgba(52, 217, 123, 0.34);
+}
+.ssh-card--loss {
+  --ssh-accent: #ff6b6b;
+  --ssh-accent-2: #ff9d7a;
+  --ssh-glow: rgba(255, 107, 107, 0.16);
+  --ssh-edge: rgba(255, 107, 107, 0.26);
+}
+
+/* ── The X Dan asked for ── */
+.ssh-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd3e1;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+.ssh-close:hover {
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+  transform: rotate(90deg);
+}
+.ssh-close:focus-visible {
+  outline: 2px solid var(--ssh-accent);
+  outline-offset: 2px;
+}
+
+.ssh-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 40px; /* clear the X */
+  margin-bottom: 16px;
+}
+.ssh-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ssh-accent);
+}
+.ssh-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #f2f5fa;
+}
+
+/* ── Hero P/L ── */
+.ssh-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 20px 16px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--ssh-edge);
+}
+.ssh-hero__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #9aa6bb;
+}
+.ssh-hero__value {
+  font-size: clamp(2.2rem, 12vw, 3rem);
+  font-weight: 900;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, var(--ssh-accent), var(--ssh-accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* Light sweep — a single pass, not a loop. Celebratory without being a toy. */
+.ssh-hero__sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.14) 45%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: sshSweep 1.1s ease-out 0.35s both;
+  pointer-events: none;
+}
+
+/* ── Stat tiles ── */
+.ssh-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  margin: 16px 0 18px;
+}
+@media (max-width: 380px) {
+  .ssh-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.ssh-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 12px 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  animation: sshTile 0.4s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
+}
+.ssh-tile__value {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #f2f5fa;
+  font-variant-numeric: tabular-nums;
+}
+.ssh-tile__label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8892a4;
+  text-align: center;
+}
+
+.ssh-done {
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--ssh-accent), var(--ssh-accent-2));
+  color: #0d1017;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    filter 0.16s ease;
+}
+.ssh-done:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+}
+.ssh-done:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+@keyframes sshFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sshRise {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.965);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes sshTile {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes sshSweep {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ssh-overlay,
+  .ssh-card,
+  .ssh-tile {
+    animation: none;
+  }
+  .ssh-hero__sweep {
+    display: none;
+  }
+  .ssh-close:hover,
+  .ssh-done:hover {
+    transform: none;
+  }
+}

@@ -12,6 +12,14 @@
  * corner and that inactive table slots are hidden with display:none (kept
  * mounted = engine sockets kept alive), not unmounted.
  *
+ * 2026-08-19 persistence invariants (container lifted ABOVE the router):
+ * MultiTablePage is mounted once by PersistentTableLayer beside <Routes> and
+ * merely hides on non-/table routes, so a lobby->cashier->lobby walk leaves
+ * the mounted tab set (= the engine-socket registry, sockets are owned by the
+ * mounted TablePage instances) untouched; the global LiveTablesBar dock
+ * surfaces "Return to game" / "Action needed" while hidden; auto-switch and
+ * keyboard shortcuts are inert off-route.
+ *
  * Run: node scripts/multi-table-check.js   (ESM; repo package.json is type:module)
  */
 'use strict';
@@ -312,6 +320,103 @@ const impure = (() => {
 })();
 check('no impure updaters: setActiveIndex/navigate never inside a setTables updater',
   impure.length === 0, 'offending setTables at lines ' + impure.join(','));
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PERSISTENCE INVARIANTS (2026-08-19: container lifted above the router)
+// ═════════════════════════════════════════════════════════════════════════════
+const APP = read('src/App.tsx');
+const LAYER = read('src/components/table/PersistentTableLayer.tsx');
+const ENGINE_HOOK = read('src/hooks/useEngineTableState.ts');
+const CLUB_HOME = read('src/pages/ClubHomePage.tsx');
+
+// -- the container survives route changes by construction ---------------------
+check('persist: PersistentTableLayer mounted OUTSIDE <Routes> (sibling, never unmounts)',
+  APP.includes('<PersistentTableLayer />') &&
+  APP.lastIndexOf('<PersistentTableLayer />') > APP.indexOf('</Routes>') &&
+  APP.lastIndexOf('<PersistentTableLayer />') < APP.indexOf('</TOSGuard>'));
+check('persist: /table route element no longer mounts MultiTablePage',
+  !/path="table\/:tableId"[\s\S]{0,600}?<MultiTablePage/.test(APP) &&
+  /path="table\/:tableId"[\s\S]{0,600}?<TableRouteSurface \/>/.test(APP));
+check('persist: layer renders MultiTablePage (auth-gated, own Suspense)',
+  LAYER.includes('<MultiTablePage />') && LAYER.includes('if (!user) return null;'));
+check('persist: hidden container collapses via display:none, NOT unmount',
+  SRC.includes("style={hidden ? { display: 'none' } : undefined}"));
+
+// -- socket ownership: EngineStateClient lives under what now persists --------
+check('sockets: EngineStateClient constructed ONLY in useEngineTableState (TablePage-owned)',
+  ENGINE_HOOK.includes('new EngineStateClient') &&
+  !SRC.includes('new EngineStateClient') &&
+  !TABLEPAGE.includes('new EngineStateClient') &&
+  !APP.includes('new EngineStateClient'));
+
+// -- simulated route walk: lobby -> cashier -> lobby --------------------------
+setTables([
+  { id: 'T1', name: 'Alpha', stakes: '1/2', isMyTurn: false, pot: 0 },
+  { id: 'T2', name: 'Bravo', stakes: '2/5', isMyTurn: false, pot: 0 },
+]);
+setActiveIndex(1);
+const walkBefore = state.tables; // identity = "socket registry" of mounted tabs
+runRoute(undefined); // /clubs/:id (lobby)
+runRoute(undefined); // /cashier
+runRoute(undefined); // back to the lobby
+check('route walk: tab set identity unchanged across lobby->cashier->lobby (no setTables fired)',
+  state.tables === walkBefore && state.activeIndex === 1,
+  'identity=' + (state.tables === walkBefore) + ' active=' + state.activeIndex);
+
+// returning to an ALREADY-mounted table focuses its tab instead of ignoring it
+runRoute('T1');
+check('route walk: /table/:id for a mounted table focuses that tab (no dup, no ignore)',
+  state.tables === walkBefore && state.activeIndex === 0,
+  ids().join(',') + ' active=' + state.activeIndex);
+
+// -- global dock: urgent-alert surfaced when route is not /table/* ------------
+const dockSnippet = extractArrow(SRC, 'const dockStateFor = (');
+const dockStateFor = new Function(...ENV, 'return ' + transpile(dockSnippet) + ';')(...envArgs);
+const quiet = [
+  { id: 'T1', name: 'Alpha', isMyTurn: false, pot: 0 },
+  { id: 'T2', name: 'Bravo', isMyTurn: false, pot: 0 },
+  { id: 'lobby:1', kind: 'lobby', name: 'Lobby', isMyTurn: false, pot: 0 },
+];
+check('dock: nothing rendered while ON /table/* (container itself is visible)',
+  dockStateFor(quiet, false, 1000).kind === 'none');
+const dq = dockStateFor(quiet, true, 1000);
+check('dock: quiet hidden tables -> Return-to-game with live-table count (lobby tabs excluded)',
+  dq.kind === 'return' && dq.count === 2 && dq.targetId === 'T1', JSON.stringify(dq));
+const withTurn = [
+  { id: 'T1', name: 'Alpha', isMyTurn: false, pot: 0 },
+  { id: 'T2', name: 'Bravo', isMyTurn: true, turnDeadlineMs: 7500, pot: 0 },
+];
+const du = dockStateFor(withTurn, true, 1000);
+check('dock: hidden table on the hero\'s action -> urgent alert with countdown',
+  du.kind === 'urgent' && du.targetId === 'T2' && du.name === 'Bravo' && du.secondsLeft === 7,
+  JSON.stringify(du));
+const twoTurns = [
+  { id: 'T1', name: 'Alpha', isMyTurn: true, turnDeadlineMs: 9000, pot: 0 },
+  { id: 'T2', name: 'Bravo', isMyTurn: true, turnDeadlineMs: 4000, pot: 0 },
+];
+check('dock: most pressing deadline wins when several tables want action',
+  dockStateFor(twoTurns, true, 1000).targetId === 'T2');
+check('dock: rendered through LiveTablesBar with the urgent payload wired',
+  SRC.includes('hidden && dock.kind !== \'none\'') && SRC.includes('<LiveTablesBar') &&
+  SRC.includes('onReturn={handleDockReturn}'));
+check('dock: exactly one affordance — ClubHomePage no longer renders its own bar',
+  !CLUB_HOME.includes('<LiveTablesBar'));
+
+// -- off-route inertness: no route yank, no key hijack -------------------------
+const autoBlock = SRC.slice(
+  SRC.indexOf('Auto-switch on urgent timer'),
+  SRC.indexOf('Keyboard shortcuts for table switching'));
+check('auto-switch: gated to /table/* (surfaces the dock instead of yanking the route)',
+  autoBlock.includes('if (hidden) return;'));
+const kbBlock = SRC.slice(
+  SRC.indexOf('Keyboard shortcuts for table switching'),
+  SRC.indexOf('Swipe Gesture Handling'));
+check('keyboard shortcuts: inert while hidden (no Tab/1-4 hijack on other pages)',
+  kbBlock.includes('if (hidden) return;'));
+check('hidden tables muted: no ambient sound follows the player off-route',
+  SRC.includes('isActive={idx === activeIndex && !hidden}') &&
+  SRC.includes('isMultiTable={tables.length > 1 || hidden}'));
 
 // ── report ───────────────────────────────────────────────────────────────────
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

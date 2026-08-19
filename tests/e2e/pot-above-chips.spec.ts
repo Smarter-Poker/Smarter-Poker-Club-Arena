@@ -21,7 +21,21 @@ import fs from 'fs';
 import path from 'path';
 
 const cssAfter = fs.readFileSync(path.join(process.cwd(), 'src/pages/TablePage.css'), 'utf8');
-const cssBefore = fs.readFileSync('/tmp/TablePage.before.css', 'utf8');
+/**
+ * The PRE-FIX stylesheet, checked in as a fixture.
+ *
+ * This used to read /tmp/TablePage.before.css - a snapshot that happened to be
+ * sitting on the machine the fix was written on. The suite passed there and
+ * failed on every clean checkout, because a test may not depend on state that
+ * is not in the repository. The fixture is the exact bytes of
+ *   git show 7e62f4faa^:src/pages/TablePage.css
+ * (7e62f4faa is "chips fly UNDER the pot total"), so the baseline this spec
+ * measures against is now reproducible by anyone.
+ */
+const cssBefore = fs.readFileSync(
+  path.join(process.cwd(), 'tests/e2e/fixtures/TablePage.before.css'),
+  'utf8'
+);
 const potCss = fs.readFileSync(
   path.join(process.cwd(), 'src/components/table/PotDisplay.css'),
   'utf8'

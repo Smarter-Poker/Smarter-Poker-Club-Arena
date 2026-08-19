@@ -1,6 +1,11 @@
 /**
  * MARKETPLACE — Get Chips tab: convert diamonds to club chips.
- * Server-authoritative via /api/club-arena/purchase-chips (client sends only packageId).
+ * Server-authoritative via /api/club-arena/purchase-chips (client sends only
+ * packageId + the club the chips are for -- never an amount or a price).
+ *
+ * 2026-08-19: chips are PER-CLUB (club_members.chip_balance). Passing clubId
+ * routes the credit to the club whose shop you are standing in; without it the
+ * server credits the global player wallet, which the shop cannot spend.
  */
 
 import { useState } from 'react';
@@ -13,11 +18,12 @@ import { CHIP_PACKAGES, type WalletInfo } from './marketplaceShared';
 
 interface ChipsTabProps {
   wallet: WalletInfo;
+  clubId: string | null;
   onGoDiamonds: () => void;
   onPurchased: () => void;
 }
 
-export default function ChipsTab({ wallet, onGoDiamonds, onPurchased }: ChipsTabProps) {
+export default function ChipsTab({ wallet, clubId, onGoDiamonds, onPurchased }: ChipsTabProps) {
   const toast = useToast();
   const [purchasing, setPurchasing] = useState<string | null>(null);
 
@@ -27,10 +33,14 @@ export default function ChipsTab({ wallet, onGoDiamonds, onPurchased }: ChipsTab
       toast.error('Insufficient diamonds');
       return;
     }
+    if (!clubId) {
+      toast.error('Join a club first - chips are held per club');
+      return;
+    }
     setPurchasing(pkgId);
     try {
-      await callClubArenaApi('purchase-chips', { packageId: pkgId });
-      toast.success(`${fmt(chips)} chips added to your wallet`);
+      await callClubArenaApi('purchase-chips', { packageId: pkgId, clubId });
+      toast.success(`${fmt(chips)} chips added to your club balance`);
       masterBus.emit('BALANCE_UPDATED', { source: 'chip_purchase' });
       onPurchased();
     } catch (err: unknown) {
@@ -45,8 +55,8 @@ export default function ChipsTab({ wallet, onGoDiamonds, onPurchased }: ChipsTab
       <div className={styles.sectionIntro}>
         <h2 className={styles.sectionTitle}>Get Chips</h2>
         <p className={styles.sectionSub}>
-          Convert diamonds into chips for club games and shop purchases. You have{' '}
-          <strong>{fmt(wallet.diamonds)}</strong> diamonds.
+          Convert diamonds into chips for this club&apos;s games and shop. Chips are held per club;
+          diamonds are global. You have <strong>{fmt(wallet.diamonds)}</strong> diamonds.
         </p>
       </div>
 
@@ -64,7 +74,7 @@ export default function ChipsTab({ wallet, onGoDiamonds, onPurchased }: ChipsTab
               <div className={styles.pkgLabel}>chips</div>
               <button
                 className={styles.pkgBuy}
-                disabled={purchasing !== null || !affordable}
+                disabled={purchasing !== null || !affordable || !clubId}
                 onClick={() => handleBuy(pkg.id, pkg.chips, pkg.diamonds)}
               >
                 {purchasing === pkg.id ? 'Processing...' : `${fmt(pkg.diamonds)} diamonds`}

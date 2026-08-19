@@ -376,6 +376,7 @@ export default function MarketplacePage() {
         {tab === 'chips' && (
           <ChipsTab
             wallet={wallet}
+            clubId={clubId}
             onGoDiamonds={() => switchTab('diamonds')}
             onPurchased={() => {
               loadingRef.current = false;

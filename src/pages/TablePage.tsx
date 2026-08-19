@@ -6734,45 +6734,11 @@ export default function TablePage({
           engine FSM reports MISSING or DISCONNECTED for this user. */}
       <DisconnectToast heroUserId={userId} disconnectStates={disconnectStates} />
 
-      {/* Dan 2026-04-17 (Task 56) — Winner acknowledgment banner.
-          Dan's exact words: "acknowledging who won the pot, and shipping the pot."
-          The seat-glow + hand-name float are subtle on mobile, so add a center
-          banner that screams the result for ~2s. Hero win → "YOU WIN" + hand
-          name + net amount. Opponent win → "<Name> wins <hand>". Keyed on
-          hand number so each new hand re-triggers the entrance animation.
-          Auto-dismisses with the 3s winnerInfo cleanup in HAND_COMPLETE. */}
-      {winnerInfo.playerIds.length > 0 &&
-        (() => {
-          const heroWon = winnerInfo.playerIds.includes(userId);
-          const primaryWinnerId = winnerInfo.playerIds[0];
-          const primaryWinner = tableState.players.find((p) => p?.id === primaryWinnerId);
-          const winnerName = heroWon ? 'YOU WIN' : `${primaryWinner?.name || 'Opponent'} wins`;
-          const chopSuffix =
-            winnerInfo.playerIds.length > 1 ? ` (split ${winnerInfo.playerIds.length} ways)` : '';
-          const amount = winnerInfo.amounts[heroWon ? userId : primaryWinnerId || ''] || 0;
-          return (
-            <div
-              key={`winner-banner-${tableState.handNumber || 0}-${primaryWinnerId || 'x'}`}
-              className={`winner-banner${heroWon ? ' winner-banner--hero' : ' winner-banner--opp'}`}
-              role="status"
-              aria-live="polite"
-            >
-              <div className="winner-banner__title">
-                {winnerName}
-                {chopSuffix}
-              </div>
-              {winnerInfo.handName && (
-                <div className="winner-banner__hand">{winnerInfo.handName}</div>
-              )}
-              {amount > 0 && (
-                <div className="winner-banner__amount">
-                  {heroWon ? '+' : ''}
-                  {amount.toLocaleString()}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+      {/* Dan 2026-08-19, bug list item 2: "no winner banner at showdown - just
+          ship the pot." The centre banner that used to live here (YOU WIN /
+          <Name> wins, hand name, amount, ~2s) is gone. `winnerInfo` is still
+          populated - the seat glow, the hand-name float and the pot ship all
+          read it - only the banner is removed. Do not reintroduce it. */}
       {/* Phase 2 T2-01 (spec §5.6): Fold Protection Dialog.
           handleFold / panel-fold defer to this when canCheckRightNow() is
           true. onCheck dismisses + executes the free check; onFold dismisses

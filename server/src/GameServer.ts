@@ -82,7 +82,7 @@ export class GameServer {
   // inside RakebackEngine never flushes (zero callers of settleRakeback before fix).
   private rakebackSettler = new RakebackSettlerService();
 
-  // Synchronized break timer — all MTT/XMTT tournaments break at the top of every hour
+  // Synchronized break timer — last hand announced at :55, break runs 5 min after it lands
   private breakTimer: NodeJS.Timeout | null = null;
   /**
    * A5: drains `pending_fee_distributions` — rake / BBJ fees that left a pot but
@@ -152,7 +152,7 @@ export class GameServer {
         reportError(err, 'GameServer.Tournament_discovery_fatal_err')
       );
 
-      // Step 7: Start synchronized break timer (top of every hour, 5 min duration)
+      // Step 7: Start synchronized break timer (last hand at :55, then 5 min break)
       this.scheduleSynchronizedBreaks();
 
       // Step 8 (A5): Start the fee reconciler. Rake and the BBJ contribution are
@@ -572,11 +572,24 @@ export class GameServer {
       return;
     }
 
+    /**
+     * Dan 2026-08-19: "AT THE 55 OF THE HOUR, THE LAST HAND IS DEALT FOR ALL
+     * TOURNAMENT TABLES, ONCE THE LAST HAND ON EVERY TABLE IS COMPLETED, THE 5
+     * MINUTE BREAK STARTS... SO IT CAN BE UP TO LIKE A 6 MINUTE BREAK."
+     *
+     * So this is two phases, not one:
+     *   :55             announce the LAST HAND on every table
+     *   last hand ends  START the five minutes
+     *
+     * The previous version started the five-minute timer at :55, which quietly
+     * shortened every break by however long the final hand ran — a slow all-in
+     * with runouts could eat most of it. The countdown now begins only once
+     * every table across every tournament is parked between hands.
+     */
     console.log(
-      `[GameServer] ═══ SYNCHRONIZED BREAK ═══ Pausing ${mttEngines.length} MTT/XMTT tournaments for 5 minutes`
+      `[GameServer] ═══ LAST HAND ═══ Announcing final hand on ${mttEngines.length} MTT/XMTT tournament(s) — break starts when every table finishes`
     );
 
-    // Pause all MTT/XMTT tournaments
     for (const tm of mttEngines) {
       try {
         await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
@@ -585,7 +598,29 @@ export class GameServer {
       }
     }
 
-    // Schedule resume after 5 minutes
+    const waitStartedAt = Date.now();
+    const allParked = await this.waitForAllTablesParked(mttEngines);
+    const lastHandMs = Date.now() - waitStartedAt;
+
+    if (allParked) {
+      console.log(
+        `[GameServer] Last hand complete on every table after ${Math.round(lastHandMs / 1000)}s — starting the ${GameServer.BREAK_DURATION_MS / 60000} minute break`
+      );
+    } else {
+      console.warn(
+        `[GameServer] Last hand did not land on every table within ${Math.round(lastHandMs / 1000)}s — starting the break anyway so play resumes near the hour`
+      );
+    }
+
+    // The countdown players see begins NOW, not at :55.
+    for (const tm of mttEngines) {
+      try {
+        await tm.beginBreakCountdown(GameServer.BREAK_DURATION_MS);
+      } catch (err: any) {
+        reportError(err, 'GameServer.Failed_to_begin_break_countdown');
+      }
+    }
+
     this.breakResumeTimer = setTimeout(async () => {
       console.log(
         `[GameServer] ═══ BREAK ENDED ═══ Resuming ${mttEngines.length} MTT/XMTT tournaments`
@@ -598,6 +633,24 @@ export class GameServer {
         }
       }
     }, GameServer.BREAK_DURATION_MS);
+  }
+
+  /**
+   * Poll until every table of every supplied tournament has finished the hand
+   * that was in flight, or until the grace window expires.
+   *
+   * Returns true if everyone parked, false if the grace window won. A wedged
+   * table must never hold the whole platform's break open — play resuming near
+   * the hour matters more than one stuck table.
+   */
+  private async waitForAllTablesParked(managers: TournamentManager[]): Promise<boolean> {
+    const deadline = Date.now() + TournamentManager.LAST_HAND_GRACE_MS;
+    while (Date.now() < deadline) {
+      if (!this.running) return false;
+      if (managers.every((tm) => tm.areAllTablesParked())) return true;
+      await this.sleep(500);
+    }
+    return managers.every((tm) => tm.areAllTablesParked());
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

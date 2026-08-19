@@ -158,3 +158,21 @@ export function blockingDeletionReason(impact: ClubDeletionImpact): string | nul
 export function privateClubNeedsApproval(isPublic: boolean, requiresApproval: boolean): boolean {
   return !isPublic && !requiresApproval;
 }
+
+/**
+ * Storage path inside the club-assets bucket for a public URL we issued, or
+ * null for anything else. Replacing a logo used to leave the previous object
+ * in the bucket forever; this is what lets the replace path delete it, while
+ * refusing to touch URLs that are not ours (data: URLs from the old
+ * create-club fallback, or a hand-set external image).
+ */
+export function clubAssetPathFromPublicUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const marker = '/storage/v1/object/public/club-assets/';
+  const i = url.indexOf(marker);
+  if (i === -1) return null;
+  const path = url.slice(i + marker.length).split('?')[0];
+  // Only the prefix this page writes to, and never a traversal.
+  if (!path.startsWith('club-logos/') || path.includes('..')) return null;
+  return decodeURIComponent(path);
+}

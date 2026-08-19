@@ -13,6 +13,7 @@ import {
   clampBuyin,
   CSV_BOM,
   blockingDeletionReason,
+  clubAssetPathFromPublicUrl,
   csvSafeCell,
   privateClubNeedsApproval,
   sanitizationWouldAlter,
@@ -203,5 +204,32 @@ describe('privateClubNeedsApproval', () => {
   it('does not flag public clubs', () => {
     expect(privateClubNeedsApproval(true, false)).toBe(false);
     expect(privateClubNeedsApproval(true, true)).toBe(false);
+  });
+});
+
+describe('clubAssetPathFromPublicUrl', () => {
+  const base =
+    'https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/club-assets/';
+
+  it('extracts the storage path from a URL we issued', () => {
+    expect(clubAssetPathFromPublicUrl(`${base}club-logos/abc-123.png`)).toBe(
+      'club-logos/abc-123.png'
+    );
+  });
+
+  it('strips a cache-busting query string', () => {
+    expect(clubAssetPathFromPublicUrl(`${base}club-logos/a.png?v=2`)).toBe('club-logos/a.png');
+  });
+
+  it('refuses anything outside the club-logos prefix', () => {
+    expect(clubAssetPathFromPublicUrl(`${base}other/evil.png`)).toBeNull();
+    expect(clubAssetPathFromPublicUrl(`${base}club-logos/../../secret.png`)).toBeNull();
+  });
+
+  it('ignores URLs that are not ours', () => {
+    expect(clubAssetPathFromPublicUrl('https://example.com/logo.png')).toBeNull();
+    expect(clubAssetPathFromPublicUrl('data:image/png;base64,AAAA')).toBeNull();
+    expect(clubAssetPathFromPublicUrl(null)).toBeNull();
+    expect(clubAssetPathFromPublicUrl(undefined)).toBeNull();
   });
 });

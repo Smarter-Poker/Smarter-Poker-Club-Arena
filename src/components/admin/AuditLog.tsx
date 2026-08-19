@@ -49,8 +49,9 @@ const FILTER_PREFIXES: Record<ActionType, string[]> = {
   security: ['login', 'security', 'password', 'ip', 'auth'],
 };
 
-/** Newest N rows. The UI says so, because a busy club silently lost the rest. */
-const AUDIT_ROW_CAP = 200;
+/** Rows fetched per page. The log used to stop dead at 200 with no way to
+ *  reach anything older; now this is a page size and the UI offers Load more. */
+const AUDIT_PAGE_SIZE = 200;
 
 interface AuditLogProps {
   clubId: string;
@@ -62,10 +63,13 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const [hasMore, setHasMore] = useState(false);
+  const [loadedLimit, setLoadedLimit] = useState(AUDIT_PAGE_SIZE);
+  const [loadingMore, setLoadingMore] = useState(false);
   const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const loadAuditLog = useCallback(async (opts?: { silent?: boolean }) => {
+  const loadAuditLog = useCallback(async (opts?: { silent?: boolean; limit?: number }) => {
     // A background refresh (realtime INSERT, ADMIN_ACTION bus event) must not
     // tear the rendered list down to skeleton rows — the log visibly flashed
     // every time an admin action landed.
@@ -86,7 +90,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
         )
         .eq('club_id', resolvedId)
         .order('created_at', { ascending: false })
-        .limit(AUDIT_ROW_CAP);
+        .limit(opts?.limit ?? AUDIT_PAGE_SIZE);
 
       const { data, error } = await query;
       if (error) {
@@ -177,6 +181,9 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
       });
 
       if (!isMounted.current) return;
+      // A full page back means there is probably another page behind it.
+      setHasMore(mapped.length >= (opts?.limit ?? AUDIT_PAGE_SIZE));
+      setLoadedLimit(opts?.limit ?? AUDIT_PAGE_SIZE);
       setEntries(mapped);
       setVisibleItems(new Set());
 
@@ -311,7 +318,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
             Showing {filteredEntries.length}
             {filteredEntries.length !== entries.length ? ` of ${entries.length}` : ''} entr
             {filteredEntries.length === 1 ? 'y' : 'ies'}
-            {entries.length >= AUDIT_ROW_CAP ? ` (newest ${AUDIT_ROW_CAP})` : ''}
+            {hasMore ? ' (newest first)' : ''}
           </p>
           {filteredEntries.map((entry, i) => (
             <div
@@ -344,6 +351,20 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
               </div>
             </div>
           ))}
+          {hasMore && (
+            <button
+              type="button"
+              className="audit-log__more"
+              disabled={loadingMore}
+              onClick={async () => {
+                setLoadingMore(true);
+                await loadAuditLog({ silent: true, limit: loadedLimit + AUDIT_PAGE_SIZE });
+                if (isMounted.current) setLoadingMore(false);
+              }}
+            >
+              {loadingMore ? 'Loading...' : `Load ${AUDIT_PAGE_SIZE} older entries`}
+            </button>
+          )}
           </>
         )}
       </div>

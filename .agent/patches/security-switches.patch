@@ -1,0 +1,497 @@
+--- a/src/pages/TableConfigPage.tsx
++++ b/src/pages/TableConfigPage.tsx
+@@ -159,14 +159,20 @@
+   synchronizedBreaks: boolean;
+ 
+   // Security Settings
+-  agentDownlineLimit: number | null;
+-  buyInAuthorization: boolean;
+-  restrictDevice: boolean;
+-  restrictObservers: boolean;
+-  gpsRestriction: boolean;
++  //
++  // 2026-08-19: seven switches were removed from here — Same Agent Downline
++  // Limit, Buy-in Authorization, Restrict Device, Restrict Observers, GPS
++  // Restriction, PC Emulator Restriction and Photo Rotation Verification.
++  // Every one of them wrote a `tables` column that NOTHING reads, and the four
++  // that sound like real protections have no data behind them at all:
++  // user_devices and geofence_visits are both empty, and there is no emulator
++  // detection or photo verification anywhere in the codebase. A switch labelled
++  // "GPS Restriction" that an owner turns on and believes in is worse than no
++  // switch. The columns are left in place so nothing is lost.
++  //
++  // ipRestriction is the one that CAN be honoured — the engine already has each
++  // player's IP at connect — so it stays.
+   ipRestriction: boolean;
+-  pcEmulatorRestriction: boolean;
+-  photoRotationVerification: boolean;
+ }
+ 
+ const GAME_TYPE_LABELS: Record<string, { name: string; color: string }> = {
+@@ -293,15 +299,12 @@
+   tournamentSchedule: false,
+   synchronizedBreaks: true,
+ 
+-  // Security Settings
+-  agentDownlineLimit: null,
+-  buyInAuthorization: false,
+-  restrictDevice: true,
+-  restrictObservers: false,
+-  gpsRestriction: true,
+-  ipRestriction: true,
+-  pcEmulatorRestriction: false,
+-  photoRotationVerification: false,
++  // Security Settings.
++  // OFF by default. The column default was `true`, so all 56,053 existing
++  // tables carry ip_restriction = true — not because anyone chose it, but
++  // because the switch never meant anything. Enforcement is opt-in: an owner
++  // turns it on deliberately.
++  ipRestriction: false,
+ };
+ 
+ // ═══════════════════════════════════════════════════════════════════════════════
+@@ -746,15 +749,9 @@
+     tournament_schedule: config.tournamentSchedule,
+     synchronized_breaks: config.synchronizedBreaks,
+ 
+-    // Security
+-    agent_downline_limit: config.agentDownlineLimit,
+-    buy_in_authorization: config.buyInAuthorization,
+-    restrict_device: config.restrictDevice,
+-    restrict_observers: config.restrictObservers,
+-    gps_restriction: config.gpsRestriction,
++    // Security. Only the switch that is actually enforced is written; the
++    // other seven were removed (see TableConfig above).
+     ip_restriction: config.ipRestriction,
+-    pc_emulator_restriction: config.pcEmulatorRestriction,
+-    photo_rotation_verification: config.photoRotationVerification,
+ 
+     // Status
+     status: 'waiting',
+@@ -1518,51 +1515,11 @@
+         />
+ 
+         {/* SECTION: Security */}
+-        <Slider
+-          label="Same Agent Downline Number Limit"
+-          value={config.agentDownlineLimit ?? 100}
+-          onChange={(v) => updateConfig('agentDownlineLimit', v === 100 ? null : v)}
+-          min={1}
+-          max={100}
+-          suffix={config.agentDownlineLimit === null ? '' : ''}
+-        />
+-
+-        <Toggle
+-          label="Buy-in Authorization"
+-          value={config.buyInAuthorization}
+-          onChange={(v) => updateConfig('buyInAuthorization', v)}
+-        />
+-        <Toggle
+-          label="Restrict Device"
+-          value={config.restrictDevice}
+-          onChange={(v) => updateConfig('restrictDevice', v)}
+-          tooltip="One device per player"
+-        />
+-        <Toggle
+-          label="Restrict Observers"
+-          value={config.restrictObservers}
+-          onChange={(v) => updateConfig('restrictObservers', v)}
+-        />
+-        <Toggle
+-          label="GPS Restriction"
+-          value={config.gpsRestriction}
+-          onChange={(v) => updateConfig('gpsRestriction', v)}
+-        />
+         <Toggle
+           label="IP Restriction"
+           value={config.ipRestriction}
+           onChange={(v) => updateConfig('ipRestriction', v)}
+-        />
+-        <Toggle
+-          label="PC Emulator Restriction"
+-          value={config.pcEmulatorRestriction}
+-          onChange={(v) => updateConfig('pcEmulatorRestriction', v)}
+-        />
+-        <Toggle
+-          label="Photo Rotation Verification"
+-          value={config.photoRotationVerification}
+-          onChange={(v) => updateConfig('photoRotationVerification', v)}
+-          tooltip="Verify identity with photo"
++          tooltip="Two different accounts cannot sit at this table from the same internet connection. Players already seated are not affected."
+         />
+         <Toggle
+           label="Hide Club Name"
+--- a/server/src/transport/EngineWebSocketServer.ts
++++ b/server/src/transport/EngineWebSocketServer.ts
+@@ -74,6 +74,20 @@
+   return sockAddr ?? null;
+ }
+ 
++/**
++ * Loopback and the 'unknown' placeholder are what we see when the proxy did not
++ * forward a real client address. Two players must never be treated as sharing a
++ * connection just because we failed to learn either of their addresses.
++ */
++const UNUSABLE_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1', 'unknown', '']);
++
++export function isUsableClientIp(ip: string | null | undefined): ip is string {
++  return typeof ip === 'string' && !UNUSABLE_IPS.has(ip.trim().toLowerCase());
++}
++
++/** How long a table's ip_restriction flag is trusted before re-reading it. */
++const IP_RESTRICTION_TTL_MS = 60_000;
++
+ // ─── Types ────────────────────────────────────────────────────────────────────
+ 
+ /**
+@@ -104,6 +118,8 @@
+   lastPongAt: number;
+   inboundCount: number;
+   inboundWindowStart: number;
++  /** Client address from the x-forwarded-for chain; null when unknown. */
++  clientIp: string | null;
+ }
+ 
+ // ─── Default JWT verification (Supabase) ──────────────────────────────────────
+@@ -129,6 +145,8 @@
+   private readonly tableExists: TableExistsCheck;
+   private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
+   private readonly onResync?: (tableId: string, userId: string) => void;
++  /** tableId -> { restricted, readAt } — see IP_RESTRICTION_TTL_MS. */
++  private ipRestrictionCache: Map<string, { restricted: boolean; readAt: number }> = new Map();
+ 
+   constructor(opts: EngineWebSocketServerOptions) {
+     this.hub = opts.hub;
+@@ -209,6 +227,31 @@
+             // blacklist-check error. Log and proceed.
+           }
+ 
++          // 2026-08-19: IP Restriction, made real. The switch existed on the
++          // create-table page since day one and enforced nothing. It means
++          // what it means in a live room: two DIFFERENT accounts may not be at
++          // the same table from the same internet connection.
++          //
++          // Deliberately narrow:
++          //   • the same player reconnecting is always fine — only a different
++          //     userId counts as a conflict;
++          //   • an address we could not learn (loopback, 'unknown') never
++          //     counts, or a proxy misconfiguration would lock out the room;
++          //   • whoever is already connected keeps their seat. This refuses
++          //     the arriving connection, it never drops a seated player.
++          try {
++            if (await this.isIpConflict(tableId, auth.userId, clientIp)) {
++              socket.write(
++                'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
++              );
++              socket.destroy();
++              return;
++            }
++          } catch {
++            // Same rule as the blacklist gate: a failure to CHECK must never
++            // become a refusal.
++          }
++
+           // Round 67/190: log connection IP to action_audit_logs so the
+           // multi-account detector has data on real player traffic. Bots
+           // generate no audit log entries; this gap meant the detector was
+@@ -216,7 +259,7 @@
+           this.logConnectionAudit(auth.userId, tableId, clientIp);
+ 
+           this.wss.handleUpgrade(req, socket, head, (ws) => {
+-            this.onUpgraded(ws, req, auth.userId, tableId);
++            this.onUpgraded(ws, req, auth.userId, tableId, clientIp);
+           });
+         })
+         .catch(() => {
+@@ -293,6 +336,61 @@
+     return !!(bans && bans.length > 0);
+   }
+ 
++  // ─── IP Restriction (2026-08-19) ────────────────────────────────────────
++  /**
++   * Is `tableId` configured to allow only one account per internet connection?
++   *
++   * Cached for IP_RESTRICTION_TTL_MS so a burst of reconnects does not hammer
++   * the table row, and so an owner flipping the switch takes effect within a
++   * minute rather than needing a table restart.
++   *
++   * A read failure returns FALSE — the gate stays open. Refusing players
++   * because the database hiccuped is a worse outcome than briefly not
++   * enforcing a collusion control.
++   */
++  private async isIpRestricted(tableId: string): Promise<boolean> {
++    const hit = this.ipRestrictionCache.get(tableId);
++    if (hit && Date.now() - hit.readAt < IP_RESTRICTION_TTL_MS) return hit.restricted;
++
++    const { data, error } = await supabase
++      .from('tables')
++      .select('ip_restriction')
++      .eq('id', tableId)
++      .maybeSingle();
++
++    if (error) return false;
++    const restricted = data?.ip_restriction === true;
++    this.ipRestrictionCache.set(tableId, { restricted, readAt: Date.now() });
++    return restricted;
++  }
++
++  /**
++   * True when this arriving connection would put a SECOND account at
++   * `tableId` from `ip`.
++   */
++  private async isIpConflict(
++    tableId: string,
++    userId: string,
++    ip: string | null
++  ): Promise<boolean> {
++    if (!isUsableClientIp(ip)) return false;
++    if (!(await this.isIpRestricted(tableId))) return false;
++
++    const needle = ip.trim().toLowerCase();
++    for (const conn of this.connections.values()) {
++      if (conn.tableId !== tableId) continue;
++      if (conn.userId === userId) continue; // the same player reconnecting
++      if (!isUsableClientIp(conn.clientIp)) continue;
++      if (conn.clientIp.trim().toLowerCase() === needle) return true;
++    }
++    return false;
++  }
++
++  /** Drop a table's cached flag — used when the table closes. */
++  forgetTable(tableId: string): void {
++    this.ipRestrictionCache.delete(tableId);
++  }
++
+   // ─── Round 67/190: per-connection audit log ─────────────────────────────
+   /**
+    * Fire-and-forget: write a row to action_audit_logs so the multi-account
+@@ -321,7 +419,13 @@
+ 
+   // ─── Upgrade aftermath ─────────────────────────────────────────────────────
+ 
+-  private onUpgraded(ws: WebSocket, _req: IncomingMessage, userId: string, tableId: string): void {
++  private onUpgraded(
++    ws: WebSocket,
++    _req: IncomingMessage,
++    userId: string,
++    tableId: string,
++    clientIp: string | null = null
++  ): void {
+     const conn: ConnectionState = {
+       id: randomUUID(),
+       userId,
+@@ -330,6 +434,7 @@
+       lastPongAt: Date.now(),
+       inboundCount: 0,
+       inboundWindowStart: Date.now(),
++      clientIp,
+     };
+     this.connections.set(ws, conn);
+ 
+--- /dev/null
++++ b/server/src/transport/EngineWebSocketServer.iprestriction.test.ts
+@@ -0,0 +1,204 @@
++/**
++ * IP RESTRICTION, MADE REAL (2026-08-19).
++ *
++ * "IP Restriction" has been a switch on the create-table page since day one and
++ * enforced nothing — one of eight security toggles that wrote a `tables` column
++ * no code read. It is the only one of the eight that CAN be honoured, because
++ * the engine already learns each player's address from the x-forwarded-for
++ * chain at the WebSocket upgrade.
++ *
++ * It means what it means in a live room: two DIFFERENT accounts may not sit at
++ * the same table from the same internet connection.
++ *
++ * The dangerous failure here is a FALSE POSITIVE — refusing a legitimate
++ * player. So most of this file is about what must NOT be treated as a conflict:
++ *
++ *   - the same player reconnecting (a dropped socket lingers until the
++ *     heartbeat sweep, so the old connection is still in the map);
++ *   - an address we never learned. Caddy proxies to the engine, so a
++ *     misconfigured forward makes EVERY client look like 127.0.0.1 — if that
++ *     counted as a match, the second player to arrive at any table would be
++ *     refused, room-wide;
++ *   - players at a DIFFERENT table on the same address;
++ *   - anything at all when the table's switch is off, which is the state every
++ *     table ships in.
++ *
++ * These tests drive the real private methods on the real class rather than a
++ * copy of the logic, because a copy would happily keep passing after the
++ * shipped rule changed.
++ */
++import { describe, it, expect, beforeEach } from 'vitest';
++import { EngineWebSocketServer, isUsableClientIp } from './EngineWebSocketServer.js';
++
++const TABLE_A = '6e1f8768-3baa-479e-b912-b8736123e840';
++const TABLE_B = '11111111-2222-3333-4444-555555555555';
++const ALICE = 'aaaaaaaa-0000-0000-0000-000000000001';
++const BOB = 'bbbbbbbb-0000-0000-0000-000000000002';
++
++/** Minimal stand-in for TableStateHub — the gate never touches it. */
++const fakeHub = {
++  subscribe: () => {},
++  unsubscribe: () => {},
++} as never;
++
++interface Harness {
++  server: EngineWebSocketServer;
++  /** Pretend `userId` is already connected to `tableId` from `ip`. */
++  seat(tableId: string, userId: string, ip: string | null): void;
++  /** Set the cached ip_restriction flag without touching the database. */
++  setRestricted(tableId: string, restricted: boolean): void;
++  conflict(tableId: string, userId: string, ip: string | null): Promise<boolean>;
++}
++
++function harness(): Harness {
++  const server = new EngineWebSocketServer({ hub: fakeHub, tableExists: () => true });
++  // The gate reads two private members. Reaching into them keeps the test on
++  // the real implementation instead of a reimplementation of it.
++  const internals = server as unknown as {
++    connections: Map<object, { userId: string; tableId: string; clientIp: string | null }>;
++    ipRestrictionCache: Map<string, { restricted: boolean; readAt: number }>;
++    isIpConflict(tableId: string, userId: string, ip: string | null): Promise<boolean>;
++  };
++  return {
++    server,
++    seat(tableId, userId, ip) {
++      internals.connections.set({}, { userId, tableId, clientIp: ip });
++    },
++    setRestricted(tableId, restricted) {
++      internals.ipRestrictionCache.set(tableId, { restricted, readAt: Date.now() });
++    },
++    conflict(tableId, userId, ip) {
++      return internals.isIpConflict.call(server, tableId, userId, ip);
++    },
++  };
++}
++
++describe('isUsableClientIp', () => {
++  it.each(['127.0.0.1', '::1', '::ffff:127.0.0.1', 'unknown', '', '  ', null, undefined])(
++    'treats %p as an address we do not actually know',
++    (ip) => {
++      expect(isUsableClientIp(ip as string | null)).toBe(false);
++    }
++  );
++
++  it.each(['24.15.206.254', '2001:db8::1', '203.0.113.7'])('accepts the real address %s', (ip) => {
++    expect(isUsableClientIp(ip)).toBe(true);
++  });
++
++  it('is case- and whitespace-insensitive about the loopback forms', () => {
++    expect(isUsableClientIp(' ::FFFF:127.0.0.1 ')).toBe(false);
++  });
++});
++
++describe('IP restriction — when it refuses', () => {
++  let h: Harness;
++  beforeEach(() => {
++    h = harness();
++    h.setRestricted(TABLE_A, true);
++  });
++
++  it('refuses a second account arriving from an address already at the table', async () => {
++    h.seat(TABLE_A, ALICE, '24.15.206.254');
++    await expect(h.conflict(TABLE_A, BOB, '24.15.206.254')).resolves.toBe(true);
++  });
++
++  it('matches regardless of case or surrounding whitespace', async () => {
++    h.seat(TABLE_A, ALICE, '2001:DB8::1');
++    await expect(h.conflict(TABLE_A, BOB, ' 2001:db8::1 ')).resolves.toBe(true);
++  });
++
++  it('still refuses when several other players are present', async () => {
++    h.seat(TABLE_A, 'cccccccc-0000-0000-0000-000000000003', '198.51.100.4');
++    h.seat(TABLE_A, ALICE, '24.15.206.254');
++    h.seat(TABLE_A, 'dddddddd-0000-0000-0000-000000000004', '203.0.113.9');
++    await expect(h.conflict(TABLE_A, BOB, '24.15.206.254')).resolves.toBe(true);
++  });
++});
++
++describe('IP restriction — what must NEVER be refused', () => {
++  let h: Harness;
++  beforeEach(() => {
++    h = harness();
++    h.setRestricted(TABLE_A, true);
++    h.setRestricted(TABLE_B, true);
++  });
++
++  it('lets the SAME player reconnect from the same address', async () => {
++    // A dropped socket stays in the map until the heartbeat sweep, so the
++    // player is racing their own stale connection. Refusing here would mean a
++    // player who blinked out could never get back to the table.
++    h.seat(TABLE_A, ALICE, '24.15.206.254');
++    await expect(h.conflict(TABLE_A, ALICE, '24.15.206.254')).resolves.toBe(false);
++  });
++
++  it('lets the same player reconnect even with several stale sockets of their own', async () => {
++    h.seat(TABLE_A, ALICE, '24.15.206.254');
++    h.seat(TABLE_A, ALICE, '24.15.206.254');
++    h.seat(TABLE_A, ALICE, '24.15.206.254');
++    await expect(h.conflict(TABLE_A, ALICE, '24.15.206.254')).resolves.toBe(false);
++  });
++
++  it('never refuses on an address we could not learn, even against a real one', async () => {
++    // Caddy sits in front of the engine. If the forward breaks, every client
++    // looks like 127.0.0.1 — and the second arrival at EVERY table would be
++    // refused. Silently not enforcing beats locking the room.
++    h.seat(TABLE_A, ALICE, '24.15.206.254');
++    await expect(h.conflict(TABLE_A, BOB, '127.0.0.1')).resolves.toBe(false);
++    await expect(h.conflict(TABLE_A, BOB, '::ffff:127.0.0.1')).resolves.toBe(false);
++    await expect(h.conflict(TABLE_A, BOB, 'unknown')).resolves.toBe(false);
++    await expect(h.conflict(TABLE_A, BOB, null)).resolves.toBe(false);
++  });
++
++  it('does not match two seated players who BOTH have unknown addresses', async () => {
++    h.seat(TABLE_A, ALICE, '127.0.0.1');
++    await expect(h.conflict(TABLE_A, BOB, '127.0.0.1')).resolves.toBe(false);
++  });
++
++  it('ignores a seated player whose address is unknown', async () => {
++    h.seat(TABLE_A, ALICE, null);
++    await expect(h.conflict(TABLE_A, BOB, '24.15.206.254')).resolves.toBe(false);
++  });
++
++  it('does not look across tables', async () => {
++    // Two people in one house at two DIFFERENT tables is not collusion.
++    h.seat(TABLE_B, ALICE, '24.15.206.254');
++    await expect(h.conflict(TABLE_A, BOB, '24.15.206.254')).resolves.toBe(false);
++  });
++
++  it('allows a different address at the same table', async () => {
++    h.seat(TABLE_A, ALICE, '24.15.206.254');
++    await expect(h.conflict(TABLE_A, BOB, '198.51.100.4')).resolves.toBe(false);
++  });
++
++  it('allows the first arrival at an empty table', async () => {
++    await expect(h.conflict(TABLE_A, ALICE, '24.15.206.254')).resolves.toBe(false);
++  });
++});
++
++describe('IP restriction — the switch itself', () => {
++  it('does nothing at all when the table has the switch OFF', async () => {
++    // Every table ships with it off; enforcement is opt-in.
++    const h = harness();
++    h.setRestricted(TABLE_A, false);
++    h.seat(TABLE_A, ALICE, '24.15.206.254');
++    await expect(h.conflict(TABLE_A, BOB, '24.15.206.254')).resolves.toBe(false);
++  });
++
++  it('short-circuits on an unusable address without ever reading the table', async () => {
++    // No cache entry seeded: if the flag were read, this would hit the network.
++    // It must decide "no conflict" from the address alone.
++    const h = harness();
++    h.seat(TABLE_A, ALICE, '127.0.0.1');
++    await expect(h.conflict(TABLE_A, BOB, '127.0.0.1')).resolves.toBe(false);
++  });
++
++  it('forgetTable drops the cached flag so a re-read happens', () => {
++    const h = harness();
++    h.setRestricted(TABLE_A, true);
++    const cache = (h.server as unknown as { ipRestrictionCache: Map<string, unknown> })
++      .ipRestrictionCache;
++    expect(cache.has(TABLE_A)).toBe(true);
++    h.server.forgetTable(TABLE_A);
++    expect(cache.has(TABLE_A)).toBe(false);
++  });
++});

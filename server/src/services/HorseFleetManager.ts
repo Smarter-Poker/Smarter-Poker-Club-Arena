@@ -223,12 +223,38 @@ export class HorseFleetManager {
       try {
         // FIX 201: Check for table by name in ANY status (not just waiting/running).
         // If a closed table exists, reactivate it instead of creating a duplicate.
-        const { data: existing } = await supabase
+        //
+        // 2026-08-19: this used .maybeSingle() and threw the error away —
+        // `const { data: existing } = ...`. PostgREST answers .maybeSingle()
+        // with PGRST116 when MORE THAN ONE row matches, so the moment a second
+        // row with the same name existed, `existing` came back null and the
+        // code below created a THIRD. Every boot after that added another, and
+        // every one it added made the next boot certain to add one more.
+        //
+        // It ran for months. 120 copies of 'NLH 1.00/2.00', 120 of
+        // 'NLH 2.00/5.00', 83 PLO4, 83 PLO5, 81 PLO6 — 487 duplicate cash
+        // tables in the lobby. The three configs that never got a second row
+        // (PLO8, Short Deck, Pineapple) still had exactly one each, which is
+        // what a self-amplifying bug looks like from the outside.
+        //
+        // .limit(1) cannot error on multiplicity, and the error is now checked:
+        // on ANY read failure this SKIPS the config rather than inserting.
+        // Inserting when you could not find out whether the row exists is the
+        // whole bug, not the .maybeSingle() call.
+        const { data: matches, error: lookupError } = await supabase
           .from('tables')
           .select('id, status, union_id, game_variant, small_blind, big_blind')
           .eq('name', config.name)
           .is('tournament_id', null)
-          .maybeSingle();
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        if (lookupError) {
+          reportError(lookupError, 'HorseFleet.table_lookup_failed');
+          continue;
+        }
+
+        const existing = matches?.[0] ?? null;
 
         if (existing) {
           // Table exists — ensure it's active and at Union level

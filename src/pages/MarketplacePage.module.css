@@ -1246,3 +1246,66 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── 2026-08-19 audit pass: purchase history + admin inline editor ─── */
+
+.historyBlock {
+  margin-top: 20px;
+}
+
+.historyToggle {
+  background: rgba(24, 25, 26, 0.6);
+  border: 1px solid rgba(58, 59, 60, 0.5);
+  color: #b0b3b8;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 10px;
+  transition: border-color 0.15s ease;
+}
+
+.historyToggle:hover {
+  border-color: rgba(69, 153, 255, 0.4);
+  color: #e4e6eb;
+}
+
+.adminRowWrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.editForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  margin: -6px 0 10px;
+  border-radius: 0 0 12px 12px;
+  background: rgba(69, 153, 255, 0.04);
+  border: 1px solid rgba(69, 153, 255, 0.18);
+  border-top: none;
+}
+
+.btnEditSmall {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4599ff;
+  background: rgba(69, 153, 255, 0.1);
+  border: 1px solid rgba(69, 153, 255, 0.3);
+  cursor: pointer;
+}
+
+.btnEditSmall:hover {
+  background: rgba(69, 153, 255, 0.18);
+}
+
+.btnDeleteSmall:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

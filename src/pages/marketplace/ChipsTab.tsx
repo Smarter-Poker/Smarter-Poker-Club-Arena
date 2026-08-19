@@ -59,7 +59,7 @@ export default function ChipsTab({ wallet, onGoDiamonds, onPurchased }: ChipsTab
               className={`${styles.pkgCard} ${pkg.popular ? styles.pkgCardPopular : ''}`}
             >
               {pkg.popular && <span className={styles.pkgRibbon}>BEST VALUE</span>}
-              {pkg.bonus ? <span className={styles.pkgBonus}>+{pkg.bonus}% bonus</span> : null}
+              {pkg.bonus ? <span className={styles.pkgBonus}>+{pkg.bonus}% value</span> : null}
               <div className={styles.pkgAmount}>{fmt(pkg.chips)}</div>
               <div className={styles.pkgLabel}>chips</div>
               <button

@@ -40,6 +40,7 @@ export interface ShopPurchase {
 
 export interface InventoryRow {
   id: string;
+  item_id?: string | null;
   item_name: string | null;
   category: string | null;
   price_paid: number;
@@ -87,12 +88,14 @@ export interface ChipPackage {
   popular?: boolean;
 }
 
+// bonus = real extra value vs the base rate (small pack = 100 chips/diamond),
+// e.g. large = 10000/80 = 125 chips/diamond = +25%. Server table is authoritative.
 export const CHIP_PACKAGES: ChipPackage[] = [
   { id: 'small', chips: 1000, diamonds: 10 },
-  { id: 'medium', chips: 5000, diamonds: 45, bonus: 10 },
-  { id: 'large', chips: 10000, diamonds: 80, bonus: 20, popular: true },
-  { id: 'mega', chips: 50000, diamonds: 350, bonus: 30 },
-  { id: 'ultra', chips: 100000, diamonds: 600, bonus: 50 },
+  { id: 'medium', chips: 5000, diamonds: 45, bonus: 11 },
+  { id: 'large', chips: 10000, diamonds: 80, bonus: 25, popular: true },
+  { id: 'mega', chips: 50000, diamonds: 350, bonus: 43 },
+  { id: 'ultra', chips: 100000, diamonds: 600, bonus: 67 },
 ];
 
 /* ═══ Diamond packages — mirrors VALID_DIAMOND_PACKAGES in create-checkout-session ═══ */

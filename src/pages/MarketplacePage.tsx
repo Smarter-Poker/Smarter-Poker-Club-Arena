@@ -7,11 +7,18 @@
  *    Get Chips   — diamonds -> club chips via /api/club-arena/purchase-chips
  *    Diamonds    — real-money diamond packages via Stripe Checkout (/api/store)
  *    Membership  — VIP daily pass / monthly / annual (diamonds or Stripe)
- *    My Items    — delivered inventory (club_shop_inventory) + redemption
+ *    My Items    — delivered inventory (club_shop_inventory) + redemption + history
  *    Manage      — owner/admin CRUD via /api/club-arena/manage-shop (RLS-safe)
  *
  *  Every price is resolved server-side. The client sends only ids/plan keys.
  *  Tab components live in ./marketplace/.
+ *
+ *  2026-08-19 audit pass:
+ *   - Reacts to ?club= / ?tab= changes while mounted (club quick links navigate
+ *     here with a new club without remounting the route).
+ *   - Ownership = an UNREDEEMED club_shop_inventory row (consumables can be
+ *     re-bought after redemption); inventory loads eagerly for that reason.
+ *   - Non-admins deep-linking ?tab=manage get a notice instead of a blank page.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -52,8 +59,11 @@ export default function MarketplacePage() {
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const qClubParam = searchParams.get('club') || searchParams.get('clubId');
+  const qTabParam = searchParams.get('tab');
+
   const initialTab = ((): TabKey => {
-    const t = searchParams.get('tab') as TabKey | null;
+    const t = qTabParam as TabKey | null;
     return t && VALID_TABS.includes(t) ? t : 'store';
   })();
 
@@ -139,13 +149,13 @@ export default function MarketplacePage() {
     }
   }, [user, mountedRef]);
 
-  /* ═══ Delivered inventory ═══ */
+  /* ═══ Delivered inventory (loaded eagerly — ownership state depends on it) ═══ */
   const loadInventory = useCallback(async () => {
     if (!clubId || !user) return;
     try {
       const { data } = await supabase
         .from('club_shop_inventory')
-        .select('id, item_name, category, price_paid, status, acquired_at')
+        .select('id, item_id, item_name, category, price_paid, status, acquired_at')
         .eq('club_id', clubId)
         .eq('user_id', user.id)
         .order('acquired_at', { ascending: false });
@@ -155,19 +165,18 @@ export default function MarketplacePage() {
     }
   }, [clubId, user, mountedRef]);
 
-  /* ═══ Init: resolve club, load everything ═══ */
+  /* ═══ Init + react to ?club= changes (club quick links navigate in place) ═══ */
   useEffect(() => {
     if (!user) return;
     let isMounted = true;
     const init = async () => {
-      const qClub = searchParams.get('club') || searchParams.get('clubId');
       let targetClub: string | null = null;
-      if (qClub) {
+      if (qClubParam) {
         // Accept both UUIDs and legacy 6-digit club codes
         try {
-          targetClub = await resolveClubUUID(qClub);
+          targetClub = await resolveClubUUID(qClubParam);
         } catch (_e) {
-          targetClub = qClub;
+          targetClub = qClubParam;
         }
       }
       if (!targetClub) {
@@ -179,10 +188,22 @@ export default function MarketplacePage() {
           .maybeSingle();
         targetClub = mem?.club_id || null;
       }
-      if (targetClub && isMounted) {
-        setClubId(targetClub);
+      if (!isMounted) return;
+      if (targetClub) {
+        setClubId((prev) => {
+          if (prev && prev !== targetClub) {
+            // Club switched in place: clear stale club-scoped state
+            setItems([]);
+            setPurchases([]);
+            setInventory([]);
+            setBalance(0);
+            setRole('player');
+          }
+          return targetClub;
+        });
+        loadingRef.current = false;
         loadShop(targetClub);
-      } else if (isMounted) {
+      } else {
         toast.error('No club found. Join a club to use the club shop.');
         setLoading(false);
       }
@@ -192,7 +213,20 @@ export default function MarketplacePage() {
     return () => {
       isMounted = false;
     };
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, qClubParam]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ═══ React to ?tab= changes from external navigation ═══ */
+  useEffect(() => {
+    const t = qTabParam as TabKey | null;
+    if (t && VALID_TABS.includes(t)) {
+      setTab((prev) => (prev === t ? prev : t));
+    }
+  }, [qTabParam]);
+
+  /* ═══ Inventory loads as soon as we know the club ═══ */
+  useEffect(() => {
+    if (clubId) loadInventory();
+  }, [clubId, loadInventory]);
 
   /* ═══ Stripe Checkout return handling (?purchase=success|canceled) ═══ */
   useEffect(() => {
@@ -225,22 +259,27 @@ export default function MarketplacePage() {
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 500),
       masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500),
       masterBus.subscribeDebounced('CASHIER_BALANCE_CHANGED', refresh, 500),
-      masterBus.subscribeDebounced('DIAMOND_BALANCE_CHANGED', () => loadWallet(), 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadShop, loadWallet]);
 
   useVisibilityRefresh(async () => {
-    if (clubId) loadShop(clubId, true);
+    if (clubId) {
+      loadShop(clubId, true);
+      loadInventory();
+    }
     loadWallet();
   });
 
-  useEffect(() => {
-    if (tab === 'my_items') loadInventory();
-  }, [tab, loadInventory]);
-
   /* ═══ Derived ═══ */
-  const ownedItemIds = useMemo(() => new Set(purchases.map((p) => p.item_id)), [purchases]);
+  // Ownership = an unredeemed inventory copy. Redeemed consumables can be re-bought.
+  const ownedItemIds = useMemo(
+    () =>
+      new Set(
+        inventory.filter((r) => r.status === 'owned' && r.item_id).map((r) => r.item_id as string)
+      ),
+    [inventory]
+  );
   const isAdmin = ['owner', 'admin'].includes(role);
 
   const switchTab = (t: TabKey) => {
@@ -253,7 +292,7 @@ export default function MarketplacePage() {
     loadingRef.current = false;
     loadShop(clubId || undefined);
     loadWallet();
-    if (tab === 'my_items') loadInventory();
+    loadInventory();
   };
 
   /* ═══ Render ═══ */
@@ -266,7 +305,7 @@ export default function MarketplacePage() {
     { key: 'chips', label: 'Get Chips' },
     { key: 'diamonds', label: 'Diamonds' },
     { key: 'membership', label: 'Membership' },
-    { key: 'my_items', label: 'My Items', badge: purchases.length || undefined },
+    { key: 'my_items', label: 'My Items', badge: inventory.length || undefined },
     { key: 'manage', label: 'Manage', adminOnly: true },
   ];
 
@@ -278,7 +317,9 @@ export default function MarketplacePage() {
           <h1 className={styles.title}>Marketplace</h1>
           <div className={styles.walletBar}>
             <span className={styles.walletPill}>{fmt(balance)} chips</span>
-            <span className={styles.walletPillDiamond}>{fmt(wallet.diamonds)} diamonds</span>
+            <span className={styles.walletPillDiamond}>
+              {wallet.loaded ? `${fmt(wallet.diamonds)} diamonds` : 'diamonds...'}
+            </span>
             {wallet.isVip && <span className={styles.vipPill}>VIP</span>}
           </div>
         </div>
@@ -350,8 +391,13 @@ export default function MarketplacePage() {
         {tab === 'my_items' && (
           <MyItemsTab
             inventory={inventory}
+            purchases={purchases}
             onGoStore={() => switchTab('store')}
-            onRedeemed={loadInventory}
+            onRedeemed={() => {
+              loadInventory();
+              // Redeeming may re-enable Buy for that item in the Store tab
+              loadShop(clubId || undefined, true);
+            }}
           />
         )}
         {tab === 'manage' && isAdmin && clubId && (
@@ -362,6 +408,16 @@ export default function MarketplacePage() {
               loadShop(clubId, true);
             }}
           />
+        )}
+        {tab === 'manage' && (!isAdmin || !clubId) && (
+          <div className={styles.emptyState}>
+            <span className={styles.emptyText}>
+              {clubId ? 'The Manage tab is for club owners and admins.' : 'Join a club first.'}
+            </span>
+            <button className={styles.emptyButton} onClick={() => switchTab('store')}>
+              Back to Store
+            </button>
+          </div>
         )}
       </div>
     </div>

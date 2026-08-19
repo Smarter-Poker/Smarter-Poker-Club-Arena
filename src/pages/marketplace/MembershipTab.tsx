@@ -180,8 +180,11 @@ export default function MembershipTab({ clubId, wallet, onWalletChanged }: Membe
       </div>
 
       <div className={styles.infoNote}>
-        Card subscriptions renew automatically and can be canceled anytime from the Diamond Store.
-        Diamond-paid plans do not auto-renew.
+        Card subscriptions renew automatically and can be canceled anytime.{' '}
+        <a className={styles.inlineLink} href="/hub/diamond-store?tab=vip">
+          Manage subscription
+        </a>
+        . Diamond-paid plans do not auto-renew.
       </div>
     </>
   );

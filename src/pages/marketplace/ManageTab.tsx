@@ -1,9 +1,12 @@
 /**
  * MARKETPLACE — Manage tab (owner/admin only).
- * 2026-08-19 REBUILD FIX: all CRUD now goes through the server route
- * /api/club-arena/manage-shop. The old anon-key supabase writes were silently
- * blocked by the 2026-05-01 RLS lockdown (club_shop_items is service_role-only
- * for writes) — Create/Toggle/Delete looked wired but never worked.
+ * All CRUD goes through the server route /api/club-arena/manage-shop (the old
+ * anon-key supabase writes were silently blocked by the 2026-05-01 RLS lockdown).
+ *
+ * 2026-08-19 audit pass: added inline editing (the server always supported
+ * 'update' but the UI had no editor), and a delete guard — items with sales
+ * can only be hidden, because club_shop_purchases.item_id is ON DELETE CASCADE
+ * and a hard delete would erase the club's purchase history.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -20,6 +23,14 @@ interface ManageTabProps {
   onShopChanged: () => void;
 }
 
+interface EditDraft {
+  name: string;
+  price: string;
+  description: string;
+  category: string;
+  imageUrl: string;
+}
+
 export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
   const toast = useToast();
   const [items, setItems] = useState<MarketplaceItem[]>([]);
@@ -30,6 +41,8 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
   const [desc, setDesc] = useState('');
   const [category, setCategory] = useState('Time Banks');
   const [imageUrl, setImageUrl] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<EditDraft | null>(null);
 
   const loadItems = useCallback(async () => {
     try {
@@ -61,12 +74,26 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
     totalRevenue: items.reduce((sum, i) => sum + (i.purchase_count || 0) * i.price, 0),
   };
 
+  const validate = (n: string, p: string): number | null => {
+    const numPrice = Math.floor(Number(p));
+    if (!n.trim()) {
+      toast.error('Item name required');
+      return null;
+    }
+    if (!numPrice || !Number.isFinite(numPrice) || numPrice <= 0) {
+      toast.error('Price must be a positive number');
+      return null;
+    }
+    if (numPrice > 1_000_000_000) {
+      toast.error('Price exceeds maximum allowed value');
+      return null;
+    }
+    return numPrice;
+  };
+
   const handleCreate = async () => {
-    const numPrice = Math.floor(Number(price));
-    if (!name.trim()) return toast.error('Item name required');
-    if (!numPrice || !Number.isFinite(numPrice) || numPrice <= 0)
-      return toast.error('Price must be a positive number');
-    if (numPrice > 1_000_000_000) return toast.error('Price exceeds maximum allowed value');
+    const numPrice = validate(name, price);
+    if (numPrice == null) return;
     setProcessing(true);
     try {
       await callClubArenaApi('manage-shop', {
@@ -93,6 +120,45 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
     }
   };
 
+  const startEdit = (item: MarketplaceItem) => {
+    setEditingId(item.id);
+    setDraft({
+      name: item.name,
+      price: String(item.price),
+      description: item.description || '',
+      category: item.category && CATEGORIES.includes(item.category) ? item.category : 'Time Banks',
+      imageUrl: item.image_url || '',
+    });
+  };
+
+  const handleSaveEdit = async (item: MarketplaceItem) => {
+    if (!draft) return;
+    const numPrice = validate(draft.name, draft.price);
+    if (numPrice == null) return;
+    setProcessing(true);
+    try {
+      await callClubArenaApi('manage-shop', {
+        action: 'update',
+        clubId,
+        itemId: item.id,
+        name: draft.name.trim(),
+        price: numPrice,
+        description: draft.description.trim(),
+        category: draft.category,
+        imageUrl: draft.imageUrl.trim() || null,
+      });
+      toast.success('Item updated');
+      setEditingId(null);
+      setDraft(null);
+      loadItems();
+      onShopChanged();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Update failed');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleToggle = async (item: MarketplaceItem) => {
     try {
       await callClubArenaApi('manage-shop', { action: 'toggle', clubId, itemId: item.id });
@@ -105,10 +171,16 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
   };
 
   const handleDelete = async (item: MarketplaceItem) => {
+    if ((item.purchase_count || 0) > 0) {
+      toast.error(
+        'This item has sales. Deleting it would erase its purchase history — hide it instead.'
+      );
+      return;
+    }
     if (
       !(await confirmDialog({
         title: 'Delete item',
-        message: `Delete "${item.name}"?`,
+        message: `Delete "${item.name}"? This cannot be undone.`,
         confirmText: 'Delete',
         variant: 'danger',
       }))
@@ -213,35 +285,120 @@ export default function ManageTab({ clubId, onShopChanged }: ManageTabProps) {
       ) : (
         <div className={styles.adminList}>
           {items.map((item) => (
-            <div key={item.id} className={styles.adminRow}>
-              <div>
-                <div
-                  style={{
-                    fontWeight: 700,
-                    color: item.is_active ? '#e4e6eb' : '#6B7280',
-                    fontSize: '14px',
-                  }}
-                >
-                  {item.name}
+            <div key={item.id} className={styles.adminRowWrap}>
+              <div className={styles.adminRow}>
+                <div>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      color: item.is_active ? '#e4e6eb' : '#6B7280',
+                      fontSize: '14px',
+                    }}
+                  >
+                    {item.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#8b8d91', marginTop: 2 }}>
+                    {fmtChips(item.price)} chips {' - '}
+                    <span className={styles.categorySmall}>{item.category || 'Time Banks'}</span>
+                    {' - '}
+                    {item.purchase_count || 0} sold
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: '#8b8d91', marginTop: 2 }}>
-                  {fmtChips(item.price)} chips {' - '}
-                  <span className={styles.categorySmall}>{item.category || 'Time Banks'}</span>
-                  {' - '}
-                  {item.purchase_count || 0} sold
+                <div className={styles.adminActions}>
+                  <button
+                    onClick={() => (editingId === item.id ? setEditingId(null) : startEdit(item))}
+                    className={styles.btnEditSmall}
+                  >
+                    {editingId === item.id ? 'Close' : 'Edit'}
+                  </button>
+                  <button
+                    onClick={() => handleToggle(item)}
+                    className={item.is_active ? styles.btnActiveToggle : styles.btnInactiveToggle}
+                  >
+                    {item.is_active ? 'Active' : 'Hidden'}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(item)}
+                    className={styles.btnDeleteSmall}
+                    disabled={(item.purchase_count || 0) > 0}
+                    title={
+                      (item.purchase_count || 0) > 0
+                        ? 'Items with sales cannot be deleted - hide them instead'
+                        : 'Delete this item'
+                    }
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
-              <div className={styles.adminActions}>
-                <button
-                  onClick={() => handleToggle(item)}
-                  className={item.is_active ? styles.btnActiveToggle : styles.btnInactiveToggle}
-                >
-                  {item.is_active ? 'Active' : 'Hidden'}
-                </button>
-                <button onClick={() => handleDelete(item)} className={styles.btnDeleteSmall}>
-                  Delete
-                </button>
-              </div>
+
+              {/* Inline editor */}
+              {editingId === item.id && draft && (
+                <div className={styles.editForm}>
+                  <div className={styles.formRow}>
+                    <input
+                      value={draft.name}
+                      onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                      placeholder="Item name"
+                      className={styles.formInput}
+                      maxLength={100}
+                    />
+                    <input
+                      type="number"
+                      value={draft.price}
+                      onChange={(e) => setDraft({ ...draft, price: e.target.value })}
+                      placeholder="Price (chips)"
+                      min="1"
+                      className={styles.formInput}
+                    />
+                  </div>
+                  <input
+                    value={draft.description}
+                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                    placeholder="Description"
+                    className={styles.formInput}
+                    maxLength={500}
+                  />
+                  <div className={styles.formRow}>
+                    <select
+                      value={draft.category}
+                      onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+                      className={styles.formSelect}
+                    >
+                      {CATEGORIES.filter((c) => c !== 'All').map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={draft.imageUrl}
+                      onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
+                      placeholder="Image URL (optional)"
+                      className={styles.formInput}
+                    />
+                  </div>
+                  <div className={styles.formRow}>
+                    <button
+                      className={styles.btnPrimary}
+                      disabled={processing}
+                      onClick={() => handleSaveEdit(item)}
+                    >
+                      {processing ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button
+                      className={styles.btnGhost}
+                      disabled={processing}
+                      onClick={() => {
+                        setEditingId(null);
+                        setDraft(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

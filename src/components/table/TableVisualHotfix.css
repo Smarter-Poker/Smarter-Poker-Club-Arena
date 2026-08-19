@@ -247,19 +247,29 @@
 }
 
 /* ── 12b. Seat hole-card backs: visible card backs, not ghost boxes ─────── */
-/* Undefined back-style "black" (user setting) also fell to the same navy.
-   Give the BASE card back real contrast so every undefined style reads as a
-   proper card back on dark felt. Defined styles (classic_red, etc.) are more
-   specific and still win. */
+/* Dan 2026-08-18 CORRECTION. The comment that used to sit here said "Defined
+   styles (classic_red, etc.) are more specific and still win." They are not,
+   and they did not: this selector is 0-4-0 AND !important, while
+   .card-back--classic_red is 0-1-0. This rule beat every card-back design, so
+   the picker changed nothing and all eight designs rendered identically.
+
+   CardImage.css now expresses each design as two custom properties
+   (--cb-gradient / --cb-border) set on the card element itself, so the
+   cascade no longer picks the winner - this explicit fallback chain does:
+
+     1. --cb-gradient         the design the player actually chose
+     2. --card-back-gradient  the Bible V8 §11.2 Cards-tab theme token
+     3. the literal below     contrast fallback on dark felt
+
+   Keeping !important is still correct: it is what stops lower-specificity
+   felt styling from washing the backs out. It just no longer overrides the
+   player's own choice. */
 .table-page .seat .card-image--back .card-back {
-  /* Dan 2026-08-17 (STEP 8): consume the Bible V8 §11.2 card-theme token so
-     the Cards tab actually changes opponents' card backs. The blue gradient
-     stays as the fallback for users with no saved theme. */
   background: var(
-    --card-back-gradient,
-    linear-gradient(135deg, #35598f 0%, #1c3560 100%)
+    --cb-gradient,
+    var(--card-back-gradient, linear-gradient(135deg, #35598f 0%, #1c3560 100%))
   ) !important;
-  border: 2px solid var(--card-accent, #7aa7dd) !important;
+  border: 2px solid var(--cb-border, var(--card-accent, #7aa7dd)) !important;
   box-shadow:
     inset 0 0 0 2.5px rgba(255, 255, 255, 0.18),
     0 1px 4px rgba(0, 0, 0, 0.5) !important;

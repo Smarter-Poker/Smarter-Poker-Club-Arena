@@ -18,6 +18,7 @@
  */
 
 import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
+import { serverNow } from '../../utils/serverClock';
 import './SeatSlot.css';
 import { CardImage, CardBack } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
@@ -206,7 +207,7 @@ function HoleCard({
   index,
   isHero = false,
   isWinner = false,
-  deckStyle = '4color',
+  deckStyle,
   cardBack = 'classic_blue',
 }: {
   card?: Card;
@@ -282,7 +283,7 @@ export const SeatSlot = memo(
       showHUD = false,
       playerStyle,
       secondsLeft,
-      deckStyle = '4color',
+      deckStyle,
       cardBack = 'classic_blue',
       showStackInBB = false,
       onSit,
@@ -519,7 +520,15 @@ export const SeatSlot = memo(
       const durationMs = turnStartTimeMs
         ? Math.max(1000, turnDeadlineMs - turnStartTimeMs)
         : 15_000;
-      const elapsedMs = turnStartTimeMs ? Math.max(0, Date.now() - turnStartTimeMs) : 0;
+      // Dan 2026-08-18: measure elapsed on the ENGINE's clock, not this
+      // device's. turnStartTimeMs is a SERVER timestamp, so subtracting a raw
+      // Date.now() from it mixed two clocks: a phone running three seconds
+      // fast reported three seconds already gone the instant the turn began,
+      // and the 15-second ring visibly emptied in twelve (slow clocks made it
+      // overrun). serverNow() applies the measured offset - see
+      // utils/serverClock.ts. durationMs above never had this problem: it is
+      // deadline minus start, server-minus-server, so the offset cancels.
+      const elapsedMs = turnStartTimeMs ? Math.max(0, serverNow() - turnStartTimeMs) : 0;
       // Dan 2026-08-15: the yellow countdown is a full 15 seconds. On a normal
       // 15s turn that is the entire clock (never goes red); when a time bank
       // extends the turn, yellow still owns the first 15s and the borrowed

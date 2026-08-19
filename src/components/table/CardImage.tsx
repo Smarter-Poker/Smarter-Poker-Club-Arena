@@ -75,7 +75,7 @@ const RANK_MAP: Record<string, string> = {
 /**
  * Get the path to the card image
  */
-export function getCardImagePath(card: Card, deckStyle: DeckStyle = '4color'): string {
+export function getCardImagePath(card: Card, deckStyle: DeckStyle = '2color'): string {
   const suitName = SUIT_MAP[card.suit];
   const rankName = RANK_MAP[card.rank];
 
@@ -225,12 +225,20 @@ export interface CardBackProps {
 
 /**
  * The card back designs that actually exist as `.card-back--<id>` rules in
- * CardImage.css. Anything not in this list renders an unstyled, invisible div.
+ * CardImage.css.
  *
  * ── Dan 2026-08-18: "make sure the card back designs are working" ──
  *
- * They were not, by default, for everyone. The ids being passed around did not
- * all match the CSS:
+ * CORRECTION to the first pass at this. An unknown id did NOT render a blank
+ * rectangle - it rendered the base navy back, and so did every KNOWN id,
+ * because `.card-image--back .card-back` (0-2-0) outranks
+ * `.card-back--classic_red` (0-1-0), and TableVisualHotfix piled !important on
+ * top at 0-4-0. All eight designs looked identical and the picker did nothing.
+ * Fixed in CSS by having each design set custom properties that the base rule
+ * reads, so there is no cascade contest left to lose.
+ *
+ * Normalising ids is still worth doing, because the ids in circulation did not
+ * match the stylesheet either:
  *   - useTableSettings defaulted cardBack to 'black'   -> no such class
  *   - SeatSlot's internal default was also 'black'      -> no such class
  *   - CommunityCards and CardReveal hardcoded 'classic' -> no such class

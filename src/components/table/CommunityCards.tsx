@@ -67,14 +67,7 @@ interface CardFaceProps {
   deckStyle?: '4color' | '2color';
 }
 
-function CardFace({
-  card,
-  index,
-  isHighlighted,
-  isNewlyDealt,
-  stage,
-  deckStyle = '4color',
-}: CardFaceProps) {
+function CardFace({ card, index, isHighlighted, isNewlyDealt, stage, deckStyle }: CardFaceProps) {
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
   const isRiverCard = isNewlyDealt && (stage === 'river' || stage === 'showdown') && index === 4;
@@ -122,7 +115,7 @@ function CommunityCardsComponent({
   highlightedIndices = [],
   isDealing = false,
   winningHandName,
-  deckStyle = '4color',
+  deckStyle,
 }: CommunityCardsProps) {
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
   const prevStageRef = useRef(stage);

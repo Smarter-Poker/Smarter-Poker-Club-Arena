@@ -5,19 +5,21 @@
  */
 
 .card-image {
-    position: relative;
-    display: inline-block;
-    border-radius: 4px;
-    overflow: hidden;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)), box-shadow 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  position: relative;
+  display: inline-block;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition:
+    transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)),
+    box-shadow 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .card-image__img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -25,33 +27,33 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .card-image--xs {
-    width: 24px;
-    height: 36px;
-    border-radius: 2px;
+  width: 24px;
+  height: 36px;
+  border-radius: 2px;
 }
 
 .card-image--sm {
-    width: 36px;
-    height: 54px;
-    border-radius: 3px;
+  width: 36px;
+  height: 54px;
+  border-radius: 3px;
 }
 
 .card-image--md {
-    width: 48px;
-    height: 72px;
-    border-radius: 4px;
+  width: 48px;
+  height: 72px;
+  border-radius: 4px;
 }
 
 .card-image--lg {
-    width: 64px;
-    height: 96px;
-    border-radius: 5px;
+  width: 64px;
+  height: 96px;
+  border-radius: 5px;
 }
 
 .card-image--xl {
-    width: 80px;
-    height: 120px;
-    border-radius: 6px;
+  width: 80px;
+  height: 120px;
+  border-radius: 6px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -59,69 +61,95 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .card-image--highlighted {
-    transform: translateY(-4px) scale(1.05);
-    box-shadow: 0 0 24px rgba(255, 215, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    z-index: 10;
+  transform: translateY(-4px) scale(1.05);
+  box-shadow:
+    0 0 24px rgba(255, 215, 0, 0.9),
+    0 0 12px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  z-index: 10;
 }
 
 .card-image--folded {
-    opacity: 0.5;
-    filter: grayscale(0.5);
+  opacity: 0.5;
+  filter: grayscale(0.5);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    CARD BACK
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* ── Dan 2026-08-18: card back designs, take two ─────────────────────────────
+ *
+ * The previous structure could not work, and the earlier "the id has no CSS
+ * class so it renders blank" diagnosis was wrong. Every id painted the SAME
+ * navy back, because of specificity:
+ *
+ *     .card-image--back .card-back   -> 0-2-0, sets background + border
+ *     .card-back--classic_red        -> 0-1-0, sets background + border
+ *
+ * Both match the same element, the base rule is more specific, so the base
+ * rule always won and the design classes were decoration. TableVisualHotfix
+ * then made it absolute with
+ *     .table-page .seat .card-image--back .card-back { ... !important }
+ * (0-4-0 + !important) whose own comment claims "Defined styles (classic_red,
+ * etc.) are more specific and still win" - they are not, and they did not.
+ *
+ * Rather than escalate the specificity war, the base rule now READS two custom
+ * properties and each design class SETS them. Custom properties are set on the
+ * same element, so there is no competition to lose: whichever design class is
+ * present supplies the paint, the base rule supplies layout and the fallback.
+ * Adding a ninth design is now one rule of two lines, and it cannot be
+ * silently overridden by an ancestor-scoped rule again.
+ */
 .card-image--back .card-back {
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
-    border: 2px solid #3a6ea5;
-    border-radius: inherit;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--cb-gradient, linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%));
+  border: 2px solid var(--cb-border, #3a6ea5);
+  border-radius: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .card-back--classic_red {
-    background: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
-    border-color: #b22222;
+  --cb-gradient: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
+  --cb-border: #b22222;
 }
 
 .card-back--classic_blue {
-    background: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
-    border-color: #3a6ea5;
+  --cb-gradient: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
+  --cb-border: #3a6ea5;
 }
 
 .card-back--diamond {
-    background: linear-gradient(135deg, #5e17eb 0%, #2a0a66 100%);
-    border-color: #9b4dca;
+  --cb-gradient: linear-gradient(135deg, #5e17eb 0%, #2a0a66 100%);
+  --cb-border: #9b4dca;
 }
 
 .card-back--gold {
-    background: linear-gradient(135deg, #ffd700 0%, #b8860b 100%);
-    border-color: #daa520;
+  --cb-gradient: linear-gradient(135deg, #ffd700 0%, #b8860b 100%);
+  --cb-border: #daa520;
 }
 
 .card-back--dragon {
-    background: linear-gradient(135deg, #2d1b69 0%, #0f0a26 100%);
-    border-color: #7c3aed;
+  --cb-gradient: linear-gradient(135deg, #2d1b69 0%, #0f0a26 100%);
+  --cb-border: #7c3aed;
 }
 
 .card-back--neon {
-    background: linear-gradient(135deg, #00ff9f 0%, #00b8ff 50%, #ff00ff 100%);
-    border-color: #00ffff;
+  --cb-gradient: linear-gradient(135deg, #00ff9f 0%, #00b8ff 50%, #ff00ff 100%);
+  --cb-border: #00ffff;
 }
 
 .card-back--galaxy {
-    background: linear-gradient(135deg, #0c0c1e 0%, #1a1a3e 50%, #2d1b69 100%);
-    border-color: #5b21b6;
+  --cb-gradient: linear-gradient(135deg, #0c0c1e 0%, #1a1a3e 50%, #2d1b69 100%);
+  --cb-border: #5b21b6;
 }
 
 .card-back--royal {
-    background: linear-gradient(135deg, #4a0080 0%, #1a0030 100%);
-    border-color: #9333ea;
+  --cb-gradient: linear-gradient(135deg, #4a0080 0%, #1a0030 100%);
+  --cb-border: #9333ea;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -129,35 +157,35 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 @keyframes card-deal {
-    from {
-        opacity: 0;
-        transform: translateY(-20px) scale(0.8) rotateY(90deg);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.8) rotateY(90deg);
+  }
 
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1) rotateY(0);
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotateY(0);
+  }
 }
 
 .card-image--dealing {
-    animation: card-deal 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+  animation: card-deal 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
 }
 
 @keyframes card-flip {
-    0% {
-        transform: rotateY(0);
-    }
+  0% {
+    transform: rotateY(0);
+  }
 
-    50% {
-        transform: rotateY(90deg);
-    }
+  50% {
+    transform: rotateY(90deg);
+  }
 
-    100% {
-        transform: rotateY(0);
-    }
+  100% {
+    transform: rotateY(0);
+  }
 }
 
 .card-image--flipping {
-    animation: card-flip 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  animation: card-flip 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }

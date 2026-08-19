@@ -95,6 +95,48 @@ const ceilCents = (n: number): number => Math.ceil(n * 100 - 1e-9) / 100;
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
+// ── Dan 2026-08-18: "it should never be a CALL to 3.85 - use whole dollars" ──
+//
+// Horses size bets off pot fractions and then snapped to CENTS, so a 1/2 game
+// produced bets like 3.85 and the next player faced "CALL 3.85". Blinds are
+// whole dollars at every real stake on the platform (1/2 through 750/1500), so
+// that fractional part was noise from the sizing maths, not a chip value anyone
+// chose.
+//
+// chipStep is the granularity a bet should land on: whole dollars whenever the
+// big blind is itself a whole number - which is every live table - and cents
+// otherwise, so a hypothetical 0.05/0.10 game is not rounded into nonsense.
+// Calls and all-ins are deliberately NOT snapped: a call must match exactly
+// what is owed, and a short stack's all-in is whatever it is.
+const chipStep = (bigBlind: number | undefined): number =>
+  typeof bigBlind === 'number' && bigBlind >= 1 && Number.isInteger(bigBlind) ? 1 : 0.01;
+
+/** Largest multiple of `step` that is <= n. */
+const snapDown = (n: number, step: number): number =>
+  step === 1 ? Math.floor(n + 1e-9) : Math.floor(n * 100 + 1e-9) / 100;
+
+/** Smallest multiple of `step` that is >= n. */
+const snapUp = (n: number, step: number): number =>
+  step === 1 ? Math.ceil(n - 1e-9) : Math.ceil(n * 100 - 1e-9) / 100;
+
+/**
+ * Snap a bet/raise size to the chip step while staying legal.
+ *
+ * Legality beats tidiness. Round DOWN to the step; if that falls under the
+ * legal minimum round UP instead; and if the result would exceed the cap, fall
+ * back to the exact minimum rather than emit an illegal amount. A whole-dollar
+ * preference must never get a horse's action rejected.
+ */
+const snapBetSize = (amount: number, min: number, max: number, step: number): number => {
+  if (!isFinite(amount)) return min;
+  let out = snapDown(amount, step);
+  if (out < min) out = snapUp(min, step);
+  if (out > max) {
+    const capped = snapDown(max, step);
+    out = capped >= min ? capped : min;
+  }
+  return out;
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // STYLE PARAMETERS — All styles are winning; they differ in HOW they win
@@ -229,7 +271,6 @@ export function resolveHorseStyle(
   return { style, mods };
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // POSITION
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -301,7 +342,11 @@ function readInitiative(
   let last: ActionRecord | null = null;
   for (const a of history) {
     if ((STAGE_ORDER[a.stage] ?? 0) >= cur) continue; // earlier streets only
-    if (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise === true)) {
+    if (
+      a.action === 'bet' ||
+      a.action === 'raise' ||
+      (a.action === 'all_in' && a.isFullRaise === true)
+    ) {
       last = a;
     }
   }
@@ -1062,11 +1107,7 @@ export class HorseLogic {
     // V7: ICM survival pressure trims bluff volume in tournaments.
     const posMod = useIQ ? (ip ? 1.15 : 0.85) : 1.0;
     const bluffScale =
-      exploit.bluffMod *
-      blockerMod *
-      posMod *
-      Math.max(0.5, 1 - 2 * risk) *
-      (quartered ? 0.6 : 1);
+      exploit.bluffMod * blockerMod * posMod * Math.max(0.5, 1 - 2 * risk) * (quartered ? 0.6 : 1);
 
     // V8 Omaha draw quality — computed LAZILY (enumeration cost) and only
     // inside the semi-bluff bands. Nut draws fight; dominated flush draws
@@ -1158,7 +1199,15 @@ export class HorseLogic {
             ? 0.25
             : 0.65;
         if (vulnerable || fastRandom() < thinFreq) {
-          return this.betSize(pot, sizeBase + fastRandom() * 0.12, player, gs, vi, params, useSizing);
+          return this.betSize(
+            pot,
+            sizeBase + fastRandom() * 0.12,
+            player,
+            gs,
+            vi,
+            params,
+            useSizing
+          );
         }
         return { action: 'check', thinkTime: 0 };
       }
@@ -1177,7 +1226,15 @@ export class HorseLogic {
           // (turn 0.75->0.60, river 0.55->0.42) and total-air no-blocker
           // barrels abandoned — the original volume measurably lost.
           if (fastRandom() < (isRiver ? 0.35 : 0.52) * Math.min(1.25, bluffScale)) {
-            return this.betSize(pot, sizeBase + 0.15 + fastRandom() * 0.1, player, gs, vi, params, useSizing);
+            return this.betSize(
+              pot,
+              sizeBase + 0.15 + fastRandom() * 0.1,
+              player,
+              gs,
+              vi,
+              params,
+              useSizing
+            );
           }
         } else if (!barrelPlan && equity < 0.52 && fastRandom() < 0.8) {
           return { action: 'check', thinkTime: 0 }; // one-and-done — give up
@@ -1229,7 +1286,15 @@ export class HorseLogic {
             omahaDrawMod()
       ) {
         planBarrel(equity);
-        return this.betSize(pot, sizeBase + 0.2 + fastRandom() * 0.15, player, gs, vi, params, useSizing);
+        return this.betSize(
+          pot,
+          sizeBase + 0.2 + fastRandom() * 0.15,
+          player,
+          gs,
+          vi,
+          params,
+          useSizing
+        );
       }
       // Pure bluff — mostly heads-up, rarer on the river, blocker-preferred.
       // V4: a fresh scare card WE block is the best bluff trigger in poker.
@@ -1240,7 +1305,15 @@ export class HorseLogic {
         fastRandom() < params.bluffFreq * bluffScale * scareBluffBoost * (isRiver ? 0.55 : 0.8)
       ) {
         planBarrel(equity);
-        return this.betSize(pot, sizeBase + 0.15 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
+        return this.betSize(
+          pot,
+          sizeBase + 0.15 + fastRandom() * 0.2,
+          player,
+          gs,
+          vi,
+          params,
+          useSizing
+        );
       }
       return { action: 'check', thinkTime: 0 };
     }
@@ -1359,11 +1432,7 @@ export class HorseLogic {
     // logic is already well-calibrated — so it was dropped, not shipped.)
     // V8: OOP calls tighten further multiway — equity realization out of
     // position degrades with every extra live opponent.
-    const posEdge = useIQ
-      ? ip
-        ? -0.012
-        : 0.008 * (useNlhX ? 1 + 0.3 * (oppCount - 1) : 1)
-      : 0;
+    const posEdge = useIQ ? (ip ? -0.012 : 0.008 * (useNlhX ? 1 + 0.3 * (oppCount - 1) : 1)) : 0;
     const sizingPenalty = (Math.min(0.06, betRatio * 0.04) + mw * 0.5) * respect;
     if (equity + impliedBonus >= potOdds + 0.03 * respect + sizingPenalty + posEdge) {
       return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -1498,8 +1567,9 @@ export class HorseLogic {
           ? { action: 'all_in', thinkTime: 0 }
           : { action: 'check', thinkTime: 0 };
       }
-      amt = Math.min(floorCents(amt), maxBet);
-      if (amt < minBet) amt = minBet;
+      // Whole dollars in cash games (see chipStep). Clamped inside snapBetSize
+      // so rounding can never drop below minBet or above the pot-limit cap.
+      amt = snapBetSize(amt, minBet, Math.min(maxBet, stack), chipStep(gs.bigBlind));
       if (amt >= stack * 0.92) return { action: 'all_in', thinkTime: 0 };
       return this.verifyAmount(
         { action: 'bet', amount: toCents(amt), thinkTime: 0 },
@@ -1534,8 +1604,9 @@ export class HorseLogic {
           return { action: 'all_in', thinkTime: 0 };
         return fallback();
       }
-      amt = Math.min(floorCents(amt), cap);
-      if (amt < minRaiseTo) amt = minRaiseTo;
+      // Whole dollars in cash games (see chipStep), clamped between the legal
+      // min raise-to and the pot-limit/stack cap so rounding stays legal.
+      amt = snapBetSize(amt, minRaiseTo, cap, chipStep(gs.bigBlind));
       if (amt >= maxRaiseTo * 0.95 && maxRaiseTo <= potLimitTo) {
         return { action: 'all_in', thinkTime: 0 };
       }
@@ -1575,7 +1646,22 @@ export class HorseLogic {
       gs.lastRaise ?? gs.minRaise,
       vi.isPotLimit
     );
-    const candidates = [d.amount!, toCents(d.amount! + 0.01), toCents(d.amount! - 0.01)];
+    // Try the exact amount, then nudge by ONE CHIP first (a whole dollar in
+    // cash games) so the boundary retry cannot reintroduce the cent amounts
+    // Dan asked us to get rid of. The one-cent nudges stay as the last resort
+    // before the fallback: an ugly-but-legal action still beats a rejected one,
+    // and this path only runs when the exact amount failed validation.
+    const step = chipStep(gs.bigBlind);
+    const candidates =
+      step === 1
+        ? [
+            d.amount!,
+            d.amount! + 1,
+            d.amount! - 1,
+            toCents(d.amount! + 0.01),
+            toCents(d.amount! - 0.01),
+          ]
+        : [d.amount!, toCents(d.amount! + 0.01), toCents(d.amount! - 0.01)];
     for (const amt of candidates) {
       if (amt <= 0) continue;
       if (validateAction(d.action, amt, player.stack, bs).valid) {

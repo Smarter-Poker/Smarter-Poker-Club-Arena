@@ -280,7 +280,7 @@
   /* Enlarge the character beyond the 56px slot and anchor it to the
      nameplate below, PokerBros-style. overflow:visible on the parent lets
      the head rise above the slot without shifting layout. */
-  transform: scale(1.45);
+  transform: scale(var(--sp-bust-scale, 1.45));
   transform-origin: 50% 88%;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
 }
@@ -288,7 +288,7 @@
 /* Hover zoom must compose with the base bust scale (was scale(1.08) alone,
    which would SHRINK a bust from 1.45 back to 1.08) */
 .seat:not(.seat--empty):not(.seat--folded) .seat__avatar--bust:hover .seat__avatar-img {
-  transform: scale(1.55);
+  transform: scale(calc(var(--sp-bust-scale, 1.45) + 0.1));
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6)) brightness(1.1);
 }
 
@@ -2405,4 +2405,25 @@
   .seat__bbj-credit {
     animation: none;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TOP-RAIL SEATS — Dan 2026-08-19, bug list item 10:
+   "the top player's box must sit on top of the rail, not in the middle of
+   the table."
+
+   The top-centre seats had been moved DOWN off the measured rail band
+   (y 8.5% -> 11%) so that tall bust art would stop poking into the BBJ
+   banner above the table. That fixed the art by putting the whole player
+   box in the middle of the felt, which is the bug Dan is reporting.
+
+   The seats are back on the rail. The overhang is capped where it actually
+   comes from instead: bust art is scaled 1.45x about a point near its feet,
+   so the head rises ~33px above the avatar slot. For the top row only - the
+   one row with nothing above it but the banner - that scale is reduced so
+   the art stays inside the table canvas. Side and bottom seats are
+   untouched and keep the full 1.45x.
+   ───────────────────────────────────────────────────────────────────────── */
+.seat-wrapper--top {
+  --sp-bust-scale: 1.15;
 }

@@ -174,6 +174,29 @@ describe('HorseLogic V2 — legality fuzz (all variants, all streets)', () => {
           expect(Math.abs(decision.amount * 100 - Math.round(decision.amount * 100))).toBeLessThan(
             1e-6
           );
+
+          // Dan 2026-08-18: "it should never be a CALL to 3.85 - use whole
+          // dollars in cash games." Horses sized off pot fractions and snapped
+          // to cents, so a 1/2 game produced bets like 3.85 and the next player
+          // was asked to CALL 3.85. VOLUNTARY sizing (bet/raise) must land on a
+          // whole dollar whenever the big blind is itself a whole number.
+          //
+          // call and all_in are excluded deliberately: a call must match
+          // exactly what is owed, and an all-in is whatever the short stack
+          // has. This loop already fuzzes bigBlind over [0.02, 2, 5, 100], so
+          // the 0.02 case simultaneously pins that sub-dollar stakes are NOT
+          // rounded into nonsense.
+          if (
+            (decision.action === 'bet' || decision.action === 'raise') &&
+            Number.isInteger(bigBlind) &&
+            bigBlind >= 1
+          ) {
+            expect(
+              Math.abs(decision.amount - Math.round(decision.amount)),
+              `${variant}/${stage}: ${decision.action} ${decision.amount} is not a whole dollar ` +
+                `(bb=${bigBlind}, currentBet=${gs.currentBet}, pot=${gs.pot})`
+            ).toBeLessThan(1e-6);
+          }
         }
         expect(decision.thinkTime).toBeGreaterThanOrEqual(0);
         expect(decision.thinkTime).toBeLessThanOrEqual(10000);
@@ -588,8 +611,22 @@ describe('HorseMind V3 — opponent intelligence', () => {
       HorseMind.observe(
         [
           { seat: 1, userId: 'r', action: 'raise', amount: 6, timestamp: ts++, stage: 'preflop' },
-          { seat: 2, userId: 'foldy', action: 'fold', amount: 0, timestamp: ts++, stage: 'preflop' },
-          { seat: 3, userId: 'sticky', action: 'call', amount: 6, timestamp: ts++, stage: 'preflop' },
+          {
+            seat: 2,
+            userId: 'foldy',
+            action: 'fold',
+            amount: 0,
+            timestamp: ts++,
+            stage: 'preflop',
+          },
+          {
+            seat: 3,
+            userId: 'sticky',
+            action: 'call',
+            amount: 6,
+            timestamp: ts++,
+            stage: 'preflop',
+          },
           { seat: 1, userId: 'r', action: 'bet', amount: 8, timestamp: ts++, stage: 'flop' },
           { seat: 3, userId: 'sticky', action: 'call', amount: 8, timestamp: ts++, stage: 'flop' },
         ],
@@ -638,9 +675,30 @@ describe('HorseMind V3 — opponent intelligence', () => {
       mkPlayer(4),
     ];
     const hist: ActionRecord[] = [
-      { seat: 2, userId: 'horse-2', action: 'raise', amount: 6, timestamp: 500000, stage: 'preflop' },
-      { seat: 3, userId: 'horse-3', action: 'call', amount: 6, timestamp: 500001, stage: 'preflop' },
-      { seat: 1, userId: 'horse-1', action: 'call', amount: 6, timestamp: 500002, stage: 'preflop' },
+      {
+        seat: 2,
+        userId: 'horse-2',
+        action: 'raise',
+        amount: 6,
+        timestamp: 500000,
+        stage: 'preflop',
+      },
+      {
+        seat: 3,
+        userId: 'horse-3',
+        action: 'call',
+        amount: 6,
+        timestamp: 500001,
+        stage: 'preflop',
+      },
+      {
+        seat: 1,
+        userId: 'horse-1',
+        action: 'call',
+        amount: 6,
+        timestamp: 500002,
+        stage: 'preflop',
+      },
       { seat: 2, userId: 'horse-2', action: 'bet', amount: 15, timestamp: 500003, stage: 'flop' },
     ];
     const gs: any = {
@@ -914,7 +972,14 @@ describe('HorseMind V5 — dynamic hand reading', () => {
       dealerSeat: 2,
       actionHistory: [
         { seat: 5, userId: 'villain', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
-        { seat: 2, userId: 'hero-probe', action: 'call', amount: 6, timestamp: 2, stage: 'preflop' },
+        {
+          seat: 2,
+          userId: 'hero-probe',
+          action: 'call',
+          amount: 6,
+          timestamp: 2,
+          stage: 'preflop',
+        },
         { seat: 5, userId: 'villain', action: 'check', amount: 0, timestamp: 3, stage: 'flop' },
         { seat: 2, userId: 'hero-probe', action: 'check', amount: 0, timestamp: 4, stage: 'flop' },
       ],
@@ -995,15 +1060,57 @@ describe('HorseMind V5 — dynamic hand reading', () => {
       const villain = mkPlayer(2, { cards: deck.slice(2, 4) });
       const currentBet = Math.random() < 0.5 ? 0 : Math.random() * 30;
       const hist: any[] = [
-        { seat: 2, userId: 'horse-2', action: 'raise', amount: 6, timestamp: 9000 + trial * 10, stage: 'preflop' },
-        { seat: 1, userId: 'horse-1', action: 'call', amount: 6, timestamp: 9001 + trial * 10, stage: 'preflop' },
+        {
+          seat: 2,
+          userId: 'horse-2',
+          action: 'raise',
+          amount: 6,
+          timestamp: 9000 + trial * 10,
+          stage: 'preflop',
+        },
+        {
+          seat: 1,
+          userId: 'horse-1',
+          action: 'call',
+          amount: 6,
+          timestamp: 9001 + trial * 10,
+          stage: 'preflop',
+        },
       ];
       if (trial % 3 === 0) {
-        hist.push({ seat: 2, userId: 'horse-2', action: 'bet', amount: 8, timestamp: 9002 + trial * 10, stage: 'flop' });
-        hist.push({ seat: 1, userId: 'horse-1', action: 'call', amount: 8, timestamp: 9003 + trial * 10, stage: 'flop' });
+        hist.push({
+          seat: 2,
+          userId: 'horse-2',
+          action: 'bet',
+          amount: 8,
+          timestamp: 9002 + trial * 10,
+          stage: 'flop',
+        });
+        hist.push({
+          seat: 1,
+          userId: 'horse-1',
+          action: 'call',
+          amount: 8,
+          timestamp: 9003 + trial * 10,
+          stage: 'flop',
+        });
       } else if (trial % 3 === 1) {
-        hist.push({ seat: 2, userId: 'horse-2', action: 'check', amount: 0, timestamp: 9002 + trial * 10, stage: 'flop' });
-        hist.push({ seat: 1, userId: 'horse-1', action: 'check', amount: 0, timestamp: 9003 + trial * 10, stage: 'flop' });
+        hist.push({
+          seat: 2,
+          userId: 'horse-2',
+          action: 'check',
+          amount: 0,
+          timestamp: 9002 + trial * 10,
+          stage: 'flop',
+        });
+        hist.push({
+          seat: 1,
+          userId: 'horse-1',
+          action: 'check',
+          amount: 0,
+          timestamp: 9003 + trial * 10,
+          stage: 'flop',
+        });
       }
       const gs: any = {
         players: [hero, villain],
@@ -1180,7 +1287,14 @@ describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () =>
       HorseMind.observe(
         [
           { seat: 1, userId: 'r7', action: 'raise', amount: 6, timestamp: ts++, stage: 'preflop' },
-          { seat: 2, userId: 'adapt', action: 'fold', amount: 0, timestamp: ts++, stage: 'preflop' },
+          {
+            seat: 2,
+            userId: 'adapt',
+            action: 'fold',
+            amount: 0,
+            timestamp: ts++,
+            stage: 'preflop',
+          },
         ],
         []
       );
@@ -1193,7 +1307,14 @@ describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () =>
       HorseMind.observe(
         [
           { seat: 1, userId: 'r7', action: 'raise', amount: 6, timestamp: ts++, stage: 'preflop' },
-          { seat: 2, userId: 'adapt', action: 'call', amount: 6, timestamp: ts++, stage: 'preflop' },
+          {
+            seat: 2,
+            userId: 'adapt',
+            action: 'call',
+            amount: 6,
+            timestamp: ts++,
+            stage: 'preflop',
+          },
         ],
         []
       );
@@ -1209,18 +1330,29 @@ describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () =>
   it('stores and honors per-hand barrel plans', () => {
     HorseMind.reset();
     const hist: ActionRecord[] = [
-      { seat: 2, userId: 'horse-2', action: 'raise', amount: 6, timestamp: 900001, stage: 'preflop' },
-      { seat: 5, userId: 'villain', action: 'call', amount: 6, timestamp: 900002, stage: 'preflop' },
+      {
+        seat: 2,
+        userId: 'horse-2',
+        action: 'raise',
+        amount: 6,
+        timestamp: 900001,
+        stage: 'preflop',
+      },
+      {
+        seat: 5,
+        userId: 'villain',
+        action: 'call',
+        amount: 6,
+        timestamp: 900002,
+        stage: 'preflop',
+      },
       { seat: 2, userId: 'horse-2', action: 'bet', amount: 4, timestamp: 900003, stage: 'flop' },
       { seat: 5, userId: 'villain', action: 'call', amount: 4, timestamp: 900004, stage: 'flop' },
     ];
     const key = HorseMind.handKeyOf(hist);
     expect(key).toBe('900001:horse-2');
     const mkTurn = (): any => ({
-      players: [
-        mkPlayer(2, { cards: [c('9c'), c('8c')] }),
-        mkPlayer(5, { user_id: 'villain' }),
-      ],
+      players: [mkPlayer(2, { cards: [c('9c'), c('8c')] }), mkPlayer(5, { user_id: 'villain' })],
       communityCards: [c('Kd'), c('7s'), c('2c'), c('5h')],
       pot: 21,
       currentBet: 0,
@@ -1253,7 +1385,13 @@ describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () =>
       const deck = shuffle(makeDeck(false));
       const preflop = trial % 2 === 0;
       const boardCount = preflop ? 0 : [3, 4, 5][trial % 3];
-      const stage = preflop ? 'preflop' : boardCount === 3 ? 'flop' : boardCount === 4 ? 'turn' : 'river';
+      const stage = preflop
+        ? 'preflop'
+        : boardCount === 3
+          ? 'flop'
+          : boardCount === 4
+            ? 'turn'
+            : 'river';
       const bigBlind = trial % 5 === 0 ? 100 : 2; // include tournament-detected blinds
       const hero = mkPlayer(1, {
         cards: deck.slice(0, 2),
@@ -1293,7 +1431,9 @@ describe('HorseMind V7 — size-aware reads + counter-adaptation + plans', () =>
       const bs = calculateBettingState(gs.pot, gs.currentBet, hero.bet, bigBlind, bigBlind, false);
       const check = validateAction(d.action, d.amount, hero.stack, bs);
       if (!check.valid) {
-        throw new Error(`V7 ILLEGAL ${stage} bb=${bigBlind}: ${d.action} ${d.amount} — ${check.error}`);
+        throw new Error(
+          `V7 ILLEGAL ${stage} bb=${bigBlind}: ${d.action} ${d.amount} — ${check.error}`
+        );
       }
     }
   });
@@ -1345,11 +1485,17 @@ describe('HorseEval V8 — hi-lo decomposition + Omaha draw quality', () => {
     const dom = omahaDrawQuality([c('9h'), c('8h'), c('Ks'), c('Qd')], [c('2h'), c('7h'), c('Kd')]);
     expect(dom.dominatedFlushDraw).toBe(true);
     expect(dom.nutty).toBe(false);
-    const wrap = omahaDrawQuality([c('9c'), c('Td'), c('Jh'), c('Qs')], [c('8s'), c('7d'), c('2c')]);
+    const wrap = omahaDrawQuality(
+      [c('9c'), c('Td'), c('Jh'), c('Qs')],
+      [c('8s'), c('7d'), c('2c')]
+    );
     expect(wrap.straightOuts).toBeGreaterThanOrEqual(9);
     expect(wrap.bigWrap).toBe(true);
     // A made straight has no straight outs to count.
-    const made = omahaDrawQuality([c('9c'), c('Td'), c('Jh'), c('Qs')], [c('8s'), c('7d'), c('6c')]);
+    const made = omahaDrawQuality(
+      [c('9c'), c('Td'), c('Jh'), c('Qs')],
+      [c('8s'), c('7d'), c('6c')]
+    );
     expect(made.straightOuts).toBe(0);
   });
 });
@@ -1441,7 +1587,13 @@ describe('HorseLogic V8 — O8 quarter brake + NLH raise bluffs', () => {
         const deck = shuffle(makeDeck(short));
         const boardCount = [0, 3, 4, 5][trial % 4];
         const stage: HandStage =
-          boardCount === 0 ? 'preflop' : boardCount === 3 ? 'flop' : boardCount === 4 ? 'turn' : 'river';
+          boardCount === 0
+            ? 'preflop'
+            : boardCount === 3
+              ? 'flop'
+              : boardCount === 4
+                ? 'turn'
+                : 'river';
         const numPlayers = 2 + (trial % 4);
         const players: SeatPlayer[] = [];
         let cardIdx = 0;
@@ -1478,7 +1630,9 @@ describe('HorseLogic V8 — O8 quarter brake + NLH raise bluffs', () => {
         );
         const check = validateAction(d.action, d.amount, hero.stack, bs);
         if (!check.valid) {
-          throw new Error(`V8 ILLEGAL ${variant}/${stage}: ${d.action} ${d.amount} — ${check.error}`);
+          throw new Error(
+            `V8 ILLEGAL ${variant}/${stage}: ${d.action} ${d.amount} — ${check.error}`
+          );
         }
       }
     }
@@ -1589,8 +1743,13 @@ describe('HorseLogic V9 — humanization polish', () => {
       const a = mk();
       withTiming += HorseLogic.decide(a.hero, a.gs, 'balanced').thinkTime;
       const b = mk();
-      withoutTiming += HorseLogic.decide(b.hero, b.gs, 'balanced', {}, { v9Timing: false })
-        .thinkTime;
+      withoutTiming += HorseLogic.decide(
+        b.hero,
+        b.gs,
+        'balanced',
+        {},
+        { v9Timing: false }
+      ).thinkTime;
     }
     expect(withTiming / n).toBeGreaterThan((withoutTiming / n) * 1.1);
   });
@@ -1648,12 +1807,17 @@ describe('HorseLogic V10 — strategy layer', () => {
     let off = 0;
     for (let i = 0; i < n; i++) {
       const a = mk();
-      if (['bet', 'all_in'].includes(HorseLogic.decide(a.players[0], a, 'balanced', {}, NOMOOD).action))
+      if (
+        ['bet', 'all_in'].includes(
+          HorseLogic.decide(a.players[0], a, 'balanced', {}, NOMOOD).action
+        )
+      )
         on++;
       const b = mk();
       if (
         ['bet', 'all_in'].includes(
-          HorseLogic.decide(b.players[0], b, 'balanced', {}, { v9Mood: false, v10Cbet: false }).action
+          HorseLogic.decide(b.players[0], b, 'balanced', {}, { v9Mood: false, v10Cbet: false })
+            .action
         )
       )
         off++;
@@ -1731,8 +1895,8 @@ describe('HorseLogic V10 — strategy layer', () => {
       if (HorseLogic.decide(a.hero, a.gs, 'balanced', {}, NOMOOD).action === 'call') on++;
       const b = mk();
       if (
-        HorseLogic.decide(b.hero, b.gs, 'balanced', {}, { v9Mood: false, v10Rake: false }).action ===
-        'call'
+        HorseLogic.decide(b.hero, b.gs, 'balanced', {}, { v9Mood: false, v10Rake: false })
+          .action === 'call'
       )
         off++;
     }
@@ -1773,7 +1937,9 @@ describe('HorseLogic V10 — strategy layer', () => {
     for (let i = 0; i < n; i++) {
       seedFastRandom(0x5eed1e + i * 7919);
       const a = mk();
-      if (['bet', 'all_in'].includes(HorseLogic.decide(a.hero, a.gs, 'balanced', {}, NOMOOD).action))
+      if (
+        ['bet', 'all_in'].includes(HorseLogic.decide(a.hero, a.gs, 'balanced', {}, NOMOOD).action)
+      )
         on++;
       seedFastRandom(0x5eed1e + i * 7919);
       const b = mk();
@@ -1829,7 +1995,13 @@ describe('HorseLogic V10 — strategy layer', () => {
         const deck = shuffle(makeDeck(short));
         const boardCount = [0, 3, 4, 5][trial % 4];
         const stage: HandStage =
-          boardCount === 0 ? 'preflop' : boardCount === 3 ? 'flop' : boardCount === 4 ? 'turn' : 'river';
+          boardCount === 0
+            ? 'preflop'
+            : boardCount === 3
+              ? 'flop'
+              : boardCount === 4
+                ? 'turn'
+                : 'river';
         const numPlayers = 2 + (trial % 4);
         const players: SeatPlayer[] = [];
         let cardIdx = 0;
@@ -1856,10 +2028,19 @@ describe('HorseLogic V10 — strategy layer', () => {
           lastRaise: 2,
         };
         const d = HorseLogic.decide(hero, gs, STYLES[trial % STYLES.length]);
-        const bs = calculateBettingState(gs.pot, gs.currentBet, hero.bet, 2, 2, variant.startsWith('plo'));
+        const bs = calculateBettingState(
+          gs.pot,
+          gs.currentBet,
+          hero.bet,
+          2,
+          2,
+          variant.startsWith('plo')
+        );
         const check = validateAction(d.action, d.amount, hero.stack, bs);
         if (!check.valid) {
-          throw new Error(`V10 ILLEGAL ${variant}/${stage}: ${d.action} ${d.amount} — ${check.error}`);
+          throw new Error(
+            `V10 ILLEGAL ${variant}/${stage}: ${d.action} ${d.amount} — ${check.error}`
+          );
         }
       }
     }

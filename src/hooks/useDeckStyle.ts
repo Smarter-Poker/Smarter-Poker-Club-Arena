@@ -72,6 +72,17 @@ function subscribe(onChange: () => void): () => void {
     onChange();
   };
 
+  // Drop the cache when the FIRST subscriber arrives, not only on change.
+  // `cached` is module scope, but invalidation only runs while something is
+  // subscribed - and a page that renders no cards has no subscribers.
+  // SettingsPage is exactly such a page, and it is where the toggle lives:
+  // toggling there wrote localStorage and invalidated nothing, so returning to
+  // a table in the same SPA session served the pre-toggle value from cache
+  // while the felt, which receives the value as an explicit prop, showed the
+  // new one - two deck styles on screen at once until a reload. Re-reading on
+  // subscribe closes that, and stops the cache leaking between vitest cases.
+  cached = null;
+
   // In-tab: useTableSettings emits this whenever any table setting changes.
   const unsubBus = masterBus.subscribe('SETTINGS_CHANGED', invalidate);
 

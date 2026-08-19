@@ -92,6 +92,16 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // Bible V8 §2.4: Timer fields required for client-side countdown
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
+      // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15
+      // seconds." The engine was already right - action_time_seconds is 15 on
+      // every table and turn_deadline_ms follows from it - but the CLIENT
+      // measured elapsed as `Date.now() - turn_start_time_ms`, mixing its own
+      // clock with a server timestamp. A device clock a few seconds fast made
+      // the ring start part-drained and finish early; a slow one made it
+      // overrun. Publishing the server's own "now" lets the client measure
+      // that offset and subtract it, so the ring reflects the real remaining
+      // time regardless of what the device clock says.
+      server_time_ms: Date.now(),
       pots: (state.pots ?? []).map((p) => ({
         amount: p.amount,
         eligible: p.eligiblePlayers ?? [],
@@ -115,10 +125,18 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           if (p.user_id === requestingUserId) {
             showCards = true;
           } else if (state.stage === 'showdown' && !p.is_folded) {
-            const isWinner = this.currentHandWinnerIds.includes(p.user_id);
-            const voluntarilyShowing = this.showHandPlayers?.has(p.user_id) ?? false;
-            const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true;
-            showCards = isWinner || voluntarilyShowing || !autoMuckEnabled;
+            // ── Dan 2026-08-18: the THIRD reveal gate, found on re-audit ──
+            //
+            // broadcastCurrentState was changed to turn every showdown hand
+            // face up, but this one was missed. getTableState serves
+            // GET /state/:tableId, which is what a client pulls on reconnect
+            // or resync - so a player who dropped and came back mid-showdown
+            // got the old auto-muck view and saw only the winner's cards,
+            // disagreeing with what everyone still connected could see.
+            //
+            // Same guard, same safety: `!p.is_folded` above means a folded
+            // hand is still never exposed.
+            showCards = true;
           }
           return {
             seat: p.seat,
@@ -187,6 +205,16 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       last_raise: state.lastRaise ?? 0,
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
+      // ── Dan 2026-08-18: "make sure the yellow countdown actually takes 15
+      // seconds." The engine was already right - action_time_seconds is 15 on
+      // every table and turn_deadline_ms follows from it - but the CLIENT
+      // measured elapsed as `Date.now() - turn_start_time_ms`, mixing its own
+      // clock with a server timestamp. A device clock a few seconds fast made
+      // the ring start part-drained and finish early; a slow one made it
+      // overrun. Publishing the server's own "now" lets the client measure
+      // that offset and subtract it, so the ring reflects the real remaining
+      // time regardless of what the device clock says.
+      server_time_ms: Date.now(),
       // Phase 1.2 PR-F: absolute wall-clock deadline. Client reads this
       // directly rather than computing start+duration locally, eliminating
       // client/server clock skew for the countdown.

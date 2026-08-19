@@ -18,6 +18,7 @@
  */
 
 import type { EngineSnapshot } from '../services/EngineStateClient';
+import { recordServerTime } from './serverClock';
 
 // ─── Raw payload type (duplicated here, not imported, so a server shape tweak
 // can't silently break the client at runtime; typos surface at compile time).
@@ -75,6 +76,9 @@ export interface EnginePublishedState {
   turn_duration_ms?: number;
   /** Phase 1.2 PR-F: absolute wall-clock deadline for the current turn. */
   turn_deadline_ms?: number;
+  /** Engine wall clock at broadcast time. Lets the client correct for device
+   *  clock drift when working out how much of a turn has elapsed. */
+  server_time_ms?: number;
   /** Phase 1.2 PR-F: per-user disconnect FSM map for client UI. */
   disconnect_states?: Record<string, DisconnectFsmEntry>;
   // NOTE: `eligible` holds USER IDs (strings) as emitted by the engine's
@@ -282,6 +286,15 @@ export function mapEngineSnapshot(
       .map((e) => (typeof e === 'string' ? (seatByUserId.get(e) ?? -1) : (e as number)))
       .filter((seat) => seat > 0),
   }));
+
+  // ── Dan 2026-08-18: keep the countdown honest across clock drift ──
+  // The engine stamps each broadcast with its own clock. Recording it here -
+  // the single place every snapshot passes through - lets the timer measure
+  // elapsed time on the ENGINE's clock rather than the device's. See
+  // utils/serverClock.ts for why that matters: the ring computed elapsed as
+  // `Date.now() - turn_start_time_ms`, mixing the two clocks, so a device clock
+  // running fast made a 15-second turn visibly run short.
+  recordServerTime(s.server_time_ms);
 
   // Action timer deadline.
   // Phase 1.2 PR-F: prefer the authoritative turn_deadline_ms from the

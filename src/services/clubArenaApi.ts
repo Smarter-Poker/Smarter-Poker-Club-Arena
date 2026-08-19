@@ -21,7 +21,7 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { uuid } from '../pages/marketplace/marketplaceShared';
+import { uuid } from '../utils/uuid';
 
 export interface ClubArenaApiOptions {
   /**

@@ -7869,3 +7869,39 @@ are interchangeable."
   name plate.
 - Verified live at prod b17a3efb: midnight/galaxy/crimson backgrounds each
   render behind a clean table with zero scene fragments.
+
+## 2026-08-19 — Live-session bug sweep (Dan's play-testing)
+
+Nine issues from Dan actually playing the game. Root causes, not symptoms:
+
+- PLO "bet pot" shoved the stack: ActionPanel treated `amount >= maxRaise` as
+  all-in. True in NO-limit (max == stack); wrong in POT-limit where maxRaise
+  IS the legal pot cap. Now compares a separate allInTo threshold.
+- [P0, self-inflicted] Players removed from live tables by ordinary deploys:
+  GameServer.cleanupStaleData cashed out and DELETED every cash seat on every
+  boot. Now horse-only; human seats survive restarts. Client half: a snapshot
+  listing players but not the hero clears heroSeat instead of claiming the
+  chair forever ("YOUR SEAT" / "Seat Reserved" with the player not in game).
+- [P0, self-inflicted] "+" crashed with a chunk 404: sync-club-arena.sh did
+  `rm -rf assets/` every deploy, deleting content-hashed chunks that open
+  sessions still resolve. Deploys now OVERLAY (hashes cannot collide) with a
+  3-day prune. Recovery also could not work — a plain reload re-serves the
+  cached index.html — so it now drops the SW, purges Cache Storage and
+  navigates cache-busted once per session.
+- Leave table: tableState.heroSeat was never cleared (only the ref), and the
+  lobby navigation was gated on a URL containing '/table/', never true in
+  multi-table mode. Seat now frees immediately, tab closes, player lands in
+  the lobby.
+- Theme changes were save-only: every open table kept its mount-time theme.
+  Saving now broadcasts UI_THEME_CHANGED; mounted tables repaint live.
+- Hero seat occupancy: the placeholder covered only the buy-in modal, so the
+  avatar vanished on confirm. Now held from the "+" tap through being dealt.
+- Countdown ran ~instantly: ACTION_TIMER_STARTED recorded the deadline but
+  never actionTimerStartTime, so SeatSlot's (deadline - start) duration
+  collapsed. Full 15s restored.
+- Yellow ring removed from every avatar; photo fills its circle.
+- Session stats: VPIP/PFR surfaced from behind the advanced toggle, plus new
+  $/Hr, Win% and BB/Hr on a wrapping grid.
+- Share hand: the board renders `.share-hand__card-img`, which had NO CSS —
+  flex squeezed the cards and object-fit: cover cropped them. Real sizing,
+  contain, md artwork.

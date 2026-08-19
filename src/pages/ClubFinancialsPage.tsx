@@ -196,18 +196,48 @@ export default function ClubFinancialsPage() {
         startDate = new Date(0); // All time - epoch
       }
 
-      // Load rake data from rake_history (the REAL table populated by the server)
-      const { data: rakeData } = await retryFetch(
-        () =>
-          supabase
-            .from('rake_history')
-            .select('rake_amount, pot_amount, collected_at')
-            .eq('club_id', resolvedId)
-            .gte('collected_at', startDate.toISOString())
-            .order('collected_at', { ascending: true })
-            .limit(5000),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
+      // ── 2026-08-19: this page was reading DEAD DATA and inventing the rest ──
+      // It selected from `rake_history`, whose last write was 2026-05-01 — so
+      // for three and a half months a club owner's financials page showed
+      // zeros. It then fabricated the remaining lines: rakeback as rake * 0.1
+      // and agent commissions as rake * 0.05, labelled as if they were real.
+      // Now every figure comes from the live ledger it actually belongs to,
+      // and a line with no activity reads 0 because it IS 0.
+      const [rakeRes, rakebackRes, commissionRes, unionFeeRes] = await Promise.all([
+        retryFetch(
+          () =>
+            supabase
+              .from('rake_records')
+              .select('rake_amount, pot_size, created_at')
+              .eq('club_id', resolvedId)
+              .gte('created_at', startDate.toISOString())
+              .order('created_at', { ascending: true })
+              .limit(5000),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+        supabase
+          .from('chip_transactions')
+          .select('amount, created_at')
+          .eq('club_id', resolvedId)
+          .eq('transaction_type', 'rakeback')
+          .gte('created_at', startDate.toISOString())
+          .limit(5000),
+        supabase
+          .from('commission_history')
+          .select('net_commission, created_at')
+          .eq('club_id', resolvedId)
+          .gte('created_at', startDate.toISOString())
+          .limit(5000),
+        supabase
+          .from('settlement_invoices')
+          .select('net_amount, created_at')
+          .eq('club_id', resolvedId)
+          .eq('invoice_type', 'union_to_club')
+          .gte('created_at', startDate.toISOString())
+          .limit(500),
+      ]);
+
+      const rakeData = (rakeRes as any)?.data as any[] | null;
 
       // Aggregate totals from actual rake_history rows
       const totalRake = (rakeData || []).reduce(
@@ -215,25 +245,34 @@ export default function ClubFinancialsPage() {
         0
       );
       const totalPots = (rakeData || []).reduce(
-        (sum: number, r: any) => sum + (r.pot_amount || 0),
+        (sum: number, r: any) => sum + (r.pot_size || 0),
         0
       );
       const totalHands = (rakeData || []).length;
 
-      // Estimate rakeback (~10% of rake) and agent commissions (~5% of rake)
-      // These are estimates until actual rakeback/commission tracking is built
-      const estimatedRakeback = totalRake * 0.1;
-      const estimatedCommissions = totalRake * 0.05;
-      const netRevenue = totalRake - estimatedRakeback - estimatedCommissions;
+      // Real figures, each from the ledger that actually records it.
+      const rakebackPaid = ((rakebackRes as any)?.data || []).reduce(
+        (sum: number, r: any) => sum + (Number(r.amount) || 0),
+        0
+      );
+      const agentCommissions = ((commissionRes as any)?.data || []).reduce(
+        (sum: number, r: any) => sum + (Number(r.net_commission) || 0),
+        0
+      );
+      const unionFees = ((unionFeeRes as any)?.data || []).reduce(
+        (sum: number, r: any) => sum + (Number(r.net_amount) || 0),
+        0
+      );
+      const netRevenue = totalRake - rakebackPaid - agentCommissions - unionFees;
 
       if (!isMounted.current) return;
 
       const summaryData = {
         period,
         rake_collected: totalRake,
-        rakeback_paid: estimatedRakeback,
-        agent_commissions: estimatedCommissions,
-        union_fees: 0,
+        rakeback_paid: rakebackPaid,
+        agent_commissions: agentCommissions,
+        union_fees: unionFees,
         net_revenue: netRevenue,
         total_hands: totalHands,
         total_pots: totalPots,
@@ -242,14 +281,20 @@ export default function ClubFinancialsPage() {
 
       // Build daily chart data from rake_history
       const dailyMap = new Map<string, { rake: number; rakeback: number }>();
+      const dayLabel = (iso: string) =>
+        new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
       for (const row of rakeData || []) {
-        const dayKey = new Date(row.collected_at).toLocaleDateString(undefined, {
-          month: 'short',
-          day: 'numeric',
-        });
+        const dayKey = dayLabel(row.created_at);
         const existing = dailyMap.get(dayKey) || { rake: 0, rakeback: 0 };
         existing.rake += row.rake_amount || 0;
-        existing.rakeback += (row.rake_amount || 0) * 0.1;
+        dailyMap.set(dayKey, existing);
+      }
+      // Rakeback plotted from the rows that actually paid it, not as a
+      // fixed fraction of the rake bar next to it.
+      for (const row of ((rakebackRes as any)?.data || [])) {
+        const dayKey = dayLabel(row.created_at);
+        const existing = dailyMap.get(dayKey) || { rake: 0, rakeback: 0 };
+        existing.rakeback += Number(row.amount) || 0;
         dailyMap.set(dayKey, existing);
       }
       const chartDataLocal = Array.from(dailyMap.entries()).map(([name, vals]) => ({
@@ -259,15 +304,16 @@ export default function ClubFinancialsPage() {
       }));
       setChartData(chartDataLocal);
 
-      // Load recent rake history as transactions (no club_transactions table needed)
+      // Recent rake rows — same dead-table fix as above: rake_records is the
+      // live ledger. (rake_records has no hand_number; it links a hand by id.)
       const { data: recentRake } = await retryFetch(
         () =>
           supabase
-            .from('rake_history')
-            .select('id, rake_amount, pot_amount, hand_number, collected_at')
+            .from('rake_records')
+            .select('id, rake_amount, pot_size, created_at')
             .eq('club_id', resolvedId)
-            .gte('collected_at', startDate.toISOString())
-            .order('collected_at', { ascending: false })
+            .gte('created_at', startDate.toISOString())
+            .order('created_at', { ascending: false })
             .limit(20),
         { maxRetries: 2, isMountedRef: isMounted }
       );
@@ -277,8 +323,8 @@ export default function ClubFinancialsPage() {
           id: r.id,
           type: 'rake' as const,
           amount: r.rake_amount || 0,
-          description: `Hand #${r.hand_number} — ${(r.rake_amount || 0).toLocaleString()} chips from ${(r.pot_amount || 0).toLocaleString()} pot`,
-          created_at: r.collected_at,
+          description: `${(r.rake_amount || 0).toLocaleString()} chips raked from a ${(r.pot_size || 0).toLocaleString()} pot`,
+          created_at: r.created_at,
         }));
         setTransactions(mappedTx);
 

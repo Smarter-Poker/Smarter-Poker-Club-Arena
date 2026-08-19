@@ -41,12 +41,16 @@ SECURITY DEFINER
 SET search_path = public
 AS $fn$
 DECLARE
-  -- Cap: the `authenticated` role has statement_timeout=8s, so the analysis
-  -- window is the player's most recent 1500 hands. When the cap bites,
-  -- overall.hands_capped is true and overall.hand_cap is the window size, so
-  -- the UI can state the window instead of silently reporting a truncated
+  -- Cap: the `authenticated` role has statement_timeout=8s. Measured per-hand
+  -- cost is ~3.8ms (random heap fetch plus per-hand JSONB expansion of players,
+  -- actions and winners); 1500 hands measured 5.7s warm and was CANCELLED
+  -- outright under concurrent load, so the window is the most recent 750 hands
+  -- (~2.1s measured for the heaviest account on production).
+  -- Ordinary players are unaffected — under 750 hands you get your full
+  -- history. Above it, overall.hand_cap / hands_capped drive a "Based on your
+  -- most recent N hands" line so a truncated window is never presented as a
   -- lifetime total.
-  c_cap  constant int := 1500;
+  c_cap  constant int := 750;
   v_ids  uuid[];
   v_floor timestamptz;
   v_ceil  timestamptz;
@@ -411,8 +415,8 @@ SELECT jsonb_build_object(
     'bb_per_100', CASE WHEN cash_hands > 0
         THEN round(cash_bb_profit / cash_hands * 100, 2) ELSE 0 END,
     'hours_played', round(total_secs / 3600.0, 2),
-    'hand_cap', 1500,
-    'hands_capped', (hands >= 1500),
+    'hand_cap', 750,
+    'hands_capped', (hands >= 750),
     'first_hand_at', first_hand_at,
     'last_hand_at', last_hand_at
   ) FROM totals),

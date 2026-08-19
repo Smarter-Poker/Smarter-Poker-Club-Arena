@@ -60,6 +60,16 @@ jobs:
       - name: Rake Invariant — client and server rake schedules must match
         run: node scripts/ci/check-rake-schedule-parity.mjs
 
+      # BLOCKING (2026-08-19 incident): the cash seat law (plo6 6, plo5 7,
+      # plo4 8, plo8 8) was enforced only in src/services/TableService.ts, which
+      # guards the club's Create Table modal. HorseFleetManager — the engine's
+      # own cash-table seeder — carried its own numbers, said PLO5 8-max and
+      # PLO6 7-max, and had been creating illegal tables on every boot. Six were
+      # live when it was found. PokerEngine.deal() throws rather than dealing
+      # short, so an over-seated PLO table fails mid-hand rather than degrading.
+      - name: Seat Law Invariant — client, server and the fleet configs must agree
+        run: node scripts/ci/check-seat-law-parity.mjs
+
       # BLOCKING. On 2026-08-15 five of seven files in infra/monitoring/ had
       # drifted from the running stack — the repo still held the versions where
       # 27 alert rules referenced non-existent metrics and Alertmanager routed

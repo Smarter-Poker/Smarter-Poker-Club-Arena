@@ -16,6 +16,7 @@
 import { supabase } from './supabase.js';
 import { buyInBBFor, isActiveNow } from './HorseBehavior.js';
 import { reportError } from './errorReporter.js';
+import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -75,7 +76,9 @@ const DEFAULT_TABLES: TableConfig[] = [
     name: 'PLO5 1.00/2.00',
     smallBlind: 1.0,
     bigBlind: 2.0,
-    maxPlayers: 8,
+    // The law: plo5 is 7-max. This said 8, and 83 such tables reached
+    // production. See server/src/config/tableSeating.ts.
+    maxPlayers: 7,
     horsesPerTable: 5,
     gameVariant: 'plo5',
   },
@@ -83,7 +86,8 @@ const DEFAULT_TABLES: TableConfig[] = [
     name: 'PLO6 1.00/2.00',
     smallBlind: 1.0,
     bigBlind: 2.0,
-    maxPlayers: 7,
+    // The law: plo6 is 6-max. This said 7.
+    maxPlayers: 6,
     horsesPerTable: 5,
     gameVariant: 'plo6',
   },
@@ -199,6 +203,22 @@ export class HorseFleetManager {
   private async ensureAllTablesExist(): Promise<void> {
     console.log(`[HorseFleet] Ensuring ${DEFAULT_TABLES.length} cash tables exist...`);
 
+    // Clamping alone would hide a wrong config forever — the table would just
+    // quietly be one seat smaller than the array says. Say so instead. This is
+    // how PLO5-at-8 and PLO6-at-7 survived: nothing ever disagreed out loud.
+    for (const config of DEFAULT_TABLES) {
+      const legal = maxSeatsForVariant(config.gameVariant);
+      if (config.maxPlayers > legal) {
+        reportError(
+          new Error(
+            `HorseFleet config "${config.name}" asks for ${config.maxPlayers} seats; ` +
+              `${config.gameVariant} is ${legal}-max. Seating ${legal}.`
+          ),
+          'HorseFleet.seat_law_override'
+        );
+      }
+    }
+
     for (const config of DEFAULT_TABLES) {
       try {
         // FIX 201: Check for table by name in ANY status (not just waiting/running).
@@ -245,7 +265,9 @@ export class HorseFleetManager {
           big_blind: config.bigBlind,
           min_buy_in: config.bigBlind * 40,
           max_buy_in: config.bigBlind * 200,
-          max_players: config.maxPlayers,
+          // The law is enforced HERE, not only in the config above, so a
+          // future config edit cannot put an illegal table in the database.
+          max_players: clampSeatsForVariant(config.gameVariant, config.maxPlayers),
           current_players: 0,
           status: 'waiting',
         });
@@ -515,7 +537,9 @@ export class HorseFleetManager {
           big_blind: config.bigBlind,
           min_buy_in: config.bigBlind * 40,
           max_buy_in: config.bigBlind * 200,
-          max_players: config.maxPlayers,
+          // The law is enforced HERE, not only in the config above, so a
+          // future config edit cannot put an illegal table in the database.
+          max_players: clampSeatsForVariant(config.gameVariant, config.maxPlayers),
           current_players: 0,
           status: 'waiting',
         });

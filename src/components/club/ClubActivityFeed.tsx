@@ -14,6 +14,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { isUUID, resolveClubUUID } from '../../utils/clubIdResolver';
+import { isAuthzError } from '../../utils/clubDashboard';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import styles from './ClubActivityFeed.module.css';
 import { reportError } from '../../utils/errorReporter';
@@ -141,11 +142,22 @@ export default function ClubActivityFeed({
         // Silent refresh — show everything immediately, no re-stagger
         setVisibleIds(new Set(items.map((item) => item.id)));
       }
-    } catch (error) {
-      reportError(error, 'ClubActivityFeed.Failed_to_load_activities');
+    } catch (error: any) {
+      // A non-member hitting the membership gate is an expected outcome, not
+      // an error worth reporting — the parent renders its own Members Only
+      // state. Anything else is a genuine failure.
+      if (!isAuthzError(error)) {
+        reportError(error, 'ClubActivityFeed.Failed_to_load_activities');
+      }
+      if (isMounted.current) setActivities([]);
+    } finally {
+      // MUST be finally. These two lines used to sit after the try/catch, so
+      // the early `return` on an unresolvable club id skipped them: loadingRef
+      // stayed true forever, every later call bailed at the in-flight guard,
+      // and the feed sat on "Loading activity..." permanently.
+      loadingRef.current = false;
+      if (isMounted.current && withSpinner) setLoading(false);
     }
-    loadingRef.current = false;
-    if (isMounted.current && withSpinner) setLoading(false);
   };
 
   const getActivityIcon = (type: ActivityType): string => {

@@ -229,3 +229,53 @@ Backfill state at time of writing: Midway Union fully rebuilt under the new
 rule. Club JAQK and SHARK CLUB are being refreshed table by table (SHARK CLUB
 39.9% -> 41.4% after 9 of 38); every NEW hand on every club already uses the
 new rule via the trigger.
+
+## 11. Third audit pass
+
+Publish state re-verified: five source files byte-identical to origin/main,
+nine dashboard migrations published, production bundle carrying every feature.
+
+### Hands Today was under-reporting by 64%
+
+The two most prominent metric cards read `club_daily_stats`, which lags.
+Midway Union showed **10,195 hands today against a real 28,195**. The existing
+coalesce fallback could never catch it: club_daily_stats HAS a row for today,
+it is simply stale.
+
+Counting `hand_history` live is not viable — measured 2.75s and ~30k buffers
+for one club-day, because it fans out across every table of the club, and this
+runs on page load.
+
+Fixed by maintaining the rollup where the data arrives: the same AFTER INSERT
+trigger that already resolves the club now upserts one row per (club, day)
+into `club_hand_daily`. Exact by construction, O(1) per hand. The upsert sits
+ahead of the player CTEs so a hand with a malformed players[] payload still
+counts — it still happened and still paid rake. `club_daily_stats` is left
+untouched for other surfaces and remains the fallback for dates predating the
+rollup, so historical series still render.
+
+Verified: hands_today 28,836 against a live truth count of 28,856, the 20-hand
+gap being hands dealt between the two queries; observed climbing to 29,111
+shortly after as the trigger kept pace.
+
+### The activity feed could wedge permanently
+
+`loadingRef.current = false` and `setLoading(false)` sat AFTER the try/catch
+rather than in a `finally`. The uuid guard I added earlier returns from inside
+the try, so both were skipped: `loadingRef` stayed true forever, every later
+call bailed at the in-flight mutex, and the feed sat on "Loading activity..."
+for the rest of the session. Moved into a `finally`. ClubDashboard was checked
+for the same shape and is safe — all six of its early returns are covered.
+
+### Membership rejection was being reported as a fault
+
+Both child components reported the 42501 membership rejection to the error
+reporter, so a single non-member visit generated error noise from two
+components while the parent was already rendering its Members Only state.
+Both now treat it as the expected outcome it is.
+
+### Verification
+
+tsc clean; 25 dashboard tests; full suite 1980 assertions across 162 files
+(the one failing file remains the pre-existing `@sentry/node` server dep);
+production build green.

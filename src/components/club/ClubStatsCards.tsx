@@ -11,6 +11,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { isUUID, resolveClubUUID } from '../../utils/clubIdResolver';
+import { isAuthzError } from '../../utils/clubDashboard';
 import { masterBus } from '../../core/MasterBus';
 import styles from './ClubStatsCards.module.css';
 import { reportError } from '../../utils/errorReporter';
@@ -163,10 +164,16 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
             : [],
         });
       }
-    } catch (error) {
-      reportError(error, 'ClubStatsCards.Failed_to_load_club_stats');
+    } catch (error: any) {
+      // The membership gate raising 42501 is an expected outcome for a
+      // non-member, not a fault worth reporting — the parent shows its own
+      // Members Only state.
+      if (!isAuthzError(error)) {
+        reportError(error, 'ClubStatsCards.Failed_to_load_club_stats');
+      }
+    } finally {
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
   };
 
   const formatInt = (num: number): string => {

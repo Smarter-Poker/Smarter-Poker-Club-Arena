@@ -732,13 +732,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // dealing, and dealingLoop awaits postHandTasksPromise first, so it is
         // still populated here — it is passed to this same logHandHistory call
         // as `winners` a few lines below.
-        const autoMuckEnabled = this.tableInfo.auto_muck_enabled ?? true;
+        // UPDATE 2026-08-18 (Dan): the rule above is unchanged - a holding may
+        // be stored only if the table showed it - but WHAT the table shows has
+        // changed. A showdown now turns every hand face up (see the WINNERS
+        // handler in ServerTableEngineHandEvents), so the revealed set and the
+        // persisted set are once again the same thing. Passing autoMuck=false
+        // keeps this write in lockstep with that broadcast; if the two ever
+        // disagree, hand_history either hides cards the table showed or stores
+        // cards it did not.
+        //
+        // The set is still not "everyone dealt in": HandController builds it
+        // from getActivePlayers(), which excludes folded and sitting-out
+        // players, so the leak this gate was added for on 2026-08-17 (3,953
+        // losing holdings in one hour) stays closed - those players never
+        // enter the array to begin with.
         const winnerIds = new Set(this.currentHandWinners.map((w) => w.userId));
         const revealedShowdownResults = selectRevealedShowdownResults(
           this.currentHandShowdownResults,
           winnerIds,
           this.showHandPlayers,
-          autoMuckEnabled
+          false
         );
 
         const result = await logHandHistory({

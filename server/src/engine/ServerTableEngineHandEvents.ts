@@ -441,20 +441,34 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // Previously this fired at SHOWDOWN for every participant, leaking
         // losing hands on auto-muck tables.
         {
-          const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true;
-          const reveals = this.currentHandShowdownResults
-            .filter((r) => {
-              if (!autoMuckEnabled) return true;
-              if (this.currentHandWinnerIds.includes(r.userId)) return true;
-              if (this.showHandPlayers?.has(r.userId)) return true;
-              return false;
-            })
-            .map((r) => ({
-              user_id: r.userId,
-              cards: r.holeCards ?? [],
-              best_hand_label: r.handName,
-              best_hand_rank: r.handRanking,
-            }));
+          // ── Dan 2026-08-18: a showdown turns EVERY hand face up ──
+          //
+          // This used to gate on `auto_muck_enabled ?? true`, and all 56,052
+          // tables have that flag true, so in practice only the winner's cards
+          // were ever revealed. Measured across 10,165 hands that reached a
+          // full five-card board, the average number of holdings shown was
+          // 1.08. Dan's instruction is that at showdown all cards are shown.
+          //
+          // This is safe, and it is worth stating why, because the 2026-07-19
+          // audit removed a reveal from exactly this area for leaking losing
+          // hands. `currentHandShowdownResults` is NOT "every player dealt
+          // in" - it is built from HandController's SHOWDOWN event, whose
+          // results come from getActivePlayers() filtered to those still
+          // holding cards. getActivePlayers() drops is_folded and
+          // is_sitting_out, and the event is only emitted when more than one
+          // such player remains. The set is therefore exactly the players who
+          // reached showdown; nobody who folded is in it, so folded hole cards
+          // still cannot escape through this path.
+          //
+          // The uncontested case is untouched: no showdown means no SHOWDOWN
+          // event, so none of this runs and a player who wins when everyone
+          // folds is still never forced to show.
+          const reveals = this.currentHandShowdownResults.map((r) => ({
+            user_id: r.userId,
+            cards: r.holeCards ?? [],
+            best_hand_label: r.handName,
+            best_hand_rank: r.handRanking,
+          }));
           if (reveals.length > 0) {
             this.hub?.emitEvent(this.tableId, {
               type: 'showdown_cards_revealed',

@@ -7963,3 +7963,31 @@ Engine: RakebackSettlerService (close_all + treasury sentinel),
 TournamentManagerEliminations (atomic audit row), tournamentRecovery
 (evidence-based refunds), DynamicWallet (backup BBJ unwrap).
 DB migration mirrors: 20260819b..f.
+
+## 2026-08-19 — Leaderboard real-profit pipeline (Cowork/Claude)
+
+Root cause: nothing ever wrote player_stats.total_winnings/total_losses
+(update_player_hand_stats is a stub; RakebackSettler only bumps hands+rake),
+so every profit/ROI leaderboard showed 0.00 for all 1,398 players and the
+/leaderboard page looked dead. Fixed WITHOUT an engine deploy:
+
+- DB migration 20260819g (applied to prod 16:07:23 UTC): AFTER INSERT trigger
+  on hand_history folds winners into total_winnings (cash hands, club via
+  tables.club_id, exception-safe); promo_apply_playthrough (already called by
+  the engine per contributing player per cash hand with exact contribution)
+  now also accumulates total_losses, gated to service_role. Profit = exact
+  net = SUM(won - invested); ROI = (W-L)/L.
+- New RPCs: fn_club_leaderboard_period_v2 (real rank_change vs yesterday
+  snapshot, handles all_time), fn_global_leaderboard_period,
+  fn_user_rank_global_period.
+- Backfill: rake_records.player_contributions x hand_history.winners
+  (2026-05-21 .. T0, raked cash hands; win 117.80M / loss 120.88M, delta =
+  3.09M house rake — chips conserve). player_stats_snapshots recomputed
+  per snapshot_date so daily/weekly/monthly deltas are correct.
+- Frontend: LeaderboardPage rebuilt — Global scope now actually works
+  (cross-club RPC), real rank-change arrows, tournament tab club-scoped,
+  no emoji in source. LeaderboardService: v2/global RPC wiring with
+  direct-query fallback.
+- Verified live: winnings/losses accruing in real time (+692/+711 in a 20s
+  window, delta = rake) and weekly club/global RPCs returning real ranked
+  profits.

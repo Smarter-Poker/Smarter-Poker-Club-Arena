@@ -2,15 +2,21 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  LEADERBOARD SERVICE — Player Rankings & Stats
  * ═══════════════════════════════════════════════════════════════════════════════
- * 
- * Manages club and union leaderboards with:
- * - Daily, weekly, monthly, and all-time rankings
- * - Multiple metrics: profit, hands played, VPIP, PFR, ROI
-
+ *
+ * Manages club, union, and GLOBAL leaderboards with:
+ * - Daily, weekly, monthly, and all-time rankings (snapshot-delta based)
+ * - Multiple metrics: profit, hands played, VPIP, PFR, ROI, tournaments won
+ * - Real rank-change tracking (current rank vs yesterday's snapshot rank)
+ *
+ * 2026-08-19 REAL-PROFIT PIPELINE: player_stats.total_winnings / total_losses
+ * are now written on every cash hand (hand_history winner-folding trigger +
+ * per-player contribution accumulation in promo_apply_playthrough). Profit is
+ * exact net: SUM(won - invested). ROI = (W - L) / L over invested chips.
+ * RPCs: fn_club_leaderboard_period_v2, fn_global_leaderboard_period,
+ * fn_user_rank_period, fn_user_rank_global_period.
  */
 
 import { supabase } from '../lib/supabase';
-import { VIP_GOLD_LIMITS } from './VIPService';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
@@ -31,6 +37,7 @@ interface PlayerStatsRow {
   tournaments_played?: number;
   tournaments_won: number;
   club_id?: string;
+  rank_change?: number;
 }
 
 interface ProfileRow {
@@ -61,7 +68,7 @@ export interface LeaderboardEntry {
   avatar?: string;
   value: number;
   metric: LeaderboardMetric;
-  change: number; // Position change from previous period
+  change: number; // Real position change vs yesterday's snapshot ranking
   isVIP?: boolean;
   vipTier?: string;
   level?: number;
@@ -71,13 +78,13 @@ export interface PlayerStats {
   userId: string;
   handsPlayed: number;
   profit: number;
-  vpip: number; // Voluntarily Put $ In Pot %
-  pfr: number; // Pre-Flop Raise %
-  threeBet: number; // 3-Bet %
-  wtsd: number; // Went To Showdown %
-  wsd: number; // Won $ at Showdown %
-  aggFactor: number; // Aggression Factor
-  roi: number; // Tournament ROI %
+  vpip: number;
+  pfr: number;
+  threeBet: number;
+  wtsd: number;
+  wsd: number;
+  aggFactor: number;
+  roi: number;
   tournamentsPlayed: number;
   tournamentsWon: number;
   lastUpdated: string;
@@ -99,16 +106,67 @@ export interface TournamentStats {
 export interface HandResultForStats {
   handId: string;
   userId: string;
-  isVoluntary: boolean; // Did they put money in voluntarily?
-  isPreflopRaise: boolean; // Did they raise preflop?
+  isVoluntary: boolean;
+  isPreflopRaise: boolean;
   wentToShowdown: boolean;
   wonAtShowdown: boolean;
   profit: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CONSTANTS
+// INTERNAL HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/** Compute the display value for a stats row given the metric. */
+function metricValue(row: PlayerStatsRow, metric: LeaderboardMetric): number {
+  const winnings = Number(row.total_winnings) || 0;
+  const losses = Number(row.total_losses) || 0;
+  switch (metric) {
+    case 'hands_played':
+      return Number(row.hands_played) || 0;
+    case 'vpip':
+      return Math.trunc((row.vpip || 0) * 10000) / 100;
+    case 'pfr':
+      return Math.trunc((row.pfr || 0) * 10000) / 100;
+    case 'tournaments_won':
+      return Number(row.tournaments_won) || 0;
+    case 'roi':
+      return losses > 0 ? Math.trunc(((winnings - losses) / losses) * 10000) / 100 : 0;
+    case 'profit':
+    default:
+      return Math.trunc((winnings - losses) * 100) / 100;
+  }
+}
+
+/** Attach usernames/avatars/tiers to raw stat rows. */
+async function decorateWithProfiles(
+  rows: PlayerStatsRow[],
+  metric: LeaderboardMetric
+): Promise<LeaderboardEntry[]> {
+  const userIds = rows.map((s) => s.user_id);
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, username, avatar_url, level, tier')
+    .in('id', userIds);
+
+  const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
+
+  return rows.map((row, index) => {
+    const profile = profileMap.get(row.user_id) || ({} as ProfileRow);
+    return {
+      rank: index + 1,
+      userId: row.user_id,
+      username: profile.username || 'Player',
+      avatar: profile.avatar_url,
+      value: metricValue(row, metric),
+      metric,
+      change: Number(row.rank_change) || 0,
+      isVIP: profile.tier === 'gold' || profile.tier === 'platinum' || profile.tier === 'diamond',
+      vipTier: profile.tier || 'bronze',
+      level: profile.level || 1,
+    };
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
@@ -116,7 +174,10 @@ export interface HandResultForStats {
 
 export const LeaderboardService = {
   /**
-   * Get leaderboard for a club
+   * Get leaderboard for a club. Non-ratio metrics use the snapshot-delta RPC
+   * (v2, with real rank_change) for every period including all_time. Ratio
+   * metrics (vpip/pfr) have no meaningful period delta and query all-time
+   * stats directly.
    */
   async getClubLeaderboard(
     clubId: string,
@@ -126,33 +187,33 @@ export const LeaderboardService = {
   ): Promise<LeaderboardEntry[]> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
-      // Ratio metrics (vpip/pfr) have no meaningful daily/weekly delta, so they
-      // always use all-time. Everything else uses the delta-based period RPC for a
-      // real day/week/month view (falls back to all-time inside the RPC).
       const isRatio = metric === 'vpip' || metric === 'pfr';
-      const usePeriod = !isRatio && period !== 'all_time';
 
-      let statsData: any[] | null = null;
-      let statsError: any = null;
+      let statsData: PlayerStatsRow[] | null = null;
 
-      if (usePeriod) {
-        const { data, error } = await supabase.rpc('fn_club_leaderboard_period', {
+      if (!isRatio) {
+        const { data, error } = await supabase.rpc('fn_club_leaderboard_period_v2', {
           p_club_id: resolvedClubId,
           p_metric: metric,
           p_period: period,
           p_limit: limit,
         });
-        statsData = data;
-        statsError = error;
-      } else {
-        // Direct query — player_stats has: total_winnings, total_losses, hands_played, vpip, pfr, tournaments_played, tournaments_won
+        if (error) {
+          reportError(error, 'LeaderboardService.getClubLeaderboard_v2');
+        } else {
+          statsData = data as PlayerStatsRow[];
+        }
+      }
+
+      if (!statsData) {
+        // Ratio metric, or v2 RPC failed: direct all-time query.
         const metricToColumn: Record<string, string> = {
           profit: 'total_winnings',
           hands_played: 'hands_played',
           vpip: 'vpip',
           pfr: 'pfr',
           tournaments_won: 'tournaments_won',
-          roi: 'total_winnings', // Sort by winnings as proxy for ROI
+          roi: 'total_winnings',
         };
         const orderCol = metricToColumn[metric] || 'total_winnings';
         const { data, error } = await supabase
@@ -163,56 +224,44 @@ export const LeaderboardService = {
           .eq('club_id', resolvedClubId)
           .order(orderCol, { ascending: false })
           .limit(limit);
-        statsData = data;
-        statsError = error;
+        if (error || !data) {
+          reportError(error, 'LeaderboardService.getClubLeaderboard_direct');
+          return [];
+        }
+        statsData = data as PlayerStatsRow[];
       }
 
-      if (statsError || !statsData) {
-        reportError(statsError, 'LeaderboardService.LeaderboardServicegetClubLeaderboard_sta');
+      return await decorateWithProfiles(statsData, metric);
+    } catch (err: unknown) {
+      reportError(err, 'LeaderboardService.getClubLeaderboard_err');
+      return [];
+    }
+  },
+
+  /**
+   * Get GLOBAL leaderboard across all clubs (per-user stats summed).
+   * Supports profit, hands_played, tournaments_won, roi for every period
+   * including all_time. Ratio metrics are per-club and not supported here.
+   */
+  async getGlobalLeaderboard(
+    metric: LeaderboardMetric = 'profit',
+    period: LeaderboardPeriod = 'weekly',
+    limit: number = 50
+  ): Promise<LeaderboardEntry[]> {
+    try {
+      if (metric === 'vpip' || metric === 'pfr') return [];
+      const { data, error } = await supabase.rpc('fn_global_leaderboard_period', {
+        p_metric: metric,
+        p_period: period,
+        p_limit: limit,
+      });
+      if (error || !data) {
+        reportError(error, 'LeaderboardService.getGlobalLeaderboard');
         return [];
       }
-
-      // Get usernames for the user IDs
-      const userIds = statsData.map((s: PlayerStatsRow) => s.user_id);
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url, level, tier')
-        .in('id', userIds);
-
-      const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
-
-      return statsData.map((row: PlayerStatsRow, index: number) => {
-        const profile = profileMap.get(row.user_id) || ({} as ProfileRow);
-        let value = 0;
-        if (metric === 'profit')
-          value = Math.trunc(((row.total_winnings || 0) - (row.total_losses || 0)) * 100) / 100;
-        else if (metric === 'hands_played') value = row.hands_played || 0;
-        else if (metric === 'vpip') value = Math.trunc((row.vpip || 0) * 10000) / 100;
-        else if (metric === 'pfr') value = Math.trunc((row.pfr || 0) * 10000) / 100;
-        else if (metric === 'tournaments_won') value = row.tournaments_won || 0;
-        else if (metric === 'roi') {
-          const winnings = row.total_winnings || 0;
-          const losses = row.total_losses || 0;
-          value = losses > 0 ? Math.trunc(((winnings - losses) / losses) * 10000) / 100 : 0;
-        } else
-          value = Math.trunc(((row.total_winnings || 0) - (row.total_losses || 0)) * 100) / 100;
-
-        return {
-          rank: index + 1,
-          userId: row.user_id,
-          username: profile.username || 'Player',
-          avatar: profile.avatar_url,
-          value,
-          metric,
-          change: 0,
-          isVIP:
-            profile.tier === 'gold' || profile.tier === 'platinum' || profile.tier === 'diamond',
-          vipTier: profile.tier || 'bronze',
-          level: profile.level || 1,
-        };
-      });
+      return await decorateWithProfiles(data as PlayerStatsRow[], metric);
     } catch (err: unknown) {
-      reportError(err, 'LeaderboardService.LeaderboardServicegetClubLeaderboard_err');
+      reportError(err, 'LeaderboardService.getGlobalLeaderboard_err');
       return [];
     }
   },
@@ -230,21 +279,21 @@ export const LeaderboardService = {
       const isRatio = metric === 'vpip' || metric === 'pfr';
       const usePeriod = !isRatio && period !== 'all_time';
 
-      let statsData: any[] | null = null;
-      let statsError: any = null;
+      let statsData: PlayerStatsRow[] | null = null;
 
       if (usePeriod) {
-        // Delta-based union period leaderboard (aggregated across member clubs).
         const { data, error } = await supabase.rpc('fn_union_leaderboard_period', {
           p_union_id: unionId,
           p_metric: metric,
           p_period: period,
           p_limit: limit,
         });
-        statsData = data;
-        statsError = error;
+        if (error || !data) {
+          reportError(error, 'LeaderboardService.getUnionLeaderboard_rpc');
+          return [];
+        }
+        statsData = data as PlayerStatsRow[];
       } else {
-        // All-time (or ratio metric): direct aggregate across member clubs.
         const { data: unionClubs } = await supabase
           .from('union_clubs')
           .select('club_id')
@@ -268,52 +317,13 @@ export const LeaderboardService = {
           .in('club_id', clubIds)
           .order(orderCol, { ascending: false })
           .limit(limit);
-        statsData = data;
-        statsError = error;
+        if (error || !data) return [];
+        statsData = data as PlayerStatsRow[];
       }
 
-      if (statsError || !statsData) return [];
-
-      const userIds = statsData.map((s: PlayerStatsRow) => s.user_id);
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url, level, tier')
-        .in('id', userIds);
-
-      const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
-
-      return statsData.map((row: PlayerStatsRow, index: number) => {
-        const profile = profileMap.get(row.user_id) || ({} as ProfileRow);
-        let value = 0;
-        if (metric === 'profit')
-          value = Math.trunc(((row.total_winnings || 0) - (row.total_losses || 0)) * 100) / 100;
-        else if (metric === 'hands_played') value = row.hands_played || 0;
-        else if (metric === 'vpip') value = Math.trunc((row.vpip || 0) * 10000) / 100;
-        else if (metric === 'pfr') value = Math.trunc((row.pfr || 0) * 10000) / 100;
-        else if (metric === 'tournaments_won') value = row.tournaments_won || 0;
-        else if (metric === 'roi') {
-          const winnings = row.total_winnings || 0;
-          const losses = row.total_losses || 0;
-          value = losses > 0 ? Math.trunc(((winnings - losses) / losses) * 10000) / 100 : 0;
-        } else
-          value = Math.trunc(((row.total_winnings || 0) - (row.total_losses || 0)) * 100) / 100;
-
-        return {
-          rank: index + 1,
-          userId: row.user_id,
-          username: profile.username || 'Player',
-          avatar: profile.avatar_url,
-          value,
-          metric,
-          change: 0,
-          isVIP:
-            profile.tier === 'gold' || profile.tier === 'platinum' || profile.tier === 'diamond',
-          vipTier: profile.tier || 'bronze',
-          level: profile.level || 1,
-        };
-      });
+      return await decorateWithProfiles(statsData, metric);
     } catch (err: unknown) {
-      reportError(err, 'LeaderboardService.LeaderboardServicegetUnionLeaderboard_er');
+      reportError(err, 'LeaderboardService.getUnionLeaderboard_err');
       return [];
     }
   },
@@ -336,15 +346,15 @@ export const LeaderboardService = {
     const { data, error } = await query.maybeSingle();
 
     if (error) {
-      reportError(error, 'LeaderboardService.LeaderboardServicegetPlayerStats_error');
+      reportError(error, 'LeaderboardService.getPlayerStats_error');
       return null;
     }
 
     if (!data) return null;
 
-    // NOTE: player_stats does not track three_bet, wtsd, wsd, agg_factor, or
-    // tournament_roi — these advanced metrics have no real column and default to 0.
-    // ROI is derived from real winnings/losses as a sensible proxy.
+    // NOTE: player_stats does not track three_bet, wtsd, wsd, agg_factor - these
+    // advanced metrics have no real column and default to 0. ROI is derived from
+    // real winnings/losses (invested chips).
     const winnings = data.total_winnings || 0;
     const losses = data.total_losses || 0;
     return {
@@ -365,13 +375,14 @@ export const LeaderboardService = {
   },
 
   /**
-   * Update player stats after a completed hand
-   * Called by HandController after each hand
+   * Update player stats after a completed hand.
+   * NOTE (2026-08-19): winnings/losses are now accumulated server-side (DB
+   * trigger + engine contribution RPC). This client-side call remains only
+   * for the profiles.total_hands_played counter and POY tracking.
    */
   async updateHandStats(
     result: HandResultForStats & { clubId?: string; clubName?: string }
   ): Promise<void> {
-    // Use upsert to atomically update stat counters
     const { error } = await retryAsync(
       () =>
         supabase.rpc('update_player_hand_stats', {
@@ -386,7 +397,7 @@ export const LeaderboardService = {
     );
 
     if (error) {
-      reportError(error, 'LeaderboardService.LeaderboardServiceupdateHandStats_error');
+      reportError(error, 'LeaderboardService.updateHandStats_error');
     }
 
     // Track for POY batched submission (cash games)
@@ -406,7 +417,7 @@ export const LeaderboardService = {
   },
 
   /**
-   * Get user's rank on a specific leaderboard
+   * Get user's rank on a specific club leaderboard.
    */
   async getUserRank(
     userId: string,
@@ -418,8 +429,8 @@ export const LeaderboardService = {
       const resolvedClubId = await resolveClubUUID(clubId);
       const isRatio = metric === 'vpip' || metric === 'pfr';
 
-      // Period rank via the delta RPC (ratio metrics stay all-time).
-      if (!isRatio && period !== 'all_time') {
+      if (!isRatio) {
+        // fn_user_rank_period handles every period including all_time.
         const { data, error } = await supabase.rpc('fn_user_rank_period', {
           p_user_id: userId,
           p_club_id: resolvedClubId,
@@ -433,42 +444,55 @@ export const LeaderboardService = {
         return { rank: Number(data.rank || 0), total: Number(data.total || 0) };
       }
 
-      const metricToColumn: Record<string, string> = {
-        profit: 'total_winnings',
-        hands_played: 'hands_played',
-        vpip: 'vpip',
-        pfr: 'pfr',
-        tournaments_won: 'tournaments_won',
-        roi: 'total_winnings',
-      };
-      const orderCol = metricToColumn[metric] || 'total_winnings';
-
+      // Ratio metrics: rank against the all-time direct ordering.
+      const orderCol = metric === 'vpip' ? 'vpip' : 'pfr';
       const { data: allStats, error } = await supabase
         .from('player_stats')
-        .select(
-          'user_id, total_winnings, total_losses, hands_played, vpip, pfr, tournaments_played, tournaments_won'
-        )
-        .eq('club_id', await resolveClubUUID(clubId))
+        .select('user_id')
+        .eq('club_id', resolvedClubId)
         .order(orderCol, { ascending: false })
         .limit(QUERY_LIMITS.BULK);
 
       if (error || !allStats) {
-        reportError(error, 'LeaderboardService.LeaderboardServicegetUserRank_error');
+        reportError(error, 'LeaderboardService.getUserRank_error');
         return null;
       }
 
-      const userIndex = allStats.findIndex((s: PlayerStatsRow) => s.user_id === userId);
+      const userIndex = allStats.findIndex((s: { user_id: string }) => s.user_id === userId);
       if (userIndex === -1) return null;
 
-      return {
-        rank: userIndex + 1,
-        total: allStats.length,
-      };
+      return { rank: userIndex + 1, total: allStats.length };
     } catch (err: unknown) {
       reportError(
         err instanceof Error ? err.message : String(err),
-        'LeaderboardService.LeaderboardServicegetUserRank_error'
+        'LeaderboardService.getUserRank_error'
       );
+      return null;
+    }
+  },
+
+  /**
+   * Get user's rank on the GLOBAL leaderboard (all clubs combined).
+   */
+  async getGlobalUserRank(
+    userId: string,
+    metric: LeaderboardMetric = 'profit',
+    period: LeaderboardPeriod = 'weekly'
+  ): Promise<{ rank: number; total: number } | null> {
+    try {
+      if (metric === 'vpip' || metric === 'pfr') return null;
+      const { data, error } = await supabase.rpc('fn_user_rank_global_period', {
+        p_user_id: userId,
+        p_metric: metric,
+        p_period: period,
+      });
+      if (error || !data?.found) {
+        if (error) reportError(error, 'LeaderboardService.getGlobalUserRank');
+        return null;
+      }
+      return { rank: Number(data.rank || 0), total: Number(data.total || 0) };
+    } catch (err: unknown) {
+      reportError(err, 'LeaderboardService.getGlobalUserRank_err');
       return null;
     }
   },
@@ -478,7 +502,6 @@ export const LeaderboardService = {
    */
   async getClubTournamentStats(clubId: string, limit: number = 50): Promise<TournamentStats[]> {
     try {
-      // Query tournament_players for all completed tournaments in this club
       const { data: playerResults, error: resultsError } = await supabase
         .from('tournament_players')
         .select(
@@ -500,11 +523,10 @@ export const LeaderboardService = {
         .limit(QUERY_LIMITS.AGGREGATE);
 
       if (resultsError || !playerResults) {
-        reportError(resultsError, 'LeaderboardService.LeaderboardServicegetClubTournamentStats');
+        reportError(resultsError, 'LeaderboardService.getClubTournamentStats');
         return [];
       }
 
-      // Group and aggregate stats by user
       const statsMap = new Map<
         string,
         {
@@ -522,10 +544,7 @@ export const LeaderboardService = {
 
       playerResults.forEach((result: any) => {
         const userId = result.user_id as string;
-        // Supabase returns a single object for many-to-one joins, not an array
         const tourn = result.tournaments;
-
-        // Skip if no tournament data (filtered out by club_id)
         if (!tourn) return;
 
         if (!statsMap.has(userId)) {
@@ -544,7 +563,6 @@ export const LeaderboardService = {
 
         const stats = statsMap.get(userId)!;
 
-        // Process the tournament data (single object, not array)
         if (tourn.club_id === clubId) {
           const buyin = tourn.buy_in_amount || 0;
           const fee = tourn.buy_in_fee || 0;
@@ -552,7 +570,6 @@ export const LeaderboardService = {
           stats.totalBuyins += buyin + fee;
         }
 
-        // Check position and prize
         if (result.position === 1) stats.wins++;
         if (result.position && result.position <= 9) stats.finalTables++;
         if (result.prize && result.prize > 0) stats.itmFinishes++;
@@ -562,7 +579,6 @@ export const LeaderboardService = {
         stats.biggestWin = Math.max(stats.biggestWin, prize);
       });
 
-      // Convert to array and calculate ROI
       const statsArray = Array.from(statsMap.values()).map((stats) => ({
         userId: stats.userId,
         username: stats.username,
@@ -578,7 +594,6 @@ export const LeaderboardService = {
         biggestWin: stats.biggestWin,
       }));
 
-      // Get usernames and avatars from profiles
       const userIds = statsArray.map((s) => s.userId);
       const { data: profiles } = await supabase
         .from('profiles')
@@ -587,7 +602,6 @@ export const LeaderboardService = {
 
       const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
 
-      // Merge profile data and sort by totalPrizes descending
       return statsArray
         .map((stats) => ({
           ...stats,
@@ -597,7 +611,7 @@ export const LeaderboardService = {
         .sort((a, b) => b.totalPrizes - a.totalPrizes)
         .slice(0, limit);
     } catch (err: unknown) {
-      reportError(err, 'LeaderboardService.LeaderboardServicegetClubTournamentStats');
+      reportError(err, 'LeaderboardService.getClubTournamentStats');
       return [];
     }
   },

@@ -1,14 +1,16 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  LEADERBOARD PAGE — Global Rankings with Real-Time Updates
+ *  LEADERBOARD PAGE — Club + Global Rankings with Real-Time Updates
  * ═══════════════════════════════════════════════════════════════════════════════
- * Full-page leaderboard with club/union rankings, podium display, and live updates.
- * Supports Clubs, Charities, and Home Game venue types with appropriate metrics.
+ * Rebuilt 2026-08-19 on the real-profit pipeline:
+ * - Profit / hands / tournaments / ROI values are real (snapshot-delta RPCs).
+ * - My Clubs vs Global scope both work (global = per-user stats across clubs).
+ * - Rank-change arrows are real (current rank vs yesterday's snapshot rank).
+ * - No emoji in source (SWC/build rule): Unicode symbols only.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { LeaderboardService } from '../services/LeaderboardService';
@@ -26,7 +28,6 @@ import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import type { VipTier } from '../components/avatars/PlayerAvatar';
 import './LeaderboardPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
 
@@ -68,23 +69,49 @@ interface UserClub {
   name: string;
 }
 
-// Metric definitions with labels and icons for each metric type
+// Metric definitions. Unicode symbols only (no emoji: build rule).
 const METRIC_OPTIONS: {
   value: LeaderboardMetric;
   label: string;
   icon: string;
   description: string;
+  globalSupported: boolean;
 }[] = [
-  { value: 'profit', label: 'Profit', icon: '◆', description: 'Total profit earned' },
-  { value: 'hands_played', label: 'Hands Played', icon: '♠', description: 'Total hands dealt in' },
+  {
+    value: 'profit',
+    label: 'Profit',
+    icon: '◆',
+    description: 'Net chips won (winnings minus invested)',
+    globalSupported: true,
+  },
+  {
+    value: 'hands_played',
+    label: 'Hands Played',
+    icon: '♠',
+    description: 'Total hands dealt in',
+    globalSupported: true,
+  },
   {
     value: 'tournaments_won',
     label: 'Tournaments Won',
     icon: '★',
     description: 'Tournament victories',
+    globalSupported: true,
   },
-  { value: 'vpip', label: 'VPIP', icon: '▦', description: 'Voluntarily put chips in pot %' },
-  { value: 'roi', label: 'ROI', icon: '▲', description: 'Return on investment %' },
+  {
+    value: 'vpip',
+    label: 'VPIP',
+    icon: '▦',
+    description: 'Voluntarily put chips in pot %',
+    globalSupported: false,
+  },
+  {
+    value: 'roi',
+    label: 'ROI',
+    icon: '▲',
+    description: 'Return on invested chips %',
+    globalSupported: true,
+  },
 ];
 
 const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
@@ -93,6 +120,8 @@ const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: 'monthly', label: 'This Month' },
   { value: 'all_time', label: 'All Time' },
 ];
+
+const PODIUM_MEDALS = ['★', '●', '●']; // rendered via podium classes
 
 export default function LeaderboardPage() {
   useEffect(() => {
@@ -118,15 +147,15 @@ export default function LeaderboardPage() {
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [clubsLoading, setClubsLoading] = useState(true);
 
-  // Tournament stats
+  // Tournament stats (club-scoped)
   const [activeTab, setActiveTab] = useState<LeaderboardTab>('rankings');
   const activeTabRef = useRef<LeaderboardTab>('rankings');
   const [tournamentStats, setTournamentStats] = useState<TournamentStats[]>([]);
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
 
   // Refs for realtime callbacks to avoid stale closures
-  const loadLeaderboardRef = useRef(async (silent?: boolean, getIsMounted?: () => boolean) => {});
-  const loadTournamentStatsRef = useRef(async (getIsMounted?: () => boolean) => {});
+  const loadLeaderboardRef = useRef(async (_silent?: boolean, _getIsMounted?: () => boolean) => {});
+  const loadTournamentStatsRef = useRef(async (_getIsMounted?: () => boolean) => {});
 
   // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
   useEffect(() => {
@@ -149,6 +178,7 @@ export default function LeaderboardPage() {
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Keep activeTabRef in sync
@@ -161,6 +191,16 @@ export default function LeaderboardPage() {
     loadLeaderboardRef.current = loadLeaderboard;
     loadTournamentStatsRef.current = loadTournamentStats;
   });
+
+  // Global scope: force rankings tab and a supported metric
+  useEffect(() => {
+    if (scope === 'global') {
+      if (activeTab === 'tournaments') setActiveTab('rankings');
+      const opt = METRIC_OPTIONS.find((m) => m.value === metric);
+      if (opt && !opt.globalSupported) setMetric('profit');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope]);
 
   // ── Bus Listener: instant leaderboard refresh when engine completes a hand ──
   useEffect(() => {
@@ -175,7 +215,6 @@ export default function LeaderboardPage() {
       },
       500
     );
-    // Phase 4: Cross-page sync events (ported from World Hub leaderboard.js)
     const unsub2 = masterBus.subscribeDebounced(
       'CHIPS_DISTRIBUTED',
       () => loadLeaderboardRef.current(true),
@@ -254,36 +293,34 @@ export default function LeaderboardPage() {
     };
   }, []);
 
-  // Fetch Rankings Data
+  // Fetch Rankings Data (club scope needs a club; global scope does not)
   useEffect(() => {
     let isMounted = true;
-    if (selectedClubId) {
-      if (activeTab === 'rankings') {
-        loadLeaderboard(false, () => isMounted);
-      }
-    } else {
+    if (activeTab === 'rankings' && (scope === 'global' || selectedClubId)) {
+      loadLeaderboard(false, () => isMounted);
+    } else if (scope === 'my-clubs' && !selectedClubId) {
       setEntries([]);
       setLoading(false);
     }
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, period, metric, selectedClubId, activeTab]);
 
-  // Fetch Tournament Stats Data
+  // Fetch Tournament Stats Data (club-scoped only)
   useEffect(() => {
     let isMounted = true;
-    if (selectedClubId) {
-      if (activeTab === 'tournaments') {
-        loadTournamentStats(() => isMounted);
-      }
-    } else {
+    if (selectedClubId && activeTab === 'tournaments') {
+      loadTournamentStats(() => isMounted);
+    } else if (!selectedClubId) {
       setTournamentStats([]);
       setTournamentsLoading(false);
     }
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClubId, activeTab]);
 
   const loadUserClubs = async (getIsMounted?: () => boolean) => {
@@ -313,14 +350,16 @@ export default function LeaderboardPage() {
   const loadingRef = useRef(false);
 
   const loadLeaderboard = async (silent = false, getIsMounted?: () => boolean) => {
-    if (!selectedClubId) {
+    const isGlobal = scope === 'global';
+    if (!isGlobal && !selectedClubId) {
       setLoading(false);
       return;
     }
     if (loadingRef.current) return;
     loadingRef.current = true;
+
     // SWR: show cached data instantly
-    const cacheKey = `${selectedClubId}_${metric}_${period}`;
+    const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
     if (!silent) {
       const cached = getCachedEntries(cacheKey);
       if (cached && cached.length > 0) {
@@ -332,7 +371,10 @@ export default function LeaderboardPage() {
     }
     try {
       const data = await retryFetch(
-        () => LeaderboardService.getClubLeaderboard(selectedClubId, metric, period, 50),
+        () =>
+          isGlobal
+            ? LeaderboardService.getGlobalLeaderboard(metric, period, 50)
+            : LeaderboardService.getClubLeaderboard(selectedClubId as string, metric, period, 50),
         { maxRetries: 2 }
       );
       if (getIsMounted && !getIsMounted()) return;
@@ -340,9 +382,16 @@ export default function LeaderboardPage() {
       setCachedEntries(cacheKey, data);
       setLastUpdated(new Date());
 
-      // Get user's rank
+      // Get user's rank in the same scope
       if (user?.id) {
-        const rank = await LeaderboardService.getUserRank(user.id, selectedClubId, metric, period);
+        const rank = isGlobal
+          ? await LeaderboardService.getGlobalUserRank(user.id, metric, period)
+          : await LeaderboardService.getUserRank(
+              user.id,
+              selectedClubId as string,
+              metric,
+              period
+            );
         if (getIsMounted && !getIsMounted()) return;
         setUserRank(rank);
       }
@@ -379,20 +428,10 @@ export default function LeaderboardPage() {
 
   const formatValue = (value: number, m: LeaderboardMetric): string => {
     const precise = Math.trunc(value * 100) / 100;
-    if (m === 'profit' || m === 'hands_played' || m === 'tournaments_won') {
-      return precise.toLocaleString('en-US');
-    }
     if (m === 'vpip' || m === 'roi') {
       return `${precise}%`;
     }
     return precise.toLocaleString('en-US');
-  };
-
-  const getRankBadge = (rank: number): string => {
-    if (rank === 1) return '★';
-    if (rank === 2) return '☆';
-    if (rank === 3) return '☆';
-    return `#${rank}`;
   };
 
   const getRankLabel = (rank: number): string => {
@@ -402,18 +441,66 @@ export default function LeaderboardPage() {
     return `#${rank}`;
   };
 
+  const visibleMetricOptions = METRIC_OPTIONS.filter(
+    (m) => scope === 'my-clubs' || m.globalSupported
+  );
+
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3);
+
+  const renderChangeBadge = (change: number) => {
+    if (!change) return null;
+    return (
+      <span className={`change rank-change-anim ${change > 0 ? 'up' : 'down'}`}>
+        {change > 0 ? '▲' : '▼'} {Math.abs(change)}
+      </span>
+    );
+  };
+
+  const renderPodiumPlace = (entry: LeaderboardEntry, place: 1 | 2 | 3) => {
+    const cls = place === 1 ? 'podium-1st' : place === 2 ? 'podium-2nd' : 'podium-3rd';
+    const barCls = place === 1 ? 'gold-bar' : place === 2 ? 'silver-bar' : 'bronze-bar';
+    const textCls = place === 1 ? 'gold-text' : place === 2 ? 'silver-text' : 'bronze-text';
+    const fallbackTier: VipTier = place === 1 ? 'gold' : place === 2 ? 'silver' : 'bronze';
+    return (
+      <div
+        className={`podium-place ${cls}`}
+        onClick={() => navigate(`/profile/${entry.userId}`)}
+      >
+        {place === 1 && <div className="podium-crown">{'♛'}</div>}
+        <PlayerAvatar
+          src={entry.avatar}
+          name={entry.username}
+          size={place === 1 ? 'xl' : 'lg'}
+          vipTier={(entry.vipTier as VipTier) || fallbackTier}
+          level={entry.level || 1}
+          showPresence={false}
+          showLevelBadge={true}
+          showVipRing={true}
+        />
+        {entry.isVIP && <span className="vip-badge">VIP</span>}
+        {(entry.change || 0) >= 3 && (
+          <span className="hot-streak-badge" title="Hot streak: climbing fast">
+            {'↑'}
+          </span>
+        )}
+        <span className="podium-name">{entry.username}</span>
+        <span className={`podium-value ${textCls}`}>{formatValue(entry.value, metric)}</span>
+        <span className="podium-rank-emoji">{PODIUM_MEDALS[place - 1]}</span>
+        <div className={`podium-bar ${barCls}`}></div>
+      </div>
+    );
+  };
 
   return (
     <div className="leaderboard-page">
       {/* Live Indicator */}
       <div className="live-indicator">
         <span className="live-dot"></span>
-        <span>Live • Updated {lastUpdated.toLocaleTimeString()}</span>
+        <span>Live &bull; Updated {lastUpdated.toLocaleTimeString()}</span>
       </div>
 
-      {/* Tab Selector */}
+      {/* Tab Selector (tournament stats are per-club) */}
       <div className="leaderboard-tabs">
         <button
           className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
@@ -421,18 +508,20 @@ export default function LeaderboardPage() {
         >
           Rankings
         </button>
-        <button
-          className={`tab-btn ${activeTab === 'tournaments' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tournaments')}
-        >
-          Tournament Stats
-        </button>
+        {scope === 'my-clubs' && (
+          <button
+            className={`tab-btn ${activeTab === 'tournaments' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tournaments')}
+          >
+            Tournament Stats
+          </button>
+        )}
       </div>
 
       {/* Filters */}
       <div className="leaderboard-filters">
-        {/* Club Selector (only shown when multiple clubs) */}
-        {userClubs.length > 1 && (
+        {/* Club Selector (club scope, multiple clubs) */}
+        {scope === 'my-clubs' && userClubs.length > 1 && (
           <div className="filter-group">
             <select
               value={selectedClubId || ''}
@@ -460,7 +549,7 @@ export default function LeaderboardPage() {
           </button>
         </div>
 
-        {/* Period Selector — Pill Chips (Initiative 2) */}
+        {/* Period Selector */}
         <div className="filter-group lb-chip-bar">
           {PERIOD_OPTIONS.map((opt) => (
             <button
@@ -473,12 +562,13 @@ export default function LeaderboardPage() {
           ))}
         </div>
 
-        {/* Metric Selector — Pill Chips (Initiative 2) */}
+        {/* Metric Selector */}
         <div className="filter-group lb-chip-bar lb-chip-scroll">
-          {METRIC_OPTIONS.map((opt) => (
+          {visibleMetricOptions.map((opt) => (
             <button
               key={opt.value}
               className={`lb-filter-chip ${metric === opt.value ? 'active' : ''}`}
+              title={opt.description}
               onClick={() => setMetric(opt.value)}
             >
               {opt.icon} {opt.label}
@@ -486,7 +576,7 @@ export default function LeaderboardPage() {
           ))}
         </div>
 
-        {entries.length > 0 && (
+        {entries.length > 0 && activeTab === 'rankings' && (
           <button
             className="lb-csv-btn"
             style={{
@@ -501,7 +591,7 @@ export default function LeaderboardPage() {
             }}
             onClick={() => {
               try {
-                exportToCSV(entries, `leaderboard_${metric}_${period}.csv`, [
+                exportToCSV(entries, `leaderboard_${scope}_${metric}_${period}.csv`, [
                   { key: 'rank', label: 'Rank' },
                   { key: 'username', label: 'Username' },
                   {
@@ -511,9 +601,9 @@ export default function LeaderboardPage() {
                   { key: 'change', label: 'Change' },
                   { key: 'userId', label: 'User ID' },
                 ]);
-                toast.success('Leaderboard exported!');
+                toast.success('Leaderboard exported');
               } catch (e) {
-                reportError(e, 'LeaderboardPage.find');
+                reportError(e, 'LeaderboardPage.export');
                 toast.error('Export failed');
               }
             }}
@@ -525,7 +615,7 @@ export default function LeaderboardPage() {
 
       {/* Leaderboard Content */}
       <div className="leaderboard-list">
-        {clubsLoading ? (
+        {clubsLoading && scope === 'my-clubs' ? (
           <div className="lb-skeleton-wrapper">
             <div className="lb-skeleton-podium">
               <div className="lb-skel-pod" />
@@ -536,10 +626,10 @@ export default function LeaderboardPage() {
               <div key={i} className="lb-skeleton-row" />
             ))}
           </div>
-        ) : userClubs.length === 0 ? (
+        ) : scope === 'my-clubs' && userClubs.length === 0 ? (
           <div className="empty-state">
-            <span className="empty-icon">♠</span>
-            <p>Join a club to see leaderboard rankings!</p>
+            <span className="empty-icon">{'♠'}</span>
+            <p>Join a club to see leaderboard rankings, or switch to Global.</p>
             <button className="join-club-btn" onClick={() => navigate('/clubs')}>
               Browse Clubs
             </button>
@@ -561,7 +651,7 @@ export default function LeaderboardPage() {
               className="empty-icon"
               style={{ fontSize: '3rem', display: 'block', marginBottom: '0.75rem' }}
             >
-              ★
+              {'★'}
             </span>
             <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
               No rankings yet for this period.
@@ -574,58 +664,11 @@ export default function LeaderboardPage() {
                 margin: '0 0 1.5rem',
               }}
             >
-              Start playing to climb the leaderboard!
+              Start playing to climb the leaderboard.
             </p>
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.75rem',
-                alignItems: 'center',
-              }}
-            >
-              <div
-                style={{
-                  background: 'rgba(65,105,225,0.1)',
-                  border: '1px solid rgba(65,105,225,0.2)',
-                  borderRadius: '12px',
-                  padding: '1rem 1.5rem',
-                  maxWidth: '320px',
-                  width: '100%',
-                  textAlign: 'left',
-                }}
-              >
-                <div
-                  style={{
-                    fontWeight: 600,
-                    marginBottom: '0.5rem',
-                    color: 'var(--off-white, #E4E6EB)',
-                  }}
-                >
-                  How to rank up
-                </div>
-                <ul
-                  style={{
-                    margin: 0,
-                    paddingLeft: '1.25rem',
-                    color: 'var(--soft-white, #B0B3B8)',
-                    fontSize: '0.85rem',
-                    lineHeight: 1.8,
-                  }}
-                >
-                  <li>Play hands at any club table</li>
-                  <li>Win tournaments for bonus points</li>
-                  <li>Climb daily, weekly & monthly boards</li>
-                </ul>
-              </div>
-              <button
-                className="join-club-btn"
-                onClick={() => navigate('/')}
-                style={{ marginTop: '0.5rem' }}
-              >
-                Find a Table
-              </button>
-            </div>
+            <button className="join-club-btn" onClick={() => navigate('/')}>
+              Find a Table
+            </button>
           </div>
         ) : activeTab === 'tournaments' && tournamentsLoading ? (
           <div className="lb-skeleton-wrapper">
@@ -635,102 +678,18 @@ export default function LeaderboardPage() {
           </div>
         ) : activeTab === 'tournaments' && tournamentStats.length === 0 ? (
           <div className="empty-state">
-            <span className="empty-icon">★</span>
+            <span className="empty-icon">{'★'}</span>
             <p>No tournament stats yet.</p>
-            <p className="empty-sub">Register for a tournament to see your stats!</p>
+            <p className="empty-sub">Register for a tournament to see your stats.</p>
           </div>
         ) : activeTab === 'rankings' && entries.length > 0 ? (
           <>
             {/* ── TOP 3 PODIUM ── */}
             {top3.length >= 3 && (
               <div className="podium-section" style={podiumAnimationStyle}>
-                {/* 2nd Place */}
-                <div
-                  className="podium-place podium-2nd"
-                  onClick={() => navigate(`/profile/${top3[1].userId}`)}
-                >
-                  <PlayerAvatar
-                    src={top3[1].avatar}
-                    name={top3[1].username}
-                    size="lg"
-                    vipTier={(top3[1].vipTier as VipTier) || 'silver'}
-                    level={top3[1].level || 1}
-                    showPresence={false}
-                    showLevelBadge={true}
-                    showVipRing={true}
-                  />
-                  {top3[1].isVIP && <span className="vip-badge">VIP</span>}
-                  {(top3[1].change || 0) >= 3 && (
-                    <span className="hot-streak-badge" title="Hot Streak!">
-                      ▲
-                    </span>
-                  )}
-                  <span className="podium-name">{top3[1].username}</span>
-                  <span className="podium-value silver-text">
-                    {formatValue(top3[1].value, metric)}
-                  </span>
-                  <span className="podium-rank-emoji">☆</span>
-                  <div className="podium-bar silver-bar"></div>
-                </div>
-
-                {/* 1st Place */}
-                <div
-                  className="podium-place podium-1st"
-                  onClick={() => navigate(`/profile/${top3[0].userId}`)}
-                >
-                  <div className="podium-crown">♛</div>
-                  <PlayerAvatar
-                    src={top3[0].avatar}
-                    name={top3[0].username}
-                    size="xl"
-                    vipTier={(top3[0].vipTier as VipTier) || 'gold'}
-                    level={top3[0].level || 1}
-                    showPresence={false}
-                    showLevelBadge={true}
-                    showVipRing={true}
-                  />
-                  {top3[0].isVIP && <span className="vip-badge">VIP</span>}
-                  {(top3[0].change || 0) >= 3 && (
-                    <span className="hot-streak-badge" title="Hot Streak!">
-                      ▲
-                    </span>
-                  )}
-                  <span className="podium-name">{top3[0].username}</span>
-                  <span className="podium-value gold-text">
-                    {formatValue(top3[0].value, metric)}
-                  </span>
-                  <span className="podium-rank-emoji">★</span>
-                  <div className="podium-bar gold-bar"></div>
-                </div>
-
-                {/* 3rd Place */}
-                <div
-                  className="podium-place podium-3rd"
-                  onClick={() => navigate(`/profile/${top3[2].userId}`)}
-                >
-                  <PlayerAvatar
-                    src={top3[2].avatar}
-                    name={top3[2].username}
-                    size="lg"
-                    vipTier={(top3[2].vipTier as VipTier) || 'bronze'}
-                    level={top3[2].level || 1}
-                    showPresence={false}
-                    showLevelBadge={true}
-                    showVipRing={true}
-                  />
-                  {top3[2].isVIP && <span className="vip-badge">VIP</span>}
-                  {(top3[2].change || 0) >= 3 && (
-                    <span className="hot-streak-badge" title="Hot Streak!">
-                      ▲
-                    </span>
-                  )}
-                  <span className="podium-name">{top3[2].username}</span>
-                  <span className="podium-value bronze-text">
-                    {formatValue(top3[2].value, metric)}
-                  </span>
-                  <span className="podium-rank-emoji">☆</span>
-                  <div className="podium-bar bronze-bar"></div>
-                </div>
+                {renderPodiumPlace(top3[1], 2)}
+                {renderPodiumPlace(top3[0], 1)}
+                {renderPodiumPlace(top3[2], 3)}
               </div>
             )}
 
@@ -743,7 +702,7 @@ export default function LeaderboardPage() {
                   onClick={() => navigate(`/profile/${entry.userId}`)}
                   style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
                 >
-                  <span className={`entry-rank top-3`}>{getRankBadge(entry.rank)}</span>
+                  <span className={`entry-rank top-3`}>{getRankLabel(entry.rank)}</span>
                   <div className="entry-avatar">
                     {entry.avatar ? (
                       <img src={entry.avatar} alt="" loading="lazy" />
@@ -759,6 +718,7 @@ export default function LeaderboardPage() {
                   </div>
                   <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
                     {formatValue(entry.value, metric)}
+                    {renderChangeBadge(entry.change)}
                   </div>
                 </div>
               ))}
@@ -789,33 +749,18 @@ export default function LeaderboardPage() {
                     {entry.username}
                     {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                     {(entry.change || 0) >= 3 && (
-                      <span className="hot-streak-badge" title="Hot Streak!">
-                        ▲
+                      <span className="hot-streak-badge" title="Hot streak: climbing fast">
+                        {'↑'}
                       </span>
                     )}
                   </span>
                 </div>
                 <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
                   {formatValue(entry.value, metric)}
-                  {entry.change !== 0 && (
-                    <span className={`change rank-change-anim ${entry.change > 0 ? 'up' : 'down'}`}>
-                      {entry.change > 0 ? '▲' : '▼'} {Math.abs(entry.change)}
-                    </span>
-                  )}
+                  {renderChangeBadge(entry.change)}
                 </div>
               </div>
             ))}
-
-            {/* Motivational CTA when leaderboard is sparse */}
-            {entries.length < 10 && (
-              <div className="lb-motivational-cta">
-                <div className="lb-motivational-icon">◎</div>
-                <div className="lb-motivational-text">
-                  <strong>Keep climbing!</strong>
-                  <span>Play more hands to move up the rankings and unlock bragging rights.</span>
-                </div>
-              </div>
-            )}
           </>
         ) : activeTab === 'tournaments' && tournamentStats.length > 0 ? (
           <>
@@ -870,11 +815,11 @@ export default function LeaderboardPage() {
       </div>
 
       {/* Sticky User Rank Card (Bottom) */}
-      {userRank && (
+      {userRank && activeTab === 'rankings' && (
         <div className="user-rank-card sticky-bottom">
           <div className="user-rank-position">
             <span className="rank-number">{getRankLabel(userRank.rank)}</span>
-            <span className="rank-label">Your Rank</span>
+            <span className="rank-label">Your Rank{scope === 'global' ? ' (Global)' : ''}</span>
           </div>
           <div className="rank-context">out of {userRank.total.toLocaleString()} players</div>
         </div>

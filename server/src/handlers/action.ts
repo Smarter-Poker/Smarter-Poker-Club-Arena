@@ -65,16 +65,19 @@ export async function handleAction(
     // Use authenticated userId from JWT, NOT from request body (prevents spoofing)
     const userId = auth.userId;
 
-    // Bible V8 §9.3: Rate limiting — reject rapid-fire action submissions
-    if (!checkRateLimit(userId)) {
+    if (!tableId || !action) {
+      return sendJSON(res, 400, { success: false, error: 'Missing tableId or action' });
+    }
+
+    // Bible V8 §9.3: Rate limiting — reject rapid-fire action submissions.
+    // Keyed per user AND table (2026-08-19): a multi-tabling player acting at
+    // two tables inside the window is normal play, not abuse. Validation of
+    // tableId moved above this so the key is always complete.
+    if (!checkRateLimit(userId, tableId)) {
       return sendJSON(res, 429, {
         success: false,
         error: 'Rate limited — wait before submitting another action',
       });
-    }
-
-    if (!tableId || !action) {
-      return sendJSON(res, 400, { success: false, error: 'Missing tableId or action' });
     }
 
     const engine = deps.gameServer.getTableEngine(tableId);

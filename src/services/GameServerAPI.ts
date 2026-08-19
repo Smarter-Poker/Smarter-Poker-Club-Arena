@@ -143,6 +143,39 @@ export interface ServerStatus {
  * @param amount - Optional amount for raise/bet actions
  * @returns ActionResult with success status and optional error message
  */
+/**
+ * Serialises action posts per table so the client cannot out-run the engine's
+ * own 250ms window. Keyed by table: actions at DIFFERENT tables must never
+ * wait on each other, which is the whole point of the per-table limiter on the
+ * server side.
+ */
+const lastActionSentAt = new Map<string, number>();
+const ACTION_MIN_SPACING_MS = 260; // engine window is 250ms; 10ms of slack
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Submit a player action.
+ *
+ * Dan 2026-08-19, bug list item 13: "'Server error (429)' popup must never
+ * happen on a live game." Three things had to be true for that to hold, and
+ * only the weakest of them was in place:
+ *
+ *  1. The engine must not rate-limit legitimate play. Its window was keyed by
+ *     userId alone, so a multi-tabling player folding at one table and calling
+ *     at another inside 250ms throttled themselves. Now keyed per user+table
+ *     (see server/src/http/rateLimit.ts).
+ *  2. The client must not fire faster than the window at a single table. It
+ *     now waits out the remainder of the window before sending rather than
+ *     sending and hoping.
+ *  3. If a 429 still happens, it must be retried, not shown. A 429 means the
+ *     request was NOT processed, so retrying is always safe. The old code
+ *     retried exactly once and then put the raw status code on screen.
+ *
+ * The player never sees a status code: if every retry is exhausted the message
+ * is in words, and the action is reported as failed so nothing is assumed to
+ * have happened.
+ */
 export async function submitAction(
   tableId: string,
   _userId: string,
@@ -151,14 +184,14 @@ export async function submitAction(
 ): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    // LIVE E2E FIX 2026-08-15: the engine rate-limits /action to one request
-    // per 250ms per user. A pre-action auto-fire, an optimistic double-tap,
-    // or a fold racing a leave can land two posts inside that window — the
-    // second surfaced a raw "Server error (429)" toast and the action was
-    // silently DROPPED. A 429 means the request was NOT processed, so it is
-    // always safe to retry: wait out the window and retry exactly once
-    // before surfacing anything to the player.
-    for (let attempt = 1; attempt <= 2; attempt++) {
+
+    // Wait out the engine's window for THIS table before the first attempt.
+    const since = Date.now() - (lastActionSentAt.get(tableId) ?? 0);
+    if (since < ACTION_MIN_SPACING_MS) await sleep(ACTION_MIN_SPACING_MS - since);
+
+    const BACKOFFS_MS = [300, 450, 700]; // 3 retries after the first attempt
+    for (let attempt = 0; attempt <= BACKOFFS_MS.length; attempt++) {
+      lastActionSentAt.set(tableId, Date.now());
       const response = await fetch(`${GAME_SERVER_URL}/action`, {
         method: 'POST',
         headers,
@@ -170,19 +203,29 @@ export async function submitAction(
         return result as ActionResult;
       }
 
-      if (response.status === 429 && attempt === 1) {
-        await new Promise((r) => setTimeout(r, 350));
+      if (response.status === 429 && attempt < BACKOFFS_MS.length) {
+        await sleep(BACKOFFS_MS[attempt]);
         continue;
+      }
+
+      if (response.status === 429) {
+        // Every retry exhausted. Never show the number.
+        return { success: false, error: 'The table is busy — please try again' };
       }
 
       return { success: false, error: `Server error (${response.status})` };
     }
-    // Unreachable (the loop always returns), but keeps TS + lint satisfied.
-    return { success: false, error: 'Server error (429)' };
+    // Unreachable: the loop returns on every path.
+    return { success: false, error: 'The table is busy — please try again' };
   } catch (err: unknown) {
     reportError(err, 'GameServerAPI.submitAction');
     return { success: false, error: 'Server unreachable' };
   }
+}
+
+/** Test-only: clear the per-table spacing map between cases. */
+export function __resetActionSpacingForTests(): void {
+  lastActionSentAt.clear();
 }
 
 /**

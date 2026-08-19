@@ -1327,6 +1327,18 @@ export default function UnionDetailPage() {
             {/* Settlement History */}
             <div className={styles.settlementSection}>
               <h3> Settlement History</h3>
+              {/* 2026-08-19: /union-dashboard had NO link anywhere in the app —
+                  it was reachable only by typing the URL. That is where the
+                  union wallet, the treasury and the weekly player win/loss
+                  settlement live, so in practice none of it was visible to the
+                  people who own it. */}
+              <p style={{ margin: '0 0 12px', fontSize: 13, opacity: 0.75 }}>
+                Weekly player win/loss settlement, wallet and treasury live on the{' '}
+                <Link to="/union-dashboard" style={{ color: '#1877F2', fontWeight: 600 }}>
+                  union dashboard
+                </Link>
+                .
+              </p>
               <table className={styles.settlementTable}>
                 <thead>
                   <tr>

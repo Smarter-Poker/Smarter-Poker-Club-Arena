@@ -8001,3 +8001,50 @@ DB migration mirrors: 20260819g, 20260819h.
     page finishes in ~10-12 min, so the cursor advances several times an hour and
     a restart costs minutes. Throughput is unchanged (bound by RPC rate, not page
     size) because #14's 60s catch-up runs pages back-to-back.
+
+## 2026-08-19 (later) — Leaderboard audit pass: 6 defects fixed (Cowork/Claude)
+
+Line-by-line audit of the same-day leaderboard pipeline. Six confirmed defects,
+each measured before and after:
+
+1. ROI board was sorted by PROFIT, not ROI (positions 1..10 read 25.94, 18.87,
+   17.88, 21.49, ... - not descending). Now sorted by real ROI with a 20-hand
+   qualifier; unqualified rows sort last instead of being dropped.
+2. hands_played was 13.4% of reality (1,083,942 true seat-hands on 08-18 vs
+   144,956 booked) because RakebackSettlerService owns it and only walks raked
+   hands. New player_stats.hands_dealt is counted by the hand_history trigger
+   for every seated player of every cash hand; backfilled from hand_history and
+   now measures 100.0% (1,083,930 / 1,083,942).
+3. rank_change was noise for the daily period (avg |change| 287 vs 28 monthly):
+   baseline and comparison snapshots were the same date, collapsing every
+   previous value to 0 and leaving an arbitrary uid tiebreak. Previous
+   standings are now the same-length window ending yesterday.
+4. VPIP/PFR rendered at 100x. They are stored as percentages (measured range
+   0.55..100, mean 40.4) but the client multiplied by 100, so a 40% VPIP
+   displayed as 4040%. Pre-existing bug, carried in from the old page.
+5. A load in flight caused the next one to be DROPPED (`if (loadingRef.current)
+   return`), so changing filters mid-fetch left the previous filter's data on
+   screen with no retry. Replaced with a monotonic request token that
+   supersedes instead of dropping.
+6. Realtime channel was subscribed to `promotion_leaderboards`, which this view
+   never reads - it could not fire. Removed; freshness comes from the 30s poll
+   and the debounced HAND_COMPLETED bus event. A channel on player_stats is
+   deliberately not used (~1.1M writes/day would flood the client).
+
+Also hardened: winner folding was one multi-row INSERT, so a single winner id
+missing from profiles would have aborted the whole hand's stats - now filtered
+per row. Added idx_pss_date for the global path.
+
+Upgrades: per-row hand counts as context for rate metrics, an explicit
+"unranked" marker for rows under the ROI qualifier, the user's own value and an
+off-list indicator on the sticky rank card, keyboard-operable rows with focus
+rings, and numbered podium places.
+
+NOT a defect (checked and cleared): loss writes are not dropping despite being
+fire-and-forget - reconciled over 5 hours at 100.05% of expected, wins at
+99.9999%. useVisibilityRefresh syncs its callback ref every render, so there is
+no stale-closure bug there.
+
+DB migration mirror: supabase/migrations/20260819j_leaderboard_correctness_pass.sql
+(dumped from the live catalog). Staging tables _lb_backfill_daily and
+_lb_hands_daily dropped after reconciliation.

@@ -38,6 +38,7 @@ interface PlayerStatsRow {
   tournaments_won: number;
   club_id?: string;
   rank_change?: number;
+  qualified?: boolean;
 }
 
 interface ProfileRow {
@@ -72,6 +73,10 @@ export interface LeaderboardEntry {
   isVIP?: boolean;
   vipTier?: string;
   level?: number;
+  /** Hands dealt in the selected period - context for rate metrics like ROI. */
+  hands?: number;
+  /** False when the row fails the ROI volume qualifier; such rows sort last. */
+  qualified?: boolean;
 }
 
 export interface PlayerStats {
@@ -124,10 +129,13 @@ function metricValue(row: PlayerStatsRow, metric: LeaderboardMetric): number {
   switch (metric) {
     case 'hands_played':
       return Number(row.hands_played) || 0;
+    // AUDIT 2026-08-19: vpip/pfr are stored as PERCENTAGES (measured range
+    // 0.55..100, mean 40.4), not 0..1 fractions. The previous `* 10000 / 100`
+    // multiplied by 100 and rendered a 40% VPIP as "4040%".
     case 'vpip':
-      return Math.trunc((row.vpip || 0) * 10000) / 100;
+      return Math.trunc((row.vpip || 0) * 100) / 100;
     case 'pfr':
-      return Math.trunc((row.pfr || 0) * 10000) / 100;
+      return Math.trunc((row.pfr || 0) * 100) / 100;
     case 'tournaments_won':
       return Number(row.tournaments_won) || 0;
     case 'roi':
@@ -161,6 +169,8 @@ async function decorateWithProfiles(
       value: metricValue(row, metric),
       metric,
       change: Number(row.rank_change) || 0,
+      hands: Number(row.hands_played) || 0,
+      qualified: row.qualified !== false,
       isVIP: profile.tier === 'gold' || profile.tier === 'platinum' || profile.tier === 'diamond',
       vipTier: profile.tier || 'bronze',
       level: profile.level || 1,
@@ -424,7 +434,7 @@ export const LeaderboardService = {
     clubId: string,
     metric: LeaderboardMetric = 'profit',
     period: LeaderboardPeriod = 'weekly'
-  ): Promise<{ rank: number; total: number } | null> {
+  ): Promise<{ rank: number; total: number; value: number } | null> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
       const isRatio = metric === 'vpip' || metric === 'pfr';
@@ -441,7 +451,11 @@ export const LeaderboardService = {
           if (error) reportError(error, 'LeaderboardService.getUserRank_period');
           return null;
         }
-        return { rank: Number(data.rank || 0), total: Number(data.total || 0) };
+        return {
+          rank: Number(data.rank || 0),
+          total: Number(data.total || 0),
+          value: Number(data.value || 0),
+        };
       }
 
       // Ratio metrics: rank against the all-time direct ordering.
@@ -461,7 +475,7 @@ export const LeaderboardService = {
       const userIndex = allStats.findIndex((s: { user_id: string }) => s.user_id === userId);
       if (userIndex === -1) return null;
 
-      return { rank: userIndex + 1, total: allStats.length };
+      return { rank: userIndex + 1, total: allStats.length, value: 0 };
     } catch (err: unknown) {
       reportError(
         err instanceof Error ? err.message : String(err),
@@ -478,7 +492,7 @@ export const LeaderboardService = {
     userId: string,
     metric: LeaderboardMetric = 'profit',
     period: LeaderboardPeriod = 'weekly'
-  ): Promise<{ rank: number; total: number } | null> {
+  ): Promise<{ rank: number; total: number; value: number } | null> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return null;
       const { data, error } = await supabase.rpc('fn_user_rank_global_period', {
@@ -490,7 +504,11 @@ export const LeaderboardService = {
         if (error) reportError(error, 'LeaderboardService.getGlobalUserRank');
         return null;
       }
-      return { rank: Number(data.rank || 0), total: Number(data.total || 0) };
+      return {
+        rank: Number(data.rank || 0),
+        total: Number(data.total || 0),
+        value: Number(data.value || 0),
+      };
     } catch (err: unknown) {
       reportError(err, 'LeaderboardService.getGlobalUserRank_err');
       return null;

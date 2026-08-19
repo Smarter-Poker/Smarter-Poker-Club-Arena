@@ -114,6 +114,8 @@ const METRIC_OPTIONS: {
   },
 ];
 
+const ROI_MIN_HANDS = 20; // mirrors v_min_hands in fn_*_leaderboard_period*
+
 const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: 'daily', label: 'Today' },
   { value: 'weekly', label: 'This Week' },
@@ -121,7 +123,7 @@ const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: 'all_time', label: 'All Time' },
 ];
 
-const PODIUM_MEDALS = ['★', '●', '●']; // rendered via podium classes
+const PODIUM_MEDALS = ['1', '2', '3']; // place numerals; colour comes from the podium classes
 
 export default function LeaderboardPage() {
   useEffect(() => {
@@ -137,7 +139,9 @@ export default function LeaderboardPage() {
   const [metric, setMetric] = useState<LeaderboardMetric>('profit');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [userRank, setUserRank] = useState<{ rank: number; total: number } | null>(null);
+  const [userRank, setUserRank] = useState<{ rank: number; total: number; value: number } | null>(
+    null
+  );
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
@@ -248,20 +252,12 @@ export default function LeaderboardPage() {
     };
   }, []);
 
-  // Callback for leaderboard updates
-  const handleLeaderboardUpdate = useCallback(() => {
-    if (activeTabRef.current === 'rankings')
-      loadLeaderboardRef.current(true, () => isMountedRef.current);
-  }, []);
-
-  useMasterBusChannel({
-    channelName: 'leaderboard-updates',
-    table: 'promotion_leaderboards',
-    filter: null,
-    event: '*',
-    onPayload: handleLeaderboardUpdate,
-    enabled: true,
-  });
+  // AUDIT 2026-08-19: a realtime channel on `promotion_leaderboards` used to live
+  // here. This view reads player_stats, so that channel could never fire for it —
+  // it was dead weight that made the page look more live than it was. Freshness
+  // comes from the 30s poll plus the debounced HAND_COMPLETED bus event above.
+  // A channel on player_stats itself is deliberately NOT used: it changes on
+  // every seat of every hand (~1.1M writes/day) and would flood the client.
 
   // Callback for tournament updates
   const handleTournamentLeaderboardUpdate = useCallback(() => {
@@ -347,7 +343,7 @@ export default function LeaderboardPage() {
     setClubsLoading(false);
   };
 
-  const loadingRef = useRef(false);
+  const reqSeqRef = useRef(0);
 
   const loadLeaderboard = async (silent = false, getIsMounted?: () => boolean) => {
     const isGlobal = scope === 'global';
@@ -355,8 +351,9 @@ export default function LeaderboardPage() {
       setLoading(false);
       return;
     }
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    // Monotonic request token: a newer request always wins, and an in-flight
+    // response that is no longer current is discarded rather than rendered.
+    const myReq = ++reqSeqRef.current;
 
     // SWR: show cached data instantly
     const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
@@ -377,6 +374,7 @@ export default function LeaderboardPage() {
             : LeaderboardService.getClubLeaderboard(selectedClubId as string, metric, period, 50),
         { maxRetries: 2 }
       );
+      if (myReq !== reqSeqRef.current) return; // superseded by a newer request
       if (getIsMounted && !getIsMounted()) return;
       setEntries(data);
       setCachedEntries(cacheKey, data);
@@ -392,6 +390,7 @@ export default function LeaderboardPage() {
               metric,
               period
             );
+        if (myReq !== reqSeqRef.current) return;
         if (getIsMounted && !getIsMounted()) return;
         setUserRank(rank);
       }
@@ -399,8 +398,7 @@ export default function LeaderboardPage() {
       reportError(error, 'LeaderboardPage.Failed_to_load_leaderboard');
       if (!silent) toast.error('Failed to load leaderboard');
     } finally {
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
+      if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) setLoading(false);
     }
   };
 
@@ -447,6 +445,29 @@ export default function LeaderboardPage() {
 
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3);
+
+  // Rate metrics are meaningless without volume, so every row carries the hand
+  // count for the selected period, and rows that fail the ROI qualifier say so
+  // rather than silently sorting last.
+  const renderRowContext = (entry: LeaderboardEntry) => {
+    const bits: string[] = [];
+    if (entry.hands != null && entry.hands > 0) {
+      bits.push(`${entry.hands.toLocaleString('en-US')} hands`);
+    }
+    if (metric === 'roi' && entry.qualified === false) {
+      bits.push(`under ${ROI_MIN_HANDS} hands - unranked`);
+    }
+    if (bits.length === 0) return null;
+    return <span className="entry-subline">{bits.join(' \u00B7 ')}</span>;
+  };
+
+  // Rows are clickable; make them operable from the keyboard too.
+  const rowKeyActivate = (userId: string) => (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      navigate(`/profile/${userId}`);
+    }
+  };
 
   const renderChangeBadge = (change: number) => {
     if (!change) return null;
@@ -734,6 +755,10 @@ export default function LeaderboardPage() {
                 key={entry.userId}
                 className={`leaderboard-entry ${entry.userId === user?.id ? 'current-user' : ''}`}
                 onClick={() => navigate(`/profile/${entry.userId}`)}
+                onKeyDown={rowKeyActivate(entry.userId)}
+                role="button"
+                tabIndex={0}
+                aria-label={`${getRankLabel(entry.rank)} ${entry.username}, ${formatValue(entry.value, metric)}`}
                 style={{ ...rankingRowAnimationStyle(index), cursor: 'pointer' }}
               >
                 <span className="entry-rank">{getRankLabel(entry.rank)}</span>
@@ -754,6 +779,7 @@ export default function LeaderboardPage() {
                       </span>
                     )}
                   </span>
+                  {renderRowContext(entry)}
                 </div>
                 <div className={`entry-value ${entry.value >= 0 ? 'positive' : 'negative'}`}>
                   {formatValue(entry.value, metric)}
@@ -821,7 +847,15 @@ export default function LeaderboardPage() {
             <span className="rank-number">{getRankLabel(userRank.rank)}</span>
             <span className="rank-label">Your Rank{scope === 'global' ? ' (Global)' : ''}</span>
           </div>
-          <div className="rank-context">out of {userRank.total.toLocaleString()} players</div>
+          <div className="rank-context">
+            <span>out of {userRank.total.toLocaleString()} players</span>
+            {userRank.value !== 0 && (
+              <span className="rank-own-value">{formatValue(userRank.value, metric)}</span>
+            )}
+            {!entries.some((e) => e.userId === user?.id) && entries.length > 0 && (
+              <span className="rank-offlist">not in the top {entries.length}</span>
+            )}
+          </div>
         </div>
       )}
     </div>

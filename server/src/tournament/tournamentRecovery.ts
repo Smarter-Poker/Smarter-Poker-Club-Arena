@@ -54,8 +54,15 @@ export async function refundAndCloseCancelledTournament(
       .select('buy_in_amount, buy_in_fee, club_id, name')
       .eq('id', tournamentId)
       .maybeSingle();
-    const refundAmount = Number(fullT?.buy_in_amount || 0) + Number(fullT?.buy_in_fee || 0);
-    const fee = Number(fullT?.buy_in_fee || 0);
+    // AUDIT 2026-08-19 (rake/BBJ pass 2): refunds are EVIDENCE-BASED. The old
+    // rule "horses paid nothing" became false the day
+    // fn_register_horse_for_tournament started charging horses real chips --
+    // skipping horses destroyed their buy-in + fee on every cancelled event,
+    // and the flat buy_in+fee amount ignored rebuys/add-ons/re-entries. Each
+    // open registration is now refunded exactly what that player actually paid
+    // for THIS tournament (tournament_buyin debits minus refunds already
+    // given), horse or human alike, and the player's un-reversed fee rows are
+    // reversed in the rake ledger so a cancelled event's fees net to zero.
 
     // Open rows = not yet eliminated/paid. Only these are refund candidates.
     const { data: openRows } = await supabase
@@ -64,60 +71,85 @@ export async function refundAndCloseCancelledTournament(
       .eq('tournament_id', tournamentId)
       .in('status', ['playing', 'registered']);
 
-    if (refundAmount > 0 && (openRows?.length ?? 0) > 0) {
-      const ids = (openRows ?? []).map((r) => r.user_id);
-      const { data: horseRows } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('id', ids)
-        .eq('is_horse', true);
-      const horseSet = new Set((horseRows ?? []).map((h) => h.id));
-      for (const row of openRows ?? []) {
-        if (horseSet.has(row.user_id)) continue; // horses paid nothing
-        if (Number(row.prize || 0) > 0) continue; // already paid a prize — no refund on top
-        const { error: refErr } = await supabase.rpc('credit_player_wallet', {
-          p_user_id: row.user_id,
-          p_amount: refundAmount,
-          // A3 FIX (2026-07-28): `refundAndCloseCancelledTournament` is driven by
-          // `cleanupStaleData`, which runs on EVERY boot, and the status flip to
-          // CANCELLED is a single batch UPDATE that only happens after this loop
-          // finishes - so a crash mid-loop (or a failure of that final UPDATE)
-          // re-refunded every already-refunded row on the next boot. Keyed on the
-          // tournament_players row id, in the SAME format used by the startup
-          // pre-start sweep and the SNG lifecycle sweep, so all three dedupe.
-          p_idempotency_key: `tourney:${tournamentId}:cancelrefund:${row.id}`,
-        });
-        if (refErr) {
-          reportError(
-            new Error(
-              `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refErr.message}`
-            ),
-            'GameServer.cancel_refund_failed'
-          );
-          continue;
-        }
-        await supabase.rpc('log_wallet_transaction', {
-          p_user_id: row.user_id,
-          p_wallet_type: 'PLAYER',
-          p_amount: refundAmount,
-          p_type: 'credit',
-          p_category: 'refund',
-          p_description: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
-          p_table_id: null,
-          p_hand_id: null,
-          p_related_entity_id: tournamentId,
-        });
-        if (fee > 0 && fullT?.club_id) {
+    for (const row of openRows ?? []) {
+      if (Number(row.prize || 0) > 0) continue; // already paid a prize -- no refund on top
+
+      // What did this player actually pay (net of refunds already issued)?
+      const { data: txRows, error: txErr } = await supabase
+        .from('wallet_transactions')
+        .select('type, category, amount')
+        .eq('user_id', row.user_id)
+        .eq('related_entity_id', tournamentId)
+        .in('category', ['tournament_buyin', 'refund']);
+      if (txErr) {
+        reportError(
+          new Error(
+            `[GameServer] Cancel refund: payment-evidence read failed for ${row.user_id} ` +
+              `(${tournamentId.slice(0, 8)}): ${txErr.message}`
+          ),
+          'GameServer.cancel_refund_evidence_failed'
+        );
+        continue;
+      }
+      let paid = 0;
+      for (const t of txRows ?? []) {
+        if (t.type === 'debit' && t.category === 'tournament_buyin') paid += Number(t.amount || 0);
+        else if (t.type === 'credit' && t.category === 'refund') paid -= Number(t.amount || 0);
+      }
+      paid = Math.round(paid * 100) / 100;
+      if (paid <= 0) continue; // never paid (legacy free entry) or already refunded
+
+      const { error: refErr } = await supabase.rpc('credit_player_wallet', {
+        p_user_id: row.user_id,
+        p_amount: paid,
+        // A3 FIX (2026-07-28): keyed on the tournament_players row id, in the
+        // SAME format used by the startup pre-start sweep and the SNG lifecycle
+        // sweep (both now delegate here), so every cancel-refund path dedupes.
+        p_idempotency_key: `tourney:${tournamentId}:cancelrefund:${row.id}`,
+      });
+      if (refErr) {
+        reportError(
+          new Error(
+            `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refErr.message}`
+          ),
+          'GameServer.cancel_refund_failed'
+        );
+        continue;
+      }
+      await supabase.rpc('log_wallet_transaction', {
+        p_user_id: row.user_id,
+        p_wallet_type: 'PLAYER',
+        p_amount: paid,
+        p_type: 'credit',
+        p_category: 'refund',
+        p_description: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
+        p_table_id: null,
+        p_hand_id: null,
+        p_related_entity_id: tournamentId,
+      });
+
+      // Reverse this player's un-reversed fee rows (registration + rebuy fees
+      // minus prior reversals -- reversal rows carry the same metadata user_id,
+      // so summing every row nets correctly).
+      if (fullT?.club_id) {
+        const { data: feeRows } = await supabase
+          .from('rake_records')
+          .select('rake_amount')
+          .eq('tournament_id', tournamentId)
+          .eq('is_tournament', true)
+          .contains('metadata', { user_id: row.user_id });
+        const feePaid =
+          Math.round((feeRows ?? []).reduce((s, r) => s + Number(r.rake_amount || 0), 0) * 100) /
+          100;
+        if (feePaid > 0) {
           await supabase.from('rake_records').insert({
             hand_id: null,
-            // AUDIT 2026-08-15: table_id has an FK to tables — a tournament id
-            // here violated it, so this reversal row NEVER inserted (probe-
-            // caught while building fn_register_for_tournament). The
-            // tournament is carried by tournament_id below.
+            // AUDIT 2026-08-15: table_id has an FK to tables -- a tournament id
+            // here violated it; the tournament is carried by tournament_id.
             table_id: null,
             club_id: fullT.club_id,
-            rake_amount: -fee,
-            pot_size: fee,
+            rake_amount: -feePaid,
+            pot_size: feePaid,
             num_players: 1,
             bbj_contribution: 0,
             is_tournament: true,

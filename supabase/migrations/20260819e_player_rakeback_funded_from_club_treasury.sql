@@ -1,0 +1,15 @@
+-- APPLIED TO PRODUCTION 2026-08-19 via Supabase MCP as
+-- `player_rakeback_funded_from_club_treasury`. Mirror only.
+--
+-- AUDIT PASS 2, DEFECT #3: fn_close_settlement_period credited each player's
+-- weekly rakeback (5-30% tiers) with NO offsetting debit anywhere -- the
+-- payout was MINTED, inflating the chip economy weekly.
+--
+-- Funding model now: the CLUB pays player rakeback from its operational bank
+-- (clubs.chip_treasury) -- exactly what the union's weekly 90% payback
+-- replenishes. Order inside one transaction:
+--   payout-row claim (idempotent) -> fn_debit_treasury -> player credit ->
+--   period paid.
+-- If the treasury cannot cover the payout the claim is released, a
+-- financial_alerts row (warning) is raised, and the period stays pending so
+-- the next weekly close retries after the union's 90% lands.

@@ -1,0 +1,24 @@
+-- APPLIED TO PRODUCTION 2026-08-19 via Supabase MCP as
+-- `bbj_contribution_idempotency_and_dedupe`. Mirror only.
+--
+-- AUDIT PASS 2, DEFECT #1: bbj_record_contribution had NO idempotency gate --
+-- an engine retry after a commit-then-timeout, or a FeeReconciler re-drive,
+-- banked the same hand's BBJ fee TWICE. (FeeReconciler's header claimed the
+-- RPC was "keyed per (table, hand)" -- it was not.) Verified live: 5 duplicate
+-- (pool_id, hand_id) pairs, all 2026-08-15, 2.60 chips over-banked.
+--
+-- Fix applied to production:
+--  1. Deleted the later duplicate of each pair, reversing the over-banked
+--     portions: union pool main -1.30, backup -0.67 (both pools' balances live
+--     in the union pool since the JAQK merge), union promo_wallet -0.63 (the
+--     promo slices had been swept), total_contributed -2.60, hands -5, with a
+--     union_wallet_transactions reversal row (tx_type bbj_dedupe_reversal).
+--  2. CREATE UNIQUE INDEX uq_bbj_contributions_pool_hand
+--       ON bbj_contributions (pool_id, hand_id) WHERE hand_id IS NOT NULL;
+--  3. bbj_record_contribution rewritten insert-first:
+--       INSERT ... ON CONFLICT (pool_id, hand_id) WHERE hand_id IS NOT NULL
+--       DO NOTHING;
+--     and the bbj_pools balance UPDATE now runs ONLY when the ledger row
+--     landed; a duplicate call returns the existing row (idempotent no-op).
+-- Full function body lives in production (pg_get_functiondef) and in the
+-- Cowork session audit; signature unchanged.

@@ -1024,9 +1024,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // increment_union_wallet RPC as the cash-rake path — it upserts the
           // union_wallets row, increments chip_balance + rake_wallet +
           // total_rake_collected under a single UPDATE, and is SECURITY DEFINER.
+          // AUDIT 2026-08-19: the union_wallet_transactions audit row is now
+          // written INSIDE the RPC, atomic with the wallet credit and carrying
+          // the correct rake_wallet balance_after. The separate client-side
+          // insert that used to follow could fail independently, silently
+          // shrinking the weekly-rakeback basis (which sums the audit rows).
           const { data: rakeRes, error: rakeErr } = await supabase.rpc('increment_union_wallet', {
             p_union_id: club.union_id,
             p_amount: totalRake,
+            p_club_id: tournament.club_id,
+            p_notes: `${rakeDescription} — ${club.name || 'club'}`,
           });
           if (rakeErr || (rakeRes && (rakeRes as any).success === false)) {
             reportError(
@@ -1043,30 +1050,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             );
           }
 
-          // Audit trail (BUG 013 FIX — correct table is union_wallet_transactions)
-          // RAKE-AUDIT 2026-07-24: wallet was 'main', which violates the
-          // union_wallet_transactions_wallet_check CHECK constraint
-          // ({chip_balance, rake_wallet, bbj_wallet, promo_wallet}) — the same
-          // ROUND 16 bug fixed in the cash path but not here. EVERY tournament
-          // rake audit row was silently rejected (verified live: zero rows).
-          const { error: uwtErr } = await supabase.from('union_wallet_transactions').insert({
-            union_id: club.union_id,
-            club_id: tournament.club_id,
-            amount: totalRake,
-            tx_type: 'rake',
-            wallet: 'rake_wallet',
-            direction: 'credit',
-            balance_after: (rakeRes as any)?.new_chip_balance ?? null,
-            notes: `${rakeDescription} — ${club.name || 'club'}`,
-          });
-          if (uwtErr) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] union rake audit row failed: ${uwtErr.message}`
-              ),
-              'Tournament.union_rake_audit_row_failed'
-            );
-          }
         } else {
           // Standalone club — rake goes to the club's OPERATIONAL BANK
           // (clubs.chip_treasury + total_rake), not the owner's personal wallet.

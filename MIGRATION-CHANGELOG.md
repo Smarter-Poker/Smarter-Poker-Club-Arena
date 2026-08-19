@@ -7925,3 +7925,41 @@ clubs, union keeps 10%; BBJ fees split 50/25/25 (main/backup/promo).
   retained 109,528.17, rake_wallet now holds only the current week (417,397.16).
 - Engine: RakebackSettlerService.runWeeklyFinancialClose step 1.5 calls
   fn_union_weekly_rakeback_close for every union each Monday (lapsed ISO week).
+
+
+## 2026-08-19 — Rake/BBJ line-by-line audit pass 2 (Cowork session)
+
+Dan's mandate: go through it all line by line; find bugs, stubs, gaps,
+regressions, wiring issues; fix and upgrade to the max. Findings (all fixed,
+all verified live):
+
+1. CRITICAL: `bbj_record_contribution` was not idempotent — retries/re-drives
+   double-banked BBJ fees (5 proven duplicate hands, 2.60 over-banked;
+   reversed). Unique (pool_id, hand_id) gate + insert-first RPC.
+2. CRITICAL (regression, same day): cancel-refund path skipped horses
+   ("horses paid nothing") after fn_register_horse_for_tournament started
+   charging them — cancelled events destroyed horse buy-ins and left
+   un-reversed fee rows. Refunds are now EVIDENCE-BASED (wallet_transactions
+   net of refunds, covers rebuys), horse or human, with per-player fee
+   reversal in the rake ledger.
+3. CRITICAL: player weekly rakeback (5–30% tiers) was MINTED — no debit
+   anywhere. Now funded from clubs.chip_treasury (which the union weekly 90%
+   replenishes) with deferral + financial_alert when underfunded.
+4. `atomic_distribute_rake` under-credited the club_wallets mirror by the BBJ
+   fee (v_net formula assumed gross rake). Fixed + backfilled.
+5. Tournament completion's union credit and its audit row were non-atomic
+   (and balance_after used the wrong column). Audit row now written inside
+   increment_union_wallet.
+6. Frontend: DynamicWallet Backup BBJ read `.backup_balance` off an unwrapped
+   PostgREST array — rendered 0.00. Fixed.
+7. Weekly union close now self-healing across multi-week outages
+   (fn_union_weekly_rakeback_close_all); manual closes must be ISO weeks.
+8. Missing index for the weekly-close basis scan added; retained-10% now has
+   double-entry rake_hold rows; union wallet values cent-rounded.
+9. New conservation sentinel `fn_union_treasury_selftest` runs every settler
+   cycle (engine: runUnionTreasurySentinel) writing deduped financial_alerts.
+
+Engine: RakebackSettlerService (close_all + treasury sentinel),
+TournamentManagerEliminations (atomic audit row), tournamentRecovery
+(evidence-based refunds), DynamicWallet (backup BBJ unwrap).
+DB migration mirrors: 20260819b..f.

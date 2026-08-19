@@ -294,7 +294,13 @@ export default function DynamicWallet({
         promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
         bbjPool:
           Number((Array.isArray(bbjRes.data) ? bbjRes.data[0] : bbjRes.data)?.main_balance) || 0,
-        backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
+        // AUDIT 2026-08-19: fn_bbj_pool_for_club RETURNS TABLE, so PostgREST
+        // hands back an ARRAY -- bbjPool above unwrapped it but this line did
+        // not, rendering Backup BBJ as 0.00 for every club.
+        backupBBJ:
+          Number(
+            (Array.isArray(bbjRes.data) ? bbjRes.data[0] : bbjRes.data)?.backup_balance
+          ) || 0,
         agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
         clubBank: Number(clubRes.data?.chip_pool) || 0,
         clubTreasury: Number(clubRes.data?.chip_treasury) || 0,

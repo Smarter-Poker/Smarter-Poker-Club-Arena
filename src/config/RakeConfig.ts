@@ -421,10 +421,42 @@ export function getTierForBB(bigBlind: number | string): StakesTier {
  * Tries exact schedule match first, then falls back to tier.
  * IMPORTANT: rakeCap is always an absolute dollar amount.
  */
+/**
+ * A table's (or club's) rake override, mirroring the server's RakeOverride.
+ * -1 / null / undefined all mean "inherit — use the schedule".
+ *
+ * This exists so the Game Rules modal shows what is ACTUALLY taken. The whole
+ * point of the 2026-08-15 display fix was that the number on screen is the
+ * number the engine uses; once a table can override the schedule, reading the
+ * schedule alone would recreate that bug for exactly the tables whose owner
+ * bothered to change it.
+ *
+ * Keep the resolution rules identical to
+ * server/src/config/RakeConfig.ts getFullRakeConfig.
+ */
+export interface RakeOverride {
+  rakePercent?: number | null;
+  rakeCapBB?: number | null;
+}
+
+/** Sentinel stored in the database meaning "inherit". */
+export const RAKE_INHERIT = -1;
+/** An owner may never rake above the published schedule rate. */
+export const MAX_RAKE_PERCENT = 10;
+/** …nor set a cap above 10 big blinds. */
+export const MAX_RAKE_CAP_BB = 10;
+
+function isRakeSet(v: number | null | undefined): v is number {
+  if (v === null || v === undefined) return false;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0;
+}
+
 export function getRakeConfig(
   bigBlind: number | string,
   variant: string = 'nlh',
-  smallBlind: number | string | null = null
+  smallBlind: number | string | null = null,
+  override?: RakeOverride
 ): RakeConfigResult {
   const sb = smallBlind != null ? parseFloat(String(smallBlind)) : parseFloat(String(bigBlind)) / 2;
   const bb = parseFloat(String(bigBlind)) || 0;
@@ -434,8 +466,17 @@ export function getRakeConfig(
   const qualifying = BBJ_QUALIFYING_HANDS[variant] || BBJ_QUALIFYING_HANDS.nlh;
   const bbjEligible = qualifying.eligible !== false;
 
-  const rakePercent = scheduleMatch ? scheduleMatch.rakePercent : tier.rakePercent;
-  const rakeCap = scheduleMatch ? scheduleMatch.rakeCap : tier.rakeCap;
+  const clampNum = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+  const schedulePercent = scheduleMatch ? scheduleMatch.rakePercent : tier.rakePercent;
+  const scheduleCap = scheduleMatch ? scheduleMatch.rakeCap : tier.rakeCap;
+
+  const rakePercent = isRakeSet(override?.rakePercent)
+    ? clampNum(Number(override!.rakePercent), 0, MAX_RAKE_PERCENT)
+    : schedulePercent;
+  // Big blinds -> dollars, exactly as the server does it.
+  const rakeCap = isRakeSet(override?.rakeCapBB)
+    ? Math.round(clampNum(Number(override!.rakeCapBB), 0, MAX_RAKE_CAP_BB) * bb * 100) / 100
+    : scheduleCap;
   const bbjFeeBB = scheduleMatch ? scheduleMatch.bbjFeeBB : tier.bbjFeeBB;
 
   return {

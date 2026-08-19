@@ -32,8 +32,16 @@ import {
   getFullRakeConfig,
   getPlayerCountCaps,
   type BBJDetectionResult,
+  type RakeOverride,
   type ServerRakeConfigResult,
 } from '../config/RakeConfig.js';
+
+/**
+ * How long a table's resolved rake settings are trusted before re-reading.
+ * An owner changing the rake sees it apply within a minute; the engine does
+ * not pay for two extra row reads on every hand at every table.
+ */
+const RAKE_CONFIG_TTL_MS = 60_000;
 import {
   loadTable,
   loadSeatedPlayers,
@@ -1226,7 +1234,7 @@ export abstract class ServerTableEngineBase {
    */
   protected getRakeConfig(sb: number, bb: number): RakeConfig {
     const variant = this.tableInfo?.game_variant || 'nlh';
-    const fullConfig = getFullRakeConfig(sb, bb, variant);
+    const fullConfig = getFullRakeConfig(sb, bb, variant, this.getRakeOverride());
     return {
       percent: fullConfig.rakePercent,
       cap: fullConfig.rakeCap,
@@ -1244,7 +1252,89 @@ export abstract class ServerTableEngineBase {
     const sb = this.tableInfo?.small_blind ?? 1;
     const bb = this.tableInfo?.big_blind ?? 2;
     const variant = this.tableInfo?.game_variant || 'nlh';
-    return getFullRakeConfig(sb, bb, variant);
+    return getFullRakeConfig(sb, bb, variant, this.getRakeOverride());
+  }
+
+  /**
+   * Resolve the rake override for this table: table setting first, then the
+   * club default, then nothing (which means the published schedule).
+   *
+   * 2026-08-18 — the four owner-facing rake controls used to write columns the
+   * engine never read. This is the only place the precedence is decided, and
+   * both hand-config construction sites go through getFullRakeAndBBJConfig(),
+   * so there is exactly one path. The clamping lives in getFullRakeConfig
+   * because it must apply to the club values too.
+   *
+   * Note clubs.rake_cap is in BIG BLINDS despite its name — the label on the
+   * club settings screen is literally "Rake Cap (BB)".
+   */
+  protected getRakeOverride(): RakeOverride | undefined {
+    const pick = (a: number | null | undefined, b: number | null | undefined) => {
+      const na = a === null || a === undefined ? NaN : Number(a);
+      if (Number.isFinite(na) && na >= 0) return na;
+      const nb = b === null || b === undefined ? NaN : Number(b);
+      if (Number.isFinite(nb) && nb >= 0) return nb;
+      return undefined;
+    };
+    const rakePercent = pick(this.tableInfo?.rake_percent, this.clubRakeDefaults?.rakePercent);
+    const rakeCapBB = pick(this.tableInfo?.rake_cap_bb, this.clubRakeDefaults?.rakeCapBB);
+    if (rakePercent === undefined && rakeCapBB === undefined) return undefined;
+    return { rakePercent, rakeCapBB };
+  }
+
+  /**
+   * Club-level rake defaults, refreshed on the same cadence as the table's own
+   * rake columns (see refreshRakeConfig). Undefined until the first load, which
+   * simply means "no club override yet" — the schedule still applies, so a slow
+   * or failed read can never stop a table dealing or change what is taken.
+   */
+  protected clubRakeDefaults: { rakePercent: number | null; rakeCapBB: number | null } | null =
+    null;
+
+  /** Wall-clock of the last rake-config refresh; 0 = never. */
+  protected lastRakeRefreshAtMs = 0;
+
+  /**
+   * Re-read the table's and club's rake settings so an owner's change takes
+   * effect without restarting the engine. Called at the top of each hand and
+   * throttled — tableInfo is otherwise loaded once per engine lifetime, and at
+   * 500+ live tables a per-hand read of two rows is real load for a value that
+   * changes perhaps twice a year.
+   *
+   * Deliberately best-effort: on any error the previous values stand.
+   */
+  protected async refreshRakeConfig(force = false): Promise<void> {
+    if (!this.tableInfo || this.isTournamentTable()) return;
+    const now = Date.now();
+    if (!force && now - this.lastRakeRefreshAtMs < RAKE_CONFIG_TTL_MS) return;
+    this.lastRakeRefreshAtMs = now;
+    try {
+      const { data: tableRow } = await supabase
+        .from('tables')
+        .select('rake_percent, rake_cap_bb')
+        .eq('id', this.tableId)
+        .maybeSingle();
+      if (tableRow && this.tableInfo) {
+        this.tableInfo.rake_percent = tableRow.rake_percent ?? undefined;
+        this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;
+      }
+      const clubId = this.tableInfo?.club_id;
+      if (clubId) {
+        const { data: clubRow } = await supabase
+          .from('clubs')
+          .select('default_rake_percent, rake_cap')
+          .eq('id', clubId)
+          .maybeSingle();
+        if (clubRow) {
+          this.clubRakeDefaults = {
+            rakePercent: clubRow.default_rake_percent ?? null,
+            rakeCapBB: clubRow.rake_cap ?? null,
+          };
+        }
+      }
+    } catch (err) {
+      reportError(err, `ServerTableEngine.${this.tableId}.refreshRakeConfig_failed`);
+    }
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

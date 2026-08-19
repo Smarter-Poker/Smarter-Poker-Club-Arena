@@ -20,6 +20,8 @@ import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
+import { formatCurrency } from '../lib/utils';
+import { RAKE_INHERIT } from '../config/RakeConfig';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -236,8 +238,12 @@ const DEFAULT_CONFIG: TableConfig = {
   runItMode: 'none',
 
   // Rake Settings (default 10% with 3BB cap)
-  rakePercent: 10,
-  rakeCapBB: 3,
+  // -1 = inherit: use the club default, then the published rake schedule.
+  // These used to default to 10 / 3 and were written to columns the engine
+  // never read. Now that it does read them, a literal 3 BB cap would REPLACE
+  // the schedule cap ($5 at 1/2, $15 at 10/25) on every table created here.
+  rakePercent: RAKE_INHERIT,
+  rakeCapBB: RAKE_INHERIT,
 
   // SNG/MTT Specific
   buyIn: 100,
@@ -332,6 +338,7 @@ const Slider = ({
   step = 1,
   suffix = '',
   tooltip,
+  format,
 }: {
   label: string;
   value: number;
@@ -341,12 +348,14 @@ const Slider = ({
   step?: number;
   suffix?: string;
   tooltip?: string;
+  /** Render the value yourself — used to show "Schedule" for the -1 sentinel. */
+  format?: (v: number) => string;
 }) => (
   <div className="config-slider">
     <div className="slider-header">
       <span className="slider-label">
-        {label}: {value}
-        {suffix}
+        {label}: {format ? format(value) : `${value}${suffix}`}
+        {format ? '' : ''}
         {tooltip && (
           <span className="tooltip-icon" title={tooltip}>
             ?
@@ -1532,25 +1541,37 @@ export default function TableConfigPage() {
           </>
         )}
 
-        {/* SECTION: Rake Settings */}
+        {/* SECTION: Rake Settings
+            Both sliders sit at -1 ("Schedule") by default, which means the
+            published rake schedule decides — 10% with a cash cap that varies by
+            stake. Sliding either one off -1 is a deliberate override, and an
+            override can only ever take LESS than the schedule: the engine
+            clamps percent to 10 and the cap to 10 BB (getFullRakeConfig).
+            The cap is entered in big blinds; the live cash value is shown
+            beside it because 3 BB is $0.60 at 0.10/0.20 and $75 at 10/25. */}
         <Slider
           label="Fee"
           value={config.rakePercent}
           onChange={(v) => updateConfig('rakePercent', v)}
-          min={0}
+          min={RAKE_INHERIT}
           max={10}
           step={0.5}
-          suffix="%"
+          format={(v) => (v < 0 ? 'Schedule (10%)' : `${v}%`)}
+          tooltip="Percentage of each raked pot. Schedule = use the house rake schedule."
         />
 
         <Slider
           label="FeeCap"
           value={config.rakeCapBB}
           onChange={(v) => updateConfig('rakeCapBB', v)}
-          min={1}
+          min={RAKE_INHERIT}
           max={10}
-          suffix=" x Big Blind"
-          tooltip="Maximum rake cap"
+          format={(v) =>
+            v < 0
+              ? 'Schedule'
+              : `${v} x Big Blind${config.bigBlind ? ` (= ${formatCurrency(v * config.bigBlind)})` : ''}`
+          }
+          tooltip="Most that can be raked from one pot. Schedule = use the house cap for this stake."
         />
 
         {/* SECTION: Security */}

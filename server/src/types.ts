@@ -111,6 +111,15 @@ export interface TableInfo {
   /** Bible V8 §1.7.4: Prefer check over fold on disconnect */
   prefer_check_over_fold?: boolean;
   /** Bible V8 §6.2: Time bank uses per session */
+  /**
+   * Per-table rake override, whole-percent units. -1 (RAKE_INHERIT) means
+   * "use the club default, then the published schedule". Clamped in
+   * getFullRakeConfig — never trust the raw column, any club admin can UPDATE
+   * the row through RLS.
+   */
+  rake_percent?: number;
+  /** Per-table rake cap override, in BIG BLINDS. -1 means inherit. */
+  rake_cap_bb?: number;
   time_bank_max_uses?: number;
   /** Bible V8 §6.2: Whether time bank feature is enabled */
   time_bank_enabled?: boolean;

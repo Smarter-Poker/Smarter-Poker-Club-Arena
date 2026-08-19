@@ -43,6 +43,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
         this.seatedPlayers = await loadSeatedPlayers(this.tableId);
         await this.refreshBlinds();
+        // 2026-08-18: cash tables re-read their rake settings here (throttled
+        // to once a minute inside the method). tableInfo is otherwise loaded
+        // once per engine lifetime, so before this an owner changing the rake
+        // saw nothing until the table restarted.
+        await this.refreshRakeConfig();
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.

@@ -604,8 +604,8 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         stakes={blinds || '1/2'}
         minBuyIn={safeBB(blinds) * 40}
         maxBuyIn={safeBB(blinds) * 100}
-        rakePercentage={rakePercent ?? 5}
-        rakeCap={rakeCap ?? 3}
+        rakePercentage={rakePercent}
+        rakeCap={rakeCap}
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
       />

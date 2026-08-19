@@ -497,13 +497,33 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
       // Guard every iteration: the table can be torn down, or the hand
       // replaced, while we are sleeping between streets.
+      // Bounded by the most streets a board can ever still need. `dealNextStreet`
+      // returns whatever the deck has left, so an exhausted deck would leave the
+      // board short forever — and unlike the synchronous path, this loop sleeps
+      // 1.4s per turn while re-broadcasting state and equity, so it would spin
+      // and flood clients rather than merely hanging. Reachable: an 8-max PLO6
+      // hand needs 48 hole cards plus 5 board out of 52.
+      let streetsLeft = 3;
       while (
         this.running &&
         this.handController === controller &&
-        controller.getCommunityCards().length < 5
+        controller.getCommunityCards().length < 5 &&
+        streetsLeft-- > 0
       ) {
+        const before = controller.getCommunityCards().length;
         const result = controller.dealNextStreet();
         this.broadcastCurrentState();
+
+        if (controller.getCommunityCards().length === before) {
+          // The deck gave us nothing; stop rather than sleep and retry.
+          reportError(
+            new Error(
+              '[PacedRunout] board stopped growing at ' + String(before) + ' cards — short deck'
+            ),
+            'ServerTableEngine.' + this.tableId + '.paced_runout_short_deck'
+          );
+          break;
+        }
 
         if (allInPlayers.length >= 2) {
           await this.broadcastAllInEquity(allInPlayers, result.board, pot);

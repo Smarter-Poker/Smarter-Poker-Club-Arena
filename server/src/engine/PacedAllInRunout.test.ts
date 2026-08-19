@@ -125,6 +125,27 @@ describe('pacedAllInRunout', () => {
     expect(timeline.filter((e) => e.what.startsWith('deal:'))).toHaveLength(1);
   });
 
+  it('does not spin forever when the deck runs short', async () => {
+    // AUDIT 2026-08-19: dealNextStreet returns whatever the deck has left. A
+    // board that stops growing used to satisfy the loop condition forever —
+    // and this loop SLEEPS 1.4s per turn while re-broadcasting state and
+    // equity, so it would spin and flood every client at the table. Reachable:
+    // an 8-max PLO6 hand needs 48 hole cards plus 5 board out of 52.
+    const { engine, timeline, controller } = harness(0);
+    controller.dealNextStreet = () => {
+      timeline.push({ what: 'deal:nothing', at: 0 });
+      return { board: [], stage: 'flop', complete: false }; // deck gave nothing
+    };
+
+    const done = engine.pacedAllInRunout(PLAYERS, 1000);
+    // If the guard were missing this never resolves and the test times out.
+    await done;
+
+    expect(timeline.filter((e) => e.what === 'deal:nothing').length).toBeLessThanOrEqual(3);
+    // The hand still has to end.
+    expect(timeline.filter((e) => e.what === 'complete')).toHaveLength(1);
+  }, 15000);
+
   it('still finishes the hand when a street throws', async () => {
     const { engine, timeline, controller } = harness(0);
     controller.dealNextStreet = () => {

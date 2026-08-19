@@ -935,7 +935,18 @@ export class HandController {
 
   private runOutCommunityCards(): void {
     const deck = this.state.deck as unknown as Deck;
-    while (this.state.communityCards.length < 5) {
+    // AUDIT 2026-08-19: this loop's ONLY exit was the board reaching 5 cards.
+    // `deck.deal(n)` returns whatever it has left, so an exhausted deck makes
+    // the board stop growing and the condition never becomes false — a
+    // SYNCHRONOUS infinite loop that freezes the entire engine process, not
+    // just this table. It is reachable: an 8-max PLO6 hand needs 48 hole cards
+    // plus 5 board out of 52. Bounded by the most streets a board can ever
+    // need, with a hard stop the moment the board fails to grow, so a short
+    // deck ends the hand on whatever board exists instead of hanging the
+    // server. The showdown/completeHand below still runs on every path.
+    let guard = 3;
+    while (this.state.communityCards.length < 5 && guard-- > 0) {
+      const lengthBefore = this.state.communityCards.length;
       const stage =
         this.state.communityCards.length < 3
           ? 'flop'
@@ -960,6 +971,11 @@ export class HandController {
       // on the board, exactly where the discard belongs in the hand flow.
       if (this.config.gameVariant === 'pineapple' && this.state.communityCards.length >= 3) {
         this.resolvePendingPineappleDiscards();
+      }
+      if (this.state.communityCards.length === lengthBefore) {
+        // The deck gave us nothing. Another turn of this loop would give us
+        // nothing again, forever.
+        break;
       }
     }
     this.transitionStage('showdown');

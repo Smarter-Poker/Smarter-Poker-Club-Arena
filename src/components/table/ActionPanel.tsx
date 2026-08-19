@@ -40,6 +40,8 @@ interface ActionPanelProps {
   showBetSizePresets?: boolean;
   /** Phase 2 T1-02 hint — drives preflop 2X/3X/4X/5X presets vs postflop fraction presets. */
   isPreflop?: boolean;
+  /** True for PLO4/5/6, so the preset row always offers RAISE POT. */
+  isPotLimit?: boolean;
   /**
    * Highest bet on the CURRENT street (server-authoritative `currentBet`), as a
    * raise-TO absolute. Required for the multiplier presets to mean anything
@@ -104,6 +106,11 @@ export interface RaisePresetInput {
    * never exceed it, and must never independently invent a different ceiling.
    */
   maxRaise: number;
+  /**
+   * True for the pot-limit games (PLO4/5/6). Dan 2026-08-19, bug list item 4b:
+   * "PLO must always have a RAISE POT button" - it was missing preflop.
+   */
+  isPotLimit?: boolean;
 }
 
 /**
@@ -143,9 +150,17 @@ export function potSizedRaiseTo(currentBet: number, pot: number, callAmount: num
  *       capping it there would collapse 2X/3X/4X/5X onto one number preflop -
  *       the exact dead-buttons bug fixed in August. The ceiling is floored to a
  *       whole number first, so ceiling a preset can never push it past the cap.
+ *
+ *  (4b) "PLO must always have a RAISE POT button" - it was missing preflop.
+ *       Preflop offered 2X/3X/4X/5X and nothing else, so in a pot-limit game
+ *       the one sizing that defines the game had no button. In pot-limit the
+ *       fourth preset is now POT rather than 5X, which also removes a dead
+ *       button: with maxRaise set to the pot cap, 4X and 5X both clamped to
+ *       that same cap, so 5X was already an unlabelled POT.
  */
 export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
-  const { isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise } = input;
+  const { isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise, isPotLimit } =
+    input;
 
   // Whole-number bounds. Floor the ceiling and ceil the floor so that every
   // value we can emit is both whole AND legal.
@@ -164,7 +179,12 @@ export function computeRaisePresets(input: RaisePresetInput): RaisePreset[] {
   if (isPreflop) {
     // The bet being faced. Unopened pot -> the big blind.
     const base = Math.max(currentBet, bigBlind) || bigBlind || 1;
-    return [2, 3, 4, 5].map((n) => finalize(`${n}X`, base * n));
+    const multiples = isPotLimit ? [2, 3, 4] : [2, 3, 4, 5];
+    const presets = multiples.map((n) => finalize(`${n}X`, base * n));
+    if (isPotLimit) {
+      presets.push(finalize('POT', potSizedRaiseTo(currentBet, pot, callAmount)));
+    }
+    return presets;
   }
 
   // Postflop fractions are "bet f x the pot I'd be raising into", as raise-TO
@@ -200,6 +220,7 @@ export default function ActionPanel({
   confirmAllIn: _confirmAllInDeprecated,
   showBetSizePresets = true,
   isPreflop = false,
+  isPotLimit = false,
   currentBet = 0,
   verticalSlider = true,
 }: ActionPanelProps) {
@@ -287,8 +308,9 @@ export default function ActionPanel({
         pot,
         minRaise,
         maxRaise,
+        isPotLimit,
       }),
-    [isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise]
+    [isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise, isPotLimit]
   );
 
   // Track last slider value for haptic snap feedback

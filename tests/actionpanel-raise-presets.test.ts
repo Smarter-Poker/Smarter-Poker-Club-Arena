@@ -174,3 +174,55 @@ describe('computeRaisePresets - legality still wins', () => {
     }
   });
 });
+
+describe('computeRaisePresets - rule 4b: PLO always offers RAISE POT', () => {
+  it('offers a POT button PREFLOP in a pot-limit game', () => {
+    // 1/2 PLO, hero UTG facing the big blind: pot 3, currentBet 2, owes 2.
+    // The legal max open is 7, and that is what POT must read.
+    const p = computeRaisePresets({
+      isPreflop: true, bigBlind: 2, currentBet: 2, callAmount: 2,
+      pot: 3, minRaise: 4, maxRaise: 7, isPotLimit: true,
+    });
+    expect(p.map((x) => x.label)).toEqual(['2X', '3X', '4X', 'POT']);
+    expect(p[3].value).toBe(7);
+    expect(p[3].value).toBe(Math.floor(potSizedRaiseTo(2, 3, 2)));
+  });
+
+  it('offers POT preflop when facing a raise too', () => {
+    // 1/2 PLO, opener to 6, hero owes 6, pot 9 -> pot raise TO 21.
+    const p = computeRaisePresets({
+      isPreflop: true, bigBlind: 2, currentBet: 6, callAmount: 6,
+      pot: 9, minRaise: 12, maxRaise: 21, isPotLimit: true,
+    });
+    expect(p[3].label).toBe('POT');
+    expect(p[3].value).toBe(21);
+  });
+
+  it('keeps 5X preflop in no-limit, where POT is not the defining sizing', () => {
+    const p = computeRaisePresets({
+      isPreflop: true, bigBlind: 2, currentBet: 2, callAmount: 2,
+      pot: 3, minRaise: 4, maxRaise: BIG, isPotLimit: false,
+    });
+    expect(p.map((x) => x.label)).toEqual(['2X', '3X', '4X', '5X']);
+  });
+
+  it('replaces a button that was already a silent POT', () => {
+    // With maxRaise at the pot cap, 4X and 5X used to clamp to the same
+    // number - 5X was an unlabelled POT. Now the fourth button says so.
+    const p = computeRaisePresets({
+      isPreflop: true, bigBlind: 2, currentBet: 2, callAmount: 2,
+      pot: 3, minRaise: 4, maxRaise: 7, isPotLimit: true,
+    });
+    expect(p[2].value).toBe(7); // 4X = 8, capped to the pot
+    expect(p[3].label).toBe('POT');
+  });
+
+  it('postflop already had POT and is unchanged by the pot-limit flag', () => {
+    const p = computeRaisePresets({
+      isPreflop: false, bigBlind: 2, currentBet: 10, callAmount: 10,
+      pot: 40, minRaise: 20, maxRaise: 60, isPotLimit: true,
+    });
+    expect(p.map((x) => x.label)).toEqual(['33%', '50%', '75%', 'POT']);
+    expect(p[3].value).toBe(60);
+  });
+});

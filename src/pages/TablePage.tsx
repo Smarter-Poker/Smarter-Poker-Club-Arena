@@ -7794,6 +7794,9 @@ export default function TablePage({
                         onAction={handleActionPanelAction}
                         isMyTurn={true}
                         isPreflop={tableState.boardStage === 'preflop'}
+                        /* Dan 2026-08-19 item 4b: PLO must always offer
+                           RAISE POT - preflop had no POT button at all. */
+                        isPotLimit={isPotLimit}
                         showPotOdds={userSettings.showPotOdds}
                         confirmAllIn={userSettings.confirmAllIn}
                       />

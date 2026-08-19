@@ -62,7 +62,21 @@ ALTER TABLE public.club_hand_daily ENABLE ROW LEVEL SECURITY;
 
 -- Backfill one (club, day). Deliberately one day at a time: the full range in
 -- a single statement exceeds any workable timeout on the largest clubs.
-CREATE OR REPLACE FUNCTION public.ca_backfill_club_hand_daily(p_club_id uuid, p_date date)
+--
+-- The current day is GUARDED. This writes an ABSOLUTE count taken from a
+-- snapshot, so any hand dealt while it runs is discarded along with the
+-- trigger increment that already recorded it — observed leaving Midway Union
+-- exactly 20 hands short, with a second run during a quieter moment coming
+-- back exact (29,905 = 29,905). Past days are immutable and safe to rewrite;
+-- today is owned by the trigger and is exact from the first hand of the day,
+-- so overwriting it can only lose data. Normal operation is to backfill
+-- history only; from the next UTC midnight the trigger owns every day end to
+-- end and no backfill is needed at all.
+CREATE OR REPLACE FUNCTION public.ca_backfill_club_hand_daily(
+  p_club_id uuid,
+  p_date    date,
+  p_force   boolean DEFAULT false
+)
 RETURNS bigint
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -72,6 +86,13 @@ AS $fn$
 DECLARE
   v_hands bigint;
 BEGIN
+  IF p_date >= (now() AT TIME ZONE 'UTC')::date AND NOT coalesce(p_force, false) THEN
+    RAISE EXCEPTION
+      'refusing to overwrite the current day (%) — the trigger maintains it exactly; pass p_force => true only if you know it has drifted',
+      p_date
+      USING ERRCODE = '55000';
+  END IF;
+
   INSERT INTO club_hand_daily AS d (club_id, stat_date, hands, rake, bbj, pot_total)
   SELECT p_club_id, p_date,
          count(*),
@@ -94,8 +115,9 @@ BEGIN
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION public.ca_backfill_club_hand_daily(uuid, date) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.ca_backfill_club_hand_daily(uuid, date) TO service_role;
+DROP FUNCTION IF EXISTS public.ca_backfill_club_hand_daily(uuid, date);
+REVOKE ALL ON FUNCTION public.ca_backfill_club_hand_daily(uuid, date, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.ca_backfill_club_hand_daily(uuid, date, boolean) TO service_role;
 
 -- ── Stats RPC reads the rollup first, club_daily_stats only as fallback ─────
 

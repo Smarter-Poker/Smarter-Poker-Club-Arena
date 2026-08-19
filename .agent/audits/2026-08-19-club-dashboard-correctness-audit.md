@@ -279,3 +279,31 @@ Both now treat it as the expected outcome it is.
 tsc clean; 25 dashboard tests; full suite 1980 assertions across 162 files
 (the one failing file remains the pre-existing `@sentry/node` server dep);
 production build green.
+
+### club_daily_stats is systematically short platform-wide
+
+Once the rollup existed it could be compared against the old source directly.
+`club_daily_stats` is not merely late — it is short on every club, every day:
+
+| club        | day        | real hands | club_daily_stats | missed |
+|-------------|------------|-----------:|-----------------:|-------:|
+| SHARK CLUB  | 2026-08-19 |    120,240 |           43,490 |  63.8% |
+| Club JAQK   | 2026-08-19 |    118,083 |           38,899 |  67.1% |
+| Midway Union| 2026-08-19 |     29,455 |           10,718 |  63.6% |
+| SHARK CLUB  | 2026-08-18 |    185,573 |           75,441 |  59.3% |
+| Club JAQK   | 2026-08-17 |    123,458 |           50,314 |  59.2% |
+| Midway Union| 2026-08-18 |      2,131 |              531 |  75.1% |
+
+The dashboard was reporting roughly a third of real activity. It now reads
+club_hand_daily and is exact. Worth flagging beyond this page: any other
+surface still reading club_daily_stats carries the same understatement.
+
+### Backfill guard
+
+ca_backfill_club_hand_daily writes an ABSOLUTE count from a snapshot, so hands
+dealt during its own run are discarded together with the trigger increments
+that already recorded them — a run left Midway Union exactly 20 short, and a
+re-run during a quieter moment came back exact (29,905 = 29,905). Past days are
+immutable and safe to rewrite; today is owned by the trigger and exact from the
+first hand, so overwriting it can only lose data. The current day is now
+guarded behind an explicit p_force. Verified: today refused, past day allowed.

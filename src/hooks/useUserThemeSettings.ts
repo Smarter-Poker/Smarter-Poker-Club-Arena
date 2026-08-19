@@ -127,10 +127,23 @@ export function useUserThemeSettings(
      * for a remount. A change saved against "ALL" applies to every game type;
      * a per-game-type change only applies to that type.
      */
-    const off = masterBus.subscribe('UI_THEME_CHANGED', (payload) => {
-      const savedFor = (payload as { key?: string })?.key;
-      const selection = (payload as { value?: Partial<UserThemeSelection> })?.value;
+    const off = masterBus.subscribe('UI_THEME_CHANGED', (event) => {
+      // AUDIT 2026-08-19 (P0): masterBus hands subscribers the EVENT WRAPPER
+      // ({ type, payload, timestamp }), not the raw payload. Reading .key/.value
+      // off the wrapper always yielded undefined, so this listener returned early
+      // on every emit and live theme application silently never worked.
+      const body = (event as { payload?: unknown })?.payload ?? event;
+      const savedFor = (body as { key?: string })?.key;
+      const selection = (body as { value?: Partial<UserThemeSelection> })?.value;
       if (!mounted || !selection) return;
+      // AUDIT 2026-08-19: UI_THEME_CHANGED is a SHARED event — useSettingsStore
+      // emits it as { key: 'theme', value: '<theme name string>' }. The gameType
+      // guard below already rejects that, but spreading a string into the
+      // selection object would produce garbage keys, so validate the shape
+      // explicitly rather than relying on the guard alone.
+      if (typeof selection !== 'object' || Array.isArray(selection)) return;
+      const THEME_FIELDS = ['theme_id', 'table_id', 'button_id', 'background_id', 'cards_id'];
+      if (!THEME_FIELDS.some((f) => f in selection)) return;
       // A change saved against "ALL" applies everywhere; a per-game-type
       // change only applies to that type.
       if (savedFor && savedFor !== 'ALL' && savedFor !== gameType) return;

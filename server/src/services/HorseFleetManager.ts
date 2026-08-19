@@ -117,6 +117,18 @@ const DEFAULT_TABLES: TableConfig[] = [
   },
 ];
 
+/**
+ * How many live tables a single config may have: the original plus two
+ * demand-spawned overflows.
+ *
+ * This used to be a local inside spawnOverflowTables, so it was a ceiling on
+ * CREATING tables and nothing else — nothing ever counted the other way.
+ * Production reached 121 rows named 'NLH 1.00/2.00'. It is now also the number
+ * retireSurplusTables() drains back down to, and the two must be the same
+ * number or the fleet spawns and retires in a loop.
+ */
+const MAX_TABLES_PER_CONFIG = 3;
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // V8 HUMANIZATION HELPERS (2026-07-24)
 // The old fleet was robotically uniform: every horse bought in for exactly
@@ -325,7 +337,7 @@ export class HorseFleetManager {
       const { data: tables, error: tablesError } = await supabase
         .from('tables')
         .select(
-          'id, name, max_players, small_blind, big_blind, game_variant, club_id, min_buy_in, max_buy_in, current_players'
+          'id, name, max_players, small_blind, big_blind, game_variant, club_id, min_buy_in, max_buy_in, current_players, created_at'
         )
         .is('tournament_id', null)
         .in('status', ['waiting', 'running']);
@@ -374,6 +386,24 @@ export class HorseFleetManager {
       console.log(
         `[HorseFleet] Seeding cycle: ${tables.length} tables found, ${validHorses.length} total horses.`
       );
+
+      // Tables past MAX_TABLES_PER_CONFIG for their config. They are not
+      // seeded — they are being drained — and retireSurplusTables() closes
+      // each one as it empties. Ordered oldest-first so the table that gets
+      // KEPT is the same one ensureAllTablesExist() treats as canonical.
+      const surplusTableIds = new Set<string>();
+      for (const config of DEFAULT_TABLES) {
+        const family = tables
+          .filter((t) => t.name === config.name || t.name.startsWith(`${config.name} #`))
+          .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
+        for (const t of family.slice(MAX_TABLES_PER_CONFIG)) surplusTableIds.add(t.id);
+      }
+      if (surplusTableIds.size > 0) {
+        console.log(
+          `[HorseFleet] ${surplusTableIds.size} surplus table(s) draining — not seeding them`
+        );
+      }
+
       let totalSeated = 0;
 
       // V8: tables with a short-handed HUMAN seed first (never leave a human
@@ -388,6 +418,10 @@ export class HorseFleetManager {
 
       for (const table of orderedTables) {
         try {
+          // A draining table gets no new horses. Without this the surplus can
+          // never empty, and so can never be retired.
+          if (surplusTableIds.has(table.id)) continue;
+
           // Get target horse count for this table
           const config = DEFAULT_TABLES.find((t) => t.name === table.name);
           const targetHorses = config?.horsesPerTable || Math.max(3, table.max_players - 1);
@@ -516,10 +550,76 @@ export class HorseFleetManager {
       // V8 DEMAND RESPONSE: when every table of a config is effectively full,
       // spawn an overflow table so arriving humans always find a seat.
       await this.spawnOverflowTables(tables, allActiveSeats || []);
+
+      // ...and the other direction, which never existed until 2026-08-19.
+      await this.retireSurplusTables(tables, surplusTableIds, allActiveSeats || []);
     } catch (err: any) {
       reportError(err, 'HorseFleet.seedAllTables_error');
     } finally {
       this.seeding = false;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // TABLE RETIREMENT (2026-08-19)
+  // ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * Close surplus tables once they are empty.
+   *
+   * The fleet could only ever ADD tables. spawnOverflowTables() capped
+   * creation at MAX_TABLES_PER_CONFIG and a comment promised that "the
+   * stale-table lifecycle owns closing" — a component that was never written.
+   * Nothing anywhere closed an idle cash table, so when ensureAllTablesExist()
+   * started duplicating rows on every boot, the count only went one way: 121
+   * rows named 'NLH 1.00/2.00', 495 fleet tables in total.
+   *
+   * Empty means EMPTY: no live seat rows, no counted players, and not mid-hand.
+   * A table with anyone at it is left alone and retired on a later cycle, so a
+   * horse — or a human who wandered in — is never closed out from under.
+   *
+   * status = 'closed' rather than DELETE: the DB trigger
+   * trg_auto_cashout_on_table_close cashes out any remaining human seat, and a
+   * delete would bypass it and strand chips. It also keeps the row's history.
+   */
+  private async retireSurplusTables(
+    tables: Array<{ id: string; name: string; current_players?: number | null }>,
+    surplusTableIds: Set<string>,
+    allActiveSeats: Array<{ table_id: string }>
+  ): Promise<void> {
+    if (surplusTableIds.size === 0) return;
+    const occupied = new Set(allActiveSeats.map((s) => s.table_id));
+    const retirable = tables.filter(
+      (t) =>
+        surplusTableIds.has(t.id) && !occupied.has(t.id) && Number(t.current_players ?? 0) === 0
+    );
+    if (retirable.length === 0) return;
+
+    try {
+      // .in('status', [...]) guards the race where the table filled between the
+      // seat fetch and this update: a table that went 'playing' is skipped.
+      const { error } = await supabase
+        .from('tables')
+        .update({ status: 'closed' })
+        .in(
+          'id',
+          retirable.map((t) => t.id)
+        )
+        .is('tournament_id', null)
+        .in('status', ['waiting', 'running']);
+      if (error) {
+        reportError(error, 'HorseFleet.retireSurplusTables_failed');
+        return;
+      }
+      console.log(
+        `[HorseFleet] Retired ${retirable.length} empty surplus table(s): ` +
+          `${retirable
+            .map((t) => t.name)
+            .slice(0, 5)
+            .join(', ')}${retirable.length > 5 ? ' ...' : ''}`
+      );
+    } catch (err: any) {
+      reportError(err, 'HorseFleet.retireSurplusTables_error');
     }
   }
 
@@ -537,7 +637,6 @@ export class HorseFleetManager {
     tables: Array<{ id: string; name: string; max_players: number }>,
     allActiveSeats: Array<{ table_id: string }>
   ): Promise<void> {
-    const MAX_TABLES_PER_CONFIG = 3;
     for (const config of DEFAULT_TABLES) {
       try {
         const family = tables.filter(

@@ -730,25 +730,45 @@ export default function ClubMembersPage() {
 
     const loadSeated = async () => {
       try {
-        const { data: clubTables } = await supabase
+        /**
+         * LIVE_TABLE_STATUSES, not a boolean flag: `tables` has no `is_active`
+         * column. The first version of this query filtered on `.eq('is_active',
+         * true)`, which PostgREST rejected outright — and because supabase-js
+         * RETURNS errors rather than throwing, the try/catch never fired, the
+         * result was silently null, and "Online" stayed stuck at 1. Any error
+         * here is now surfaced instead of swallowed.
+         *
+         * Seats on `closed` tables are deliberately excluded: stale rows on
+         * closed tables would otherwise count long-gone players as online.
+         */
+        const { data: clubTables, error: tablesErr } = await supabase
           .from('tables')
           .select('id')
           .eq('club_id', resolvedClubId)
-          .eq('is_active', true);
+          .in('status', ['waiting', 'running']);
+        if (tablesErr) {
+          reportError(tablesErr.message, 'ClubMembersPage.Seated_online_tables_query');
+          return;
+        }
         const tableIds = (clubTables || []).map((t: { id: string }) => t.id);
         if (cancelled || tableIds.length === 0) return;
 
         const seated = new Set<string>();
         const chunkSize = 100;
         for (let i = 0; i < tableIds.length; i += chunkSize) {
-          const { data: seats } = await supabase
+          const { data: seats, error: seatsErr } = await supabase
             .from('table_seats')
             .select('user_id')
             .in('table_id', tableIds.slice(i, i + chunkSize))
             .is('left_at', null);
+          if (seatsErr) {
+            reportError(seatsErr.message, 'ClubMembersPage.Seated_online_seats_query');
+            return;
+          }
           (seats || []).forEach((s: { user_id: string | null }) => {
             if (s.user_id) seated.add(s.user_id);
           });
+          if (cancelled) return;
         }
         if (cancelled) return;
 

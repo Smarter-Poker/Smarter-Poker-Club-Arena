@@ -1041,20 +1041,25 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   return (
     <div className="club-home">
       <GlobalUXIndicators wsConnected={wsConnected} />
+      {/* Dan 2026-08-19: the resume bar moved into the persistent multi-table
+          layer (PersistentTableLayer in App.tsx), which now shows it on EVERY
+          non-/table route — a per-page copy here would double-render it. */}
       {/* Animations moved to ClubHomePage.css */}
       {/* ═══════════════════════════════════════════════════════════════════
                 QUICK ACTION ICONS ROW
             ═══════════════════════════════════════════════════════════════════ */}
       <div className="club-home__actions-row">
-        <button
-          className="club-home__back-btn"
-          onClick={() => {
-            haptic.light();
-            navigate('/clubs');
-          }}
-        >
-          ‹‹
-        </button>
+        {!clubIdOverride && (
+          <button
+            className="club-home__back-btn"
+            onClick={() => {
+              haptic.light();
+              navigate('/clubs');
+            }}
+          >
+            ‹‹
+          </button>
+        )}
         <div className="club-home__quick-icons">
           <button
             className="quick-icon"

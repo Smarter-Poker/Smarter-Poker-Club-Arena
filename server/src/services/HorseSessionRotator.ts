@@ -70,8 +70,23 @@ export interface RotatorEngine {
 export class HorseSessionRotator {
   private isRunning = false;
   private handle: ReturnType<typeof setInterval> | null = null;
-  /** V8: horses currently on a short break -> when to sit back in */
-  private breaks = new Map<string, { tableId: string; sitBackAt: number }>();
+  /**
+   * V8: horses currently on a short break -> when to sit back in.
+   *
+   * 2026-08-19 MULTI-TABLE FIX: keyed by `${tableId}:${userId}`, NOT userId.
+   * Horses multi-table (up to 4 tables). Keyed by user alone, a break started
+   * at table B OVERWROTE a live break record at table A — table A's deferred
+   * sit-out was then never sat back in, so the horse sat out at A forever
+   * (until it happened to leave, or the process restarted). A session-end
+   * departure at one table likewise deleted the break record belonging to a
+   * DIFFERENT table, orphaning that sit-out the same way. The value carries
+   * userId so the sit-back pass knows who to seat.
+   */
+  private breaks = new Map<string, { tableId: string; userId: string; sitBackAt: number }>();
+
+  private static breakKey(tableId: string, userId: string): string {
+    return `${tableId}:${userId}`;
+  }
 
   constructor(private getEngine: (tableId: string) => RotatorEngine | undefined) {}
 
@@ -96,7 +111,9 @@ export class HorseSessionRotator {
     // Seated horses at CASH tables with enough table population to spare one.
     const { data: seats, error } = await supabase
       .from('table_seats')
-      .select('table_id, user_id, seat_number, stack, joined_at, tables!inner(id, big_blind, tournament_id, status)')
+      .select(
+        'table_id, user_id, seat_number, stack, joined_at, tables!inner(id, big_blind, tournament_id, status)'
+      )
       .is('left_at', null)
       .limit(400);
     if (error || !seats) return;
@@ -124,11 +141,11 @@ export class HorseSessionRotator {
 
     // V8: end any due short breaks FIRST — sitting a horse back in is never
     // rate-limited.
-    for (const [userId, info] of [...this.breaks]) {
+    for (const [key, info] of [...this.breaks]) {
       if (Date.now() < info.sitBackAt) continue;
-      this.breaks.delete(userId);
+      this.breaks.delete(key);
       try {
-        this.getEngine(info.tableId)?.sitOut?.(userId, false);
+        this.getEngine(info.tableId)?.sitOut?.(info.userId, false);
       } catch (err) {
         reportError(err, 'HorseSessionRotator.sitBack');
       }
@@ -162,7 +179,7 @@ export class HorseSessionRotator {
         const stackNow = Number(seat.stack) || 0;
         if (
           engine.addChips &&
-          !this.breaks.has(seat.user_id) &&
+          !this.breaks.has(HorseSessionRotator.breakKey(tableId, seat.user_id)) &&
           minutes >= TOPUP_MIN_MINUTES &&
           stackNow > 0 &&
           stackNow < buyIn * TOPUP_STACK_FRAC &&
@@ -185,10 +202,11 @@ export class HorseSessionRotator {
 
         // Base hazard: exponential session with ~MEAN_SESSION_MINUTES mean,
         // expressed per 90s cycle.
-        let p = (CYCLE_MS / 60000) / MEAN_SESSION_MINUTES;
+        let p = CYCLE_MS / 60000 / MEAN_SESSION_MINUTES;
         const stack = stackNow;
         const swing = stack / buyIn;
-        if (swing >= 2) p *= 2.2; // doubled up — racking up is human
+        if (swing >= 2)
+          p *= 2.2; // doubled up — racking up is human
         else if (swing <= 0.35) p *= 1.8; // felted-ish — calling it a night
         if (minutes > 150) p *= 1.6; // long sessions wind down
         // V8: outside the horse's daily activity window, sessions end sooner.
@@ -204,7 +222,9 @@ export class HorseSessionRotator {
           const result = engine.leaveTable(best.seat.user_id);
           if (result.success) {
             departures++;
-            this.breaks.delete(best.seat.user_id);
+            // Only THIS table's break record — a break at another table is
+            // still live and must still sit back in over there.
+            this.breaks.delete(HorseSessionRotator.breakKey(tableId, best.seat.user_id));
             console.log(
               `[SessionRotator] horse=${best.seat.user_id.slice(0, 8)} leaving table=${tableId.slice(0, 8)} ` +
                 `after session (stack=${best.seat.stack})`
@@ -221,6 +241,9 @@ export class HorseSessionRotator {
         !breakTaken &&
         engine.sitOut &&
         best &&
+        // Not already on break at THIS table (re-setting would silently
+        // extend the sit-out and reset the sit-back clock).
+        !this.breaks.has(HorseSessionRotator.breakKey(tableId, best.seat.user_id)) &&
         tableSeats.length >= (humanPresent ? 6 : 5) &&
         this.breaks.size < 2 &&
         Math.random() < BREAK_PROB / Math.max(1, byTable.size)
@@ -229,8 +252,9 @@ export class HorseSessionRotator {
           const res = engine.sitOut(best.seat.user_id, true);
           if (res.success) {
             breakTaken = true;
-            this.breaks.set(best.seat.user_id, {
+            this.breaks.set(HorseSessionRotator.breakKey(tableId, best.seat.user_id), {
               tableId,
+              userId: best.seat.user_id,
               sitBackAt: Date.now() + BREAK_MIN_MS + Math.random() * (BREAK_MAX_MS - BREAK_MIN_MS),
             });
             console.log(

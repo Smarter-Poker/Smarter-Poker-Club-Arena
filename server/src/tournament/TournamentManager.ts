@@ -525,10 +525,35 @@ export class TournamentManager extends TournamentManagerEliminations {
       );
     }
     if (targetOpen && target && awardCount > 0) {
-      await supabase
-        .from('tournaments')
-        .update({ current_players: Number(target.current_players || 0) + awardCount })
-        .eq('id', target.id);
+      // MULTI-TABLE AUDIT 2026-08-19: was
+      //   current_players: Number(target.current_players || 0) + awardCount
+      // — a read-modify-write on a snapshot taken BEFORE all the payout
+      // awaits above (the same bug shape the 2026-07-21 union-rake fix in
+      // TournamentManagerEliminations closed). Any human registering into the
+      // target through fn_register_for_tournament (which increments
+      // current_players atomically under a row lock) between our read and
+      // this write was ERASED from the count; it also counted seats whose
+      // insert deduped as already_registered or fell back to a cash payout.
+      // Recount from tournament_players — the table fn_register/unregister
+      // themselves insert into/delete from — so the write converges on truth
+      // instead of compounding a stale snapshot.
+      const { count: targetCount, error: countErr } = await supabase
+        .from('tournament_players')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('tournament_id', target.id);
+      if (countErr || typeof targetCount !== 'number') {
+        reportError(
+          new Error(
+            `[Satellite:${this.tournamentId.slice(0, 8)}] target recount failed: ${countErr?.message ?? 'no count'} — leaving current_players untouched`
+          ),
+          'Tournament.satellite_target_recount_failed'
+        );
+      } else {
+        await supabase
+          .from('tournaments')
+          .update({ current_players: targetCount })
+          .eq('id', target.id);
+      }
     }
   }
 

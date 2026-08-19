@@ -14,8 +14,9 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
+import LiveTablesBar from '../components/table/LiveTablesBar';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -34,6 +35,14 @@ const HomePage = lazy(() => import('./HomePage'));
  * when we genuinely cannot resolve which club the player came from.
  */
 const ClubHomePage = lazy(() => import('./ClubHomePage'));
+/**
+ * Dan 2026-08-19: tournament cards in the in-tab lobby link to
+ * /tournaments/:id, a route OUTSIDE table/:tableId — following it unmounted
+ * this whole container and killed every live game. The lobby tab now renders
+ * TournamentDetails IN PLACE instead (see handleLobbyLinkCapture), so
+ * registering for a tournament keeps the other tables dealing.
+ */
+const TournamentDetails = lazy(() => import('./tournament/TournamentDetails'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -59,6 +68,14 @@ interface TableInstance {
    * Absent means 'table', so every pre-existing construction site stays valid.
    */
   kind?: 'table' | 'lobby';
+  /**
+   * Dan 2026-08-19: a lobby tab drilled into a tournament. Set when the user
+   * taps a tournament card inside the in-tab lobby; the tab then renders
+   * TournamentDetails instead of the club lobby so the running tables never
+   * unmount. Cleared by the tab's own "back to lobby" affordance, or wholesale
+   * when TABLE_SEATED / the route effect converts the lobby tab into a table.
+   */
+  lobbyTournamentId?: string;
 }
 
 /** Lobby tabs carry a synthetic id so they can share the tabs array. */
@@ -67,13 +84,53 @@ const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(L
 
 const MAX_TABLES = 4;
 
+/**
+ * Dan 2026-08-19 (persistence upgrade): what the GLOBAL dock should show while
+ * the container is hidden on a non-/table route. Pure so the logic harness
+ * can lift it verbatim.
+ * - Some table needs the hero's action -> 'urgent' (most pressing deadline
+ *   wins): the player must be pulled back before their hand is folded out.
+ * - Tables merely running -> 'return': a quiet re-entry affordance.
+ * - On /table/* the container itself is visible -> 'none' (no dock).
+ */
+const dockStateFor = (tabs: TableInstance[], hidden: boolean, nowMs: number) => {
+  if (!hidden) return { kind: 'none' as const };
+  const live = tabs.filter((t) => !isLobbyTab(t));
+  if (live.length === 0) return { kind: 'none' as const };
+  const urgent = live
+    .filter((t) => t.isMyTurn)
+    .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
+  if (urgent) {
+    return {
+      kind: 'urgent' as const,
+      targetId: urgent.id,
+      name: urgent.name,
+      secondsLeft:
+        urgent.turnDeadlineMs !== undefined
+          ? Math.max(0, Math.ceil((urgent.turnDeadlineMs - nowMs) / 1000))
+          : undefined,
+    };
+  }
+  return { kind: 'return' as const, count: live.length, targetId: live[0].id };
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function MultiTablePage() {
   const { user } = useAuthUser();
-  const { tableId: routeTableId } = useParams<{ tableId: string }>();
+  /**
+   * Dan 2026-08-19 (persistence upgrade): this container no longer lives under
+   * the /table/:tableId route — App.tsx mounts it ONCE via
+   * PersistentTableLayer, as a sibling of <Routes>, so navigating ANYWHERE
+   * keeps every TablePage (and its EngineStateClient socket) mounted. The
+   * route param is therefore derived from the location, and `hidden` collapses
+   * the whole container to display:none while the player browses other routes.
+   */
+  const location = useLocation();
+  const routeTableId = matchPath('/table/:tableId', location.pathname)?.params.tableId;
+  const hidden = routeTableId === undefined;
   /**
    * The club whose lobby the player should return to. Resolved from the tables
    * they actually sat at, so it survives closing every tab. Kept in state (not
@@ -263,24 +320,30 @@ export default function MultiTablePage() {
     'TABLE_MENU_ACTION',
     (payload: { tableId?: string; action?: string }) => {
       if (payload?.action !== 'CLOSE_TABLE_TAB' || !payload.tableId) return;
-      setTables((prev) => {
-        const idx = prev.findIndex((t) => t.id === payload.tableId);
-        if (idx === -1) return prev;
-        const next = prev.filter((t) => t.id !== payload.tableId);
-        setActiveIndex((cur) => (cur >= idx && cur > 0 ? cur - 1 : 0));
+      // Dan 2026-08-19: this used to call setActiveIndex INSIDE the setTables
+      // updater (impure updater — double-fires under StrictMode/concurrent
+      // re-basing), and its index math sent anyone LEFT of the closed tab to
+      // tab 0 (cur < idx fell through to the `: 0` branch). Compute from the
+      // ref, update each piece of state once, keep the math exact.
+      const prev = tablesRef.current;
+      const idx = prev.findIndex((t) => t.id === payload.tableId);
+      if (idx === -1) return;
+      const next = prev.filter((t) => t.id !== payload.tableId);
+      if (next.length === 0) {
         // Nothing left to play — surface the lobby so there is always
         // somewhere to go next.
-        if (next.length === 0) {
-          return [
-            {
-              id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
-              kind: 'lobby',
-              name: 'Lobby',
-            } as TableInstance,
-          ];
-        }
-        return next;
-      });
+        setTables([
+          {
+            id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
+            kind: 'lobby',
+            name: 'Lobby',
+          } as TableInstance,
+        ]);
+        setActiveIndex(0);
+        return;
+      }
+      setTables(next);
+      setActiveIndex((cur) => (cur > idx ? cur - 1 : cur === idx ? Math.max(0, cur - 1) : cur));
     }
   );
 
@@ -289,59 +352,56 @@ export default function MultiTablePage() {
     (payload: { tableId?: string; action?: string }) => {
       if (!payload?.tableId || !payload.tableId.startsWith(LOBBY_TAB_PREFIX)) return;
       if (payload.action !== 'FORCE_LEAVE_TABLE' && payload.action !== 'LEAVE_TABLE') return;
-      setTables((prev) => {
-        const idx = prev.findIndex((t) => t.id === payload.tableId);
-        if (idx === -1) return prev;
-        setActiveIndex((cur) => (cur >= idx && cur > 0 ? cur - 1 : cur));
-        return prev.filter((t) => t.id !== payload.tableId);
-      });
+      const prev = tablesRef.current;
+      const idx = prev.findIndex((t) => t.id === payload.tableId);
+      if (idx === -1) return;
+      setTables(prev.filter((t) => t.id !== payload.tableId));
+      setActiveIndex((cur) => (cur > idx ? cur - 1 : cur === idx ? Math.max(0, cur - 1) : cur));
     }
   );
 
   useMasterBusSubscription('OPEN_LOBBY_TAB', () => {
-    setTables((prev) => {
-      const existingLobby = prev.findIndex(isLobbyTab);
-      if (existingLobby !== -1) {
-        // Already have one — just focus it rather than stacking duplicates.
-        setActiveIndex(existingLobby);
-        return prev;
-      }
-      if (prev.length >= MAX_TABLES) return prev;
-      setActiveIndex(prev.length);
-      return [
-        ...prev,
-        {
-          id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
-          name: 'Lobby',
-          stakes: '',
-          isMyTurn: false,
-          pot: 0,
-          kind: 'lobby',
-        },
-      ];
-    });
+    const prev = tablesRef.current;
+    const existingLobby = prev.findIndex(isLobbyTab);
+    if (existingLobby !== -1) {
+      // Already have one — just focus it rather than stacking duplicates.
+      setActiveIndex(existingLobby);
+      return;
+    }
+    if (prev.length >= MAX_TABLES) return;
+    setTables([
+      ...prev,
+      {
+        id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
+        name: 'Lobby',
+        stakes: '',
+        isMyTurn: false,
+        pot: 0,
+        kind: 'lobby',
+      },
+    ]);
+    setActiveIndex(prev.length);
   });
 
   useMasterBusSubscription('TABLE_LEFT', (payload: LeftPayload) => {
     const e = payload;
     if (e.tableId) {
-      setTables((prev) => {
-        const newTables = prev.filter((t) => t.id !== e.tableId);
-        // If all tables closed, return to the club lobby they came from.
-        if (newTables.length === 0) {
-          goToLobby();
-        }
-        return newTables;
-      });
-      // Adjust activeIndex to prevent out-of-bounds or pointing at wrong tab
+      // Dan 2026-08-19: goToLobby() (a navigate call) used to run INSIDE the
+      // setTables updater — a side effect in a function React may invoke
+      // during render, and twice under StrictMode. Compute outside, then
+      // apply each state change once.
+      const prev = tablesRef.current;
+      const closedIdx = prev.findIndex((t) => t.id === e.tableId);
+      if (closedIdx === -1) return;
+      const newTables = prev.filter((t) => t.id !== e.tableId);
+      setTables(newTables);
       setActiveIndex((prevIdx) => {
-        const currentTables = tablesRef.current;
-        const closedIdx = currentTables.findIndex((t) => t.id === e.tableId);
-        if (closedIdx === -1) return prevIdx;
         if (closedIdx < prevIdx) return prevIdx - 1;
         if (closedIdx === prevIdx && prevIdx > 0) return prevIdx - 1;
         return prevIdx;
       });
+      // If all tables closed, return to the club lobby they came from.
+      if (newTables.length === 0) goToLobby();
     }
   });
 
@@ -503,10 +563,61 @@ export default function MultiTablePage() {
     [updateTableInfo]
   );
 
+  // ─── In-tab lobby rendering (Dan 2026-08-19) ─────────────────────────
+  // The lobby tab shows the club's real lobby. Its cash-game cards are
+  // <Link to="/table/:id"> — safe, the route effect above converts this tab
+  // in place. Its TOURNAMENT cards are <Link to="/tournaments/:id">, a route
+  // outside table/:tableId that would unmount this container and kill every
+  // live game. Capture those clicks and drill into the tournament INSIDE the
+  // tab instead. Everything else (bottom nav, cashier, ...) passes through:
+  // leaving is then an explicit user choice, and the server-truth rebuild
+  // restores every seat as a tab on the way back.
+  const handleLobbyLinkCapture = useCallback((e: React.MouseEvent) => {
+    const anchor = (e.target as HTMLElement | null)?.closest?.('a');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href') || '';
+    const match = href.match(/^\/tournaments\/([^/?#]+)/);
+    if (!match) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const tournamentId = match[1];
+    setTables((prev) =>
+      prev.map((t) => (isLobbyTab(t) ? { ...t, lobbyTournamentId: tournamentId } : t))
+    );
+  }, []);
+
+  const clearLobbyTournament = useCallback((tabId: string) => {
+    setTables((prev) =>
+      prev.map((t) => (t.id === tabId ? { ...t, lobbyTournamentId: undefined } : t))
+    );
+  }, []);
+
+  const renderLobbyTab = (table: TableInstance) =>
+    table.lobbyTournamentId ? (
+      <div className="multi-table-page__lobby-tab">
+        <button
+          className="multi-table-page__lobby-back"
+          onClick={() => clearLobbyTournament(table.id)}
+        >
+          ← Lobby
+        </button>
+        <TournamentDetails tournamentIdOverride={table.lobbyTournamentId} />
+      </div>
+    ) : (
+      <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
+        {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
+      </div>
+    );
+
   // ─── Auto-switch on urgent timer ─────────────────────────────────────
   // 2026-08-15 fix: this compared against a hardcoded timeRemaining of 15,
   // so it could never fire. Now derived from the real server deadline.
   useEffect(() => {
+    // Dan 2026-08-19: only auto-switch the active TAB while the player is
+    // actually on /table/*. When they browse elsewhere the global dock
+    // surfaces the alert instead — yanking the route out from under them
+    // mid-cashier would be hostile.
+    if (hidden) return;
     const urgentTable = tables.find((t, idx) => {
       if (idx === activeIndex) return false;
       const left = secondsLeft(t);
@@ -520,10 +631,13 @@ export default function MultiTablePage() {
         setTimeout(() => setIsTransitioning(false), 320);
       }
     }
-  }, [tables, activeIndex, secondsLeft]);
+  }, [tables, activeIndex, secondsLeft, hidden]);
 
   // ─── Keyboard shortcuts for table switching ───────────────────────────
   useEffect(() => {
+    // Dan 2026-08-19: the container is now ALWAYS mounted; while hidden on
+    // another route these shortcuts must not hijack Tab/1-4 from that page.
+    if (hidden) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       // P1-5 FIX: never hijack keystrokes while the user is typing in an input,
       // textarea, select, or contenteditable (table chat, raise amount, modals),
@@ -561,7 +675,7 @@ export default function MultiTablePage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tables.length]);
+  }, [tables.length, hidden]);
 
   // ─── Swipe Gesture Handling ──────────────────────────────────────────
   const handleTouchStart = useCallback(
@@ -635,27 +749,62 @@ export default function MultiTablePage() {
   }, [swipeOffset, activeIndex, tables.length]);
 
   // ─── Handle route-based table ID changes ─────────────────────────────
+  // Dan 2026-08-19: the cash-game cards in the in-tab lobby are plain
+  // <Link to="/table/:id"> elements, so "sit at a second table" arrives HERE
+  // as a route change — not (yet) as TABLE_SEATED. This effect used to blindly
+  // append, which stranded the lobby tab the player had just used: it sat
+  // there as a dead "Lobby" tab burning one of the four slots. Convert the
+  // lobby tab in place, exactly like the TABLE_SEATED handler does.
   useEffect(() => {
-    if (routeTableId && !tables.find((t) => t.id === routeTableId)) {
-      // New table from URL — add it if room
-      if (tables.length < MAX_TABLES) {
-        setTables((prev) => [
-          ...prev,
-          {
-            id: routeTableId,
-            name: searchParams.get('name') || `Table ${prev.length + 1}`,
-            stakes: searchParams.get('stakes') || '',
-            isMyTurn: false,
-            pot: 0,
-          },
-        ]);
-        setActiveIndex(tables.length); // Switch to new table
-      }
+    if (!routeTableId) return;
+    const prev = tablesRef.current;
+    const existingIdx = prev.findIndex((t) => t.id === routeTableId);
+    if (existingIdx !== -1) {
+      // Dan 2026-08-19: navigating to a table that is ALREADY mounted (dock
+      // click, lobby resume link, browser back) must focus its tab — the
+      // container persists now, so "arriving" is a tab switch, not a mount.
+      setActiveIndex(existingIdx);
+      return;
+    }
+    const fromUrl: TableInstance = {
+      id: routeTableId,
+      name: searchParams.get('name') || `Table ${prev.length + 1}`,
+      stakes: searchParams.get('stakes') || '',
+      isMyTurn: false,
+      pot: 0,
+      kind: 'table',
+    };
+    const lobbyIdx = prev.findIndex(isLobbyTab);
+    if (lobbyIdx !== -1) {
+      const next = [...prev];
+      next[lobbyIdx] = fromUrl;
+      setTables(next);
+      setActiveIndex(lobbyIdx); // focus the table they just picked
+    } else if (prev.length < MAX_TABLES) {
+      setTables([...prev, fromUrl]);
+      setActiveIndex(prev.length); // Switch to new table
     }
   }, [routeTableId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ─── Global dock (Dan 2026-08-19) ────────────────────────────────────
+  // While hidden on another route, the LiveTablesBar dock is the ONE global
+  // affordance: "Return to game" when tables are quietly running, "Action
+  // needed" (with the live countdown — nowMs already ticks whenever any
+  // turn clock runs) when a hidden table waits on the hero.
+  const dock = dockStateFor(tables, hidden, nowMs);
+  const handleDockReturn = useCallback(
+    (tableId: string) => {
+      const idx = tablesRef.current.findIndex((t) => t.id === tableId);
+      if (idx !== -1) setActiveIndex(idx);
+      navigate(`/table/${tableId}`);
+    },
+    [navigate]
+  );
+
   // ─── Render ──────────────────────────────────────────────────────────
   if (tables.length === 0) {
+    // Hidden with nothing mounted: render nothing at all.
+    if (hidden) return null;
     return (
       <div className="multi-table-page multi-table-page--empty">
         <p>No tables open</p>
@@ -674,7 +823,19 @@ export default function MultiTablePage() {
     : 'none';
 
   return (
-    <div className="multi-table-page">
+    <>
+      {hidden && dock.kind !== 'none' && (
+        <LiveTablesBar
+          tables={tables.filter((t) => !isLobbyTab(t)).map((t) => ({ id: t.id, name: t.name }))}
+          urgent={
+            dock.kind === 'urgent'
+              ? { tableId: dock.targetId, name: dock.name, secondsLeft: dock.secondsLeft }
+              : null
+          }
+          onReturn={handleDockReturn}
+        />
+      )}
+      <div className="multi-table-page" style={hidden ? { display: 'none' } : undefined}>
       {/* Tab Bar */}
       {tables.length > 1 && (
         <div className="multi-table-page__tab-bar-wrapper">
@@ -772,16 +933,14 @@ export default function MultiTablePage() {
             >
               <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
                 {isLobbyTab(table) ? (
-                  <div className="multi-table-page__lobby-tab">
-                    {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
-                  </div>
+                  renderLobbyTab(table)
                 ) : (
                   <TablePage
                     key={table.id}
                     embeddedTableId={table.id}
                     onTableInfoUpdate={getTableInfoCb(table.id)}
                     isMultiTable={true}
-                    isActive={idx === activeIndex}
+                    isActive={idx === activeIndex && !hidden}
                   />
                 )}
               </Suspense>
@@ -835,16 +994,18 @@ export default function MultiTablePage() {
                   }
                 >
                   {isLobbyTab(table) ? (
-                    <div className="multi-table-page__lobby-tab">
-                      {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
-                    </div>
+                    renderLobbyTab(table)
                   ) : (
                     <TablePage
                       key={table.id}
                       embeddedTableId={table.id}
                       onTableInfoUpdate={getTableInfoCb(table.id)}
-                      isMultiTable={tables.length > 1}
-                      isActive={idx === activeIndex}
+                      // Dan 2026-08-19: while hidden on another route no tab is
+                      // "active" — ambient table sounds must not follow the
+                      // player into the cashier (isMultiTable true when hidden
+                      // so single-table mode is muted too).
+                      isMultiTable={tables.length > 1 || hidden}
+                      isActive={idx === activeIndex && !hidden}
                     />
                   )}
                 </Suspense>
@@ -853,6 +1014,7 @@ export default function MultiTablePage() {
           })}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

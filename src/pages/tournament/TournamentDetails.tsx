@@ -64,8 +64,17 @@ function getOrdinal(n: number): string {
   return s[(v - 20) % 10] || s[v] || s[0];
 }
 
-export default function TournamentDetails() {
-  const { tournamentId } = useParams<{ tournamentId: string }>();
+/**
+ * Dan 2026-08-19: `tournamentIdOverride` lets this page render OUTSIDE its own
+ * route — MultiTablePage embeds it in a lobby tab so a seated player can
+ * browse and register for a tournament while their other tables keep dealing.
+ * Route usage is unchanged: without the prop the id comes from useParams.
+ */
+export default function TournamentDetails({
+  tournamentIdOverride,
+}: { tournamentIdOverride?: string } = {}) {
+  const { tournamentId: routeTournamentId } = useParams<{ tournamentId: string }>();
+  const tournamentId = tournamentIdOverride || routeTournamentId;
   const navigate = useNavigate();
   const { user, isHydrating } = useAuthUser();
   const toast = useToast();

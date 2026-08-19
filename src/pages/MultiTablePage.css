@@ -70,6 +70,7 @@
    `contain: layout paint` keeps the lobby's layout from thrashing the sibling
    tables that are still mounted and dealing behind it. */
 .multi-table-page__lobby-tab {
+  position: relative; /* anchors the tournament back-pill in any container */
   width: 100%;
   height: 100%;
   overflow-y: auto;
@@ -295,4 +296,27 @@
   .table-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── In-tab tournament drill-down (Dan 2026-08-19) ──────────────────────── */
+/* Floating "back to lobby" pill shown while a lobby tab renders
+   TournamentDetails in place. Matches the tab bar's dark glass + cyan accent. */
+.multi-table-page__lobby-back {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 60;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  background: rgba(10, 10, 15, 0.85);
+  color: rgba(0, 212, 255, 0.9);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.multi-table-page__lobby-back:hover {
+  background: rgba(0, 212, 255, 0.12);
 }

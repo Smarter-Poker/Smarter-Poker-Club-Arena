@@ -34,6 +34,14 @@ const HomePage = lazy(() => import('./HomePage'));
  * when we genuinely cannot resolve which club the player came from.
  */
 const ClubHomePage = lazy(() => import('./ClubHomePage'));
+/**
+ * Dan 2026-08-19: tournament cards in the in-tab lobby link to
+ * /tournaments/:id, a route OUTSIDE table/:tableId — following it unmounted
+ * this whole container and killed every live game. The lobby tab now renders
+ * TournamentDetails IN PLACE instead (see handleLobbyLinkCapture), so
+ * registering for a tournament keeps the other tables dealing.
+ */
+const TournamentDetails = lazy(() => import('./tournament/TournamentDetails'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -59,6 +67,14 @@ interface TableInstance {
    * Absent means 'table', so every pre-existing construction site stays valid.
    */
   kind?: 'table' | 'lobby';
+  /**
+   * Dan 2026-08-19: a lobby tab drilled into a tournament. Set when the user
+   * taps a tournament card inside the in-tab lobby; the tab then renders
+   * TournamentDetails instead of the club lobby so the running tables never
+   * unmount. Cleared by the tab's own "back to lobby" affordance, or wholesale
+   * when TABLE_SEATED / the route effect converts the lobby tab into a table.
+   */
+  lobbyTournamentId?: string;
 }
 
 /** Lobby tabs carry a synthetic id so they can share the tabs array. */
@@ -263,24 +279,30 @@ export default function MultiTablePage() {
     'TABLE_MENU_ACTION',
     (payload: { tableId?: string; action?: string }) => {
       if (payload?.action !== 'CLOSE_TABLE_TAB' || !payload.tableId) return;
-      setTables((prev) => {
-        const idx = prev.findIndex((t) => t.id === payload.tableId);
-        if (idx === -1) return prev;
-        const next = prev.filter((t) => t.id !== payload.tableId);
-        setActiveIndex((cur) => (cur >= idx && cur > 0 ? cur - 1 : 0));
+      // Dan 2026-08-19: this used to call setActiveIndex INSIDE the setTables
+      // updater (impure updater — double-fires under StrictMode/concurrent
+      // re-basing), and its index math sent anyone LEFT of the closed tab to
+      // tab 0 (cur < idx fell through to the `: 0` branch). Compute from the
+      // ref, update each piece of state once, keep the math exact.
+      const prev = tablesRef.current;
+      const idx = prev.findIndex((t) => t.id === payload.tableId);
+      if (idx === -1) return;
+      const next = prev.filter((t) => t.id !== payload.tableId);
+      if (next.length === 0) {
         // Nothing left to play — surface the lobby so there is always
         // somewhere to go next.
-        if (next.length === 0) {
-          return [
-            {
-              id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
-              kind: 'lobby',
-              name: 'Lobby',
-            } as TableInstance,
-          ];
-        }
-        return next;
-      });
+        setTables([
+          {
+            id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
+            kind: 'lobby',
+            name: 'Lobby',
+          } as TableInstance,
+        ]);
+        setActiveIndex(0);
+        return;
+      }
+      setTables(next);
+      setActiveIndex((cur) => (cur > idx ? cur - 1 : cur === idx ? Math.max(0, cur - 1) : cur));
     }
   );
 
@@ -289,59 +311,56 @@ export default function MultiTablePage() {
     (payload: { tableId?: string; action?: string }) => {
       if (!payload?.tableId || !payload.tableId.startsWith(LOBBY_TAB_PREFIX)) return;
       if (payload.action !== 'FORCE_LEAVE_TABLE' && payload.action !== 'LEAVE_TABLE') return;
-      setTables((prev) => {
-        const idx = prev.findIndex((t) => t.id === payload.tableId);
-        if (idx === -1) return prev;
-        setActiveIndex((cur) => (cur >= idx && cur > 0 ? cur - 1 : cur));
-        return prev.filter((t) => t.id !== payload.tableId);
-      });
+      const prev = tablesRef.current;
+      const idx = prev.findIndex((t) => t.id === payload.tableId);
+      if (idx === -1) return;
+      setTables(prev.filter((t) => t.id !== payload.tableId));
+      setActiveIndex((cur) => (cur > idx ? cur - 1 : cur === idx ? Math.max(0, cur - 1) : cur));
     }
   );
 
   useMasterBusSubscription('OPEN_LOBBY_TAB', () => {
-    setTables((prev) => {
-      const existingLobby = prev.findIndex(isLobbyTab);
-      if (existingLobby !== -1) {
-        // Already have one — just focus it rather than stacking duplicates.
-        setActiveIndex(existingLobby);
-        return prev;
-      }
-      if (prev.length >= MAX_TABLES) return prev;
-      setActiveIndex(prev.length);
-      return [
-        ...prev,
-        {
-          id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
-          name: 'Lobby',
-          stakes: '',
-          isMyTurn: false,
-          pot: 0,
-          kind: 'lobby',
-        },
-      ];
-    });
+    const prev = tablesRef.current;
+    const existingLobby = prev.findIndex(isLobbyTab);
+    if (existingLobby !== -1) {
+      // Already have one — just focus it rather than stacking duplicates.
+      setActiveIndex(existingLobby);
+      return;
+    }
+    if (prev.length >= MAX_TABLES) return;
+    setTables([
+      ...prev,
+      {
+        id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
+        name: 'Lobby',
+        stakes: '',
+        isMyTurn: false,
+        pot: 0,
+        kind: 'lobby',
+      },
+    ]);
+    setActiveIndex(prev.length);
   });
 
   useMasterBusSubscription('TABLE_LEFT', (payload: LeftPayload) => {
     const e = payload;
     if (e.tableId) {
-      setTables((prev) => {
-        const newTables = prev.filter((t) => t.id !== e.tableId);
-        // If all tables closed, return to the club lobby they came from.
-        if (newTables.length === 0) {
-          goToLobby();
-        }
-        return newTables;
-      });
-      // Adjust activeIndex to prevent out-of-bounds or pointing at wrong tab
+      // Dan 2026-08-19: goToLobby() (a navigate call) used to run INSIDE the
+      // setTables updater — a side effect in a function React may invoke
+      // during render, and twice under StrictMode. Compute outside, then
+      // apply each state change once.
+      const prev = tablesRef.current;
+      const closedIdx = prev.findIndex((t) => t.id === e.tableId);
+      if (closedIdx === -1) return;
+      const newTables = prev.filter((t) => t.id !== e.tableId);
+      setTables(newTables);
       setActiveIndex((prevIdx) => {
-        const currentTables = tablesRef.current;
-        const closedIdx = currentTables.findIndex((t) => t.id === e.tableId);
-        if (closedIdx === -1) return prevIdx;
         if (closedIdx < prevIdx) return prevIdx - 1;
         if (closedIdx === prevIdx && prevIdx > 0) return prevIdx - 1;
         return prevIdx;
       });
+      // If all tables closed, return to the club lobby they came from.
+      if (newTables.length === 0) goToLobby();
     }
   });
 
@@ -503,6 +522,52 @@ export default function MultiTablePage() {
     [updateTableInfo]
   );
 
+  // ─── In-tab lobby rendering (Dan 2026-08-19) ─────────────────────────
+  // The lobby tab shows the club's real lobby. Its cash-game cards are
+  // <Link to="/table/:id"> — safe, the route effect above converts this tab
+  // in place. Its TOURNAMENT cards are <Link to="/tournaments/:id">, a route
+  // outside table/:tableId that would unmount this container and kill every
+  // live game. Capture those clicks and drill into the tournament INSIDE the
+  // tab instead. Everything else (bottom nav, cashier, ...) passes through:
+  // leaving is then an explicit user choice, and the server-truth rebuild
+  // restores every seat as a tab on the way back.
+  const handleLobbyLinkCapture = useCallback((e: React.MouseEvent) => {
+    const anchor = (e.target as HTMLElement | null)?.closest?.('a');
+    if (!anchor) return;
+    const href = anchor.getAttribute('href') || '';
+    const match = href.match(/^\/tournaments\/([^/?#]+)/);
+    if (!match) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const tournamentId = match[1];
+    setTables((prev) =>
+      prev.map((t) => (isLobbyTab(t) ? { ...t, lobbyTournamentId: tournamentId } : t))
+    );
+  }, []);
+
+  const clearLobbyTournament = useCallback((tabId: string) => {
+    setTables((prev) =>
+      prev.map((t) => (t.id === tabId ? { ...t, lobbyTournamentId: undefined } : t))
+    );
+  }, []);
+
+  const renderLobbyTab = (table: TableInstance) =>
+    table.lobbyTournamentId ? (
+      <div className="multi-table-page__lobby-tab">
+        <button
+          className="multi-table-page__lobby-back"
+          onClick={() => clearLobbyTournament(table.id)}
+        >
+          ← Lobby
+        </button>
+        <TournamentDetails tournamentIdOverride={table.lobbyTournamentId} />
+      </div>
+    ) : (
+      <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
+        {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
+      </div>
+    );
+
   // ─── Auto-switch on urgent timer ─────────────────────────────────────
   // 2026-08-15 fix: this compared against a hardcoded timeRemaining of 15,
   // so it could never fire. Now derived from the real server deadline.
@@ -635,22 +700,33 @@ export default function MultiTablePage() {
   }, [swipeOffset, activeIndex, tables.length]);
 
   // ─── Handle route-based table ID changes ─────────────────────────────
+  // Dan 2026-08-19: the cash-game cards in the in-tab lobby are plain
+  // <Link to="/table/:id"> elements, so "sit at a second table" arrives HERE
+  // as a route change — not (yet) as TABLE_SEATED. This effect used to blindly
+  // append, which stranded the lobby tab the player had just used: it sat
+  // there as a dead "Lobby" tab burning one of the four slots. Convert the
+  // lobby tab in place, exactly like the TABLE_SEATED handler does.
   useEffect(() => {
-    if (routeTableId && !tables.find((t) => t.id === routeTableId)) {
-      // New table from URL — add it if room
-      if (tables.length < MAX_TABLES) {
-        setTables((prev) => [
-          ...prev,
-          {
-            id: routeTableId,
-            name: searchParams.get('name') || `Table ${prev.length + 1}`,
-            stakes: searchParams.get('stakes') || '',
-            isMyTurn: false,
-            pot: 0,
-          },
-        ]);
-        setActiveIndex(tables.length); // Switch to new table
-      }
+    if (!routeTableId) return;
+    const prev = tablesRef.current;
+    if (prev.find((t) => t.id === routeTableId)) return;
+    const fromUrl: TableInstance = {
+      id: routeTableId,
+      name: searchParams.get('name') || `Table ${prev.length + 1}`,
+      stakes: searchParams.get('stakes') || '',
+      isMyTurn: false,
+      pot: 0,
+      kind: 'table',
+    };
+    const lobbyIdx = prev.findIndex(isLobbyTab);
+    if (lobbyIdx !== -1) {
+      const next = [...prev];
+      next[lobbyIdx] = fromUrl;
+      setTables(next);
+      setActiveIndex(lobbyIdx); // focus the table they just picked
+    } else if (prev.length < MAX_TABLES) {
+      setTables([...prev, fromUrl]);
+      setActiveIndex(prev.length); // Switch to new table
     }
   }, [routeTableId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -772,9 +848,7 @@ export default function MultiTablePage() {
             >
               <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
                 {isLobbyTab(table) ? (
-                  <div className="multi-table-page__lobby-tab">
-                    {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
-                  </div>
+                  renderLobbyTab(table)
                 ) : (
                   <TablePage
                     key={table.id}
@@ -835,9 +909,7 @@ export default function MultiTablePage() {
                   }
                 >
                   {isLobbyTab(table) ? (
-                    <div className="multi-table-page__lobby-tab">
-                      {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
-                    </div>
+                    renderLobbyTab(table)
                   ) : (
                     <TablePage
                       key={table.id}

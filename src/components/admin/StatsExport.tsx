@@ -21,7 +21,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
-import { toCSV } from '../../utils/clubSettingsRules';
+import { CSV_BOM, toCSV } from '../../utils/clubSettingsRules';
 import { reportError } from '../../utils/errorReporter';
 import './StatsExport.css';
 
@@ -171,9 +171,15 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
       const base = `${dataset === 'members' ? 'club-member-stats' : 'my-hand-history'}-${stamp}`;
 
       if (format === 'csv') {
-        downloadFile(convertToCSV(rows), `${base}.csv`, 'text/csv');
+        // Excel only reads a UTF-8 CSV as UTF-8 when it starts with a byte
+        // order mark; without it every accented player name arrived mojibake.
+        downloadFile(CSV_BOM + convertToCSV(rows), `${base}.csv`, 'text/csv;charset=utf-8');
       } else {
-        downloadFile(JSON.stringify(rows, null, 2), `${base}.json`, 'application/json');
+        downloadFile(
+          JSON.stringify(rows, null, 2),
+          `${base}.json`,
+          'application/json;charset=utf-8'
+        );
       }
 
       if (isMounted.current)
@@ -197,8 +203,16 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    // Anchor must be in the document for the click to count in some browsers,
+    // and revoking the URL synchronously can cancel the download before it
+    // starts — release it on the next tick instead.
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 0);
   };
 
   if (!isOpen) return null;

@@ -211,3 +211,41 @@ and `clubs_rake_cap_range` CHECK constraints (which also allow the -1
 inherit sentinel). No UI value can be rejected by the constraint.
 
 Suite: 165 files / 2038 tests passing (baseline 2032 + 6 new).
+
+## Pass 6 — stubs, encoding, disclosure
+
+1. **`CSV_BOM` was a live stub of my own making.** Pass 5 declared it in
+   `clubSettingsRules.ts` and never imported it anywhere, so exports still
+   carried no byte order mark and Excel rendered every accented player name
+   as mojibake. Now wired into the CSV download, with `charset=utf-8` on both
+   the CSV and JSON blob types, and pinned by tests.
+2. **The download could be cancelled by its own cleanup.** `downloadFile`
+   revoked the object URL synchronously after `a.click()` and never attached
+   the anchor to the document — both are known to abort the save in some
+   browsers. The anchor is now appended and the URL released on the next tick.
+3. **`AUDIT_ROW_CAP` was declared after the callback that used it.** The query
+   read a `const` defined further down the component body; it worked only
+   because the callback happens to run after the render completes. Moved to
+   module scope (tsc TDZ error confirmed the same class of mistake in my
+   `canSeeAuditLog` edit, which is now declared after `userRole`).
+4. **The audit log never disclosed its 200-row cap** and said "No log entries
+   found" whether the club had no history at all or the active filter simply
+   matched nothing. It now distinguishes the two and shows a
+   "Showing N of M entries (newest 200)" summary.
+5. **Staff who *can* read the audit log were never shown it.** Pass 3 added an
+   `is_club_admin()` SELECT policy on `audit_trail`, but the panel stayed
+   `isOwner`-only. Gate now mirrors the policy.
+6. Two headings still carried the leading space left by the emoji purge
+   (`<h3> Danger Zone>`, `<h3> Delete Club>`).
+7. The Data Export blurb promised "club analytics" the modal does not
+   produce; it now describes what actually downloads.
+8. The Rake Cap hint had no "Currently:" line while Default Rake did.
+
+Slug URLs were considered and deliberately left alone: `resolveClubIdFilter`
+maps a non-UUID param through `Number()`, so a hand-typed `/clubs/<slug>/settings`
+fails the lookup and lands on the "Failed to load" retry state rather than
+anything silent. Every in-app link navigates by UUID (`club.id`), so the path
+is unreachable in practice, and widening the shared resolver would touch every
+caller across the app for no real-world gain.
+
+Suite: 166 files / 2050 tests passing. eslint: 0 errors.

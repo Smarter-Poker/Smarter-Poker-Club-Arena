@@ -49,6 +49,9 @@ const FILTER_PREFIXES: Record<ActionType, string[]> = {
   security: ['login', 'security', 'password', 'ip', 'auth'],
 };
 
+/** Newest N rows. The UI says so, because a busy club silently lost the rest. */
+const AUDIT_ROW_CAP = 200;
+
 interface AuditLogProps {
   clubId: string;
 }
@@ -83,7 +86,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
         )
         .eq('club_id', resolvedId)
         .order('created_at', { ascending: false })
-        .limit(200);
+        .limit(AUDIT_ROW_CAP);
 
       const { data, error } = await query;
       if (error) {
@@ -300,10 +303,17 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
         ) : filteredEntries.length === 0 ? (
           <div className="empty-state">
             <span>▤</span>
-            <p>No log entries found</p>
+            <p>{entries.length === 0 ? 'No admin actions recorded yet' : 'No log entries match this filter'}</p>
           </div>
         ) : (
-          filteredEntries.map((entry, i) => (
+          <>
+          <p className="audit-log__summary">
+            Showing {filteredEntries.length}
+            {filteredEntries.length !== entries.length ? ` of ${entries.length}` : ''} entr
+            {filteredEntries.length === 1 ? 'y' : 'ies'}
+            {entries.length >= AUDIT_ROW_CAP ? ` (newest ${AUDIT_ROW_CAP})` : ''}
+          </p>
+          {filteredEntries.map((entry, i) => (
             <div
               key={entry.id}
               className="log-entry"
@@ -333,7 +343,8 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
                 </div>
               </div>
             </div>
-          ))
+          ))}
+          </>
         )}
       </div>
     </div>

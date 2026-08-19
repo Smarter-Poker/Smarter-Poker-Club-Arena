@@ -141,6 +141,9 @@ export default function ClubSettingsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  // Mirrors the audit_trail SELECT policies: owner, or is_club_admin() which
+  // accepts role IN ('owner','admin','manager','agent').
+  const canSeeAuditLog = isOwner || userRole === 'admin' || userRole === 'agent';
   const [loadError, setLoadError] = useState(false);
   // A club id that resolves to no row (deleted club, bad code, or a club RLS
   // hides) used to fall straight through the `if (data)` block: no error, no
@@ -931,7 +934,10 @@ export default function ClubSettingsPage() {
             />
             <small className="form-hint">
               Most that can be raked from one pot, in big blinds. Blank uses the house cap for each
-              stake ($3–$20 depending on blinds).
+              stake ($3–$20 depending on blinds).{' '}
+              {settings.rake_cap < 0
+                ? 'Currently: house cap.'
+                : `Currently: ${settings.rake_cap} BB.`}
             </small>
           </div>
           {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
@@ -1027,8 +1033,10 @@ export default function ClubSettingsPage() {
           )}
         </section>
 
-        {/* Audit Log - Admin Activity */}
-        {isOwner && clubId && (
+        {/* Audit Log — visible to anyone the audit_trail RLS lets read it:
+            the owner, plus club admins/agents via is_club_admin(). It was
+            owner-only, so a staff member who could read the log never saw it. */}
+        {canSeeAuditLog && clubId && (
           <section className="settings-section audit-section">
             <h3>Admin Activity Log</h3>
             <AuditLog clubId={clubId} />
@@ -1043,7 +1051,8 @@ export default function ClubSettingsPage() {
               <div className="export-info">
                 <span className="export-label">Export Club Stats</span>
                 <span className="export-desc">
-                  Download player stats, hand histories, and club analytics.
+                  Download the member roster with lifetime stats, or your own hand history for
+                  this club, as CSV or JSON.
                 </span>
               </div>
               <button className="btn btn-secondary" onClick={() => setShowStatsExport(true)}>
@@ -1056,7 +1065,7 @@ export default function ClubSettingsPage() {
         {/* Danger Zone - Owner Only */}
         {isOwner && (
           <section className="settings-section danger-zone">
-            <h3> Danger Zone</h3>
+            <h3>Danger Zone</h3>
             <div className="danger-item">
               <div className="danger-info">
                 <span className="danger-label">Delete this club</span>
@@ -1093,7 +1102,7 @@ export default function ClubSettingsPage() {
       {showDeleteModal && (
         <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
           <div className="modal-content delete-modal" onClick={(e) => e.stopPropagation()}>
-            <h3> Delete Club</h3>
+            <h3>Delete Club</h3>
             <p>
               This action <strong>cannot be undone</strong>. This will permanently delete the club{' '}
               <strong>{savedClubName}</strong> and remove all members.

@@ -404,6 +404,16 @@ export default function PlayerStatsPage() {
         setFull(resolved);
         hasStatsRef.current = true;
         setCachedFull(targetUserId, resolved);
+
+        // Fire-and-forget: advance the player->hand index past the hands played
+        // since the last refresh, so the live window the RPC has to scan stays
+        // short. Never blocks or fails the render — the RPC is correct with or
+        // without it, this only keeps it fast.
+        // Batch is sized to finish inside the 8s statement_timeout on the
+        // `authenticated` role; concurrent callers no-op via an advisory lock.
+        void supabase
+          .rpc('ca_refresh_hand_player_index', { p_max_hands: 3000 })
+          .then(() => undefined, () => undefined);
       } else {
         // Legacy fallback (aggregates per-club rows; never .maybeSingle())
         const legacy = await loadLegacyStats(targetUserId);

@@ -35,11 +35,76 @@ CREATE INDEX IF NOT EXISTS idx_hand_history_players_gin
 
 CREATE OR REPLACE FUNCTION public.ca_player_stats_full(p_user uuid)
 RETURNS jsonb
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $fn$
+DECLARE
+  -- Cap: the `authenticated` role has statement_timeout=8s, so the analysis
+  -- window is the player's most recent 1500 hands. When the cap bites,
+  -- overall.hands_capped is true and overall.hand_cap is the window size, so
+  -- the UI can state the window instead of silently reporting a truncated
+  -- lifetime total.
+  c_cap  constant int := 1500;
+  v_ids  uuid[];
+  v_floor timestamptz;
+  v_ceil  timestamptz;
+  v_need int;
+BEGIN
+  -- Hand selection is deliberately two-step. hand_history.players is JSONB, so a
+  -- containment scan has to materialise EVERY hand a player appears in before
+  -- ORDER BY/LIMIT can apply (measured: 71,238 rows / 35,807 heap blocks / ~12s
+  -- for an active account — past the 8s timeout). ca_hand_player_idx gives a
+  -- (user_id, created_at DESC) btree, so step 1 is an index range scan that
+  -- heap-fetches only the hands we actually use.
+  SELECT array_agg(hand_id ORDER BY created_at DESC)
+  INTO v_ids
+  FROM (SELECT hand_id, created_at FROM ca_hand_player_idx
+        WHERE user_id = p_user ORDER BY created_at DESC LIMIT c_cap) q;
+
+  -- FORWARD TAIL: hands played since the index was last refreshed are not in
+  -- ca_hand_player_idx yet. Without this a player's newest hands — the ones they
+  -- just played and are most likely checking on — would be missing. The window
+  -- is bounded by the refresh cadence and served by idx_hand_history_created,
+  -- so it stays cheap; ca_refresh_hand_player_index() keeps it short.
+  SELECT idx_ceil INTO v_ceil FROM ca_hand_player_idx_state WHERE id;
+  IF v_ceil IS NOT NULL THEN
+    SELECT coalesce(array_agg(id ORDER BY created_at DESC), '{}'::uuid[]) || coalesce(v_ids, '{}'::uuid[])
+    INTO v_ids
+    FROM (SELECT h.id, h.created_at FROM hand_history h
+          WHERE h.created_at > v_ceil
+            AND h.players @> jsonb_build_array(jsonb_build_object('userId', p_user::text))
+          ORDER BY h.created_at DESC LIMIT c_cap) q0;
+
+    IF coalesce(array_length(v_ids, 1), 0) > c_cap THEN
+      v_ids := v_ids[1:c_cap];
+    END IF;
+  END IF;
+
+  v_need := c_cap - coalesce(array_length(v_ids, 1), 0);
+
+  -- Step 2 only runs while the backfill is still descending AND this player has
+  -- fewer than c_cap indexed hands — which necessarily means a small match set,
+  -- so the containment scan here is cheap. High-volume accounts are fully
+  -- served by step 1 and never reach this branch.
+  IF v_need > 0 THEN
+    SELECT idx_floor INTO v_floor FROM ca_hand_player_idx_state WHERE id;
+    IF v_floor IS NOT NULL THEN
+      SELECT coalesce(v_ids, '{}'::uuid[]) || coalesce(array_agg(id ORDER BY created_at DESC), '{}'::uuid[])
+      INTO v_ids
+      FROM (SELECT h.id, h.created_at FROM hand_history h
+            WHERE h.created_at < v_floor
+              AND h.players @> jsonb_build_array(jsonb_build_object('userId', p_user::text))
+            ORDER BY h.created_at DESC LIMIT v_need) q2;
+    END IF;
+  END IF;
+
+  IF v_ids IS NULL OR array_length(v_ids, 1) IS NULL THEN
+    v_ids := '{}'::uuid[];
+  END IF;
+
+RETURN (
 WITH my_hands AS (
   SELECT h.id, h.tournament_id,
          lower(coalesce(h.game_variant, 'nlh')) AS game_variant,
@@ -50,12 +115,7 @@ WITH my_hands AS (
          coalesce(h.actions, '[]'::jsonb) AS actions,
          coalesce(h.winners, '[]'::jsonb) AS winners
   FROM hand_history h
-  WHERE h.players @> jsonb_build_array(jsonb_build_object('userId', p_user::text))
-  ORDER BY h.created_at DESC
-  -- Cap: authenticated role has statement_timeout=8s. Measured cost is
-  -- ~1.5ms/hand, so 3k hands ~= 4.5s worst case. Only horses ever hit the
-  -- cap; human players are in the hundreds of hands.
-  LIMIT 3000
+  WHERE h.id = ANY(v_ids)
 ),
 per_hand AS (
   SELECT
@@ -275,22 +335,34 @@ variants AS (
               ELSE 0 END AS bb100
   FROM scored GROUP BY game_variant ORDER BY count(*) DESC
 ),
+-- Tournament entries live in tournament_players (41,684 rows), NOT in
+-- tournament_registrations — that table is empty platform-wide (0 rows), so
+-- reading it made the Tournaments tab show zeros for everyone. Buy-in cost is
+-- reconstructed from the tournament (buy-in + fee) plus this player's rebuys
+-- and add-on; winnings include bounty_winnings for PKO/bounty events.
 tourn AS (
   SELECT count(*)::int AS entries,
-         count(*) FILTER (WHERE coalesce(prize_amount, 0) > 0)::int AS cashes,
-         count(*) FILTER (WHERE finish_rank = 1)::int AS wins,
-         min(finish_rank) FILTER (WHERE finish_rank IS NOT NULL) AS best_finish,
-         coalesce(sum(coalesce(buy_in_amount, 0) + coalesce(buy_in_fee, 0)), 0) AS total_buyins,
-         coalesce(sum(coalesce(prize_amount, 0)), 0) AS total_winnings
-  FROM tournament_registrations WHERE user_id = p_user
+         count(*) FILTER (WHERE coalesce(tp.prize, 0) > 0)::int AS cashes,
+         count(*) FILTER (WHERE tp.position = 1 OR tp.status = 'winner')::int AS wins,
+         min(tp.position) FILTER (WHERE tp.position IS NOT NULL) AS best_finish,
+         coalesce(sum(coalesce(t.buy_in_amount, 0) + coalesce(t.buy_in_fee, 0)
+           + coalesce(tp.rebuys, 0) * coalesce(t.rebuy_cost, 0)
+           + CASE WHEN tp.add_on THEN coalesce(t.addon_cost, 0) ELSE 0 END), 0) AS total_buyins,
+         coalesce(sum(coalesce(tp.prize, 0) + coalesce(tp.bounty_winnings, 0)), 0) AS total_winnings
+  FROM tournament_players tp
+  LEFT JOIN tournaments t ON t.id = tp.tournament_id
+  WHERE tp.user_id = p_user
 ),
 tourn_recent AS (
-  SELECT t.name, t.start_time, t.variant, r.finish_rank, r.status,
-         coalesce(r.prize_amount, 0) AS prize,
-         coalesce(r.buy_in_amount, 0) + coalesce(r.buy_in_fee, 0) AS buyin
-  FROM tournament_registrations r
-  JOIN tournaments t ON t.id = r.tournament_id
-  WHERE r.user_id = p_user
+  SELECT t.name, t.start_time, t.variant,
+         tp.position AS finish_rank, tp.status,
+         coalesce(tp.prize, 0) + coalesce(tp.bounty_winnings, 0) AS prize,
+         coalesce(t.buy_in_amount, 0) + coalesce(t.buy_in_fee, 0)
+           + coalesce(tp.rebuys, 0) * coalesce(t.rebuy_cost, 0)
+           + CASE WHEN tp.add_on THEN coalesce(t.addon_cost, 0) ELSE 0 END AS buyin
+  FROM tournament_players tp
+  JOIN tournaments t ON t.id = tp.tournament_id
+  WHERE tp.user_id = p_user
   ORDER BY t.start_time DESC NULLS LAST LIMIT 25
 )
 SELECT jsonb_build_object(
@@ -324,6 +396,8 @@ SELECT jsonb_build_object(
     'bb_per_100', CASE WHEN cash_hands > 0
         THEN round(cash_bb_profit / cash_hands * 100, 2) ELSE 0 END,
     'hours_played', round(total_secs / 3600.0, 2),
+    'hand_cap', 1500,
+    'hands_capped', (hands >= 1500),
     'first_hand_at', first_hand_at,
     'last_hand_at', last_hand_at
   ) FROM totals),
@@ -373,7 +447,9 @@ SELECT jsonb_build_object(
       'status', status,
       'prize', prize,
       'buyin', buyin) ORDER BY start_time DESC NULLS LAST) FROM tourn_recent), '[]'::jsonb)
+)
 );
+END;
 $fn$;
 
 REVOKE ALL ON FUNCTION public.ca_player_stats_full(uuid) FROM PUBLIC;

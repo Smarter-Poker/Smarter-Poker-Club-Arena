@@ -205,7 +205,13 @@ class TableService {
       throw new Error('Invalid club ID provided');
     }
     const access = await fetchGameCreationAccess(resolvedClubId);
-    if (!access.allowed) {
+    // Union governance (2026-08-19): a union club's own staff cannot build
+    // union-visible games, but they MAY build a PRIVATE club game
+    // (is_private = true — visible only inside the club, never in the union
+    // lobby; the tables RLS policy enforces who may actually insert it and
+    // trg_tables_union_ownership keeps union_id NULL on private rows).
+    const privateOnly = !access.allowed && access.reason === 'union_only';
+    if (!access.allowed && !privateOnly) {
       throw new Error(gameCreationDeniedMessage(access));
     }
 
@@ -214,8 +220,10 @@ class TableService {
       .insert({
         club_id: resolvedClubId,
         // Stamp the owning union so a game built for a member club also shows
-        // in the union's own views. NULL for a standalone club.
-        union_id: access.unionId,
+        // in the union's own views. NULL for a standalone club and for
+        // private club games.
+        union_id: privateOnly ? null : access.unionId,
+        is_private: privateOnly,
         name,
         game_type: 'cash',
         game_variant: gameVariant,

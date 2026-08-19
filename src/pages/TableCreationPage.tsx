@@ -54,8 +54,11 @@ export default function TableCreationPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Union guard: redirect back if club is in a union
-  // FIX: Resolve clubId to UUID — union_clubs stores UUIDs, not integer club_ids
+  // Union governance (2026-08-19): clubs inside a union may still create
+  // tables here, but they are ALWAYS private club games (is_private = true,
+  // never union-visible). Union-wide tables are created by union admins from
+  // the union page. Track membership so creation can stamp the flag.
+  const [inUnion, setInUnion] = useState(false);
   useEffect(() => {
     if (!clubId) return;
     (async () => {
@@ -67,13 +70,13 @@ export default function TableCreationPage() {
           .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
-        if (data) navigate(`/clubs/${clubId}`, { replace: true });
+        setInUnion(!!data);
       } catch (e) {
         reportError(e, 'TableCreationPage.async');
         /* fail-open */
       }
     })();
-  }, [clubId, navigate]);
+  }, [clubId]);
 
   const handleCreate = async () => {
     if (!settings.name.trim()) {
@@ -88,7 +91,10 @@ export default function TableCreationPage() {
     setCreating(true);
     setError(null);
     try {
-      // UNION GUARD (defense-in-depth): Block creation even if useEffect redirect didn't fire yet
+      // UNION GOVERNANCE (defense-in-depth): re-check membership at create time.
+      // A union club's table is forced private — never union-visible. The
+      // trg_tables_union_ownership DB trigger and tables RLS policy enforce
+      // the same rule server-side.
       const resolvedClubId = await resolveClubUUID(clubId);
       const { data: unionCheck } = await supabase
         .from('union_clubs')
@@ -96,16 +102,13 @@ export default function TableCreationPage() {
         .eq('club_id', resolvedClubId)
         .limit(1)
         .maybeSingle();
-      if (unionCheck) {
-        throw new Error(
-          'Clubs inside a union cannot create standalone tables. Tables are managed at the union level.'
-        );
-      }
+      const forcePrivate = inUnion || !!unionCheck;
 
       const { data, error: createError } = await supabase
         .from('tables')
         .insert({
           club_id: resolvedClubId, // FIX: was using raw clubId — must use resolved UUID
+          is_private: forcePrivate,
           name: settings.name.trim(),
           game_type: settings.game_type,
           small_blind: settings.small_blind,

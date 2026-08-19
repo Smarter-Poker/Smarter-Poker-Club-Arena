@@ -11,12 +11,8 @@
  * - MIXED GAME (Hold'em/Omaha)
  */
 
-import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import { resolveClubUUID } from '../utils/clubIdResolver';
 import './CreateTablePage.css';
-import { reportError } from '../utils/errorReporter';
 
 const gameTypeCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -98,25 +94,9 @@ export default function CreateTablePage() {
   const navigate = useNavigate();
   const userLevel = 1; // All game types unlocked at level 1
 
-  // Union guard: redirect back if club is in a union
-  useEffect(() => {
-    if (!clubId) return;
-    (async () => {
-      try {
-        const resolvedId = await resolveClubUUID(clubId);
-        const { data } = await supabase
-          .from('union_clubs')
-          .select('union_id')
-          .eq('club_id', resolvedId)
-          .limit(1)
-          .maybeSingle();
-        if (data) navigate(`/clubs/${clubId}`, { replace: true });
-      } catch (e) {
-        reportError(e, 'CreateTablePage.async');
-        /* fail-open */
-      }
-    })();
-  }, [clubId, navigate]);
+  // Union governance (2026-08-19): union clubs may create PRIVATE club games
+  // here (the config pages force is_private). No redirect — only union admins
+  // can create union-wide tables, from the union page.
 
   const handleSelectGameType = (gameType: GameType) => {
     if (userLevel < gameType.unlockLevel) {

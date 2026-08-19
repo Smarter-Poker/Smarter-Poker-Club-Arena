@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { fetchGameCreationAccess } from './GameAccessService';
 import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
 import { reportError } from '../utils/errorReporter';
@@ -169,6 +170,9 @@ export interface TournamentConfig {
   // XMTT (Union Tournament)
   isXmtt?: boolean;
   unionId?: string;
+  // Private club tournament — visible only inside the club, never union-wide.
+  // Forced true for non-XMTT tournaments created by clubs that are in a union.
+  isPrivate?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -453,19 +457,18 @@ class TournamentService {
    * Create a new tournament
    */
   async createTournament(clubId: string, config: TournamentConfig): Promise<Tournament> {
-    // Union guard: clubs inside a union cannot create ANY standalone tournaments.
-    // All tournaments for union clubs must be created at the union level (XMTT).
-    if (!config.isXmtt) {
+    // Union governance (2026-08-19): clubs inside a union cannot create
+    // union-visible tournaments — those are created at the union level.
+    // A union club's own staff MAY still create a PRIVATE club tournament
+    // (is_private = true, visible only inside the club, never in the union
+    // lobby). Union owners/admins keep building union-visible games. The
+    // fn_create_tournament RPC + trg_tournaments_union_ownership trigger
+    // enforce the same rule server-side.
+    if (!config.isXmtt && !config.isPrivate) {
       const resolvedClubId = await resolveClubUUID(clubId);
-      const { data: unionCheck } = await supabase
-        .from('union_clubs')
-        .select('union_id')
-        .eq('club_id', resolvedClubId)
-        .maybeSingle();
-      if (unionCheck) {
-        throw new Error(
-          'Clubs inside a union cannot create standalone tournaments. Use the Union page to create XMTT tournaments.'
-        );
+      const access = await fetchGameCreationAccess(resolvedClubId);
+      if (!access.allowed && access.reason === 'union_only') {
+        config.isPrivate = true;
       }
     }
 
@@ -609,6 +612,7 @@ class TournamentService {
         spinType: config.type === 'spin' ? config.spinType || 'standard' : null,
         satelliteTargetId: config.satelliteTarget?.tournamentId || null,
         isXmtt: config.isXmtt || false,
+        isPrivate: config.isPrivate || false,
       },
     });
 

@@ -417,6 +417,11 @@ export default function TableConfigPage() {
   const [access, setAccess] = useState<GameCreationAccess | null>(null);
   const checkingAccess = access === null;
   const canCreate = access?.allowed === true;
+  // Union governance (2026-08-19): a union club's own staff may not build
+  // union-visible games, but they MAY build a PRIVATE club game here
+  // (is_private forced true; RLS enforces who can actually insert it).
+  const privateOnly = access?.allowed === false && access?.reason === 'union_only';
+  const canBuildHere = canCreate || privateOnly;
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
@@ -447,8 +452,13 @@ export default function TableConfigPage() {
       if (!isMounted) return;
       setAccess(result);
       if (!result.allowed) {
-        toast.error(gameCreationDeniedMessage(result));
-        navigate(`/clubs/${clubId}`);
+        if (result.reason === 'union_only') {
+          // Union governance: club staff may still build a PRIVATE club game.
+          toast.info('This club is in a union — the game will be private to your club.');
+        } else {
+          toast.error(gameCreationDeniedMessage(result));
+          navigate(`/clubs/${clubId}`);
+        }
       }
     })();
     return () => {
@@ -638,7 +648,7 @@ export default function TableConfigPage() {
     // member club also shows up in the union's own views (getUnionTables).
     // NULL for a standalone club — matching every existing union table, which
     // carries BOTH union_id and the member club's club_id.
-    union_id: access?.unionId ?? null,
+    union_id: privateOnly ? null : (access?.unionId ?? null),
     name: config.name,
     game_type: gameType?.toUpperCase() || 'NLH',
     game_variant: gameType || 'nlh',
@@ -649,8 +659,9 @@ export default function TableConfigPage() {
     big_blind: config.bigBlind,
     stakes: `${config.smallBlind}/${config.bigBlind}`,
 
-    // Basic settings
-    is_private: config.isPrivate,
+    // Basic settings — union clubs build private club games ONLY (the
+    // trg_tables_union_ownership DB trigger enforces this server-side too)
+    is_private: config.isPrivate || privateOnly,
     is_vip_only: config.isVipOnly,
     is_anonymous: config.isAnonymous,
     ban_chat: config.banChat,
@@ -764,7 +775,8 @@ export default function TableConfigPage() {
       return;
     }
     // PERMISSION GATE: re-check at save time (defense-in-depth).
-    if (!canCreate) {
+    // privateOnly (union club staff) may proceed — the game is forced private.
+    if (!canBuildHere) {
       toast.error(
         checkingAccess
           ? 'Still checking your permission to create games here.'
@@ -848,7 +860,7 @@ export default function TableConfigPage() {
     // and tournaments are built by the same people. The server enforces it
     // either way (the tables RLS policy and fn_create_tournament both call
     // fn_can_create_games); this is only so the message says why.
-    if (!canCreate) {
+    if (!canBuildHere) {
       toast.error(
         checkingAccess
           ? 'Still checking your permission to create games here.'

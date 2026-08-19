@@ -670,7 +670,12 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at'
         );
       if (unionId) {
-        tableQuery.eq('union_id', unionId);
+        // Union governance (2026-08-19): union clubs see the UNION's tables
+        // plus their OWN private club games. Other clubs' private games are
+        // never visible here.
+        tableQuery.or(
+          `union_id.eq.${unionId},and(club_id.eq.${resolvedId},is_private.eq.true)`
+        );
       } else {
         tableQuery.in('club_id', unionClubIds);
       }
@@ -685,23 +690,33 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         .order('created_at', { ascending: false })
         .limit(QUERY_LIMITS.LIST);
 
+      // Union governance (2026-08-19): for union clubs the club-scoped query
+      // returns ONLY the club's own PRIVATE tournaments; every union-visible
+      // tournament comes from the union-scoped query below. Standalone clubs
+      // keep the original club_id scoping.
+      const clubTournamentQuery = supabase
+        .from('tournaments')
+        .select(
+          'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, late_reg_mins, late_reg_levels, started_at, current_level'
+        )
+        // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
+        // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
+        // through, and this page -- /clubs/:clubId, the one the featured
+        // club card opens -- kept serving a cancelled April Sit&Go as a
+        // joinable 6/6 card after TournamentService was fixed, because it
+        // runs its own query rather than the service. Same rule as the
+        // service now: a lobby lists what can be ENTERED.
+        .in('status', ['REGISTERING', 'RUNNING'])
+        .order('start_time', { ascending: true });
+      if (unionId) {
+        clubTournamentQuery.eq('club_id', resolvedId).eq('is_private', true);
+      } else {
+        clubTournamentQuery.in('club_id', unionClubIds);
+      }
+
       const [tableResult, clubTournamentResult, bbjResult, ...xmttResults] = await Promise.all([
         tableQuery,
-        supabase
-          .from('tournaments')
-          .select(
-            'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, late_reg_mins, late_reg_levels, started_at, current_level'
-          )
-          .in('club_id', unionClubIds)
-          // Joinable-only (Dan 2026-08-15, round 2 of the silent-join fix): the
-          // COMPLETED-only exclusion let all 6,669 CANCELLED tournaments
-          // through, and this page -- /clubs/:clubId, the one the featured
-          // club card opens -- kept serving a cancelled April Sit&Go as a
-          // joinable 6/6 card after TournamentService was fixed, because it
-          // runs its own query rather than the service. Same rule as the
-          // service now: a lobby lists what can be ENTERED.
-          .in('status', ['REGISTERING', 'RUNNING'])
-          .order('start_time', { ascending: true }),
+        clubTournamentQuery,
         (async () => {
           try {
             // BUGFIX: resolve the CORRECT BBJ pool. Union clubs contribute to the
@@ -723,8 +738,9 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 .select(
                   'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, is_xmtt, late_reg_mins, late_reg_levels, started_at, current_level'
                 )
+                // Union governance (2026-08-19): ALL union-owned tournaments
+                // (XMTT and union-stamped recurring games), not just XMTT.
                 .eq('union_id', unionId)
-                .eq('is_xmtt', true)
                 // Joinable-only -- same rule as the club query above.
                 .in('status', ['REGISTERING', 'RUNNING'])
                 .order('start_time', { ascending: true }),

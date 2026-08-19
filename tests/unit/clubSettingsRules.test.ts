@@ -11,6 +11,7 @@ import {
   CLUB_NAME_MAX,
   WATCHED_COLUMNS,
   clampBuyin,
+  CSV_BOM,
   csvSafeCell,
   sanitizationWouldAlter,
   toCSV,
@@ -140,5 +141,20 @@ describe('sanitizationWouldAlter', () => {
 
   it('ignores pure whitespace differences', () => {
     expect(sanitizationWouldAlter('  Midway  ', 'Midway')).toBe(false);
+  });
+});
+
+describe('CSV_BOM', () => {
+  it('is the UTF-8 byte order mark Excel needs', () => {
+    // Declared in pass 5 but never imported anywhere — a live stub. Wired
+    // into the CSV download in pass 6; this pins the value.
+    expect(CSV_BOM).toBe('\ufeff');
+    expect(CSV_BOM).toHaveLength(1);
+  });
+
+  it('prefixes a CSV without disturbing the header row', () => {
+    const csv = CSV_BOM + toCSV([{ player: 'José', hands_played: 12 }]);
+    expect(csv.startsWith('\ufeff')).toBe(true);
+    expect(csv.slice(1).split('\n')[0]).toBe('player,hands_played');
   });
 });

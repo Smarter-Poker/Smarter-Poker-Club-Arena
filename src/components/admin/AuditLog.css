@@ -179,3 +179,9 @@
     padding: 0 4px;
     border-radius: 2px;
 }
+/* Row-count / cap disclosure under the filters. */
+.audit-log__summary {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  color: var(--text-secondary, #6a7a8a);
+}

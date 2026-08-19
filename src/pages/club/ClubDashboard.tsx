@@ -37,6 +37,7 @@ import {
   formatInt,
   formatSigned,
   leaderboardToCsv,
+  formatAgo,
   isAuthzError,
   isLiveTableStatus,
   tableStatusLabel,
@@ -79,6 +80,7 @@ interface ClubMemberRow {
   displayName: string;
   avatarUrl?: string;
   isHorse: boolean;
+  isOnline: boolean;
   role: string;
   status: string;
   joinedAt: string | null;
@@ -106,6 +108,18 @@ type TabId = 'overview' | 'activity' | 'players' | 'tables';
 
 const VALID_TABS: TabId[] = ['overview', 'activity', 'players', 'tables'];
 const MEMBER_PAGE_SIZE = 25;
+const LEADERBOARD_VISIBLE = 10;
+type MemberSortId = 'hands' | 'profit' | 'name' | 'joined' | 'last_active';
+
+const selectStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.06)',
+  color: 'inherit',
+  border: '1px solid rgba(255,255,255,0.12)',
+  borderRadius: 8,
+  padding: '5px 10px',
+  fontSize: '0.78rem',
+  cursor: 'pointer',
+};
 
 const RANK_COLORS: Record<number, string> = {
   1: 'linear-gradient(135deg, #f5c518, #b8860b)',
@@ -131,6 +145,9 @@ export default function ClubDashboard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [notAMember, setNotAMember] = useState(false);
+  // Background refreshes are deliberately silent, so without this the page
+  // gives no signal at all about how current its numbers are.
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   const [activeTab, setActiveTab] = useState<TabId>(() => {
     const urlTab = new URLSearchParams(window.location.search).get('tab');
@@ -145,7 +162,7 @@ export default function ClubDashboard() {
     getLocalStorage('ca_dashboard_hide_horses', false)
   );
 
-  const [visiblePlayers, setVisiblePlayers] = useState<Set<number>>(new Set());
+  const [visiblePlayers, setVisiblePlayers] = useState<Set<string>>(new Set());
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
 
@@ -155,6 +172,19 @@ export default function ClubDashboard() {
   const [memberPage, setMemberPage] = useState(0);
   const [memberSearch, setMemberSearch] = useState('');
   const [membersLoading, setMembersLoading] = useState(false);
+  const [memberSort, setMemberSort] = useState<MemberSortId>(() =>
+    getLocalStorage('ca_dashboard_member_sort', 'hands')
+  );
+  const [memberRole, setMemberRole] = useState<string>('');
+  const memberRequestIdRef = useRef(0);
+  // Drives the "Updated Xs ago" label without re-fetching anything.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') setNowTick(Date.now());
+    }, 15_000);
+    return () => clearInterval(id);
+  }, []);
 
   const loadingRef = useRef(false);
   // Monotonic request id: a slower earlier response must never overwrite the
@@ -177,6 +207,9 @@ export default function ClubDashboard() {
   useEffect(() => {
     setLocalStorage('ca_dashboard_hide_horses', hideHorses);
   }, [hideHorses]);
+  useEffect(() => {
+    setLocalStorage('ca_dashboard_member_sort', memberSort);
+  }, [memberSort]);
 
   // Deep-linking: ?tab=activity switches tabs.
   useEffect(() => {
@@ -204,9 +237,17 @@ export default function ClubDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId, dateRange]);
 
-  // Leaderboard stagger animation, keyed on a CONTENT signature rather than
-  // array identity: every refresh builds a fresh array, so an identity dep
-  // re-ran this on each one and the rows permanently re-faded from nothing.
+  // Leaderboard stagger animation.
+  //
+  // Keyed on a CONTENT signature rather than array identity: every refresh
+  // builds a fresh array, so an identity dep re-ran this on each one and the
+  // rows permanently re-faded from nothing.
+  //
+  // Visibility is tracked by userId, not list index. The rendered list is
+  // sorted and optionally horse-filtered, so an index into the raw array does
+  // not identify the same row — the activity feed had exactly this bug, where
+  // filtering left rows stuck at opacity 0. Only the rows actually rendered
+  // are staggered, so a 100-row payload no longer schedules 100 timers.
   const topPlayersRef = useRef(topPlayers);
   useEffect(() => {
     topPlayersRef.current = topPlayers;
@@ -215,9 +256,11 @@ export default function ClubDashboard() {
   useEffect(() => {
     setVisiblePlayers(new Set());
     staggerTimersRef.current.forEach((t) => clearTimeout(t));
-    staggerTimersRef.current = topPlayersRef.current.map((_, i) =>
-      setTimeout(() => setVisiblePlayers((prev) => new Set(prev).add(i)), i * 60)
-    );
+    staggerTimersRef.current = topPlayersRef.current
+      .slice(0, LEADERBOARD_VISIBLE)
+      .map((p, i) =>
+        setTimeout(() => setVisiblePlayers((prev) => new Set(prev).add(p.userId)), i * 60)
+      );
     return () => {
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = [];
@@ -363,6 +406,9 @@ export default function ClubDashboard() {
       }
 
       const since = sinceForRange(dateRange);
+      // Clear a stale "Members Only" verdict carried over from a previously
+      // viewed club before this club's own authorization result comes back.
+      setNotAMember(false);
 
       const [clubResult, statsResult, playersResult, roleResult, tablesResult] = await Promise.all([
         supabase
@@ -407,6 +453,17 @@ export default function ClubDashboard() {
       if (statsResult.error) reportError(statsResult.error, 'ClubDashboard.stats_rpc_error');
       if (playersResult.error)
         reportError(playersResult.error, 'ClubDashboard.top_players_rpc_error');
+      // These two were previously swallowed: a failed clubs read rendered the
+      // "Club Not Found" screen for a club that exists, and a failed tables
+      // read rendered an empty Tables tab, both indistinguishable from real
+      // emptiness.
+      if (clubResult.error) reportError(clubResult.error, 'ClubDashboard.club_read_error');
+      if (tablesResult.error) reportError(tablesResult.error, 'ClubDashboard.tables_read_error');
+      if (roleResult?.error) reportError(roleResult.error, 'ClubDashboard.role_read_error');
+      if (clubResult.error && !club) {
+        setLoadError(true);
+        return;
+      }
 
       const raw: any = statsResult.data;
       const stats: DashboardStats | null = raw
@@ -489,6 +546,7 @@ export default function ClubDashboard() {
         rank: 0,
       }));
       setTopPlayers(players);
+      setLastUpdated(Date.now());
     } catch (error: any) {
       if (isAuthzError(error)) {
         setNotAMember(true);
@@ -510,8 +568,12 @@ export default function ClubDashboard() {
 
   // ── Members tab data ───────────────────────────────────────────────────────
   const loadMembers = useCallback(
-    async (page: number, search: string) => {
+    async (page: number, search: string, sort: MemberSortId, role: string) => {
       if (!resolvedClubId) return;
+      // Out-of-order guard: typing in the search box fires overlapping
+      // requests, and without this a slower earlier response could land last
+      // and show results for a query the user has already moved past.
+      const reqId = ++memberRequestIdRef.current;
       setMembersLoading(true);
       try {
         const { data, error } = await supabase.rpc('ca_club_members', {
@@ -520,13 +582,17 @@ export default function ClubDashboard() {
           p_since: sinceForRange(dateRange),
           p_limit: MEMBER_PAGE_SIZE,
           p_offset: page * MEMBER_PAGE_SIZE,
+          p_sort: sort,
+          p_role: role || null,
         });
         if (error) throw error;
+        if (reqId !== memberRequestIdRef.current) return;
         const rows: ClubMemberRow[] = (data || []).map((m: any) => ({
           userId: m.user_id,
           displayName: m.display_name || 'Player',
           avatarUrl: m.avatar_url,
           isHorse: !!m.is_horse,
+          isOnline: !!m.is_online,
           role: m.role || 'member',
           status: m.status || 'active',
           joinedAt: m.joined_at,
@@ -538,11 +604,12 @@ export default function ClubDashboard() {
         setMembers(rows);
         setMemberTotal(Number((data || [])[0]?.total_count) || 0);
       } catch (err: any) {
+        if (reqId !== memberRequestIdRef.current) return;
         if (!isAuthzError(err)) reportError(err, 'ClubDashboard.members_rpc_error');
         setMembers([]);
         setMemberTotal(0);
       } finally {
-        setMembersLoading(false);
+        if (reqId === memberRequestIdRef.current) setMembersLoading(false);
       }
     },
     [resolvedClubId, dateRange]
@@ -551,14 +618,26 @@ export default function ClubDashboard() {
   // Debounced member search / paging, only while the Players tab is open.
   useEffect(() => {
     if (activeTab !== 'players' || !resolvedClubId) return;
-    const t = setTimeout(() => loadMembers(memberPage, memberSearch), 250);
+    const t = setTimeout(
+      () => loadMembers(memberPage, memberSearch, memberSort, memberRole),
+      250
+    );
     return () => clearTimeout(t);
-  }, [activeTab, resolvedClubId, memberPage, memberSearch, loadMembers]);
+  }, [
+    activeTab,
+    resolvedClubId,
+    memberPage,
+    memberSearch,
+    memberSort,
+    memberRole,
+    loadMembers,
+  ]);
 
-  // A new search must restart at page 1.
+  // A new search / filter / range must restart at page 1. Guarded so it does
+  // not queue a redundant fetch when already on the first page.
   useEffect(() => {
-    setMemberPage(0);
-  }, [memberSearch, dateRange]);
+    setMemberPage((p) => (p === 0 ? p : 0));
+  }, [memberSearch, memberSort, memberRole, dateRange]);
 
   // ── Derived leaderboard (filter + sort applied client-side on <=100 rows) ──
   const rankedPlayers = useMemo(
@@ -566,25 +645,60 @@ export default function ClubDashboard() {
     [topPlayers, hideHorses, sortBy]
   );
 
+  // Derived from the RANKED set, so with "Humans only" on the caption
+  // describes the rows actually on screen rather than quietly including the
+  // horses the user just filtered out.
   useEffect(() => {
-    const played = topPlayers.reduce((s, p) => s + p.handsPlayed, 0);
-    const attributed = topPlayers.reduce((s, p) => s + p.handsAttributed, 0);
+    const played = rankedPlayers.reduce((s, p) => s + p.handsPlayed, 0);
+    const attributed = rankedPlayers.reduce((s, p) => s + p.handsAttributed, 0);
     setAttribution(played > 0 ? { played, attributed } : null);
-  }, [topPlayers]);
+  }, [rankedPlayers]);
 
-  const exportLeaderboardCsv = () => {
-    const blob = new Blob([leaderboardToCsv(rankedPlayers)], {
-      type: 'text/csv;charset=utf-8;',
-    });
+  const downloadCsv = (csv: string, suffix: string) => {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${(club?.name || 'club').replace(/[^\w-]+/g, '-')}-leaderboard-${dateRange}.csv`;
+    a.download = `${(club?.name || 'club').replace(/[^\w-]+/g, '-')}-${suffix}-${dateRange}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+
+  /** Exports the page currently on screen — labelled as such, not as the roster. */
+  const exportMembersCsv = () => {
+    const header = [
+      'display_name',
+      'role',
+      'status',
+      'is_horse',
+      'is_online',
+      'joined_at',
+      'last_active',
+      'chip_balance',
+      'hands_played',
+      'profit',
+    ];
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows = members.map((m) =>
+      [
+        esc(m.displayName),
+        esc(m.role),
+        esc(m.status),
+        m.isHorse,
+        m.isOnline,
+        esc(m.joinedAt ?? ''),
+        esc(m.lastActive ?? ''),
+        m.chipBalance,
+        m.handsPlayed,
+        m.profit,
+      ].join(',')
+    );
+    downloadCsv([header.join(','), ...rows].join('\n'), `members-page${memberPage + 1}`);
+  };
+
+  const exportLeaderboardCsv = () => downloadCsv(leaderboardToCsv(rankedPlayers), 'leaderboard');
 
   if (loading && !club) {
     return (
@@ -739,26 +853,85 @@ export default function ClubDashboard() {
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <nav className={styles.tabNav}>
-        {[
-          { id: 'overview', label: 'Overview' },
-          { id: 'activity', label: 'Activity' },
-          { id: 'players', label: 'Players' },
-          { id: 'tables', label: 'Tables' },
-        ].map((tab) => (
+      {/* Tab Navigation — real tablist semantics so screen readers announce
+          the selected tab and arrow keys move between them. */}
+      <nav className={styles.tabNav} role="tablist" aria-label="Club dashboard sections">
+        {(
+          [
+            { id: 'overview', label: 'Overview' },
+            { id: 'activity', label: 'Activity' },
+            { id: 'players', label: 'Players' },
+            { id: 'tables', label: 'Tables' },
+          ] as const
+        ).map((tab, i, arr) => (
           <button
             key={tab.id}
+            role="tab"
+            id={`ca-tab-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            aria-controls="ca-tabpanel"
+            tabIndex={activeTab === tab.id ? 0 : -1}
             className={`${styles.tab} ${activeTab === tab.id ? styles.active : ''}`}
-            onClick={() => switchTab(tab.id as TabId)}
+            onClick={() => switchTab(tab.id)}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const next = arr[(i + (e.key === 'ArrowRight' ? 1 : arr.length - 1)) % arr.length];
+              switchTab(next.id);
+              document.getElementById(`ca-tab-${next.id}`)?.focus();
+            }}
           >
             {tab.label}
           </button>
         ))}
       </nav>
 
+      {/* Freshness. Background refreshes are silent by design, so state the
+          age of the numbers and offer an explicit refresh. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 10,
+          padding: '0 4px 6px',
+          fontSize: '0.7rem',
+          color: 'var(--text-secondary, #8a8f98)',
+        }}
+      >
+        <span aria-live="polite">
+          {loading
+            ? 'Refreshing...'
+            : lastUpdated
+              ? `Updated ${formatAgo(lastUpdated, nowTick)}`
+              : ''}
+        </span>
+        <button
+          onClick={() => loadDashboardData()}
+          disabled={loading}
+          aria-label="Refresh dashboard data"
+          style={{
+            background: 'rgba(255,255,255,0.06)',
+            color: 'inherit',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 8,
+            padding: '3px 10px',
+            fontSize: '0.7rem',
+            cursor: loading ? 'default' : 'pointer',
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          Refresh
+        </button>
+      </div>
+
       {/* Tab Content */}
-      <div className={styles.content}>
+      <div
+        className={styles.content}
+        id="ca-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`ca-tab-${activeTab}`}
+      >
         {activeTab === 'overview' && (
           <div className={styles.overviewGrid}>
             <section className={styles.statsSection}>
@@ -839,13 +1012,19 @@ export default function ClubDashboard() {
                       : `No hands played ${rangeLabel}`}
                   </p>
                 ) : (
-                  rankedPlayers.slice(0, 10).map((player, idx) => (
-                    <div
+                  rankedPlayers.slice(0, LEADERBOARD_VISIBLE).map((player) => (
+                    <Link
                       key={player.userId}
+                      to={`/profile/${player.userId}`}
                       className={styles.playerRow}
+                      title={`View ${player.displayName}'s profile`}
                       style={{
-                        opacity: visiblePlayers.has(idx) ? 1 : 0,
-                        transform: visiblePlayers.has(idx) ? 'translateY(0)' : 'translateY(8px)',
+                        textDecoration: 'none',
+                        color: 'inherit',
+                        opacity: visiblePlayers.has(player.userId) ? 1 : 0,
+                        transform: visiblePlayers.has(player.userId)
+                          ? 'translateY(0)'
+                          : 'translateY(8px)',
                         transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                       }}
                     >
@@ -912,8 +1091,22 @@ export default function ClubDashboard() {
                       >
                         {formatSigned(player.totalProfit)}
                       </span>
-                    </div>
+                    </Link>
                   ))
+                )}
+                {rankedPlayers.length > LEADERBOARD_VISIBLE && (
+                  <button
+                    onClick={() => switchTab('players')}
+                    className={styles.viewAllLink}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      marginTop: 4,
+                    }}
+                  >
+                    See all {formatInt(rankedPlayers.length)} ranked players {'→'}
+                  </button>
                 )}
               </div>
               {attribution && (
@@ -977,7 +1170,7 @@ export default function ClubDashboard() {
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
-                margin: '8px 0 12px',
+                margin: '8px 0 8px',
                 padding: '10px 12px',
                 borderRadius: 8,
                 border: '1px solid rgba(255,255,255,0.12)',
@@ -986,6 +1179,53 @@ export default function ClubDashboard() {
                 fontSize: '0.9rem',
               }}
             />
+
+            {/* Sorting and role filtering are applied SERVER-side: the list is
+                paged, so ordering 25 rows in the browser would present one
+                page as if it were the ranking of the whole roster. */}
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                marginBottom: 12,
+              }}
+            >
+              <select
+                value={memberSort}
+                onChange={(e) => setMemberSort(e.target.value as MemberSortId)}
+                aria-label="Sort members"
+                style={selectStyle}
+              >
+                <option value="hands">Most hands</option>
+                <option value="profit">Most profit</option>
+                <option value="name">Name (A-Z)</option>
+                <option value="joined">Recently joined</option>
+                <option value="last_active">Recently active</option>
+              </select>
+              <select
+                value={memberRole}
+                onChange={(e) => setMemberRole(e.target.value)}
+                aria-label="Filter members by role"
+                style={selectStyle}
+              >
+                <option value="">All roles</option>
+                <option value="owner">Owner</option>
+                <option value="admin">Admin</option>
+                <option value="agent">Agent</option>
+                <option value="player">Player</option>
+                <option value="member">Member</option>
+              </select>
+              {members.length > 0 && (
+                <button onClick={exportMembersCsv} style={selectStyle}>
+                  Export CSV
+                </button>
+              )}
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary, #8a8f98)' }}>
+                {membersLoading ? 'Loading...' : `${formatInt(memberTotal)} shown`}
+              </span>
+            </div>
 
             <div className={styles.playersList}>
               {membersLoading && members.length === 0 ? (
@@ -996,12 +1236,34 @@ export default function ClubDashboard() {
                 </p>
               ) : (
                 members.map((m) => (
-                  <div key={m.userId} className={styles.playerCard}>
-                    <div className={styles.playerAvatar}>
+                  <Link
+                    key={m.userId}
+                    to={`/profile/${m.userId}`}
+                    className={styles.playerCard}
+                    title={`View ${m.displayName}'s profile`}
+                    style={{ textDecoration: 'none', color: 'inherit' }}
+                  >
+                    <div className={styles.playerAvatar} style={{ position: 'relative' }}>
                       {m.avatarUrl ? (
                         <img src={m.avatarUrl} alt="" loading="lazy" />
                       ) : (
                         <span>{m.displayName.charAt(0)}</span>
+                      )}
+                      {m.isOnline && (
+                        <span
+                          title="Online"
+                          aria-label="Online"
+                          style={{
+                            position: 'absolute',
+                            right: -1,
+                            bottom: -1,
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            background: '#10b981',
+                            border: '2px solid rgba(15,15,30,0.9)',
+                          }}
+                        />
                       )}
                     </div>
                     <div className={styles.playerInfo}>
@@ -1047,7 +1309,7 @@ export default function ClubDashboard() {
                     >
                       {formatSigned(m.profit)}
                     </span>
-                  </div>
+                  </Link>
                 ))
               )}
             </div>

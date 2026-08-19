@@ -133,3 +133,65 @@ is fully rebuilt and verified.
 - Suite: 1976 passing, 22 of them new (`tests/unit/clubDashboard.test.ts`).
   `TournamentRecurringService.test.ts` fails to load on a missing
   `@sentry/node` server dep — pre-existing, unrelated.
+
+## 9. Second audit pass — findings and upgrades
+
+Publish state re-verified first: all five source files byte-identical to
+origin/main, all seven dashboard migrations present, production bundle
+carrying every feature. A second agent's `20260819g_leaderboard_real_profit_pipeline`
+landed in parallel — checked, it creates its own trigger and functions and
+touches none of these objects. hand_history now carries three AFTER INSERT
+row triggers; the adjacency probe added here is an index-only scan costing
+0.086ms / 3 buffers, so it is not a factor on the hot path.
+
+### Bugs found and fixed
+
+- **Leaderboard stagger keyed by list index.** Visibility was a Set of indices
+  into the RAW players array while the rendered list is sorted and optionally
+  horse-filtered — the identical bug already fixed in the activity feed. Now
+  keyed by userId, and only the ten rendered rows are staggered instead of
+  scheduling 100 timers for a 100-row payload.
+- **Attribution caption ignored the filter.** With "Humans only" on, the
+  "measured on N of M player-hands" line still counted the horses the user had
+  just filtered out. Now derived from the ranked set actually on screen.
+- **Stale "Members Only" across clubs.** `notAMember` persisted from a
+  previously viewed club until the next load resolved, so navigating from a
+  club you are not in to one you are briefly showed the refusal screen. Reset
+  at the start of every load.
+- **Silently swallowed read errors.** A failed `clubs` read rendered "Club Not
+  Found" for a club that exists, and a failed `tables` read rendered an empty
+  Tables tab — both indistinguishable from genuine emptiness. All three reads
+  (club, tables, role) now report, and a failed club read surfaces the retry
+  state instead of a false negative.
+- **Member search had no out-of-order guard.** Typing fires overlapping
+  requests; a slower earlier response could land last and show results for a
+  query already moved past. Added a monotonic request id.
+- **Redundant fetch on filter change.** The page-reset effect set page 0
+  unconditionally, queueing a second request when already on page 1.
+
+### Upgrades
+
+- **Server-side member sorting and role filter** (`ca_club_members` v2). The
+  roster is paged, so ordering had to move into SQL — sorting the 25 rows the
+  client holds would present one page as the ranking of 327 members. Sort by
+  hands / profit / name / joined / last active, filter by role, with a stable
+  (joined_at, user_id) tiebreak so paging cannot repeat or drop rows.
+- **Live presence** — `is_online` from live seats or 15-minute activity, using
+  the same definition as the Online Now card so the two cannot disagree.
+- **Player drill-down** — leaderboard rows and member rows link to
+  `/profile/:userId`.
+- **Freshness** — background refreshes are silent by design, so the page now
+  states how old its numbers are and offers an explicit Refresh.
+- **Accessibility** — real `tablist`/`tab`/`tabpanel` semantics with
+  `aria-selected`, roving tabindex and arrow-key navigation; `aria-live` on the
+  refresh status; labels on every control.
+- **Members CSV export**, labelled by page so it is never mistaken for the
+  whole roster.
+- **"See all N ranked players"** when the leaderboard is truncated at ten.
+
+### Verification
+
+tsc clean; 25 dashboard unit tests (3 new for `formatAgo`, including the
+clock-skew case); full suite 1980 assertions passing across 162 files, the one
+failing file being the pre-existing `@sentry/node` server dep. Production build
+green.

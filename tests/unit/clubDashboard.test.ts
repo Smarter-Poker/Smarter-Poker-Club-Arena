@@ -8,6 +8,7 @@ import {
   formatSigned,
   csvEscape,
   leaderboardToCsv,
+  formatAgo,
   isAuthzError,
   isLiveTableStatus,
   tableStatusLabel,
@@ -142,6 +143,25 @@ describe('CSV export', () => {
 
   it('produces only a header for an empty leaderboard', () => {
     expect(leaderboardToCsv([]).split('\n')).toHaveLength(1);
+  });
+});
+
+describe('formatAgo', () => {
+  const now = 1_700_000_000_000;
+
+  it('reads as "just now" inside the first ten seconds', () => {
+    expect(formatAgo(now - 3_000, now)).toBe('just now');
+  });
+
+  it('steps through seconds, minutes, hours and days', () => {
+    expect(formatAgo(now - 30_000, now)).toBe('30s ago');
+    expect(formatAgo(now - 5 * 60_000, now)).toBe('5m ago');
+    expect(formatAgo(now - 3 * 3_600_000, now)).toBe('3h ago');
+    expect(formatAgo(now - 2 * 86_400_000, now)).toBe('2d ago');
+  });
+
+  it('never renders a negative age when clocks disagree', () => {
+    expect(formatAgo(now + 60_000, now)).toBe('just now');
   });
 });
 

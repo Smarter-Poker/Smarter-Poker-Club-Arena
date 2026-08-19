@@ -1375,6 +1375,56 @@ export class TournamentRecurringService {
     }
   }
 
+  /**
+   * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+   *
+   * Horses are seeded once at creation, deliberately leaving a seat or two for
+   * real players. When nobody took that seat the tournament sat at (max-1)
+   * until a 30-minute timer cancelled it. Measured over two days: 557 of 562
+   * cancellations were tournaments short by exactly ONE player — 363 at 2/3,
+   * 138 at 5/6, 56 at 8/9. A real poker room fills the seat and deals; it does
+   * not delete the game.
+   *
+   * Tops a short tournament up to `targetPlayers` and rewrites current_players
+   * from the authoritative tournament_players count — never from an
+   * incremented guess, which drifts if a real player registers in the same
+   * window. Returns how many horses were actually added.
+   */
+  async topUpWithHorses(tournamentId: string, targetPlayers: number): Promise<number> {
+    try {
+      const { count: liveCount, error: countErr } = await supabase
+        .from('tournament_players')
+        .select('id', { count: 'exact', head: true })
+        .eq('tournament_id', tournamentId)
+        .in('status', ['registered', 'playing']);
+      if (countErr) return 0;
+
+      const shortfall = targetPlayers - (liveCount || 0);
+      if (shortfall <= 0) return 0;
+
+      const added = await this.registerHorses(tournamentId, shortfall);
+
+      // Re-read rather than trusting `liveCount + added`: a human may have
+      // registered while we were seating horses.
+      const { count: finalCount } = await supabase
+        .from('tournament_players')
+        .select('id', { count: 'exact', head: true })
+        .eq('tournament_id', tournamentId)
+        .in('status', ['registered', 'playing']);
+
+      if (typeof finalCount === 'number') {
+        await supabase
+          .from('tournaments')
+          .update({ current_players: finalCount })
+          .eq('id', tournamentId);
+      }
+
+      return added;
+    } catch {
+      return 0;
+    }
+  }
+
   private async registerHorses(tournamentId: string, count: number): Promise<number> {
     try {
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in

@@ -11,68 +11,60 @@
  *
  * Because the engine redeploys on every push touching server/**, the sweep
  * fired constantly. Production over two days: 563 CANCELLED vs 243 COMPLETED,
- * cancellations arriving in same-second pairs — the signature of a boot sweep,
- * not organic under-filling. The tournament Dan joined filled 9/9, started at
- * 03:14:13 and died at 03:14:28 with its table open and all nine seats taken.
+ * cancellations arriving in same-second pairs. Dan's tournament filled 9/9,
+ * started 03:14:13 and died 03:14:28 with its table open and all nine seats
+ * taken.
  *
- * Invariant locked here: the restart-cancel path must prove a tournament has NO
- * resumable table before killing it, and must fail closed if it cannot tell.
+ * The sweep is now GONE — not narrowed. resume() additionally rebuilds the
+ * tables when none survived, so a restart has no unrecoverable state left.
  *
- * Source-level assertions on purpose — cleanupStaleData is a private method
- * that talks to Supabase across half a dozen sweeps; a mocked client would
- * assert the mock, not the policy.
+ * Source-level assertions on purpose: cleanupStaleData is a private method
+ * spanning half a dozen Supabase sweeps, and a mocked client would assert the
+ * mock rather than the policy.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
 const SRC = readFileSync(resolve(__dirname, '../../server/src/GameServer.ts'), 'utf8');
-
-/** Sweep §5 — the restart-cancel path for SNG/Spin tournaments. */
-const sweep5 = SRC.slice(
-  SRC.indexOf('const { data: runningSngSpins }'),
-  SRC.indexOf('// 6. Cancel stale RUNNING MTT')
+const BASE = readFileSync(
+  resolve(__dirname, '../../server/src/tournament/TournamentManagerBase.ts'),
+  'utf8'
 );
 
-describe('running SNG/Spin tournaments survive a server restart', () => {
-  it('still has the restart sweep', () => {
-    expect(sweep5.length).toBeGreaterThan(400);
-    expect(sweep5).toContain('runningSngSpins');
+describe('running tournaments survive a server restart', () => {
+  it('the boot sweep no longer cancels running SNG/Spin tournaments', () => {
+    // Assert the CODE, not the prose — the comment deliberately quotes the old
+    // premise so future readers know why the sweep was removed.
+    const code = SRC.split('\n')
+      .filter((l) => {
+        const t = l.trim();
+        return !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('/*');
+      })
+      .join('\n');
+    expect(code).not.toContain("status: 'CANCELLED'");
+    expect(code).not.toContain('refundAndCloseCancelledTournament(');
   });
 
-  it('checks for a resumable table before cancelling', () => {
-    expect(sweep5).toContain("from('tables')");
-    expect(sweep5).toMatch(/\.eq\(\s*'tournament_id'\s*,\s*t\.id\s*\)/);
-    expect(sweep5).toMatch(/\.in\(\s*'status'\s*,\s*\[[^\]]*'waiting'[^\]]*'running'[^\]]*\]/);
+  it('the boot sweep preserves them for the resume path', () => {
+    expect(SRC).toMatch(/preserved across restart/i);
   });
 
-  it('skips the cancel when a resumable table exists', () => {
-    // The guard must `continue` (leave it for resume), not fall through.
-    expect(sweep5).toMatch(/resumableTables[\s\S]{0,160}continue;/);
-  });
-
-  it('fails CLOSED — an errored lookup must not cancel the tournament', () => {
-    expect(sweep5).toMatch(/resumableErr/);
-    expect(sweep5).toMatch(/if\s*\(\s*resumableErr\s*\)[\s\S]{0,500}continue;/);
-  });
-
-  it('the resumable guard runs BEFORE the status flip to CANCELLED', () => {
-    const guardAt = sweep5.indexOf('resumableTables');
-    const cancelAt = sweep5.indexOf("status: 'CANCELLED'");
-    expect(guardAt).toBeGreaterThan(-1);
-    expect(cancelAt).toBeGreaterThan(-1);
-    expect(guardAt).toBeLessThan(cancelAt);
-  });
-
-  it('no longer claims running tournaments cannot survive a restart', () => {
-    expect(sweep5).not.toMatch(/can'?t survive a server restart/i);
-  });
-});
-
-describe('the resume path the sweep defers to', () => {
   it('discovery still resumes RUNNING tournaments that have no engine', () => {
     const discovery = SRC.slice(SRC.indexOf('private async discoverTournaments'));
     expect(discovery).toMatch(/\.eq\(\s*'status'\s*,\s*'RUNNING'\s*\)/);
     expect(discovery).toContain('tm.resume()');
+  });
+
+  it('resume rebuilds the tables when none survived, instead of giving up', () => {
+    const resume = BASE.slice(BASE.indexOf('async resume()'));
+    expect(resume).toMatch(/tables\.length === 0|!tables \|\| tables\.length === 0/);
+    expect(resume).toContain('createTablesAndSeatPlayers(tournament)');
+  });
+
+  it('resume only rebuilds when entrants actually remain', () => {
+    const resume = BASE.slice(BASE.indexOf('async resume()'));
+    expect(resume).toMatch(/liveEntrants/);
+    expect(resume).toMatch(/\.in\(\s*'status'\s*,\s*\[[^\]]*'registered'[^\]]*'playing'[^\]]*\]/);
   });
 });

@@ -24,10 +24,10 @@ import { reportError, initSentry, flushSentry } from './services/errorReporter.j
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
 
-import {
-  refundAndCloseCancelledTournament,
-  recoverStuckCompletingTournaments,
-} from './tournament/tournamentRecovery.js';
+// Dan 2026-08-19: refundAndCloseCancelledTournament is no longer imported here.
+// GameServer had four tournament-cancel paths; all four are gone. Nothing in
+// this file cancels a tournament any more — it fills, resumes or settles.
+import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
@@ -799,135 +799,53 @@ export class GameServer {
         .select('id, name, buy_in_amount, buy_in_fee')
         .in('status', ['ANNOUNCED', 'REGISTERING'])
         .lt('start_time', oneHourAgo);
-      for (const t of stalePreStart || []) {
-        try {
-          const refundEach = (t.buy_in_amount || 0) + (t.buy_in_fee || 0);
-          if (refundEach > 0) {
-            const { data: regs } = await supabase
-              .from('tournament_players')
-              .select('id, user_id')
-              .eq('tournament_id', t.id);
-            for (const p of regs || []) {
-              const { error: refErr } = await supabase.rpc('credit_player_wallet', {
-                p_user_id: p.user_id,
-                p_amount: refundEach,
-                // A3 FIX (2026-07-28): this startup sweep marks nothing per-row and
-                // only flips the tournament to CANCELLED after the loop, so any
-                // crash (or a failed flip) re-refunded everyone on the next boot.
-                // Same key format as tournamentRecovery + HorseLifecycleManager so
-                // all three cancel-refund paths dedupe against each other.
-                p_idempotency_key: `tourney:${t.id}:cancelrefund:${p.id}`,
-              });
-              if (refErr) {
-                console.warn(
-                  `[GameServer] Startup pre-start refund FAILED for ${p.user_id.slice(0, 8)} on "${t.name}": ${refErr.message}`
-                );
-              }
-            }
-          }
-          await supabase
-            .from('tournaments')
-            .update({ status: 'CANCELLED' })
-            .eq('id', t.id)
-            .in('status', ['ANNOUNCED', 'REGISTERING']);
-        } catch (err: any) {
-          console.warn(`[GameServer] Startup pre-start cancel error for ${t.id}: ${err?.message}`);
-        }
-      }
+      /**
+       * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+       *
+       * This sweep used to refund and CANCEL every REGISTERING/ANNOUNCED
+       * tournament whose start time was more than an hour past — the boot-time
+       * twin of the 30-minute auto-cancel in discoverTournaments(). Both
+       * existed to tidy up games that never filled. Neither is acceptable in a
+       * poker room: a player who registered and paid a buy-in is owed a game,
+       * not a refund and an apology.
+       *
+       * Past-due tournaments are now left exactly where they are. The discovery
+       * loop tops them up with horses and starts them, which is the same
+       * outcome a real room reaches by having a dealer sit the game.
+       */
       if ((stalePreStart?.length || 0) > 0) {
         console.log(
-          `[GameServer] Cancelled ${stalePreStart!.length} past-due REGISTERING/ANNOUNCED tournaments (with refunds)`
+          `[GameServer] ${stalePreStart!.length} past-due REGISTERING/ANNOUNCED tournament(s) found — leaving them for the fill-and-start path (never cancelled)`
         );
       }
 
-      // 5. Cancel ALL RUNNING SNG/Spin tournaments (they can't survive a server restart —
-      //    lobby IDs change, table engines are lost, players are already cleaned out)
-      const { data: runningSngSpins } = await supabase
-        .from('tournaments')
-        .select('id, name, variant, tournament_type')
-        .eq('status', 'RUNNING');
-
-      let cancelledCount = 0;
-      let resumableCount = 0;
-      for (const t of runningSngSpins || []) {
-        const isSngOrSpin =
-          t.variant === 'sng' ||
-          t.variant === 'spin' ||
-          t.tournament_type === 'SNG' ||
-          t.tournament_type === 'SPIN';
-        if (isSngOrSpin) {
-          /**
-           * Dan 2026-08-19 (P0): this sweep used to cancel EVERY running
-           * SNG/Spin on boot, on the premise that they "can't survive a server
-           * restart". That premise is false, and has been for a long time:
-           * discoverTournaments() explicitly looks for RUNNING tournaments with
-           * no engine and calls TournamentManager.resume(), which reloads the
-           * tournament, rebuilds a ServerTableEngine per surviving table,
-           * restores the blind level and resumes the level clock mid-level.
-           *
-           * Because the engine redeploys on every push touching server/**, this
-           * sweep fired constantly and destroyed live games. Measured on
-           * production: 563 CANCELLED vs 243 COMPLETED over two days, with
-           * cancellations arriving in same-second pairs — the signature of a
-           * boot sweep, not organic under-filling. Dan registered for a 9-max
-           * SNG that filled 9/9, started at 03:14:13 and was cancelled at
-           * 03:14:28: alive for FIFTEEN SECONDS, with its table still open and
-           * all nine seats occupied.
-           *
-           * A tournament is only genuinely unrecoverable once it has no table
-           * left to resume onto. Check that before killing it; anything with a
-           * waiting/running table is left for the resume path.
-           */
-          const { data: resumableTables, error: resumableErr } = await supabase
-            .from('tables')
-            .select('id')
-            .eq('tournament_id', t.id)
-            .in('status', ['waiting', 'running'])
-            .limit(1);
-
-          if (resumableErr) {
-            // Fail CLOSED: if we cannot prove the tournament is dead, do not
-            // kill it. A cancel refunds and closes tables — far more damaging
-            // than leaving a tournament for the next discovery pass.
-            console.warn(
-              `[GameServer] Skipping restart-cancel for "${t.name}" — could not check for resumable tables: ${resumableErr.message}`
-            );
-            resumableCount++;
-            continue;
-          }
-
-          if (resumableTables && resumableTables.length > 0) {
-            resumableCount++;
-            continue;
-          }
-
-          const { count: cancelUpdated } = await supabase
-            .from('tournaments')
-            .update({ status: 'CANCELLED', ended_at: new Date().toISOString() }, { count: 'exact' })
-            .eq('id', t.id)
-            .eq('status', 'RUNNING');
-          if (!cancelUpdated) continue;
-          cancelledCount++;
-
-          // TOURNEY-AUDIT 2026-07-24 (sweep 4): full cancel cleanup — refunds
-          // real players (buy-in + fee, with fee reversal), closes stranded
-          // tournament_players rows, and closes the tournament's tables.
-          await refundAndCloseCancelledTournament(
-            t.id,
-            t.name ?? null,
-            'SNG/Spin cancelled on server restart'
+      // 5. Running SNG/Spin tournaments — NEVER cancelled on restart.
+      //
+      // Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+      //
+      // This sweep used to cancel EVERY running SNG/Spin on boot, on the
+      // premise that they "can't survive a server restart". That premise was
+      // false: discoverTournaments() finds RUNNING tournaments with no engine
+      // and calls TournamentManager.resume(), which rebuilds an engine per
+      // surviving table, restores the blind level and resumes the level clock
+      // mid-level. resume() now also REBUILDS the tables when none survived,
+      // so there is no longer any state a restart cannot recover from.
+      //
+      // Because the engine redeploys on every push touching server/**, this
+      // sweep fired constantly and destroyed live games. Dan registered for a
+      // 9-max SNG that filled 9/9, started 03:14:13 and was cancelled at
+      // 03:14:28 — alive for FIFTEEN SECONDS with its table open and all nine
+      // seats occupied. The sweep is gone; the resume path owns this case.
+      {
+        const { count: runningSngSpins } = await supabase
+          .from('tournaments')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'RUNNING');
+        if ((runningSngSpins || 0) > 0) {
+          console.log(
+            `[GameServer] ${runningSngSpins} running tournament(s) preserved across restart — the resume path will rebuild them`
           );
         }
-      }
-      if (cancelledCount > 0) {
-        console.log(
-          `[GameServer] Cancelled ${cancelledCount} orphaned SNG/Spin RUNNING tournaments (no resumable table)`
-        );
-      }
-      if (resumableCount > 0) {
-        console.log(
-          `[GameServer] Left ${resumableCount} running SNG/Spin tournament(s) alive for the resume path — they still have open tables`
-        );
       }
 
       // 6. Cancel stale RUNNING MTT tournaments (BUG 019 FIX 2026-04-15):
@@ -962,21 +880,37 @@ export class GameServer {
           );
           continue;
         }
-        await supabase
+        /**
+         * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+         *
+         * This was the last cancel write on the server. A tournament wedged for
+         * over 12 hours with no hands is genuinely stuck, but voiding it is
+         * still the wrong ending: the players earned their chip positions. A
+         * real room settles the game and pays the places out.
+         *
+         * So instead of CANCELLED, this now walks it through the normal
+         * finish: flip to COMPLETING (CAS-guarded so a live engine that is
+         * mid-finish always wins the race) and hand it to
+         * recoverStuckCompletingTournaments, which ranks the remaining players
+         * by chip count, assigns the top positions, pays the payout structure
+         * and flips to COMPLETED. Money reaches the players who earned it and
+         * the game shows a real result instead of vanishing.
+         */
+        const { data: completingClaim } = await supabase
           .from('tournaments')
-          .update({ status: 'CANCELLED', ended_at: new Date().toISOString() })
-          .eq('id', t.id);
-        // TOURNEY-AUDIT 2026-07-24 (sweep 4): the "separate scheduled cleanup
-        // should refund affected players" promised in the comment above NEVER
-        // EXISTED — real players in a crashed >12h MTT simply lost their money,
-        // and their tournament_players rows + tables stayed open forever.
-        await refundAndCloseCancelledTournament(
-          t.id,
-          t.name ?? null,
-          'Tournament cancelled (stalled >12h)'
-        );
+          .update({ status: 'COMPLETING' })
+          .eq('id', t.id)
+          .eq('status', 'RUNNING')
+          .select('id');
+
+        if (!completingClaim || completingClaim.length === 0) {
+          // Someone else moved it on — leave it alone.
+          continue;
+        }
+
+        await recoverStuckCompletingTournaments('startup-stale-12h-settle', t.id);
         console.log(
-          `[GameServer] Cancelled genuinely stale RUNNING tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no recent hands)`
+          `[GameServer] Settled genuinely stalled tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no hands) — paid out and COMPLETED, not cancelled`
         );
       }
       console.log(
@@ -1218,31 +1152,43 @@ export class GameServer {
           const now = Date.now();
           const minPlayers = tournament.min_players || 3;
 
-          // Auto-cancel: if 30+ mins past start time and not enough players
-          if (startTime <= now - 30 * 60 * 1000 && tournament.current_players < minPlayers) {
-            console.log(
-              `[GameServer] Cancelling tournament: ${tournament.name} — only ${tournament.current_players}/${minPlayers} players after 30min`
-            );
-            // TOURNEY-AUDIT 2026-07-24 (sweep 5) [CRITICAL — money mint]: the
-            // old inline refund loop credited buy-in + fee to EVERY registered
-            // row INCLUDING HORSES, who register free — every under-filled
-            // auto-cancel (the platform runs hundreds per week) minted
-            // horses' entry money out of thin air. The shared cleanup refunds
-            // ONLY real players (with fee reversal in the rake ledger) and
-            // closes the player rows instead of deleting the audit trail.
-            const { data: cancelClaim } = await supabase
-              .from('tournaments')
-              .update({ status: 'CANCELLED', ended_at: new Date().toISOString() })
-              .eq('id', tournament.id)
-              .in('status', ['ANNOUNCED', 'REGISTERING'])
-              .select('id');
-            if (cancelClaim && cancelClaim.length > 0) {
-              await refundAndCloseCancelledTournament(
-                tournament.id,
-                tournament.name ?? null,
-                'Tournament cancelled (insufficient players)'
+          /**
+           * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+           *
+           * This used to cancel any tournament still short of min_players 30
+           * minutes after its start time. That single branch was responsible
+           * for essentially every cancellation on the platform: over two days,
+           * 557 of 562 cancelled tournaments were short by exactly ONE player
+           * (363 at 2/3, 138 at 5/6, 56 at 8/9). Horses are seeded at creation
+           * leaving a seat for a human, and when no human took it the game was
+           * deleted instead of dealt.
+           *
+           * A real poker room fills the seat. Past its start time and still
+           * short, we top the field up with horses and let the normal start
+           * logic fire on the next pass — the buy-in stays in play, the prize
+           * pool stands, and the player who registered gets the game they paid
+           * for. If the horse pool cannot deliver right now we simply try
+           * again next pass; waiting is always better than destroying a game.
+           */
+          const isPastStart = startTime <= now;
+          if (isPastStart && tournament.current_players < minPlayers) {
+            // SNG/Spin only ever start when FULL, so fill to max for those;
+            // MTTs only need the minimum to get underway.
+            const isSngOrSpinFill =
+              tournament.variant === 'sng' ||
+              tournament.variant === 'spin' ||
+              tournament.tournament_type === 'SNG' ||
+              tournament.tournament_type === 'SPIN';
+            const target =
+              isSngOrSpinFill && tournament.max_players > 0 ? tournament.max_players : minPlayers;
+
+            const added = await this.tournamentRecurring.topUpWithHorses(tournament.id, target);
+            if (added > 0) {
+              console.log(
+                `[GameServer] Filled "${tournament.name}" with ${added} player(s) to reach ${target} — starting instead of cancelling`
               );
             }
+            // Re-evaluate on the next discovery pass with the refreshed count.
             continue;
           }
 

@@ -310,27 +310,19 @@ export abstract class TournamentManagerBase {
         .eq('status', 'registered');
 
       if ((regCount || 0) < 3) {
+        /**
+         * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+         *
+         * This used to CANCEL the tournament outright when fewer than three
+         * players were registered at start time. It now stands down instead:
+         * the tournament stays REGISTERING, the discovery loop tops the field
+         * up with horses on its next pass, and start() is called again with a
+         * full field. Nobody's buy-in is refunded out from under them and no
+         * scheduled game disappears from the lobby.
+         */
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} player(s) — cancelling (minimum 3)`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} player(s) — standing down so the field can be filled (NOT cancelling)`
         );
-        // TOURNEY-AUDIT 2026-07-24 (sweep 5) [CRITICAL — money mint]: same fix
-        // as the discovery-loop auto-cancel — the old inline loop refunded
-        // buy-in + fee to HORSES too (who paid nothing), minting chips on
-        // every under-filled start. Shared cleanup refunds only real players
-        // (with fee reversal) and closes rows instead of deleting them.
-        const { data: cancelClaim } = await supabase
-          .from('tournaments')
-          .update({ status: 'CANCELLED', ended_at: new Date().toISOString() })
-          .eq('id', this.tournamentId)
-          .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
-          .select('id');
-        if (cancelClaim && cancelClaim.length > 0) {
-          await refundAndCloseCancelledTournament(
-            this.tournamentId,
-            tournament.name ?? null,
-            'Tournament cancelled (insufficient players)'
-          );
-        }
         this.running = false;
         return;
       }
@@ -554,14 +546,38 @@ export abstract class TournamentManagerBase {
         .eq('tournament_id', this.tournamentId)
         .in('status', ['running', 'waiting']);
 
-      for (const table of tables || []) {
-        const engine = new ServerTableEngine(table.id);
-        engine.setHub(tableStateHub); // Phase 1.1 PR-2
-        this.tableEngines.set(table.id, engine);
-        this.gameServer.registerTableEngine(table.id, engine);
-        engine
-          .start()
-          .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Resume_table_error'));
+      /**
+       * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+       *
+       * A RUNNING tournament whose tables had all been closed used to be the
+       * one case with no way back, which is why the boot sweep cancelled it.
+       * There IS a way back: the entrants are still on the roster, so rebuild
+       * the tables and seat them — exactly what start() does. A room that lost
+       * a table redeals it; it does not void the tournament.
+       */
+      if (!tables || tables.length === 0) {
+        const { count: liveEntrants } = await supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['registered', 'playing']);
+
+        if ((liveEntrants || 0) > 0) {
+          console.warn(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables — rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
+          );
+          await this.createTablesAndSeatPlayers(tournament);
+        }
+      } else {
+        for (const table of tables) {
+          const engine = new ServerTableEngine(table.id);
+          engine.setHub(tableStateHub); // Phase 1.1 PR-2
+          this.tableEngines.set(table.id, engine);
+          this.gameServer.registerTableEngine(table.id, engine);
+          engine
+            .start()
+            .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Resume_table_error'));
+        }
       }
 
       // Restore blind level

@@ -374,60 +374,27 @@ export class HorseLifecycleManager {
 
       if (!staleSNGs || staleSNGs.length === 0) return;
 
-      let cancelled = 0;
-
-      for (const sng of staleSNGs) {
-        try {
-          const buyInAmount = sng.buy_in_amount || 0;
-
-          // Get registered players for refund
-          const { data: players } = await supabase
-            .from('tournament_players')
-            .select('id, user_id')
-            .eq('tournament_id', sng.id);
-
-          if (players && players.length > 0 && buyInAmount > 0) {
-            for (const player of players) {
-              const { error: refundErr } = await supabase.rpc('credit_player_wallet', {
-                p_user_id: player.user_id,
-                p_amount: buyInAmount,
-                // A3 FIX (2026-07-28): `performMaintenanceCycle` is a 60s
-                // setInterval with NO overlap guard, and the CANCELLED flip only
-                // happens after this loop - so an overlapping or crashed cycle
-                // refunded the same registration repeatedly. Same key format as
-                // the two other cancel-refund paths so they all dedupe.
-                p_idempotency_key: `tourney:${sng.id}:cancelrefund:${player.id}`,
-              });
-              if (refundErr)
-                reportError(
-                  new Error(
-                    `[HorseLifecycle] SNG cancel refund FAILED for ${player.user_id.slice(0, 8)}: ${refundErr.message}`
-                  ),
-                  'HorseLifecycle.SNG_cancel_refund_FAILED_for_p'
-                );
-            }
-          }
-
-          await supabase
-            .from('tournaments')
-            .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
-            .eq('id', sng.id);
-
-          cancelled++;
-          await this.persistLifecycleLog('system', 'stale_sng_cancelled', {
-            sngId: sng.id,
-            sngName: sng.name,
-            refundsIssued: players?.length || 0,
-            refundAmount: buyInAmount,
-          });
-        } catch {
-          // Skip individual errors
-        }
-      }
-
-      if (cancelled > 0) {
-        console.log(`[Lifecycle] Cancelled ${cancelled} stale SNGs`);
-      }
+      /**
+       * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
+       *
+       * This swept SNGs that had sat in ANNOUNCED/REGISTERING for hours,
+       * refunded every entrant and flipped the tournament to CANCELLED. It was
+       * the third of three cancel-on-underfill paths (the others were the
+       * discovery-loop 30-minute timer and the boot sweep). All three are gone:
+       * a game that has not filled is a game waiting for players, not a game to
+       * delete. The discovery loop tops the field up with horses and starts it.
+       *
+       * The sweep is kept as pure OBSERVABILITY so a genuinely wedged SNG is
+       * still visible in the lifecycle log — it just no longer destroys it.
+       */
+      await this.persistLifecycleLog('system', 'stale_sng_observed', {
+        count: staleSNGs.length,
+        sngIds: staleSNGs.slice(0, 20).map((s: { id: string }) => s.id),
+        note: 'left REGISTERING for the fill-and-start path — never cancelled',
+      });
+      console.log(
+        `[Lifecycle] ${staleSNGs.length} slow-filling SNG(s) left open for the fill-and-start path (never cancelled)`
+      );
     } catch {
       // Non-critical
     }

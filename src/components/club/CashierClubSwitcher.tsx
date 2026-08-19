@@ -5,9 +5,18 @@
  *
  * Compact context bar at the top of CashierPage: shows which club's cashier
  * is open, and for multi-club users a dropdown to jump straight to another
- * club's cashier. Club list comes from the lobby's CLUBS_CACHE (no network);
- * with a cold cache or a single club it degrades to a static name chip, and
- * with no cached clubs at all it renders nothing.
+ * club's cashier, with each club's own chip balance alongside it.
+ *
+ * Club list resolution:
+ *   1. the lobby's CLUBS_CACHE (no network) — re-read whenever the dropdown
+ *      opens so a join/leave in this session is picked up
+ *   2. on a cold cache (deep link straight into a cashier), the user's
+ *      memberships are fetched once
+ *   3. with a single club it degrades to a static name chip; with nothing
+ *      resolvable at all it renders nothing
+ *
+ * Unions are excluded everywhere — they are club_members rows too, but a
+ * union is not a club cashier destination.
  *
  * LAST_CLUB is updated by LastClubTracker on route change, so selections here
  * automatically become the lobby quick-link target too.
@@ -18,12 +27,16 @@ import { useNavigate } from 'react-router-dom';
 
 import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { STORAGE_KEYS } from '../../lib/storage';
+import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import {
   eligibleQuickLinkClubs,
   clubParamToUuid,
   fetchClubChipBalances,
+  clearClubChipBalanceCache,
   fetchQuickLinkClubs,
+  readCachedQuickLinkClubs,
+  rememberLastClub,
+  CHIP_BALANCE_EVENTS,
   type QuickLinkClub,
 } from '../../utils/clubQuickLink';
 import styles from './CashierClubSwitcher.module.css';
@@ -35,42 +48,37 @@ interface CashierClubSwitcherProps {
   clubName?: string;
 }
 
-function readCachedClubs(): QuickLinkClub[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? eligibleQuickLinkClubs(parsed) : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwitcherProps) {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [balances, setBalances] = useState<Map<string, number> | null>(null);
+  const [balanceNonce, setBalanceNonce] = useState(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const cachedClubs = useMemo(() => readCachedClubs(), []);
+  // Cached list, re-read on demand (cacheNonce) so a join/leave lands
+  const [cacheNonce, setCacheNonce] = useState(0);
+  const cachedClubs = useMemo(() => readCachedQuickLinkClubs(), [cacheNonce]);
   const [fetchedClubs, setFetchedClubs] = useState<QuickLinkClub[] | null>(null);
-  const clubs = fetchedClubs ?? cachedClubs;
+  const clubs = useMemo(
+    () => eligibleQuickLinkClubs(cachedClubs.length > 0 ? cachedClubs : (fetchedClubs ?? [])),
+    [cachedClubs, fetchedClubs]
+  );
 
   // Cold-cache fallback — a deep link straight into the cashier means the
   // lobby never populated CLUBS_CACHE; fetch memberships so switching works
   useEffect(() => {
-    if (cachedClubs.length > 0 || !user?.id) return;
+    if (cachedClubs.length > 0 || fetchedClubs !== null || !user?.id) return;
     let live = true;
     fetchQuickLinkClubs(user.id).then((list) => {
-      if (live && list.length > 0) setFetchedClubs(list);
+      if (live) setFetchedClubs(list);
     });
     return () => {
       live = false;
     };
-  }, [cachedClubs.length, user?.id]);
+  }, [cachedClubs.length, fetchedClubs, user?.id]);
 
   // Per-club chip balances — lazy-loaded when the dropdown opens
   useEffect(() => {
@@ -82,7 +90,14 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
     return () => {
       live = false;
     };
-  }, [menuOpen, user?.id]);
+  }, [menuOpen, user?.id, balanceNonce]);
+
+  // Chip movements (this page is where they happen) invalidate the memo
+  useMasterBusSubscriptions([...CHIP_BALANCE_EVENTS], () => {
+    clearClubChipBalanceCache();
+    setBalanceNonce((n) => n + 1);
+  });
+
   const currentUuid = useMemo(() => clubParamToUuid(clubId), [clubId]);
   const currentClub = useMemo(
     () => clubs.find((c) => c.id === currentUuid || String(c.club_id) === clubId) || null,
@@ -92,7 +107,16 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
   const displayName = currentClub?.name || clubName || '';
   const hasSwitch = clubs.length > 1;
 
+  // LastClubTracker can only resolve a UUID route param (or a numeric code
+  // already present in the cache). Once this page has resolved the club for
+  // real, record it — that closes the gap for a deep link that arrives with a
+  // numeric club code on a cold cache.
+  useEffect(() => {
+    if (currentClub?.id) rememberLastClub(currentClub.id);
+  }, [currentClub?.id]);
+
   const openMenu = useCallback(() => {
+    setCacheNonce((n) => n + 1); // re-read CLUBS_CACHE on open
     const selected = currentClub ? clubs.findIndex((c) => c.id === currentClub.id) : 0;
     setActiveIndex(selected >= 0 ? selected : 0);
     setMenuOpen(true);
@@ -150,6 +174,9 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
     },
     [clubs.length, closeMenu]
   );
+
+  // Drop refs for rows that no longer exist
+  itemRefs.current.length = clubs.length;
 
   // Nothing useful to show: no name resolved and nothing to switch to
   if (!displayName && !hasSwitch) return null;

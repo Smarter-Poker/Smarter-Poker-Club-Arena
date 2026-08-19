@@ -1,28 +1,34 @@
 /**
  * Club quick link resolution — the single rule behind the lobby Cashier and
  * Marketplace tiles, keyboard shortcuts 4/5, and the in-cashier switcher.
+ *
+ * Chips are PER CLUB (club_members.chip_balance). Unions live in the `clubs`
+ * table with is_union = true and DO have club_members rows, so every path
+ * that lists "clubs" has to filter them out.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const eqMock = vi.fn();
+// Supabase chain used by the util: .from().select().eq().in()
+const inMock = vi.fn();
+const eqMock = vi.fn(() => ({ in: inMock }));
+const selectMock = vi.fn(() => ({ eq: eqMock }));
 vi.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({ eq: eqMock })),
-    })),
-  },
+  supabase: { from: vi.fn(() => ({ select: selectMock })) },
 }));
 
 import {
   eligibleQuickLinkClubs,
+  isUnionEntity,
   resolveTargetClub,
   readLastClubId,
   rememberLastClub,
   clubParamToUuid,
+  readCachedQuickLinkClubs,
   fetchClubChipBalances,
   fetchQuickLinkClubs,
   clearClubChipBalanceCache,
+  CHIP_BALANCE_EVENTS,
 } from '../src/utils/clubQuickLink';
 import { STORAGE_KEYS } from '../src/lib/storage';
 
@@ -34,16 +40,41 @@ const U = {
   club_id: 55555,
   entity_type: 'union' as const,
 };
+/** A union whose NAME does not contain "union" — the lobby heuristic misses it. */
+const U_FLAG = {
+  id: 'eeeeeeee-0000-0000-0000-000000000005',
+  name: 'Midway Alliance',
+  club_id: 55556,
+  is_union: true,
+};
+const USER = 'dddddddd-0000-0000-0000-000000000042';
 
 beforeEach(() => {
   localStorage.clear();
   clearClubChipBalanceCache();
-  eqMock.mockReset();
+  inMock.mockReset();
+  eqMock.mockClear();
+  selectMock.mockClear();
+  inMock.mockResolvedValue({ data: [], error: null });
+});
+
+describe('isUnionEntity', () => {
+  it('detects unions by the authoritative is_union column', () => {
+    expect(isUnionEntity(U_FLAG)).toBe(true);
+  });
+
+  it('detects unions by the lobby entity_type label', () => {
+    expect(isUnionEntity(U)).toBe(true);
+  });
+
+  it('leaves ordinary clubs alone', () => {
+    expect(isUnionEntity(A)).toBe(false);
+  });
 });
 
 describe('eligibleQuickLinkClubs', () => {
-  it('excludes unions', () => {
-    expect(eligibleQuickLinkClubs([A, U, B])).toEqual([A, B]);
+  it('excludes unions flagged either way', () => {
+    expect(eligibleQuickLinkClubs([A, U, U_FLAG, B])).toEqual([A, B]);
   });
 
   it('returns empty for empty input', () => {
@@ -62,11 +93,13 @@ describe('resolveTargetClub', () => {
 
   it('never resolves to a union, even as last-visited', () => {
     expect(resolveTargetClub([U, A], U.id)).toEqual(A);
+    expect(resolveTargetClub([U_FLAG, A], U_FLAG.id)).toEqual(A);
   });
 
   it('returns null when the user has no eligible clubs', () => {
     expect(resolveTargetClub([], null)).toBeNull();
     expect(resolveTargetClub([U], U.id)).toBeNull();
+    expect(resolveTargetClub([U_FLAG], U_FLAG.id)).toBeNull();
   });
 
   it('reads stored LAST_CLUB when no override is given', () => {
@@ -87,11 +120,22 @@ describe('rememberLastClub / readLastClubId', () => {
   });
 });
 
-describe('fetchClubChipBalances', () => {
-  const USER = 'dddddddd-0000-0000-0000-000000000042';
+describe('readCachedQuickLinkClubs', () => {
+  it('returns the union-filtered cached list', () => {
+    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, U_FLAG, B]));
+    expect(readCachedQuickLinkClubs().map((c) => c.id)).toEqual([A.id, B.id]);
+  });
 
-  it('maps club_members rows to a club_id → balance map', async () => {
-    eqMock.mockResolvedValue({
+  it('is empty on a cold or corrupt cache', () => {
+    expect(readCachedQuickLinkClubs()).toEqual([]);
+    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, '{not json');
+    expect(readCachedQuickLinkClubs()).toEqual([]);
+  });
+});
+
+describe('fetchClubChipBalances', () => {
+  it('maps club_members rows to a club_id -> balance map', async () => {
+    inMock.mockResolvedValue({
       data: [
         { club_id: A.id, chip_balance: 1234.5 },
         { club_id: B.id, chip_balance: 0 },
@@ -103,34 +147,68 @@ describe('fetchClubChipBalances', () => {
     expect(balances.get(B.id)).toBe(0);
   });
 
+  it('only counts active/approved memberships', async () => {
+    await fetchClubChipBalances(USER);
+    expect(inMock).toHaveBeenCalledWith('status', ['approved', 'active']);
+  });
+
   it('memoizes within the TTL — second call does not requery', async () => {
-    eqMock.mockResolvedValue({ data: [{ club_id: A.id, chip_balance: 7 }], error: null });
+    inMock.mockResolvedValue({ data: [{ club_id: A.id, chip_balance: 7 }], error: null });
     await fetchClubChipBalances(USER);
     await fetchClubChipBalances(USER);
-    expect(eqMock).toHaveBeenCalledTimes(1);
+    expect(inMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches after the cache is cleared by a chip movement', async () => {
+    inMock.mockResolvedValue({ data: [{ club_id: A.id, chip_balance: 7 }], error: null });
+    await fetchClubChipBalances(USER);
+    clearClubChipBalanceCache();
+    await fetchClubChipBalances(USER);
+    expect(inMock).toHaveBeenCalledTimes(2);
   });
 
   it('returns empty map on query error without throwing', async () => {
-    eqMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    inMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
     const balances = await fetchClubChipBalances(USER);
     expect(balances.size).toBe(0);
+  });
+
+  it('exposes the bus events that should invalidate it', () => {
+    expect(CHIP_BALANCE_EVENTS).toContain('CASHIER_BALANCE_CHANGED');
+    expect(CHIP_BALANCE_EVENTS).toContain('CHIPS_DISTRIBUTED');
   });
 });
 
 describe('fetchQuickLinkClubs', () => {
-  const USER = 'dddddddd-0000-0000-0000-000000000042';
-
   it('unwraps joined club rows', async () => {
-    eqMock.mockResolvedValue({
-      data: [{ club: A }, { club: [B] }, { club: null }],
-      error: null,
-    });
+    inMock.mockResolvedValue({ data: [{ club: A }, { club: [B] }, { club: null }], error: null });
     const clubs = await fetchQuickLinkClubs(USER);
     expect(clubs.map((c) => c.id)).toEqual([A.id, B.id]);
   });
 
+  it('filters out unions — they are club_members rows too', async () => {
+    inMock.mockResolvedValue({ data: [{ club: A }, { club: U_FLAG }], error: null });
+    const clubs = await fetchQuickLinkClubs(USER);
+    expect(clubs.map((c) => c.id)).toEqual([A.id]);
+  });
+
+  it('selects the is_union flag so the filter can work', async () => {
+    await fetchQuickLinkClubs(USER);
+    expect(selectMock).toHaveBeenCalledWith(expect.stringContaining('is_union'));
+  });
+
+  it('restricts to active/approved memberships', async () => {
+    await fetchQuickLinkClubs(USER);
+    expect(inMock).toHaveBeenCalledWith('status', ['approved', 'active']);
+  });
+
+  it('de-duplicates repeated club rows', async () => {
+    inMock.mockResolvedValue({ data: [{ club: A }, { club: A }], error: null });
+    expect(await fetchQuickLinkClubs(USER)).toHaveLength(1);
+  });
+
   it('returns empty list on error without throwing', async () => {
-    eqMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    inMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
     expect(await fetchQuickLinkClubs(USER)).toEqual([]);
   });
 });

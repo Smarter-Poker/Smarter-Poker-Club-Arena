@@ -12,6 +12,11 @@
  * LAST_CLUB is written by rememberLastClub(), which is called from the club
  * carousel, the quick-switch popovers, and LastClubTracker (any /clubs/:clubId
  * route entry), so "last visited" stays accurate however the user navigates.
+ *
+ * CHIP MODEL (binding): chips are PER CLUB — a separate balance per club
+ * membership on `club_members.chip_balance`, never interchangeable between
+ * clubs. Only diamonds are global (the `wallets` table). Never source a
+ * club chip balance from `wallets`.
  */
 
 import { STORAGE_KEYS } from '../lib/storage';
@@ -25,13 +30,36 @@ export interface QuickLinkClub {
   name?: string;
   club_id?: number | string;
   logo_url?: string;
+  /** Authoritative union flag from the `clubs` table. */
+  is_union?: boolean;
+  /** Lobby-derived label; kept for callers that only have the mapped shape. */
   entity_type?: 'club' | 'union';
   [key: string]: unknown;
 }
 
+/**
+ * Membership rows that count as "you are in this club".
+ * Production currently uses 'approved' (bulk) and 'active' (legacy rows);
+ * anything else (pending/banned/rejected) must never surface in a quick link.
+ */
+const ACTIVE_MEMBER_STATUSES = ['approved', 'active'];
+
+/**
+ * True when a club row is really a union.
+ *
+ * `is_union` is the authoritative column on the `clubs` table. `entity_type`
+ * is the lobby's derived label, which is computed from a NAME HEURISTIC
+ * (union_id set AND /union/i in the name) and therefore misses a union that
+ * isn't named "... Union". Checking both means a union is filtered out even
+ * when only one source is present on the object.
+ */
+export function isUnionEntity(club: QuickLinkClub): boolean {
+  return club.is_union === true || club.entity_type === 'union';
+}
+
 /** Clubs eligible for cashier/marketplace quick links (unions excluded). */
 export function eligibleQuickLinkClubs<T extends QuickLinkClub>(clubs: T[]): T[] {
-  return clubs.filter((c) => c.entity_type !== 'union');
+  return clubs.filter((c) => !isUnionEntity(c));
 }
 
 /** Read the last-visited club UUID, null when unset or storage is unavailable. */
@@ -71,7 +99,7 @@ export function resolveTargetClub<T extends QuickLinkClub>(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PER-CLUB CHIP BALANCES — club chips live on club_members.chip_balance
-// (the wallets table is the user's global diamond/promo balance, not per-club)
+// (the wallets table holds global diamonds, never per-club chips)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BALANCE_TTL_MS = 30_000;
@@ -82,6 +110,9 @@ let balanceCache: { userId: string; ts: number; balances: Map<string, number> } 
  * UUID. One cheap query, memoized for 30s so opening a popover twice does not
  * refetch. Returns the stale cache (or an empty map) on failure — the popover
  * simply omits balances rather than breaking.
+ *
+ * Call clearClubChipBalanceCache() after any chip movement to force a refresh;
+ * the quick-link surfaces do this off the MasterBus balance events.
  */
 export async function fetchClubChipBalances(userId: string): Promise<Map<string, number>> {
   if (
@@ -94,8 +125,9 @@ export async function fetchClubChipBalances(userId: string): Promise<Map<string,
   try {
     const { data, error } = await supabase
       .from('club_members')
-      .select('club_id, chip_balance')
-      .eq('user_id', userId);
+      .select('club_id, chip_balance, status')
+      .eq('user_id', userId)
+      .in('status', ACTIVE_MEMBER_STATUSES);
     if (error) {
       reportError(error, 'clubQuickLink.fetchClubChipBalances');
       return balanceCache?.balances ?? new Map();
@@ -112,33 +144,52 @@ export async function fetchClubChipBalances(userId: string): Promise<Map<string,
   }
 }
 
-/** Drop the memoized balances (used by tests and after chip transfers). */
+/** Drop the memoized balances. Called after chip movements and by tests. */
 export function clearClubChipBalanceCache(): void {
   balanceCache = null;
 }
 
 /**
+ * MasterBus events that mean "a chip balance just moved" — the quick-link
+ * surfaces subscribe to these and drop the memo so the next popover open
+ * shows fresh numbers instead of up-to-30s-stale ones.
+ */
+export const CHIP_BALANCE_EVENTS = [
+  'CASHIER_BALANCE_CHANGED',
+  'CHIPS_DISTRIBUTED',
+  'BALANCE_UPDATED',
+  'WALLET_REFRESHED',
+] as const;
+
+/**
  * Network fallback for when CLUBS_CACHE is cold (e.g. a deep link straight
  * into a club cashier without ever visiting the lobby). Fetches a minimal
- * club list via the user's memberships. Rows come from club_members, so
- * unions never appear.
+ * club list via the user's memberships.
+ *
+ * Unions ARE stored in the `clubs` table (is_union = true) and DO have
+ * club_members rows, so the union flag must be selected and filtered here —
+ * otherwise the union shows up as a switchable club cashier.
  */
 export async function fetchQuickLinkClubs(userId: string): Promise<QuickLinkClub[]> {
   try {
     const { data, error } = await supabase
       .from('club_members')
-      .select('club:clubs(id, club_id, name, logo_url, member_count)')
-      .eq('user_id', userId);
+      .select('status, club:clubs(id, club_id, name, logo_url, member_count, is_union)')
+      .eq('user_id', userId)
+      .in('status', ACTIVE_MEMBER_STATUSES);
     if (error) {
       reportError(error, 'clubQuickLink.fetchQuickLinkClubs');
       return [];
     }
     const clubs: QuickLinkClub[] = [];
+    const seen = new Set<string>();
     for (const row of (data || []) as Array<{ club: QuickLinkClub | QuickLinkClub[] | null }>) {
       const club = Array.isArray(row.club) ? row.club[0] : row.club;
-      if (club?.id) clubs.push(club);
+      if (!club?.id || seen.has(club.id)) continue;
+      seen.add(club.id);
+      clubs.push(club);
     }
-    return clubs;
+    return eligibleQuickLinkClubs(clubs);
   } catch (err) {
     reportError(err, 'clubQuickLink.fetchQuickLinkClubs');
     return [];
@@ -162,5 +213,17 @@ export function clubParamToUuid(param: string | undefined): string | null {
     return match && isUUID(match.id) ? match.id : null;
   } catch {
     return null;
+  }
+}
+
+/** Read the lobby's cached club list, union-filtered. Empty when cold/corrupt. */
+export function readCachedQuickLinkClubs(): QuickLinkClub[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? eligibleQuickLinkClubs(parsed) : [];
+  } catch {
+    return [];
   }
 }

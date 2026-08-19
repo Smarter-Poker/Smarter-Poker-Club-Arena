@@ -6,20 +6,30 @@
  * Used by the Cashier and Marketplace bottom-row tiles. Renders the target
  * club's name on the tile, and for multi-club users a quick-switch button
  * (also reachable by long-pressing the tile) that opens a club popover with
- * logos, full keyboard navigation, and managed focus.
+ * logos, per-club chip balances, keyboard navigation, and managed focus.
  *
  * Tap tile          -> onSelect(targetClub), or onEmpty() with no clubs
  * Tap switch / hold -> popover: ArrowUp/Down/Home/End navigate, Enter/Space
  *                      select, Escape closes and returns focus to the trigger
+ *
+ * Chips are per club (club_members.chip_balance) — the popover shows the
+ * balance for each club so the user can see where their chips are before
+ * jumping. Balances refresh whenever the bus reports a chip movement.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { preloadRoute } from '../../utils/ChunkPreloader';
 import type { LobbyTile } from '../../config/lobbyTiles.config';
-import { fetchClubChipBalances, type QuickLinkClub } from '../../utils/clubQuickLink';
+import {
+  fetchClubChipBalances,
+  clearClubChipBalanceCache,
+  CHIP_BALANCE_EVENTS,
+  type QuickLinkClub,
+} from '../../utils/clubQuickLink';
 import styles from '../../pages/HomePage.module.css';
 
 const LONG_PRESS_MS = 500;
@@ -53,6 +63,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [balances, setBalances] = useState<Map<string, number> | null>(null);
+  const [balanceNonce, setBalanceNonce] = useState(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,7 +79,8 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
     preloadRoute(preloadPath);
   }, [preloadPath]);
 
-  // Per-club chip balances — lazy-loaded when the popover opens
+  // Per-club chip balances — lazy-loaded when the popover opens, and re-read
+  // when a chip movement invalidates the memo while the popover is open
   useEffect(() => {
     if (!menuOpen || !user?.id) return;
     let live = true;
@@ -78,23 +90,13 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
     return () => {
       live = false;
     };
-  }, [menuOpen, user?.id]);
+  }, [menuOpen, user?.id, balanceNonce]);
 
-  const openMenu = useCallback(() => {
-    const selected = targetClub ? clubs.findIndex((c) => c.id === targetClub.id) : 0;
-    setActiveIndex(selected >= 0 ? selected : 0);
-    setMenuOpen(true);
-  }, [clubs, targetClub]);
-
-  const closeMenu = useCallback((returnFocus: boolean) => {
-    setMenuOpen(false);
-    if (returnFocus) triggerRef.current?.focus();
-  }, []);
-
-  // Focus follows the active item while the menu is open
-  useEffect(() => {
-    if (menuOpen) itemRefs.current[activeIndex]?.focus();
-  }, [menuOpen, activeIndex]);
+  // Any chip movement invalidates the 30s memo so the next open is accurate
+  useMasterBusSubscriptions([...CHIP_BALANCE_EVENTS], () => {
+    clearClubChipBalanceCache();
+    setBalanceNonce((n) => n + 1);
+  });
 
   const clearLongPress = useCallback(() => {
     if (longPressTimer.current) {
@@ -102,6 +104,33 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
       longPressTimer.current = null;
     }
   }, []);
+
+  // Never leave a pending long-press timer behind on unmount
+  useEffect(() => clearLongPress, [clearLongPress]);
+
+  const openMenu = useCallback(() => {
+    const selected = targetClub ? clubs.findIndex((c) => c.id === targetClub.id) : 0;
+    setActiveIndex(selected >= 0 ? selected : 0);
+    setMenuOpen(true);
+  }, [clubs, targetClub]);
+
+  const closeMenu = useCallback(
+    (returnFocus: boolean) => {
+      setMenuOpen(false);
+      // Clear the long-press latch here too: when the popover is dismissed by
+      // the overlay (rather than by a click landing back on the tile), the
+      // latch would otherwise stay set and swallow the user's NEXT tile tap.
+      longPressFired.current = false;
+      clearLongPress();
+      if (returnFocus) triggerRef.current?.focus();
+    },
+    [clearLongPress]
+  );
+
+  // Focus follows the active item while the menu is open
+  useEffect(() => {
+    if (menuOpen) itemRefs.current[activeIndex]?.focus();
+  }, [menuOpen, activeIndex]);
 
   const handlePointerDown = useCallback(() => {
     if (!hasSwitch) return;
@@ -159,6 +188,8 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   );
 
   const clubName = targetClub?.name || undefined;
+  // Drop refs for rows that no longer exist (club left / list shrank)
+  itemRefs.current.length = clubs.length;
 
   return (
     <div className={styles.cashierTileWrap}>
@@ -173,12 +204,15 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
         }}
         onPointerUp={clearLongPress}
         onPointerLeave={clearLongPress}
+        onPointerCancel={clearLongPress}
         onContextMenu={(e) => {
           if (hasSwitch) {
             e.preventDefault();
             openMenu();
           }
         }}
+        aria-haspopup={hasSwitch ? 'menu' : undefined}
+        aria-expanded={hasSwitch ? menuOpen : undefined}
         aria-label={
           clubName
             ? `${tile.alt} for ${clubName} (press ${tile.shortcutKey}${hasSwitch ? ', hold to switch clubs' : ''})`

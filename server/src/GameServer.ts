@@ -1172,20 +1172,25 @@ export class GameServer {
            */
           const isPastStart = startTime <= now;
           if (isPastStart && tournament.current_players < minPlayers) {
-            // SNG/Spin only ever start when FULL, so fill to max for those;
-            // MTTs only need the minimum to get underway.
-            const isSngOrSpinFill =
-              tournament.variant === 'sng' ||
-              tournament.variant === 'spin' ||
-              tournament.tournament_type === 'SNG' ||
-              tournament.tournament_type === 'SPIN';
-            const target =
-              isSngOrSpinFill && tournament.max_players > 0 ? tournament.max_players : minPlayers;
+            /**
+             * Dan 2026-08-19: fill to a FULL FIELD, every format.
+             *
+             * "ALLOW HORSES TO FILL ALL SEATS FOR SIT N GO'S AND MTT AND SPINS"
+             *
+             * SNG/Spin only ever start when full, so max_players was always the
+             * right target for them. MTTs used to be topped up to min_players
+             * only — enough to start, but a 50-seat event running 6-handed.
+             * They now aim for a full field too. topUpWithHorses can only seat
+             * horses that are genuinely free (not in another tournament, not
+             * sitting at an open table), so asking for max_players fills the
+             * event as far as the pool allows and never starves cash games.
+             */
+            const target = tournament.max_players > 0 ? tournament.max_players : minPlayers;
 
             const added = await this.tournamentRecurring.topUpWithHorses(tournament.id, target);
             if (added > 0) {
               console.log(
-                `[GameServer] Filled "${tournament.name}" with ${added} player(s) to reach ${target} — starting instead of cancelling`
+                `[GameServer] Filled "${tournament.name}" with ${added} player(s) toward ${target} seats — running it instead of cancelling`
               );
             }
             // Re-evaluate on the next discovery pass with the refreshed count.

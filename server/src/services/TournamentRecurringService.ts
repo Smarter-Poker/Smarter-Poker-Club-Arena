@@ -475,19 +475,29 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
 // SNG / SPIN CONFIGS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// TOURNEY-AUDIT 2026-07-24 (sweep 6): Dan's rule — SNGs and Spins hold ONE
-// seat open for a human by default (horses fill maxPlayers - 1; the game
-// starts when a human takes the last seat). Every Nth created game is a
-// FULL-HORSE VERIFICATION GAME that fills and runs immediately, keeping a
-// continuous live self-test of rake collection, payouts, blind levels and
-// completion flowing through production (asserted by the tournament invariant
-// sentinel + scripts/verify-tournaments.mjs).
-const FULL_HORSE_SIM_EVERY_N = 10;
-let sngSpinCreationCounter = 0;
+/**
+ * Dan 2026-08-19: HORSES FILL EVERY SEAT — SNG, Spin and MTT alike.
+ *
+ * "FOR NOW, TOURNAMENTS CAN ALWAYS BE SEATED BY ALL HORSES, RIGHT NOW WE HAVE
+ *  ZERO REAL USERS... SO ALLOW HORSES TO FILL ALL SEATS FOR SIT N GO'S AND MTT
+ *  AND SPINS"
+ *
+ * The previous rule held ONE seat open for a human on 9 of every 10 SNG/Spins
+ * (only every 10th was a full-horse verification game). With no real users
+ * that seat was never taken, so nine in ten games sat at maxPlayers-1 until a
+ * timer cancelled them. That single line produced 557 of the 562 cancellations
+ * measured over two days: 363 stuck at 2/3, 138 at 5/6, 56 at 8/9 — every one
+ * of them exactly one player short.
+ *
+ * Every game now seeds to a full field and runs immediately. When real players
+ * arrive, flip HOLD_SEAT_FOR_HUMAN back to true and the reserved seat returns
+ * with no other change — the fill-on-start path in GameServer keeps games
+ * running either way, so this is purely about how fast they fill.
+ */
+const HOLD_SEAT_FOR_HUMAN = false;
 function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boolean } {
-  sngSpinCreationCounter++;
-  const isSim = sngSpinCreationCounter % FULL_HORSE_SIM_EVERY_N === 0;
-  return { horses: isSim ? maxPlayers : Math.max(1, maxPlayers - 1), isSim };
+  if (!HOLD_SEAT_FOR_HUMAN) return { horses: maxPlayers, isSim: true };
+  return { horses: Math.max(1, maxPlayers - 1), isSim: false };
 }
 
 const SNG_CONFIGS: SNGConfig[] = [
@@ -1009,7 +1019,15 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      const registered = await this.registerHorses(tournament.id, config.horsesToRegister);
+      // Dan 2026-08-19: MTTs seed a FULL field too, not just horsesToRegister.
+      // registerHorses only ever returns horses that are genuinely free (not in
+      // another tournament and not sitting at an open table), so asking for
+      // maxPlayers fills the event as far as the pool allows and no further —
+      // it cannot starve cash games or other tournaments.
+      const horseTarget = HOLD_SEAT_FOR_HUMAN
+        ? config.horsesToRegister
+        : Math.max(config.horsesToRegister, config.maxPlayers);
+      const registered = await this.registerHorses(tournament.id, horseTarget);
       // TOURNEY-AUDIT 2026-07-24 [money]: exclude the bounty portion from the
       // prize pool for bounty formats (same fix as the club-level MTT path).
       const xmttPerEntry = Math.max(0, config.buyIn - (bountyAmount || 0));
@@ -1178,7 +1196,15 @@ export class TournamentRecurringService {
         return { tournamentId: null, registered: 0 };
       }
 
-      const registered = await this.registerHorses(tournament.id, config.horsesToRegister);
+      // Dan 2026-08-19: MTTs seed a FULL field too, not just horsesToRegister.
+      // registerHorses only ever returns horses that are genuinely free (not in
+      // another tournament and not sitting at an open table), so asking for
+      // maxPlayers fills the event as far as the pool allows and no further —
+      // it cannot starve cash games or other tournaments.
+      const horseTarget = HOLD_SEAT_FOR_HUMAN
+        ? config.horsesToRegister
+        : Math.max(config.horsesToRegister, config.maxPlayers);
+      const registered = await this.registerHorses(tournament.id, horseTarget);
       // TOURNEY-AUDIT 2026-07-24 [money]: for bounty formats the bounty
       // portion of each entry funds the bounty pool, NOT the prize pool —
       // the old math left the full buy-in in the pool AND paid bounties on
@@ -1439,6 +1465,27 @@ export class TournamentRecurringService {
         .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
         .limit(2000);
       const busyIds = new Set((busyRows ?? []).map((r: any) => r.user_id));
+
+      /**
+       * Dan 2026-08-19: ALSO exclude horses currently sitting at an open table.
+       *
+       * The tournament-busy check above was the only guard, and `horse_status`
+       * is never flipped when a horse takes a CASH seat — live proof: 574
+       * horses exist, 329 of them are seated at open tables, and all 574 still
+       * read horse_status='available'. Registering those would yank a horse out
+       * of a hand it is already playing. That was survivable while tournaments
+       * only seeded a dozen horses; now that they fill every seat it would
+       * strip live cash tables, so the seat check is mandatory.
+       */
+      const { data: seatedRows } = await supabase
+        .from('table_seats')
+        .select('user_id, tables!inner(status)')
+        .is('left_at', null)
+        .in('tables.status', ['waiting', 'running'])
+        .limit(5000);
+      for (const r of seatedRows ?? []) {
+        if ((r as any).user_id) busyIds.add((r as any).user_id);
+      }
 
       const { data: horsePool } = await supabase
         .from('profiles')

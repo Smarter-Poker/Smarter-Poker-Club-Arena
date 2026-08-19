@@ -11,7 +11,7 @@
  * - Auto-distribute when players bust
  */
 
-import { PAYOUT_STRUCTURES } from './TournamentService';
+import { PAYOUT_STRUCTURES } from '../config/blindStructures';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

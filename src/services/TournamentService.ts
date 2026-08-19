@@ -3,6 +3,9 @@
  * SNGs and MTTs with blind levels and payout structures
  */
 
+export type { BlindLevel } from '../config/blindStructures';
+export { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE, PAYOUT_STRUCTURES } from '../config/blindStructures';
+import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE, type BlindLevel } from '../config/blindStructures';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
@@ -41,14 +44,7 @@ function unregisterReasonText(reason: string | undefined): string {
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface BlindLevel {
-  level: number;
-  smallBlind: number;
-  bigBlind: number;
-  ante: number;
-  durationMinutes: number;
-  isBreak?: boolean;
-}
+
 
 export interface PayoutStructure {
   place: number;
@@ -100,6 +96,28 @@ export interface SpinMultiplier {
   probability: number; // Percentage chance
   isPremium?: boolean; // Special handling for huge multipliers
 }
+
+/**
+ * fn_create_tournament returns a machine-readable reason; turn it into
+ * something a club owner can act on. Anything unmapped falls back to a generic
+ * message rather than leaking the raw code.
+ */
+const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
+  not_authenticated: 'You need to be signed in to create a tournament.',
+  not_authorised:
+    'Only the owner or an admin can create tournaments here. A club inside a union does not create its own — the union creates them.',
+  buy_in_must_not_be_negative: 'Buy-in cannot be negative.',
+  max_players_must_be_positive:
+    'Set a maximum number of players. Zero means nobody can register.',
+  blind_structure_required: 'Choose a blind structure.',
+  payout_structure_required: 'Choose a payout structure.',
+  payouts_must_total_100: 'Payout percentages have to add up to 100%.',
+  more_paid_places_than_players:
+    'There are more paid places than players allowed to enter. Raise the field size or pay fewer places.',
+  bounty_amount_required: 'A bounty tournament needs a bounty amount.',
+  bounty_exceeds_buy_in:
+    'The bounty plus the 10% fee is more than the buy-in, so there would be nothing left for the prize pool.',
+};
 
 export interface TournamentConfig {
   name: string;
@@ -157,203 +175,9 @@ export interface TournamentConfig {
 // STANDARD STRUCTURES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const BLIND_STRUCTURES = {
-  turbo: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 3 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 3 },
-    { level: 3, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 3 },
-    { level: 4, smallBlind: 50, bigBlind: 100, ante: 5, durationMinutes: 3 },
-    { level: 5, smallBlind: 75, bigBlind: 150, ante: 10, durationMinutes: 3 },
-    { level: 6, smallBlind: 100, bigBlind: 200, ante: 15, durationMinutes: 3 },
-    { level: 7, smallBlind: 150, bigBlind: 300, ante: 25, durationMinutes: 3 },
-    { level: 8, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 9, smallBlind: 200, bigBlind: 400, ante: 30, durationMinutes: 3 },
-    { level: 10, smallBlind: 300, bigBlind: 600, ante: 50, durationMinutes: 3 },
-    { level: 11, smallBlind: 400, bigBlind: 800, ante: 75, durationMinutes: 3 },
-    { level: 12, smallBlind: 500, bigBlind: 1000, ante: 100, durationMinutes: 3 },
-    { level: 13, smallBlind: 600, bigBlind: 1200, ante: 150, durationMinutes: 3 },
-    { level: 14, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 15, smallBlind: 800, bigBlind: 1600, ante: 200, durationMinutes: 3 },
-    { level: 16, smallBlind: 1000, bigBlind: 2000, ante: 250, durationMinutes: 3 },
-    { level: 17, smallBlind: 1200, bigBlind: 2400, ante: 300, durationMinutes: 3 },
-    { level: 18, smallBlind: 1500, bigBlind: 3000, ante: 400, durationMinutes: 3 },
-    { level: 19, smallBlind: 2000, bigBlind: 4000, ante: 500, durationMinutes: 3 },
-    { level: 20, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 21, smallBlind: 2500, bigBlind: 5000, ante: 600, durationMinutes: 3 },
-    { level: 22, smallBlind: 3000, bigBlind: 6000, ante: 750, durationMinutes: 3 },
-    { level: 23, smallBlind: 4000, bigBlind: 8000, ante: 1000, durationMinutes: 3 },
-    { level: 24, smallBlind: 5000, bigBlind: 10000, ante: 1200, durationMinutes: 3 },
-    { level: 25, smallBlind: 6000, bigBlind: 12000, ante: 1500, durationMinutes: 3 },
-    { level: 26, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 27, smallBlind: 8000, bigBlind: 16000, ante: 2000, durationMinutes: 3 },
-    { level: 28, smallBlind: 10000, bigBlind: 20000, ante: 2500, durationMinutes: 3 },
-    { level: 29, smallBlind: 12000, bigBlind: 24000, ante: 3000, durationMinutes: 3 },
-    { level: 30, smallBlind: 15000, bigBlind: 30000, ante: 3500, durationMinutes: 3 },
-  ],
-  regular: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 8 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 8 },
-    { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 8 },
-    { level: 4, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 8 },
-    { level: 5, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 8 },
-    { level: 6, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 8 },
-    { level: 7, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 8 },
-    { level: 8, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 9, smallBlind: 150, bigBlind: 300, ante: 40, durationMinutes: 8 },
-    { level: 10, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 8 },
-    { level: 11, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 8 },
-    { level: 12, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 8 },
-    { level: 13, smallBlind: 500, bigBlind: 1000, ante: 150, durationMinutes: 8 },
-    { level: 14, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 15, smallBlind: 600, bigBlind: 1200, ante: 200, durationMinutes: 8 },
-    { level: 16, smallBlind: 800, bigBlind: 1600, ante: 250, durationMinutes: 8 },
-    { level: 17, smallBlind: 1000, bigBlind: 2000, ante: 300, durationMinutes: 8 },
-    { level: 18, smallBlind: 1200, bigBlind: 2400, ante: 400, durationMinutes: 8 },
-    { level: 19, smallBlind: 1500, bigBlind: 3000, ante: 500, durationMinutes: 8 },
-    { level: 20, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 21, smallBlind: 2000, bigBlind: 4000, ante: 600, durationMinutes: 8 },
-    { level: 22, smallBlind: 2500, bigBlind: 5000, ante: 750, durationMinutes: 8 },
-    { level: 23, smallBlind: 3000, bigBlind: 6000, ante: 1000, durationMinutes: 8 },
-    { level: 24, smallBlind: 4000, bigBlind: 8000, ante: 1200, durationMinutes: 8 },
-    { level: 25, smallBlind: 5000, bigBlind: 10000, ante: 1500, durationMinutes: 8 },
-    { level: 26, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 27, smallBlind: 6000, bigBlind: 12000, ante: 2000, durationMinutes: 8 },
-    { level: 28, smallBlind: 8000, bigBlind: 16000, ante: 2500, durationMinutes: 8 },
-    { level: 29, smallBlind: 10000, bigBlind: 20000, ante: 3000, durationMinutes: 8 },
-    { level: 30, smallBlind: 12000, bigBlind: 24000, ante: 3500, durationMinutes: 8 },
-  ],
-  deepStack: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 15 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 15 },
-    { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 15 },
-    { level: 4, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 15 },
-    { level: 5, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 15 },
-    { level: 6, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 7, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 15 },
-    { level: 8, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 15 },
-    { level: 9, smallBlind: 150, bigBlind: 300, ante: 40, durationMinutes: 15 },
-    { level: 10, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 11, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 15 },
-    { level: 12, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 15 },
-    { level: 13, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 15 },
-    { level: 14, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 15, smallBlind: 500, bigBlind: 1000, ante: 150, durationMinutes: 15 },
-    { level: 16, smallBlind: 600, bigBlind: 1200, ante: 200, durationMinutes: 15 },
-    { level: 17, smallBlind: 800, bigBlind: 1600, ante: 250, durationMinutes: 15 },
-    { level: 18, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 19, smallBlind: 1000, bigBlind: 2000, ante: 300, durationMinutes: 15 },
-    { level: 20, smallBlind: 1200, bigBlind: 2400, ante: 400, durationMinutes: 15 },
-    { level: 21, smallBlind: 1500, bigBlind: 3000, ante: 500, durationMinutes: 15 },
-    { level: 22, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 23, smallBlind: 2000, bigBlind: 4000, ante: 600, durationMinutes: 15 },
-    { level: 24, smallBlind: 2500, bigBlind: 5000, ante: 750, durationMinutes: 15 },
-    { level: 25, smallBlind: 3000, bigBlind: 6000, ante: 1000, durationMinutes: 15 },
-    { level: 26, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
-    { level: 27, smallBlind: 4000, bigBlind: 8000, ante: 1200, durationMinutes: 15 },
-    { level: 28, smallBlind: 5000, bigBlind: 10000, ante: 1500, durationMinutes: 15 },
-    { level: 29, smallBlind: 6000, bigBlind: 12000, ante: 2000, durationMinutes: 15 },
-    { level: 30, smallBlind: 8000, bigBlind: 16000, ante: 2500, durationMinutes: 15 },
-  ],
-  sng: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 6 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 6 },
-    { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 6 },
-    { level: 4, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 6 },
-    { level: 5, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 6 },
-    { level: 6, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 6 },
-    { level: 7, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 6 },
-    { level: 8, smallBlind: 150, bigBlind: 300, ante: 40, durationMinutes: 6 },
-    { level: 9, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 6 },
-    { level: 10, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 6 },
-    { level: 11, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 6 },
-    { level: 12, smallBlind: 500, bigBlind: 1000, ante: 150, durationMinutes: 6 },
-    { level: 13, smallBlind: 600, bigBlind: 1200, ante: 200, durationMinutes: 6 },
-    { level: 14, smallBlind: 800, bigBlind: 1600, ante: 250, durationMinutes: 6 },
-    { level: 15, smallBlind: 1000, bigBlind: 2000, ante: 300, durationMinutes: 6 },
-  ],
-};
 
-export const PAYOUT_STRUCTURES = {
-  sng6: [
-    { place: 1, percentage: 65 },
-    { place: 2, percentage: 35 },
-  ],
-  sng9: [
-    { place: 1, percentage: 50 },
-    { place: 2, percentage: 30 },
-    { place: 3, percentage: 20 },
-  ],
-  mtt10: [
-    { place: 1, percentage: 50 },
-    { place: 2, percentage: 30 },
-    { place: 3, percentage: 20 },
-  ],
-  mtt20: [
-    { place: 1, percentage: 38 },
-    { place: 2, percentage: 27 },
-    { place: 3, percentage: 18 },
-    { place: 4, percentage: 10 },
-    { place: 5, percentage: 7 },
-  ],
-  mtt50: [
-    { place: 1, percentage: 28 },
-    { place: 2, percentage: 18 },
-    { place: 3, percentage: 13 },
-    { place: 4, percentage: 10 },
-    { place: 5, percentage: 8 },
-    { place: 6, percentage: 6 },
-    { place: 7, percentage: 5 },
-    { place: 8, percentage: 4.5 },
-    { place: 9, percentage: 4 },
-    { place: 10, percentage: 3.5 },
-  ],
-  mtt100: [
-    { place: 1, percentage: 25 },
-    { place: 2, percentage: 16 },
-    { place: 3, percentage: 11 },
-    { place: 4, percentage: 8 },
-    { place: 5, percentage: 6.5 },
-    { place: 6, percentage: 5.5 },
-    { place: 7, percentage: 4.5 },
-    { place: 8, percentage: 4 },
-    { place: 9, percentage: 3.5 },
-    { place: 10, percentage: 3 },
-    { place: 11, percentage: 3 },
-    { place: 12, percentage: 2.5 },
-    { place: 13, percentage: 2.5 },
-    { place: 14, percentage: 2.5 },
-    { place: 15, percentage: 2.5 },
-  ],
-  mtt200: [
-    { place: 1, percentage: 23.8 },
-    { place: 2, percentage: 13.5 },
-    { place: 3, percentage: 9 },
-    { place: 4, percentage: 6.8 },
-    { place: 5, percentage: 5.5 },
-    { place: 6, percentage: 4.5 },
-    { place: 7, percentage: 3.5 },
-    { place: 8, percentage: 3 },
-    { place: 9, percentage: 2.5 },
-    { place: 10, percentage: 2.2 },
-    { place: 11, percentage: 2.2 },
-    { place: 12, percentage: 2.2 },
-    { place: 13, percentage: 1.9 },
-    { place: 14, percentage: 1.9 },
-    { place: 15, percentage: 1.9 },
-    { place: 16, percentage: 1.6 },
-    { place: 17, percentage: 1.6 },
-    { place: 18, percentage: 1.6 },
-    { place: 19, percentage: 1.4 },
-    { place: 20, percentage: 1.4 },
-    { place: 21, percentage: 1.4 },
-    { place: 22, percentage: 1.2 },
-    { place: 23, percentage: 1.2 },
-    { place: 24, percentage: 1.2 },
-    { place: 25, percentage: 1 },
-    { place: 26, percentage: 1 },
-    { place: 27, percentage: 1 },
-  ],
-};
+
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SPIN CONFIGURATIONS
@@ -490,23 +314,7 @@ export const BOUNTY_PRESETS: Record<string, BountyConfig> = {
 // HYPER-TURBO STRUCTURE (for Spins)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const SPIN_BLIND_STRUCTURE: BlindLevel[] = [
-  { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 2 },
-  { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 2 },
-  { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 2 },
-  { level: 4, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 2 },
-  { level: 5, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 2 },
-  { level: 6, smallBlind: 75, bigBlind: 150, ante: 0, durationMinutes: 2 },
-  { level: 7, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 2 },
-  { level: 8, smallBlind: 150, bigBlind: 300, ante: 0, durationMinutes: 2 },
-  { level: 9, smallBlind: 200, bigBlind: 400, ante: 0, durationMinutes: 2 },
-  { level: 10, smallBlind: 300, bigBlind: 600, ante: 0, durationMinutes: 2 },
-  { level: 11, smallBlind: 400, bigBlind: 800, ante: 0, durationMinutes: 2 },
-  { level: 12, smallBlind: 600, bigBlind: 1200, ante: 0, durationMinutes: 2 },
-  { level: 13, smallBlind: 800, bigBlind: 1600, ante: 0, durationMinutes: 2 },
-  { level: 14, smallBlind: 1200, bigBlind: 2400, ante: 0, durationMinutes: 2 },
-  { level: 15, smallBlind: 1600, bigBlind: 3200, ante: 0, durationMinutes: 2 },
-];
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -753,75 +561,68 @@ class TournamentService {
 
     // FIX: Use resolvedClubId from union guard above — raw clubId may not be a UUID
     const finalClubId = config.isXmtt ? clubId : await resolveClubUUID(clubId);
-    const { data, error } = await supabase
-      .from('tournaments')
-      .insert({
-        club_id: finalClubId,
+    // 2026-08-19 — this used to be a direct INSERT into `tournaments`, which
+    // could never have worked from a browser: the table has RLS on with only a
+    // public SELECT policy and a service_role ALL policy, and no INSERT policy
+    // for authenticated. Every attempt failed with 42501, which is why all
+    // 9,481 existing tournaments were created server-side by the recurring
+    // service and why this modal appeared to do nothing.
+    //
+    // It now goes through fn_create_tournament, a SECURITY DEFINER function
+    // that owns the three things a client must not be trusted with:
+    //
+    //   WHO   — fn_can_create_games enforces the owner ruling: a standalone
+    //           club's owner/admin, or the union's owner/admin for a club that
+    //           belongs to a union (that club does not build its own games).
+    //   FEE   — the 10% house fee. The override below is still applied so the
+    //           UI shows the right number, but the server recomputes it and
+    //           ignores whatever arrives.
+    //   STATE — status, current_players and the prize/bounty pools.
+    //
+    // The checks above are kept because they produce better messages than the
+    // single deliberately-vague 'not_authorised' the function returns (it must
+    // not let a caller probe which clubs exist or who administers them).
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('fn_create_tournament', {
+      p_club_id: await resolveClubUUID(clubId),
+      p_config: {
         name: config.name,
-        game_type: config.gameVariant || 'NLH',
-        variant: variantMap[config.type] || 'freezeout',
-        tournament_type: config.type === 'sng' ? 'SNG' : config.type === 'spin' ? 'SPIN' : 'MTT',
-        buy_in_amount: config.buyIn,
-        // RAKE-AUDIT 2026-07-24: HOUSE RULE ENFORCED — the fee is 10% of the
-        // buy-in on ANY AND ALL tournaments and SNGs. The fee was previously
-        // whatever free-form value the creator typed (including 0), so the 10%
-        // rule was only a coincidence of defaults. Any configured value is
-        // overridden with exactly 10%, rounded to the cent.
-        buy_in_fee: Math.round((config.buyIn || 0) * 0.1 * 100) / 100,
-        starting_chips: config.startingStack,
-        max_players: config.maxPlayers,
-        min_players: config.minPlayers || 3,
-        current_players: 0,
-        status: 'REGISTERING',
-        blind_structure: config.blindStructure,
-        payout_structure: config.payoutStructure,
-        guaranteed_prize: config.guaranteedPrize || 0,
-        // Late reg + rebuy cutoff (level-based, per-tournament)
-        late_reg_levels: config.lateRegistrationLevels || 0,
-        late_reg_mins: config.lateRegistrationLevels || 0, // Legacy fallback
-        // TOURNEY-AUDIT 2026-07-24 (sweep 6): satellite target finally wired —
-        // the engine awards seats in this tournament at satellite finish.
-        satellite_target_id:
-          config.type === 'satellite' && config.satelliteTarget?.tournamentId
-            ? config.satelliteTarget.tournamentId
-            : null,
-        start_time: config.startTime?.toISOString() || new Date(Date.now() + 60000).toISOString(),
-        // Rebuy / Re-Entry / Add-on
-        is_rebuy: config.isRebuy || false,
-        is_reentry: config.isReentry || false,
-        rebuy_cost: config.rebuyCost || 0,
-        rebuy_chips: config.rebuyChips || 0,
-        rebuy_levels: config.lateRegistrationLevels || 0, // Always matches late reg
-        add_on_available: config.addOnAvailable || false,
-        addon_cost: config.addOnCost || 0,
-        addon_chips: config.addOnChips || 0,
-        addon_levels: config.addOnLevels || 1,
-        // Bounty
-        is_bounty: isBountyType,
-        bounty_amount: config.bountyConfig?.baseBounty || 0,
-        is_pko: config.type === 'progressive_bounty',
-        is_mystery_bounty: config.type === 'mystery_bounty',
-        mystery_bounty_min: config.bountyConfig?.mysteryTiers?.[0]?.minMultiplier ?? 1,
-        mystery_bounty_max:
-          config.bountyConfig?.mysteryTiers && config.bountyConfig.mysteryTiers.length > 0
-            ? config.bountyConfig.mysteryTiers[config.bountyConfig.mysteryTiers.length - 1]
-                .maxMultiplier
-            : 50,
-        // Multi-Day
-        is_multi_day: config.isMultiDay || false,
-        total_days: config.totalDays || 1,
-        day_number: 1,
-        flight_number: 1,
-        // Spin type (standard vs hyper) — server reads this to pick multiplier table
-        spin_type: config.type === 'spin' ? config.spinType || 'standard' : null,
-        // XMTT (Union Tournament)
-        is_xmtt: config.isXmtt || false,
-        union_id: config.unionId || null,
-      })
-      .select()
-      .maybeSingle();
+        type: config.type,
+        gameVariant: config.gameVariant || 'NLH',
+        buyIn: config.buyIn,
+        startingStack: config.startingStack,
+        maxPlayers: config.maxPlayers,
+        minPlayers: config.minPlayers,
+        blindStructure: config.blindStructure,
+        payoutStructure: config.payoutStructure,
+        guaranteedPrize: config.guaranteedPrize || 0,
+        lateRegistrationLevels: config.lateRegistrationLevels || 0,
+        startTime: config.startTime?.toISOString() ?? null,
+        isRebuy: config.isRebuy || false,
+        isReentry: config.isReentry || false,
+        rebuyCost: config.rebuyCost || 0,
+        rebuyChips: config.rebuyChips || 0,
+        addOnAvailable: config.addOnAvailable || false,
+        addOnCost: config.addOnCost || 0,
+        addOnChips: config.addOnChips || 0,
+        addOnLevels: config.addOnLevels || 1,
+        bountyAmount: config.bountyConfig?.baseBounty || 0,
+        spinType: config.type === 'spin' ? config.spinType || 'standard' : null,
+        satelliteTargetId: config.satelliteTarget?.tournamentId || null,
+        isXmtt: config.isXmtt || false,
+      },
+    });
 
-    if (error) throw error;
+    if (rpcError) throw rpcError;
+    const result = rpcResult as { success?: boolean; error?: string; tournament_id?: string } | null;
+    if (!result?.success) {
+      throw new Error(TOURNAMENT_CREATE_ERRORS[result?.error ?? ''] ?? 'Could not create tournament');
+    }
+
+    const { data } = await supabase
+      .from('tournaments')
+      .select('*')
+      .eq('id', result.tournament_id!)
+      .maybeSingle();
     return data;
   }
 

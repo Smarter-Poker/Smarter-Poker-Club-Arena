@@ -28,6 +28,7 @@ import {
   WATCHED_COLUMNS,
   type ClubDeletionImpact,
   blockingDeletionReason,
+  clubAssetPathFromPublicUrl,
   clampBuyin,
   privateClubNeedsApproval,
   sanitizationWouldAlter,
@@ -210,6 +211,43 @@ export default function ClubSettingsPage() {
   // Silent: tabbing away and back must not replace the form with a skeleton,
   // and must not throw away edits the owner has not saved yet.
   useVisibilityRefresh(() => loadClubSettings(undefined, { silent: true }));
+
+  // In-app navigation loses edits silently. beforeunload only covers a reload
+  // or a tab close; clicking the bottom nav is a React Router <Link>, which
+  // never fires it. This app mounts <BrowserRouter>, not a data router, so
+  // useBlocker() is unavailable — intercept the anchor click instead, in the
+  // capture phase, and only while there is something to lose.
+  useEffect(() => {
+    if (!hasUnsavedChanges || !isOwner) return;
+    const onClickCapture = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+        return;
+      }
+      const anchor = (e.target as HTMLElement | null)?.closest?.('a[href]') as
+        | HTMLAnchorElement
+        | null;
+      if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+      const href = anchor.getAttribute('href') || '';
+      if (!href || href.startsWith('#')) return; // in-page anchor, not a navigation
+      let dest: URL;
+      try {
+        dest = new URL(anchor.href, window.location.href);
+      } catch {
+        return; // unparseable (mailto:, tel:, javascript:) — not our business
+      }
+      // Leaving the origin is already covered by the beforeunload handler.
+      if (dest.origin !== window.location.origin) return;
+      if (dest.pathname === window.location.pathname) return; // same page
+      if (
+        !window.confirm('You have unsaved settings changes. Leave this page and discard them?')
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    document.addEventListener('click', onClickCapture, true);
+    return () => document.removeEventListener('click', onClickCapture, true);
+  }, [hasUnsavedChanges, isOwner]);
 
   // Warn before a reload/close with unsaved edits. The page already tracks
   // exactly which fields changed; it just never used that to stop the browser
@@ -526,7 +564,18 @@ export default function ClubSettingsPage() {
         details: { changedFields: changedFieldsDisplay },
         userId: user?.id,
       });
-      if (newLogoUrl) setCurrentLogoUrl(newLogoUrl);
+      if (newLogoUrl) {
+        // The logo it replaced would otherwise sit in the bucket forever.
+        // Best-effort: a failed cleanup must never fail a successful save.
+        const stale = clubAssetPathFromPublicUrl(currentLogoUrl);
+        if (stale) {
+          await supabase.storage
+            .from('club-assets')
+            .remove([stale])
+            .catch(() => undefined);
+        }
+        setCurrentLogoUrl(newLogoUrl);
+      }
       setPendingLogo((prev) => {
         if (prev) URL.revokeObjectURL(prev.preview);
         return null;
@@ -593,6 +642,13 @@ export default function ClubSettingsPage() {
       if (error) throw error;
       if (!updated || updated.length === 0) {
         throw new Error('Logo was not removed — you may no longer own this club.');
+      }
+      const stale = clubAssetPathFromPublicUrl(currentLogoUrl);
+      if (stale) {
+        await supabase.storage
+          .from('club-assets')
+          .remove([stale])
+          .catch(() => undefined);
       }
       setCurrentLogoUrl(null);
       toast.success('Logo removed');

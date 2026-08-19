@@ -291,3 +291,37 @@ test-infrastructure flake under parallel load, not a product defect, but it
 will randomly redden CI and is worth pinning separately.
 
 Suite (clean run): 166 files / 2058 tests. eslint: 0 errors.
+
+## Pass 8 — the deferred list, closed out
+
+1. **In-app navigation silently discarded edits.** `beforeunload` only covers a
+   reload or tab close; the bottom nav is a React Router `<Link>`, which never
+   fires it, so tapping Players/Cashier/Data threw away unsaved settings with
+   no prompt. This app mounts `<BrowserRouter>`, not a data router, so
+   `useBlocker()` is unavailable — the guard is a capture-phase click listener
+   that only exists while the form is dirty, ignores modified clicks, new-tab
+   and download links, in-page anchors, cross-origin and same-path targets,
+   and confirms before letting the navigation through.
+2. **Replaced logos were orphaned in storage forever.** Both the replace path
+   and the new Remove action now delete the superseded object, via
+   `clubAssetPathFromPublicUrl()` — which refuses to touch anything that is
+   not ours (data: URLs from the old create-club fallback, external images)
+   and rejects traversal outside the `club-logos/` prefix. Cleanup failure can
+   never fail an otherwise successful save.
+3. **The audit log stopped dead at 200 rows** with no way to reach anything
+   older. 200 is now a page size with a Load more control.
+4. **`clubs.name` had no database-level guard** against the empty string —
+   only the client validation added in pass 5, and the client is not an
+   authority (an owner-scoped token can PATCH the row directly through
+   PostgREST). Migration `20260819d_clubs_name_not_blank.sql`, applied to
+   production: 0 of 789 rows violated it, and a blank UPDATE is now rejected
+   (verified in a rolled-back transaction). Length is deliberately NOT
+   constrained — the UI caps at 50 but other creation paths are unaudited.
+
+`gps_restricted` remains deliberately unwired: the column exists and is even
+whitelisted in `updateClub`, but nothing anywhere reads it. Adding a toggle
+would recreate the lying-control class the Time Bank removal fixed; enforcement
+has to be built first. Left as the one open item, on purpose.
+
+Suite: 168 files / 2100 tests, of which 1 file (ChipPurchaseModal, 5 tests) was
+already failing on the base commit before these changes — verified by stashing.

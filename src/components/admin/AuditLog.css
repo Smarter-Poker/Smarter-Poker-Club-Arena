@@ -185,3 +185,24 @@
   font-size: 0.72rem;
   color: var(--text-secondary, #6a7a8a);
 }
+
+/* Load-more control under the entry list. */
+.audit-log__more {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text-secondary, #8fa3b5);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.audit-log__more:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+.audit-log__more:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

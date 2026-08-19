@@ -1332,6 +1332,7 @@
     "fn_refresh_player_stats",
     "fn_refresh_trending_home_groups",
     "fn_register_for_tournament",
+    "fn_register_horse_for_tournament",
     "fn_reject_cashout",
     "fn_release_cron_lock",
     "fn_release_tournament_holds",

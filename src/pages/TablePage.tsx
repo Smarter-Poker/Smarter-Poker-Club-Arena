@@ -14,7 +14,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
-import { TABLE_SKINS, TABLE_BACKGROUNDS } from '../assets/tableAssets';
 import { publishSessionSummary } from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -48,20 +47,7 @@ import type { BoardStage } from '../components/table/CommunityCards';
  * table_id values working.
  */
 
-/** Resolve a stored table/theme id to a skin asset; default stays green. */
-function resolveSkin(tid: string): string {
-  return TABLE_SKINS[tid] || TABLE_SKINS.classic_green;
-}
 
-// Dan 2026-08-18 — INTERCHANGEABLE DESIGNED BACKGROUNDS.
-// The blurred-skin backdrop is gone ("remove the weird images around the
-// table"). The page behind the table is now one of ten standalone designed
-// backgrounds, selected on the Theme modal's Background tab and stored in
-// user_theme_settings.background_id. Legacy ids alias to the closest design.
-
-function resolveBackground(bid: string): string {
-  return TABLE_BACKGROUNDS[bid] || TABLE_BACKGROUNDS.midnight;
-}
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -190,8 +176,6 @@ import { getRakeConfig } from '../config/RakeConfig';
 // Dan 2026-08-15: two distinct HandRecord shapes exist — the snake_case
 // Supabase row from the service, and the camelCase view-model the panel
 // renders. Alias both so adaptServiceHandToPanel below reads unambiguously.
-import type { HandRecord as ServiceHandRecord } from '../services/HandHistoryService';
-import type { HandRecord as PanelHandRecord } from '../components/table/HandHistoryPanel';
 import { LeaderboardService } from '../services/LeaderboardService';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
 import { notificationService } from '../services/NotificationService';
@@ -362,89 +346,6 @@ interface TableState {
 // is the ONLY slot the rotation ever assigns to hero, so nudging it down here
 // moves hero alone and leaves all six villain positions untouched. 91 -> 95.5
 // also buys the 1.33x hero avatar the vertical room it needs.
-/**
- * Dan 2026-08-15 — HandRecord adapter (build fix).
- *
- * There are two unrelated `HandRecord` types: the snake_case row shape
- * returned by HandHistoryService (the Supabase `hand_history` projection) and
- * the camelCase view-model HandHistoryPanel renders. Commit ee1a310f5 wired
- * the panel to the service and passed one straight into the other, which does
- * not typecheck — main was red. This maps between them explicitly.
- *
- * Two fields genuinely have no source in the row and are marked rather than
- * faked: per-street pot totals (only the final pot is stored) and per-player
- * stack at time of hand. Everything the panel actually displays — players,
- * positions, hole cards, actions by street, winners, hero result — is real.
- */
-function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): PanelHandRecord {
-  const cardStr = (c: { rank: string; suit: string }) =>
-    `${c.rank}${(c.suit || '').charAt(0).toLowerCase()}`;
-
-  const board = (h.community_cards || []).map(cardStr);
-  // Board is dealt 3/1/1; slice it back into the streets that revealed it.
-  const streetCards: Record<string, string[] | undefined> = {
-    preflop: undefined,
-    flop: board.slice(0, 3),
-    turn: board.slice(3, 4),
-    river: board.slice(4, 5),
-  };
-
-  const nameFor = (uid: string) =>
-    (h.players || []).find((p) => p.user_id === uid)?.username || 'Player';
-
-  const streets = (['preflop', 'flop', 'turn', 'river'] as const)
-    .map((name) => ({
-      name,
-      cards: streetCards[name]?.length ? streetCards[name] : undefined,
-      actions: (h.actions || [])
-        .filter((a) => a.street === name)
-        .map((a) => ({
-          playerId: a.player_id,
-          playerName: nameFor(a.player_id),
-          // Service says 'all-in'; the panel's union says 'allin'.
-          action: (a.action === 'all-in' ? 'allin' : a.action) as
-            | 'fold'
-            | 'check'
-            | 'call'
-            | 'bet'
-            | 'raise'
-            | 'allin',
-          amount: a.amount,
-        })),
-      pot: 0, // not stored per street — only the final pot is persisted
-    }))
-    .filter((s) => s.actions.length > 0 || s.cards);
-
-  const potTotal = (h.main_pot || 0) + (h.side_pots || []).reduce((a, b) => a + (b || 0), 0);
-
-  return {
-    id: h.id,
-    handNumber: h.hand_number,
-    timestamp: Date.parse(h.played_at) || Date.now(),
-    gameType: h.game_type,
-    blinds: h.stakes,
-    players: (h.players || []).map((p) => ({
-      id: p.user_id,
-      name: p.username,
-      seat: p.seat,
-      stack: 0, // not stored per hand in hand_history
-      position: p.position,
-      holeCards: p.hole_cards?.length ? p.hole_cards.map(cardStr) : undefined,
-    })),
-    streets,
-    winners: (h.players || [])
-      .filter((p) => p.is_winner)
-      .map((p) => ({
-        playerId: p.user_id,
-        playerName: p.username,
-        amount: p.result,
-        hand: p.final_hand,
-      })),
-    heroId,
-    heroResult: (h.players || []).find((p) => p.user_id === heroId)?.result ?? 0,
-    potTotal,
-  };
-}
 
 
 
@@ -461,6 +362,8 @@ import {
   getGameVariantLabel,
 } from '../lib/tableCardDisplay';
 import { seatLayoutFor, createEmptySeats } from '../lib/tableSeatGeometry';
+import { resolveSkin, resolveBackground } from '../lib/tableTheme';
+import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
 
 
 // ═══════════════════════════════════════════════════════════════════════════════

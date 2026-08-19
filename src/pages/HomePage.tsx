@@ -1489,29 +1489,6 @@ function HomePageInner() {
           </div>
         )}
 
-        {/* Stale cache indicator — shows how fresh the data is */}
-        {lastFetchTs &&
-          !isLoading &&
-          hasFetchedOnceRef.current &&
-          (() => {
-            const ageMin = Math.floor((Date.now() - lastFetchTs) / 60000);
-            if (ageMin < 1) return null;
-            return (
-              <div
-                className={styles.staleCacheBadge}
-                onClick={() => {
-                  haptic.light();
-                  fetchUserData(true, () => isMountedRef.current);
-                }}
-                role="button"
-                aria-label={`Data updated ${ageMin} minutes ago. Tap to refresh.`}
-              >
-                <span className={styles.staleCacheDot} />
-                Updated {ageMin}m ago · Tap to refresh
-              </div>
-            );
-          })()}
-
         {/* Welcome message for new users is handled as a toast popup (auto-dismiss) */}
 
         {/* ═══════════════════════════════════════════════════════════════════════

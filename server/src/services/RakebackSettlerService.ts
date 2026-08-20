@@ -481,6 +481,16 @@ export class RakebackSettlerService {
       // reportError only — never mutates state. Monday's PHASE 8 still
       // notifies the union owner/admins for critical breaks.
       await this.runUnionGovernanceSentinel();
+      // 2026-08-20: keep the union rake rollup warm OUTSIDE the money
+      // transaction. The rollup is filled lazily by its first caller, and on
+      // Monday that caller is fn_union_settle_player_pnl while it holds
+      // FOR UPDATE locks on union_wallets and clubs.chip_treasury — the same
+      // rows live horse funding writes to. Measured 2026-08-20: 4 unrolled
+      // days would have added ~12s of scan inside that lock window. This
+      // also RE-ROLLS days whose inputs changed retroactively (the union
+      // migration keeps setting tables.union_id on existing tables, which
+      // pulls historical rake_records into scope after a day was finalized).
+      await this.runUnionRakeRollupCatchup();
     } finally {
       this.isSettling = false;
     }
@@ -707,6 +717,58 @@ export class RakebackSettlerService {
       reportError(
         new Error((e as { message?: string })?.message || String(e)),
         'RakebackSettler.treasury_selftest_threw'
+      );
+    }
+  }
+
+  /**
+   * Union rake rollup catch-up (2026-08-20).
+   *
+   * fn_union_rake_rollup_catchup_all() finalizes up to 3 missing-or-stale
+   * whole UTC days per union per cycle, each in its own transaction under an
+   * advisory lock. Bounded by construction (~3s per day) and safe to run
+   * concurrently with play. Correctness never depends on it: a stale day is
+   * detected by record-count mismatch and recomputed live at read time. This
+   * is purely to keep that work OUT of the Monday settlement transaction.
+   */
+  private async runUnionRakeRollupCatchup(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_union_rake_rollup_catchup_all', {
+        p_max_days: 3,
+      });
+      if (error) {
+        reportError(
+          new Error(`fn_union_rake_rollup_catchup_all failed: ${error.message}`),
+          'RakebackSettler.rake_rollup_catchup_rpc'
+        );
+        return;
+      }
+      const unions = ((data as { unions?: unknown[] } | null)?.unions ?? []) as Array<{
+        union_id: string;
+        rolled: string[];
+        failed: string[];
+        stale_remaining: number;
+      }>;
+      for (const u of unions) {
+        if ((u.failed?.length ?? 0) > 0) {
+          reportError(
+            new Error(
+              `union rake rollup failed for ${u.union_id}: ${JSON.stringify(u.failed)}`
+            ),
+            'RakebackSettler.rake_rollup_catchup_failed'
+          );
+        }
+        if ((u.rolled?.length ?? 0) > 0) {
+          console.log(
+            `[RakebackSettler] Union rake rollup: ${u.union_id} rolled ` +
+              `${u.rolled.join(', ')} (stale remaining: ${u.stale_remaining})`
+          );
+        }
+      }
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'RakebackSettler.rake_rollup_catchup_threw'
       );
     }
   }

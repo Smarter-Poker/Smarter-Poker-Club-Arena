@@ -157,6 +157,11 @@ describe('GameServerAPI', () => {
           'showHand',
           'submitAction',
           'submitDiscard',
+          // 2026-08-20: dealer tips moved off a direct browser RPC and onto the
+          // engine, so this endpoint is new and intentional. The point of this
+          // allowlist is to keep the WebSocket helpers from creeping back in,
+          // not to freeze the HTTP surface.
+          'tipDealer',
           'toggleStraddle',
         ].sort()
       );

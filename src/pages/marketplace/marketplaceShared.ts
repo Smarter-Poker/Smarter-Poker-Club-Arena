@@ -56,6 +56,8 @@ export interface MarketplaceItem {
   purchase_count?: number;
   /** admin view only — real revenue from price_paid */
   revenue?: number;
+  /** the CALLER's own non-refunded purchases of this item (for per_user_limit) */
+  my_purchase_count?: number;
 }
 
 /** What the buyer will actually be charged (sale-aware). Server re-decides. */
@@ -77,15 +79,26 @@ export function unavailableReason(
     stock?: number | null;
     available_from?: string | null;
     available_until?: string | null;
+    per_user_limit?: number | null;
+    my_purchase_count?: number;
   },
   owned: boolean,
   stackable: boolean
-): 'sold_out' | 'not_yet' | 'ended' | 'owned' | null {
+): 'sold_out' | 'not_yet' | 'ended' | 'owned' | 'limit_reached' | null {
   const now = Date.now();
   if (item.available_from && now < new Date(item.available_from).getTime()) return 'not_yet';
   if (item.available_until && now >= new Date(item.available_until).getTime()) return 'ended';
   if (item.stock !== null && item.stock !== undefined && item.stock <= 0) return 'sold_out';
   if (owned && !stackable) return 'owned';
+  // Mirrors fn_shop_item_availability. Without this the button stayed enabled
+  // and the member only learned about the cap after confirming a purchase.
+  if (
+    item.per_user_limit !== null &&
+    item.per_user_limit !== undefined &&
+    (item.my_purchase_count ?? 0) >= item.per_user_limit
+  ) {
+    return 'limit_reached';
+  }
   return null;
 }
 
@@ -176,6 +189,29 @@ export function isOwnedRow(row: { status?: string | null }): boolean {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
+
+/**
+ * `<input type="datetime-local">` yields "2026-08-20T18:00" with NO timezone
+ * designator. Per spec that is LOCAL time — but the server parses it with
+ * `new Date()` under UTC, so sending it raw shifted every promo window by the
+ * admin's offset (UTC+10 setting 18:00 got 04:00 the next day).
+ * Returns null for blank so the caller can clear the field.
+ */
+export function localInputToIso(local: string | null | undefined): string | null {
+  const v = (local ?? '').trim();
+  if (!v) return null;
+  const d = new Date(v); // interpreted in the BROWSER's zone, which is what the admin meant
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Inverse: an ISO instant back into a datetime-local value in local time. */
+export function isoToLocalInput(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 /** Only https or same-origin paths may be used as an item image. */
 export function safeImageUrl(raw?: string | null): string | null {

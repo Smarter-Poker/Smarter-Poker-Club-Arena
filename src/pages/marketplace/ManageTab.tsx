@@ -17,9 +17,12 @@ import { confirmDialog } from '../../components/common/confirmDialog';
 import { fmtChips } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
 import ShopAnalytics from './ShopAnalytics';
+import PurchaseLedger from './PurchaseLedger';
 import {
   CATEGORIES,
   describeGrant,
+  localInputToIso,
+  isoToLocalInput,
   type MarketplaceItem,
   type ShopCategoryInfo,
 } from './marketplaceShared';
@@ -43,6 +46,15 @@ interface EditDraft {
   grantRef: string;
   /** '' = unlimited */
   stock: string;
+  /** '' = no sale */
+  salePrice: string;
+  /** '' = no cap */
+  perUserLimit: string;
+  /** '' = always available; local wall-clock, converted on send */
+  availableFrom: string;
+  availableUntil: string;
+  sortOrder: string;
+  stackable: boolean;
 }
 
 export default function ManageTab({
@@ -63,6 +75,8 @@ export default function ManageTab({
   const [salePrice, setSalePrice] = useState('');
   const [perUserLimit, setPerUserLimit] = useState('');
   const [availableUntil, setAvailableUntil] = useState('');
+  const [availableFrom, setAvailableFrom] = useState('');
+  const [sortOrder, setSortOrder] = useState('');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [desc, setDesc] = useState('');
@@ -162,7 +176,12 @@ export default function ManageTab({
         salePrice: salePrice.trim() === '' ? null : Math.max(0, Math.floor(Number(salePrice) || 0)),
         perUserLimit:
           perUserLimit.trim() === '' ? null : Math.max(1, Math.floor(Number(perUserLimit) || 1)),
-        availableUntil: availableUntil.trim() === '' ? null : availableUntil,
+        // datetime-local carries no offset, so it must be converted to a real
+        // instant here. Sending it raw made the server (UTC) read the admin's
+        // wall clock as UTC — an admin in UTC+10 setting 18:00 got 04:00 next day.
+        availableUntil: localInputToIso(availableUntil),
+        availableFrom: localInputToIso(availableFrom),
+        sortOrder: sortOrder.trim() === '' ? undefined : Math.floor(Number(sortOrder) || 0),
       });
       toast.success('Item created');
       setName('');
@@ -176,6 +195,8 @@ export default function ManageTab({
       setSalePrice('');
       setPerUserLimit('');
       setAvailableUntil('');
+      setAvailableFrom('');
+      setSortOrder('');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
@@ -198,6 +219,17 @@ export default function ManageTab({
       grantQty: String(item.grant_spec?.qty ?? 1),
       grantRef: item.grant_spec?.avatar_id || item.grant_spec?.theme_id || '',
       stock: item.stock === null || item.stock === undefined ? '' : String(item.stock),
+      salePrice:
+        item.sale_price === null || item.sale_price === undefined ? '' : String(item.sale_price),
+      perUserLimit:
+        item.per_user_limit === null || item.per_user_limit === undefined
+          ? ''
+          : String(item.per_user_limit),
+      availableFrom: isoToLocalInput(item.available_from),
+      availableUntil: isoToLocalInput(item.available_until),
+      sortOrder:
+        item.sort_order === null || item.sort_order === undefined ? '' : String(item.sort_order),
+      stackable: !!item.stackable,
     });
   };
 
@@ -205,6 +237,17 @@ export default function ManageTab({
     if (!draft) return;
     const numPrice = validate(draft.name, draft.price);
     if (numPrice == null) return;
+    // club_shop_items_sale_price_valid enforces sale_price <= price. Without
+    // this, lowering the price under an active sale surfaced as a bare 500.
+    if (draft.salePrice.trim() !== '') {
+      const sale = Math.floor(Number(draft.salePrice) || 0);
+      if (sale > numPrice) {
+        toast.error(
+          `Sale price cannot exceed the price (${numPrice}). Lower the sale price first.`
+        );
+        return;
+      }
+    }
     setProcessing(true);
     try {
       // The grant MUST travel with the category. Updating category alone left
@@ -228,6 +271,20 @@ export default function ManageTab({
         // Restocking was impossible: a limited drop that sold out (or lost a
         // unit to a failed purchase) could never be revived from the UI.
         stock: draft.stock.trim() === '' ? null : Math.max(0, Math.floor(Number(draft.stock) || 0)),
+        // Explicit null clears. Omitting these is what made promos write-once:
+        // a sale could be started and then never ended except by hiding the item.
+        salePrice:
+          draft.salePrice.trim() === ''
+            ? null
+            : Math.max(0, Math.floor(Number(draft.salePrice) || 0)),
+        perUserLimit:
+          draft.perUserLimit.trim() === ''
+            ? null
+            : Math.max(1, Math.floor(Number(draft.perUserLimit) || 1)),
+        availableFrom: localInputToIso(draft.availableFrom),
+        availableUntil: localInputToIso(draft.availableUntil),
+        sortOrder: draft.sortOrder.trim() === '' ? 0 : Math.floor(Number(draft.sortOrder) || 0),
+        stackable: draft.stackable,
       });
       toast.success('Item updated');
       setEditingId(null);
@@ -308,6 +365,10 @@ export default function ManageTab({
           <span className={styles.statLabel}>Revenue</span>
         </div>
       </div>
+
+      <ShopAnalytics clubId={clubId} />
+
+      <PurchaseLedger clubId={clubId} />
 
       {/* Create form */}
       <div className={styles.createForm}>
@@ -398,6 +459,24 @@ export default function ManageTab({
             value={availableUntil}
             onChange={(e) => setAvailableUntil(e.target.value)}
             aria-label="Available until"
+            className={styles.formInput}
+          />
+        </div>
+        <div className={styles.formRow}>
+          <input
+            type="datetime-local"
+            value={availableFrom}
+            onChange={(e) => setAvailableFrom(e.target.value)}
+            aria-label="Available from"
+            className={styles.formInput}
+          />
+          <input
+            type="number"
+            step="1"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+            placeholder="Sort order (lower shows first)"
+            aria-label="Storefront sort order"
             className={styles.formInput}
           />
         </div>
@@ -611,9 +690,67 @@ export default function ManageTab({
                       aria-label="Stock quantity, blank for unlimited"
                       className={styles.formInput}
                     />
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={draft.salePrice}
+                      onChange={(e) => setDraft({ ...draft, salePrice: e.target.value })}
+                      placeholder="Sale price (blank ends the sale)"
+                      aria-label="Sale price, blank to end the sale"
+                      className={styles.formInput}
+                    />
                     <span className={styles.grantHint}>
                       {draft.stock.trim() === '' ? 'Unlimited' : `${draft.stock} available`}
                     </span>
+                  </div>
+                  <div className={styles.formRow}>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={draft.perUserLimit}
+                      onChange={(e) => setDraft({ ...draft, perUserLimit: e.target.value })}
+                      placeholder="Max per member (blank = no cap)"
+                      aria-label="Maximum purchases per member"
+                      className={styles.formInput}
+                    />
+                    <input
+                      type="number"
+                      step="1"
+                      value={draft.sortOrder}
+                      onChange={(e) => setDraft({ ...draft, sortOrder: e.target.value })}
+                      placeholder="Sort order"
+                      aria-label="Storefront sort order"
+                      className={styles.formInput}
+                    />
+                  </div>
+                  <div className={styles.formRow}>
+                    <input
+                      type="datetime-local"
+                      value={draft.availableFrom}
+                      onChange={(e) => setDraft({ ...draft, availableFrom: e.target.value })}
+                      aria-label="Available from"
+                      className={styles.formInput}
+                    />
+                    <input
+                      type="datetime-local"
+                      value={draft.availableUntil}
+                      onChange={(e) => setDraft({ ...draft, availableUntil: e.target.value })}
+                      aria-label="Available until"
+                      className={styles.formInput}
+                    />
+                  </div>
+                  <div className={styles.formRow}>
+                    <label className={styles.grantHint}>
+                      <input
+                        type="checkbox"
+                        checked={draft.stackable}
+                        onChange={(e) => setDraft({ ...draft, stackable: e.target.checked })}
+                        style={{ marginRight: 8 }}
+                      />
+                      Stackable — members may hold several unredeemed copies
+                    </label>
                   </div>
                   {(() => {
                     const g = categories.find((c) => c.name === draft.category);

@@ -328,9 +328,11 @@ export default function StoreTab({
                     ? 'Coming soon'
                     : blocked === 'ended'
                       ? 'Ended'
-                      : stackable && alreadyOwned
-                        ? 'Buy again'
-                        : 'Buy';
+                      : blocked === 'limit_reached'
+                        ? 'Limit reached'
+                        : stackable && alreadyOwned
+                          ? 'Buy again'
+                          : 'Buy';
             return (
               <div key={item.id} className={styles.itemCard}>
                 <div className={styles.itemImageArea}>
@@ -354,6 +356,12 @@ export default function StoreTab({
                     <span className={styles.stockTag}>{item.stock} left</span>
                   )}
                   {onSale && !soldOut && <span className={styles.saleTag}>SALE</span>}
+                  {item.per_user_limit && !blocked ? (
+                    <span className={styles.stockTag}>
+                      {Math.max(0, item.per_user_limit - (item.my_purchase_count ?? 0))} left for
+                      you
+                    </span>
+                  ) : null}
                 </div>
                 <div className={styles.itemBody}>
                   <div className={styles.itemName}>{item.name}</div>

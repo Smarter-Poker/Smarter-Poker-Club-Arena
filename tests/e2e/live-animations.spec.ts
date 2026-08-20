@@ -76,7 +76,7 @@ async function mountTable(page: Page) {
 async function beat(page: Page, mutate: string): Promise<Record<string, number>> {
   return page.evaluate(async (src) => {
     const $ = (id: string) => document.getElementById(id)!;
-    // eslint-disable-next-line no-new-func
+     
     new Function('$', 'document', src)($, document);
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     const out: Record<string, number> = {};
@@ -220,6 +220,79 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     expect(b.allInBannerSlam, 'ALL IN must slam in').toBe(1800);
     expect(b.allInShockwave, 'and throw a shockwave ring').toBe(900);
     expect(b.equityPop, 'the win% must pop on every change').toBe(450);
+  });
+
+  test('the SPIN WHEEL: backdrop, glow, live pointer, result, confetti', async ({ page }) => {
+    // The draw is the entire product of the Spin format, and until 2026-08-20
+    // no human had ever confirmed its beats run outside jsdom. These are the
+    // production keyframes, asserted at their shipped durations.
+    const spinning = await beat(
+      page,
+      `const sw=document.createElement('div');sw.className='sw';
+       sw.innerHTML='<div class="sw__backdrop"></div>'+
+         '<div class="sw__stage"><div class="sw__eyebrow">SPIN</div>'+
+         '<div class="sw__wheel-wrap"><div class="sw__glow"></div>'+
+         '<div class="sw__pointer sw__pointer--live"><span class="sw__pointer-tip"></span></div>'+
+         '<div class="sw__wheel"><div class="sw__seg sw--base"><span class="sw__seg-label">2×</span></div>'+
+         '<div class="sw__seg sw--mega sw__seg--locked"><span class="sw__seg-label">500×</span></div></div></div>'+
+         '<div class="sw__status"><span class="sw__status-main">Spinning</span>'+
+         '<span class="sw__status-locked">500× unlocks at 5,000</span></div></div>';
+       document.querySelector('.table-page').appendChild(sw);`
+    );
+    expect(spinning.swBackdropIn, 'the takeover must fade in').toBe(400);
+    expect(spinning.swGlowPulse, 'the wheel must glow while deciding').toBe(2200);
+    expect(spinning.swPointerFlick, 'the pointer must tick as segments pass').toBe(90);
+
+    const result = await beat(
+      page,
+      `const st=document.querySelector('.sw__stage');
+       const r=document.createElement('div');r.className='sw__result';
+       r.innerHTML='<div class="sw__mult">25×</div>';st.appendChild(r);
+       const cf=document.createElement('div');cf.className='sw__confetti';
+       cf.innerHTML='<span class="sw__conf" style="--sw-c:0"></span>';st.appendChild(cf);`
+    );
+    expect(result.swResultIn, 'the result must land, not appear').toBe(550);
+    expect(result.swConfFall, 'a big multiplier must rain confetti').toBe(1800);
+  });
+
+  test('the KNOCKOUT: vignette, shockwave, the head cracks and FALLS', async ({ page }) => {
+    const b = await beat(
+      page,
+      `const ko=document.createElement('div');ko.className='ko ko--impact';
+       ko.innerHTML='<div class="ko__vignette"></div>'+
+         '<div class="ko__shockwave"></div>'+
+         '<div class="ko__stack"><div class="ko__head"><div class="ko__head-disc">'+
+         '<img class="ko__head-img" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt=""></div></div></div>';
+       document.querySelector('.table-page').appendChild(ko);`
+    );
+    expect(b.koVignetteIn, 'the table must darken on impact').toBe(340);
+    expect(b.koShockwave, 'the hit must throw a shockwave').toBe(620);
+    expect(b.koHeadIn, 'the head must slam in').toBe(420);
+    // The centrepiece: the head falls 500ms AFTER it lands. Both the duration
+    // and the delay are the drama — a fall that starts instantly reads as a
+    // glitch, not a knockout.
+    expect(b.koHeadFall, 'the head must FALL').toBe(1100);
+  });
+
+  test('the MYSTERY CHEST: drop, breathe under tension, lid opens', async ({ page }) => {
+    const landing = await beat(
+      page,
+      `const m=document.createElement('div');m.className='mbc mbc--landing';m.id='mbc';
+       m.innerHTML='<div class="mbc__backdrop"></div><div class="mbc__stage">'+
+         '<div class="mbc__chest"><div class="mbc__chest-lid"></div></div></div>';
+       document.querySelector('.table-page').appendChild(m);`
+    );
+    expect(landing.mbcBackdropIn).toBe(400);
+    expect(landing.mbcChestDrop, 'the chest must DROP, with squash on contact').toBe(700);
+
+    const locked = await beat(page, `document.getElementById('mbc').className='mbc mbc--locked';`);
+    expect(locked.mbcChestBreathe, 'a locked chest must breathe').toBeGreaterThan(0);
+
+    const opening = await beat(
+      page,
+      `document.getElementById('mbc').className='mbc mbc--opening';`
+    );
+    expect(opening.mbcLidOpen, 'the lid must hinge open').toBe(900);
   });
 
   test('reduced motion is honoured — every animation collapses', async ({ browser }) => {

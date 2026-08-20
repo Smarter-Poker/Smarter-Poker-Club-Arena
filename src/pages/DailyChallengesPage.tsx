@@ -20,7 +20,8 @@ import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
 import {
   dailyChallengeService,
-  type UserDailyChallenge,
+  type TieredUserChallenge,
+  type Tier,
   type ChallengeType,
 } from '../services/DailyChallengeService';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -31,11 +32,10 @@ import styles from './DailyChallengesPage.module.css';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type Tier = 'daily' | 'weekly' | 'monthly';
-
-interface TieredChallenge extends UserDailyChallenge {
-  tier: Tier;
-}
+// Tier and TieredChallenge now come from the service, which is also what the
+// server-catalog fetch returns -- one definition, so a tier added there cannot
+// silently disagree with the tabs here.
+type TieredChallenge = TieredUserChallenge;
 
 interface StreakInfo {
   streak: number;
@@ -49,6 +49,7 @@ interface ChallengeStats {
   totalCompleted: number;
   currentStreak: number;
   totalChipsEarned: number;
+  totalDiamondsEarned: number;
   nextMilestone: number;
   milestoneReward: number;
 }
@@ -65,8 +66,6 @@ const TYPE_GLYPHS: Record<ChallengeType, string> = {
   tournaments_played: '♛', // queen
   big_pots: '◆', // diamond — the pot
   strong_hands: '♥', // heart — the hand
-  login_streak: '◉',
-  rakeback_earned: '◈',
   friends_added: '♣', // club
 };
 
@@ -210,6 +209,7 @@ export default function DailyChallengesPage() {
   const [streak, setStreak] = useState<StreakInfo | null>(null);
   const [activeTier, setActiveTier] = useState<Tier>('daily');
   const [claimingIds, setClaimingIds] = useState<Set<string>>(new Set());
+  const [claimingAll, setClaimingAll] = useState(false);
   const [celebratingIds, setCelebratingIds] = useState<Set<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
   // Non-null while the celebration overlay is on screen.
@@ -234,11 +234,7 @@ export default function DailyChallengesPage() {
         dailyChallengeService.getStreak(uid),
       ]);
       if (!isMountedRef.current) return;
-      setChallenges([
-        ...daily.map((c) => ({ ...c, tier: 'daily' as const })),
-        ...weekly,
-        ...monthly,
-      ]);
+      setChallenges([...daily, ...weekly, ...monthly]);
       setStats(challengeStats);
       setStreak(streakInfo);
     } catch (err) {
@@ -277,7 +273,16 @@ export default function DailyChallengesPage() {
     const t = setTimeout(() => {
       if (isMountedRef.current) setReward(null);
     }, 5000);
-    return () => clearTimeout(t);
+    // Escape closes it. A full-screen overlay with no keyboard exit is a trap
+    // for anyone not using a pointer.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setReward(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('keydown', onKey);
+    };
   }, [reward]);
 
   // ── Live countdown + automatic daily rollover ──
@@ -303,11 +308,20 @@ export default function DailyChallengesPage() {
       },
       1000
     );
-    return () => {
-      unsub();
-      celebrateTimersRef.current.forEach(clearTimeout);
-    };
+    return unsub;
   }, [userId, loadChallenges]);
+
+  // Card-flash timers are cleared on UNMOUNT only. They used to be cleared in
+  // the bus-subscription cleanup above, which re-runs whenever userId settles --
+  // so a claim made around that moment had its flash cancelled and its id left
+  // in celebratingIds permanently. Separate concerns, separate effects.
+  useEffect(() => {
+    const timers = celebrateTimersRef;
+    return () => {
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
+    };
+  }, []);
 
   // ── Claim handler ──
   const handleClaim = useCallback(
@@ -329,13 +343,21 @@ export default function DailyChallengesPage() {
         // would announce diamonds the balance never received.
         if (paid.alreadyClaimed) {
           toast.info('You already claimed this one');
-        } else {
+        } else if (paid.claimed) {
           setReward({
             name: challenge.challenge.name,
             chips: paid.chips,
             diamonds: paid.diamonds,
             diamondBalance: paid.diamondBalance,
           });
+        } else {
+          // Neither paid nor already paid. The server declined without raising
+          // -- so nothing was credited, and celebrating here would announce a
+          // reward of nothing and then hide the Claim button for a reward the
+          // player never received. Re-read the truth instead.
+          toast.error('That reward could not be claimed. Refreshing...');
+          loadChallenges(userId, false);
+          return;
         }
         setChallenges((prev) =>
           prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
@@ -376,6 +398,77 @@ export default function DailyChallengesPage() {
     [userId]
   );
 
+  // ── Claim everything that is ready ──
+  //
+  // Sequential, not Promise.all: each claim credits a wallet, and firing five
+  // wallet writes at once invites lock contention on the same profile row for
+  // no user-visible gain. The overlay shows the COMBINED total rather than
+  // flashing five times in a row.
+  const handleClaimAll = useCallback(async () => {
+    if (!userId || claimingAll) return;
+    const ready = challenges.filter((c) => c.completed && !c.claimed);
+    if (ready.length === 0) return;
+
+    setClaimingAll(true);
+    let chips = 0;
+    let diamonds = 0;
+    let balance = 0;
+    let failures = 0;
+    const claimedIds: string[] = [];
+
+    for (const c of ready) {
+      if (claimGuardRef.current.has(c.id)) continue;
+      claimGuardRef.current.add(c.id);
+      try {
+        const paid = await dailyChallengeService.claimChallenge(
+          userId,
+          c.id,
+          c.challenge.chipReward
+        );
+        if (paid.claimed) {
+          chips += paid.chips;
+          diamonds += paid.diamonds;
+          balance = paid.diamondBalance;
+          claimedIds.push(c.id);
+        } else if (paid.alreadyClaimed) {
+          claimedIds.push(c.id);
+        } else {
+          failures++;
+        }
+      } catch (err) {
+        failures++;
+        reportError(err, 'DailyChallengesPage.claimAll_failed');
+      } finally {
+        claimGuardRef.current.delete(c.id);
+      }
+    }
+
+    if (!isMountedRef.current) return;
+    setClaimingAll(false);
+    if (claimedIds.length > 0) {
+      const done = new Set(claimedIds);
+      setChallenges((prev) => prev.map((c) => (done.has(c.id) ? { ...c, claimed: true } : c)));
+      triggerHaptic('success');
+    }
+    if (chips > 0 || diamonds > 0) {
+      setReward({
+        name: `${claimedIds.length} challenge${claimedIds.length === 1 ? '' : 's'}`,
+        chips,
+        diamonds,
+        diamondBalance: balance,
+      });
+    }
+    // Report partial failure honestly rather than letting a silent skip look
+    // like a reward that was never owed.
+    if (failures > 0) {
+      toast.error(
+        `${failures} reward${failures === 1 ? '' : 's'} could not be claimed. Refreshing...`
+      );
+      loadChallenges(userId, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, challenges, claimingAll]);
+
   // ── Derived ──
   const tierCounts = useMemo(() => {
     const counts: Record<Tier, { total: number; done: number; claimed: number }> = {
@@ -408,13 +501,21 @@ export default function DailyChallengesPage() {
     [challenges, activeTier]
   );
 
-  const unclaimedRewards = useMemo(
-    () =>
-      challenges
-        .filter((c) => c.completed && !c.claimed)
-        .reduce((sum, c) => sum + c.challenge.chipReward, 0),
-    [challenges]
-  );
+  // Diamonds are the premium currency and the reason to come back, so the
+  // "ready to claim" callout has to name them. Counting only chips undersold
+  // every unclaimed reward on the page.
+  const unclaimed = useMemo(() => {
+    let chips = 0;
+    let diamonds = 0;
+    let count = 0;
+    for (const c of challenges) {
+      if (!c.completed || c.claimed) continue;
+      count++;
+      chips += c.challenge.chipReward;
+      diamonds += c.challenge.diamondReward;
+    }
+    return { chips, diamonds, count };
+  }, [challenges]);
 
   const tierCountdown: Record<Tier, string> = {
     daily: formatCountdown(msUntilUtcMidnight()),
@@ -520,6 +621,12 @@ export default function DailyChallengesPage() {
           <span className={styles.summaryLabel}>All-Time Completed</span>
         </div>
         <div className={styles.summaryTile}>
+          <span className={`${styles.summaryValue} ${styles.diamond}`}>
+            {'◆'} {(stats?.totalDiamondsEarned || 0).toLocaleString()}
+          </span>
+          <span className={styles.summaryLabel}>Diamonds Earned</span>
+        </div>
+        <div className={styles.summaryTile}>
           <span className={`${styles.summaryValue} ${styles.gold}`}>
             {(stats?.totalChipsEarned || 0).toLocaleString()}
           </span>
@@ -528,19 +635,36 @@ export default function DailyChallengesPage() {
       </section>
 
       {/* Unclaimed rewards callout */}
-      {unclaimedRewards > 0 && (
+      {unclaimed.count > 0 && (
         <div className={styles.unclaimedBar}>
           <span>
-            {unclaimedRewards.toLocaleString()} chips ready to claim
+            {[
+              unclaimed.diamonds > 0 ? `${'◆'} ${unclaimed.diamonds.toLocaleString()}` : '',
+              unclaimed.chips > 0 ? `${unclaimed.chips.toLocaleString()} chips` : '',
+            ]
+              .filter(Boolean)
+              .join('  +  ')}{' '}
+            ready to claim
           </span>
+          <button
+            className={styles.claimAllButton}
+            onClick={handleClaimAll}
+            disabled={claimingAll}
+          >
+            {claimingAll
+              ? 'Claiming...'
+              : `Claim ${unclaimed.count === 1 ? 'It' : `All ${unclaimed.count}`}`}
+          </button>
         </div>
       )}
 
       {/* Tier tabs */}
-      <nav className={styles.tabs}>
+      <nav className={styles.tabs} role="tablist" aria-label="Challenge period">
         {(['daily', 'weekly', 'monthly'] as Tier[]).map((tier) => (
           <button
             key={tier}
+            role="tab"
+            aria-selected={activeTier === tier}
             className={`${styles.tab} ${activeTier === tier ? styles.tabActive : ''}`}
             style={{ '--tier-color': TIER_COLORS[tier] } as React.CSSProperties}
             onClick={() => setActiveTier(tier)}
@@ -585,8 +709,15 @@ export default function DailyChallengesPage() {
         <div
           className={styles.celebrateOverlay}
           role="dialog"
+          aria-modal="true"
           aria-live="assertive"
-          aria-label={`Challenge complete. You earned ${reward.diamonds} diamonds.`}
+          aria-label={[
+            `Challenge complete: ${reward.name}.`,
+            reward.diamonds > 0 ? `You earned ${reward.diamonds} diamonds.` : '',
+            reward.chips > 0 ? `You earned ${reward.chips} chips.` : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
           onClick={() => setReward(null)}
         >
           <div className={styles.celebrateCard} onClick={(e) => e.stopPropagation()}>
@@ -619,7 +750,11 @@ export default function DailyChallengesPage() {
               </p>
             )}
 
-            <button className={styles.celebrateButton} onClick={() => setReward(null)}>
+            <button
+              className={styles.celebrateButton}
+              onClick={() => setReward(null)}
+              autoFocus
+            >
               Nice
             </button>
           </div>

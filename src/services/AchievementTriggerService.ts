@@ -24,6 +24,61 @@ interface TriggerResult {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════
+// CHALLENGE COMPLETION NOTICE
+// ════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Announce finished challenges wherever the player happens to be.
+ *
+ * SHOW_TOAST is routed to the live ToastProvider by BusToastBridge, which is
+ * mounted once at the app root -- so this works from a table, the lobby, or a
+ * tournament screen without any of them knowing challenges exist.
+ *
+ * Deliberately says what was WON and that it is waiting to be claimed. "Daily
+ * challenge complete" alone gives the player nothing to act on, and an unclaimed
+ * reward they never hear about is the same as no reward at all.
+ */
+function notifyChallengesCompleted(
+  completed: Array<{ name: string; chipReward: number; diamondReward: number }>
+): void {
+  if (!completed || completed.length === 0) return;
+  try {
+    if (completed.length === 1) {
+      const c = completed[0];
+      const parts: string[] = [];
+      if (c.diamondReward > 0) parts.push(`${c.diamondReward.toLocaleString()} diamonds`);
+      if (c.chipReward > 0) parts.push(`${c.chipReward.toLocaleString()} chips`);
+      masterBus.emit('SHOW_TOAST', {
+        message: parts.length
+          ? `Challenge complete: ${c.name} - ${parts.join(' and ')} ready to claim`
+          : `Challenge complete: ${c.name}`,
+        severity: 'info',
+        source: 'daily_challenge',
+        durationMs: 6000,
+      });
+      return;
+    }
+    // Several at once (common on the hand that finishes a daily and its weekly
+    // parent). One line beats a stack of toasts covering the table.
+    const diamonds = completed.reduce((s, c) => s + (c.diamondReward || 0), 0);
+    const chips = completed.reduce((s, c) => s + (c.chipReward || 0), 0);
+    const parts: string[] = [];
+    if (diamonds > 0) parts.push(`${diamonds.toLocaleString()} diamonds`);
+    if (chips > 0) parts.push(`${chips.toLocaleString()} chips`);
+    masterBus.emit('SHOW_TOAST', {
+      message: parts.length
+        ? `${completed.length} challenges complete - ${parts.join(' and ')} ready to claim`
+        : `${completed.length} challenges complete`,
+      severity: 'info',
+      source: 'daily_challenge',
+      durationMs: 6000,
+    });
+  } catch {
+    // A missed toast must never break a hand from settling.
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════
 // SERVICE
 // ════════════════════════════════════════════════════════════════════════════════════
 class AchievementTriggerServiceClass {
@@ -100,7 +155,7 @@ class AchievementTriggerServiceClass {
       // per matching row -- roughly 3 selects and 8 RPCs per player per hand at
       // table speed. bump_challenge_progress does it in a single statement and
       // returns only the challenges that just crossed into completion.
-      const { completed } = await dailyChallengeService.bumpProgress(userId, {
+      const { advanced, completed } = await dailyChallengeService.bumpProgress(userId, {
         hands_played: 1,
         ...(handData.won ? { hands_won: 1 } : {}),
         ...(handData.showdown ? { showdowns: 1 } : {}),
@@ -111,9 +166,24 @@ class AchievementTriggerServiceClass {
         ...(isStrongHand(handData.handRank) ? { strong_hands: 1 } : {}),
       });
 
-      if (completed.length > 0) {
-        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'hand_complete' });
+      // Fire on ANY movement, not just completion. This previously only emitted
+      // when a challenge finished, so a challenges tab left open beside the
+      // table sat frozen for a whole session -- which reads as "this feature is
+      // broken", not as "you are three hands away".
+      if (advanced.length > 0) {
+        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', {
+          userId,
+          source: 'hand_complete',
+          // Distinct per hand so the 500ms bus dedup cannot swallow a real tick.
+          at: Date.now(),
+        });
       }
+
+      // Tell the player, wherever they are. Finishing a challenge used to be
+      // completely silent unless they happened to have /challenges open: the
+      // reward landed in a list they had no reason to visit. A daily loop that
+      // never announces its own payoff does not loop.
+      notifyChallengesCompleted(completed);
     } catch (dcErr) {
       console.debug('[AchievementTrigger] Daily challenge progress update failed:', dcErr);
     }
@@ -167,7 +237,12 @@ class AchievementTriggerServiceClass {
     try {
       const dcResult = await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
       if (dcResult.completed.length > 0) {
-        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'tournament_complete' });
+        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', {
+          userId,
+          source: 'tournament_complete',
+          at: Date.now(),
+        });
+        notifyChallengesCompleted(dcResult.completed.map((c) => c.challenge));
       }
     } catch (dcErr) {
       console.debug('[AchievementTrigger] Daily challenge tournament progress failed:', dcErr);
@@ -200,7 +275,12 @@ class AchievementTriggerServiceClass {
     try {
       const dcResult = await dailyChallengeService.updateProgress(userId, 'friends_added', 1);
       if (dcResult.completed.length > 0) {
-        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'friend_added' });
+        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', {
+          userId,
+          source: 'friend_added',
+          at: Date.now(),
+        });
+        notifyChallengesCompleted(dcResult.completed.map((c) => c.challenge));
       }
     } catch (dcErr) {
       console.debug('[AchievementTrigger] Daily challenge friend progress failed:', dcErr);
@@ -375,7 +455,12 @@ masterBus.subscribe('TOURNAMENT_REGISTERED', async (payload: any) => {
     if (!userId) return;
     const res = await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
     if (res.completed.length > 0) {
-      masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'tournament_registered' });
+      masterBus.emit('CHALLENGE_PROGRESS_UPDATED', {
+        userId,
+        source: 'tournament_registered',
+        at: Date.now(),
+      });
+      notifyChallengesCompleted(res.completed.map((c) => c.challenge));
     }
   } catch (err) {
     console.debug('[AchievementTrigger] Tournament challenge update failed:', err);

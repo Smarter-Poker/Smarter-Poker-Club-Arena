@@ -8,7 +8,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
@@ -18,18 +17,35 @@ import { reportError } from '../utils/errorReporter';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type ChallengeType =
-  | 'hands_played'
-  | 'hands_won'
-  | 'showdowns'
-  | 'tournaments_played'
+/**
+ * Every challenge type the app can actually COUNT.
+ *
+ * This is the single list; ChallengeType is derived from it, so a type cannot
+ * exist in the union without appearing here, and the test that checks pool
+ * validity iterates this rather than a hand-copied array. That copy had already
+ * gone stale once: big_pots and strong_hands shipped to production while the
+ * test still asserted against a list that predated them, so the suite was red
+ * and asserting the wrong thing at the same time.
+ *
+ * The bar for adding an entry: something in the app must already increment it.
+ * 'login_streak' and 'rakeback_earned' were removed on 2026-08-20 for failing
+ * exactly that test -- nothing ever incremented either, so a challenge using
+ * one would have been handed out, displayed, and then sat at 0/N forever with
+ * nothing to tell the player it was impossible rather than merely hard.
+ */
+export const CHALLENGE_TYPES = [
+  'hands_played',
+  'hands_won',
+  'showdowns',
+  'tournaments_played',
   // Skill/excitement types. Driven by potSize and handRank, which
   // onHandComplete already receives -- see BIG_POT_MIN and isStrongHand below.
-  | 'big_pots'
-  | 'strong_hands'
-  | 'login_streak'
-  | 'rakeback_earned'
-  | 'friends_added';
+  'big_pots',
+  'strong_hands',
+  'friends_added',
+] as const;
+
+export type ChallengeType = (typeof CHALLENGE_TYPES)[number];
 
 /**
  * A pot at or above this counts as a "big pot" for the big_pots challenges.
@@ -94,6 +110,13 @@ export interface UserDailyChallenge {
   claimed: boolean;
   completedAt?: string;
   challenge: DailyChallenge;
+}
+
+/** Which reset period a challenge belongs to. */
+export type Tier = 'daily' | 'weekly' | 'monthly';
+
+export interface TieredUserChallenge extends UserDailyChallenge {
+  tier: Tier;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -523,6 +546,88 @@ class DailyChallengeServiceClass {
   }
 
   /**
+   * The whole page in ONE round trip, rendered from the SERVER catalog.
+   *
+   * Two problems this replaces:
+   *
+   * 1. SIX round trips. Painting /challenges did a SELECT plus a possible
+   *    assign RPC for each of daily, weekly and monthly.
+   *
+   * 2. Worse -- the client rendered every card from its OWN copy of the name,
+   *    requirement and rewards while the server paid from
+   *    daily_challenge_catalog. Two copies of the same numbers drift, and drift
+   *    here is not cosmetic: it is a card promising 7 diamonds beside a balance
+   *    that received 3. It has already bitten once, when ids were added to the
+   *    client pool that the catalog had never heard of and the claim RPC
+   *    rejected every one of them.
+   *
+   * Now the catalog is the single source of truth for everything displayed, so
+   * the shown reward is BY CONSTRUCTION the one claim_daily_challenge will pay.
+   * The local pools survive only to CHOOSE which ids to assign.
+   *
+   * Falls back to the old per-tier path if the RPC is unavailable (an older
+   * database, or a deploy where the client is ahead of the migration).
+   */
+  async getAllChallengesFromServer(userId: string): Promise<{
+    daily: TieredUserChallenge[];
+    weekly: TieredUserChallenge[];
+    monthly: TieredUserChallenge[];
+  } | null> {
+    const dailyKey = this.getTodayKey();
+    const weeklyKey = this.getWeekKey();
+    const monthlyKey = this.getMonthKey();
+
+    const { data, error } = await supabase.rpc('get_or_assign_challenges', {
+      p_daily_key: dailyKey,
+      p_daily_ids: this.selectDailyChallenges(5).map((c) => c.id),
+      p_weekly_key: weeklyKey,
+      p_weekly_ids: this.selectChallenges(WEEKLY_CHALLENGE_POOL, 3, weeklyKey).map((c) => c.id),
+      p_monthly_key: monthlyKey,
+      p_monthly_ids: this.selectChallenges(MONTHLY_CHALLENGE_POOL, 2, monthlyKey).map((c) => c.id),
+    });
+
+    if (error) {
+      reportError(error, 'DailyChallengeService.getAllChallengesFromServer_failed');
+      return null; // caller falls back to the per-tier path
+    }
+
+    const out = {
+      daily: [] as TieredUserChallenge[],
+      weekly: [] as TieredUserChallenge[],
+      monthly: [] as TieredUserChallenge[],
+    };
+    for (const row of (data || []) as any[]) {
+      const tier: Tier =
+        row.assigned_date === dailyKey
+          ? 'daily'
+          : row.assigned_date === weeklyKey
+            ? 'weekly'
+            : 'monthly';
+      out[tier].push({
+        id: row.id,
+        challengeId: row.challenge_id,
+        userId,
+        progress: Number(row.progress) || 0,
+        completed: row.completed === true,
+        claimed: row.claimed === true,
+        completedAt: row.completed_at || undefined,
+        tier,
+        challenge: {
+          id: row.challenge_id,
+          name: row.name,
+          description: row.description,
+          type: row.challenge_type as ChallengeType,
+          requirement: Number(row.requirement) || 0,
+          chipReward: Number(row.chip_reward) || 0,
+          diamondReward: Number(row.diamond_reward) || 0,
+          icon: '',
+        },
+      });
+    }
+    return out;
+  }
+
+  /**
    * Get today's challenges for a user. Assigns a fresh, seeded set if the day
    * has not been assigned yet.
    */
@@ -622,17 +727,31 @@ class DailyChallengeServiceClass {
    * daily_challenge_catalog.
    *
    * @param amounts e.g. { hands_played: 1, hands_won: 1 }
-   * @returns the challenges that CROSSED into completion on this call
+   * @returns `advanced` -- every challenge this call moved, and `completed` --
+   *          the subset that crossed the finish line. The RPC used to return
+   *          only the second set, which left callers unable to tell "moved but
+   *          not done" from "matched nothing", so an open challenges tab had
+   *          no signal to refresh on and its progress bars never ticked.
    */
   async bumpProgress(
     userId: string,
     amounts: Partial<Record<ChallengeType, number>>
-  ): Promise<{ completed: Array<{ id: string; challengeId: string; chipReward: number }> }> {
+  ): Promise<{
+    advanced: Array<{ id: string; challengeId: string; progress: number; requirement: number }>;
+    completed: Array<{
+      id: string;
+      challengeId: string;
+      name: string;
+      chipReward: number;
+      diamondReward: number;
+    }>;
+  }> {
+    const empty = { advanced: [], completed: [] };
     const cleaned: Record<string, number> = {};
     for (const [k, v] of Object.entries(amounts)) {
       if (typeof v === 'number' && v > 0) cleaned[k] = v;
     }
-    if (Object.keys(cleaned).length === 0) return { completed: [] };
+    if (Object.keys(cleaned).length === 0) return empty;
 
     try {
       const { data, error } = await supabase.rpc('bump_challenge_progress', {
@@ -644,19 +763,43 @@ class DailyChallengeServiceClass {
       });
       if (error) {
         reportError(error, 'DailyChallengeService.bumpProgress_failed');
-        return { completed: [] };
+        return empty;
       }
+
+      const rows = (data || []) as any[];
       return {
-        completed: (data || []).map((r: any) => ({
+        advanced: rows.map((r) => ({
           id: r.id,
           challengeId: r.challenge_id,
-          chipReward: Number(r.chip_reward) || 0,
+          progress: Number(r.progress) || 0,
+          requirement: Number(r.requirement) || 0,
         })),
+        completed: rows
+          .filter((r) => r.newly_completed === true)
+          .map((r) => {
+            const meta = this.findInPools(r.challenge_id);
+            return {
+              id: r.id,
+              challengeId: r.challenge_id,
+              name: meta?.name || 'Challenge',
+              chipReward: Number(r.chip_reward) || 0,
+              diamondReward: meta?.diamondReward || 0,
+            };
+          }),
       };
     } catch (e) {
       reportError(e, 'DailyChallengeService.bumpProgress_threw');
-      return { completed: [] };
+      return empty;
     }
+  }
+
+  /** Look a challenge up across all three pools. */
+  private findInPools(id: string): DailyChallenge | undefined {
+    return (
+      CHALLENGE_POOL.find((c) => c.id === id) ||
+      WEEKLY_CHALLENGE_POOL.find((c) => c.id === id) ||
+      MONTHLY_CHALLENGE_POOL.find((c) => c.id === id)
+    );
   }
 
   /**
@@ -768,6 +911,15 @@ class DailyChallengeServiceClass {
     // false rather than raising, so a commit whose response was lost to a
     // network blip no longer surfaces "Challenge already claimed" as an error
     // for chips the player actually received.
+    // Set when the RPC RAISED an "already claimed" error rather than returning
+    // the structured alreadyClaimed result. Current server versions return the
+    // jsonb, but an older one raises -- and swallowing that error left `data`
+    // null, so every field below fell back to 0/false. The page then took the
+    // "something was paid" branch and rendered a celebration announcing an
+    // empty reward. A duplicate claim has to be reported as a duplicate, not as
+    // a prize of nothing.
+    let raisedAlreadyClaimed = false;
+
     const rpcResult = await retryAsync(async () => {
       const result = await supabase.rpc('claim_daily_challenge', {
         p_user_id: userId,
@@ -775,7 +927,10 @@ class DailyChallengeServiceClass {
         p_reward_amount: rewardAmount,
       });
       if (result.error) {
-        if (/already claimed/i.test(result.error.message || '')) return result; // treat as success
+        if (/already claimed/i.test(result.error.message || '')) {
+          raisedAlreadyClaimed = true;
+          return result; // the reward is already in the account; not a failure
+        }
         reportError(result.error, 'DailyChallengeService.RPC_claim_error');
         throw new Error(result.error.message);
       }
@@ -808,7 +963,7 @@ class DailyChallengeServiceClass {
 
     return {
       claimed: paid.claimed === true,
-      alreadyClaimed: paid.alreadyClaimed === true,
+      alreadyClaimed: paid.alreadyClaimed === true || raisedAlreadyClaimed,
       chips: Number(paid.chips) || 0,
       diamonds: Number(paid.diamonds) || 0,
       diamondBalance: Number(paid.diamondBalance) || 0,
@@ -822,6 +977,7 @@ class DailyChallengeServiceClass {
     totalCompleted: number;
     currentStreak: number;
     totalChipsEarned: number;
+    totalDiamondsEarned: number;
     nextMilestone: number;
     milestoneReward: number;
   }> {
@@ -842,6 +998,7 @@ class DailyChallengeServiceClass {
         totalCompleted: 0,
         currentStreak: 0,
         totalChipsEarned: 0,
+        totalDiamondsEarned: 0,
         nextMilestone: 7,
         milestoneReward: 500,
       };
@@ -849,17 +1006,16 @@ class DailyChallengeServiceClass {
 
     const totalCompleted = data.length;
     let totalChipsEarned = 0;
+    let totalDiamondsEarned = 0;
 
     for (const uc of data) {
       // Only CLAIMED rewards are money the player actually has. Counting
       // completed-but-unclaimed rows made "Chips Earned" overstate the balance.
       if (!uc.claimed) continue;
-      const challenge =
-        CHALLENGE_POOL.find((c) => c.id === uc.challenge_id) ||
-        WEEKLY_CHALLENGE_POOL.find((c) => c.id === uc.challenge_id) ||
-        MONTHLY_CHALLENGE_POOL.find((c) => c.id === uc.challenge_id);
+      const challenge = this.findInPools(uc.challenge_id);
       if (challenge) {
         totalChipsEarned += challenge.chipReward;
+        totalDiamondsEarned += challenge.diamondReward;
       }
     }
 
@@ -904,7 +1060,14 @@ class DailyChallengeServiceClass {
     const nextMilestone = nextMilestoneEntry.days;
     const milestoneReward = nextMilestoneEntry.reward;
 
-    return { totalCompleted, currentStreak, totalChipsEarned, nextMilestone, milestoneReward };
+    return {
+      totalCompleted,
+      currentStreak,
+      totalChipsEarned,
+      totalDiamondsEarned,
+      nextMilestone,
+      milestoneReward,
+    };
   }
 
   // emitDailyResetReminder removed — was dead code (never called from any file)
@@ -914,16 +1077,27 @@ class DailyChallengeServiceClass {
    * Reduces boilerplate for callers that need all three tiers at once.
    */
   async getAllChallenges(userId: string): Promise<{
-    daily: UserDailyChallenge[];
-    weekly: (UserDailyChallenge & { tier: 'weekly' })[];
-    monthly: (UserDailyChallenge & { tier: 'monthly' })[];
+    daily: TieredUserChallenge[];
+    weekly: TieredUserChallenge[];
+    monthly: TieredUserChallenge[];
   }> {
+    // Preferred path: one round trip, catalog-authoritative.
+    const fromServer = await this.getAllChallengesFromServer(userId);
+    if (fromServer) return fromServer;
+
+    // Fallback for a database without get_or_assign_challenges. Renders from
+    // the local pools, so it carries the drift risk the server path removes --
+    // acceptable as a degraded mode, not as the normal one.
     const [daily, weekly, monthly] = await Promise.all([
       this.getTodaysChallenges(userId),
       this.getWeeklyChallenges(userId),
       this.getMonthlyChallenges(userId),
     ]);
-    return { daily, weekly, monthly };
+    return {
+      daily: daily.map((c) => ({ ...c, tier: 'daily' as const })),
+      weekly,
+      monthly,
+    };
   }
 
   /**
@@ -1052,33 +1226,19 @@ class DailyChallengeServiceClass {
   }
 
   /**
-   * Simple hash for seeded randomization
-   */
-  private simpleHash(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return hash;
-  }
-
-  /**
    * Map database row to typed object
    */
   private mapToUserChallenge(row: any): UserDailyChallenge {
-    const challenge = CHALLENGE_POOL.find((c) => c.id === row.challenge_id) ||
-      WEEKLY_CHALLENGE_POOL.find((c) => c.id === row.challenge_id) ||
-      MONTHLY_CHALLENGE_POOL.find((c) => c.id === row.challenge_id) || {
-        id: row.challenge_id,
-        name: 'Unknown',
-        description: '',
-        type: 'hands_played' as ChallengeType,
-        requirement: 0,
-        chipReward: 0,
-        diamondReward: 0,
-        icon: '?',
-      };
+    const challenge = this.findInPools(row.challenge_id) || {
+      id: row.challenge_id,
+      name: 'Unknown',
+      description: '',
+      type: 'hands_played' as ChallengeType,
+      requirement: 0,
+      chipReward: 0,
+      diamondReward: 0,
+      icon: '?',
+    };
 
     return {
       id: row.id,

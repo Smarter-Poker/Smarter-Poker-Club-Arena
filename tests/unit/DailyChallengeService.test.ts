@@ -51,6 +51,7 @@ vi.mock('../../src/utils/retryAsync', () => ({
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import {
+  CHALLENGE_TYPES,
   CHALLENGE_POOL,
   WEEKLY_CHALLENGE_POOL,
   MONTHLY_CHALLENGE_POOL,
@@ -82,18 +83,38 @@ describe('DailyChallengeService', () => {
       }
     });
 
+    // Derived from CHALLENGE_TYPES, never hand-copied. The previous version
+    // duplicated the list here and drifted: big_pots and strong_hands were live
+    // in production while this test still asserted against a list that predated
+    // them, so it failed on correct code and would have passed on a type nobody
+    // could increment.
     it('should have valid challenge types', () => {
-      const validTypes = [
-        'hands_played',
-        'hands_won',
-        'showdowns',
-        'tournaments_played',
-        'login_streak',
-        'rakeback_earned',
-        'friends_added',
-      ];
-      for (const c of CHALLENGE_POOL) {
-        expect(validTypes).toContain(c.type);
+      for (const c of [...CHALLENGE_POOL, ...WEEKLY_CHALLENGE_POOL, ...MONTHLY_CHALLENGE_POOL]) {
+        expect(CHALLENGE_TYPES as readonly string[]).toContain(c.type);
+      }
+    });
+
+    // Every assignable challenge must be winnable. A type with no writer means
+    // a card that can be handed out and never moves.
+    it('every pool type has something in the app that increments it', () => {
+      const WRITTEN_BY_APP: Record<string, string> = {
+        hands_played: 'AchievementTriggerService.onHandComplete',
+        hands_won: 'AchievementTriggerService.onHandComplete',
+        showdowns: 'AchievementTriggerService.onHandComplete',
+        big_pots: 'AchievementTriggerService.onHandComplete',
+        strong_hands: 'AchievementTriggerService.onHandComplete',
+        tournaments_played: 'AchievementTriggerService TOURNAMENT_REGISTERED subscriber',
+        friends_added: 'AchievementTriggerService.onFriendAdded',
+      };
+      for (const c of [...CHALLENGE_POOL, ...WEEKLY_CHALLENGE_POOL, ...MONTHLY_CHALLENGE_POOL]) {
+        expect(
+          WRITTEN_BY_APP[c.type],
+          `challenge "${c.id}" has type "${c.type}", which nothing increments -- it could never be completed`
+        ).toBeTruthy();
+      }
+      // And no declared type is dead weight waiting to be used by mistake.
+      for (const t of CHALLENGE_TYPES) {
+        expect(WRITTEN_BY_APP[t], `challenge type "${t}" has no writer in the app`).toBeTruthy();
       }
     });
   });

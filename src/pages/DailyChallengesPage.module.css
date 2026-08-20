@@ -128,11 +128,20 @@
 }
 
 /* ── Summary tiles ── */
+/* 2x2 at 375px -- four tiles across a phone gives each about 85px, which
+   truncates "All-Time Completed" and any six-figure chip total. Four across
+   only once there is room for it. */
 .summaryRow {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-bottom: 12px;
+}
+
+@media (min-width: 480px) {
+  .summaryRow {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 .summaryTile {
@@ -159,6 +168,11 @@
   color: #fbbf24;
 }
 
+.summaryValue.diamond,
+.diamond {
+  color: #7dd3fc;
+}
+
 .summaryLabel {
   font-size: 0.62rem;
   color: #8a9aaa;
@@ -168,6 +182,10 @@
 
 /* ── Unclaimed rewards bar ── */
 .unclaimedBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 10px 14px;
   margin-bottom: 12px;
   background: rgba(16, 185, 129, 0.1);
@@ -176,8 +194,41 @@
   color: #34d399;
   font-size: 0.82rem;
   font-weight: 700;
-  text-align: center;
+  text-align: left;
   animation: pulseGlow 2.4s ease-in-out infinite;
+}
+
+.claimAllButton {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  min-height: 36px; /* stays tappable at 375px */
+  background: linear-gradient(135deg, #10b981, #34d399);
+  border: none;
+  border-radius: 8px;
+  color: #04241a;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.15s ease;
+}
+
+.claimAllButton:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.claimAllButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* The pulse is an attention magnet sitting on screen indefinitely. Anyone who
+   asked the OS to calm motion down should not have to watch it breathe. */
+@media (prefers-reduced-motion: reduce) {
+  .unclaimedBar {
+    animation: none;
+  }
 }
 
 @keyframes pulseGlow {

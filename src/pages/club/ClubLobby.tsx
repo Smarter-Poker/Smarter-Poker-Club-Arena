@@ -143,14 +143,11 @@ export default function ClubLobby() {
           .limit(1)
           .maybeSingle();
 
-        if (ucRow && !cancelled && isMountedRef.current) {
-          setIsInUnion(true);
-          navigate(`/unions/${ucRow.union_id}`, { replace: true });
-          return;
-        }
-
-        // Not in union — flag it
-        setIsInUnion(false);
+        // UNION LAW (2026-08-19, Dan): players stay INSIDE their own club
+        // lobby. Union games surface here (TableService resolves them by
+        // union_id) — never bounce members to the union surface; that page
+        // is for the union owner only.
+        setIsInUnion(!!ucRow);
       } catch (e) {
         reportError(e, 'ClubLobby.init');
         // Fail-open for standalone clubs

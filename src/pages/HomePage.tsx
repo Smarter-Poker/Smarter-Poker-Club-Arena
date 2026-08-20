@@ -333,8 +333,16 @@ function HomePageInner() {
                       : 'club',
                 }) as UserClub
             ) || [];
+          // UNION LAW (2026-08-19, Dan): the union house-club card (club.id ===
+          // club.union_id) is only shown to its owner. Players enter through
+          // their own club; union games appear inside the club lobby.
+          const lawFilteredClubs = clubs.filter((c) => {
+            const uid = (c as any).union_id as string | undefined;
+            const isUnionHouseClub = c.entity_type === 'union' || (!!uid && c.id === uid);
+            return !isUnionHouseClub || (c as any).is_owner;
+          });
           if (getIsMounted && !getIsMounted()) return;
-          setUserClubs(clubs);
+          setUserClubs(lawFilteredClubs);
           // Enhancement #9: Update SWR cache
           // Fix 4/5: Only increment statsRefreshKey when club IDs actually changed
           // to avoid N×3 RPC cascade on every fetch
@@ -346,14 +354,14 @@ function HomePageInner() {
                   .sort()
                   .join(',')
               : '';
-            const newIds = clubs
+            const newIds = lawFilteredClubs
               .map((c: UserClub) => c.id)
               .sort()
               .join(',');
             if (prevIds !== newIds) {
               setStatsRefreshKey((k) => k + 1);
             }
-            localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify(clubs));
+            localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify(lawFilteredClubs));
             localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE_TS, String(Date.now()));
           } catch {
             /* quota */

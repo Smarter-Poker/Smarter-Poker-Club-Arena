@@ -47,12 +47,34 @@ class TableService {
   async getClubTables(clubId: string): Promise<PokerTable[]> {
     // Resolve integer club_id to UUID for FK query
     const resolvedId = await resolveClubUUID(clubId);
-    const { data, error } = await supabase
+
+    // UNION LAW (2026-08-19, Dan): a club inside a union lists the UNION's
+    // games (all hosted by the union house club, stamped with union_id) plus
+    // this club's OWN private tables. Sibling clubs' private games never show.
+    let unionId: string | null = null;
+    try {
+      const { data: ucRow } = await supabase
+        .from('union_clubs')
+        .select('union_id')
+        .eq('club_id', resolvedId)
+        .limit(1)
+        .maybeSingle();
+      unionId = ucRow?.union_id ?? null;
+    } catch {
+      /* fail-open: standalone club behavior */
+    }
+
+    let query = supabase
       .from('tables')
       .select(
-        'id, club_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
-      )
-      .eq('club_id', resolvedId)
+        'id, club_id, union_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
+      );
+    if (unionId) {
+      query = query.or(`union_id.eq.${unionId},and(club_id.eq.${resolvedId},is_private.eq.true)`);
+    } else {
+      query = query.eq('club_id', resolvedId);
+    }
+    const { data, error } = await query
       .eq('is_deleted', false)
       .neq('status', 'closed')
       // Tournament tables are not cash games — they were being listed as

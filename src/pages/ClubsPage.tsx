@@ -159,26 +159,20 @@ export default function ClubsPage() {
       if (getIsMounted && !getIsMounted()) return;
       setCurrentUserId(authUser?.id || null);
 
-      // Deduplicate: filter standalone clubs that belong to a loaded union
-      let displayedClubs = memberships;
-      if (unions.length > 0 && memberships.length > 0) {
-        try {
-          const unionClubIds = new Set<string>();
-          const unionIds = unions.map((u) => u.id);
-          const { data: ucRows } = await supabase
-            .from('union_clubs')
-            .select('club_id')
-            .in('union_id', unionIds);
-          if (ucRows) ucRows.forEach((r) => unionClubIds.add(r.club_id));
-          displayedClubs = memberships.filter((m) => !unionClubIds.has((m.club as any)?.id));
-        } catch (e) {
-          reportError(e, 'ClubsPage.filter');
-          /* fail-open: show all clubs if dedup fails */
-        }
-      }
+      // UNION LAW (2026-08-19, Dan): players always enter through THEIR club
+      // card — union games surface inside the club lobby. The union house-club
+      // card (club.id === club.union_id, e.g. Midway Union) is an operations
+      // surface shown ONLY to its owner. Union cards are owner-only too.
+      const displayedClubs = memberships.filter((m) => {
+        const club = m.club as any;
+        if (!club) return false;
+        const isUnionHouseClub = !!club.union_id && club.id === club.union_id;
+        return !isUnionHouseClub || club.owner_id === authUser?.id;
+      });
+      const visibleUnions = unions.filter((u) => u.ownerId === authUser?.id);
 
       setMyClubs(displayedClubs);
-      setMyUnions(unions);
+      setMyUnions(visibleUnions);
       // SWR cache write
       try {
         localStorage.setItem(STORAGE_KEYS.CLUBS_PAGE_CACHE, JSON.stringify(displayedClubs));
@@ -186,7 +180,7 @@ export default function ClubsPage() {
         /* quota */
       }
       try {
-        localStorage.setItem(STORAGE_KEYS.CLUBS_PAGE_UNIONS_CACHE, JSON.stringify(unions));
+        localStorage.setItem(STORAGE_KEYS.CLUBS_PAGE_UNIONS_CACHE, JSON.stringify(visibleUnions));
       } catch {
         /* quota */
       }

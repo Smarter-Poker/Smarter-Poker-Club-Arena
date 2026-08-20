@@ -8,7 +8,16 @@ import fs from 'fs';
 const AUTH=process.env.E2E_AUTH||'/tmp/e2e-work/auth.json';
 const S=(n)=>`${process.env.E2E_SHOTS||'/tmp/e2e-shots'}/mt-${n}.png`;
 const R=[]; const check=(n,ok,d='')=>{R.push({n,ok});console.log(`${ok?'PASS':'FAIL'} ${n}${d?' -- '+d:''}`)};
-const skip=(n,d)=>{console.log(`SKIP ${n} -- ${d}`)};
+/**
+ * A skipped step is NOT a passing step. The summary used to print only
+ * "13/13 PASS" while a skip had quietly removed a core assertion from the run —
+ * a test that can pass without testing, which is the exact failure shape this
+ * suite exists to catch in the product. Skips are now counted, listed, and by
+ * default make the run non-zero. Set E2E_ALLOW_SKIPS=1 when a skip really is
+ * environmental (e.g. only one table exists in the lobby right now).
+ */
+const SKIPS=[];
+const skip=(n,d)=>{SKIPS.push({n,d});console.log(`SKIP ${n} -- ${d}`)};
 
 const browser=await chromium.launch({headless:true});
 const opts={viewport:{width:1280,height:900}};
@@ -242,6 +251,9 @@ try{
 }catch(e){ check('walk completed', false, e.message.slice(0,160)); await page.screenshot({path:S('99-err')}).catch(()=>{}); }
 await ctx.storageState({path:AUTH}).catch(()=>{});
 const f=R.filter(x=>!x.ok).length;
-console.log(`\nMULTI-TABLE WALK: ${R.length-f}/${R.length} PASS`);
+const allowSkips=process.env.E2E_ALLOW_SKIPS==='1';
+console.log(`\nMULTI-TABLE WALK: ${R.length-f}/${R.length} PASS` +
+  (SKIPS.length?` -- ${SKIPS.length} SKIPPED (coverage gap${allowSkips?', allowed':''})`:''));
+for (const s of SKIPS) console.log(`  skipped: ${s.n} -- ${s.d}`);
 await browser.close();
-process.exit(f?1:0);
+process.exit(f || (SKIPS.length && !allowSkips) ? 1 : 0);

@@ -234,6 +234,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // the dedup ref so a retry can actually run, and drop `loading` — with no
   // club data that renders the existing "Club Not Found / Retry" panel; with
   // cached data it simply ends a background refresh that was going nowhere.
+  const [loadStalled, setLoadStalled] = useState(false);
   useEffect(() => {
     if (!loading) return;
     const watchdog = setTimeout(() => {
@@ -242,10 +243,17 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         'ClubHomePage.load_watchdog_timeout'
       );
       loadingRef.current = false;
+      setLoadStalled(true);
       setLoading(false);
     }, 15000);
     return () => clearTimeout(watchdog);
   }, [loading]);
+
+  // Any successful club load clears the stall state, so a slow-but-working
+  // connection that finishes after the watchdog fired snaps back to normal.
+  useEffect(() => {
+    if (club) setLoadStalled(false);
+  }, [club]);
 
   // SWR: show cached club data instantly on mount
   useEffect(() => {
@@ -1069,17 +1077,28 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   }
 
   if (!club) {
+    /**
+     * Dan 2026-08-20: distinguish "we asked and the club is not there" from
+     * "our request never came back". The watchdog above unsticks a stalled
+     * load, and this panel used to tell those players their club had been
+     * "moved or deleted" — a flatly untrue message during the 2026-08-20
+     * Supabase API degradation, when the club existed and 39 of its tables
+     * were running. Same panel, same Retry button, honest wording.
+     */
     return (
       <div className="club-home error">
-        <h2>Club Not Found</h2>
+        <h2>{loadStalled ? 'Still Loading' : 'Club Not Found'}</h2>
         <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 1rem' }}>
-          The club may have been moved or deleted.
+          {loadStalled
+            ? 'This is taking longer than usual — the connection may be slow right now. Your chips and seats are safe.'
+            : 'The club may have been moved or deleted.'}
         </p>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
           <button
             className="btn btn-primary"
             onClick={() => {
               loadingRef.current = false;
+              setLoadStalled(false);
               loadClubData();
             }}
             style={{

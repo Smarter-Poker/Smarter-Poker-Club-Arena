@@ -94,6 +94,13 @@ try {
   await page.screenshot({ path: SHOT('99-error') }).catch(()=>{});
 }
 const failed = results.filter(r=>!r.ok).length;
+// Findings are non-fatal observations (product bugs seen in passing that are
+// not what this walk asserts). Print them with the result so a green run never
+// hides them.
 console.log(`\nTRAINER WALKTHROUGH: ${results.length-failed}/${results.length} PASS`);
+if (errors.length) {
+  console.log(`  ${errors.length} console/page error(s) observed:`);
+  for (const e of errors.slice(0, 8)) console.log('   - ' + e);
+}
 await browser.close();
 process.exit(failed ? 1 : 0);

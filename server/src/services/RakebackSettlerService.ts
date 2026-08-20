@@ -1195,92 +1195,118 @@ export class RakebackSettlerService {
     // correct value rather than diverging.
     let upserts = 0;
     let failures = 0;
-    for (const bucket of buckets.values()) {
-      // Existing row (mostly for status check — paid rows are immutable)
-      const { data: existing } = await supabase
-        .from('rakeback_periods')
-        .select('id, status')
-        .eq('user_id', bucket.user_id)
-        .eq('club_id', bucket.club_id)
-        .eq('period_start', bucket.period_start)
-        .maybeSingle();
+    {
+      // ═══ AUDIT 2026-08-20 — this loop was the settler's dominant cost ═══
+      //
+      // It ran THREE round trips per (user, club, week) bucket, and the middle
+      // one re-downloaded the club's ENTIRE week of rake_records — once per
+      // user. Measured over 20 minutes of production traffic after the credit
+      // batching landed: 164 batched credit calls versus ~3,000 round trips
+      // from this block alone (1,094 rake_records GET + 1,084 rakeback_periods
+      // GET + 582 POST + 256 PATCH).
+      //
+      // Now: each (club, week) window is fetched ONCE and every bucket in it is
+      // computed from that single dataset, then all rows are persisted in one
+      // call. The arithmetic is untouched — the same equalShareCents split runs
+      // on the same rows, so the totals are byte-identical; only the transport
+      // changed. (Re-deriving the split in SQL would have moved a remainder
+      // cent between players, and rake_generated decides the rakeback tier.)
+      const groups = new Map<string, { club_id: string; period_start: string; period_end: string }>();
+      for (const b of buckets.values()) {
+        groups.set(`${b.club_id}|${b.period_start}`, {
+          club_id: b.club_id,
+          period_start: b.period_start,
+          period_end: b.period_end,
+        });
+      }
 
-      // Recompute the canonical period total from rake_records.
-      // We sum equal-shares for this (user, club) within the period window.
-      const periodEndDate = new Date(bucket.period_end + 'T23:59:59.999Z');
-      const periodStartDate = new Date(bucket.period_start + 'T00:00:00.000Z');
-      const { data: periodRows } = await supabase
-        .from('rake_records')
-        .select('rake_amount, player_contributions')
-        .eq('club_id', bucket.club_id)
-        .gte('created_at', periodStartDate.toISOString())
-        .lte('created_at', periodEndDate.toISOString())
-        .gt('rake_amount', 0)
-        .not('player_contributions', 'is', null)
-        .limit(50000);
+      const items: Record<string, unknown>[] = [];
 
-      let totalRake = 0;
-      for (const r of (periodRows as RakeRecordRow[] | null) ?? []) {
-        if (!r.player_contributions) continue;
-        const dealt = Object.entries(r.player_contributions).filter(([, a]) => Number(a) > 0);
-        if (dealt.length === 0) continue;
-        if (dealt.some(([uid]) => uid === bucket.user_id)) {
-          // RAKE-AUDIT 2026-07-24: exact integer-cents split (shares sum to rake)
+      for (const g of groups.values()) {
+        const periodStartDate = new Date(g.period_start + 'T00:00:00.000Z');
+        const periodEndDate = new Date(g.period_end + 'T23:59:59.999Z');
+        const { data: periodRows, error: prErr } = await supabase
+          .from('rake_records')
+          .select('rake_amount, player_contributions')
+          .eq('club_id', g.club_id)
+          .gte('created_at', periodStartDate.toISOString())
+          .lte('created_at', periodEndDate.toISOString())
+          .gt('rake_amount', 0)
+          .not('player_contributions', 'is', null)
+          .limit(50000);
+
+        if (prErr) {
+          reportError(
+            new Error(`period recompute fetch failed for ${g.club_id} ${g.period_start}: ${prErr.message}`),
+            'RakebackSettler.period_fetch_failed'
+          );
+          continue; // leave these buckets for the next cycle rather than writing a wrong total
+        }
+
+        // One pass over the window accumulates EVERY user's share at once.
+        const totals = new Map<string, number>();
+        for (const r of (periodRows as RakeRecordRow[] | null) ?? []) {
+          if (!r.player_contributions) continue;
+          const dealt = Object.entries(r.player_contributions).filter(([, a]) => Number(a) > 0);
+          if (dealt.length === 0) continue;
           const rcShares = equalShareCents(
             Number(r.rake_amount),
             dealt.map(([uid]) => uid)
           );
-          totalRake += rcShares.get(bucket.user_id) ?? 0;
+          for (const [uid] of dealt) {
+            totals.set(uid, (totals.get(uid) ?? 0) + (rcShares.get(uid) ?? 0));
+          }
         }
-      }
-      totalRake = Math.round(totalRake * 100) / 100;
-      const tier = tierFor(totalRake);
-      const rakebackEarned = Math.round(totalRake * tier.rate * 100) / 100;
 
-      if (existing && existing.status === 'pending') {
-        const { error } = await supabase
-          .from('rakeback_periods')
-          .update({
+        for (const b of buckets.values()) {
+          if (b.club_id !== g.club_id || b.period_start !== g.period_start) continue;
+          const totalRake = Math.round((totals.get(b.user_id) ?? 0) * 100) / 100;
+          const tier = tierFor(totalRake);
+          const rakebackEarned = Math.round(totalRake * tier.rate * 100) / 100;
+          items.push({
+            user_id: b.user_id,
+            club_id: b.club_id,
+            period_start: b.period_start,
+            period_end: b.period_end,
             rake_generated: totalRake,
             rakeback_rate: tier.rate,
             rakeback_earned: rakebackEarned,
             rakeback_amount: rakebackEarned,
             total_rake_paid: totalRake,
-          })
-          .eq('id', existing.id);
-        if (error) {
-          failures++;
-          reportError(
-            new Error(error?.message || JSON.stringify(error) || String(error)),
-            'RakebackSettler.update_failed'
-          );
-        } else {
-          upserts++;
-        }
-      } else if (!existing) {
-        const { error } = await supabase.from('rakeback_periods').insert({
-          user_id: bucket.user_id,
-          club_id: bucket.club_id,
-          period_start: bucket.period_start,
-          period_end: bucket.period_end,
-          rake_generated: totalRake,
-          rakeback_rate: tier.rate,
-          rakeback_earned: rakebackEarned,
-          rakeback_amount: rakebackEarned,
-          total_rake_paid: totalRake,
-          status: 'pending',
-        });
-        if (error) {
-          failures++;
-          reportError(
-            new Error(error?.message || JSON.stringify(error) || String(error)),
-            'RakebackSettler.insert_failed'
-          );
-        } else {
-          upserts++;
+          });
         }
       }
-      // status != 'pending' → already paid out, do not modify
+
+      // Persist every bucket in one call. Paid weeks stay immutable (the RPC
+      // gates its DO UPDATE on status = 'pending'), and the second unique key
+      // (user_id, period_start) — which spans all clubs and is the source of
+      // the 409s in the edge log — is caught per item so one collision cannot
+      // abort the batch.
+      for (let i = 0; i < items.length; i += CREDIT_BATCH_SIZE) {
+        const chunk = items.slice(i, i + CREDIT_BATCH_SIZE);
+        try {
+          const { data, error } = await supabase.rpc('fn_rakeback_periods_bulk_upsert', {
+            p_items: chunk,
+          });
+          if (error) {
+            failures += chunk.length;
+            reportError(
+              new Error(`fn_rakeback_periods_bulk_upsert failed: ${error.message}`),
+              'RakebackSettler.period_bulk_upsert'
+            );
+          } else {
+            const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+            upserts += Number(r?.written ?? 0);
+            failures += Number(r?.failed ?? 0) + Number(r?.conflicts ?? 0);
+          }
+        } catch (e) {
+          failures += chunk.length;
+          reportError(
+            new Error((e as { message?: string })?.message || String(e)),
+            'RakebackSettler.period_bulk_upsert_threw'
+          );
+        }
+      }
     }
 
     const elapsedMs = Date.now() - startedAt;

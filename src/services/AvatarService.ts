@@ -15,6 +15,7 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { VIP_AVATAR_LIBRARY } from '../data/vipAvatarLibrary';
 import {
   generateAvatarSvg,
   generateDefaultAvatar,
@@ -127,7 +128,8 @@ class AvatarServiceClass {
    *
    * Sources (merged):
    *  1. Preset avatars from social-media/avatars storage bucket (free tier)
-   *  2. User's custom generated avatars from user_avatars table + custom-avatars bucket
+   *  2. The Hub's VIP avatar library, served same-origin from /avatars/vip/
+   *  3. User's custom generated avatars from user_avatars table + custom-avatars bucket
    *
    * Returns Avatar[] compatible with AvatarGallery component.
    */
@@ -142,7 +144,26 @@ class AvatarServiceClass {
       console.warn('[AvatarService] Failed to load preset avatars:', err);
     }
 
-    // ── 2. Fetch user's custom avatars from user_avatars table ──
+    /* ── 2. The Hub's VIP library ──
+       Dan 2026-08-20: this source did not exist, which is why the gallery's
+       VIP tab was described as "permanently empty - nothing in the codebase
+       ever produced an Avatar with category 'vip'". It does now. The 74 VIP
+       avatars (including the 26 new transparent ones) are static files under
+       the Hub's public/avatars/vip/, same origin as Club Arena, so they need
+       no bucket listing and no network round trip at all. */
+    for (const entry of VIP_AVATAR_LIBRARY) {
+      results.push({
+        id: entry.id,
+        name: entry.name,
+        imageUrl: entry.image,
+        category: 'vip',
+        // Gating is the caller's business (AvatarGallery knows isVip); the
+        // service reports what exists.
+        isOwned: true,
+      });
+    }
+
+    // ── 3. Fetch user's custom avatars from user_avatars table ──
     if (userId) {
       try {
         const { data: userAvatars, error } = await supabase

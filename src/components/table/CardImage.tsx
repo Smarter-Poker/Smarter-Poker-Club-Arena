@@ -293,6 +293,16 @@ const CARD_BACK_ALIASES: Record<string, string> = {
   // paid tier — each maps to a distinct real design
   burgundy: 'classic_red',
   navy: 'classic_blue',
+  // Theme Settings' old Cards tab (pre-2026-08-20). These five ids were never
+  // card-back designs — the tab shipped with invented ids that matched nothing
+  // here — but they ARE sitting in user_theme_settings.cards_id for everyone
+  // who ever opened the modal. Map each to the closest real design so those
+  // rows upgrade to something intentional instead of silently defaulting.
+  'standard-red': 'classic_red',
+  'standard-blue': 'classic_blue',
+  'premium-gold': 'gold',
+  'premium-black': 'carbon',
+  'premium-platinum': 'holographic',
 };
 
 /** Every id the store can hand us, canonical + purchasable aliases. */

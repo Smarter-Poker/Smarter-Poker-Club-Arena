@@ -38,7 +38,7 @@ import { reportError } from '../../utils/errorReporter';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type GalleryTab = 'free' | 'custom' | 'upload';
+type GalleryTab = 'free' | 'vip' | 'custom' | 'upload';
 
 export interface AvatarGalleryProps {
   isOpen: boolean;
@@ -109,22 +109,36 @@ export function AvatarGallery({
   }, [isOpen, userId]);
 
   const freeAvatars = useMemo(() => avatars.filter((a) => a.category === 'free'), [avatars]);
-  const myAvatars = useMemo(
-    () => avatars.filter((a) => a.category === 'custom' || a.category === 'vip'),
-    [avatars]
-  );
+  /* Dan 2026-08-20: 'vip' used to be folded into "Mine", which was correct
+     only while nothing produced a VIP avatar. AvatarService now serves the
+     Hub's 74-strong VIP library (the 26 new transparent designs among them),
+     so VIP gets its own tab and "Mine" goes back to meaning the user's own
+     saved avatars. */
+  const vipAvatars = useMemo(() => avatars.filter((a) => a.category === 'vip'), [avatars]);
+  const myAvatars = useMemo(() => avatars.filter((a) => a.category === 'custom'), [avatars]);
 
   const filteredAvatars = useMemo(() => {
     if (activeTab === 'free') return freeAvatars;
+    if (activeTab === 'vip') return vipAvatars;
     if (activeTab === 'custom') return myAvatars;
     return [];
-  }, [activeTab, freeAvatars, myAvatars]);
+  }, [activeTab, freeAvatars, vipAvatars, myAvatars]);
 
-  const handleSelect = useCallback((avatar: Avatar) => {
-    haptic.light();
-    setNotice(null);
-    setSelectedAvatar(avatar.imageUrl);
-  }, []);
+  const handleSelect = useCallback(
+    (avatar: Avatar) => {
+      // VIP artwork is VIP artwork. Say so instead of letting the pick appear
+      // to take and then quietly not stick.
+      if (avatar.category === 'vip' && !isVip) {
+        haptic.light();
+        setNotice('This avatar is part of the VIP collection. Upgrade to VIP to use it.');
+        return;
+      }
+      haptic.light();
+      setNotice(null);
+      setSelectedAvatar(avatar.imageUrl);
+    },
+    [isVip]
+  );
 
   const handleUseProfilePhoto = useCallback(() => {
     if (!profilePhotoUrl) return;
@@ -284,6 +298,12 @@ export function AvatarGallery({
             Presets ({freeAvatars.length})
           </button>
           <button
+            className={`ag-tab ${activeTab === 'vip' ? 'ag-tab--active' : ''}`}
+            onClick={() => setActiveTab('vip')}
+          >
+            VIP ({vipAvatars.length})
+          </button>
+          <button
             className={`ag-tab ${activeTab === 'custom' ? 'ag-tab--active' : ''}`}
             onClick={() => setActiveTab('custom')}
           >
@@ -312,21 +332,28 @@ export function AvatarGallery({
               <div className="ag-empty">
                 {activeTab === 'custom'
                   ? 'You have not created any avatars yet. Use Create Custom Avatar above.'
-                  : 'No preset avatars available.'}
+                  : activeTab === 'vip'
+                    ? 'VIP avatars could not be loaded.'
+                    : 'No preset avatars available.'}
               </div>
             ) : (
               <div className="ag-grid">
                 {filteredAvatars.map((avatar) => {
                   const isSelected = selectedAvatar === avatar.imageUrl;
+                  const isLocked = avatar.category === 'vip' && !isVip;
 
                   return (
                     <div
                       key={avatar.id}
-                      className={['ag-item', isSelected ? 'ag-item--selected' : '']
+                      className={[
+                        'ag-item',
+                        isSelected ? 'ag-item--selected' : '',
+                        isLocked ? 'ag-item--locked' : '',
+                      ]
                         .filter(Boolean)
                         .join(' ')}
                       onClick={() => handleSelect(avatar)}
-                      title={avatar.name}
+                      title={isLocked ? `${avatar.name} (VIP)` : avatar.name}
                     >
                       <img
                         loading="lazy"
@@ -338,7 +365,8 @@ export function AvatarGallery({
                           (e.target as HTMLImageElement).src = generateDefaultAvatar();
                         }}
                       />
-                      {isSelected && <div className="ag-item__check">&#10003;</div>}
+                      {isLocked && <div className="ag-item__lock">VIP</div>}
+                      {isSelected && !isLocked && <div className="ag-item__check">&#10003;</div>}
                       <span className="ag-item__name">{avatar.name}</span>
                     </div>
                   );

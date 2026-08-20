@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { TABLE_SKINS, TABLE_BACKGROUNDS } from '../../assets/tableAssets';
+import { TABLE_SKINS, TABLE_BACKGROUNDS, TABLE_BACKGROUND_IDS } from '../../assets/tableAssets';
 import { CardBack, normalizeCardBack } from './CardImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
@@ -74,6 +74,37 @@ const TABS: { key: ThemeTab; label: string }[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 // THEME ASSETS — Bible V8 §11.2.2
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Display name + VIP flag per background. The ORDER and the very existence of
+ * a tile come from TABLE_BACKGROUND_IDS (the same registry TablePage paints
+ * from), so this map only supplies the labels. An id here that the registry
+ * dropped simply stops appearing; an id the registry gains appears with a
+ * title-cased name until someone gives it a nicer one.
+ */
+const BACKGROUND_META: Record<string, { name: string; vipOnly: boolean }> = {
+  midnight: { name: 'Midnight', vipOnly: false },
+  royal_indigo: { name: 'Royal Indigo', vipOnly: false },
+  emerald_room: { name: 'Emerald Room', vipOnly: false },
+  crimson_lounge: { name: 'Crimson Lounge', vipOnly: false },
+  ocean_abyss: { name: 'Ocean Abyss', vipOnly: false },
+  golden_dusk: { name: 'Golden Dusk', vipOnly: false },
+  galaxy: { name: 'Galaxy', vipOnly: false },
+  carbon_grid: { name: 'Carbon Grid', vipOnly: true },
+  ice_frost: { name: 'Ice Frost', vipOnly: true },
+  jade_neon: { name: 'Jade Neon', vipOnly: true },
+};
+
+const BACKGROUND_FALLBACK_GRADIENT = 'radial-gradient(ellipse at 50% 35%, #2c323c, #0a0c10)';
+
+const BACKGROUND_ASSETS: ThemeAsset[] = TABLE_BACKGROUND_IDS.map((id) => ({
+  id,
+  name:
+    BACKGROUND_META[id]?.name ??
+    id.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+  thumbnail: BACKGROUND_FALLBACK_GRADIENT,
+  vipOnly: BACKGROUND_META[id]?.vipOnly ?? false,
+}));
 
 const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
   themes: [
@@ -234,97 +265,71 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
   ],
   // Dan 2026-08-18: ten standalone designed backgrounds (see
   // src/assets/backgrounds/, applied via TABLE_BACKGROUNDS in TablePage).
-  background: [
-    {
-      id: 'midnight',
-      name: 'Midnight',
-      thumbnail: 'radial-gradient(ellipse at 50% 35%, #2c323c, #0a0c10)',
-      vipOnly: false,
-    },
-    {
-      id: 'royal_indigo',
-      name: 'Royal Indigo',
-      thumbnail: 'radial-gradient(ellipse at 50% 35%, #3a306e, #0c0a1a)',
-      vipOnly: false,
-    },
-    {
-      id: 'emerald_room',
-      name: 'Emerald Room',
-      thumbnail: 'radial-gradient(ellipse at 50% 35%, #164e36, #06120d)',
-      vipOnly: false,
-    },
-    {
-      id: 'crimson_lounge',
-      name: 'Crimson Lounge',
-      thumbnail: 'radial-gradient(ellipse at 50% 35%, #601a22, #14070a)',
-      vipOnly: false,
-    },
-    {
-      id: 'ocean_abyss',
-      name: 'Ocean Abyss',
-      thumbnail: 'radial-gradient(ellipse at 50% 35%, #143e68, #050c18)',
-      vipOnly: false,
-    },
-    {
-      id: 'golden_dusk',
-      name: 'Golden Dusk',
-      thumbnail: 'radial-gradient(ellipse at 50% 35%, #786022, #181008)',
-      vipOnly: false,
-    },
-    {
-      id: 'galaxy',
-      name: 'Galaxy',
-      thumbnail: 'radial-gradient(ellipse at 30% 25%, #2e1650, #04040c)',
-      vipOnly: false,
-    },
-    {
-      id: 'carbon_grid',
-      name: 'Carbon Grid',
-      thumbnail: 'radial-gradient(ellipse at 50% 40%, #1e2126, #08090b)',
-      vipOnly: true,
-    },
-    {
-      id: 'ice_frost',
-      name: 'Ice Frost',
-      thumbnail: 'radial-gradient(ellipse at 50% 35%, #46607a, #0a121e)',
-      vipOnly: true,
-    },
-    {
-      id: 'jade_neon',
-      name: 'Jade Neon',
-      thumbnail: 'radial-gradient(ellipse at 50% 90%, #12784f, #050a09)',
-      vipOnly: true,
-    },
-  ],
+  //
+  // Dan 2026-08-20: GENERATED from TABLE_BACKGROUND_IDS rather than typed out
+  // a second time. The tiles render the real room artwork (renderAssetPreview
+  // reads TABLE_BACKGROUNDS); the `thumbnail` gradient below is only the
+  // fallback for an id with no artwork behind it. Deriving the list from the
+  // registry means that fallback can never be what a player actually sees:
+  // an id can no longer appear here without artwork existing for it, and a
+  // newly added background shows up in the picker on its own.
+  background: BACKGROUND_ASSETS,
+  // Dan 2026-08-20: these ids are the REAL card-back designs (CARD_BACK_IDS in
+  // CardImage.tsx, each with its own artwork under
+  // public/cards/backs/table/*.webp). The previous list — standard-red,
+  // standard-blue, premium-gold, premium-black, premium-platinum — matched
+  // nothing: not CARD_BACK_IDS, not CARD_BACK_ALIASES. normalizeCardBack sent
+  // every one of them to the default classic_blue, so all five tiles rendered
+  // the identical navy back and picking any of them changed nothing on the
+  // felt. Free/VIP split mirrors CardBackSelector's standard vs premium/
+  // exclusive store tiers so the modal and the shop agree on what is paid.
   cards: [
     {
-      id: 'standard-red',
-      name: 'Standard Red',
-      thumbnail: 'linear-gradient(135deg, #c62828, #e53935)',
+      id: 'classic_red',
+      name: 'Classic Red',
+      thumbnail: 'linear-gradient(135deg, #8b0000, #4a0000)',
       vipOnly: false,
     },
     {
-      id: 'standard-blue',
-      name: 'Standard Blue',
-      thumbnail: 'linear-gradient(135deg, #1565c0, #1976d2)',
+      id: 'classic_blue',
+      name: 'Classic Blue',
+      thumbnail: 'linear-gradient(135deg, #1e3a5f, #0d2137)',
       vipOnly: false,
     },
     {
-      id: 'premium-gold',
+      id: 'royal',
+      name: 'Royal',
+      thumbnail: 'linear-gradient(135deg, #4a0080, #1a0030)',
+      vipOnly: false,
+    },
+    {
+      id: 'gold',
       name: 'Premium Gold',
-      thumbnail: 'linear-gradient(135deg, #f57f17, #ff8f00)',
+      thumbnail: 'linear-gradient(135deg, #ffd700, #b8860b)',
       vipOnly: true,
     },
     {
-      id: 'premium-black',
-      name: 'Premium Black',
-      thumbnail: 'linear-gradient(135deg, #212121, #424242)',
+      id: 'holographic',
+      name: 'Holographic',
+      thumbnail: 'linear-gradient(135deg, #d3d3d3, #a9a9a9)',
       vipOnly: true,
     },
     {
-      id: 'premium-platinum',
-      name: 'Platinum',
-      thumbnail: 'linear-gradient(135deg, #78909c, #90a4ae)',
+      id: 'carbon',
+      name: 'Carbon Fiber',
+      thumbnail: 'linear-gradient(135deg, #434343, #000000)',
+      vipOnly: true,
+    },
+    {
+      id: 'club-branded',
+      name: 'Club Crest',
+      thumbnail: 'linear-gradient(135deg, #8b0000, #4a0000)',
+      vipOnly: true,
+    },
+    {
+      id: 'diamond-foil',
+      name: 'Diamond Foil',
+      thumbnail: 'linear-gradient(135deg, #e0e0e0, #ffffff)',
       vipOnly: true,
     },
   ],
@@ -343,7 +348,7 @@ const DEFAULT_SELECTION: ThemeSelection = {
   table_id: 'neon_city',
   button_id: 'classic-white',
   background_id: 'midnight',
-  cards_id: 'standard-red',
+  cards_id: 'classic_red',
 };
 
 /**
@@ -358,31 +363,31 @@ const THEME_PRESET_BUNDLES: Record<string, Partial<ThemeSelection>> = {
     table_id: 'neon_city',
     button_id: 'classic-white',
     background_id: 'midnight',
-    cards_id: 'standard-red',
+    cards_id: 'classic_red',
   },
   'classic-brown': {
     table_id: 'mahogany_red',
     button_id: 'gray-d-gear',
     background_id: 'midnight',
-    cards_id: 'standard-red',
+    cards_id: 'classic_red',
   },
   'neon-blue': {
     table_id: 'ice_cavern',
     button_id: 'blue-crystal',
     background_id: 'galaxy',
-    cards_id: 'standard-blue',
+    cards_id: 'classic_blue',
   },
   'rustic-wood': {
     table_id: 'classic_green',
     button_id: 'gold-star',
     background_id: 'golden_dusk',
-    cards_id: 'premium-gold',
+    cards_id: 'gold',
   },
   'casino-green': {
     table_id: 'jade_city',
     button_id: 'gold-star',
     background_id: 'jade_neon',
-    cards_id: 'premium-black',
+    cards_id: 'carbon',
   },
 };
 
@@ -516,7 +521,10 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             table_id: data.table_id || DEFAULT_SELECTION.table_id,
             button_id: data.button_id || DEFAULT_SELECTION.button_id,
             background_id: data.background_id || DEFAULT_SELECTION.background_id,
-            cards_id: data.cards_id || DEFAULT_SELECTION.cards_id,
+            // Dan 2026-08-20: normalise, or a row still holding one of the old
+            // invented ids (standard-red, premium-platinum, ...) highlights no
+            // tile at all and the tab looks like it forgot the user's choice.
+            cards_id: normalizeCardBack(data.cards_id || DEFAULT_SELECTION.cards_id),
           });
         } else if (mounted) {
           // No saved theme for this game type — try ALL fallback
@@ -534,7 +542,7 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
                 table_id: fallback.table_id || DEFAULT_SELECTION.table_id,
                 button_id: fallback.button_id || DEFAULT_SELECTION.button_id,
                 background_id: fallback.background_id || DEFAULT_SELECTION.background_id,
-                cards_id: fallback.cards_id || DEFAULT_SELECTION.cards_id,
+                cards_id: normalizeCardBack(fallback.cards_id || DEFAULT_SELECTION.cards_id),
               });
             } else if (mounted) {
               setSelection({ ...DEFAULT_SELECTION });

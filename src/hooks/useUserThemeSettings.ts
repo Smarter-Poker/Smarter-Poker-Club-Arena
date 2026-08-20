@@ -27,7 +27,7 @@ const DEFAULT_THEME: UserThemeSelection = {
   table_id: 'neon_city',
   button_id: 'classic-white',
   background_id: 'midnight',
-  cards_id: 'standard-red',
+  cards_id: 'classic_red',
 };
 
 /**

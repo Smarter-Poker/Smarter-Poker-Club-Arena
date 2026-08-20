@@ -644,28 +644,64 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    FIX 222: BIBLE V8 §11.2 — Tab 5 (Card Themes)
-   Card face color tokens — consumed by card rendering components
+   Card face color tokens — consumed by DealAnimation.css (the in-flight card)
+   and TableVisualHotfix.css (the settled card back's gradient fallback).
+
+   Dan 2026-08-20: the five selectors here were standard-red / standard-blue /
+   premium-gold / premium-black / premium-platinum — the Theme modal's old
+   card ids, none of which is a real card-back design. data-cards-theme now
+   carries a normalised CARD_BACK id, so every selector below is one of the
+   twelve real designs and the flying card matches the one it lands as.
+   Palettes mirror the --cb-gradient / --cb-border pairs in CardImage.css.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.table-page[data-cards-theme='standard-red'] {
-  --card-accent: #c62828;
-  --card-back-gradient: linear-gradient(135deg, #c62828, #e53935);
+.table-page[data-cards-theme='classic_red'] {
+  --card-accent: #b22222;
+  --card-back-gradient: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
 }
-.table-page[data-cards-theme='standard-blue'] {
-  --card-accent: #1565c0;
-  --card-back-gradient: linear-gradient(135deg, #1565c0, #1976d2);
+.table-page[data-cards-theme='classic_blue'] {
+  --card-accent: #3a6ea5;
+  --card-back-gradient: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
 }
-.table-page[data-cards-theme='premium-gold'] {
-  --card-accent: #f57f17;
-  --card-back-gradient: linear-gradient(135deg, #f57f17, #ff8f00);
+.table-page[data-cards-theme='diamond'] {
+  --card-accent: #9b4dca;
+  --card-back-gradient: linear-gradient(135deg, #5e17eb 0%, #2a0a66 100%);
 }
-.table-page[data-cards-theme='premium-black'] {
-  --card-accent: #424242;
-  --card-back-gradient: linear-gradient(135deg, #212121, #424242);
+.table-page[data-cards-theme='dragon'] {
+  --card-accent: #7c3aed;
+  --card-back-gradient: linear-gradient(135deg, #2d1b69 0%, #0f0a26 100%);
 }
-.table-page[data-cards-theme='premium-platinum'] {
-  --card-accent: #90a4ae;
-  --card-back-gradient: linear-gradient(135deg, #78909c, #90a4ae);
+.table-page[data-cards-theme='galaxy'] {
+  --card-accent: #5b21b6;
+  --card-back-gradient: linear-gradient(135deg, #0c0c1e 0%, #1a1a3e 50%, #2d1b69 100%);
+}
+.table-page[data-cards-theme='gold'] {
+  --card-accent: #daa520;
+  --card-back-gradient: linear-gradient(135deg, #ffd700 0%, #b8860b 100%);
+}
+.table-page[data-cards-theme='neon'] {
+  --card-accent: #00ffff;
+  --card-back-gradient: linear-gradient(135deg, #00ff9f 0%, #00b8ff 50%, #ff00ff 100%);
+}
+.table-page[data-cards-theme='royal'] {
+  --card-accent: #9333ea;
+  --card-back-gradient: linear-gradient(135deg, #4a0080 0%, #1a0030 100%);
+}
+.table-page[data-cards-theme='holographic'] {
+  --card-accent: #808080;
+  --card-back-gradient: linear-gradient(135deg, #d3d3d3 0%, #a9a9a9 100%);
+}
+.table-page[data-cards-theme='carbon'] {
+  --card-accent: #333333;
+  --card-back-gradient: linear-gradient(135deg, #434343 0%, #000000 100%);
+}
+.table-page[data-cards-theme='club-branded'] {
+  --card-accent: #b22222;
+  --card-back-gradient: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
+}
+.table-page[data-cards-theme='diamond-foil'] {
+  --card-accent: #cccccc;
+  --card-back-gradient: linear-gradient(135deg, #e0e0e0 0%, #ffffff 100%);
 }
 
 .table-surface {

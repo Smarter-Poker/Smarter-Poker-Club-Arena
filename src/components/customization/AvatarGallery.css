@@ -247,11 +247,18 @@
   border-color: transparent;
 }
 
+/* Dan 2026-08-20: `object-fit: cover` was fine for the square bucket presets
+   and wrong for the new VIP artwork, which is transparent character art at
+   assorted aspect ratios - cover crops it to a slice of torso, so a row of
+   distinct characters reads as a row of near-identical blobs. `contain` shows
+   each design whole; the disc background keeps the circular silhouette that
+   cover was providing for free. */
 .ag-item__img {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  object-fit: cover;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 .ag-item__name {
@@ -267,7 +274,14 @@
   position: absolute;
   top: 4px;
   right: 4px;
-  font-size: 0.7rem;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 5px;
+  color: #1a1a1e;
+  background: linear-gradient(135deg, #ffd700, #b8860b);
 }
 .ag-item__check {
   position: absolute;

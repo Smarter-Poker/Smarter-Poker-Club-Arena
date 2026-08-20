@@ -797,13 +797,30 @@ export default function PlayerStatsPage() {
         credentials: 'include',
         body: JSON.stringify({}),
       });
-      if (res.ok) {
-        toast.success('Stats exported. Opening your Personal Assistant...');
+      // The detector needs a minimum sample and says so in the body. Reporting
+      // "exported" and navigating regardless would claim work that did not
+      // happen — the player would land on an assistant with nothing new.
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        toast.error('Assistant export failed. Try again in a moment.');
+      } else if (body && typeof body.leaksDetected === 'number' && body.leaksDetected === 0) {
+        const analysed = typeof body.handsAnalyzed === 'number' ? body.handsAnalyzed : null;
+        toast.info(
+          body.message ||
+            (analysed !== null
+              ? `Analysed ${analysed.toLocaleString()} hands — nothing to flag yet.`
+              : 'Nothing to flag yet.')
+        );
+      } else {
+        const n = typeof body?.leaksDetected === 'number' ? body.leaksDetected : null;
+        toast.success(
+          n !== null
+            ? `${n} pattern${n === 1 ? '' : 's'} sent to your Personal Assistant...`
+            : 'Stats exported. Opening your Personal Assistant...'
+        );
         setTimeout(() => {
           window.location.href = '/hub/personal-assistant';
         }, 900);
-      } else {
-        toast.error('Assistant export failed. Try again in a moment.');
       }
     } catch (e) {
       reportError(e, 'PlayerStatsPage.sendToAssistant');

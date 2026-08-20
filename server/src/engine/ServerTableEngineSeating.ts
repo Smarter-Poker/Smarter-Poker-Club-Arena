@@ -401,7 +401,20 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   public leaveTable(userId: string): { success: boolean; error?: string; immediate: boolean } {
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) {
-      return { success: false, error: 'Player not found at this table', immediate: false };
+      // Dan 2026-08-20 (leave-stuck fix): `seatedPlayers` is the HAND roster,
+      // reloaded from the DB at each hand start. A player who reserved a seat
+      // mid-hand ("Seat Reserved, you'll be dealt in next hand") is legally
+      // absent from it. The old response was a hard failure -> HTTP 400 ->
+      // TableService refused to cash out -> the player could NEVER leave while
+      // waiting to be dealt in; the seat stayed reserved forever. The engine
+      // holds no in-memory state for this player (no live stack, not in any
+      // hand), so the departure is trivially safe to acknowledge: return
+      // success + immediate so the client proceeds with atomic DB cashout,
+      // exactly like the engine-not-running branch of the /leave handler.
+      console.log(
+        `[ServerTableEngine:${this.tableId}] leave for ${userId}: not in hand roster (reserved/waiting) — acking, client handles DB cleanup`
+      );
+      return { success: true, immediate: true };
     }
 
     // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so

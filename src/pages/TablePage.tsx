@@ -27,6 +27,7 @@ import {
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
+import { normalizeCardBack } from '../components/table/CardImage';
 // Rabbit-hunt button artwork (Dan: "use the actual rabbit hunt dynamic image").
 // Imported through Vite rather than referenced from public/ on purpose: an
 // imported asset is emitted into dist/assets/, and sync-club-arena.sh copies
@@ -2354,6 +2355,25 @@ export default function TablePage({
     tableState.gameType,
     tableState.isTournament,
     undefined // tournamentType resolved internally from gameType
+  );
+
+  /**
+   * Dan 2026-08-20 — THE CARDS TAB NEVER APPLIED ANYTHING.
+   *
+   * Theme Settings' Cards tab wrote `cards_id` into user_theme_settings, and
+   * this page read it into exactly one place: the `data-cards-theme` attribute
+   * below, which sets two CSS custom properties nothing consumes. The card
+   * backs that actually render come from `userSettings.cardBack` (settingsBridge),
+   * a completely separate value. So you could pick a card back in the modal,
+   * see "Theme applied", and watch the felt keep dealing the old design forever.
+   *
+   * The theme selection is the more specific choice (it is per game type), so
+   * it wins when set; the global setting is the fallback. Both go through
+   * normalizeCardBack so a stale id can never blank a card.
+   */
+  const activeCardBack = useMemo(
+    () => normalizeCardBack(v8Theme.cards_id || userSettings.cardBack),
+    [v8Theme.cards_id, userSettings.cardBack]
   );
 
   // Bible V8 §9.1.3: Frame budget monitoring (dev mode only — warns on >16ms frames)
@@ -5247,36 +5267,12 @@ export default function TablePage({
             (heroP.stack || 0) > 0;
           if (!heroStillHasAction) setIsAllInMode(true);
         }
-        if (
-          (action === 'bet' ||
-            action === 'raise' ||
-            action === 'call' ||
-            action === 'all_in' ||
-            action === 'allin') &&
-          actionSeat > 0 &&
-          actionAmount > 0
-        ) {
-          // Translate seat percentage → screen px using the rotated layout.
-          // 2026-08-04 FIX: percentages are relative to the TABLE SCALER, not
-          // the viewport — mapping them through window.innerWidth/Height threw
-          // chips off the felt on desktop. Use the measured scaler rect.
-          const seatPct = seatPositions[seatIdx] || { x: 50, y: 90 };
-          const fromPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
-          // ANIMATION AUDIT 2026-08-19: chips used to aim at scaler y:45 while
-          // .pot-area sits at 49.9%/32.99% — every flight landed ~12% of the
-          // table height BELOW the pot. Aim at the pot's real anchor.
-          const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
-          const id = `pa_${Date.now()}_${seatIdx}_${Math.random().toString(36).slice(2, 6)}`;
-          setChipAnimations((prev) => [
-            ...prev,
-            {
-              id,
-              from: fromPos,
-              to: potPos,
-              amount: actionAmount,
-            },
-          ]);
-        }
+        // Dan 2026-08-20 (pot redesign): NO chip flight to the pot on the
+        // action itself. Chips belong IN FRONT of the player (ChipPhysics bet
+        // stack at the seat) until the street completes — they sweep to the
+        // middle only when the next board card(s) come (COMMUNITY_CARDS_DEALT
+        // handler) or the hand ends. The old per-action flight is also what
+        // kept stranding lone chip sprites in the middle of the felt.
         break;
       }
 
@@ -5471,20 +5467,14 @@ export default function TablePage({
         const postings =
           ((evt.data as any).postings as Array<{ seat: number; type: string; amount: number }>) ||
           [];
-        // 2026-08-04 FIX: scaler-relative percentages, not viewport (see PLAYER_ACTION)
-        const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
+        // Dan 2026-08-20 (pot redesign): blinds no longer fly to the middle
+        // either — they sit in front of the blind seats (ChipPhysics) and are
+        // swept into the pot with everything else when the flop comes.
         for (const p of postings) {
           if (p.seat > 0 && p.amount > 0) {
             const seatIdx = p.seat - 1;
             // ANIMATION AUDIT 2026-08-19: blinds count toward the sweep mask.
             streetBetsRef.current[seatIdx] = p.amount;
-            const seatPct = seatPositions[seatIdx] || { x: 50, y: 90 };
-            const fromPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
-            const id = `blind_${Date.now()}_${seatIdx}_${Math.random().toString(36).slice(2, 6)}`;
-            setChipAnimations((prev) => [
-              ...prev,
-              { id, from: fromPos, to: potPos, amount: p.amount },
-            ]);
           }
         }
         // Play chip sound for blinds posting
@@ -7412,7 +7402,7 @@ export default function TablePage({
       data-felt-theme={v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'}
       data-background-theme={v8Theme.background_id || 'midnight'}
       data-button-theme={v8Theme.button_id || 'classic-white'}
-      data-cards-theme={v8Theme.cards_id || 'standard-red'}
+      data-cards-theme={activeCardBack}
       data-theme-preset={v8Theme.theme_id || 'default-dark'}
       /* Dan 2026-08-18: 2 or 3 when the hand is run multiple times — CSS
          shifts the felt masthead down by one board height per extra run so
@@ -7908,7 +7898,7 @@ export default function TablePage({
                     highlightedIndices={winnerInfo.cardIndices}
                     winningHandName={winnerInfo.handName}
                     deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
-                    cardBack={userSettings.cardBack}
+                    cardBack={activeCardBack}
                     playSounds={ambientSoundsAllowed}
                   />
                   {(ritResult?.boards?.length ?? 0) >= 2 &&
@@ -7919,7 +7909,7 @@ export default function TablePage({
                           cards={normalizeCards(board) as Card[]}
                           stage="river"
                           deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
-                          cardBack={userSettings.cardBack}
+                          cardBack={activeCardBack}
                         />
                       </div>
                     ))}
@@ -8033,6 +8023,10 @@ export default function TablePage({
               displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
               onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
               collectTo={potCollectTo}
+              /* Dan 2026-08-20: live bets still in front of players — shown as
+                 a second thin pill under the POT pill; they merge into the pot
+                 total when the street's chips sweep to the middle. */
+              streetBets={(tableState.lastBetAmounts || []).reduce((s, a) => s + (a || 0), 0)}
             />
             {/* AUDIT FIX 2026-07-19: removed the duplicate PremiumPot —
                 it rendered the SAME pot total in the same .pot-area as
@@ -8289,7 +8283,7 @@ export default function TablePage({
                   hudStats={player && !player.isHero ? getPlayerHUDStats(player.id) : null}
                   showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
-                  cardBack={userSettings.cardBack}
+                  cardBack={activeCardBack}
                   showStackInBB={v8Settings.show_stack_in_bb}
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}

@@ -280,28 +280,24 @@
  *   - Gold border that intensifies on interaction
  */
 
+/* Dan 2026-08-20 (PokerBros-parity redesign): the pot is a THIN PILL — a
+   single horizontal row, "POT" label + amount, dark translucent capsule.
+   The old tall glassmorphism box (column layout, big padding, gold glow
+   wall) read as a billboard parked over the felt. */
 .pot-display__main {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  background: linear-gradient(
-    145deg,
-    rgba(0, 0, 0, 0.9) 0%,
-    rgba(10, 8, 22, 0.85) 50%,
-    rgba(0, 0, 0, 0.8) 100%
-  );
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  border-radius: var(--radius-lg, 14px);
-  padding: var(--space-sm, 6px) var(--space-xl, 20px);
-  border: 1px solid var(--pd-gold-dim);
+  gap: 8px;
+  background: rgba(8, 10, 18, 0.72);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  border-radius: 999px;
+  padding: 3px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
-    /* Drop shadow — lifts container off felt */
-    0 6px 28px rgba(0, 0, 0, 0.65),
-    /* Ambient gold glow — "pot is hot" */ 0 0 40px var(--pd-gold-glow),
-    /* Pixel-perfect outer border */ 0 0 0 1px rgba(255, 255, 255, 0.03),
-    /* Inner top highlight — glass edge catch */ inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    /* Inner bottom shadow — depth */ inset 0 -1px 0 rgba(0, 0, 0, 0.25);
+    0 2px 10px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   transition:
     border-color 0.25s ease,
     box-shadow 0.3s ease,
@@ -400,28 +396,75 @@
    ================================================================================= */
 
 .pot-display__label {
-  font-size: 0.625rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #f5a623; /* PokerBros-style amber POT label */
   text-transform: uppercase;
-  letter-spacing: 0.15em;
-  margin-bottom: 2px;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
 .pot-display__amount {
-  font-size: var(--font-2xl, 1.25rem);
+  font-size: 0.95rem;
   font-weight: var(--weight-extrabold, 800);
-  color: var(--pd-gold);
+  color: #ffffff;
   font-family: 'JetBrains Mono', monospace;
-  text-shadow:
-    0 0 14px rgba(255, 215, 0, 0.45),
-    0 0 30px rgba(255, 215, 0, 0.15),
-    0 2px 8px rgba(0, 0, 0, 0.65);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
   transition:
     transform 0.3s var(--pd-ease-bounce),
     color 0.2s ease;
   letter-spacing: -0.02em;
   position: relative;
+}
+
+/* ── Current-street pill (Dan 2026-08-20) ──
+   Sits below the POT pill while a street is being bet: tiny chip stack icon
+   + the street's accumulating total. Disappears when the chips sweep in. */
+.pot-display__street {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  background: rgba(8, 10, 18, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 2px 12px;
+  animation: pdTotalFadeIn 0.25s var(--pd-ease-settle) backwards;
+}
+
+.pot-display__street-amount {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* Tiny 3-chip stack icon */
+.pot-display__mini-chips {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+}
+.pot-display__mini-chip {
+  position: absolute;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #35d0c5 0%, #17877f 70%);
+  border: 1.5px dashed rgba(255, 255, 255, 0.75);
+  box-sizing: border-box;
+}
+.pot-display__mini-chip--b {
+  bottom: 0;
+}
+.pot-display__mini-chip--m {
+  bottom: 3px;
+}
+.pot-display__mini-chip--t {
+  bottom: 6px;
 }
 
 /*
@@ -937,17 +980,16 @@
   }
 
   .pot-display__main {
-    padding: 8px 18px;
-    gap: 4px;
+    padding: 3px 12px;
+    gap: 7px;
   }
 
   .pot-display__label {
     font-size: 0.65rem;
-    margin-bottom: 2px;
   }
 
   .pot-display__amount {
-    font-size: 1.1rem;
+    font-size: 0.9rem;
     font-weight: 800;
   }
 
@@ -1008,11 +1050,11 @@
   }
 
   .pot-display__main {
-    padding: 7px 16px;
+    padding: 3px 11px;
   }
 
   .pot-display__amount {
-    font-size: 1rem;
+    font-size: 0.85rem;
   }
 
   .pot-display__chips {
@@ -1042,18 +1084,17 @@
   }
 
   .pot-display__main {
-    padding: 6px 14px;
-    gap: 3px;
-    border-radius: 10px;
+    padding: 2px 10px;
+    gap: 6px;
+    border-radius: 999px;
   }
 
   .pot-display__label {
     font-size: 0.6rem;
-    margin-bottom: 1px;
   }
 
   .pot-display__amount {
-    font-size: 0.95rem;
+    font-size: 0.82rem;
     font-weight: 800;
   }
 
@@ -1087,8 +1128,8 @@
   }
 
   .pot-display__main {
-    padding: 5px 12px;
-    gap: 2px;
+    padding: 2px 9px;
+    gap: 5px;
     max-width: 100%;
   }
 
@@ -1097,7 +1138,7 @@
   }
 
   .pot-display__amount {
-    font-size: 0.9rem;
+    font-size: 0.78rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

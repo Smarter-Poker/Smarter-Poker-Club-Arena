@@ -250,7 +250,7 @@
 }
 
 .seat__avatar[role='button']:focus-visible {
-  outline: 2px solid var(--timer-color, #ffd700);
+  outline: 2px solid var(--timer-color, #00e5ff);
   outline-offset: 3px;
   border-radius: var(--radius-circle);
 }
@@ -665,10 +665,14 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   NEON YELLOW TIMER BORDER — The signature PokerBros effect
+   NEON BLUE TIMER BORDER — The signature PokerBros effect
+   (Dan 2026-08-20: countdown recolored neon yellow -> neon blue #00e5ff.
+    The final-seconds snap to red is unchanged. Variable names that say
+    "yellow" — e.g. --sp-timer-yellow-duration — are legacy names for the
+    BASE-color window and were kept to avoid churning the TSX contract.)
    ═══════════════════════════════════════════════════════════════════════════════
 
-   When .seat--active, the info box gets a neon yellow glowing border.
+   When .seat--active, the info box gets a neon blue glowing border.
    The border uses a conic-gradient that shrinks based on --timer-progress,
    creating the "disappearing clock" effect.
 
@@ -707,7 +711,7 @@
 @property --timer-color {
   syntax: '<color>';
   inherits: true;
-  initial-value: #ffd700;
+  initial-value: #00e5ff;
 }
 @keyframes spTimerRingShrink {
   from {
@@ -730,10 +734,10 @@
        red for the borrowed time, which is where urgency actually belongs. */
 @keyframes spTimerColorShift {
   0% {
-    --timer-color: #ffd700;
+    --timer-color: #00e5ff;
   }
   99.99% {
-    --timer-color: #ffd700;
+    --timer-color: #00e5ff;
   }
   100% {
     --timer-color: #ef4444;
@@ -761,13 +765,13 @@
     from 0deg,
     transparent 0%,
     transparent calc(100% - var(--timer-progress, 100%)),
-    var(--timer-color, #ffd700) calc(100% - var(--timer-progress, 100%)),
-    var(--timer-color, #ffd700) 100%
+    var(--timer-color, #00e5ff) calc(100% - var(--timer-progress, 100%)),
+    var(--timer-color, #00e5ff) 100%
   );
   z-index: -2;
   /* Neon glow — color matches ring; drop-shadow tracks --timer-color implicitly */
-  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.55))
-    drop-shadow(0 0 10px rgba(255, 107, 53, 0.25));
+  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.55))
+    drop-shadow(0 0 10px rgba(0, 149, 255, 0.25));
   transition: filter 0.3s ease;
   will-change: background;
 }
@@ -784,7 +788,7 @@
 
 /* Smooth glow on active timer — no pulsing/ticking, just a steady subtle glow */
 .seat--active .seat__info::before {
-  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.5)) drop-shadow(0 0 10px rgba(255, 215, 0, 0.2));
+  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.5)) drop-shadow(0 0 10px rgba(0, 229, 255, 0.2));
   transition: filter 0.3s ease;
 }
 
@@ -929,11 +933,11 @@
    conic countdown ring around the avatar and the gold rim/border on the
    avatar and info box below. */
 
-/* Active avatar: thin gold rim only — the pool is the highlight, not a disc */
+/* Active avatar: thin neon-blue rim only — the pool is the highlight, not a disc */
 .seat--active .seat__avatar {
-  border-color: var(--timer-color, #ffd700);
+  border-color: var(--timer-color, #00e5ff);
   box-shadow:
-    0 0 8px rgba(255, 215, 0, 0.3),
+    0 0 8px rgba(0, 229, 255, 0.3),
     0 4px 16px rgba(0, 0, 0, 0.5);
   transform: scale(1.04);
   animation: none;

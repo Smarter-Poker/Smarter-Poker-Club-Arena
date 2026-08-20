@@ -755,7 +755,14 @@ export const SeatSlot = memo(
       // Clamp to a plausible turn band. Anything outside it is a torn read,
       // not a real turn length, so fall back to the canonical 15s rather than
       // rendering a clock we know is wrong.
-      const MIN_PLAUSIBLE_TURN_MS = 5_000;
+      // Dan 2026-08-20 (round 2): "it needs to take 15 seconds to disappear,
+      // it currently disappears too fast." The old plausibility floor was 5s,
+      // so a torn read landing anywhere in the 5-15s band was still rendered
+      // as a fast ring. The shot clock is 15s on every table (engine default
+      // and all live rows), so anything SHORTER than 15s is by definition a
+      // torn/stale pair — floor the ring at the canonical 15s. Longer stays
+      // honored: that is a genuine time-bank-extended turn.
+      const MIN_PLAUSIBLE_TURN_MS = 15_000;
       const MAX_PLAUSIBLE_TURN_MS = 180_000;
       const rawDurationMs = turnStartTimeMs ? turnDeadlineMs - turnStartTimeMs : 15_000;
       const durationMs =

@@ -649,7 +649,18 @@ export async function notifyServerLeave(tableId: string): Promise<ActionResult> 
       headers,
       body: JSON.stringify({ tableId }),
     });
-    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    if (!resp.ok) {
+      // Dan 2026-08-20 (leave-stuck fix): surface the engine's structured
+      // error instead of a bare status code — TableService shows this to the
+      // player when it refuses the cashout, and "Server error (400)" told
+      // nobody anything.
+      try {
+        const body = (await resp.json()) as ActionResult;
+        return { success: false, error: body?.error || `Server error (${resp.status})` };
+      } catch {
+        return { success: false, error: `Server error (${resp.status})` };
+      }
+    }
     return (await resp.json()) as ActionResult;
   } catch (err: unknown) {
     // Non-fatal — client-side leave still works via Supabase

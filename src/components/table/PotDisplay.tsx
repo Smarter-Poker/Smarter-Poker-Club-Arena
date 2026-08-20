@@ -3,10 +3,15 @@
  *  POT DISPLAY — Main Pot & Side Pots Visualization
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Displays the current pot amount(s) at the center of the poker table with:
- * - Animated main pot with chip visuals
- * - Side pot breakdown for all-in scenarios
- * - Chip stack animations on pot updates
+ * Dan 2026-08-20 (PokerBros-parity redesign):
+ *  - The pot is a THIN PILL: "POT" label + collected total, top row.
+ *  - While a street is being bet, a second thin pill appears BELOW it with a
+ *    small chip icon and the street's accumulating total. When the street
+ *    completes the seat chips sweep to the middle (ChipPhysics cpCollect,
+ *    driven by TablePage), the lower pill's amount folds into the top pill
+ *    and the lower pill disappears.
+ *  - The old casino chip-pile visualization next to the pot is GONE — it is
+ *    what kept leaving stray red chips painted in the middle of the felt.
  */
 
 import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
@@ -35,16 +40,19 @@ export interface PotDisplayProps {
   displayMode?: PotDisplayMode;
   onToggleDisplayMode?: () => void;
   /**
+   * Dan 2026-08-20: total of the CURRENT street's live bets (still sitting in
+   * front of the players). The engine's pot figure includes these the moment
+   * they are wagered, so the top pill shows (mainPot - streetBets) — chips
+   * only count as "in the pot" once they physically sweep to the middle.
+   */
+  streetBets?: number;
+  /**
    * Dan 2026-08-19, bug list item 6: "pot-push animation to the winner after
    * every hand showing chip amounts, not auto-advancing."
    *
    * When set, the pot slides toward the winner's seat and fades, carrying its
    * amount with it, instead of the number simply vanishing when the hand ends.
    * The offset is in pixels from the pot's own centre toward that seat.
-   *
-   * The `.pot-display--collect` rule and its --collect-dx/--collect-dy
-   * custom properties have existed in the stylesheet all along, documented as
-   * "set by JS" - nothing ever set them, so the animation had never once run.
    */
   collectTo?: { dx: number; dy: number } | null;
 }
@@ -71,118 +79,9 @@ function formatBB(amount: number, bigBlind: number): string {
   return `${bbs.toFixed(1)} BB`;
 }
 
-// Real poker chip denomination colors — matches casino standard
-// Descending order so breakdown algorithm picks highest denominations first
-const CHIP_COLORS = [
-  { threshold: 100000, color: '#f97316', label: '100K' }, // Orange
-  { threshold: 25000, color: '#14b8a6', label: '25K' }, // Teal
-  { threshold: 5000, color: '#ec4899', label: '5K' }, // Pink
-  { threshold: 1000, color: '#eab308', label: '1K' }, // Yellow
-  { threshold: 500, color: '#a855f7', label: '500' }, // Purple
-  { threshold: 100, color: '#1a1a2e', label: '100' }, // Black
-  { threshold: 25, color: '#22c55e', label: '25' }, // Green
-  { threshold: 5, color: '#ef4444', label: '5' }, // Red
-  { threshold: 1, color: '#e0e0e0', label: '1' }, // White
-];
-
-/**
- * Calculate chip breakdown for a pot amount.
- *
- * Rules:
- *  1. Break amount into exact denominations (largest first)
- *  2. Max 10 chips TOTAL displayed — when over, remove smallest denomination
- *     chips first until total <= 10
- *  3. Visual accuracy: 487 = 4 black + 3 green + 2 red + 2 white = 11 → trim 1 white = 10
- */
-const MAX_TOTAL_CHIPS = 10;
-
-function getChipBreakdown(amount: number): { color: string; count: number; label: string }[] {
-  if (amount <= 0) return [];
-
-  // Step 1: exact breakdown into denominations
-  const chips: { color: string; count: number; label: string }[] = [];
-  let remaining = Math.round(amount);
-
-  for (const chip of CHIP_COLORS) {
-    if (remaining >= chip.threshold) {
-      const count = Math.floor(remaining / chip.threshold);
-      chips.push({ color: chip.color, count, label: chip.label });
-      remaining -= count * chip.threshold;
-    }
-  }
-
-  // Step 2: count total chips
-  let totalChips = chips.reduce((sum, c) => sum + c.count, 0);
-
-  // Step 3: trim from smallest denominations (end of array) until at limit
-  while (totalChips > MAX_TOTAL_CHIPS && chips.length > 0) {
-    const smallest = chips[chips.length - 1];
-    const excess = totalChips - MAX_TOTAL_CHIPS;
-    if (smallest.count <= excess) {
-      // Remove entire denomination
-      totalChips -= smallest.count;
-      chips.pop();
-    } else {
-      // Trim partial
-      smallest.count -= excess;
-      totalChips = MAX_TOTAL_CHIPS;
-    }
-  }
-
-  return chips;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUB-COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
-
-interface ChipStackProps {
-  color: string;
-  count: number;
-  offsetX: number;
-}
-
-function ChipStack({ color, count, offsetX }: ChipStackProps) {
-  // Show up to 8 physical chips per stack — the visual ceiling for readability
-  const visibleCount = Math.min(count, 8);
-  // Stack height per chip — tighter stacking for that satisfying pile look
-  const chipGap = 2;
-  // UI-AUDIT #6: seed each chip's random tilt ONCE (keyed on how many chips are
-  // shown). Previously computed inline with Math.random() on every render, so
-  // ChipStack (keyed by index and reused across pot increments) re-randomized
-  // the tilt each pot tick and the pile visibly jittered/reshuffled.
-  const chipSpins = useMemo(
-    () => Array.from({ length: visibleCount }, () => (Math.random() - 0.5) * 8),
-    [visibleCount]
-  );
-  return (
-    <div
-      className="pot-display__chip-stack"
-      style={{
-        transform: `translateX(${offsetX}px)`,
-        height: `${18 + visibleCount * chipGap + 10}px`,
-      }}
-    >
-      {Array.from({ length: visibleCount }).map((_, i) => (
-        <div
-          key={i}
-          className="pot-display__chip"
-          style={
-            {
-              '--chip-color': color,
-              '--chip-offset': `${-i * chipGap}px`,
-              '--chip-spin': `${chipSpins[i]}`,
-              zIndex: count - i,
-              animationDelay: `${i * 50}ms`,
-            } as React.CSSProperties
-          }
-        >
-          <div className="pot-display__chip-face" />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 interface SidePotBadgeProps {
   pot: SidePot;
@@ -207,6 +106,17 @@ function SidePotBadge({
   );
 }
 
+/** Tiny decorative chip stack for the street-bets pill (pure CSS circles). */
+function MiniChipIcon() {
+  return (
+    <span className="pot-display__mini-chips" aria-hidden="true">
+      <span className="pot-display__mini-chip pot-display__mini-chip--b" />
+      <span className="pot-display__mini-chip pot-display__mini-chip--m" />
+      <span className="pot-display__mini-chip pot-display__mini-chip--t" />
+    </span>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -214,25 +124,29 @@ function SidePotBadge({
 function PotDisplayComponent({
   mainPot,
   sidePots = [],
-  showChipAnimation = true,
   currency = '',
   bigBlind = 0,
   displayMode = 'chips',
   onToggleDisplayMode,
+  streetBets = 0,
   collectTo = null,
 }: PotDisplayProps) {
+  // Chips only belong to the pot once swept to the middle: the top pill shows
+  // the collected portion, the lower pill shows what's still in front of seats.
+  const collectedPot = Math.max(0, mainPot - Math.max(0, streetBets));
+
   // Pot update pulse animation — triggers CSS class briefly on change
   const [isPotUpdated, setIsPotUpdated] = useState(false);
-  const prevPotRef = useRef(mainPot);
+  const prevPotRef = useRef(collectedPot);
   useEffect(() => {
-    if (mainPot !== prevPotRef.current && mainPot > prevPotRef.current) {
+    if (collectedPot > prevPotRef.current) {
       setIsPotUpdated(true);
       const timer = setTimeout(() => setIsPotUpdated(false), 500);
-      prevPotRef.current = mainPot;
+      prevPotRef.current = collectedPot;
       return () => clearTimeout(timer);
     }
-    prevPotRef.current = mainPot;
-  }, [mainPot]);
+    prevPotRef.current = collectedPot;
+  }, [collectedPot]);
 
   // Multi-chip splash whenever a NEW side pot appears (all-in split moment)
   const prevSidePotCountRef = useRef(sidePots.length);
@@ -246,29 +160,22 @@ function PotDisplayComponent({
   // ANIMATION AUDIT 2026-08-19: during the pot-push (collectTo set) a
   // snapshot may already have zeroed the pot. Show the last real amount for
   // the slide so the pot travels to the winner still reading its value.
-  // AUDIT-2 FIX 2026-08-20: the ref was written during render (a side effect
-  // React StrictMode double-invokes). Capture it in an effect instead; the
-  // render reads the value the previous commit stored, which is exactly the
-  // "last real pot" semantics the pot-push needs.
-  const lastNonZeroPotRef = useRef(mainPot);
-  const displayPot = mainPot > 0 ? mainPot : collectTo ? lastNonZeroPotRef.current : mainPot;
+  const lastNonZeroPotRef = useRef(collectedPot);
+  const displayPot = collectedPot > 0 ? collectedPot : collectTo ? lastNonZeroPotRef.current : 0;
   useEffect(() => {
-    if (mainPot > 0) lastNonZeroPotRef.current = mainPot;
-  }, [mainPot]);
-
-  // Calculate chip visualization
-  const chipBreakdown = useMemo(() => getChipBreakdown(displayPot), [displayPot]);
+    if (collectedPot > 0) lastNonZeroPotRef.current = collectedPot;
+  }, [collectedPot]);
 
   // Total pot calculation
   const totalPot = useMemo(() => {
     return mainPot + sidePots.reduce((sum, p) => sum + p.amount, 0);
   }, [mainPot, sidePots]);
 
-  // ANIMATION AUDIT 2026-08-19: while collectTo is set, the pot is mid-slide
-  // toward the winner (pdCollect). A snapshot zeroing the pot used to hit
-  // this early return and unmount the component, cutting the push short —
-  // the pot number blinked out instead of travelling to the seat.
-  if (mainPot === 0 && sidePots.length === 0 && !collectTo) {
+  const fmt = (n: number) =>
+    displayMode === 'bb' && bigBlind > 0 ? formatBB(n, bigBlind) : formatAmount(n, currency);
+
+  // Nothing at all to show: no pot, no live bets, no side pots, no push.
+  if (mainPot === 0 && streetBets === 0 && sidePots.length === 0 && !collectTo) {
     return null;
   }
 
@@ -287,23 +194,9 @@ function PotDisplayComponent({
       }
       role="status"
       aria-live="polite"
-      aria-label={`Pot: ${formatAmount(mainPot, currency)}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
+      aria-label={`Pot: ${formatAmount(displayPot, currency)}${streetBets > 0 ? `, ${formatAmount(streetBets, currency)} in front of players` : ''}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
     >
-      {/* Chip Stacks Visualization */}
-      {showChipAnimation && displayPot > 0 && (
-        <div className="pot-display__chips">
-          {chipBreakdown.map((chip, i) => (
-            <ChipStack
-              key={i}
-              color={chip.color}
-              count={chip.count}
-              offsetX={i * 8 - chipBreakdown.length * 4}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Main Pot Amount — click to toggle chips/BB display */}
+      {/* Main Pot pill — click to toggle chips/BB display */}
       <div
         className={`pot-display__main ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''}`}
         onClick={onToggleDisplayMode}
@@ -311,21 +204,20 @@ function PotDisplayComponent({
       >
         <span className="pot-display__label">POT</span>
         <span className="pot-display__amount">
-          {displayMode === 'bb' && bigBlind > 0 ? (
-            <AnimatedNumber
-              value={displayPot}
-              duration={350}
-              format={(n) => formatBB(n, bigBlind)}
-            />
-          ) : (
-            <AnimatedNumber
-              value={displayPot}
-              duration={350}
-              format={(n) => formatAmount(n, currency)}
-            />
-          )}
+          <AnimatedNumber value={displayPot} duration={350} format={fmt} />
         </span>
       </div>
+
+      {/* Current street's bets — thin pill below the pot; folds into the pot
+          total when the street completes and the chips sweep in. */}
+      {streetBets > 0 && (
+        <div className="pot-display__street" aria-hidden="true">
+          <MiniChipIcon />
+          <span className="pot-display__street-amount">
+            <AnimatedNumber value={streetBets} duration={250} format={fmt} />
+          </span>
+        </div>
+      )}
 
       {/* Side Pots */}
       {sidePots.length > 0 && (
@@ -347,19 +239,7 @@ function PotDisplayComponent({
         <div className="pot-display__total">
           <span className="pot-display__total-label">TOTAL</span>
           <span className="pot-display__total-amount">
-            {displayMode === 'bb' && bigBlind > 0 ? (
-              <AnimatedNumber
-                value={totalPot}
-                duration={350}
-                format={(n) => formatBB(n, bigBlind)}
-              />
-            ) : (
-              <AnimatedNumber
-                value={totalPot}
-                duration={350}
-                format={(n) => formatAmount(n, currency)}
-              />
-            )}
+            <AnimatedNumber value={totalPot} duration={350} format={fmt} />
           </span>
         </div>
       )}
@@ -370,7 +250,7 @@ function PotDisplayComponent({
 export const PotDisplay = memo(PotDisplayComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.mainPot !== next.mainPot) return false;
-  if (prev.showChipAnimation !== next.showChipAnimation) return false;
+  if (prev.streetBets !== next.streetBets) return false;
   if (prev.currency !== next.currency) return false;
   if (prev.bigBlind !== next.bigBlind) return false;
   if (prev.displayMode !== next.displayMode) return false;

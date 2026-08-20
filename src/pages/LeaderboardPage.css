@@ -1959,3 +1959,26 @@
   border: 1px dashed rgba(65, 105, 225, 0.55);
   background: rgba(65, 105, 225, 0.08);
 }
+
+/* Period window label + pagination */
+.live-indicator .lb-window-label {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.lb-load-more {
+  display: block;
+  width: 100%;
+  margin: 12px 0 4px;
+  padding: 10px 14px;
+  background: rgba(65, 105, 225, 0.12);
+  border: 1px solid rgba(65, 105, 225, 0.3);
+  border-radius: 10px;
+  color: #4169e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lb-load-more:disabled { opacity: 0.6; cursor: default; }
+.lb-load-more:focus-visible { outline: 2px solid #4169e1; outline-offset: 2px; }

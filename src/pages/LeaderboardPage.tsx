@@ -85,6 +85,13 @@ const METRIC_OPTIONS: {
     globalSupported: true,
   },
   {
+    value: 'bb100',
+    label: 'bb/100',
+    icon: '◈',
+    description: 'Big blinds won per 100 hands - comparable across stakes',
+    globalSupported: true,
+  },
+  {
     value: 'hands_played',
     label: 'Hands Played',
     icon: '♠',
@@ -114,6 +121,7 @@ const METRIC_OPTIONS: {
   },
 ];
 
+const PAGE_SIZE = 50;
 const ROI_MIN_HANDS = 20; // mirrors v_min_hands in fn_*_leaderboard_period*
 
 const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
@@ -138,6 +146,9 @@ export default function LeaderboardPage() {
   const [period, setPeriod] = useState<LeaderboardPeriod>('weekly');
   const [metric, setMetric] = useState<LeaderboardMetric>('profit');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [totalRanked, setTotalRanked] = useState<number | null>(null);
+  const [baselineDate, setBaselineDate] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userRank, setUserRank] = useState<{ rank: number; total: number; value: number } | null>(
     null
@@ -370,13 +381,15 @@ export default function LeaderboardPage() {
       const data = await retryFetch(
         () =>
           isGlobal
-            ? LeaderboardService.getGlobalLeaderboard(metric, period, 50)
-            : LeaderboardService.getClubLeaderboard(selectedClubId as string, metric, period, 50),
+            ? LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE)
+            : LeaderboardService.getClubLeaderboard(selectedClubId as string, metric, period, PAGE_SIZE),
         { maxRetries: 2 }
       );
       if (myReq !== reqSeqRef.current) return; // superseded by a newer request
       if (getIsMounted && !getIsMounted()) return;
       setEntries(data);
+      setTotalRanked(data[0]?.totalRanked ?? null);
+      setBaselineDate(data[0]?.baselineDate ?? null);
       setCachedEntries(cacheKey, data);
       setLastUpdated(new Date());
 
@@ -399,6 +412,35 @@ export default function LeaderboardPage() {
       if (!silent) toast.error('Failed to load leaderboard');
     } finally {
       if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) setLoading(false);
+    }
+  };
+
+  /** Append the next page. Uses the RPC's offset so ranks stay correct. */
+  const loadMore = async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const more =
+        scope === 'global'
+          ? await LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, entries.length)
+          : await LeaderboardService.getClubLeaderboard(
+              selectedClubId as string,
+              metric,
+              period,
+              PAGE_SIZE,
+              entries.length
+            );
+      if (more.length > 0) {
+        setEntries((prev) => {
+          const seen = new Set(prev.map((e) => e.userId));
+          return [...prev, ...more.filter((m) => !seen.has(m.userId))];
+        });
+      }
+    } catch (e) {
+      reportError(e, 'LeaderboardPage.loadMore');
+      toast.error('Could not load more');
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -429,6 +471,9 @@ export default function LeaderboardPage() {
     if (m === 'vpip' || m === 'roi') {
       return `${precise}%`;
     }
+    if (m === 'bb100') {
+      return `${precise > 0 ? '+' : ''}${precise} bb/100`;
+    }
     return precise.toLocaleString('en-US');
   };
 
@@ -454,7 +499,7 @@ export default function LeaderboardPage() {
     if (entry.hands != null && entry.hands > 0) {
       bits.push(`${entry.hands.toLocaleString('en-US')} hands`);
     }
-    if (metric === 'roi' && entry.qualified === false) {
+    if ((metric === 'roi' || metric === 'bb100') && entry.qualified === false) {
       bits.push(`under ${ROI_MIN_HANDS} hands - unranked`);
     }
     if (bits.length === 0) return null;
@@ -518,12 +563,29 @@ export default function LeaderboardPage() {
     );
   };
 
+  // Period deltas are measured from a daily snapshot. If that job missed a day
+  // the baseline is older than the label implies, so show the real span.
+  const windowLabel = (() => {
+    if (period === 'all_time') return 'since 2026-05-21';
+    if (!baselineDate) return null;
+    const days = Math.round(
+      (Date.now() - new Date(`${baselineDate}T00:00:00Z`).getTime()) / 86400000
+    );
+    const expected = period === 'daily' ? 1 : period === 'weekly' ? 7 : 30;
+    return days > expected ? `${days}d window` : `since ${baselineDate}`;
+  })();
+
   return (
     <div className="leaderboard-page">
       {/* Live Indicator */}
       <div className="live-indicator">
         <span className="live-dot"></span>
         <span>Live &bull; Updated {lastUpdated.toLocaleTimeString()}</span>
+        {activeTab === 'rankings' && windowLabel && (
+          <span className="lb-window-label" title="The snapshot this period is measured from">
+            {windowLabel}
+          </span>
+        )}
       </div>
 
       {/* Tab Selector (tournament stats are per-club) */}
@@ -793,6 +855,19 @@ export default function LeaderboardPage() {
                 </div>
               </div>
             ))}
+
+            {totalRanked != null && entries.length < totalRanked && (
+              <button
+                className="lb-load-more"
+                onClick={loadMore}
+                disabled={loadingMore}
+                aria-label={`Load more, showing ${entries.length} of ${totalRanked}`}
+              >
+                {loadingMore
+                  ? 'Loading...'
+                  : `Show more (${entries.length.toLocaleString('en-US')} of ${totalRanked.toLocaleString('en-US')})`}
+              </button>
+            )}
 
             {/* Ranked, but below the visible cut - pin their own row so the number
                 in the sticky card has something to sit against. */}

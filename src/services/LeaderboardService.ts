@@ -39,6 +39,10 @@ interface PlayerStatsRow {
   club_id?: string;
   rank_change?: number;
   qualified?: boolean;
+  sum_big_blind?: number;
+  rank?: number;
+  total_ranked?: number;
+  baseline_date?: string;
 }
 
 interface ProfileRow {
@@ -56,6 +60,7 @@ export type LeaderboardMetric =
   | 'vpip'
   | 'pfr'
   | 'roi'
+  | 'bb100'
   | 'tournaments_won';
 
 export interface LeaderboardEntry {
@@ -71,8 +76,17 @@ export interface LeaderboardEntry {
   level?: number;
   /** Hands dealt in the selected period - context for rate metrics like ROI. */
   hands?: number;
-  /** False when the row fails the ROI volume qualifier; such rows sort last. */
+  /** False when the row fails the rate-metric volume qualifier; such rows sort last. */
   qualified?: boolean;
+  /** Size of the ranked population, so the client can page without re-deriving it. */
+  totalRanked?: number;
+  /**
+   * The snapshot date the period delta was measured from. Surfaced because the
+   * daily snapshot job has missed a day before (2026-08-09): on a miss these
+   * functions fall back to an older snapshot and "This Week" silently becomes a
+   * longer window. Showing the real date makes that visible.
+   */
+  baselineDate?: string;
 }
 
 export interface PlayerStats {
@@ -136,6 +150,11 @@ function metricValue(row: PlayerStatsRow, metric: LeaderboardMetric): number {
       return Number(row.tournaments_won) || 0;
     case 'roi':
       return losses > 0 ? Math.trunc(((winnings - losses) / losses) * 10000) / 100 : 0;
+    case 'bb100': {
+      // Stake-normalised win rate: big blinds won per 100 hands.
+      const bb = Number(row.sum_big_blind) || 0;
+      return bb > 0 ? Math.trunc(((winnings - losses) / bb) * 10000) / 100 : 0;
+    }
     case 'profit':
     default:
       return Math.trunc((winnings - losses) * 100) / 100;
@@ -158,7 +177,8 @@ async function decorateWithProfiles(
   return rows.map((row, index) => {
     const profile = profileMap.get(row.user_id) || ({} as ProfileRow);
     return {
-      rank: index + 1,
+      // Rank comes from the RPC so it stays correct on pages after the first.
+      rank: row.rank != null ? Number(row.rank) : index + 1,
       userId: row.user_id,
       username: profile.username || 'Player',
       avatar: profile.avatar_url,
@@ -167,6 +187,8 @@ async function decorateWithProfiles(
       change: Number(row.rank_change) || 0,
       hands: Number(row.hands_played) || 0,
       qualified: row.qualified !== false,
+      totalRanked: row.total_ranked != null ? Number(row.total_ranked) : undefined,
+      baselineDate: row.baseline_date,
       isVIP: profile.tier === 'gold' || profile.tier === 'platinum' || profile.tier === 'diamond',
       vipTier: profile.tier || 'bronze',
       level: profile.level || 1,
@@ -189,7 +211,8 @@ export const LeaderboardService = {
     clubId: string,
     metric: LeaderboardMetric = 'profit',
     period: LeaderboardPeriod = 'weekly',
-    limit: number = 10
+    limit: number = 10,
+    offset: number = 0
   ): Promise<LeaderboardEntry[]> {
     try {
       const resolvedClubId = await resolveClubUUID(clubId);
@@ -203,6 +226,7 @@ export const LeaderboardService = {
           p_metric: metric,
           p_period: period,
           p_limit: limit,
+          p_offset: offset,
         });
         if (error) {
           reportError(error, 'LeaderboardService.getClubLeaderboard_v2');
@@ -252,7 +276,8 @@ export const LeaderboardService = {
   async getGlobalLeaderboard(
     metric: LeaderboardMetric = 'profit',
     period: LeaderboardPeriod = 'weekly',
-    limit: number = 50
+    limit: number = 50,
+    offset: number = 0
   ): Promise<LeaderboardEntry[]> {
     try {
       if (metric === 'vpip' || metric === 'pfr') return [];
@@ -260,6 +285,7 @@ export const LeaderboardService = {
         p_metric: metric,
         p_period: period,
         p_limit: limit,
+        p_offset: offset,
       });
       if (error || !data) {
         reportError(error, 'LeaderboardService.getGlobalLeaderboard');

@@ -1220,90 +1220,55 @@ export class RakebackSettlerService {
         });
       }
 
-      const items: Record<string, unknown>[] = [];
-
+      // ═══ CRITICAL FIX 2026-08-20 — periods were computed from ~1% of a week ═══
+      //
+      // This block used to FETCH the club's week of rake_records and sum the
+      // shares here. PostgREST caps a response at 1000 rows, so `.limit(50000)`
+      // returned ~1000 rows of a week that actually holds 81,000-180,000:
+      // rake_generated was derived from well under 1% of the data.
+      //
+      // Proven against live pending periods before the fix:
+      //   user 1c1c12c2…   stored 23.17   actual 377.01   (16x understated)
+      // and since rake_generated also selects the rakeback TIER (5/10/15/20/30%
+      // at 100/500/2000/10000), that player sat in the 5% band instead of 10%,
+      // compounding the shortfall on money owed to them.
+      //
+      // The row cap cannot be lifted from the client, so the computation moved
+      // into the database, which has no such ceiling.
+      // fn_rakeback_recompute_periods reproduces equalShareCents EXACTLY (same
+      // integer-cents base, same remainder-to-the-first-keys rule — jsonb sorts
+      // equal-length UUID keys lexicographically, which is the order this engine
+      // sees) and the same tier ladder, then upserts while leaving paid weeks
+      // immutable. One call per (club, week) instead of a truncated download.
       for (const g of groups.values()) {
-        const periodStartDate = new Date(g.period_start + 'T00:00:00.000Z');
-        const periodEndDate = new Date(g.period_end + 'T23:59:59.999Z');
-        const { data: periodRows, error: prErr } = await supabase
-          .from('rake_records')
-          .select('rake_amount, player_contributions')
-          .eq('club_id', g.club_id)
-          .gte('created_at', periodStartDate.toISOString())
-          .lte('created_at', periodEndDate.toISOString())
-          .gt('rake_amount', 0)
-          .not('player_contributions', 'is', null)
-          .limit(50000);
-
-        if (prErr) {
-          reportError(
-            new Error(`period recompute fetch failed for ${g.club_id} ${g.period_start}: ${prErr.message}`),
-            'RakebackSettler.period_fetch_failed'
-          );
-          continue; // leave these buckets for the next cycle rather than writing a wrong total
-        }
-
-        // One pass over the window accumulates EVERY user's share at once.
-        const totals = new Map<string, number>();
-        for (const r of (periodRows as RakeRecordRow[] | null) ?? []) {
-          if (!r.player_contributions) continue;
-          const dealt = Object.entries(r.player_contributions).filter(([, a]) => Number(a) > 0);
-          if (dealt.length === 0) continue;
-          const rcShares = equalShareCents(
-            Number(r.rake_amount),
-            dealt.map(([uid]) => uid)
-          );
-          for (const [uid] of dealt) {
-            totals.set(uid, (totals.get(uid) ?? 0) + (rcShares.get(uid) ?? 0));
-          }
-        }
-
-        for (const b of buckets.values()) {
-          if (b.club_id !== g.club_id || b.period_start !== g.period_start) continue;
-          const totalRake = Math.round((totals.get(b.user_id) ?? 0) * 100) / 100;
-          const tier = tierFor(totalRake);
-          const rakebackEarned = Math.round(totalRake * tier.rate * 100) / 100;
-          items.push({
-            user_id: b.user_id,
-            club_id: b.club_id,
-            period_start: b.period_start,
-            period_end: b.period_end,
-            rake_generated: totalRake,
-            rakeback_rate: tier.rate,
-            rakeback_earned: rakebackEarned,
-            rakeback_amount: rakebackEarned,
-            total_rake_paid: totalRake,
-          });
-        }
-      }
-
-      // Persist every bucket in one call. Paid weeks stay immutable (the RPC
-      // gates its DO UPDATE on status = 'pending'), and the second unique key
-      // (user_id, period_start) — which spans all clubs and is the source of
-      // the 409s in the edge log — is caught per item so one collision cannot
-      // abort the batch.
-      for (let i = 0; i < items.length; i += CREDIT_BATCH_SIZE) {
-        const chunk = items.slice(i, i + CREDIT_BATCH_SIZE);
+        const userIds = [...buckets.values()]
+          .filter((b) => b.club_id === g.club_id && b.period_start === g.period_start)
+          .map((b) => b.user_id);
+        if (userIds.length === 0) continue;
         try {
-          const { data, error } = await supabase.rpc('fn_rakeback_periods_bulk_upsert', {
-            p_items: chunk,
+          const { data, error } = await supabase.rpc('fn_rakeback_recompute_periods', {
+            p_club_id: g.club_id,
+            p_period_start: g.period_start,
+            p_period_end: g.period_end,
+            p_user_ids: userIds,
           });
           if (error) {
-            failures += chunk.length;
+            failures += userIds.length;
             reportError(
-              new Error(`fn_rakeback_periods_bulk_upsert failed: ${error.message}`),
-              'RakebackSettler.period_bulk_upsert'
+              new Error(
+                `fn_rakeback_recompute_periods failed for ${g.club_id} ${g.period_start}: ${error.message}`
+              ),
+              'RakebackSettler.period_recompute'
             );
           } else {
             const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
             upserts += Number(r?.written ?? 0);
-            failures += Number(r?.failed ?? 0) + Number(r?.conflicts ?? 0);
           }
         } catch (e) {
-          failures += chunk.length;
+          failures += userIds.length;
           reportError(
             new Error((e as { message?: string })?.message || String(e)),
-            'RakebackSettler.period_bulk_upsert_threw'
+            'RakebackSettler.period_recompute_threw'
           );
         }
       }

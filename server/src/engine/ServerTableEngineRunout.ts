@@ -29,7 +29,17 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * Instance fields, not statics, so a test can drive the ORDERING of the
    * run-out without also spending its real-world seconds.
    */
-  protected allInFirstPauseMs = 1000;
+  /**
+   * Dan 2026-08-20 (systematic sweep): this was 1000ms while the client's ALL
+   * IN banner runs allInBannerSlam for 1800ms — so the first street started
+   * dealing while "ALL IN" was still slamming in over the felt. Same bug class
+   * as the turn bug: the moment was superseded before it finished.
+   *
+   * The banner fires on the first all_in_equity broadcast, which goes out with
+   * this pause. 2000ms lets the banner complete AND leaves a beat to read the
+   * starting equities before the first card lands.
+   */
+  protected allInFirstPauseMs = 2000;
   protected allInStreetPauseMs = 1400;
   protected allInPreShowdownPauseMs = 1200;
 

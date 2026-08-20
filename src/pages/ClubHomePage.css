@@ -1228,7 +1228,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    ANIMATIONS (extracted from inline <style>)
 ═══════════════════════════════════════════════════════════════════════════════ */
-@keyframes slideInUp {
+@keyframes clubHomePageSlideInUp {
   from {
     opacity: 0;
     transform: translateY(16px);
@@ -1239,7 +1239,7 @@
   }
 }
 
-@keyframes slideInLeft {
+@keyframes clubHomePageSlideInLeft {
   from {
     opacity: 0;
     transform: translateX(-16px);
@@ -1251,15 +1251,15 @@
 }
 
 .club-home__stats-animated {
-  animation: slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: clubHomePageSlideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .club-home__games-item-animated {
-  animation: slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: clubHomePageSlideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
   opacity: 0;
 }
 
-@keyframes shimmer {
+@keyframes clubHomePageShimmer {
   0% {
     background-position: -1000px 0;
   }
@@ -1277,7 +1277,7 @@
     rgba(255, 255, 255, 0.1)
   );
   background-size: 1000px 100%;
-  animation: shimmer 2s infinite;
+  animation: clubHomePageShimmer 2s infinite;
 }
 
 /* BBJ lobby ticker spacing (2026-08-18) */

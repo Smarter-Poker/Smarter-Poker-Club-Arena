@@ -2,7 +2,7 @@
   padding: 8px 12px;
   background: var(--bg-secondary, #141a2a);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  animation: slideDown 0.2s ease;
+  animation: messageSearchBarSlideDown 0.2s ease;
 }
 
 .searchWrapper {
@@ -81,7 +81,7 @@
   color: #ff3b30;
 }
 
-@keyframes slideDown {
+@keyframes messageSearchBarSlideDown {
   from {
     transform: translateY(-100%);
     opacity: 0;

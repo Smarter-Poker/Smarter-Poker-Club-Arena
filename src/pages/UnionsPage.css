@@ -175,7 +175,7 @@
    ANIMATIONS
    ═══════════════════════════════════════════════════════════════ */
 
-@keyframes fadeInUp {
+@keyframes unionsPageFadeInUp {
     from {
         opacity: 0;
         transform: translateY(12px);

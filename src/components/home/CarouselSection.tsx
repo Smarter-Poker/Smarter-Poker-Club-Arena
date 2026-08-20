@@ -46,6 +46,19 @@ export interface CarouselSectionProps {
   displayClubs: UserClub[];
   clubStats: Record<string, ClubStats>;
   pinnedClubIds: string[];
+  /* Dan 2026-08-20: HomePage already passes these three; the interface never
+     declared them, so `tsc -b` failed on TS2322 and BLOCKED every Club Arena
+     build (npm run build is `tsc -b && vite build`). Declared optional and
+     unused rather than deleted from the call site: the Shark Club card is
+     rendered by ClubCardPanel further down and these are the values it will
+     need when the shark-club branch lands. Nothing here reads them yet. */
+  sharkClubId?: string | null;
+  sharkClubStats?: {
+    totalMembers: number | null;
+    clubLevel: number | null;
+    activePlayers: number | null;
+  };
+  toast?: unknown;
   navigate: (path: string) => void;
   handleContextMenu: (e: React.MouseEvent, club: UserClub) => void;
   handleLongPressStart: (club: UserClub, e: React.TouchEvent) => void;

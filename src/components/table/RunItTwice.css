@@ -43,7 +43,7 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 20px;
   text-align: center;
-  animation: popIn 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  animation: runItTwicePopIn 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(14px) saturate(1.3);
   -webkit-backdrop-filter: blur(14px) saturate(1.3);
   box-shadow:
@@ -51,7 +51,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-@keyframes popIn {
+@keyframes runItTwicePopIn {
   from {
     opacity: 0;
     transform: scale(0.9);

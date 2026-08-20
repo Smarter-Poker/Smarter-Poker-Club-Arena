@@ -162,10 +162,10 @@
 .scrollIndicator span {
     color: #60a5fa;
     font-size: 0.8rem;
-    animation: bounce 1.5s infinite;
+    animation: clubPromotionRulesModalBounce 1.5s infinite;
 }
 
-@keyframes bounce {
+@keyframes clubPromotionRulesModalBounce {
 
     0%,
     100% {
@@ -178,7 +178,7 @@
 }
 
 .scrollIndicator span {
-    animation: bounce 1.5s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) infinite;
+    animation: clubPromotionRulesModalBounce 1.5s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) infinite;
 }
 
 .footer {

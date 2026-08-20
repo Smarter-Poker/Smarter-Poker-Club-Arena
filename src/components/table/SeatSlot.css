@@ -277,18 +277,32 @@
 .seat__avatar--bust .seat__avatar-img {
   border-radius: 0;
   object-fit: contain;
-  /* Enlarge the character beyond the 56px slot and anchor it to the
-     nameplate below, PokerBros-style. overflow:visible on the parent lets
-     the head rise above the slot without shifting layout. */
-  transform: scale(var(--sp-bust-scale, 1.45));
-  transform-origin: 50% 88%;
+  /* Dan 2026-08-20: "avatars must be CONNECTED to the name box." Bust art is
+     drawn standing on the bottom edge of its own canvas, so the art's feet
+     have to land on the bottom edge of the slot — the slot's bottom edge is
+     what `--seat-avatar-wrap` margin-bottom tucks into the name box.
+
+     --sp-bust-clip is how much of the slot's bottom is clipped away by
+     clip-path (TableVisualHotfix rule 2 shaves the baked gold nameplate off
+     /avatars/table/ art). 0 for everything else. Anchoring the transform to
+     the VISIBLE bottom (100% - clip) means scaling never moves that edge,
+     and translating back down by the same clip puts it exactly on the slot
+     bottom — correct for any --sp-bust-scale at any breakpoint, instead of
+     the old hand-tuned `50% 88%` origin, which left the art floating
+     ~25px above the name box once the clip was applied. */
+  --sp-bust-clip: 0%;
+  object-position: 50% 100%;
+  transform-origin: 50% calc(100% - var(--sp-bust-clip));
+  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-scale, 1.45));
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
 }
 
 /* Hover zoom must compose with the base bust scale (was scale(1.08) alone,
-   which would SHRINK a bust from 1.45 back to 1.08) */
+   which would SHRINK a bust from 1.45 back to 1.08) AND keep the
+   clip-compensating translate, or the art would jump up off the name box
+   on hover. */
 .seat:not(.seat--empty):not(.seat--folded) .seat__avatar--bust:hover .seat__avatar-img {
-  transform: scale(calc(var(--sp-bust-scale, 1.45) + 0.1));
+  transform: translateY(var(--sp-bust-clip)) scale(calc(var(--sp-bust-scale, 1.45) + 0.1));
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6)) brightness(1.1);
 }
 
@@ -897,7 +911,7 @@
   animation: none;
 }
 
-@keyframes activeAvatarPulse {
+@keyframes seatSlotActiveAvatarPulse {
   0%,
   100% {
     box-shadow:
@@ -1465,11 +1479,17 @@
     0 0 48px rgba(255, 215, 0, 0.25),
     0 0 80px rgba(255, 215, 0, 0.1),
     0 4px 16px rgba(0, 0, 0, 0.5);
-  animation: winnerAvatarGlow 1.2s ease-in-out infinite;
+  animation: seatWinnerAvatarGlow 1.2s ease-in-out infinite;
   transform: scale(1.08);
 }
 
-@keyframes winnerAvatarGlow {
+/* AUDIT 2026-08-20 (global keyframe collision): `winnerAvatarGlow` is also
+   defined in components/common/Avatar.css with a DIFFERENT body and a
+   different duration (2s infinite vs this 1.2s). @keyframes is a GLOBAL
+   namespace, so whichever stylesheet loaded last won for BOTH — the winning
+   seat's avatar glow was not reliably the one written for it. Renamed so the
+   table owns its own. */
+@keyframes seatWinnerAvatarGlow {
   0%,
   100% {
     box-shadow:
@@ -2089,10 +2109,10 @@
   color: #ffffff;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   z-index: 5;
-  animation: equityFadeIn 0.3s ease-out;
+  animation: seatEquityFadeIn 0.3s ease-out;
 }
 
-@keyframes equityFadeIn {
+@keyframes seatEquityFadeIn {
   from {
     opacity: 0;
     transform: scale(0.8);

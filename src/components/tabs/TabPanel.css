@@ -1,9 +1,9 @@
 .tab-panel {
     padding: 20px 0;
-    animation: fadeIn 0.2s;
+    animation: tabPanelFadeIn 0.2s;
 }
 
-@keyframes fadeIn {
+@keyframes tabPanelFadeIn {
     from {
         opacity: 0;
         transform: translateY(4px);

@@ -528,7 +528,7 @@ a:hover {
   }
 }
 
-@keyframes pulseGlow {
+@keyframes globalsPulseGlow {
   0%,
   100% {
     opacity: 1;
@@ -540,7 +540,7 @@ a:hover {
   }
 }
 
-@keyframes slideInUp {
+@keyframes globalsSlideInUp {
   from {
     opacity: 0;
     transform: translateY(24px);
@@ -562,7 +562,7 @@ a:hover {
   }
 }
 
-@keyframes fadeInScale {
+@keyframes globalsFadeInScale {
   from {
     opacity: 0;
     transform: scale(0.95);
@@ -585,7 +585,7 @@ a:hover {
   }
 }
 
-@keyframes chipBounce {
+@keyframes globalsChipBounce {
   0%,
   100% {
     transform: translateY(0);
@@ -661,15 +661,15 @@ a:hover {
 }
 
 .animate-pulse-glow {
-  animation: pulseGlow var(--duration-normal) ease-in-out infinite;
+  animation: globalsPulseGlow var(--duration-normal) ease-in-out infinite;
 }
 
 .animate-slide-up {
-  animation: slideInUp var(--duration-normal) var(--ease-spring) forwards;
+  animation: globalsSlideInUp var(--duration-normal) var(--ease-spring) forwards;
 }
 
 .animate-fade-scale {
-  animation: fadeInScale var(--duration-normal) var(--ease-spring) forwards;
+  animation: globalsFadeInScale var(--duration-normal) var(--ease-spring) forwards;
 }
 
 /* Interaction Classes */

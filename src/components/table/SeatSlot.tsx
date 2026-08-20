@@ -661,7 +661,11 @@ export const SeatSlot = memo(
 
     // ─── OCCUPIED SEAT ─────────────────────────────────────────────────────
     // Use deterministic SVG avatar (colorful, unique per player) when no real image exists
-    const avatarUrl = getAvatarWithFallback(player.avatar || null, player.id, player.name);
+    // 56 CSS px is the seat avatar box; the helper doubles it for retina and
+    // asks Storage to do the resizing. Before this every seat pulled the user's
+    // full-resolution upload — 263 KB each on the owner account, nine of them
+    // on a full table.
+    const avatarUrl = getAvatarWithFallback(player.avatar || null, player.id, player.name, 56);
     // 2026-08-04 PokerBros-style: library bust art (/avatars/table|free|vip/*)
     // is a transparent-background character PNG — render it free-floating
     // (no circle crop, no ring, larger) like the reference client. Uploaded

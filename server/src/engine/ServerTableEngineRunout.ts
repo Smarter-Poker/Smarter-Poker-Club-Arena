@@ -29,9 +29,70 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * Instance fields, not statics, so a test can drive the ORDERING of the
    * run-out without also spending its real-world seconds.
    */
-  protected allInFirstPauseMs = 1000;
+  /**
+   * Dan 2026-08-20 (systematic sweep): this was 1000ms while the client's ALL
+   * IN banner runs allInBannerSlam for 1800ms — so the first street started
+   * dealing while "ALL IN" was still slamming in over the felt. Same bug class
+   * as the turn bug: the moment was superseded before it finished.
+   *
+   * The banner fires on the first all_in_equity broadcast, which goes out with
+   * this pause. 2000ms lets the banner complete AND leaves a beat to read the
+   * starting equities before the first card lands.
+   */
+  protected allInFirstPauseMs = 2000;
   protected allInStreetPauseMs = 1400;
   protected allInPreShowdownPauseMs = 1200;
+
+  /**
+   * Dan 2026-08-20: the settle beat between a player's action landing and the
+   * next player going on the clock. Applied in the TURN_CHANGE handler, so it
+   * paces EVERY action path — human, horse, pre-action, timeout, time-bank
+   * expiry, disconnect auto-action — with no way for a caller to bypass it.
+   *
+   * 650ms > the 500ms cpSlideIn chip slide, so the wager is fully on the felt
+   * and the action label is readable before the spotlight moves.
+   *
+   * Instance field, not a static, so tests can drive turn ORDER without
+   * spending its real-world seconds.
+   */
+  protected actionSettleMs = 650;
+
+  /**
+   * Dan 2026-08-20: the beat a freshly dealt board gets before the first
+   * postflop actor goes on the clock. HandController deals the street and
+   * emits TURN_CHANGE in the same synchronous call, so without this the reveal
+   * raced the next action.
+   *
+   * Sized for the worst case, the flop: it lands (ccFlopLand 300ms) and only
+   * then fans open (ccFlopFanOpen 420ms, starting ~520ms in) — ~940ms of
+   * animation — plus a beat to actually read the board.
+   */
+  protected streetSettleMs = 1400;
+
+  /**
+   * Dan 2026-08-20: the beat between hands turning face up at showdown and the
+   * pot shipping. completeHandInner() emits SHOWDOWN and WINNERS in the SAME
+   * tick, so the reveal had zero airtime before the winner lit up and the pot
+   * flew away. Covers cardShowdownFlip (350ms + 120ms second-card stagger) and
+   * leaves time to read the hands. Applied only when 2+ hands actually reached
+   * showdown; a fold-around win has nothing to reveal.
+   */
+  protected showdownSettleMs = 1600;
+
+  /** Wall-clock stamp of the last street dealt — see streetSettleMs. */
+  protected lastStreetDealtAtMs = 0;
+
+  /**
+   * Dan 2026-08-20: the beat between the hand being dealt and the first player
+   * going on the clock. The deal is the longest animation at the table — 12
+   * cards on an 80ms stagger with a 320ms flight (~1.2s) — and the blinds fly
+   * for another 400ms after it. Both used to still be in the air when the
+   * first action began.
+   */
+  protected handStartSettleMs = 1500;
+
+  /** Wall-clock stamp of the blinds landing — see handStartSettleMs. */
+  protected lastHandStartAtMs = 0;
 
   /**
    * ANIMATION AUDIT 2026-08-19: true from the moment an all-in runout begins

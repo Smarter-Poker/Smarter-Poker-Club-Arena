@@ -31,7 +31,7 @@ function filterCriticalErrors(errors: string[]): string[] {
 test.describe('Cashier Page — Deep UX Tests', () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to cashier — will redirect to login if unauthenticated
-    await page.goto('/cashier');
+    await page.goto('cashier');
     await page.waitForTimeout(2000);
   });
 
@@ -106,7 +106,7 @@ test.describe('Cashier Page — Deep UX Tests', () => {
 
 test.describe('Wallet Page — Deep UX Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/wallet');
+    await page.goto('wallet');
     await page.waitForTimeout(2000);
   });
 
@@ -134,7 +134,7 @@ test.describe('Wallet Page — Deep UX Tests', () => {
 
 test.describe('Transaction History — UX Tests', () => {
   test('should show skeleton or transaction data', async ({ page }) => {
-    await page.goto('/cashier');
+    await page.goto('cashier');
     await page.waitForTimeout(2000);
 
     // Click History tab if present
@@ -162,7 +162,7 @@ test.describe('Transaction History — UX Tests', () => {
 
 test.describe('Club CashierModal — ARIA Tests', () => {
   test('should render ARIA tablist and tabs if club cashier is open', async ({ page }) => {
-    await page.goto('/cashier');
+    await page.goto('cashier');
     await page.waitForTimeout(2000);
 
     // These tests verify the club CashierModal ARIA wiring added in Phase 3.
@@ -191,7 +191,7 @@ test.describe('Club CashierModal — ARIA Tests', () => {
 
 test.describe('Focus Trap — Modal UX Tests', () => {
   test('should close modal on Escape key', async ({ page }) => {
-    await page.goto('/cashier');
+    await page.goto('cashier');
     await page.waitForTimeout(2000);
 
     // Check if any dialog/modal is open
@@ -207,7 +207,7 @@ test.describe('Focus Trap — Modal UX Tests', () => {
   });
 
   test('should trap focus within open modal', async ({ page }) => {
-    await page.goto('/cashier');
+    await page.goto('cashier');
     await page.waitForTimeout(2000);
 
     const dialog = page.locator('[role="dialog"]');
@@ -241,7 +241,7 @@ test.describe('Focus Trap — Modal UX Tests', () => {
 
 test.describe('CashierPage — Settlement Lock', () => {
   test('should show settlement lock error when frozen', async ({ page }) => {
-    await page.goto('/cashier');
+    await page.goto('cashier');
     await page.waitForTimeout(2000);
 
     // If settlement is active, the lock message should be visible

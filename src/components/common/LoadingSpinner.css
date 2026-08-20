@@ -134,10 +134,10 @@
     height: 40px;
     background: var(--color-primary, #4169E1);
     border-radius: 50%;
-    animation: pulse 1.4s ease-in-out infinite;
+    animation: loadingSpinnerPulse 1.4s ease-in-out infinite;
 }
 
-@keyframes pulse {
+@keyframes loadingSpinnerPulse {
     0% {
         transform: scale(0.8);
         opacity: 0.5;

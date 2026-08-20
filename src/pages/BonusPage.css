@@ -343,11 +343,11 @@
   width: 8px;
   height: 8px;
   border-radius: 2px;
-  animation: confettiFall 2s ease-in forwards;
+  animation: bonusPageConfettiFall 2s ease-in forwards;
   opacity: 0.9;
 }
 
-@keyframes confettiFall {
+@keyframes bonusPageConfettiFall {
   0% {
     transform: translateY(0) rotate(0deg) scale(1);
     opacity: 1;

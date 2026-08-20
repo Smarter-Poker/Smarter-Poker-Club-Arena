@@ -292,7 +292,7 @@
   border-top: 1px solid rgba(0, 212, 255, 0.1);
 }
 
-@keyframes slideDown {
+@keyframes sessionHistorySlideDown {
   from {
     opacity: 0;
     transform: translateY(-8px);

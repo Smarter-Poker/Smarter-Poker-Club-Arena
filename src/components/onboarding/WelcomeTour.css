@@ -21,13 +21,13 @@
     padding: 28px;
     max-width: 400px;
     width: 90%;
-    animation: tooltipIn 0.3s ease-out;
+    animation: welcomeTourTooltipIn 0.3s ease-out;
     backdrop-filter: blur(12px) saturate(1.2);
     -webkit-backdrop-filter: blur(12px) saturate(1.2);
     box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-@keyframes tooltipIn {
+@keyframes welcomeTourTooltipIn {
     from {
         transform: translate(-50%, -50%) scale(0.9);
         opacity: 0;

@@ -202,3 +202,60 @@ still ships. Verify content-level, never by SHA alone:
 `vercel` failing with "token ... is not valid" on a machine that is logged in
 means a stale VERCEL_TOKEN in the process environment is shadowing auth.json.
 No .env edit fixes that. Use `bash scripts/vercel-safe.sh <cmd>`.
+
+## 10. ASSET AND SCHEMA-GRANT TRAPS (2026-08-20 sweep)
+
+Two whole classes of defect turned up by measuring instead of reading:
+
+**Images ship at source resolution unless someone stops them.** The arena's
+first paint was 6.21 MB of images — a 297 KB PNG for a 40-pixel help icon, a
+1179x1509 avatar drawn at 48x48. Now 1.6 MB, FCP 1012ms -> 696ms.
+`scripts/optimize-arena-images.sh` handles both halves:
+
+    bash scripts/optimize-arena-images.sh          # critical path, to 3x render box
+    bash scripts/optimize-arena-images.sh --bulk   # everything else in public/images
+    bash scripts/optimize-arena-images.sh --check  # CI gate, non-blocking
+
+Both modes are IDEMPOTENT and that property is load-bearing: pngquant shaves
+another ~25% off an already-quantised file every time it runs, so a byte-based
+rule would keep "finding work" and silently degrade quality on each pass. The
+critical-path pass keys on DIMENSIONS; the bulk pass keys on BYTES-PER-PIXEL
+with the threshold above every observed post-pass value. Prove it after any
+change by running twice and hashing.
+
+Before adding an entry, MEASURE the render box with getBoundingClientRect() on
+the deployed page — do not guess it from the design.
+
+Uploaded images need the same treatment at both ends: `sizedStorageUrl()` asks
+Supabase's transform endpoint for the display size (263 KB -> 4.3 KB per seat
+avatar), and AvatarService downscales to 512px before upload so the original is
+never stored.
+
+**A table's RLS policy passing does NOT mean the query will.** Column grants
+are separate, and Postgres rejects the WHOLE statement when a star-select
+touches an ungranted column. `profiles` has 114 columns and `authenticated` may
+read 103, so `.select('*')` returned 403 on every profile load, for every
+signed-in user, forever — and both call sites had written the failure off as an
+"expected anon/RLS denial". It was neither.
+
+    -- what to check when a read 403s but the policy looks fine
+    select count(*) from information_schema.columns
+      where table_schema='public' and table_name='X';
+    select count(*) from information_schema.column_privileges
+      where table_schema='public' and table_name='X'
+        and grantee='authenticated' and privilege_type='SELECT';
+
+If those two numbers differ, never `select('*')` on that table. Storage buckets
+have the same trap by path prefix: club-assets granted INSERT only under
+`club-logos/%` while the code wrote to `club-cards/%`, so club-card baking had
+never once succeeded — and it retried on every HomePage load.
+
+Test a suspected grant problem with a REAL user JWT, not the anon key. Anon
+often has no grants at all, so it fails for a different reason and tells you
+nothing:
+
+    JWT=$(curl -s "$URL/auth/v1/token?grant_type=password" -H "apikey: $ANON" \
+      -H 'Content-Type: application/json' -d '{"email":"...","password":"..."}' \
+      | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
+    curl -s -o /dev/null -w '%{http_code}\n' "$URL/rest/v1/profiles?select=*&id=eq.$ID" \
+      -H "apikey: $ANON" -H "Authorization: Bearer $JWT"

@@ -88,6 +88,9 @@ export default function CarouselSection({
 }: CarouselSectionProps) {
   const carouselRef = useRef<HTMLDivElement>(null);
   const sharkCardRef = useRef<HTMLDivElement>(null);
+  // True only while the user is the one scrolling. Programmatic scrolls
+  // (the centring below) must not trigger the snap haptic/SFX.
+  const userScrollRef = useRef(false);
 
   // Enhancement #8: Drag-to-reorder state
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -151,29 +154,72 @@ export default function CarouselSection({
   //   * scrollLeft set directly rather than scrollIntoView, which also scrolls
   //     ancestors and can drag the whole page vertically on mount.
   useLayoutEffect(() => {
-    const wrap = carouselRef.current;
-    const card = sharkCardRef.current;
-    if (!wrap || !card) return;
-    // .clubCarousel is position: relative, so it is the offsetParent and
-    // offsetLeft is already relative to the scroll container.
-    const target = card.offsetLeft - (wrap.clientWidth - card.offsetWidth) / 2;
-    wrap.scrollLeft = Math.max(0, target);
+    const centre = () => {
+      const wrap = carouselRef.current;
+      const card = sharkCardRef.current;
+      if (!wrap || !card) return;
+      // .clubCarousel is position: relative, so it is the offsetParent and
+      // offsetLeft is already relative to the scroll container.
+      const target = card.offsetLeft - (wrap.clientWidth - card.offsetWidth) / 2;
+      wrap.scrollLeft = Math.max(0, target);
+    };
+
+    centre();
+
+    // Re-centre on resize/orientation change. Without this the featured card
+    // drifts off-centre the moment the viewport width changes, because the
+    // offset was computed against the old clientWidth.
+    let raf = 0;
+    const onResize = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(centre);
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
   }, [orderedClubs.length]);
 
-  // Enhancement #7: Haptic on scroll snap
+  // Haptic + SFX when a scroll SNAP settles.
+  //
+  // Gated on a real user gesture. The scroll event does not distinguish user
+  // scrolling from a programmatic one, so the centring above — which runs on
+  // mount and whenever the club count changes — used to trip this handler and
+  // play the snap sound and buzz the device on page load, with the user having
+  // touched nothing. Feedback for "you snapped a card" must follow an actual
+  // input, so the flag is set by the input events that can start a scroll and
+  // cleared once the snap has been announced.
   useEffect(() => {
     const el = carouselRef.current;
     if (!el) return;
     let snapTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const markUser = () => {
+      userScrollRef.current = true;
+    };
     const handleScroll = () => {
+      if (!userScrollRef.current) return;
       if (snapTimer) clearTimeout(snapTimer);
       snapTimer = setTimeout(() => {
         haptic.light();
         PremiumSFX.scrollSnap();
+        userScrollRef.current = false;
       }, 150);
     };
+
+    el.addEventListener('pointerdown', markUser, { passive: true });
+    el.addEventListener('touchstart', markUser, { passive: true });
+    el.addEventListener('wheel', markUser, { passive: true });
+    el.addEventListener('keydown', markUser);
     el.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
+      el.removeEventListener('pointerdown', markUser);
+      el.removeEventListener('touchstart', markUser);
+      el.removeEventListener('wheel', markUser);
+      el.removeEventListener('keydown', markUser);
       el.removeEventListener('scroll', handleScroll);
       if (snapTimer) clearTimeout(snapTimer);
     };

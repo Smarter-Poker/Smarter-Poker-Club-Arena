@@ -144,10 +144,20 @@ test.describe('Transaction History — UX Tests', () => {
       await page.waitForTimeout(1000);
 
       // Should show either skeleton bars, transaction rows, empty state, or error+retry
-      const skeleton = page.locator('.tx-skeleton-bar');
-      const txRows = page.locator('.transaction-row');
-      const emptyState = page.locator('.empty-state');
-      const retryBtn = page.locator('.tx-retry-btn');
+      /* The cashier is styled with CSS Modules, so nothing on this page has a
+         plain global class: a transaction row ships as
+         `class="_txRow_1mn1y_662"`. `.transaction-row` and its three siblings
+         below could never match anything on any build, which made `hasContent`
+         unconditionally false - and the test still passed for a year, because
+         signed out the History tab did not exist and the whole block was
+         skipped by `if (historyTab.count() > 0)`.
+
+         Match on the stable part of the generated name. Verified live: the
+         panel renders `_txRow_*` rows with real transactions. */
+      const skeleton = page.locator('[class*="txSkeleton"], [class*="skeleton"]');
+      const txRows = page.locator('[class*="txRow"]');
+      const emptyState = page.locator('[class*="emptyState"], [class*="txEmpty"]');
+      const retryBtn = page.locator('[class*="txRetry"], [class*="retryBtn"]');
 
       const hasContent =
         (await skeleton.count()) > 0 ||

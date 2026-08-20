@@ -10,7 +10,11 @@ import { Page, expect } from '@playwright/test';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function waitForPageLoad(page: Page) {
-    await page.waitForLoadState('networkidle');
+    /* NOT 'networkidle'. Club Arena holds Supabase Realtime websockets open and
+       polls, so a signed-in session never reaches network idle and this helper
+       would hang until the test timed out. 'load' is the strongest state that
+       is actually reachable here. */
+    await page.waitForLoadState('load');
 }
 
 export async function expectPageToHaveContent(page: Page, text: string | RegExp) {

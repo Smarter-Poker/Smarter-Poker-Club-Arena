@@ -29,8 +29,15 @@ const APP_BASE = '/hub/club-arena';
 const url = (path: string) => `${BASE_URL}${APP_BASE}${path === '/' ? '/' : path}`;
 
 // ─── Helper: Navigate and verify page loads ───
+/* NOT `networkidle`. Club Arena holds Supabase Realtime websockets open and
+   polls on a timer, so on a SIGNED-IN session the network never goes idle and
+   every one of these navigations burns the full 30s test timeout. It passed
+   for as long as the suite ran signed out only because the app bounced to a
+   static login page, which does settle - the wait was never actually
+   exercised. The console-errors test below already carries this note and was
+   already fixed; these five were left behind. */
 async function assertPageLoads(page: any, path: string, selector: string, timeout = 10000) {
-  await page.goto(url(path), { waitUntil: 'networkidle' });
+  await page.goto(url(path), { waitUntil: 'domcontentloaded' });
   await expect(page.locator(selector)).toBeVisible({ timeout });
 }
 
@@ -40,7 +47,7 @@ async function assertPageLoads(page: any, path: string, selector: string, timeou
 
 test.describe('Club Arena — Smoke Tests', () => {
   test('Homepage loads successfully', async ({ page }) => {
-    await page.goto(url('/'), { waitUntil: 'networkidle' });
+    await page.goto(url('/'), { waitUntil: 'domcontentloaded' });
     // Should either show the home page or redirect to login
     const bodyText = await page.textContent('body');
     expect(bodyText).toBeTruthy();
@@ -48,19 +55,19 @@ test.describe('Club Arena — Smoke Tests', () => {
   });
 
   test('Profile page loads', async ({ page }) => {
-    await page.goto(url('/profile'), { waitUntil: 'networkidle' });
+    await page.goto(url('/profile'), { waitUntil: 'domcontentloaded' });
     const bodyText = await page.textContent('body');
     expect(bodyText).toBeTruthy();
   });
 
   test('Notification center loads', async ({ page }) => {
-    await page.goto(url('/notifications'), { waitUntil: 'networkidle' });
+    await page.goto(url('/notifications'), { waitUntil: 'domcontentloaded' });
     const bodyText = await page.textContent('body');
     expect(bodyText).toBeTruthy();
   });
 
   test('Cashier page loads', async ({ page }) => {
-    await page.goto(url('/cashier'), { waitUntil: 'networkidle' });
+    await page.goto(url('/cashier'), { waitUntil: 'domcontentloaded' });
     const bodyText = await page.textContent('body');
     expect(bodyText).toBeTruthy();
   });

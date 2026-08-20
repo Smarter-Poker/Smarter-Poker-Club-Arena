@@ -38,8 +38,19 @@ export default defineConfig({
    */
   workers: isCI ? 4 : undefined,
   reporter: 'html',
+  /**
+   * Optional authenticated session. tests/e2e/global-setup.ts logs in when
+   * SP_EMAIL/SP_PASS are present and writes a storageState; without them it
+   * writes an EMPTY state and the suite runs signed out exactly as before.
+   * 47 route specs skip themselves on /auth today — this is what lets them
+   * actually run, without requiring a credential to exist for the rest to work.
+   */
+  globalSetup: './tests/e2e/global-setup.ts',
   use: {
     baseURL,
+    /* Written by globalSetup on every run, so it is never stale and never
+       missing. Gitignored — a committed one is a leaked session token. */
+    storageState: 'tests/e2e/.auth/state.json',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'on-first-retry',

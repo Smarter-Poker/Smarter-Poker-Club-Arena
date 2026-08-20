@@ -12,11 +12,20 @@ test.describe('Club Operations', () => {
     // Wait for clubs to load
     await page.waitForTimeout(1000);
 
-    // Find and click first club card if exists
-    const clubCard = page.locator('[class*="club"]').first();
-    if (await clubCard.isVisible()) {
-      await clubCard.click();
-      await expect(page).toHaveURL(/.*clubs\/.+/);
+    /* `[class*="club"]` matched layout chrome, not a card - on a signed-in run
+       its first match is a full-page container sitting under the header, so the
+       click was intercepted and burned the whole 30s timeout. Signed out the
+       page was empty, nothing matched, and the branch never ran; that is how a
+       test this weak stayed green.
+
+       Target something that is actually a link to a club, and bound the click
+       so a failure names this step rather than a locator. */
+    const clubCard = page
+      .locator('a[href*="/clubs/"], [data-testid="club-card"], [class*="club-card"]')
+      .first();
+    if ((await clubCard.count()) > 0 && (await clubCard.isVisible())) {
+      await clubCard.click({ timeout: 8000 });
+      await expect(page).toHaveURL(/.*clubs\/.+/, { timeout: 10000 });
     }
   });
 });

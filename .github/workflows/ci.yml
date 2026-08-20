@@ -522,6 +522,15 @@ jobs:
           # Point tests at production — set PLAYWRIGHT_BASE_URL in the test config
           BASE_URL: https://smarter.poker/hub/club-arena
           CI: true
+          # Optional test account. 47 of the route specs skip themselves the
+          # moment they land on /auth, so a signed-out run has never asserted a
+          # third of the suite. tests/e2e/global-setup.ts logs in when these are
+          # present and writes a storageState; when the secrets do not exist
+          # GitHub substitutes empty strings, global-setup writes an EMPTY state,
+          # and the run is byte-for-byte the signed-out one. That is deliberate:
+          # this step must not go red on a repo that has never set them.
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
         continue-on-error: false
 
       - name: Upload Playwright Report

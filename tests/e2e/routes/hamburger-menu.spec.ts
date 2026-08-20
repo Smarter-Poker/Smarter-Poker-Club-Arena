@@ -78,10 +78,18 @@ test.describe('Hamburger Menu — Open / Close', () => {
     const gameModes = page.locator('text=Game Modes');
     await expect(gameModes).toBeVisible({ timeout: 3000 });
 
-    // Press Escape to close
+    /* Press Escape to close.
+       NOT `not.toBeVisible()`. The drawer closes by sliding out - it keeps its
+       full 320px box and `visibility: visible`, it just sits at x = -320. That
+       is closed to a user and OPEN to Playwright, whose definition of visible
+       is "non-empty bounding box and not visibility:hidden" - nothing about
+       being on screen. Measured live after Escape: {w:320, h:43, x:-320,
+       visibility:'visible'}. So this assertion failed on a working Escape
+       handler (HamburgerMenu.tsx:136) the moment the suite ran signed in.
+       `toBeInViewport` is the check that means what this test meant. */
     await page.keyboard.press('Escape');
     await page.waitForTimeout(350);
-    await expect(gameModes).not.toBeVisible({ timeout: 2000 });
+    await expect(gameModes).not.toBeInViewport({ timeout: 2000 });
   });
 });
 
@@ -123,7 +131,10 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     { label: 'Club Messages', path: '/messages/clubs' },
     { label: 'Players', path: '/players' },
     { label: 'Cashier', path: '/cashier' },
-    { label: 'Search', path: '/search' },
+    // The menu has never had an item called "Search" - the row that routes to
+    // /search is labelled "Find Player" (HamburgerMenu.tsx:695). Signed out this
+    // test skipped before it could notice.
+    { label: 'Find Player', path: '/search' },
     // Unions
     { label: 'Browse Unions', path: '/unions' },
     { label: 'Create Union', path: '/unions/create' },
@@ -249,10 +260,26 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
       return;
     }
 
-    const bbLabel = page.locator('span:text-is("Show Stack in BBs")').first();
+    /* This setting is rendered as "Show Stack in Big Blinds"
+       (useUserTableSettings.ts:132), which is the metadata TableSettingsPanel
+       actually reads. TableSettings.tsx and VIPCardsModal.tsx still call the
+       same setting "Show Stack in BBs" - worth reconciling, but the panel's
+       label is what a test of the panel has to match.
+
+       It is one of the 12 toggles inside TableSettingsPanel,
+       which the menu renders only while its "Table Settings" row is expanded
+       (HamburgerMenu.tsx:989 - `showTableSettings && <TableSettingsPanel/>`).
+       This test never expanded it, so the label was legitimately absent and the
+       spec would have failed the first time it ever ran. */
+    const tableSettingsRow = page.locator('span:text-is("Table Settings")').first();
+    await expect(tableSettingsRow).toBeVisible({ timeout: 5000 });
+    await tableSettingsRow.click();
+
+    const bbLabel = page.locator('.tsp-item__label:text-is("Show Stack in Big Blinds")').first();
     await expect(bbLabel).toBeVisible({ timeout: 5000 });
 
-    const bbToggle = bbLabel.locator('..').locator('button');
+    // The toggle is a sibling of the label's wrapper, not of the label itself.
+    const bbToggle = bbLabel.locator('../..').locator('button').first();
     await expect(bbToggle).toBeVisible();
     await bbToggle.click();
     await page.waitForTimeout(200);

@@ -396,25 +396,6 @@ export const achievementTriggerService = new AchievementTriggerServiceClass();
 export default achievementTriggerService;
 
 // ════════════════════════════════════════════════════════════════════════════════════
-// AUTO-WIRE: friends_added challenge trigger via bus event
-// FriendsPage + PublicProfilePage emit FRIEND_REQUEST_ACCEPTED when a friend
-// request is accepted, but neither calls onFriendAdded(). This centralized
-// listener ensures the 'friends_added' challenge type always increments.
-// ════════════════════════════════════════════════════════════════════════════════════
-masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', async () => {
-  try {
-    const {
-      data: { user },
-    } = await getAuthUser();
-    if (user?.id) {
-      await achievementTriggerService.onFriendAdded(user.id);
-    }
-  } catch (err) {
-    console.debug('[AchievementTrigger] Friend-added challenge update failed:', err);
-  }
-});
-
-// ════════════════════════════════════════════════════════════════════════════════════
 // AUTO-WIRE: tournaments_played challenge trigger via bus event
 //
 // onTournamentComplete() — the only thing that increments 'tournaments_played'

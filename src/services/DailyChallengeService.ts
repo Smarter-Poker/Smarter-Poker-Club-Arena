@@ -135,7 +135,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 10,
     chipReward: 0,
-    diamondReward: 1,
+    diamondReward: 10,
     icon: '',
   },
   {
@@ -145,7 +145,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 25,
     chipReward: 0,
-    diamondReward: 2,
+    diamondReward: 12,
     icon: '',
   },
   {
@@ -155,7 +155,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 50,
     chipReward: 0,
-    diamondReward: 3,
+    diamondReward: 15,
     icon: '',
   },
   {
@@ -165,7 +165,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 15,
     chipReward: 0,
-    diamondReward: 1,
+    diamondReward: 10,
     icon: '',
   },
   {
@@ -175,7 +175,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 40,
     chipReward: 0,
-    diamondReward: 3,
+    diamondReward: 15,
     icon: '',
   },
   {
@@ -185,7 +185,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 75,
     chipReward: 0,
-    diamondReward: 4,
+    diamondReward: 20,
     icon: '',
   },
   {
@@ -195,7 +195,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 100,
     chipReward: 0,
-    diamondReward: 5,
+    diamondReward: 25,
     icon: '',
   },
 
@@ -207,7 +207,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 3,
     chipReward: 0,
-    diamondReward: 2,
+    diamondReward: 12,
     icon: '',
   },
   {
@@ -217,7 +217,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 5,
     chipReward: 0,
-    diamondReward: 3,
+    diamondReward: 15,
     icon: '',
   },
   {
@@ -227,7 +227,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 10,
     chipReward: 0,
-    diamondReward: 4,
+    diamondReward: 20,
     icon: '',
   },
   {
@@ -237,7 +237,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 7,
     chipReward: 0,
-    diamondReward: 3,
+    diamondReward: 15,
     icon: '',
   },
   {
@@ -247,7 +247,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 15,
     chipReward: 0,
-    diamondReward: 5,
+    diamondReward: 25,
     icon: '',
   },
 
@@ -259,7 +259,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 3,
     chipReward: 0,
-    diamondReward: 2,
+    diamondReward: 12,
     icon: '',
   },
   {
@@ -269,7 +269,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 5,
     chipReward: 0,
-    diamondReward: 2,
+    diamondReward: 12,
     icon: '',
   },
   {
@@ -279,7 +279,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 8,
     chipReward: 0,
-    diamondReward: 3,
+    diamondReward: 15,
     icon: '',
   },
   {
@@ -289,7 +289,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 10,
     chipReward: 0,
-    diamondReward: 4,
+    diamondReward: 20,
     icon: '',
   },
 
@@ -301,7 +301,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 1,
     chipReward: 0,
-    diamondReward: 2,
+    diamondReward: 12,
     icon: '',
   },
   {
@@ -311,7 +311,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 3,
     chipReward: 0,
-    diamondReward: 4,
+    diamondReward: 20,
     icon: '',
   },
   {
@@ -321,7 +321,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 2,
     chipReward: 0,
-    diamondReward: 3,
+    diamondReward: 15,
     icon: '',
   },
 
@@ -333,7 +333,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'big_pots',
     requirement: 1,
     chipReward: 0,
-    diamondReward: 3,
+    diamondReward: 15,
     icon: '',
   },
   {
@@ -343,7 +343,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'big_pots',
     requirement: 3,
     chipReward: 0,
-    diamondReward: 6,
+    diamondReward: 25,
     icon: '',
   },
 
@@ -355,7 +355,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'strong_hands',
     requirement: 1,
     chipReward: 0,
-    diamondReward: 3,
+    diamondReward: 15,
     icon: '',
   },
   {
@@ -365,7 +365,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'strong_hands',
     requirement: 3,
     chipReward: 0,
-    diamondReward: 7,
+    diamondReward: 25,
     icon: '',
   },
 
@@ -377,7 +377,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'friends_added',
     requirement: 1,
     chipReward: 0,
-    diamondReward: 2,
+    diamondReward: 12,
     icon: '',
   },
 ];
@@ -390,7 +390,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 250,
     chipReward: 0,
-    diamondReward: 12,
+    diamondReward: 25,
     icon: '',
   },
   {
@@ -400,7 +400,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 50,
     chipReward: 0,
-    diamondReward: 15,
+    diamondReward: 25,
     icon: '',
   },
   {
@@ -410,7 +410,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 10,
     chipReward: 0,
-    diamondReward: 18,
+    diamondReward: 25,
     icon: '',
   },
   {
@@ -420,7 +420,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'big_pots',
     requirement: 10,
     chipReward: 0,
-    diamondReward: 15,
+    diamondReward: 25,
     icon: '',
   },
   {
@@ -430,7 +430,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'strong_hands',
     requirement: 8,
     chipReward: 0,
-    diamondReward: 14,
+    diamondReward: 25,
     icon: '',
   },
   {
@@ -440,7 +440,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 20,
     chipReward: 0,
-    diamondReward: 10,
+    diamondReward: 25,
     icon: '',
   },
 ];
@@ -1107,9 +1107,22 @@ class DailyChallengeServiceClass {
    * Select random challenges for today
    */
   private selectDailyChallenges(count: number): DailyChallenge[] {
-    // Use date-based seed for consistent challenges across all users
     const seed = this.getTodayKey().replace(/-/g, '');
-    return this.seededDiverseSelect(CHALLENGE_POOL, count, seed);
+    const buckets = [10, 12, 15, 20, 25];
+    const picked: DailyChallenge[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const targetReward = buckets[Math.min(i, buckets.length - 1)];
+      const bucketPool = CHALLENGE_POOL.filter((c) => c.diamondReward === targetReward);
+
+      let available = bucketPool.filter((c) => !picked.some((p) => p.type === c.type));
+      if (available.length === 0) available = bucketPool;
+
+      const choice = this.seededDiverseSelect(available, 1, seed + String(i))[0];
+      if (choice) picked.push(choice);
+    }
+
+    return picked;
   }
 
   private selectChallenges(

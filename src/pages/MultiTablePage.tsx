@@ -271,6 +271,7 @@ export default function MultiTablePage() {
   // merged so observer-only tabs (open via URL, not seated) are never
   // removed. Seat at a 2nd/3rd/4th table in the lobby, come back, and every
   // seat is a tab again — the PokerBros flow.
+  const droppedRef = useRef(0);
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
@@ -285,36 +286,67 @@ export default function MultiTablePage() {
       if (ids.length === 0) return;
       const { data: tblRows } = await supabase
         .from('tables')
-        .select('id, name, game_variant, small_blind, big_blind')
+        .select('id, name, game_variant, small_blind, big_blind, tournament_id')
         .in('id', ids);
       if (cancelled) return;
       setTables((prev) => {
         const known = new Set(prev.map((t) => t.id));
         const room = Math.max(0, MAX_TABLES - prev.length);
-        const additions = ids
-          .filter((id) => !known.has(id))
-          .slice(0, room)
-          .map((id, i) => {
-            const row = tblRows?.find((r) => r.id === id);
-            const stakes =
-              row && row.small_blind != null && row.big_blind != null
-                ? `${row.small_blind}/${row.big_blind}`
-                : '';
-            return {
-              id,
-              name: (row?.name as string) || `Table ${prev.length + i + 1}`,
-              stakes,
-              isMyTurn: false,
-              pot: 0,
-            };
-          });
+        const candidates = ids.filter((id) => !known.has(id));
+        /**
+         * Dan 2026-08-20 (audit): this used to `.slice(0, room)` straight off
+         * the raw query order — effectively an arbitrary four when a player had
+         * more live seats than the device can show, which is entirely possible
+         * because the server caps CASH seats at four but never caps tournament
+         * seats (registrations are uncapped by design).
+         *
+         * Arbitrary was the wrong four. A tournament seat cannot be walked away
+         * from — miss it and you blind out of something you paid to enter —
+         * while a cash seat can be left at any time with the stack refunded. So
+         * tournaments are restored first, and if anything still does not fit,
+         * the player is told rather than left to discover it.
+         */
+        const isTourney = (id: string) => !!tblRows?.find((r) => r.id === id)?.tournament_id;
+        const ordered = [...candidates].sort((a, b) => {
+          const ta = isTourney(a) ? 0 : 1;
+          const tb = isTourney(b) ? 0 : 1;
+          return ta - tb;
+        });
+        if (ordered.length > room) droppedRef.current = ordered.length - room;
+        const additions = ordered.slice(0, room).map((id, i) => {
+          const row = tblRows?.find((r) => r.id === id);
+          const stakes =
+            row && row.small_blind != null && row.big_blind != null
+              ? `${row.small_blind}/${row.big_blind}`
+              : '';
+          return {
+            id,
+            name: (row?.name as string) || `Table ${prev.length + i + 1}`,
+            stakes,
+            isMyTurn: false,
+            pot: 0,
+          };
+        });
         return additions.length > 0 ? [...prev, ...additions] : prev;
       });
+      // Tell the player OUTSIDE the updater. A setTables callback must stay
+      // pure — React may run it twice under StrictMode, and this file has been
+      // bitten by side effects in updaters twice already (see TABLE_LEFT and
+      // CLOSE_TABLE_TAB above).
+      if (!cancelled && droppedRef.current > 0) {
+        const n = droppedRef.current;
+        droppedRef.current = 0;
+        toast.info(
+          `You have ${n} more live ${n === 1 ? 'seat' : 'seats'} than this device can show ` +
+            `(${MAX_TABLES} at a time). Close a table to bring ${n === 1 ? 'it' : 'them'} in.`,
+          7000
+        );
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;

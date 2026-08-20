@@ -163,8 +163,12 @@ const rebuildUpdaterSnippet = (() => {
   }
   return SRC.slice(start, k + 1);
 })();
-const makeRebuild = new Function('ids', 'tblRows', 'MAX_TABLES',
+// droppedRef records how many live seats did not fit on the device, so the
+// caller can tell the player. The harness reads it to assert the priority.
+const droppedRef = { current: 0 };
+const makeRebuild = new Function('ids', 'tblRows', 'MAX_TABLES', 'droppedRef',
   'return ' + transpile(rebuildUpdaterSnippet) + ';');
+const makeRebuildBound = (ids, tblRows, cap) => makeRebuild(ids, tblRows, cap, droppedRef);
 
 const ids = (ts_) => state.tables.map((t) => (isLobbyTab(t) ? 'LOBBY' : t.id));
 
@@ -284,7 +288,7 @@ check('TABLE_LEFT on last table returns to the club lobby (navigate once)',
 
 // 8. refresh-restore: server-truth rebuild merges every live seat back in
 setTables([{ id: 'T1', name: 'Table 1', stakes: '', isMyTurn: false, pot: 0 }]); // from URL
-const rebuilt = makeRebuild(
+const rebuilt = makeRebuildBound(
   ['T1', 'T3', 'T4'],
   [
     { id: 'T1', name: 'Alpha', small_blind: 1, big_blind: 2 },
@@ -296,8 +300,37 @@ const rebuilt = makeRebuild(
 check('refresh: all live seats restored as tabs (dedup on URL table)',
   rebuilt.map((t) => t.id).join(',') === 'T1,T3,T4', rebuilt.map((t) => t.id).join(','));
 check('refresh: stakes mapped from server rows', rebuilt[1].stakes === '2/5', rebuilt[1].stakes);
-const rebuiltCap = makeRebuild(['A','B','C','D','E','F'],[],MAX_TABLES)([]);
+droppedRef.current = 0;
+const rebuiltCap = makeRebuildBound(['A','B','C','D','E','F'],[],MAX_TABLES)([]);
 check('refresh: rebuild honors the 4-cap', rebuiltCap.length === 4, 'len=' + rebuiltCap.length);
+check('refresh: overflow is recorded so the player can be told',
+  droppedRef.current === 2, 'dropped=' + droppedRef.current);
+
+// Dan 2026-08-20: the server caps CASH seats at four but never caps tournament
+// seats, so a returning player CAN legitimately hold more live seats than the
+// device shows. Which four get restored is not arbitrary: a tournament seat
+// cannot be walked away from (miss it and you blind out of something you paid
+// to enter), a cash seat can be left any time with the stack refunded.
+droppedRef.current = 0;
+const mixedRows = [
+  { id: 'C1', name: 'Cash 1', small_blind: 1, big_blind: 2, tournament_id: null },
+  { id: 'C2', name: 'Cash 2', small_blind: 1, big_blind: 2, tournament_id: null },
+  { id: 'C3', name: 'Cash 3', small_blind: 1, big_blind: 2, tournament_id: null },
+  { id: 'V1', name: 'MTT A', small_blind: 50, big_blind: 100, tournament_id: 'tourA' },
+  { id: 'V2', name: 'MTT B', small_blind: 50, big_blind: 100, tournament_id: 'tourB' },
+];
+const mixed = makeRebuildBound(['C1','C2','C3','V1','V2'], mixedRows, MAX_TABLES)([]);
+check('refresh: tournament seats are restored BEFORE cash seats when over cap',
+  mixed.slice(0, 2).map((t) => t.id).sort().join(',') === 'V1,V2',
+  mixed.map((t) => t.id).join(','));
+check('refresh: no tournament seat is ever the one dropped',
+  !['V1','V2'].some((id) => !mixed.find((t) => t.id === id)),
+  mixed.map((t) => t.id).join(','));
+check('refresh: overflow count is exact for the mixed case',
+  droppedRef.current === 1, 'dropped=' + droppedRef.current);
+check('refresh: cash-only order is left alone when everything fits',
+  makeRebuildBound(['C1','C2'], mixedRows, MAX_TABLES)([])
+    .map((t) => t.id).join(',') === 'C1,C2');
 
 // ── tab-bar slot math (lifted values from TableTabBar.tsx) ──────────────────
 const slotMath = TABBAR.match(/const emptySlots = maxTables - tabs\.length;/);

@@ -499,6 +499,35 @@ export abstract class TournamentManagerBase {
         const buyIn = tournament.buy_in_amount || 0;
         const prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
 
+        // SPIN MARGIN 2026-08-20: this line OVERWRITES the pool that
+        // registration accumulated, and until now the difference simply
+        // ceased to exist.
+        //
+        // Each registration charges buy_in + fee, books the fee to
+        // rake_records and ADDS the buy_in to prize_pool, so a 3-handed Spin
+        // arrives here holding 3 x buy_in. The pool then becomes
+        // buy_in x multiplier. Since the multiplier averages 2.55 against the
+        // 3.0 that break-even requires, the house keeps the difference on
+        // ~93% of Spins and funds an overlay on the rest -- and NO row was
+        // ever written either way.
+        //
+        // Measured over 2,106 completed Spins (every one 3-handed):
+        //   2x  1,628 spins  contributed 10,476  paid  6,984   house +3,492
+        //   3x    280 spins  contributed  1,734  paid  1,734   break-even
+        //   5x    136 spins  contributed    876  paid  1,460   house  -584
+        //   10x    60 spins  contributed    348  paid  1,160   house  -812
+        //   25x     2 spins  contributed     12  paid    100   house   -88
+        //   net: 2,008 retained beyond the booked entry fees, in no ledger.
+        //
+        // The margin is now recorded so it can be reported and reconciled.
+        // player_contributions is deliberately LEFT NULL: the union rake
+        // rollup selects `player_contributions IS NOT NULL AND rake_amount > 0`,
+        // so this row is visible and auditable WITHOUT silently redirecting
+        // revenue to clubs and unions. Whether they should share in the Spin
+        // margin is Dan's call, not a side effect of making it visible.
+        const contributedPool = Math.round((tournament.prize_pool || 0) * 100) / 100;
+        const spinMargin = Math.round((contributedPool - prizePool) * 100) / 100;
+
         await supabase
           .from('tournaments')
           .update({
@@ -507,6 +536,39 @@ export abstract class TournamentManagerBase {
             is_premium_spin: spinMultiplier >= 100,
           })
           .eq('id', this.tournamentId);
+
+        if (spinMargin !== 0 && tournament.club_id) {
+          const { error: marginErr } = await supabase.from('rake_records').insert({
+            hand_id: null,
+            table_id: null,
+            club_id: tournament.club_id,
+            rake_amount: spinMargin,
+            pot_size: Math.abs(spinMargin),
+            num_players: tournament.current_players ?? 0,
+            bbj_contribution: 0,
+            is_tournament: true,
+            tournament_id: this.tournamentId,
+            source: 'TournamentManagerBase.spin_margin',
+            metadata: {
+              kind: 'spin_margin',
+              multiplier: spinMultiplier,
+              buy_in: buyIn,
+              contributed_pool: contributedPool,
+              prize_pool: prizePool,
+              // positive: the house retained it. negative: the house funded
+              // an overlay out of its own pocket.
+              direction: spinMargin > 0 ? 'house_retained' : 'house_funded_overlay',
+            },
+          });
+          if (marginErr) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] spin margin ${spinMargin} not recorded: ${marginErr.message}`
+              ),
+              'Tournament.spin_margin_unrecorded'
+            );
+          }
+        }
 
         tournament.prize_pool = prizePool;
         console.log(

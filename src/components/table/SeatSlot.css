@@ -1966,7 +1966,15 @@
   backface-visibility: hidden;
   will-change: transform;
   /* Shadow deepens as the card lifts, selling the bend. */
-  filter: drop-shadow(0 calc(var(--squeeze-progress, 0) * 10px) calc(var(--squeeze-progress, 0) * 8px) rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(
+    0 calc(var(--squeeze-progress, 0) * 10px) calc(var(--squeeze-progress, 0) * 8px)
+      rgba(0, 0, 0, 0.45)
+  );
+}
+
+/* While the finger is DOWN, the cover must track it with zero lag. */
+.seat__cards--squeeze:active .seat__squeeze-face--cover {
+  transition: none;
 }
 
 /* While the finger is DOWN, the cover must track it with zero lag. */

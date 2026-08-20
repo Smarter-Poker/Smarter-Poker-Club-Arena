@@ -94,11 +94,6 @@ export default function AppLayout() {
           <Outlet />
         </RouteErrorBoundary>
       </main>
-
-      {/* Footer */}
-      <footer className={styles.footer}>
-        <p>Club Engine 2026 - Club Arena</p>
-      </footer>
     </div>
   );
 }

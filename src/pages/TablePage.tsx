@@ -47,7 +47,6 @@ import type { BoardStage } from '../components/table/CommunityCards';
  * table_id values working.
  */
 
-
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -243,8 +242,6 @@ import { TableModalsLayer } from '../components/table/TableModalsLayer';
 // RAKE CONFIG HELPER — Derives rake config from official chart
 // ═══════════════════════════════════════════════════════════════════════════════
 
-
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -347,20 +344,13 @@ interface TableState {
 // moves hero alone and leaves all six villain positions untouched. 91 -> 95.5
 // also buys the 1.33x hero avatar the vertical room it needs.
 
-
-
-
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
 // Each horse gets a unique colorful avatar derived from their name
 import { generateAvatarSvg } from '../utils/avatarGenerator';
 // 2026-08-19: pure card + seat helpers now live in their own modules. They used
 // to sit inline in this file; the seat rings in particular carry measured rail
 // positions that must not be casually rewritten. See those files for why.
-import {
-  ENGINE_SUIT_MAP,
-  sortCardsByRank,
-  getGameVariantLabel,
-} from '../lib/tableCardDisplay';
+import { ENGINE_SUIT_MAP, sortCardsByRank, getGameVariantLabel } from '../lib/tableCardDisplay';
 import {
   seatLayoutFor,
   createEmptySeats,
@@ -369,7 +359,6 @@ import {
 } from '../lib/tableSeatGeometry';
 import { resolveSkin, resolveBackground } from '../lib/tableTheme';
 import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
-
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
@@ -5050,18 +5039,15 @@ export default function TablePage({
           }
           // cpCollect runs 550ms + 100ms stack stagger; the old 450ms window
           // unmounted the chips at 82% of the keyframe.
-          collectSeatsTimerRef.current = window.setTimeout(
-            () => {
-              collectSeatsTimerRef.current = null;
-              setCollectingChipSeats(Array(collectMask.length).fill(false));
-              streetBetsRef.current = Array(9).fill(0);
-              setTableState((prev) => ({
-                ...prev,
-                lastBetAmounts: prev.lastBetAmounts.map(() => 0),
-              }));
-            },
-            700 * getAnimationSpeed()
-          );
+          collectSeatsTimerRef.current = window.setTimeout(() => {
+            collectSeatsTimerRef.current = null;
+            setCollectingChipSeats(Array(collectMask.length).fill(false));
+            streetBetsRef.current = Array(9).fill(0);
+            setTableState((prev) => ({
+              ...prev,
+              lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+            }));
+          }, 700 * getAnimationSpeed());
         }
 
         setTableState((prev) => ({
@@ -5263,18 +5249,15 @@ export default function TablePage({
           if (collectSeatsTimerRef.current) {
             window.clearTimeout(collectSeatsTimerRef.current);
           }
-          collectSeatsTimerRef.current = window.setTimeout(
-            () => {
-              collectSeatsTimerRef.current = null;
-              setCollectingChipSeats(Array(finalMask.length).fill(false));
-              streetBetsRef.current = Array(9).fill(0);
-              setTableState((prev) => ({
-                ...prev,
-                lastBetAmounts: prev.lastBetAmounts.map(() => 0),
-              }));
-            },
-            700 * getAnimationSpeed()
-          );
+          collectSeatsTimerRef.current = window.setTimeout(() => {
+            collectSeatsTimerRef.current = null;
+            setCollectingChipSeats(Array(finalMask.length).fill(false));
+            streetBetsRef.current = Array(9).fill(0);
+            setTableState((prev) => ({
+              ...prev,
+              lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+            }));
+          }, 700 * getAnimationSpeed());
         }
         // ANIMATION AUDIT 2026-08-19: showdown losers' cards used to simply
         // vanish at the 3s reset — no muck animation existed for them. Fly
@@ -5533,13 +5516,10 @@ export default function TablePage({
               if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
               // Slightly longer than --pd-collect-duration (0.5s) so the pot is
               // never yanked back to centre mid-slide.
-              potCollectTimerRef.current = setTimeout(
-                () => {
-                  potCollectTimerRef.current = null;
-                  setPotCollectTo(null);
-                },
-                700 * getAnimationSpeed()
-              );
+              potCollectTimerRef.current = setTimeout(() => {
+                potCollectTimerRef.current = null;
+                setPotCollectTo(null);
+              }, 700 * getAnimationSpeed());
             }
           }
         }

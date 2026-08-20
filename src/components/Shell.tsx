@@ -288,11 +288,6 @@ function ShellContent() {
         <Outlet />
       </main>
 
-      {/* Footer */}
-      <footer className="shell-footer">
-        <p>Club Engine 2026 - Club Arena</p>
-      </footer>
-
       {/* Global In-App Alerts */}
       <InAppAlerts alerts={alerts} onDismiss={dismissAlert} position="top-right" />
     </div>

@@ -178,24 +178,36 @@ export class HorseLifecycleManager {
         Date.now() - STUCK_HORSE_THRESHOLD_HOURS * 60 * 60 * 1000
       ).toISOString();
 
-      const stuckHorses = await fetchAllRows<{
+      const stuckPage = await fetchAllRows<{
         id: string;
         display_name: string | null;
         horse_status: string | null;
         updated_at: string;
       }>(
-        () =>
-          supabase
+        (cursor, want) => {
+          let q = supabase
             .from('profiles')
             .select('id, display_name, horse_status, updated_at')
             .eq('is_horse', true)
             .neq('horse_status', 'available')
             .lt('updated_at', thresholdTime)
-            .order('id'),
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
         { label: 'HorseLifecycle.stuckHorses', maxRows: 50_000 }
       );
+      // Under-reading here just means fewer horses are unstuck this pass, which
+      // is harmless and self-correcting — but say so rather than treating a
+      // partial read as "nothing is stuck".
+      if (!stuckPage.complete) {
+        console.warn('[HorseLifecycle] stuck-horse sweep read incompletely — retrying next pass');
+        return;
+      }
+      const stuckHorses = stuckPage.rows;
 
-      if (!stuckHorses || stuckHorses.length === 0) return;
+      if (stuckHorses.length === 0) return;
 
       let forcedResets = 0;
 
@@ -425,7 +437,7 @@ export class HorseLifecycleManager {
       // the platform (1,428 today, mostly tournament seats). PostgREST caps a
       // response at db-max-rows (1,000) WITHOUT erroring, so the sweep that
       // exists to reap orphaned seats was capable of never seeing the orphans.
-      const staleSeats = await fetchAllRows<{
+      const stalePage = await fetchAllRows<{
         id: string;
         table_id: string;
         user_id: string;
@@ -433,16 +445,27 @@ export class HorseLifecycleManager {
         stack: number;
         joined_at: string;
       }>(
-        () =>
-          supabase
+        (cursor, want) => {
+          let q = supabase
             .from('table_seats')
             .select('id, table_id, user_id, seat_number, stack, joined_at')
             .is('left_at', null)
             .lt('joined_at', thresholdTime)
-            .order('id'),
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
         { label: 'HorseLifecycle.staleSeats', maxRows: 50_000 }
       );
-
+      // This sweep force-cashes-out seats. Acting on a partial read cannot
+      // reap a seat it never saw (safe), but it also cannot be trusted to have
+      // finished — and it runs every 4 hours, so skipping one pass is free.
+      if (!stalePage.complete) {
+        console.warn('[HorseLifecycle] stale-seat sweep read incompletely — retrying next pass');
+        return;
+      }
+      const staleSeats = stalePage.rows;
       if (staleSeats.length === 0) return;
 
       let cleaned = 0;

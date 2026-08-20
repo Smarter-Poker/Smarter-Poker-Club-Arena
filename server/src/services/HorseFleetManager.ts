@@ -372,58 +372,102 @@ export class HorseFleetManager {
       // No money was ever at risk: atomic_table_buyin is the authoritative
       // guard and rejected all of them. That is precisely why it stayed
       // invisible — the failure mode was pure waste, logged where nobody looks.
-      const allActiveSeats = await fetchAllRows<{
+      const seatPage = await fetchAllRows<{
+        id: string;
         user_id: string;
         table_id: string;
         seat_number: number;
       }>(
-        () =>
-          supabase
+        (cursor, want) => {
+          // KEYSET, not OFFSET. `.range()` paging re-reads the table under a
+          // fresh snapshot per page: a seat that empties between page 1 and
+          // page 2 shifts every later row down one index, so OFFSET 1000 starts
+          // PAST a still-occupied seat and never returns it — which is exactly
+          // the duplicate-key buy-in this whole fix exists to stop. Seats empty
+          // constantly in a live room. `id > cursor` has no such window.
+          let q = supabase
             .from('table_seats')
-            .select('user_id, table_id, seat_number')
+            .select('id, user_id, table_id, seat_number')
             .is('left_at', null)
-            // A total order is required: OFFSET paging without one can skip or
-            // repeat rows, which would reintroduce the same bug more subtly.
-            .order('id', { ascending: true }),
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
         { label: 'HorseFleet.activeSeats', maxRows: 50_000 }
       );
 
+      // FAIL CLOSED. A partial seat map is precisely the state that produced
+      // ~150,000 failed buy-ins a day: every seat we cannot see reads as empty.
+      // Skipping a 30-second seeding cycle costs nothing; seeding from a
+      // half-read map costs a storm.
+      if (!seatPage.complete) {
+        console.warn(
+          '[HorseFleet] Seeding cycle SKIPPED — the seat map came back incomplete, ' +
+            'and seeding from a partial map is what caused the duplicate-seat storm.'
+        );
+        return;
+      }
+      const allActiveSeats = seatPage.rows;
+
       const horseTables = new Map<string, Set<string>>();
-      if (allActiveSeats) {
-        for (const seat of allActiveSeats) {
-          if (!horseTables.has(seat.user_id)) horseTables.set(seat.user_id, new Set());
-          horseTables.get(seat.user_id)!.add(seat.table_id);
-        }
+      for (const seat of allActiveSeats) {
+        if (!horseTables.has(seat.user_id)) horseTables.set(seat.user_id, new Set());
+        horseTables.get(seat.user_id)!.add(seat.table_id);
       }
 
       // Optimization: Fetch all horses once instead of querying per table
       // We NO LONGER check for 'available' status because horses can multi-table.
       // 2026-08-20: paged, same reason as the seat read above — the fleet is
       // 574 horses and a truncated pool silently shrinks who can ever be seated.
-      const validHorses = await fetchAllRows<{
+      const horsePage = await fetchAllRows<{
         id: string;
         display_name: string | null;
         username: string | null;
       }>(
-        () =>
-          supabase
+        (cursor, want) => {
+          let q = supabase
             .from('profiles')
             .select('id, display_name, username')
             .eq('is_horse', true)
             .neq('horse_status', 'disabled') // 'disabled' is the only status that prevents playing
-            .order('id'),
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
         { label: 'HorseFleet.validHorses', maxRows: 50_000 }
       );
+      if (!horsePage.complete) {
+        console.warn('[HorseFleet] Seeding cycle SKIPPED — the horse pool came back incomplete.');
+        return;
+      }
+      const validHorses = horsePage.rows;
 
       // V8: full horse-id set (any status) so we can tell HUMAN seats from
       // horse seats — humans get rescue priority below.
       // Paged: a horse missing from this set reads as a HUMAN, which triggers
       // the short-handed-human rescue path and reorders the whole seeding queue.
-      const allHorseIds = await fetchAllRows<{ id: string }>(
-        () => supabase.from('profiles').select('id').eq('is_horse', true).order('id'),
+      const idPage = await fetchAllRows<{ id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('profiles')
+            .select('id')
+            .eq('is_horse', true)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
         { label: 'HorseFleet.horseIds', maxRows: 50_000 }
       );
-      const horseIdSet = new Set(allHorseIds.map((h) => h.id));
+      // A horse missing from this set reads as a HUMAN, which triggers the
+      // short-handed-human rescue path and reorders the whole seeding queue.
+      if (!idPage.complete) {
+        console.warn('[HorseFleet] Seeding cycle SKIPPED — the horse id set came back incomplete.');
+        return;
+      }
+      const horseIdSet = new Set(idPage.rows.map((h) => h.id));
       const hourUTC = new Date().getUTCHours();
 
       console.log(
@@ -452,7 +496,7 @@ export class HorseFleetManager {
       // V8: tables with a short-handed HUMAN seed first (never leave a human
       // stranded); everything else keeps its natural order.
       const humanShort = (t: any): boolean => {
-        const seats = (allActiveSeats || []).filter((x) => x.table_id === t.id);
+        const seats = allActiveSeats.filter((x) => x.table_id === t.id);
         return seats.some((x) => !horseIdSet.has(x.user_id)) && seats.length < 4;
       };
       const orderedTables = [...tables].sort(
@@ -470,7 +514,7 @@ export class HorseFleetManager {
           const targetHorses = config?.horsesPerTable || Math.max(3, table.max_players - 1);
 
           // Determine currently occupied seats for THIS table from our in-memory map
-          const tableOccupiedSeats = (allActiveSeats || []).filter((s) => s.table_id === table.id);
+          const tableOccupiedSeats = allActiveSeats.filter((s) => s.table_id === table.id);
           const occupiedNumbers = new Set(tableOccupiedSeats.map((s) => s.seat_number));
 
           const currentCount = occupiedNumbers.size;
@@ -799,12 +843,25 @@ export class HorseFleetManager {
     stuck: number;
   }> {
     try {
-      const horses = await fetchAllRows<{ id: string; horse_status: string | null }>(
-        () => supabase.from('profiles').select('id, horse_status').eq('is_horse', true).order('id'),
+      const healthPage = await fetchAllRows<{ id: string; horse_status: string | null }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('profiles')
+            .select('id, horse_status')
+            .eq('is_horse', true)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
         { label: 'HorseFleet.fleetHealth', maxRows: 50_000 }
       );
-
-      if (horses.length === 0) return { total: 0, available: 0, seated: 0, stuck: 0 };
+      const horses = healthPage.rows;
+      // An incomplete read and a genuinely empty fleet must not report the same
+      // numbers — this is a health probe, and a silent undercount is a lie.
+      if (!healthPage.complete || horses.length === 0) {
+        return { total: 0, available: 0, seated: 0, stuck: 0 };
+      }
 
       let available = 0,
         seated = 0,

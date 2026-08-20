@@ -23,6 +23,7 @@
 
 import { createServer } from 'http';
 import { reportError } from './services/errorReporter.js';
+import { handHistoryQueueDepth } from './services/supabase.js';
 import { tableStateHub } from './transport/TableStateHub.js';
 import { EngineWebSocketServer } from './transport/EngineWebSocketServer.js';
 import { ChannelWebSocketServer } from './transport/ChannelWebSocketServer.js';
@@ -126,6 +127,25 @@ const fatal = (err: unknown, kind: string) => {
   if (exiting) return;
   exiting = true;
   console.error(`[GameServer] FATAL (${kind}) — exiting for supervisor restart`);
+  // REVIEW FIX 2026-08-20: this path never calls gameServer.stop(), so anything
+  // still held in the hand_history retry queue dies with the process. That loss
+  // is accepted by design (the queue is in-process), but it must not be
+  // INVISIBLE — those hands will have no history row and nothing will ever say
+  // so otherwise.
+  try {
+    const held = handHistoryQueueDepth();
+    if (held > 0) {
+      reportError(
+        new Error(
+          `[GameServer] exiting fatally with ${held} unwritten hand_history row(s) still ` +
+            `queued — those hands will have no history row.`
+        ),
+        'GameServer.hand_history_queue_lost_on_fatal'
+      );
+    }
+  } catch {
+    /* never let the diagnostic stop the exit */
+  }
   // Give Sentry a moment, but never hang on it.
   setTimeout(() => process.exit(1), 2000).unref();
 };

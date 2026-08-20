@@ -146,12 +146,23 @@ COMMENT ON FUNCTION public.sp_prune_hand_history(integer) IS
 -- 90-day window. 4,000 per 5 minutes is 1.15M/day against 238k/day arriving, so
 -- the backlog clears in about two and a half days. It needs no manual reset
 -- afterwards: once caught up, each run simply finds fewer eligible rows.
+-- REVIEW FIX 2026-08-20: this was wrapped in `EXCEPTION WHEN others ... RAISE
+-- NOTICE`, which swallowed a permissions failure or a NULL jobid identically to
+-- "the job is absent". The migration would report success while the pruner
+-- silently stayed at 2,500/run — half the rate the comment above claims is
+-- needed to drain the backlog. Distinguish the cases and be loud about the
+-- unexpected one.
 DO $cron$
+DECLARE v_jobid bigint;
 BEGIN
-  PERFORM cron.alter_job(
-    (SELECT jobid FROM cron.job WHERE jobname = 'sp_prune_hand_history_10m'),
-    command := 'select public.sp_prune_hand_history(4000)'
-  );
-EXCEPTION WHEN others THEN
-  RAISE NOTICE 'cron job sp_prune_hand_history_10m not present — skipping batch bump';
+  SELECT jobid INTO v_jobid FROM cron.job WHERE jobname = 'sp_prune_hand_history_10m';
+  IF v_jobid IS NULL THEN
+    RAISE NOTICE 'cron job sp_prune_hand_history_10m not present — nothing to bump';
+  ELSE
+    PERFORM cron.alter_job(v_jobid, command := 'select public.sp_prune_hand_history(4000)');
+    RAISE NOTICE 'sp_prune_hand_history batch raised to 4000 (job %)', v_jobid;
+  END IF;
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE WARNING 'could not alter cron job sp_prune_hand_history_10m: %. The pruner will '
+                'run at its previous batch size and may not drain the backlog.', SQLERRM;
 END $cron$;

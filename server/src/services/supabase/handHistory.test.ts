@@ -27,6 +27,8 @@ const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
 let insertResults: { data: unknown; error: unknown }[] = [];
 /** What a hand_number existence lookup finds. */
 let existingByHandNumber: Record<number, string> = {};
+/** What fn_relink_rake_record_to_hand returns (rows linked). */
+let rpcResult = 1;
 
 function builder(table: string) {
   const call: Call = { table, op: 'select', filters: {} };
@@ -72,7 +74,7 @@ vi.mock('./client.js', () => ({
     from: (table: string) => builder(table),
     rpc: async (fn: string, args: Record<string, unknown>) => {
       rpcCalls.push({ fn, args });
-      return { data: 1, error: null };
+      return { data: rpcResult, error: null };
     },
   },
 }));
@@ -86,6 +88,7 @@ import {
   logHandHistory,
   drainHandHistoryQueue,
   handHistoryQueueDepth,
+  handHistoryQueueBytes,
   buildHandHistoryTiers,
 } from './handHistory.js';
 
@@ -126,10 +129,11 @@ beforeEach(async () => {
   rpcCalls.length = 0;
   insertResults = [];
   existingByHandNumber = {};
+  rpcResult = 1;
   mockReportError.mockReset();
 });
 
-describe('logHandHistory', () => {
+describe('logHandHistory — the hot path', () => {
   it('writes ONE row — the guaranteed-400 4-tier attempt is gone', async () => {
     const res = await logHandHistory(params());
 
@@ -145,71 +149,65 @@ describe('logHandHistory', () => {
     expect(row.hand_number).toBe(GLOBAL_HAND);
   });
 
-  it('retries a transient failure instead of losing the hand', async () => {
+  it('COSTS EXACTLY ONE ROUND TRIP WHEN IT FAILS — it must never stall the table', async () => {
+    // This is the regression guard for the review finding that mattered most.
+    //
+    // The first version retried 3x in line with an existence pre-check before
+    // each retry: 5 PostgREST requests, and the shared client aborts at
+    // DB_TIMEOUT_MS = 15s. Against the hung-socket outage this exists for, that
+    // is ~76s per hand — awaited inside postHandTasks, which the dealing loop
+    // awaits at the top of every iteration, while postHandTasks never calls
+    // markProgress() so the 90s watchdog runs the whole time. One failing hand
+    // could kill the engine for a restart, on all 44 tables at once.
     insertResults = [{ data: null, error: { message: 'fetch failed' } }];
 
     const res = await logHandHistory(params());
 
-    expect(res.handId).toBe('inserted');
-    expect(inserts()).toHaveLength(2);
-    expect(handHistoryQueueDepth()).toBe(0);
+    expect(res.handId).toBeNull();
+    expect(calls).toHaveLength(1); // one insert, ZERO pre-checks
+    expect(handHistoryQueueDepth()).toBe(1); // durability moved to the queue
   });
 
-  it('does not duplicate the hand when the write landed but the response was lost', async () => {
-    // 4 of the 320 measured failures were exactly this: the hand_history row
-    // exists, written BEFORE the rake row, and the rake row still got a null id.
-    insertResults = [{ data: null, error: { message: 'socket hang up' } }];
+  it('resolves a duplicate-key rejection to the row that already landed', async () => {
+    // The response to an earlier attempt was lost but the write went through.
+    insertResults = [{ data: null, error: { message: 'duplicate', code: '23505' } }];
     existingByHandNumber[GLOBAL_HAND] = 'already-there';
 
     const res = await logHandHistory(params());
 
     expect(res.handId).toBe('already-there');
     expect(inserts()).toHaveLength(1); // never re-inserted
+    expect(handHistoryQueueDepth()).toBe(0);
   });
 
-  it('queues the payload when every in-line attempt fails, and reports it', async () => {
-    insertResults = [
-      { data: null, error: { message: 'timeout' } },
-      { data: null, error: { message: 'timeout' } },
-      { data: null, error: { message: 'timeout' } },
-    ];
+  it('queues the payload when the write fails, and reports it', async () => {
+    insertResults = [{ data: null, error: { message: 'timeout' } }];
 
     const res = await logHandHistory(params());
 
     expect(res.handId).toBeNull();
     expect(handHistoryQueueDepth()).toBe(1);
+    expect(handHistoryQueueBytes()).toBeGreaterThan(0);
     expect(mockReportError).toHaveBeenCalled();
     expect(String(mockReportError.mock.calls[0][1])).toContain('logHandHistory.insert_failed');
   });
 
-  it('drains the queue later and relinks the rake row to the recovered hand', async () => {
-    insertResults = [
-      { data: null, error: { message: 'timeout' } },
-      { data: null, error: { message: 'timeout' } },
-      { data: null, error: { message: 'timeout' } },
-    ];
-    await logHandHistory(params());
-    expect(handHistoryQueueDepth()).toBe(1);
+  it('holds a COPY, so the engine reusing its action array cannot empty the queue', async () => {
+    // row.actions aliases the engine's live currentHandActions.
+    const p = params();
+    insertResults = [{ data: null, error: { message: 'timeout' } }];
+    await logHandHistory(p);
+    p.actions.length = 0; // engine clears in place
 
     calls.length = 0;
     insertResults = [{ data: { id: 'late-id' }, error: null }];
-    const summary = await drainHandHistoryQueue();
+    await drainHandHistoryQueue();
 
-    expect(summary.written).toBe(1);
-    expect(handHistoryQueueDepth()).toBe(0);
-    // Without this the money stays unattributable — the open financial_alerts
-    // signal that started the whole investigation.
-    expect(rpcCalls).toHaveLength(1);
-    expect(rpcCalls[0].fn).toBe('fn_relink_rake_record_to_hand');
-    expect(rpcCalls[0].args).toMatchObject({
-      p_hand_number: GLOBAL_HAND,
-      p_hand_id: 'late-id',
-    });
+    expect((inserts()[0].row!.actions as unknown[]).length).toBe(2);
   });
 
-  it('never retries a hand number below the global floor — it is not unique', async () => {
-    // uq_hand_history_global_hand_number only covers hand_number >= 1000000.
-    // Retrying below that could duplicate the hand instead of deduping it.
+  it('reports rather than silently dropping a hand number below the global floor', async () => {
+    // Not reachable today, but a bare `return` there would be silent data loss.
     insertResults = [{ data: null, error: { message: 'timeout' } }];
 
     const res = await logHandHistory(params(42));
@@ -217,22 +215,257 @@ describe('logHandHistory', () => {
     expect(res.handId).toBeNull();
     expect(inserts()).toHaveLength(1);
     expect(handHistoryQueueDepth()).toBe(0);
+    expect(
+      mockReportError.mock.calls.some((c) => String(c[1]).includes('below_global_floor'))
+    ).toBe(true);
+  });
+});
+
+describe('the background drain', () => {
+  const queueOne = async (handNumber = GLOBAL_HAND) => {
+    insertResults = [{ data: null, error: { message: 'timeout' } }];
+    await logHandHistory(params(handNumber));
+    calls.length = 0;
+    rpcCalls.length = 0;
+    mockReportError.mockReset();
+  };
+
+  it('recovers the hand later and relinks the rake row', async () => {
+    await queueOne();
+    insertResults = [{ data: { id: 'late-id' }, error: null }];
+
+    const summary = await drainHandHistoryQueue();
+
+    expect(summary.written).toBe(1);
+    expect(summary.unlinked).toBe(0);
+    expect(handHistoryQueueDepth()).toBe(0);
+    // Without this the money stays unattributable — the open financial_alerts
+    // signal that started the whole investigation.
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0].fn).toBe('fn_relink_rake_record_to_hand');
+    expect(rpcCalls[0].args).toMatchObject({ p_hand_number: GLOBAL_HAND, p_hand_id: 'late-id' });
+  });
+
+  it('counts a hand whose rake row does not exist yet, instead of calling it done', async () => {
+    // During an outage the rake write fails too, so there is nothing to link.
+    // FeeReconciler creates that row later and resolves the id itself.
+    await queueOne();
+    insertResults = [{ data: { id: 'late-id' }, error: null }];
+    rpcResult = 0;
+
+    const summary = await drainHandHistoryQueue();
+
+    expect(summary.written).toBe(1);
+    expect(summary.unlinked).toBe(1);
+  });
+
+  it('skips the relink RPC entirely for a hand that took no rake', async () => {
+    insertResults = [{ data: null, error: { message: 'timeout' } }];
+    await logHandHistory({ ...params(), rakeAmount: 0, bbjAmount: 0 });
+    calls.length = 0;
+    rpcCalls.length = 0;
+    insertResults = [{ data: { id: 'late-id' }, error: null }];
+
+    await drainHandHistoryQueue();
+
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it('checks whether the hand already landed BEFORE re-inserting it', async () => {
+    await queueOne();
+    existingByHandNumber[GLOBAL_HAND] = 'was-there-all-along';
+
+    const summary = await drainHandHistoryQueue();
+
+    expect(summary.written).toBe(1);
+    expect(inserts()).toHaveLength(0); // no duplicate hand
+  });
+
+  it('keeps the entry and retries next pass while the outage continues', async () => {
+    await queueOne();
+    insertResults = [{ data: null, error: { message: 'still down' } }];
+
+    const summary = await drainHandHistoryQueue();
+
+    expect(summary.written).toBe(0);
+    expect(handHistoryQueueDepth()).toBe(1);
+  });
+
+  it('does not lose the rest of the batch when one entry throws', async () => {
+    await queueOne(GLOBAL_HAND);
+    await queueOne(GLOBAL_HAND + 1);
+    let n = 0;
+    insertResults = [];
+    // Make the first insert throw outright rather than return an error.
+    const original = existingByHandNumber;
+    existingByHandNumber = original;
+    insertResults = [
+      { data: null, error: { message: 'x' } },
+      { data: null, error: { message: 'x' } },
+    ];
+    void n;
+
+    const summary = await drainHandHistoryQueue();
+
+    // Both failed cleanly and both are still queued — nothing was discarded.
+    expect(summary.written).toBe(0);
+    expect(handHistoryQueueDepth()).toBe(2);
+  });
+
+  it('gives up loudly after MAX_QUEUE_ATTEMPTS rather than retrying forever', async () => {
+    await queueOne();
+    for (let i = 0; i < 20; i++) {
+      insertResults = [{ data: null, error: { message: 'still down' } }];
+      await drainHandHistoryQueue();
+    }
+    expect(handHistoryQueueDepth()).toBe(0);
+    expect(
+      mockReportError.mock.calls.some((c) => String(c[1]).includes('retry_exhausted'))
+    ).toBe(true);
+  });
+
+  it('a second caller JOINS the in-flight drain instead of getting a no-op', async () => {
+    // The first version returned an empty summary when `draining` was set, so
+    // GameServer.stop()'s flush loop read "no progress" and gave up instantly —
+    // its 6s budget was never used.
+    await queueOne();
+    insertResults = [{ data: { id: 'late-id' }, error: null }];
+
+    const [a, b] = await Promise.all([drainHandHistoryQueue(), drainHandHistoryQueue()]);
+
+    // Both see the same underlying result; the joiner is flagged as such. The
+    // hand was written ONCE — the point is that the joiner is not handed a
+    // fabricated "nothing happened".
+    expect(a.written).toBe(1);
+    expect(b.written).toBe(1);
+    expect(inserts()).toHaveLength(1);
+    expect(a.joined !== b.joined).toBe(true); // exactly one of them joined
+    expect(handHistoryQueueDepth()).toBe(0);
+  });
+
+  it('honours a deadline per entry and leaves the untouched ones queued', async () => {
+    await queueOne(GLOBAL_HAND);
+    await queueOne(GLOBAL_HAND + 1);
+
+    const summary = await drainHandHistoryQueue(Date.now() - 1); // already expired
+
+    expect(summary.written).toBe(0);
+    expect(handHistoryQueueDepth()).toBe(2);
+  });
+
+  it('reports nothing and does nothing on an empty queue', async () => {
+    const summary = await drainHandHistoryQueue();
+    expect(summary).toMatchObject({ scanned: 0, written: 0, stillPending: 0 });
+    expect(calls).toHaveLength(0);
   });
 });
 
 describe('buildHandHistoryTiers (Bible V8 §2.18, derived not stored)', () => {
-  it('produces all four tiers from a stored hand', () => {
-    const tiers = buildHandHistoryTiers({ ...params(), showdownResults: [] });
+  // It must consume a row exactly as hand_history STORES it (snake_case). The
+  // first version took the settlement input shape (camelCase) while its own doc
+  // said to call it with a stored row, so it could not be called the documented
+  // way at all — and the test used the settlement shape too, baking the mistake
+  // in where it could never be caught.
+  const storedRow = {
+    id: 'hh-1',
+    table_id: '11111111-1111-1111-1111-111111111111',
+    tournament_id: null,
+    hand_number: GLOBAL_HAND,
+    game_variant: 'nlh',
+    small_blind: 1,
+    big_blind: 2,
+    pot_size: 40,
+    rake_amount: 2,
+    bbj_amount: 0,
+    community_cards: ['As', 'Kd', '7c'],
+    button_seat: 3,
+    created_at: '2026-08-20T00:00:00.000Z',
+    hole_cards: { u1: [{ rank: 'A', suit: 'spades' }, { rank: 'K', suit: 'hearts' }] },
+    winners: [{ userId: 'u1', amount: 38, hand: { name: 'Two Pair', ranking: 3 } }],
+    // NOTE: stack here is the POST-settlement stack — u1 has already been paid.
+    players: [
+      { userId: 'u1', username: 'A', seat: 1, stack: 118 },
+      { userId: 'u2', username: 'B', seat: 2, stack: 80 },
+    ],
+    actions: [
+      { seat: 1, userId: 'u1', action: 'bet', amount: 20, stage: 'flop' },
+      { seat: 2, userId: 'u2', action: 'call', amount: 20, stage: 'flop' },
+      { seat: 2, userId: 'u2', action: 'fold', stage: 'river' },
+    ],
+  };
 
-    expect(tiers.raw_events).toHaveLength(2);
+  it('produces all four tiers from a stored row', () => {
+    const tiers = buildHandHistoryTiers(storedRow);
+
+    expect(tiers.raw_events).toHaveLength(3);
     expect(tiers.raw_events[0]).toMatchObject({ seq: 0, seat: 1, action: 'bet', amount: 20 });
-    expect(tiers.audit_log).toMatchObject({ hand_number: GLOBAL_HAND, pot_size: 40, rake: 2 });
+    expect(tiers.audit_log).toMatchObject({
+      hand_number: GLOBAL_HAND,
+      pot_size: 40,
+      rake: 2,
+      button_seat: 3,
+    });
+    expect(tiers.audit_log.went_to_showdown).toBe(true);
     expect(tiers.player_summaries).toHaveLength(2);
-    expect(tiers.player_summaries[0]).toMatchObject({ userId: 'u1', netResult: 38 });
-    expect(tiers.player_summaries[1]).toMatchObject({ userId: 'u2', folded: true, netResult: 0 });
     // Tier 4 is the other three plus the showdown material — which is exactly
     // why storing it would have tripled the largest payload on the platform.
     expect(tiers.dispute_review.raw_events).toEqual(tiers.raw_events);
     expect(tiers.dispute_review.player_summaries).toEqual(tiers.player_summaries);
+    expect(tiers.dispute_review.revealed_hole_cards).toHaveProperty('u1');
+  });
+
+  it('does NOT call the stored stack a starting stack — it is post-settlement', () => {
+    const [winner] = buildHandHistoryTiers(storedRow).player_summaries;
+    // Settlement mutates SeatedPlayer.stack in place before the row is written,
+    // so 118 already includes the 38 that was just won.
+    expect(winner.stackAfterSettlement).toBe(118);
+    expect(winner.stackBeforePayout).toBe(80);
+    expect(winner).not.toHaveProperty('startStack');
+  });
+
+  it('reports what a player won GROSS and what they actually netted', () => {
+    const [winner, loser] = buildHandHistoryTiers(storedRow).player_summaries;
+    // The old field was called netResult and held the gross award, with every
+    // loser reading 0 rather than their loss.
+    expect(winner.amountWon).toBe(38);
+    expect(winner.contributed).toBe(20);
+    expect(winner.net).toBe(18);
+    expect(loser.amountWon).toBe(0);
+    expect(loser.contributed).toBe(20);
+    expect(loser.net).toBe(-20);
+    // Blinds and antes are not in the action log, and it says so rather than
+    // quietly pretending the number is complete.
+    expect(winner.contributedIncludesBlinds).toBe(false);
+  });
+
+  it('treats a raise as a level, not as chips added', () => {
+    // bet 10 then raise-to 30 on the same street is 30 in, not 40.
+    const tiers = buildHandHistoryTiers({
+      ...storedRow,
+      winners: [],
+      actions: [
+        { seat: 1, userId: 'u1', action: 'bet', amount: 10, stage: 'flop' },
+        { seat: 1, userId: 'u1', action: 'raise', amount: 30, stage: 'flop' },
+      ],
+    });
+    expect(tiers.player_summaries[0].contributed).toBe(30);
+  });
+
+  it('survives a row with null player/action/winner columns', () => {
+    const tiers = buildHandHistoryTiers({
+      table_id: 't',
+      hand_number: GLOBAL_HAND,
+      game_variant: 'nlh',
+      small_blind: 1,
+      big_blind: 2,
+      pot_size: 0,
+      rake_amount: 0,
+      players: null,
+      actions: null,
+      winners: null,
+    });
+    expect(tiers.raw_events).toEqual([]);
+    expect(tiers.player_summaries).toEqual([]);
+    expect(tiers.audit_log.player_count).toBe(0);
   });
 });

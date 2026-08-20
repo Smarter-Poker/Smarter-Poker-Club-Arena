@@ -494,14 +494,20 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
     }
 
     let performed = false;
-    // Try the random pick first; on rejection walk a shrinking candidate list
-    // so the hand always makes progress. A seat with NO legal action at all is
-    // a genuine liveness bug and is reported as one.
     const tried: string[] = [];
     const order: ActionType[] = [];
-    if (pool.length > 0) order.push(pool[Math.floor(rnd() * pool.length)]);
-    for (const a of ['check', 'call', 'all_in', 'fold'] as ActionType[]) {
-      if (available.includes(a)) order.push(a);
+    const primary = pool.length > 0 ? pool[Math.floor(rnd() * pool.length)] : undefined;
+    if (primary) order.push(primary);
+    // REVIEW FIX 2026-08-20: all_in comes BEFORE check/call in the fallback.
+    //
+    // amountFor() returns null exactly when the stack (or the pot-limit cap) is
+    // below one min-raise — the shove-or-fold spot. Measured over 3,000 hands,
+    // that was 25% of raise picks and 20% of bet picks, and every one of them
+    // fell through to a passive call or check. The fuzzer was systematically
+    // converting the most interesting short-stack spots into the least
+    // interesting action.
+    for (const a of ['all_in', 'check', 'call', 'fold'] as ActionType[]) {
+      if (available.includes(a) && !order.includes(a)) order.push(a);
     }
 
     for (const action of order) {
@@ -509,6 +515,7 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
       if (action === 'bet' || action === 'raise') {
         const a = amountFor(hc, player, action, rnd);
         if (a === null) {
+          // Not a defect: no legal size exists (stack below one min-raise).
           tried.push(`${action}(no legal size)`);
           continue;
         }
@@ -522,6 +529,33 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
         break;
       }
       tried.push(`${action}${amount ? '(' + amount + ')' : ''}`);
+
+      // ── INV-LEGALITY ──────────────────────────────────────────────────────
+      // REVIEW FIX 2026-08-20: this used to fall through silently to the next
+      // candidate, and that silence hid a live, player-facing bug for as long
+      // as this fuzzer had been running.
+      //
+      // `action` came from the engine's own getAvailableActions(). If it needed
+      // a size, that size came from amountFor(), which mirrors validateAction's
+      // published bounds exactly. So a `false` here is the engine contradicting
+      // itself — it offered the action and then refused it — and that is never
+      // acceptable, because it is precisely what a real player sees when they
+      // press a button the UI has enabled.
+      //
+      // What it was hiding: `raiseAmount = amount - currentBet` is IEEE 754
+      // subtraction of two exact-cent values, so an exactly-minimum raise
+      // computed 0.04999999999999999 against a 0.05 minimum and was rejected.
+      // 538 of 1,200 cent-granular raise levels — 44.8% of min-raise presses.
+      // Fixed in PokerEngine.validateAction (CENT_EPS).
+      fail(
+        ctx,
+        'INV-LEGALITY',
+        `the engine OFFERED ${action}${amount ? ` (${amount})` : ''} to seat ${seat} and then ` +
+          `REFUSED it. available=${JSON.stringify(available)} stage=${st.stage} ` +
+          `currentBet=${st.currentBet} lastRaise=${st.lastRaise} minRaise=${st.minRaise} ` +
+          `playerBet=${player!.bet} stack=${player!.stack}. A player pressing that button ` +
+          `gets the same rejection.`
+      );
     }
 
     if (!performed) {

@@ -96,6 +96,43 @@ AS $function$
      );
 $function$;
 
+-- ── 2b. The trigger function this file's triggers reference ─────────────────
+--
+-- REVIEW FIX 2026-08-20: this migration created three triggers pointing at
+-- fn_sync_club_table_counts() and commented on it, but no migration in the repo
+-- ever CREATEd it — it only existed in the live catalog. On a fresh database
+-- (`supabase db reset`, a preview branch, CI) this file failed outright with
+-- `function public.fn_sync_club_table_counts() does not exist`. Dumped from the
+-- live catalog and included so the repo can actually rebuild the schema.
+--
+-- NOTE: 20260820f replaces this body — it recomputes BOTH sides of a club/union
+-- move, which this version does not. This is the historical body, kept so the
+-- migration sequence applies cleanly in order.
+CREATE OR REPLACE FUNCTION public.fn_sync_club_table_counts()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE v_club uuid; v_union uuid;
+BEGIN
+  v_club  := COALESCE(NEW.club_id,  OLD.club_id);
+  v_union := COALESCE(NEW.union_id, OLD.union_id);
+
+  IF v_club IS NOT NULL THEN
+    UPDATE clubs SET table_count = fn_live_table_count(id) WHERE id = v_club;
+  END IF;
+
+  -- Every club that can see this union's tables (members + the union's own row)
+  IF v_union IS NOT NULL THEN
+    UPDATE clubs SET table_count = fn_live_table_count(id)
+     WHERE id = v_union
+        OR id IN (SELECT club_id FROM union_clubs WHERE union_id = v_union);
+  END IF;
+
+  RETURN NULL;
+END $function$;
+
 -- ── 3. Fire only on a real change ───────────────────────────────────────────
 DROP TRIGGER IF EXISTS trg_tables_sync_club_counts ON public.tables;
 

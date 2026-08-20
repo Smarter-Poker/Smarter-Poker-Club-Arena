@@ -165,12 +165,39 @@ export async function reconcilePendingFees(): Promise<{
     let ok = false;
     let failureMessage = '';
 
+    // REVIEW FIX 2026-08-20 — the hole that kept this alert alive.
+    //
+    // A queued fee captures hand_id at the moment settlement FAILED. During an
+    // outage both writes fail together: hand_history has no row yet, so the
+    // captured hand_id is null. The engine's retry queue writes that hand a few
+    // seconds later and calls fn_relink_rake_record_to_hand — which finds
+    // nothing to link, because the rake row does not exist yet either. Then
+    // THIS function finally creates it, passing the stale null through, and the
+    // row is unlinkable forever. That is precisely the `unlinkable_rows` signal
+    // auditBBJDrift reports below, with nothing left in the system able to
+    // repair it.
+    //
+    // The hand row exists by now, so resolve the id here instead of trusting a
+    // null captured minutes ago. hand_number is globally unique above
+    // 1,000,000 (uq_hand_history_global_hand_number), so this is one indexed
+    // lookup and it cannot match another table's hand.
+    let resolvedHandId = row.hand_id;
+    if (!resolvedHandId && Number(row.hand_number) >= 1_000_000) {
+      const { data: hh } = await supabase
+        .from('hand_history')
+        .select('id')
+        .eq('hand_number', row.hand_number)
+        .limit(1)
+        .maybeSingle();
+      if (hh?.id) resolvedHandId = hh.id as string;
+    }
+
     try {
       if (row.kind === 'rake') {
         const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
           p_table_id: row.table_id,
           p_club_id: row.club_id,
-          p_hand_id: row.hand_id,
+          p_hand_id: resolvedHandId,
           p_hand_number: row.hand_number,
           p_rake: row.rake,
           p_bbj: row.bbj,
@@ -188,7 +215,7 @@ export async function reconcilePendingFees(): Promise<{
           row.hand_number,
           Number(row.bbj),
           Number(row.big_blind ?? 0),
-          row.hand_id
+          resolvedHandId
         );
         if (!ok) failureMessage = 'logBBJCollection returned false';
       }

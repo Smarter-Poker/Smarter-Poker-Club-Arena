@@ -242,30 +242,6 @@ export class GameServer {
       this.feeReconcileTimer = null;
     }
 
-    // 2026-08-20: flush the hand_history retry queue before the timer dies.
-    // A rolling deploy is one of the situations that fills it, and the queue
-    // is in-process — whatever is still held here when the process exits is
-    // the one class of hand this mechanism cannot save. Best effort, bounded:
-    // never block a shutdown for more than ~6s.
-    if (handHistoryQueueDepth() > 0) {
-      console.log(`[GameServer] flushing ${handHistoryQueueDepth()} queued hand_history row(s)...`);
-      const deadline = Date.now() + 6_000;
-      while (handHistoryQueueDepth() > 0 && Date.now() < deadline) {
-        const before = handHistoryQueueDepth();
-        await drainHandHistoryQueue();
-        if (handHistoryQueueDepth() >= before) break; // making no progress
-      }
-      if (handHistoryQueueDepth() > 0) {
-        reportError(
-          new Error(
-            `[GameServer] shutting down with ${handHistoryQueueDepth()} hand_history row(s) ` +
-              `still unwritten — those hands will have no history row.`
-          ),
-          'GameServer.hand_history_queue_lost_on_shutdown'
-        );
-      }
-    }
-    stopHandHistoryRetry();
     if (this.breakResumeTimer) {
       clearTimeout(this.breakResumeTimer);
       this.breakResumeTimer = null;
@@ -322,6 +298,47 @@ export class GameServer {
     // on teardown cannot strand the rest half-stopped.
     await Promise.allSettled(engines.map((engine) => engine.stop()));
     this.tableEngines.clear();
+
+    // ── Flush the hand_history retry queue ──────────────────────────────────
+    //
+    // REVIEW FIX 2026-08-20: this block used to run near the TOP of stop(),
+    // before releaseTables() and before the pauseAfterHand drain below. That
+    // was exactly backwards. `pauseAfterHand` parks each table AFTER its
+    // current hand, so every table settles one more hand during that window —
+    // and a rolling deploy, with its connection churn, is precisely when those
+    // writes fail. Each of those hands was enqueued into a queue whose timer
+    // had already been cleared and which nothing would ever drain again. They
+    // were discarded at process exit with no log and no alert, because the
+    // alert had already run minutes earlier against an empty queue.
+    //
+    // It belongs here: after every engine has stopped and no new hand can
+    // settle. The deadline is now passed INTO the drain, which checks it per
+    // entry, so it is a real bound rather than a between-passes hope.
+    if (handHistoryQueueDepth() > 0) {
+      const deadline = Date.now() + 6_000;
+      console.log(
+        `[GameServer] flushing ${handHistoryQueueDepth()} queued hand_history row(s)...`
+      );
+      while (handHistoryQueueDepth() > 0 && Date.now() < deadline) {
+        const before = handHistoryQueueDepth();
+        const summary = await drainHandHistoryQueue(deadline);
+        // `joined` means we awaited a drain someone else started; that one may
+        // have finished its own batch without touching ours, so a single
+        // no-progress pass is not proof there is nothing left to do.
+        if (!summary.joined && handHistoryQueueDepth() >= before) break;
+      }
+      if (handHistoryQueueDepth() > 0) {
+        reportError(
+          new Error(
+            `[GameServer] shutting down with ${handHistoryQueueDepth()} hand_history row(s) ` +
+              `still unwritten — those hands will have no history row.`
+          ),
+          'GameServer.hand_history_queue_lost_on_shutdown'
+        );
+      }
+    }
+    stopHandHistoryRetry();
+
 
     // Stop all tournament engines
     for (const [, tm] of this.tournamentEngines) {
@@ -793,15 +810,20 @@ export class GameServer {
       // reads as "not a horse", and this sweep's whole job is to reap ONLY
       // horse seats. Under-reading is safe (fail-closed), but it would leave
       // orphaned seats forever with no signal.
-      let horseErr: Error | null = null;
-      const horseRows = await fetchAllRows<{ id: string }>(
-        () => supabase.from('profiles').select('id').eq('is_horse', true).order('id'),
+      const horsePage = await fetchAllRows<{ id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('profiles')
+            .select('id')
+            .eq('is_horse', true)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
         { label: 'GameServer.staleSweep.horses', maxRows: 50_000 }
-      ).catch((e: unknown) => {
-        horseErr = e instanceof Error ? e : new Error(String(e));
-        return [] as { id: string }[];
-      });
-      const horseIdList = horseRows.map((h: { id: string }) => h.id);
+      );
+      const horseIdList = horsePage.rows.map((h) => h.id);
 
       // FAIL CLOSED (2026-08-19 audit). The first version of this guard applied
       // the horse filter only `if (horseIdList.length > 0)`, so a failed or
@@ -809,24 +831,65 @@ export class GameServer {
       // straight back to cashing out and DELETING every human seat — the exact
       // P0 this guard exists to prevent, reintroduced as a failure mode. If we
       // cannot prove which seats belong to horses, we sweep nothing.
-      if (horseErr || horseIdList.length === 0) {
+      // FAIL CLOSED. If we cannot prove which seats belong to horses, we sweep
+      // nothing — this sweep cashes out and DELETES seat rows, and a human's
+      // seat must never be reaped by it.
+      //
+      // REVIEW FIX 2026-08-20: the previous version wrapped fetchAllRows in a
+      // .catch() and tested `horseErr`. fetchAllRows never rejects — every
+      // error path reports and returns — so that branch was unreachable and the
+      // guard had silently weakened to "sweep whatever partial list we got".
+      // Completeness is now part of the return type, so this cannot rot again.
+      //
+      // Note this only skips the SEAT SWEEP. It used to `return` out of the
+      // whole of cleanupStaleData, which also skipped resetting cash tables to
+      // 'waiting' and cancelling past-due tournaments WITH REFUNDS — and an
+      // empty horse list is a normal state (DISABLE_HORSE_FLEET, a fresh DB).
+      const canSweepSeats = horsePage.complete && horseIdList.length > 0;
+      if (!canSweepSeats) {
         console.warn(
-          '[GameServer] Stale-seat sweep SKIPPED — could not resolve the horse list:',
-          (horseErr as Error | null)?.message ?? '(no horses returned)'
+          '[GameServer] Stale-seat sweep SKIPPED — could not resolve the horse list ' +
+            `(complete=${horsePage.complete}, horses=${horseIdList.length}). ` +
+            'The rest of the cleanup still runs.'
         );
-        return;
       }
-
-      let seatsQuery = supabase
-        .from('table_seats')
-        .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
-        .is('left_at', null)
-        .is('tables.tournament_id', null)
-        .in('user_id', horseIdList);
-      if (protectedTableId) {
-        seatsQuery = seatsQuery.neq('table_id', protectedTableId);
+      if (canSweepSeats) {
+      // REVIEW FIX 2026-08-20: this said `.range(0, 4999)`, which does NOT
+      // raise the cap — PostgREST applies db-max-rows AFTER the Range header,
+      // so it still returned at most 1,000 rows with no error. That left the
+      // single most dangerous statement on this path (it credits wallets and
+      // DELETEs seat rows) silently truncated, while the read-only horse lookup
+      // above it had been paged. Page it properly.
+      const seatPage = await fetchAllRows<{
+        id: string;
+        user_id: string;
+        table_id: string;
+        seat_number: number;
+        stack: number;
+      }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('table_seats')
+            .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
+            .is('left_at', null)
+            .is('tables.tournament_id', null)
+            .in('user_id', horseIdList)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (protectedTableId) q = q.neq('table_id', protectedTableId);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'GameServer.staleSweep.seats', maxRows: 50_000 }
+      );
+      // Same fail-closed rule as the horse list: this path DELETES seat rows.
+      const activeSeats = seatPage.complete ? seatPage.rows : [];
+      if (!seatPage.complete) {
+        console.warn(
+          '[GameServer] Stale-seat sweep SKIPPED — the seat read was incomplete. ' +
+            'The rest of the cleanup still runs.'
+        );
       }
-      const { data: activeSeats } = await seatsQuery.range(0, 4999);
 
       if (activeSeats && activeSeats.length > 0) {
         // Aggregate total stack per user
@@ -918,6 +981,7 @@ export class GameServer {
         // seats and historical left_at rows) on every restart.
         console.log('[GameServer] No active cash-table seats needed cashout');
       }
+      } // end if (canSweepSeats)
 
       // 3. FIX 202: Reset cash tables based on horse fleet mode.
       // E2E test mode (protectedTableId) ALWAYS closes everything-but-test

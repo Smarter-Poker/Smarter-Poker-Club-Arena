@@ -190,11 +190,6 @@ type HandHistoryRow = Record<string, unknown> & { hand_number: number; table_id:
 /** Only globally allocated hand numbers are unique platform-wide. */
 const GLOBAL_HAND_NUMBER_FLOOR = 1_000_000;
 
-const INLINE_ATTEMPTS = 3;
-const INLINE_BACKOFF_MS = [250, 900];
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 /** Did this hand already land? Cheap: one indexed lookup on a unique index. */
 async function findExistingHandId(row: HandHistoryRow): Promise<string | null> {
   if (row.hand_number < GLOBAL_HAND_NUMBER_FLOOR) return null;
@@ -209,50 +204,65 @@ async function findExistingHandId(row: HandHistoryRow): Promise<string | null> {
 }
 
 /**
- * Insert one hand_history row, retrying transient failures.
+ * Insert one hand_history row.
  *
- * Before every retry it checks whether the previous attempt actually landed —
- * a request whose response was lost still wrote the row, and re-inserting it
- * would duplicate the hand. (4 of the 320 measured failures were exactly this:
- * a hand_history row exists, written before the rake row, yet the rake row
- * still got a null hand_id.)
+ * ONE attempt. This is deliberate, and it is a correction of this module's own
+ * first version — see the note below.
+ *
+ * REVIEW FIX 2026-08-20: the first version retried three times in line, with
+ * 250ms/900ms backoff and an existence pre-check before each retry. On paper
+ * that was "~1.15s worst case". In production it was far worse, because the
+ * backoff is not what dominates:
+ *
+ *   * a fully failing hand issued FIVE PostgREST requests, not one
+ *     (3 inserts + 2 pre-checks), and
+ *   * the shared client aborts at DB_TIMEOUT_MS = 15s (services/supabase/
+ *     client.ts), not instantly.
+ *
+ * The outage mode this retry exists for is a hung socket, not a fast 5xx. So
+ * the real worst case was 5 x 15s + 1.15s = ~76s per hand — awaited inside
+ * postHandTasks, which ServerTableEngineDealing awaits at the top of every
+ * dealing-loop iteration. That table deals nothing for the duration, and
+ * postHandTasks never calls markProgress(), so the 90s watchdog
+ * (ServerTableEngineBase.WATCHDOG_IDLE_MS) runs the whole time. One failing
+ * hand could therefore trip the watchdog and kill the engine for a restart —
+ * turning a transient write outage into a fleet-wide restart cascade, on all
+ * 44 tables at once, since the failures are correlated by construction.
+ *
+ * It was also a 5x request amplification with zero jitter, aimed at a PostgREST
+ * that had just gone to zero. That makes an outage longer, not shorter.
+ *
+ * So the hot path is back to exactly one request — the same cost as before any
+ * of this work — and ALL retrying happens in the background queue below, where
+ * it costs no table any dealing time. The queue does the existence pre-check,
+ * so the lost-response case is still handled; it just is not handled while a
+ * table sits idle waiting for it.
  */
 async function insertHandHistoryRow(
   row: HandHistoryRow,
   origin: 'settlement' | 'retry-queue'
 ): Promise<string | null> {
-  const retryable = row.hand_number >= GLOBAL_HAND_NUMBER_FLOOR;
-  const attempts = retryable ? INLINE_ATTEMPTS : 1;
-  let lastError = '';
+  const { data, error } = await supabase
+    .from('hand_history')
+    .insert(row)
+    .select('id')
+    .maybeSingle();
 
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    if (attempt > 1) {
-      await sleep(INLINE_BACKOFF_MS[Math.min(attempt - 2, INLINE_BACKOFF_MS.length - 1)]);
-      const existing = await findExistingHandId(row);
-      if (existing) return existing;
-    }
+  if (!error) return data?.id ?? null;
 
-    const { data, error } = await supabase
-      .from('hand_history')
-      .insert(row)
-      .select('id')
-      .maybeSingle();
-
-    if (!error) return data?.id ?? null;
-    lastError = error.message ?? String(error);
-
-    // A duplicate means a previous attempt landed after all — resolve to it.
-    if (error.code === '23505') {
-      const existing = await findExistingHandId(row);
-      if (existing) return existing;
-    }
+  // A duplicate means an earlier attempt landed after all (its response was
+  // lost). PostgREST returns the Postgres SQLSTATE verbatim in the body.
+  if (error.code === '23505') {
+    const existing = await findExistingHandId(row);
+    if (existing) return existing;
   }
 
   if (origin === 'settlement') {
     reportError(
       new Error(
-        `[DB] hand_history insert failed after ${attempts} attempt(s) for table ` +
-          `${row.table_id} hand #${row.hand_number}: ${lastError}. Queued for background retry.`
+        `[DB] hand_history insert failed for table ${row.table_id} ` +
+          `hand #${row.hand_number}: ${error.message ?? String(error)}. ` +
+          `Queued for background retry.`
       ),
       'logHandHistory.insert_failed'
     );
@@ -262,48 +272,134 @@ async function insertHandHistoryRow(
 
 // ── Background retry queue ────────────────────────────────────────────────────
 //
-// The in-line retries cover ~1.2s, which handles a blip but not the observed
-// 30-120 second windows where platform-wide hand_history writes go to zero. A
-// hand's payload only exists in memory at settlement time — it cannot be
-// reconstructed later from anything — so the choice is hold it or lose it.
+// The hot path gets ONE attempt (see insertHandHistoryRow). Everything else
+// happens here, where it costs no table any dealing time. That matters: the
+// outages this exists for are 30-120 second windows in which platform-wide
+// hand_history writes go to zero, and a hand's payload only exists in memory at
+// settlement — it cannot be reconstructed from anything later. So the choice is
+// hold it or lose it, and holding it must not stall the room.
 //
-// Bounded at MAX_QUEUE payloads (~4 KB each, so ~8 MB worst case) and drained
-// every DRAIN_INTERVAL_MS. This is in-process, so a crash during an outage
-// still loses the hand; it converts "one timeout loses a hand forever" into
-// "only a crash during an outage does".
+// This is in-process: a crash during an outage still loses the hand. It
+// converts "one timeout loses a hand forever" into "only a crash during an
+// outage does".
 
 interface QueuedHand {
   row: HandHistoryRow;
   attempts: number;
   queuedAt: number;
+  bytes: number;
 }
 
+/**
+ * REVIEW FIX 2026-08-20: bounded by BYTES as well as by count.
+ *
+ * The original bound was "2,000 payloads x ~4 KB = ~8 MB". 4 KB is the MEDIAN
+ * hand. Measured against the real row shape, a 9-max PLO hand with a capped
+ * raise war is ~16 KB retained, so a full queue of those is ~31 MB, not 8 —
+ * and the count cap gave no warning of that. Whichever limit binds first wins.
+ */
 const MAX_QUEUE = 2_000;
+const MAX_QUEUE_BYTES = 24 * 1024 * 1024;
 const MAX_QUEUE_ATTEMPTS = 20;
-const DRAIN_INTERVAL_MS = 20_000;
-const DRAIN_BATCH = 50;
+/**
+ * REVIEW FIX 2026-08-20: 50 every 20s is a ceiling of 150 hands/min. The
+ * platform averages 166/min and peaks at 217/min — the drain could not outrun
+ * its own inflow, so a long outage would grow the queue faster than it drained
+ * it even after service returned. 200 every 5s with 8-way concurrency is
+ * ~2,400/min, an order of magnitude of headroom.
+ */
+const DRAIN_INTERVAL_MS = 5_000;
+const DRAIN_BATCH = 200;
+const DRAIN_CONCURRENCY = 8;
+/** After a fully failed pass, wait longer before hammering a service that is down. */
+const MAX_BACKOFF_SKIPS = 12; // 12 x 5s = 60s ceiling
 
 const pendingHands: QueuedHand[] = [];
+let pendingBytes = 0;
+let inFlight = 0;
 let droppedForCapacity = 0;
 let drainTimer: NodeJS.Timeout | null = null;
-let draining = false;
+let drainPromise: Promise<DrainSummary> | null = null;
+let consecutiveFailedPasses = 0;
+let skipsRemaining = 0;
+
+export interface DrainSummary {
+  scanned: number;
+  written: number;
+  stillPending: number;
+  exhausted: number;
+  /** Recovered hands whose rake row could not be linked (it did not exist yet). */
+  unlinked: number;
+  /** True when another drain was already running and this call joined it. */
+  joined: boolean;
+}
+
+const emptySummary = (): DrainSummary => ({
+  scanned: 0,
+  written: 0,
+  stillPending: pendingHands.length + inFlight,
+  exhausted: 0,
+  unlinked: 0,
+  joined: false,
+});
+
+/** Cheap size estimate. Exact enough to bound memory; not worth JSON.stringify. */
+function estimateBytes(row: HandHistoryRow): number {
+  let n = 512; // scalars + object overhead
+  for (const key of ['actions', 'players', 'winners', 'hole_cards', 'board'] as const) {
+    const v = row[key];
+    if (Array.isArray(v)) n += v.length * 180;
+    else if (v && typeof v === 'object') n += Object.keys(v).length * 180;
+  }
+  return n;
+}
 
 function enqueueHandHistory(row: HandHistoryRow): void {
-  if (row.hand_number < GLOBAL_HAND_NUMBER_FLOOR) return; // cannot dedupe it
-  if (pendingHands.length >= MAX_QUEUE) {
-    pendingHands.shift();
+  if (row.hand_number < GLOBAL_HAND_NUMBER_FLOOR) {
+    // Not reachable today — allocateGlobalHandNumber refuses to deal rather than
+    // return a number below the floor — but a silent `return` here would be a
+    // per-hand data loss with no signal if that ever regresses.
+    reportError(
+      new Error(
+        `[DB] hand_history for table ${row.table_id} hand #${row.hand_number} cannot be ` +
+          `queued: hand numbers below ${GLOBAL_HAND_NUMBER_FLOOR} are not globally unique, ` +
+          `so a retry could duplicate the hand. The hand has no history row.`
+      ),
+      'logHandHistory.below_global_floor'
+    );
+    return;
+  }
+
+  // REVIEW FIX 2026-08-20: deep-copy before holding it. `row.actions` and
+  // `row.winners` alias the engine's live currentHandActions/currentHandWinners
+  // arrays. Today dealHand REASSIGNS those rather than clearing in place, so
+  // this is safe — but one `.length = 0` anywhere in the engine would silently
+  // empty every queued hand, and the failure would be invisible. Only runs on
+  // the failure path, so it costs nothing in normal operation.
+  const held: HandHistoryRow = structuredClone(row);
+  const bytes = estimateBytes(held);
+
+  while (
+    pendingHands.length > 0 &&
+    (pendingHands.length >= MAX_QUEUE || pendingBytes + bytes > MAX_QUEUE_BYTES)
+  ) {
+    const dropped = pendingHands.shift()!;
+    pendingBytes -= dropped.bytes;
     droppedForCapacity++;
     if (droppedForCapacity % 100 === 1) {
       reportError(
         new Error(
-          `[DB] hand_history retry queue is full (${MAX_QUEUE}); ${droppedForCapacity} ` +
-            `hand(s) dropped. hand_history has been unwritable for a sustained period.`
+          `[DB] hand_history retry queue is full (${pendingHands.length} rows, ` +
+            `${Math.round(pendingBytes / 1024)} KB); ${droppedForCapacity} hand(s) dropped. ` +
+            `hand_history has been unwritable for a sustained period.`
         ),
         'logHandHistory.queue_overflow'
       );
     }
   }
-  pendingHands.push({ row, attempts: 0, queuedAt: Date.now() });
+
+  pendingHands.push({ row: held, attempts: 0, queuedAt: Date.now(), bytes });
+  pendingBytes += bytes;
 }
 
 /**
@@ -311,72 +407,157 @@ function enqueueHandHistory(row: HandHistoryRow): void {
  * for it at settlement time, or the money stays unattributable — which is the
  * financial_alerts signal that started this investigation.
  * atomic_distribute_rake stamps metadata->>'hand_number', so the link is exact.
+ *
+ * Returns the number of rake rows linked (0 or 1). Zero is NOT an error: a
+ * tournament hand or a zero-rake hand has no rake row, and during an outage the
+ * rake write can fail too — FeeReconciler creates that row later, and it
+ * resolves the hand id itself at that point precisely because this call
+ * cannot (see FeeReconciler.resolveHandId).
  */
-async function relinkRakeRecord(row: HandHistoryRow, handId: string): Promise<void> {
-  const { error } = await supabase.rpc('fn_relink_rake_record_to_hand', {
+async function relinkRakeRecord(row: HandHistoryRow, handId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('fn_relink_rake_record_to_hand', {
     p_table_id: row.table_id,
     p_hand_number: row.hand_number,
     p_hand_id: handId,
   });
   if (error) {
     reportError(error, 'logHandHistory.relink_rake_failed');
+    return 0;
   }
+  return typeof data === 'number' ? data : 0;
 }
 
-export async function drainHandHistoryQueue(): Promise<{
-  scanned: number;
-  written: number;
-  stillPending: number;
-  exhausted: number;
-}> {
-  const summary = { scanned: 0, written: 0, stillPending: 0, exhausted: 0 };
-  if (draining || pendingHands.length === 0) {
-    summary.stillPending = pendingHands.length;
-    return summary;
-  }
-  draining = true;
-  try {
-    const batch = pendingHands.splice(0, DRAIN_BATCH);
-    summary.scanned = batch.length;
-    for (const entry of batch) {
-      entry.attempts++;
-      let handId = await findExistingHandId(entry.row);
-      if (!handId) {
-        handId = await insertHandHistoryRow(entry.row, 'retry-queue');
-      }
-      if (handId) {
-        summary.written++;
-        await relinkRakeRecord(entry.row, handId);
-      } else if (entry.attempts >= MAX_QUEUE_ATTEMPTS) {
-        summary.exhausted++;
-        reportError(
-          new Error(
-            `[DB] hand_history for table ${entry.row.table_id} hand #${entry.row.hand_number} ` +
-              `gave up after ${entry.attempts} attempts over ` +
-              `${Math.round((Date.now() - entry.queuedAt) / 1000)}s. The hand has no history row.`
-          ),
-          'logHandHistory.retry_exhausted'
-        );
-      } else {
-        pendingHands.push(entry);
-      }
+async function processQueuedHand(entry: QueuedHand, summary: DrainSummary): Promise<void> {
+  entry.attempts++;
+  let handId = await findExistingHandId(entry.row);
+  if (!handId) handId = await insertHandHistoryRow(entry.row, 'retry-queue');
+
+  if (handId) {
+    summary.written++;
+    // Only cash hands that actually took rake can have a row to link.
+    const rake = Number(entry.row.rake_amount ?? 0);
+    const bbj = Number(entry.row.bbj_amount ?? 0);
+    if (!entry.row.tournament_id && (rake > 0 || bbj > 0)) {
+      if ((await relinkRakeRecord(entry.row, handId)) === 0) summary.unlinked++;
     }
-  } finally {
-    draining = false;
-    summary.stillPending = pendingHands.length;
+    return;
   }
-  return summary;
+
+  if (entry.attempts >= MAX_QUEUE_ATTEMPTS) {
+    summary.exhausted++;
+    reportError(
+      new Error(
+        `[DB] hand_history for table ${entry.row.table_id} hand #${entry.row.hand_number} ` +
+          `gave up after ${entry.attempts} attempts over ` +
+          `${Math.round((Date.now() - entry.queuedAt) / 1000)}s. The hand has no history row.`
+      ),
+      'logHandHistory.retry_exhausted'
+    );
+    return;
+  }
+
+  requeue(entry);
+}
+
+function requeue(entry: QueuedHand): void {
+  pendingHands.push(entry);
+  pendingBytes += entry.bytes;
+}
+
+/**
+ * Drain the queue.
+ *
+ * @param deadlineMs absolute wall clock after which no NEW entry is started.
+ *        Entries not started are left queued, untouched.
+ *
+ * REVIEW FIX 2026-08-20, three defects in the first version:
+ *   1. it returned a no-op summary when a drain was already running, so
+ *      GameServer.stop()'s flush loop saw "no progress" and gave up
+ *      immediately — the 6s budget was never used. Concurrent callers now JOIN
+ *      the in-flight drain instead.
+ *   2. it spliced a batch off the queue and had no try/catch, so a single throw
+ *      from any await discarded every remaining entry in that batch. Each entry
+ *      is now individually guarded and re-queued on throw.
+ *   3. its deadline was only checked BETWEEN whole passes, so "never block a
+ *      shutdown for more than ~6s" was not true of a pass that itself took
+ *      minutes. It is checked per entry now.
+ */
+export function drainHandHistoryQueue(deadlineMs?: number): Promise<DrainSummary> {
+  if (drainPromise) {
+    return drainPromise.then((s) => ({ ...s, joined: true }));
+  }
+  if (pendingHands.length === 0) return Promise.resolve(emptySummary());
+
+  drainPromise = (async (): Promise<DrainSummary> => {
+    const summary = emptySummary();
+    const batch = pendingHands.splice(0, DRAIN_BATCH);
+    for (const e of batch) pendingBytes -= e.bytes;
+    inFlight = batch.length;
+    summary.scanned = batch.length;
+
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        if (deadlineMs !== undefined && Date.now() >= deadlineMs) return;
+        const i = next++;
+        if (i >= batch.length) return;
+        const entry = batch[i];
+        try {
+          await processQueuedHand(entry, summary);
+        } catch (err) {
+          // Never lose the payload to an unexpected throw.
+          reportError(err, 'logHandHistory.drain_entry_failed');
+          requeue(entry);
+        } finally {
+          inFlight--;
+        }
+      }
+    };
+
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(DRAIN_CONCURRENCY, batch.length) }, () => worker())
+      );
+    } finally {
+      // Anything the deadline stopped us from starting goes back untouched.
+      for (let i = next; i < batch.length; i++) {
+        requeue(batch[i]);
+        inFlight--;
+      }
+      if (inFlight < 0) inFlight = 0;
+      summary.stillPending = pendingHands.length + inFlight;
+    }
+
+    // Back off when a whole pass achieved nothing — the service is down, and
+    // hammering it is how an outage gets extended rather than ridden out.
+    if (summary.scanned > 0 && summary.written === 0) {
+      consecutiveFailedPasses++;
+      skipsRemaining = Math.min(consecutiveFailedPasses, MAX_BACKOFF_SKIPS);
+    } else if (summary.written > 0) {
+      consecutiveFailedPasses = 0;
+      skipsRemaining = 0;
+    }
+    return summary;
+  })();
+
+  return drainPromise.finally(() => {
+    drainPromise = null;
+  });
 }
 
 export function startHandHistoryRetry(): void {
   if (drainTimer) return;
   drainTimer = setInterval(() => {
+    if (skipsRemaining > 0) {
+      skipsRemaining--;
+      return;
+    }
     void drainHandHistoryQueue()
       .then((s) => {
-        if (s.written > 0 || s.exhausted > 0) {
+        if (s.written > 0 || s.exhausted > 0 || s.unlinked > 0) {
           console.log(
             `[HandHistoryRetry] wrote ${s.written}, exhausted ${s.exhausted}, ` +
-              `${s.stillPending} still queued`
+              `${s.unlinked} awaiting a rake row, ${s.stillPending} still queued`
           );
         }
       })
@@ -390,60 +571,117 @@ export function stopHandHistoryRetry(): void {
   drainTimer = null;
 }
 
-/** Test/observability hook. */
+/**
+ * Queue depth INCLUDING the batch currently in flight.
+ *
+ * REVIEW FIX 2026-08-20: this used to return only pendingHands.length, so while
+ * a drain held up to a full batch in memory the depth read as 0 — which made
+ * GameServer.stop() skip its flush entirely and under-report the loss alarm.
+ */
 export function handHistoryQueueDepth(): number {
-  return pendingHands.length;
+  return pendingHands.length + inFlight;
+}
+
+/** Test/observability hook: bytes currently held. */
+export function handHistoryQueueBytes(): number {
+  return pendingBytes;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Bible V8 §2.18 — the four tiers, DERIVED
 // ═══════════════════════════════════════════════════════════════════════════════
-/**
- * Materialise the 4-tier hand-history package from a hand.
- *
- * This is the same code that used to run on every settlement and write four
- * extra JSONB columns. It now runs on demand instead, because every tier is a
- * pure function of what the row already stores:
- *
- *   Tier 1 raw_events       <- actions (re-keyed with a sequence number and a
- *                              resolved userId)
- *   Tier 2 audit_log        <- the row's own scalar columns, re-packed
- *   Tier 3 player_summaries <- players + winners + actions + showdown results
- *   Tier 4 dispute_review   <- the other three, plus showdown results and board
- *
- * Storing them cost three redundant copies of the largest payload on the
- * platform (hand_history takes 238,583 rows and roughly a gigabyte a day) and
- * added no information. Call this from dispute tooling, an export, or an admin
- * endpoint with a row read back out of hand_history.
- */
-export function buildHandHistoryTiers(hand: {
-  tableId: string;
-  tournamentId?: string | null;
-  handNumber: number;
-  gameVariant: string;
-  smallBlind: number;
-  bigBlind: number;
-  potSize: number;
-  rakeAmount: number;
-  bbjAmount?: number;
-  communityCards: string[];
-  createdAt?: string;
-  winners: { userId: string; amount: number; hand?: { name: string; ranking: number } }[];
-  players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
-  actions: {
+
+/** A row as it is actually stored in hand_history (snake_case). */
+export interface StoredHandHistoryRow {
+  id?: string;
+  table_id: string;
+  tournament_id?: string | null;
+  hand_number: number;
+  game_variant: string;
+  small_blind: number;
+  big_blind: number;
+  pot_size: number;
+  rake_amount: number;
+  bbj_amount?: number | null;
+  community_cards?: string[] | null;
+  board?: unknown;
+  hole_cards?: Record<string, { rank: string; suit: string }[]> | null;
+  button_seat?: number | null;
+  started_at?: string | null;
+  ended_at?: string | null;
+  created_at?: string | null;
+  winners?: {
+    userId: string;
+    amount: number;
+    potIndex?: number;
+    hand?: { name: string; ranking: number };
+  }[] | null;
+  players?: { userId: string; username: string; seat: number; stack: number }[] | null;
+  actions?: {
     seat: number;
     userId?: string;
     action: string;
     amount?: number;
     timestamp?: number;
     stage: string;
-  }[];
-  showdownResults?: { userId: string; handRanking: number; handName: string }[];
-}) {
-  const rawEvents = hand.actions.map((a, idx) => ({
+  }[] | null;
+}
+
+/**
+ * Materialise the 4-tier hand-history package from a STORED hand_history row.
+ *
+ * This is the code that used to run on every settlement and write four extra
+ * JSONB columns. It runs on demand instead, because every tier is a pure
+ * function of what the row already stores:
+ *
+ *   Tier 1 raw_events       <- actions (re-keyed with a sequence number and a
+ *                              resolved userId)
+ *   Tier 2 audit_log        <- the row's own scalar columns, re-packed
+ *   Tier 3 player_summaries <- players + winners + actions
+ *   Tier 4 dispute_review   <- the other three, plus the board, the revealed
+ *                              holdings and the button
+ *
+ * Storing them cost three redundant copies of the largest payload on the
+ * platform (hand_history takes 238,583 rows and roughly a gigabyte a day) and
+ * added no information.
+ *
+ * REVIEW FIXES 2026-08-20 — the first version was dead code AND wrong in three
+ * ways, which mattered because "the tiers are derivable" is the stated reason
+ * for not applying supabase/migrations/20260417_hand_history_4tier.sql:
+ *
+ *   1. It took the SETTLEMENT input shape (camelCase: tableId, handNumber,
+ *      communityCards) while its own doc said to call it with a row read back
+ *      out of hand_history — which is snake_case. There was no adapter, so it
+ *      could not actually be called the documented way at all. It now takes the
+ *      stored row.
+ *   2. It called the stack `startStack`. It is the ENDING stack: settlement
+ *      mutates SeatedPlayer.stack in place (bounties, payouts) BEFORE
+ *      postHandTasks runs, and that same array is what is persisted. Dispute
+ *      tooling trusting `startStack` would have been wrong on every hand. It is
+ *      `stackAfterSettlement` now, and the starting stack is reconstructed
+ *      where the data allows it.
+ *   3. It called the winner's award `netResult`. It is gross — the player's own
+ *      contributions were never subtracted, and every loser read 0 rather than
+ *      their loss. It is `amountWon` now, with `contributed` and `net` derived
+ *      from the action log so the honest number is available too.
+ *
+ * `contributed` is reconstructed per street from the action log: bet/raise and
+ * all-in amounts are the raise-TO level for that street, so a player's street
+ * contribution is the maximum level they reached on it, while a call adds
+ * chips directly. Blinds and antes are NOT in the action log, so this
+ * undercounts by the forced money — `contributedIncludesBlinds: false` says so
+ * rather than quietly pretending otherwise.
+ */
+export function buildHandHistoryTiers(hand: StoredHandHistoryRow) {
+  const players = hand.players ?? [];
+  const actions = hand.actions ?? [];
+  const winners = hand.winners ?? [];
+  const board = hand.community_cards ?? [];
+
+  const rawEvents = actions.map((a, idx) => ({
     seq: idx,
     seat: a.seat,
-    userId: a.userId || hand.players.find((p) => p.seat === a.seat)?.userId || 'unknown',
+    userId: a.userId || players.find((p) => p.seat === a.seat)?.userId || 'unknown',
     action: a.action,
     amount: a.amount ?? 0,
     stage: a.stage,
@@ -451,33 +689,68 @@ export function buildHandHistoryTiers(hand: {
   }));
 
   const auditLog = {
-    table_id: hand.tableId,
-    tournament_id: hand.tournamentId || null,
-    hand_number: hand.handNumber,
-    game_variant: hand.gameVariant,
-    blinds: { sb: hand.smallBlind, bb: hand.bigBlind },
-    pot_size: hand.potSize,
-    rake: hand.rakeAmount,
-    bbj_fee: hand.bbjAmount || 0,
-    board: hand.communityCards,
-    player_count: hand.players.length,
-    action_count: hand.actions.length,
-    went_to_showdown: (hand.showdownResults?.length ?? 0) > 0,
-    created_at: hand.createdAt ?? null,
+    table_id: hand.table_id,
+    tournament_id: hand.tournament_id ?? null,
+    hand_number: hand.hand_number,
+    game_variant: hand.game_variant,
+    blinds: { sb: hand.small_blind, bb: hand.big_blind },
+    pot_size: hand.pot_size,
+    rake: hand.rake_amount,
+    bbj_fee: hand.bbj_amount ?? 0,
+    board,
+    button_seat: hand.button_seat ?? null,
+    player_count: players.length,
+    action_count: actions.length,
+    went_to_showdown: Object.keys(hand.hole_cards ?? {}).length > 0,
+    started_at: hand.started_at ?? null,
+    ended_at: hand.ended_at ?? null,
+    created_at: hand.created_at ?? null,
   };
 
-  const playerSummaries = hand.players.map((p) => {
-    const winRecord = hand.winners.find((w) => w.userId === p.userId);
-    const showdown = hand.showdownResults?.find((sd) => sd.userId === p.userId);
-    const playerActions = hand.actions.filter((a) => a.seat === p.seat || a.userId === p.userId);
+  /** Chips a seat put in voluntarily, per the action log (excludes blinds/antes). */
+  const contributedBySeat = new Map<number, number>();
+  const levelByStreet = new Map<string, number>(); // `${seat}:${stage}` -> highest level
+  for (const a of actions) {
+    const key = `${a.seat}:${a.stage}`;
+    const amt = a.amount ?? 0;
+    if (amt <= 0) continue;
+    if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in') {
+      // These carry the raise-TO level for the street; take the highest.
+      levelByStreet.set(key, Math.max(levelByStreet.get(key) ?? 0, amt));
+    } else if (a.action === 'call') {
+      // A call records the chips actually added.
+      levelByStreet.set(key, (levelByStreet.get(key) ?? 0) + amt);
+    }
+  }
+  for (const [key, level] of levelByStreet) {
+    const seat = Number(key.split(':')[0]);
+    contributedBySeat.set(seat, Math.round(((contributedBySeat.get(seat) ?? 0) + level) * 100) / 100);
+  }
+
+  const playerSummaries = players.map((p) => {
+    const winRecord = winners.find((w) => w.userId === p.userId);
+    const playerActions = actions.filter((a) => a.seat === p.seat || a.userId === p.userId);
+    const amountWon = winRecord ? winRecord.amount : 0;
+    const contributed = contributedBySeat.get(p.seat) ?? 0;
     return {
       userId: p.userId,
       username: p.username,
       seat: p.seat,
-      startStack: p.stack,
-      netResult: winRecord ? winRecord.amount : 0,
-      handName: showdown?.handName || null,
-      handRanking: showdown?.handRanking || null,
+      /**
+       * The stack AFTER settlement — payouts and bounties are already applied.
+       * `hand_history.players[].stack` has always meant this; only the old
+       * label said otherwise.
+       */
+      stackAfterSettlement: p.stack,
+      /** Reconstructed: what they held before the pot was awarded. */
+      stackBeforePayout: Math.round((p.stack - amountWon) * 100) / 100,
+      amountWon,
+      contributed,
+      net: Math.round((amountWon - contributed) * 100) / 100,
+      contributedIncludesBlinds: false,
+      handName: winRecord?.hand?.name ?? null,
+      handRanking: winRecord?.hand?.ranking ?? null,
+      revealedCards: hand.hole_cards?.[p.userId] ?? null,
       actionCount: playerActions.length,
       folded: playerActions.some((a) => a.action === 'fold'),
       wentAllIn: playerActions.some((a) => a.action === 'all_in'),
@@ -492,10 +765,11 @@ export function buildHandHistoryTiers(hand: {
       raw_events: rawEvents,
       audit_log: auditLog,
       player_summaries: playerSummaries,
-      showdown_results: hand.showdownResults ?? [],
-      community_cards: hand.communityCards,
-      pot_breakdown: hand.winners,
-      integrity_hash: `${hand.tableId}:${hand.handNumber}`,
+      community_cards: board,
+      revealed_hole_cards: hand.hole_cards ?? {},
+      pot_breakdown: winners,
+      button_seat: hand.button_seat ?? null,
+      integrity_hash: `${hand.table_id}:${hand.hand_number}`,
     },
   };
 }

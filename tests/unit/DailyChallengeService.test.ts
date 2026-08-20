@@ -76,10 +76,14 @@ describe('DailyChallengeService', () => {
       expect(new Set(ids).size).toBe(ids.length);
     });
 
-    it('should have positive requirements and rewards', () => {
+    it('should have positive requirements and a meaningful reward', () => {
+      // 2026-08-19 redesign: rewards are strictly diamonds (chipReward is 0
+      // across the pool). Assert the invariant that survives reward-mix
+      // changes: every challenge must require something and pay something.
       for (const c of CHALLENGE_POOL) {
         expect(c.requirement).toBeGreaterThan(0);
-        expect(c.chipReward).toBeGreaterThan(0);
+        expect(c.chipReward).toBeGreaterThanOrEqual(0);
+        expect((c.chipReward || 0) + (c.diamondReward || 0)).toBeGreaterThan(0);
       }
     });
 

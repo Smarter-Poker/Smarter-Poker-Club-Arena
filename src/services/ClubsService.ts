@@ -8,6 +8,7 @@
 import { supabase, getAuthUser } from '@/lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { sanitizeInput } from '../utils/sanitizeInput';
+import { buildClubSlug, escapeIlikePattern } from '../utils/clubSlug';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
@@ -177,27 +178,22 @@ export async function createClub(clubData: {
     throw new Error('Club name must be 30 characters or less.');
   }
 
-  // Duplicate name check
+  // Duplicate name check (pattern-escaped so "100%" matches literally)
   const { data: existing } = await supabase
     .from('clubs')
     .select('id')
-    .ilike('name', safeName)
+    .ilike('name', escapeIlikePattern(safeName))
     .limit(1);
 
   if (existing && existing.length > 0) {
     throw new Error('A club with this name already exists. Please choose a different name.');
   }
 
-  // Generate URL-friendly slug
-  const slug = safeName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-
   // Enforce mutual exclusivity: public clubs can't require approval
   const isPublic = clubData.is_public ?? true;
 
-  // Insert with collision retry for random club_id
+  // Insert with collision retry for random club_id AND slug (clubs.slug has a
+  // unique index — retries make the slug collision-proof, see utils/clubSlug)
   let data: any = null;
   let lastError: any = null;
   const MAX_RETRIES = 3;
@@ -212,7 +208,7 @@ export async function createClub(clubData: {
       .insert({
         club_id: clubIdNumber,
         name: safeName,
-        slug,
+        slug: buildClubSlug(safeName, clubIdNumber, attempt),
         description: safeDescription,
         color_theme: clubData.color_theme || 'royal-blue',
         is_public: isPublic,
@@ -300,6 +296,37 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
   }
 
   const membership = data as ClubMember;
+
+  // ── Redeem a referral code stored by the Join modal (fire-and-forget) ──
+  // The join flow's "Join with Referral" prompt saves the code under
+  // `referral_<clubUuid>`. Nothing ever redeemed it (audit 2026-08-19), so
+  // the prompt was a stub. Redeem through the canonical platform RPC —
+  // it validates the code, rejects self-referrals, and dedupes server-side.
+  // Never allowed to affect the join result.
+  try {
+    if (typeof window !== 'undefined') {
+      const referralKey = `referral_${resolvedId}`;
+      const altKey = `referral_${clubId}`;
+      const storedCode =
+        window.localStorage.getItem(referralKey) || window.localStorage.getItem(altKey);
+      if (storedCode) {
+        // Single-shot: clear first so a failing code is never retried forever
+        window.localStorage.removeItem(referralKey);
+        window.localStorage.removeItem(altKey);
+        const { referralService } = await import('./ReferralService');
+        referralService
+          .redeemCode(user.user.id, storedCode)
+          .then((res) => {
+            if (!res.success) {
+              console.warn('[ClubsService] joinClub: referral redemption rejected:', res.error);
+            }
+          })
+          .catch((e) => reportError(e, 'ClubsService.joinClub_referral_redeem'));
+      }
+    }
+  } catch (e) {
+    reportError(e, 'ClubsService.joinClub_referral');
+  }
 
   // Emit CLUB_JOINED for cross-page reactivity (lobby, carousel, detail pages).
   // Harmless for pending joins — listeners simply re-fetch memberships.

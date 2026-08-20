@@ -17,6 +17,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { ClubCardGenerator } from '../../services/ClubCardGenerator';
 import { sanitizeInput } from '../../utils/sanitizeInput';
+import { buildClubSlug, escapeIlikePattern } from '../../utils/clubSlug';
 import { masterBus } from '../../core/MasterBus';
 import haptic from '../../services/HapticService';
 import styles from './CreateClubModal.module.css';
@@ -124,7 +125,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       const { data: existing } = await supabase
         .from('clubs')
         .select('id')
-        .ilike('name', clubName.trim())
+        .ilike('name', escapeIlikePattern(clubName.trim()))
         .limit(1);
 
       if (existing && existing.length > 0) {
@@ -198,11 +199,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         // that made new clubs unjoinable by code.
         const clubIdNumber = Math.floor(10000 + Math.random() * 90000);
 
-        // Generate URL-friendly slug
-        const slug = sanitizeInput(clubName.trim())
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '');
+        // clubs.slug is UNIQUE — retries append the club_id (see utils/clubSlug)
+        const slug = buildClubSlug(sanitizeInput(clubName.trim()), clubIdNumber, attempt);
 
         const { data: insertData, error: insertError } = await supabase
           .from('clubs')
@@ -214,7 +212,12 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             is_public: true,
             requires_approval: false,
             card_image_url: null, // Will be set after baked card generation
-            logo_url: logoUrl || logoPreview, // Raw logo URL (NOT the baked card)
+            // Raw logo URL (NOT the baked card). If the storage upload failed,
+            // store NULL — never the base64 data URL: a multi-MB data URL in
+            // this column gets pulled by every getUserMemberships call on
+            // every home-page load. The baked card below still renders from
+            // the local preview, and the logo can be re-uploaded in settings.
+            logo_url: logoUrl,
             member_count: 1,
             level: 1,
             active_players: 1,

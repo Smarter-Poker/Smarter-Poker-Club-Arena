@@ -16,6 +16,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import ClubPromotionRulesModal from '../components/modals/ClubPromotionRulesModal';
 import { masterBus } from '../core/MasterBus';
 import { sanitizeInput } from '../utils/sanitizeInput';
+import { buildClubSlug, escapeIlikePattern } from '../utils/clubSlug';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -511,7 +512,7 @@ export default function CreateClubPage() {
       const { data: existing } = await supabase
         .from('clubs')
         .select('id')
-        .ilike('name', form.name.trim())
+        .ilike('name', escapeIlikePattern(form.name.trim()))
         .limit(1);
 
       if (existing && existing.length > 0) {
@@ -527,13 +528,6 @@ export default function CreateClubPage() {
     }
 
     try {
-      // Generate URL-friendly slug
-      const slug = form.name
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
-
       // Determine the logo value for insert.
       // IMPORTANT: consumers (carousel, club cards, getUserMemberships) read
       // logo_url / avatar_url — the bare `logo` column is legacy. Write all of
@@ -562,7 +556,8 @@ export default function CreateClubPage() {
           .insert({
             club_id: clubIdNumber,
             name: sanitizeInput(form.name.trim()),
-            slug,
+            // clubs.slug is UNIQUE — retries append the club_id (see utils/clubSlug)
+            slug: buildClubSlug(form.name, clubIdNumber, attempt),
             description: sanitizeInput(form.description.trim()) || null,
             owner_id: user.id,
             is_public: form.isPublic,

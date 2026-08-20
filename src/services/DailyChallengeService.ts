@@ -740,7 +740,7 @@ class DailyChallengeServiceClass {
 
   /**
    * Batch fetch all challenge tiers for a user in a single call.
-   * Reduces boilerplate in ProfilePage and DailyChallengesWidget.
+   * Reduces boilerplate for callers that need all three tiers at once.
    */
   async getAllChallenges(userId: string): Promise<{
     daily: UserDailyChallenge[];

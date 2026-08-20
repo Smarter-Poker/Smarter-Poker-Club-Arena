@@ -89,10 +89,25 @@ here, because it has to run inside `npm test` (the Hetzner deploy gates on that
 suite before it ships anything):
 
 - `src/engine/HandFuzzer.ts` — drives `HandController` through complete
-  randomized hands (all 7 variants, 2-9 seats, micro to deep stacks, antes, Big
-  Blind Antes, straddles, bomb pots, dead blinds, post-BB entries, every rake
-  shape, BBJ on and off) picking a uniformly random LEGAL action each turn, and
-  asserts nine chip-integrity invariants after every single mutation.
+  randomized hands (all 7 variants, 2-9 non-contiguous seats, sitting-out seats,
+  micro to deep stacks, antes, Big Blind Antes, straddles, bomb pots, dead
+  blinds, post-BB entries, every rake shape, BBJ on and off) picking a uniformly
+  random LEGAL action each turn, and asserting the chip-integrity invariants
+  after every single mutation. All three all-in runout shapes are exercised:
+  the instant `continueRunout()`, the paced per-street `dealNextStreet()`, and
+  the run-it-twice shape where the caller distributes and
+  `finalizeRunout(skipDistribution=true)` only reports.
+
+  The invariants: chips are conserved against the table total (INV-1) and
+  per player (INV-2); the side pots sum to the pot (INV-3) AND match an
+  independent partition built from the rules rather than from the code under
+  test (INV-10); settlement pays out exactly the pot less the rake and jackpot
+  fee it reports taking (INV-4); every value is a whole cent and nothing is
+  negative (INV-5); nobody invests more than they sat down with (INV-6); nobody
+  is paid out of a pot they were not eligible for (INV-7); the rake gate agrees
+  with the dealt board (INV-9); and the engine never offers an action and then
+  refuses it (INV-LEGALITY) — which is what a player sees when a button they
+  were given does nothing.
 - `src/engine/ChipConservation.property.test.ts` — the vitest leg. ~11,000 hands
   per run: a fixed corpus that keeps a green build green, plus 1,000 hands from
   a fresh random seed so every CI run walks new ground.

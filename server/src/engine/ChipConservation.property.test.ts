@@ -20,13 +20,33 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { fuzzOneHand, ChipConservationError, type FuzzHandResult } from './HandFuzzer.js';
+import {
+  fuzzOneHand,
+  ChipConservationError,
+  VARIANTS,
+  type FuzzHandResult,
+} from './HandFuzzer.js';
 import { calculatePots } from './PokerEngine.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, SeatPlayer } from '../types.js';
 
 const HANDS = Number(process.env.CHIP_CONSERVATION_HANDS ?? 10_000);
-/** Fixed corpus. A green build stays green — no flaky deploys from this leg. */
+/**
+ * Fixed ACTION seeds.
+ *
+ * CORRECTION 2026-08-20: this said "a green build stays green — no flaky
+ * deploys from this leg", and that was false. Only the action stream is seeded.
+ * The deck is shuffled with secureShuffle (node:crypto) and is deliberately NOT
+ * seedable, so every card is fresh on every run and any invariant whose outcome
+ * depends on cards — INV-7, INV-10, chop and odd-chip allocation, hi-lo splits,
+ * the no-winners guard — is non-deterministic. Demonstrated: with a side-pot
+ * mutant installed, three runs of the identical 2,000-seed corpus produced 28,
+ * 26 and 27 failures, and 2 of the 28 failing seeds did not fail in all three.
+ *
+ * So a card-dependent regression shows up as an INTERMITTENT red build. That is
+ * a real property of this test and it is written down here rather than denied.
+ * The replay dump in the failure message is the reproduction — not the seed.
+ */
 const BASE_SEED = Number(process.env.CHIP_CONSERVATION_SEED ?? 1);
 /** Fresh territory on every run, so the corpus is not the only thing tested. */
 const EXPLORE_HANDS = Number(process.env.CHIP_CONSERVATION_EXPLORE ?? 1_000);
@@ -64,10 +84,14 @@ function runCorpus(baseSeed: number, count: number): RunSummary {
       if (err instanceof ChipConservationError) {
         // The message already carries the full replay. Reproduce with:
         //   CHIP_CONSERVATION_SEED=<seed> CHIP_CONSERVATION_HANDS=1 npx vitest run ChipConservation
+        // The REPLAY below is the reproduction: it carries the config, the
+        // dealt board, every hole card and every action. Re-running the seed
+        // reproduces the action stream but NOT the deck (see BASE_SEED above),
+        // so it is offered as a starting point, not as a guarantee.
         throw new Error(
           `chip conservation violated on seed ${seed}\n` +
-            `reproduce: CHIP_CONSERVATION_SEED=${seed} CHIP_CONSERVATION_HANDS=1 ` +
-            `CHIP_CONSERVATION_EXPLORE=0 npx vitest run ChipConservation\n\n` +
+            `the REPLAY below is the reproduction; the seed alone replays only ` +
+            `the actions, not the cards\n\n` +
             err.message
         );
       }
@@ -88,10 +112,13 @@ function runCorpus(baseSeed: number, count: number): RunSummary {
 
 describe('chip conservation (property)', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
   let warnings: string[];
+  let errors: string[];
 
   beforeEach(() => {
     warnings = [];
+    errors = [];
     // The hand FSM reports an illegal hand flow by console.warn-ing. Across a
     // corpus this doubles as a property test on the FSM graph itself: a bomb
     // pot used to fire four "Invalid transition" warnings per hand because
@@ -99,11 +126,32 @@ describe('chip conservation (property)', () => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
       warnings.push(args.map(String).join(' '));
     });
+    // The engine reports several faults that are chip-CONSERVING and therefore
+    // invisible to every invariant here. completeHand's catch-all writes to
+    // console.error; StateMachine's invalid-transition path writes to both.
+    // Capturing error also stops a regression spewing 10,000 unmocked lines.
+    errorSpy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errors.push(args.map(String).join(' '));
+    });
   });
 
   afterEach(() => {
     warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
+
+  /**
+   * Faults the engine announces but no chip invariant can see.
+   *
+   * "No winners found" awards the ENTIRE pot to activePlayers[0] — perfectly
+   * chip-conserving, and the wrong player is paid. "completeHand threw" force-
+   * ends the hand with rake 0. Neither moves a chip that INV-1..INV-10 can
+   * object to, so without this they pass silently.
+   */
+  const enginePanics = () =>
+    [...warnings, ...errors].filter((m) =>
+      /No winners found|No actionable seat|completeHand threw|Invalid transition/.test(m)
+    );
 
   it(`conserves chips across ${HANDS} randomized hands (fixed corpus from seed ${BASE_SEED})`, () => {
     const s = runCorpus(BASE_SEED, HANDS);
@@ -113,18 +161,24 @@ describe('chip conservation (property)', () => {
     // The corpus must actually exercise the engine. Without this, a change to
     // randomTable() that quietly stopped producing contested hands would leave
     // the test green and meaningless.
-    expect(s.checks).toBeGreaterThan(HANDS); // >1 invariant check per hand
-    expect(s.actions).toBeGreaterThan(HANDS * 2);
-    expect(s.showdowns).toBeGreaterThan(HANDS * 0.2);
-    expect(s.allInRunouts).toBeGreaterThan(HANDS * 0.05);
-    expect(s.maxSidePots).toBeGreaterThanOrEqual(3);
-    expect(s.rakeTaken).toBeGreaterThan(0);
-    expect(s.variants.size).toBe(7); // every variant the engine supports
-    expect(Math.min(...s.seatCounts)).toBe(2);
-    expect(Math.max(...s.seatCounts)).toBeGreaterThanOrEqual(6);
+    //
+    // GUARDED on corpus size (review fix 2026-08-20): these are statements
+    // about a LARGE SAMPLE, and applying them unconditionally broke the one
+    // command the failure message tells you to run — a 1-hand reproduction
+    // failed here with `expected 1 to be 7` and never reached the replay.
+    if (HANDS >= 1000) {
+      expect(s.checks).toBeGreaterThan(HANDS); // >1 invariant check per hand
+      expect(s.actions).toBeGreaterThan(HANDS * 2);
+      expect(s.showdowns).toBeGreaterThan(HANDS * 0.2);
+      expect(s.allInRunouts).toBeGreaterThan(HANDS * 0.05);
+      expect(s.maxSidePots).toBeGreaterThanOrEqual(3);
+      expect(s.rakeTaken).toBeGreaterThan(0);
+      expect(s.variants.size).toBe(VARIANTS.length); // every variant the engine supports
+      expect(Math.min(...s.seatCounts)).toBe(2);
+      expect(Math.max(...s.seatCounts)).toBeGreaterThanOrEqual(6);
+    }
 
-    const fsmViolations = warnings.filter((w) => w.includes('Invalid transition'));
-    expect(fsmViolations.slice(0, 5)).toEqual([]);
+    expect(enginePanics().slice(0, 5)).toEqual([]);
   }, 600_000);
 
   it(`explores ${EXPLORE_HANDS} previously untested hands`, () => {
@@ -134,8 +188,7 @@ describe('chip conservation (property)', () => {
     const base = 1_000_000 + Math.floor(Math.random() * 1_000_000_000);
     const s = runCorpus(base, EXPLORE_HANDS);
     expect(s.ran).toBe(EXPLORE_HANDS);
-    const fsmViolations = warnings.filter((w) => w.includes('Invalid transition'));
-    expect(fsmViolations.slice(0, 5)).toEqual([]);
+    expect(enginePanics().slice(0, 5)).toEqual([]);
   }, 600_000);
 });
 

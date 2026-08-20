@@ -107,7 +107,7 @@ const VARIANT_CARDS: Record<
   short_deck: { perPlayer: 2, deckSize: 36, maxSeats: 9 },
 };
 
-const VARIANTS = Object.keys(VARIANT_CARDS) as GameVariant[];
+export const VARIANTS = Object.keys(VARIANT_CARDS) as GameVariant[];
 const BLIND_LEVELS: [number, number][] = [
   [0.01, 0.02],
   [0.05, 0.1],
@@ -153,19 +153,32 @@ export function randomTable(rnd: () => number): FuzzConfig {
   }
   const seatNumbers = allSeats.slice(0, playerCount).sort((a, b) => a - b);
 
-  const seats: SeatPlayer[] = seatNumbers.map((seat, i) => ({
-    seat,
-    user_id: `u${i + 1}`,
-    username: `P${i + 1}`,
-    stack: stackFor(),
-    bet: 0,
-    totalInvested: 0,
-    deadInvested: 0,
-    cards: [],
-    is_folded: false,
-    is_all_in: false,
-    is_sitting_out: false,
-  }));
+  // REVIEW FIX 2026-08-20: is_sitting_out was hard-coded false, and
+  // HandController branches on it in 16 places — dealHoleCards, the ante loop,
+  // getNextActiveSeat, getActivePlayers, isSeatActionable, the bbOnlyPosts and
+  // straddle guards, and (money-relevant) the playerCount feeding
+  // playerCountCaps and the playersDealt feeding the BBJ eligibility gate.
+  // Dropping any one of those filters was undetectable. Never sit out so many
+  // that fewer than two players remain.
+  const maxSittingOut = Math.max(0, playerCount - 2);
+  let sittingOut = 0;
+  const seats: SeatPlayer[] = seatNumbers.map((seat, i) => {
+    const sitOut = sittingOut < maxSittingOut && rnd() < 0.08;
+    if (sitOut) sittingOut++;
+    return {
+      seat,
+      user_id: `u${i + 1}`,
+      username: `P${i + 1}`,
+      stack: stackFor(),
+      bet: 0,
+      totalInvested: 0,
+      deadInvested: 0,
+      cards: [],
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: sitOut,
+    };
+  });
 
   const dealerSeat = seatNumbers[Math.floor(rnd() * seatNumbers.length)];
 
@@ -176,7 +189,13 @@ export function randomTable(rnd: () => number): FuzzConfig {
     smallBlind: sb,
     bigBlind: bb,
     rakeConfig: {
-      percent: [0, 0.01, 0.03, 0.05, 0.1][Math.floor(rnd() * 5)],
+      // REVIEW FIX 2026-08-20: RakeConfig.percent is in WHOLE-PERCENT units
+      // ("7.5 means 7.5%", src/config/RakeConfig.ts) and every live level uses
+      // 10. The old array [0, 0.01 ... 0.1] tested a rake regime 100x lighter
+      // than production: measured p99 of 0.11% of the pot against a real 5-10%,
+      // so the rake-exceeds-pot clamp and the winner-scaling loops were only
+      // ever exercised with a negligible deduction.
+      percent: [0, 1, 3, 5, 10][Math.floor(rnd() * 5)],
       cap: cents(bb * [0, 1, 3, 5, 25][Math.floor(rnd() * 5)]),
       noFlopNoDrop: rnd() < 0.8,
       ...(rnd() < 0.25
@@ -281,6 +300,95 @@ function fail(ctx: Ctx, invariant: string, detail: string): never {
   throw new ChipConservationError(invariant, detail, replayOf(ctx));
 }
 
+/**
+ * INV-10 — an INDEPENDENT side-pot partition, written from the rules rather
+ * than from the code under test.
+ *
+ * REVIEW FIX 2026-08-20. INV-3 only proved that calculatePots() SUMS to the
+ * pot, and INV-7 read its cap out of `state.pots` — the very array
+ * determineWinners was handed. So both were blind to a WRONG eligibility set:
+ * widening eligibility raises the cap and makes INV-7 pass by construction.
+ *
+ * Demonstrated with two mutants of calculatePots. Making folded players
+ * eligible was caught (1.4% of hands). Making DEAD money count toward side-pot
+ * eligibility — the exact regression PokerEngine documents as previously
+ * shipped, where a player all-in for a 5-chip ante could win a 205 pot — was
+ * NOT caught at all: zero invariant failures over 10,000 hands.
+ *
+ * This rebuilds the partition from the stated rules:
+ *   - side-pot LEVELS come from LIVE investment only (totalInvested minus dead
+ *     money: antes, a Big Blind Ante the BB fronts, dead small blinds)
+ *   - a level's amount is (level - previousLevel) x everyone who reached it,
+ *     folded contributors included — their chips stay in the pot
+ *   - only NON-FOLDED players may be eligible to win it
+ *   - dead money forms its own pot at the bottom, contested by every
+ *     non-folded player who put anything in
+ *   - a level whose every eligible player folded is uncontested dead money and
+ *     joins the main pot
+ * and asserts the engine agrees on both the amounts and the eligible sets.
+ */
+function expectedPots(
+  players: SeatPlayer[]
+): { amount: number; eligiblePlayers: string[] }[] {
+  const r = (n: number) => Math.round(n * 100) / 100;
+  const live = (p: SeatPlayer) => Math.max(0, r((p.totalInvested ?? 0) - (p.deadInvested ?? 0)));
+  const active = players.filter((p) => !p.is_folded);
+  if (active.length === 0) return [];
+
+  const deadTotal = r(players.reduce((sum, p) => sum + (p.deadInvested ?? 0), 0));
+  const contributors = players.filter((p) => live(p) > 0);
+  if (contributors.length === 0) {
+    return deadTotal > 0
+      ? [{ amount: deadTotal, eligiblePlayers: active.map((p) => p.user_id) }]
+      : [];
+  }
+
+  const levels = [...new Set(contributors.map(live))].sort((a, b) => a - b);
+  const pots: { amount: number; eligiblePlayers: string[] }[] = [];
+  let previous = 0;
+  let orphaned = 0;
+  for (const level of levels) {
+    if (level === 0) continue;
+    const contribution = level - previous;
+    const reached = contributors.filter((p) => live(p) >= level).length;
+    const eligible = active.filter((p) => live(p) >= level);
+    if (reached > 0 && eligible.length > 0) {
+      pots.push({ amount: contribution * reached, eligiblePlayers: eligible.map((p) => p.user_id) });
+    } else if (reached > 0) {
+      orphaned = r(orphaned + contribution * reached);
+    }
+    previous = level;
+  }
+  if (orphaned > 0 && pots.length > 0) {
+    pots[0].amount = r(pots[0].amount + orphaned);
+    orphaned = 0;
+  }
+  const deadPool = r(deadTotal + orphaned);
+  if (pots.length > 0 && deadPool > 0) {
+    pots.unshift({
+      amount: deadPool,
+      eligiblePlayers: active
+        .filter((p) => (p.totalInvested ?? p.bet ?? 0) > 0)
+        .map((p) => p.user_id),
+    });
+  }
+  if (pots.length === 0) {
+    return deadPool > 0
+      ? [{ amount: deadPool, eligiblePlayers: active.map((p) => p.user_id) }]
+      : [];
+  }
+  const merged = [pots[0]];
+  for (let i = 1; i < pots.length; i++) {
+    const last = merged[merged.length - 1];
+    if (JSON.stringify(last.eligiblePlayers) === JSON.stringify(pots[i].eligiblePlayers)) {
+      last.amount += pots[i].amount;
+    } else {
+      merged.push(pots[i]);
+    }
+  }
+  return merged;
+}
+
 /** INV-1, INV-2, INV-3, INV-5, INV-6 — everything checkable mid-hand. */
 function checkMidHand(ctx: Ctx, where: string): void {
   const st = (ctx.hc as any).state;
@@ -347,6 +455,31 @@ function checkMidHand(ctx: Ctx, where: string): void {
       'INV-3',
       `side pots sum to ${potsSum} but pot is ${st.pot} at ${where} ` +
         `(delta ${cents(potsSum - st.pot)}); pots=${JSON.stringify(pots.map((p) => p.amount))}`
+    );
+  }
+
+  // INV-10: the partition itself, against an independent construction.
+  const expected = expectedPots(players);
+  const norm = (ps: { amount: number; eligiblePlayers: string[] }[]) =>
+    ps.map((p) => `${cents(p.amount)}|${[...p.eligiblePlayers].sort().join(',')}`);
+  const got = norm(pots);
+  const want = norm(expected);
+  if (got.length !== want.length || got.some((v, i) => v !== want[i])) {
+    // A folded player among the eligible is the single most dangerous shape,
+    // so name it explicitly when that is what differs.
+    const foldedIds = new Set(players.filter((p) => p.is_folded).map((p) => p.user_id));
+    const foldedEligible = pots
+      .flatMap((p) => p.eligiblePlayers)
+      .filter((id) => foldedIds.has(id));
+    fail(
+      ctx,
+      'INV-10',
+      `side-pot partition disagrees with the rules at ${where}` +
+        (foldedEligible.length
+          ? ` — FOLDED player(s) ${JSON.stringify([...new Set(foldedEligible)])} are eligible to win`
+          : '') +
+        `\n  engine:   ${JSON.stringify(got)}` +
+        `\n  expected: ${JSON.stringify(want)}`
     );
   }
 }
@@ -444,14 +577,21 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
   hc.start();
   checkMidHand(ctx, 'after start()');
 
-  const st = (hc as any).state;
+  // REVIEW FIX 2026-08-20: this used to be captured ONCE for the whole hand.
+  // checkMidHand and replayOf re-read it on every call, so if HandController
+  // ever reassigned `this.state` (a reset or restore path) the driver would
+  // read a dead snapshot while the assertions read the live one — a false
+  // negative, and the only reflection site here that would fail QUIETLY.
+  const readState = () => (hc as any).state;
   let actions = 0;
   // Bound: 9 seats x 4 streets x a generous raise war. A hand that cannot
   // finish inside this is itself a defect (the live 10-minute void).
+  // Observed maximum across ~250,000 hands: 41.
   const MAX_STEPS = 800;
   let steps = 0;
 
   while (!complete && steps++ < MAX_STEPS) {
+    const st = readState();
     if (pineappleSeats.length > 0) {
       const seats = pineappleSeats;
       pineappleSeats = [];
@@ -571,6 +711,7 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
     if (!complete) checkMidHand(ctx, `after seat ${seat} action #${actions}`);
   }
 
+  const st = readState();
   if (!complete) {
     fail(ctx, 'LIVENESS', `hand did not complete within ${MAX_STEPS} steps (stage=${st.stage})`);
   }
@@ -612,7 +753,12 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
         .filter((pot) => pot.eligiblePlayers.includes(p.user_id))
         .reduce((sn, pot) => sn + pot.amount, 0)
     );
-    if (winnings > cap + 0.01) {
+    // REVIEW FIX 2026-08-20: this had 1c of slack "for odd-chip allocation".
+    // distributePot splits WITHIN a pot and its shares sum to that pot exactly,
+    // so a player can never exceed the sum of the pots they are eligible for —
+    // not even by a cent. The slack only blinded this to a 1-cent overpayment,
+    // which is the same class as the two 1-cent leaks this engine has shipped.
+    if (winnings > cap + EPS) {
       fail(
         ctx,
         'INV-7',

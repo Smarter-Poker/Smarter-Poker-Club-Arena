@@ -430,8 +430,20 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   // Blind Ante the BB fronts for the table, dead small blinds) belongs in the
   // pot but must not create a private side pot for whoever posted it — it is
   // summed and added to the main (first) pot, contested by all eligible players.
+  // 2026-08-20: snapped to cents. Side-pot LEVELS are the distinct values of
+  // this expression, and `totalInvested - deadInvested` is a float subtraction —
+  // snapChips() rounds stack, bet, totalInvested and pot at every mutation
+  // choke point (Bible V8 §2.6) but NOT deadInvested, so two players who are
+  // equal to the cent could differ by ~1e-17 and be split into two levels. That
+  // produced a spurious extra side pot of amount ~0 with a NARROWER eligible
+  // set, handed to determineWinners as if it were a real contest. Found by the
+  // chip-conservation property test's independent side-pot oracle (INV-10):
+  // engine ["0.50|u1,u3", "0|u3"] against the correct ["0.50|u1,u3"].
+  // No chips were misallocated — the amount is a rounding artefact — but the
+  // pot COUNT and its eligibility are what the client renders and what odd-chip
+  // allocation walks, and a level that does not exist should not be in either.
   const getInvestment = (p: SeatPlayer) =>
-    Math.max(0, (p.totalInvested ?? p.bet ?? 0) - (p.deadInvested ?? 0));
+    Math.max(0, Math.round(((p.totalInvested ?? p.bet ?? 0) - (p.deadInvested ?? 0)) * 100) / 100);
   const deadTotal = Math.round(players.reduce((s, p) => s + (p.deadInvested ?? 0), 0) * 100) / 100;
   const allContributors = players.filter((p) => getInvestment(p) > 0);
 

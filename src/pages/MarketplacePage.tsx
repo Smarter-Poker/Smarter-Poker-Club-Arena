@@ -53,14 +53,13 @@ import {
   type WalletInfo,
 } from './marketplace/marketplaceShared';
 import StoreTab from './marketplace/StoreTab';
-import ChipsTab from './marketplace/ChipsTab';
 import DiamondsTab from './marketplace/DiamondsTab';
 import MembershipTab from './marketplace/MembershipTab';
 import MyItemsTab from './marketplace/MyItemsTab';
 import ManageTab from './marketplace/ManageTab';
 
-type TabKey = 'store' | 'chips' | 'diamonds' | 'membership' | 'my_items' | 'manage';
-const VALID_TABS: TabKey[] = ['store', 'chips', 'diamonds', 'membership', 'my_items', 'manage'];
+type TabKey = 'store' | 'diamonds' | 'membership' | 'my_items' | 'manage';
+const VALID_TABS: TabKey[] = ['store', 'diamonds', 'membership', 'my_items', 'manage'];
 
 export default function MarketplacePage() {
   const { user } = useAuthUser();
@@ -428,7 +427,6 @@ export default function MarketplacePage() {
 
   const TABS: { key: TabKey; label: string; badge?: number; adminOnly?: boolean }[] = [
     { key: 'store', label: 'Store', badge: items.length },
-    { key: 'chips', label: 'Get Chips' },
     { key: 'diamonds', label: 'Diamonds' },
     { key: 'membership', label: 'Membership' },
     { key: 'my_items', label: 'My Items', badge: ownedCount || undefined },
@@ -508,7 +506,6 @@ export default function MarketplacePage() {
             loading={loading}
             categories={catalog.shopCategories}
             onGoManage={() => switchTab('manage')}
-            onGoChips={() => switchTab('chips')}
             onPurchased={(newBalance) => {
               // The BALANCE_UPDATED bus subscription reloads the shop + wallet;
               // only the optimistic balance and the inventory are needed here.
@@ -524,18 +521,6 @@ export default function MarketplacePage() {
               Diamonds and VIP membership are still available in the other tabs.
             </span>
           </div>
-        )}
-        {tab === 'chips' && (
-          <ChipsTab
-            wallet={wallet}
-            clubId={clubId}
-            packages={catalog.chipPackages}
-            onGoDiamonds={() => switchTab('diamonds')}
-            onPurchased={() => {
-              // BALANCE_UPDATED already triggers the shop + wallet refresh.
-              loadWallet();
-            }}
-          />
         )}
         {tab === 'diamonds' && (
           <DiamondsTab clubId={clubId || ''} wallet={wallet} packages={catalog.diamondPackages} />

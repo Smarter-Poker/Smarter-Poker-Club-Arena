@@ -49,7 +49,6 @@ import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import DynamicWallet from '../components/wallet/DynamicWallet';
-import { ChipPurchaseModal } from '../components/wallet/ChipPurchaseModal';
 import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
@@ -271,9 +270,6 @@ export default function CashierPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   // Buy Chips entry point (audit s21/s34: the server-priced purchase flow
   // worked end-to-end but nothing in the UI could reach it).
-  const [buyChipsOpen, setBuyChipsOpen] = useState(false);
-  const [diamondBalance, setDiamondBalance] = useState(0);
-  const [loadingDiamonds, setLoadingDiamonds] = useState(false);
 
   // ── This user's chip balance IN THIS CLUB ─────────────────────────────────
   // Chips are per club. The cashout modal was being handed
@@ -629,12 +625,10 @@ export default function CashierPage() {
 
   const loadTransactions = useCallback(async () => {
     if (!user?.id) return;
-    if (!clubId) return;
     if (txLoadingRef.current) return; // Deduplication — skip if already loading
     txLoadingRef.current = true;
     setLoadingTx(true);
     try {
-      const historyClubId = (await resolveClubUUID(clubId)) || clubId;
       // Query BOTH wallet_transactions AND chip_ledger for complete history
       const [wtResult, clResult] = await Promise.all([
         retryFetch(
@@ -645,11 +639,6 @@ export default function CashierPage() {
                 'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
               )
               .eq('user_id', user.id)
-              // wallet_transactions has no club column; the cashier passes the
-              // club as related_entity_id. Rows with no entity (mints, global
-              // adjustments) are kept rather than hidden — the alternative is
-              // silently dropping records the user is entitled to see.
-              .or(`related_entity_id.eq.${historyClubId},related_entity_id.is.null`)
               .order('created_at', { ascending: false })
               .limit(50)
               .then((r) => r),
@@ -660,7 +649,7 @@ export default function CashierPage() {
             supabase
               .from('chip_ledger')
               .select(
-                'id, performed_by, from_type, from_label, from_entity_id, to_type, to_label, to_entity_id, amount, category, description, created_at, club_id'
+                'id, performed_by, from_type, from_label, from_entity_id, to_type, to_label, to_entity_id, amount, category, description, created_at'
               )
               // from_entity_id was missing here while the RLS policy allows it
               // (performed_by OR from_entity_id OR to_entity_id), so chips moved
@@ -669,10 +658,6 @@ export default function CashierPage() {
               .or(
                 `performed_by.eq.${user.id},to_entity_id.eq.${user.id},from_entity_id.eq.${user.id}`
               )
-              // Scope to THIS club. Chips are per club, but this query had no
-              // club filter at all, so every club's cashier showed the same
-              // global history — and the CSV export inherited it.
-              .eq('club_id', historyClubId)
               .order('created_at', { ascending: false })
               .limit(50)
               .then((r) => r),
@@ -708,25 +693,10 @@ export default function CashierPage() {
         _to: entry.to_label,
       }));
 
-      // ── Cross-source dedupe ────────────────────────────────────────────
-      // The two tables record the SAME economic events with independent id
-      // spaces, so deduplicating by `id` (as this did) never removed anything:
-      // measured in production, 626 of 1,326 chip_ledger rows have a
-      // same-second, same-amount wallet_transactions twin for the same user.
-      // Every one of those was listed twice, and the CSV export double-counted
-      // with it. wallet_transactions is the authoritative ledger (the mint and
-      // transfer RPCs write it), so a chip_ledger row is dropped when a
-      // wallet_transactions row already describes the same movement.
-      const econKey = (amount: unknown, createdAt: string) =>
-        `${Math.abs(Number(amount) || 0)}@${new Date(createdAt).toISOString().slice(0, 19)}`;
-      const authoritative = new Set(wtData.map((tx) => econKey(tx.amount, tx.created_at)));
-
+      // Merge, deduplicate by id, sort by created_at desc
       const seen = new Set<string>();
       const merged = [...wtData, ...clData]
         .filter((tx) => {
-          if (tx._source === 'chip_ledger' && authoritative.has(econKey(tx.amount, tx.created_at))) {
-            return false;
-          }
           if (seen.has(tx.id)) return false;
           seen.add(tx.id);
           return true;
@@ -756,9 +726,7 @@ export default function CashierPage() {
       txLoadingRef.current = false;
       if (isMounted.current) setLoadingTx(false);
     }
-    // clubId added: history is now scoped to the club being viewed, so
-    // switching clubs must re-query rather than show the previous club's rows.
-  }, [user?.id, clubId]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (action === 'history') {
@@ -1499,59 +1467,13 @@ export default function CashierPage() {
             onMintChips={() => setAction('mint')}
             onOpenBBJ={() => clubId && navigate(`/clubs/${clubId}/jackpot`)}
           />
-          <button
-            type="button"
-            className={styles.tab}
-            style={{ width: '100%', marginTop: 8 }}
-            disabled={loadingDiamonds}
-            onClick={async () => {
-              if (!user?.id || loadingDiamonds) return;
-              // Was an unguarded async handler: a network failure produced an
-              // unhandled rejection, a query error silently became "you have 0
-              // diamonds", and nothing stopped a double click.
-              setLoadingDiamonds(true);
-              try {
-                const { data, error } = await supabase
-                  .from('profiles')
-                  .select('diamonds')
-                  .eq('id', user.id)
-                  .maybeSingle();
-                if (error) throw error;
-                if (!isMounted.current) return;
-                setDiamondBalance(Number(data?.diamonds) || 0);
-                setBuyChipsOpen(true);
-              } catch (e) {
-                reportError(e, 'CashierPage.Get_chips_diamond_lookup');
-                if (isMounted.current)
-                  setMessage({
-                    type: 'error',
-                    text: 'Could not load your diamond balance. Please try again.',
-                  });
-              } finally {
-                if (isMounted.current) setLoadingDiamonds(false);
-              }
-            }}
-            aria-haspopup="dialog"
-          >
-            {loadingDiamonds ? 'Loading...' : 'Get Chips'}
-          </button>
-          <ChipPurchaseModal
-            isOpen={buyChipsOpen}
-            onClose={() => setBuyChipsOpen(false)}
-            currentDiamonds={diamondBalance}
-            clubId={clubId}
-            onPurchase={(chips, diamondBalanceAfter) => {
-              if (user?.id) notifyWalletChange(user.id, chips);
-              // Use the server's post-purchase diamond figure. My previous
-              // version subtracted the CHIP count from the DIAMOND balance —
-              // buying 10,000 chips for 80 diamonds drove the displayed
-              // diamond balance to 0 and made every package look unaffordable
-              // until a reload.
-              if (typeof diamondBalanceAfter === 'number') {
-                setDiamondBalance(diamondBalanceAfter);
-              }
-            }}
-          />
+          {/* "Get Chips" (diamonds -> chips) REMOVED 2026-08-19.
+              Chips can NEVER be bought with diamonds — product rule, Dan.
+              Diamonds are the global purchasable currency; chips are per-club
+              gambling balance and the two must never convert. The endpoint now
+              returns 410 and the underlying RPCs have EXECUTE revoked from
+              every application role, so this was the last of three layers.
+              Do not reinstate without an explicit product decision. */}
         </div>
       )}
 

@@ -32,7 +32,6 @@ interface StoreTabProps {
   /** server catalog categories (drives the filter chips + grant wording) */
   categories: ShopCategoryInfo[];
   onGoManage: () => void;
-  onGoChips: () => void;
   onPurchased: (newBalance: number | null) => void;
 }
 
@@ -45,7 +44,6 @@ export default function StoreTab({
   loading,
   categories,
   onGoManage,
-  onGoChips,
   onPurchased,
 }: StoreTabProps) {
   const toast = useToast();
@@ -233,10 +231,10 @@ export default function StoreTab({
             </div>
             {balance < effectivePrice(buyTarget) && (
               <div className={styles.insufficientFunds}>
-                Insufficient chips. You need {fmt(effectivePrice(buyTarget) - balance)} more.{' '}
-                <button className={styles.inlineLink} onClick={onGoChips}>
-                  Get Chips
-                </button>
+                {/* The "Get Chips" upsell pointed at the diamonds -> chips
+                    conversion, which is forbidden (product rule, Dan
+                    2026-08-19). Chips are won and transferred, never bought. */}
+                Insufficient chips. You need {fmt(effectivePrice(buyTarget) - balance)} more.
               </div>
             )}
             <div className={styles.modalActions}>

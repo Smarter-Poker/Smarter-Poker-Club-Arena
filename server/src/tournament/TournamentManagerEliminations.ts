@@ -1270,6 +1270,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       .update({
         status: 'COMPLETED',
         ended_at: new Date().toISOString(),
+        // 2026-08-20: clear the break flags on the way out. endBreak() is what
+        // normally resets them, and it never runs if the event finishes DURING
+        // a break -- leaving COMPLETED tournaments permanently flagged
+        // on_break=true (3 of them, one showing 1,231 minutes "on break").
+        // Harmless to play, since nothing resumes a COMPLETED event, but it
+        // makes a finished tournament read as stuck to anything inspecting
+        // these columns.
+        on_break: false,
+        break_ends_at: null,
       })
       .eq('id', this.tournamentId)
       .eq('status', 'COMPLETING'); // Guard: only COMPLETING → COMPLETED

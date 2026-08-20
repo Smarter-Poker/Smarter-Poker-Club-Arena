@@ -65,11 +65,25 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
         if (busted && busted.length > 0) {
           // Get current remaining count BEFORE processing any eliminations
-          const { count: playingCount } = await supabase
+          const { count: playingCount, error: playingErr } = await supabase
             .from('tournament_players')
             .select('*', { count: 'exact', head: true })
             .eq('tournament_id', this.tournamentId)
             .eq('status', 'playing');
+
+          // PAYOUT-INTEGRITY 2026-08-20: finishing positions are derived from
+          // this count, and a wrong count produces COLLIDING positions (see
+          // the basePosition note below) which pay the same place twice. If we
+          // could not read it, assign nothing this cycle.
+          if (playingErr || playingCount === null || playingCount === undefined) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] playing count unavailable (${playingErr?.message ?? 'null count'}) — deferring ${busted.length} elimination(s)`
+              ),
+              'Tournament.playing_count_unavailable'
+            );
+            return; // the finally block clears isProcessingEliminations
+          }
 
           // FIX-B2 2026-07-19: assign DISTINCT finishing places to players busted
           // in the same sweep. The old code gave them all one shared position, so
@@ -83,7 +97,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // >=1 survivor these are all >= 2, leaving 1st for finishTournament.
           // (Exact-tie ordering by hand-start stack for a genuine same-hand double
           // bust is a documented follow-up; distinct places is money-correct now.)
-          const basePosition = playingCount || busted.length;
           let bustedOrdered = [...busted].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
 
           // TOURNEY-AUDIT 2026-07-24 [double-pay guard]: if EVERY remaining
@@ -92,24 +105,63 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // and then the remainingCount===0 branch ALSO paid the winner via
           // finishTournament — 1st place paid twice. Spare the top stack from
           // elimination; the winner path below then pays them exactly once.
-          if ((playingCount || busted.length) === busted.length && bustedOrdered.length > 0) {
+          if (playingCount === busted.length && bustedOrdered.length > 0) {
             bustedOrdered = bustedOrdered.slice(0, -1);
           }
 
+          // PAYOUT-INTEGRITY 2026-08-20: positions MUST be distinct. This was
+          //     const position = Math.max(2, basePosition - i);
+          // and the clamp is a double-pay generator: whenever basePosition was
+          // smaller than the number of players being eliminated, every position
+          // that computed below 2 collapsed onto 2, so several players were
+          // stamped place 2 and EACH collected a full 2nd-place prize. The
+          // wallet idempotency key is `tourney:{id}:prize:{user}:{place}` --
+          // it dedupes a repeated user, not a repeated PLACE -- so nothing
+          // downstream caught it. Observed in 11 tournaments (12 extra
+          // payments); e.g. Early Bird Freeroll ad750179 paid place 2 to two
+          // different players and disbursed 93.75 against a 75.00 pool.
+          //
+          // Flooring basePosition at bustedOrdered.length + 1 makes the run
+          // basePosition .. basePosition-(n-1) strictly decreasing and always
+          // >= 2, so places are distinct by construction and place 1 stays
+          // reserved for the winner. No clamp required.
+          const basePosition = Math.max(playingCount, bustedOrdered.length + 1);
+
           for (let i = 0; i < bustedOrdered.length; i++) {
-            const position = Math.max(2, basePosition - i);
+            const position = basePosition - i;
             await this.eliminatePlayer(bustedOrdered[i].user_id, position);
           }
         }
 
         // Check remaining players AFTER all eliminations processed
-        const { count: remainingCount } = await supabase
+        const { count: remainingCount, error: remainingErr } = await supabase
           .from('tournament_players')
           .select('*', { count: 'exact', head: true })
           .eq('tournament_id', this.tournamentId)
           .eq('status', 'playing');
 
-        if ((remainingCount || 0) <= 1) {
+        // PAYOUT-INTEGRITY 2026-08-20: a FAILED count must never read as
+        // "nobody is left". This line used to be `(remainingCount || 0) <= 1`,
+        // and on a supabase timeout `count` comes back null -> `|| 0` -> 0 ->
+        // "<= 1" is true -> the tournament finishes while players are still
+        // seated and playing. That is exactly how Afternoon Bounty (NLH) and
+        // Union PKO Afternoon (PLO4) ended on 2026-08-20 with 5 and 4 players
+        // still status='playing' and position=NULL: the survivors were the
+        // paid places, so their prize money (289.80 + 346.50) was never
+        // emitted and became unattributable. The same shape is visible across
+        // history in 113 multi-place tournaments.
+        //
+        // A count we could not read is UNKNOWN, not zero. Skip this cycle and
+        // re-check on the next one; the tournament stays live and no money
+        // moves on the strength of a failed query.
+        if (remainingErr || remainingCount === null || remainingCount === undefined) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] remaining-player count unavailable (${remainingErr?.message ?? 'null count'}) — skipping finish check this cycle`
+            ),
+            'Tournament.remaining_count_unavailable'
+          );
+        } else if (remainingCount <= 1) {
           try {
             // Use maybeSingle to handle edge case where 0 players remain
             const { data: winner } = await supabase
@@ -868,6 +920,46 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
     }
 
+    // PAYOUT-INTEGRITY 2026-08-20: never finalise while players are still
+    // unresolved. If we reach here with survivors other than the winner, they
+    // are exactly the finishers the paid places belong to, and leaving them
+    // status='playing'/position=NULL is what stranded prize money in 113
+    // multi-place tournaments -- the money is owed, but to nobody
+    // identifiable, so it can never be paid or even attributed afterwards.
+    //
+    // Normally this loop finds nothing: finishTournament is only entered with
+    // <= 1 player left. It matters on the abnormal paths (notably "all busted
+    // simultaneously", where the winner is the last ELIMINATED player and real
+    // survivors can still be sitting in 'playing').
+    //
+    // Ranking rule is the standard one already used by the bust sweep: a
+    // bigger stack finishes higher. Places run 2..N+1 with the shortest stack
+    // taking the lowest place, so they are distinct and 1st stays the winner's.
+    // eliminatePlayer pays each place, so the pool is disbursed in full.
+    const { data: stillPlaying, error: stillPlayingErr } = await supabase
+      .from('tournament_players')
+      .select('user_id, chips')
+      .eq('tournament_id', this.tournamentId)
+      .eq('status', 'playing')
+      .neq('user_id', winnerId);
+
+    if (stillPlayingErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] could not read unresolved players at finish: ${stillPlayingErr.message}`
+        ),
+        'Tournament.unresolved_players_read_failed'
+      );
+    } else if (stillPlaying && stillPlaying.length > 0) {
+      console.warn(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] finishing with ${stillPlaying.length} unresolved player(s) — assigning places 2..${stillPlaying.length + 1}`
+      );
+      const ordered = [...stillPlaying].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
+      for (let i = 0; i < ordered.length; i++) {
+        await this.eliminatePlayer(ordered[i].user_id, ordered.length + 1 - i);
+      }
+    }
+
     await supabase
       .from('tournament_players')
       .update({ status: 'winner', position: 1, prize: winnerPrize })
@@ -1093,6 +1185,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       })
       .eq('id', this.tournamentId)
       .eq('status', 'COMPLETING'); // Guard: only COMPLETING → COMPLETED
+
+    // PAYOUT-INTEGRITY 2026-08-20: final settlement check. Prizes are emitted
+    // incrementally (places 2..N as players bust, place 1 here), so until now
+    // nothing ever verified that the pool was actually disbursed in full --
+    // which is why 113 multi-place tournaments under-paid and 11 double-paid.
+    //
+    // fn_tournament_payout_reconcile recomputes every place from prize_pool
+    // and payout_structure, compares it against what each finisher was really
+    // paid, and tops up any shortfall using the SAME idempotency key format
+    // this file uses, so it can never collide with the payments above. It
+    // reports overpayment rather than clawing it back, and refuses to guess
+    // when a place has no single recorded finisher.
+    //
+    // Runs after the COMPLETED transition so it sees final standings, and is
+    // deliberately non-fatal: a failure here must not undo a finished event.
+    try {
+      const { data: reconcile, error: reconcileErr } = await supabase.rpc(
+        'fn_tournament_payout_reconcile',
+        { p_tournament_id: this.tournamentId, p_apply: true }
+      );
+      if (reconcileErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] payout reconcile failed: ${reconcileErr.message}`
+          ),
+          'Tournament.payout_reconcile_failed'
+        );
+      } else if (reconcile && (reconcile as any).clean === false) {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] payout reconcile: topped up ${(reconcile as any).total_top_up}, issues ${JSON.stringify((reconcile as any).issues)}`
+        );
+      }
+    } catch (reconcileThrew) {
+      reportError(reconcileThrew, 'Tournament.payout_reconcile_threw');
+    }
 
     for (const [tableId, engine] of this.tableEngines) {
       await engine.stop();

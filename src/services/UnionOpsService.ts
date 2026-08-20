@@ -89,6 +89,40 @@ export interface SettlementRound {
   detail: Record<string, unknown> | null;
 }
 
+export interface SettlementShortfall {
+  club_id?: string;
+  club?: string | null;
+  agent_user_id?: string;
+  agent?: string | null;
+  owed: number;
+  treasury?: number;
+  agent_balance?: number;
+  short_by: number;
+}
+
+export interface SettlementPreview {
+  union_id: string;
+  period_start: string;
+  period_end: string;
+  round1: { already_executed: boolean; rake_treasury_available: number };
+  round2: {
+    payees: number;
+    amount: number;
+    clubs_short: number;
+    short_by: number;
+    detail: SettlementShortfall[];
+  };
+  round3: {
+    payees: number;
+    amount: number;
+    agents_short: number;
+    short_by: number;
+    detail: SettlementShortfall[];
+  };
+  total_to_move: number;
+  has_blockers: boolean;
+}
+
 export interface DistributionCheck {
   period_start: string;
   rake_collected: number;
@@ -111,6 +145,23 @@ export interface ExitBlockers {
   unsettled_rake_this_period: number;
   agent_credit_outstanding: number;
   clear_to_exit: boolean;
+}
+
+/**
+ * Read failures used to be swallowed into an empty array, so the UI could not
+ * tell "this union has no agents" from "you are not allowed to see this" from
+ * "the request failed". Reads now return this alongside the data.
+ */
+export type LoadResult<T> = { data: T; error: string | null };
+
+export function describeRpcError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e ?? 'Request failed');
+  if (/not_authorised|not_authorized/i.test(msg)) {
+    return 'You do not have permission to view this. Union operations are visible to union owners and admins.';
+  }
+  if (/permission denied/i.test(msg)) return 'Permission denied by the database.';
+  if (/fetch|network/i.test(msg)) return 'Network error — could not reach the server.';
+  return msg;
 }
 
 function num(v: unknown): number {
@@ -176,6 +227,13 @@ export const UnionOpsService = {
     return (data ?? null) as UnionCoverage | null;
   },
 
+  /** Same read as getCoverage, but throws so the caller can show why it failed. */
+  async getCoverageStrict(unionId: string = MIDWAY_UNION_ID): Promise<UnionCoverage | null> {
+    const { data, error } = await supabase.rpc('fn_union_agent_coverage', { p_union_id: unionId });
+    if (error) throw error;
+    return (data ?? null) as UnionCoverage | null;
+  },
+
   async getAllAgentStatements(unionId: string = MIDWAY_UNION_ID, from?: string) {
     const { data, error } = await supabase.rpc('fn_union_weekly_agent_statements', {
       p_union_id: unionId,
@@ -212,6 +270,21 @@ export const UnionOpsService = {
       ...r,
       amount: num((r as { amount: unknown }).amount),
     })) as SettlementRound[];
+  },
+
+  /** Read-only dry run: what each round WOULD move, and who cannot cover it. */
+  async getSettlementPreview(
+    unionId: string = MIDWAY_UNION_ID,
+    from?: string,
+    to?: string
+  ): Promise<SettlementPreview> {
+    const { data, error } = await supabase.rpc('fn_union_settlement_preview', {
+      p_union_id: unionId,
+      p_period_start: from ?? null,
+      p_period_end: to ?? null,
+    });
+    if (error) throw error;
+    return data as SettlementPreview;
   },
 
   async runSettlementCascade(unionId: string = MIDWAY_UNION_ID, from?: string, to?: string) {

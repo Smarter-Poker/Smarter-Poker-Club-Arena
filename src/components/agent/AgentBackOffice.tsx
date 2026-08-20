@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   UnionOpsService,
+  describeRpcError,
   type AgentRosterRow,
   type AgentStatement,
 } from '../../services/UnionOpsService';
@@ -34,9 +35,11 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
   const [roster, setRoster] = useState<AgentRosterRow[]>([]);
   const [statement, setStatement] = useState<AgentStatement | null>(null);
   const [sort, setSort] = useState<keyof AgentRosterRow>('rake_generated');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [r, s] = await Promise.all([
         UnionOpsService.getAgentRoster(agentUserId),
@@ -45,6 +48,7 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
       setRoster(r);
       setStatement(s);
     } catch (e) {
+      setLoadError(describeRpcError(e));
       reportError(e, 'AgentBackOffice.load');
     } finally {
       setLoading(false);
@@ -56,6 +60,39 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
   }, [load]);
 
   if (loading) return <div style={{ padding: 16, color: '#8aa' }}>Loading roster…</div>;
+
+  if (loadError) {
+    return (
+      <div
+        style={{
+          padding: 16,
+          borderRadius: 10,
+          border: '1px solid #5a2020',
+          background: 'rgba(255,118,118,0.08)',
+          color: '#ff9c9c',
+          display: 'flex',
+          gap: 12,
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span>{loadError}</span>
+        <button
+          onClick={() => void load()}
+          style={{
+            padding: '6px 12px',
+            borderRadius: 8,
+            border: '1px solid #5a2020',
+            background: 'transparent',
+            color: '#ff9c9c',
+            cursor: 'pointer',
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const sorted = [...roster].sort((a, b) => {
     const av = a[sort];

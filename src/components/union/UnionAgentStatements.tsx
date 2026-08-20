@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   UnionOpsService,
   MIDWAY_UNION_ID,
+  describeRpcError,
   type AgentStatement,
 } from '../../services/UnionOpsService';
 import { reportError } from '../../utils/errorReporter';
@@ -30,12 +31,15 @@ export default function UnionAgentStatements({ unionId = MIDWAY_UNION_ID }: { un
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setRows((await UnionOpsService.getAllAgentStatements(unionId)) as Row[]);
     } catch (e) {
+      setLoadError(describeRpcError(e));
       reportError(e, 'UnionAgentStatements.load');
     } finally {
       setLoading(false);
@@ -77,6 +81,22 @@ export default function UnionAgentStatements({ unionId = MIDWAY_UNION_ID }: { un
   );
 
   if (loading) return <div style={{ color: '#8aa', padding: 12 }}>Loading agent statements…</div>;
+
+  if (loadError) {
+    return (
+      <div
+        style={{
+          padding: 14,
+          borderRadius: 10,
+          border: '1px solid #5a2020',
+          background: 'rgba(255,118,118,0.08)',
+          color: '#ff9c9c',
+        }}
+      >
+        {loadError}
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

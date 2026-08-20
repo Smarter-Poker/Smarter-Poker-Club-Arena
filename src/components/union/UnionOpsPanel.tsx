@@ -14,18 +14,20 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   UnionOpsService,
   MIDWAY_UNION_ID,
+  describeRpcError,
   type AgentRiskRow,
   type UnionCoverage,
   type SettlementRound,
   type DistributionCheck,
   type LawSelfTest,
+  type SettlementPreview,
 } from '../../services/UnionOpsService';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 
 type Tab = 'risk' | 'hierarchy' | 'settlement' | 'integrity';
 
-const money = (n: number) =>
+const money = (n: unknown) =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(n) || 0);
 
 interface Props {
@@ -44,23 +46,31 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
   const [rounds, setRounds] = useState<SettlementRound[]>([]);
   const [dist, setDist] = useState<DistributionCheck | null>(null);
   const [law, setLaw] = useState<LawSelfTest | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<SettlementPreview | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [r, c, s, d, l] = await Promise.all([
+      // Authorisation is identical across these reads, so probe with one call
+      // first: four identical permission errors are less useful than one clear
+      // message, and an empty table must not be mistaken for "no data".
+      const c = await UnionOpsService.getCoverageStrict(unionId);
+      const [r, rs, d, l] = await Promise.all([
         UnionOpsService.getAgentRisk(unionId),
-        UnionOpsService.getCoverage(unionId),
         UnionOpsService.getSettlementRounds(unionId),
         UnionOpsService.getDistributionCheck(unionId),
         UnionOpsService.getLawSelfTest(),
       ]);
-      setRisk(r);
       setCoverage(c);
-      setRounds(s);
+      setRisk(r);
+      setRounds(rs);
       setDist(d);
       setLaw(l);
     } catch (e) {
+      setLoadError(describeRpcError(e));
       reportError(e, 'UnionOpsPanel.load');
     } finally {
       setLoading(false);
@@ -71,11 +81,26 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
     void load();
   }, [load]);
 
+  const openPreview = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setPreview(await UnionOpsService.getSettlementPreview(unionId));
+      setConfirming(true);
+    } catch (e) {
+      toast.error(describeRpcError(e));
+      reportError(e, 'UnionOpsPanel.openPreview');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const runCascade = async () => {
     if (busy) return;
     setBusy(true);
     try {
       const res = await UnionOpsService.runSettlementCascade(unionId);
+      setConfirming(false);
       const r2 = (res as Record<string, Record<string, unknown>>)?.round2_club_to_agents;
       const r3 = (res as Record<string, Record<string, unknown>>)?.round3_agents_to_players;
       toast.success(
@@ -109,6 +134,39 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
   };
 
   if (loading) return <div style={{ padding: 16, color: '#8aa' }}>Loading union operations…</div>;
+
+  if (loadError) {
+    return (
+      <div
+        style={{
+          padding: 16,
+          borderRadius: 10,
+          border: '1px solid #5a2020',
+          background: 'rgba(255,118,118,0.08)',
+          color: '#ff9c9c',
+          display: 'flex',
+          gap: 12,
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span>{loadError}</span>
+        <button
+          onClick={() => void load()}
+          style={{
+            padding: '6px 12px',
+            borderRadius: 8,
+            border: '1px solid #5a2020',
+            background: 'transparent',
+            color: '#ff9c9c',
+            cursor: 'pointer',
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const tabs: Array<[Tab, string]> = [
     ['risk', 'Risk by agent'],
@@ -284,7 +342,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
 
           {canRun && (
             <button
-              onClick={() => void runCascade()}
+              onClick={() => void openPreview()}
               disabled={busy}
               style={{
                 alignSelf: 'flex-start',
@@ -297,7 +355,7 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
                 cursor: busy ? 'wait' : 'pointer',
               }}
             >
-              {busy ? 'Running…' : 'Run settlement cascade'}
+              {busy ? 'Checking…' : 'Review & run settlement'}
             </button>
           )}
           <p style={{ color: '#66787f', fontSize: '0.78rem', margin: 0 }}>
@@ -348,6 +406,15 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
             </table>
           )}
         </div>
+      )}
+
+      {confirming && preview && (
+        <SettlementConfirm
+          preview={preview}
+          busy={busy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void runCascade()}
+        />
       )}
 
       {/* INTEGRITY + UNION LAW */}
@@ -404,6 +471,173 @@ export default function UnionOpsPanel({ unionId = MIDWAY_UNION_ID, canRun = fals
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+{
+  /* PREVIEW / CONFIRM — settlement moves money across every club, agent and
+    player in the union. It used to fire on a single click with no idea of
+    what it would do. */
+}
+function SettlementConfirm({
+  preview,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  preview: SettlementPreview;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const nothingToDo = Number(preview.total_to_move) === 0;
+  return (
+    <div
+      onClick={() => !busy && onCancel()}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        background: 'rgba(0,0,0,0.72)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 560,
+          maxHeight: '86vh',
+          overflowY: 'auto',
+          borderRadius: 14,
+          padding: 20,
+          background: '#101a1f',
+          border: '1px solid #24343d',
+        }}
+      >
+        <h3 style={{ margin: '0 0 2px', color: '#e6f1f5' }}>Run settlement</h3>
+        <p style={{ color: '#7d919b', fontSize: '0.8rem', marginTop: 0 }}>
+          {new Date(preview.period_start).toLocaleDateString()} –{' '}
+          {new Date(preview.period_end).toLocaleDateString()}
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '14px 0' }}>
+          <Row
+            label="Round 1 · union → clubs"
+            value={
+              preview.round1.already_executed
+                ? 'already settled'
+                : `treasury ${money(preview.round1.rake_treasury_available)}`
+            }
+          />
+          <Row
+            label={`Round 2 · clubs → agents (${preview.round2.payees})`}
+            value={money(preview.round2.amount)}
+          />
+          <Row
+            label={`Round 3 · agents → players (${preview.round3.payees})`}
+            value={money(preview.round3.amount)}
+          />
+          <div
+            style={{
+              borderTop: '1px solid #24343d',
+              marginTop: 4,
+              paddingTop: 8,
+              display: 'flex',
+              justifyContent: 'space-between',
+            }}
+          >
+            <strong style={{ color: '#e6f1f5' }}>Total to move</strong>
+            <strong style={{ color: '#37e7c7' }}>{money(preview.total_to_move)}</strong>
+          </div>
+        </div>
+
+        {preview.has_blockers && (
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 8,
+              marginBottom: 14,
+              border: '1px solid #6b4a12',
+              background: 'rgba(255,179,71,0.08)',
+            }}
+          >
+            <strong style={{ color: '#ffb347' }}>
+              {preview.round2.clubs_short + preview.round3.agents_short} payer(s) cannot cover their
+              obligation
+            </strong>
+            <p style={{ color: '#c8a15e', fontSize: '0.78rem', margin: '6px 0 8px' }}>
+              These will be skipped and reported as shortfalls. Everyone else is still paid.
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 18, color: '#d8b784', fontSize: '0.8rem' }}>
+              {preview.round2.detail.slice(0, 6).map((d, i) => (
+                <li key={`c${i}`}>
+                  {d.club ?? 'club'} owes {money(d.owed)}, treasury {money(d.treasury)} — short{' '}
+                  {money(d.short_by)}
+                </li>
+              ))}
+              {preview.round3.detail.slice(0, 6).map((d, i) => (
+                <li key={`a${i}`}>
+                  {d.agent ?? 'agent'} owes {money(d.owed)}, balance {money(d.agent_balance)} —
+                  short {money(d.short_by)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {nothingToDo && (
+          <p style={{ color: '#8fa3ad', fontSize: '0.85rem' }}>
+            Nothing outstanding for this period — running again is safe and will move nothing.
+          </p>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            style={{
+              padding: '9px 14px',
+              borderRadius: 8,
+              border: '1px solid #2a3a44',
+              background: 'transparent',
+              color: '#8fa3ad',
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy || nothingToDo}
+            style={{
+              padding: '9px 16px',
+              borderRadius: 8,
+              border: '1px solid #37e7c7',
+              background: 'rgba(55,231,199,0.12)',
+              color: '#37e7c7',
+              fontWeight: 700,
+              opacity: nothingToDo ? 0.4 : 1,
+              cursor: busy ? 'wait' : nothingToDo ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {busy ? 'Settling…' : `Settle ${money(preview.total_to_move)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.86rem' }}>
+      <span style={{ color: '#8fa3ad' }}>{label}</span>
+      <span style={{ color: '#e6f1f5' }}>{value}</span>
     </div>
   );
 }

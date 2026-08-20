@@ -24,6 +24,7 @@ import SpinWheel, {
   buildWheelOrder,
   tierClass,
   DEFAULT_SPIN_TIERS,
+  parseLockedTiers,
 } from '../../src/components/tournament/SpinWheel';
 
 vi.mock('../../src/services/SoundService', () => ({
@@ -102,7 +103,12 @@ describe('wheel layout', () => {
   });
 
   it('handles an odd and an even ladder without duplicating the middle', () => {
-    const even = buildWheelOrder([{ multiplier: 2 }, { multiplier: 5 }, { multiplier: 10 }, { multiplier: 50 }]);
+    const even = buildWheelOrder([
+      { multiplier: 2 },
+      { multiplier: 5 },
+      { multiplier: 10 },
+      { multiplier: 50 },
+    ]);
     expect(even.map((t) => t.multiplier)).toEqual([2, 50, 5, 10]);
     expect(even).toHaveLength(4);
 
@@ -250,10 +256,7 @@ describe('SpinWheel — sequence', () => {
 describe('SpinWheel — locked tiers and payout splits', () => {
   it('shows a tier the pool cannot fund as LOCKED rather than hiding it', () => {
     const { container } = render(
-      <SpinWheel
-        data={{ ...SPIN, lockedMultipliers: [100, 500] }}
-        onDone={() => {}}
-      />
+      <SpinWheel data={{ ...SPIN, lockedMultipliers: [100, 500] }} onDone={() => {}} />
     );
     // Still on the wheel — a visible 500x you cannot win yet is anticipation.
     expect(container.querySelectorAll('.sw__seg').length).toBe(DEFAULT_SPIN_TIERS.length);
@@ -263,12 +266,76 @@ describe('SpinWheel — locked tiers and payout splits', () => {
   it('marks nothing locked when the pool can fund everything', () => {
     const { container } = render(<SpinWheel data={SPIN} onDone={() => {}} />);
     expect(container.querySelectorAll('.sw__seg--locked').length).toBe(0);
+    expect(container.querySelector('.sw__status-locked')).toBeNull();
+  });
+
+  it('dims the same segments from the richer lockedTiers form', () => {
+    const { container } = render(
+      <SpinWheel
+        data={{
+          ...SPIN,
+          lockedTiers: [
+            { multiplier: 100, reason: 'threshold', unlocksAt: 750 },
+            { multiplier: 500, reason: 'threshold', unlocksAt: 5000 },
+          ],
+        }}
+        onDone={() => {}}
+      />
+    );
+    expect(container.querySelectorAll('.sw__seg--locked').length).toBe(2);
+  });
+
+  it('names the CHEAPEST unlock, so the note is something reachable', () => {
+    // 100x at 750 and 500x at 5,000 — the honest thing to advertise is the
+    // one the club is closest to, not the biggest number on the wheel.
+    const { container } = render(
+      <SpinWheel
+        data={{
+          ...SPIN,
+          lockedTiers: [
+            { multiplier: 500, reason: 'threshold', unlocksAt: 5000 },
+            { multiplier: 100, reason: 'threshold', unlocksAt: 750 },
+          ],
+        }}
+        onDone={() => {}}
+      />
+    );
+    const note = container.querySelector('.sw__status-locked');
+    expect(note).toBeTruthy();
+    expect(note!.textContent).toContain('100');
+    expect(note!.textContent).toContain('750');
+  });
+
+  it('says nothing about unlocks when no threshold was recorded', () => {
+    // Older Spins have no spin_locked_tiers at all, and a tier locked purely
+    // on affordability may carry no usable threshold. Dim the segment, but
+    // do not invent a number to promise.
+    const { container } = render(
+      <SpinWheel data={{ ...SPIN, lockedMultipliers: [500] }} onDone={() => {}} />
+    );
+    expect(container.querySelectorAll('.sw__seg--locked').length).toBe(1);
+    expect(container.querySelector('.sw__status-locked')).toBeNull();
+  });
+
+  it('survives whatever the jsonb column hands back', () => {
+    // A wheel that throws while a player watches their prize be decided is a
+    // far worse failure than one that fails to dim a segment.
+    expect(parseLockedTiers(null)).toEqual([]);
+    expect(parseLockedTiers(undefined)).toEqual([]);
+    expect(parseLockedTiers('not json')).toEqual([]);
+    expect(parseLockedTiers('{}')).toEqual([]);
+    expect(parseLockedTiers([{ nope: 1 }])).toEqual([]);
+    expect(parseLockedTiers('[{"multiplier":500,"reason":"threshold","unlocksAt":5000}]')).toEqual([
+      { multiplier: 500, reason: 'threshold', unlocksAt: 5000 },
+    ]);
+    // unlocksAt of 0 is "no threshold", not "unlocks for free".
+    expect(parseLockedTiers([{ multiplier: 100, unlocksAt: 0 }])).toEqual([
+      { multiplier: 100, reason: undefined, unlocksAt: undefined },
+    ]);
   });
 
   it('says who cashes — only first place below 10x', () => {
-    const { container } = render(
-      <SpinWheel data={{ ...SPIN, multiplier: 5 }} onDone={() => {}} />
-    );
+    const { container } = render(<SpinWheel data={{ ...SPIN, multiplier: 5 }} onDone={() => {}} />);
     runToResult();
     expect(container.querySelectorAll('.sw__split').length).toBe(1);
   });

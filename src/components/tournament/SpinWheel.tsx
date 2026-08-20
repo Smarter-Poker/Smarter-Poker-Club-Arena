@@ -75,6 +75,24 @@ export interface SpinWheelData {
    * never be the result.
    */
   lockedMultipliers?: number[];
+  /**
+   * The same information with the reason and the unlock threshold attached,
+   * exactly as `fn_spin_draw_multiplier` recorded it for THIS draw. Preferred
+   * over `lockedMultipliers` when present, because "500x unlocks at 5,000" is
+   * anticipation where a bare dimmed segment is just an absence.
+   *
+   * `reason` is 'unaffordable' (the pool plus this game's own contribution
+   * cannot cover the prize) or 'threshold' (affordable, but not yet backed by
+   * the required multiple of its own jackpot at the biggest stake running).
+   */
+  lockedTiers?: SpinLockedTier[];
+}
+
+export interface SpinLockedTier {
+  multiplier: number;
+  reason?: string;
+  /** Reserve balance at which this tier becomes drawable. */
+  unlocksAt?: number;
 }
 
 export interface SpinWheelProps {
@@ -120,6 +138,39 @@ export function buildWheelOrder(tiers: SpinTier[]): SpinTier[] {
   return out;
 }
 
+/**
+ * Read `tournaments.spin_locked_tiers` into the shape this component wants.
+ *
+ * The column is jsonb and PostgREST may hand it back as a parsed array or, in
+ * some client configurations, as a string. It is also NULL on every Spin
+ * created before the column existed. Anything unrecognisable yields an empty
+ * list: a wheel that fails to dim a segment is a small loss, and a wheel that
+ * throws while a player is watching their prize be decided is a large one.
+ */
+export function parseLockedTiers(raw: unknown): SpinLockedTier[] {
+  let value = raw;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(value)) return [];
+  const out: SpinLockedTier[] = [];
+  for (const entry of value) {
+    const multiplier = Number((entry as any)?.multiplier);
+    if (!Number.isFinite(multiplier)) continue;
+    const unlocksAt = Number((entry as any)?.unlocksAt);
+    out.push({
+      multiplier,
+      reason: (entry as any)?.reason ? String((entry as any).reason) : undefined,
+      unlocksAt: Number.isFinite(unlocksAt) && unlocksAt > 0 ? unlocksAt : undefined,
+    });
+  }
+  return out;
+}
+
 /** Tier styling band. Bigger prizes read hotter. */
 export function tierClass(multiplier: number): string {
   if (multiplier >= 100) return 'sw--mega';
@@ -129,10 +180,35 @@ export function tierClass(multiplier: number): string {
 }
 
 export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheelProps) {
-  const locked = useMemo(
-    () => new Set(data?.lockedMultipliers ?? []),
-    [data?.lockedMultipliers]
-  );
+  /**
+   * `lockedTiers` wins when both are given — it is the richer form of the same
+   * fact. `lockedMultipliers` stays supported so a caller with only the bare
+   * numbers still dims the right segments.
+   */
+  const lockedDetail = useMemo(() => {
+    const map = new Map<number, SpinLockedTier>();
+    for (const m of data?.lockedMultipliers ?? []) map.set(m, { multiplier: m });
+    for (const t of data?.lockedTiers ?? []) {
+      if (Number.isFinite(t?.multiplier)) map.set(t.multiplier, t);
+    }
+    return map;
+  }, [data?.lockedMultipliers, data?.lockedTiers]);
+
+  const locked = useMemo(() => new Set(lockedDetail.keys()), [lockedDetail]);
+
+  /**
+   * The cheapest unlock we can honestly advertise: the smallest threshold
+   * among the locked tiers that told us one. Shown while the wheel decides,
+   * where it reads as "there is more on this wheel than you can win today" —
+   * which is true, and is the strongest thing this format has to say.
+   */
+  const nextUnlock = useMemo(() => {
+    const withThreshold = [...lockedDetail.values()].filter(
+      (t) => Number.isFinite(t.unlocksAt) && (t.unlocksAt as number) > 0
+    );
+    if (withThreshold.length === 0) return null;
+    return withThreshold.sort((a, b) => (a.unlocksAt as number) - (b.unlocksAt as number))[0];
+  }, [lockedDetail]);
   const [phase, setPhase] = useState<Phase>('idle');
   const [rotation, setRotation] = useState(0);
   const [displayPrize, setDisplayPrize] = useState(0);
@@ -323,6 +399,13 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
                   ['--sw-angle' as string]: `${segmentAngle}deg`,
                   transform: `rotate(${i * segmentAngle}deg)`,
                 }}
+                title={
+                  lockedDetail.get(tier.multiplier)?.unlocksAt
+                    ? `${tier.multiplier}x unlocks at a ${currency}${Number(
+                        lockedDetail.get(tier.multiplier)!.unlocksAt
+                      ).toLocaleString(undefined, { maximumFractionDigits: 0 })} reserve`
+                    : undefined
+                }
               >
                 <span className="sw__seg-label">
                   {tier.multiplier}×{locked.has(tier.multiplier) ? ' \u00B7' : ''}
@@ -348,6 +431,18 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
               {currency}
               {data.buyIn.toLocaleString()} buy-in · winner takes the pool
             </span>
+            {/* An honest note about the ceiling. A dimmed segment on its own
+                just looks like an absence; naming the number it unlocks at
+                turns it into something to come back for, and states plainly
+                that it is not in play right now rather than implying it is. */}
+            {nextUnlock && (
+              <span className="sw__status-locked">
+                {nextUnlock.multiplier}× unlocks when the club reserve reaches {currency}
+                {(nextUnlock.unlocksAt as number).toLocaleString(undefined, {
+                  maximumFractionDigits: 0,
+                })}
+              </span>
+            )}
           </div>
         ) : (
           <div className="sw__result">

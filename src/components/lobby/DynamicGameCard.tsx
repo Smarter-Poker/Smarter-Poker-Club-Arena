@@ -16,6 +16,7 @@ import './DynamicGameCard.css';
 import './NeonCard.css';
 import { reportError } from '../../utils/errorReporter';
 import { MEDIA_BASE } from '../../utils/mediaBase';
+import { SPIN_TIERS } from '../../config/spinSpec';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 interface TableSettings {
@@ -419,7 +420,13 @@ export function SNGCard({ tournament }: TournamentCardProps) {
 export function SpinCard({ tournament }: TournamentCardProps) {
   const vKey = TOURNEY_VARIANT_MAP[tournament.game_type] || 'nlh';
   const v = VARIANT_DISPLAY[vKey] || VARIANT_DISPLAY.nlh;
-  const mult = (tournament as unknown as { spin_multiplier?: number }).spin_multiplier || 100;
+  // "Win up to" is a claim about the FORMAT, not about this particular
+  // tournament — so it is the top of the ladder, and it comes from the
+  // canonical spec rather than a literal. It used to read the drawn
+  // `spin_multiplier`, which was wrong twice over: it printed the answer on
+  // the lobby tile before the wheel ever span, and on a 2x it advertised
+  // "Win up to 2" for a format whose whole pitch is 500.
+  const maxMult = SPIN_TIERS[SPIN_TIERS.length - 1].multiplier;
 
   return (
     <NeonCard
@@ -436,7 +443,7 @@ export function SpinCard({ tournament }: TournamentCardProps) {
         <div className="ngc-val">Buy In {tournament.buy_in_amount + tournament.buy_in_fee}</div>
       </div>
       <div className="ngc-row">
-        <span className="ngc-win">Win up to {mult}</span>
+        <span className="ngc-win">Win up to {maxMult}x</span>
         <span className="ngc-players">
           {tournament.current_players}/{tournament.max_players}
         </span>

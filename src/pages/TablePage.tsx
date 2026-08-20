@@ -155,15 +155,14 @@ import { useToast } from '../components/common/Toast';
 import TournamentBreakScreen from '../components/table/TournamentBreakScreen';
 import AddOnModal from '../components/table/AddOnModal';
 import TournamentAnnouncementOverlay from '../components/table/TournamentAnnouncementOverlay';
-import KnockoutAnimation, {
-  type KnockoutData,
-} from '../components/tournament/KnockoutAnimation';
+import KnockoutAnimation, { type KnockoutData } from '../components/tournament/KnockoutAnimation';
 import MysteryBountyChest, {
   type MysteryChestData,
 } from '../components/tournament/MysteryBountyChest';
 import { useAnimationQueue } from '../hooks/useAnimationQueue';
 import SpinWheel, {
   DEFAULT_SPIN_TIERS,
+  parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
 import RebuyModal from '../components/table/RebuyModal';
@@ -1800,7 +1799,6 @@ export default function TablePage({
   } = useTableAnimations(tableId, userId, tableState.heroSeat);
   receiveThrowRef.current = receiveThrow;
 
-
   // ─────────────────────────────────────────────────────────────────
   // INSTANT SEATING (Dan 2026-08-15, verbatim: "the player needs to be shown
   // 'sitting' as soon as they hit the sit button, then they choose how many
@@ -1983,7 +1981,6 @@ export default function TablePage({
     },
     [tableId, isStraddleEnabled, straddleBusy, toast]
   );
-
 
   // Cashier state
   const [showCashier, setShowCashier] = useState(false);
@@ -3595,7 +3592,7 @@ export default function TablePage({
           const { data: tournData } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, buy_in_amount, blind_structure, current_level'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, blind_structure, current_level'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -3730,6 +3727,13 @@ export default function TablePage({
                 multiplier: Number(tournData.spin_multiplier),
                 buyIn: Number(tournData.buy_in_amount) || 0,
                 tiers: DEFAULT_SPIN_TIERS,
+                // The tiers the Reserve Pool could not fund AT THE MOMENT OF
+                // THIS DRAW, recorded on the row by fn_spin_draw_multiplier.
+                // SpinWheel had rendered locked segments, shipped the CSS and
+                // been tested since the day it was written; nothing had ever
+                // passed the value, so the feature was dead on arrival.
+                // Older Spins have no column value and simply show none.
+                lockedTiers: parseLockedTiers(tournData.spin_locked_tiers),
               });
             }
           }
@@ -5758,18 +5762,15 @@ export default function TablePage({
             // Scaled like the cardFoldOut keyframe it triggers. The showdown
             // result window is 2.6-6.9s server-side, so 2400ms leaves the muck
             // fully visible before the 3s client reset.
-            muckTimerRef.current = setTimeout(
-              () => {
-                muckTimerRef.current = null;
-                setMuckingSeats(loserMask);
-                // SOUND GAP 2026-08-20: the losers' cards flying to the muck
-                // at showdown animated in silence. The hero's own muck has had
-                // a sound since the Show/Muck modal was wired; the table's did
-                // not. Same card-slide cue.
-                if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playFold();
-              },
-              2400 * getAnimationSpeed()
-            );
+            muckTimerRef.current = setTimeout(() => {
+              muckTimerRef.current = null;
+              setMuckingSeats(loserMask);
+              // SOUND GAP 2026-08-20: the losers' cards flying to the muck
+              // at showdown animated in silence. The hero's own muck has had
+              // a sound since the Show/Muck modal was wired; the table's did
+              // not. Same card-slide cue.
+              if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playFold();
+            }, 2400 * getAnimationSpeed());
           }
         }
         // Bible V8 §5.1 — winner display persists 2.5–3s before the table
@@ -7860,8 +7861,18 @@ export default function TablePage({
                     SpectatorBadge and SpectatorOverlay components still exist for
                     future integration into the chat panel. */}
 
-                {/* Spin Multiplier Badge */}
+                {/* Spin Multiplier Badge.
+                    HELD BACK WHILE THE WHEEL IS UP (2026-08-20). This badge
+                    and the SpinWheel render in the same view, so the badge was
+                    sitting on the felt printing "4x" for the entire time the
+                    wheel was dramatically deciding whether the answer was 4x.
+                    `spinDraw` is non-null exactly while the wheel is on screen
+                    and is cleared by its onDone, so the wheel's landing IS the
+                    reveal and this becomes the persistent reminder afterwards.
+                    On a rejoin the wheel does not replay, spinDraw is already
+                    null, and the badge shows immediately — which is right. */}
                 {tableState.isTournament &&
+                  !spinDraw &&
                   tableState.spinMultiplier &&
                   tableState.spinMultiplier > 1 && (
                     <div

@@ -476,6 +476,16 @@ export abstract class TournamentManagerBase {
       //   prize_pool = buy_in x multiplier, drawn FROM the pool
       if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
         let spinMultiplier = tournament.spin_multiplier || 0;
+        // Only set when THIS path draws. A row that already carried its
+        // multiplier also already carries the locked tiers recorded at
+        // creation, and overwriting them with a gate evaluated now — against a
+        // pool balance that has moved since — would make the wheel show a
+        // restriction that never applied to this draw.
+        let redrawnLockedTiers: Array<{
+          multiplier: number;
+          reason?: string;
+          unlocksAt?: number;
+        }> | null = null;
 
         if (!spinMultiplier || spinMultiplier <= 0) {
           // Creation always draws. Reaching here means the row was written by
@@ -494,6 +504,17 @@ export abstract class TournamentManagerBase {
               p_seats: tournament.current_players || SPEC_SPIN_SEATS,
             });
             spinMultiplier = Number(draw?.multiplier) || 0;
+            if (Array.isArray(draw?.locked)) {
+              redrawnLockedTiers = draw.locked
+                .map((l: any) => ({
+                  multiplier: Number(l?.multiplier),
+                  reason: l?.reason ? String(l.reason) : undefined,
+                  unlocksAt: Number.isFinite(Number(l?.unlocksAt))
+                    ? Number(l.unlocksAt)
+                    : undefined,
+                }))
+                .filter((l: { multiplier: number }) => Number.isFinite(l.multiplier));
+            }
           } catch {
             /* handled below */
           }
@@ -577,6 +598,7 @@ export abstract class TournamentManagerBase {
               place: i + 1,
               percentage: Math.round(pct * 10000) / 100,
             })),
+            ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
           })
           .eq('id', this.tournamentId);
 
@@ -959,7 +981,9 @@ export abstract class TournamentManagerBase {
       this.gameServer.registerTableEngine(t.id, engine);
       engine
         .start()
-        .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Adopted_table_engine_error'));
+        .catch((err) =>
+          reportError(err, 'TournamentthistournamentIdslic.Adopted_table_engine_error')
+        );
     }
     if ((existingTables ?? []).length > 0) {
       console.log(

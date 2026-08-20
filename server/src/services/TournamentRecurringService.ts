@@ -221,7 +221,6 @@ const SPIN_MULTIPLIERS = SPIN_TIERS.map((t) => ({
   weight: t.freq,
 }));
 
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // HOURLY TOURNAMENT SCHEDULE (24/7 COVERAGE)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1410,6 +1409,14 @@ export class TournamentRecurringService {
       // pick from ALWAYS-AVAILABLE tiers (reserveThresholdX === 0), so it can
       // never hand out a jackpot the pool cannot cover.
       let multiplier: number;
+      // Which tiers the pool could NOT fund at the moment of this draw. The
+      // RPC already computes it and it was being thrown away, so the wheel's
+      // locked-segment rendering — CSS, tests and all — had never once run.
+      // Recorded on the row so the wheel shows the gate that actually applied
+      // to THIS draw rather than re-deriving one from a balance that has since
+      // moved. Empty array (not null) on the fallback path: the fallback
+      // restricts itself to always-available tiers, which is a real answer.
+      let lockedTiers: Array<{ multiplier: number; reason?: string; unlocksAt?: number }> = [];
       try {
         const { data: draw, error: drawErr } = await supabase.rpc('fn_spin_draw_multiplier', {
           p_club_id: this.ownerClubId,
@@ -1427,15 +1434,33 @@ export class TournamentRecurringService {
           p_rake_rate: spinRakeRate(config.buyIn),
           p_seats: SPEC_SPIN_SEATS,
         });
-        if (drawErr || !draw?.ok) throw new Error(drawErr?.message || draw?.reason || 'draw_failed');
+        if (drawErr || !draw?.ok)
+          throw new Error(drawErr?.message || draw?.reason || 'draw_failed');
         multiplier = Number(draw.multiplier);
         if (!(multiplier > 0)) throw new Error('draw returned no multiplier');
+        lockedTiers = Array.isArray(draw.locked)
+          ? draw.locked
+              .map((l: any) => ({
+                multiplier: Number(l?.multiplier),
+                reason: l?.reason ? String(l.reason) : undefined,
+                unlocksAt: Number.isFinite(Number(l?.unlocksAt)) ? Number(l.unlocksAt) : undefined,
+              }))
+              .filter((l: { multiplier: number }) => Number.isFinite(l.multiplier))
+          : [];
       } catch (drawErr: any) {
         const safeTiers = SPIN_TIERS.filter((t) => t.reserveThresholdX <= 0).map((t) => ({
           multiplier: t.multiplier,
           weight: t.freq,
         }));
         multiplier = this.rollSpinMultiplier(safeTiers);
+        // The fallback can only pick from always-available tiers, so every
+        // gated tier is genuinely locked for this draw. Saying so is honest;
+        // showing them unlocked would advertise a prize this draw could never
+        // have produced.
+        lockedTiers = SPIN_TIERS.filter((t) => t.reserveThresholdX > 0).map((t) => ({
+          multiplier: t.multiplier,
+          reason: 'threshold',
+        }));
         reportError(
           new Error(
             `[TournamentRecurring] Spin draw RPC unavailable (${drawErr?.message}) — fell back to ungated tiers, capped at ${safeTiers[safeTiers.length - 1].multiplier}x`
@@ -1452,17 +1477,29 @@ export class TournamentRecurringService {
       const spinLevelMins = tier?.levelMinutes ?? 3;
       const spinBlinds = Array.from({ length: 12 }, (_, i) => {
         const b = spinBlindsForLevel(i + 1);
-        return { level: i + 1, smallBlind: b.small, bigBlind: b.big, ante: 0, duration: spinLevelMins * 60 };
+        return {
+          level: i + 1,
+          smallBlind: b.small,
+          bigBlind: b.big,
+          ante: 0,
+          duration: spinLevelMins * 60,
+        };
       });
       const spinPayouts = (tier?.payouts ?? [1]).map((pct, i) => ({
         place: i + 1,
         percentage: Math.round(pct * 10000) / 100,
       }));
 
+      // SPIN_GAME_TYPES advertises NLH, PLO4, PLO5 and PLO6. This map decides
+      // what actually reaches the database, and `plo6` was missing from it —
+      // so a PLO6 Spin config would have been silently created as NLH, giving
+      // players a different game from the one on the tile. Every member of
+      // SPIN_GAME_TYPES must have an entry here.
       const gameTypeMap: Record<string, string> = {
         nlh: 'NLH',
         plo4: 'PLO4',
         plo5: 'PLO5',
+        plo6: 'PLO6',
       };
       const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
 
@@ -1471,7 +1508,16 @@ export class TournamentRecurringService {
         .insert({
           club_id: this.ownerClubId,
           union_id: this.ownerUnionId,
-          name: `${config.name} (${multiplier}x)`,
+          // THE NAME MUST NOT CARRY THE MULTIPLIER. It used to read
+          // "3 Chip Spin NLH (4x)", and that one string reached the lobby
+          // tile, the tournament list, the table masthead and the browser tab
+          // — so by the time the wheel span up to "reveal" the draw, the
+          // player had already read the answer in four places. The draw is the
+          // product; a reveal of a number you were shown on the way in is
+          // theatre. `spin_multiplier` carries the value for everything that
+          // legitimately needs it, and nothing anywhere parses the name for it
+          // (verified by grep across both projects).
+          name: config.name,
           game_type: dbGameType,
           variant: 'spin',
           tournament_type: 'SPIN',
@@ -1485,6 +1531,9 @@ export class TournamentRecurringService {
           buy_in_fee: 0,
           guaranteed_prize: 0, // Will be calculated after registrations
           spin_multiplier: multiplier,
+          // Drives the dimmed segments on the wheel. See migration
+          // 20260820n_spin_locked_tiers_column.sql.
+          spin_locked_tiers: lockedTiers,
           starting_chips: spinStack,
           // Forced, not read from the config — a Spin is 3-handed by
           // definition. See SPIN_SEATS.

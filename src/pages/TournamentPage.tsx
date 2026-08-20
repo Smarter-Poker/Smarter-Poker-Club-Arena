@@ -34,6 +34,7 @@ import { useAnimationQueue } from '../hooks/useAnimationQueue';
 import { TournamentClock } from '../components/tournament/TournamentClock';
 import TournamentStandings from '../components/tournament/TournamentStandings';
 import { reportError } from '../utils/errorReporter';
+import { spinMultiplierLabel } from '../utils/spinReveal';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -1068,9 +1069,7 @@ export default function TournamentPage() {
                   <div className="stat">
                     <span className="stat-label">Multiplier</span>
                     <span className="stat-value">
-                      {selectedTournament.spin_multiplier
-                        ? `${selectedTournament.spin_multiplier}x`
-                        : 'TBD'}
+                      {spinMultiplierLabel(selectedTournament as any) ?? 'TBD'}
                     </span>
                   </div>
                 )}
@@ -1303,9 +1302,7 @@ export default function TournamentPage() {
                       .slice(0, 3)
                       .map((p: any, i: number) => (
                         <div key={i} className={`podium-place podium-${i + 1}`}>
-                          <div className="podium-icon">
-                            {i === 0 ? '★' : i === 1 ? '☆' : '✧'}
-                          </div>
+                          <div className="podium-icon">{i === 0 ? '★' : i === 1 ? '☆' : '✧'}</div>
                           <div className="podium-payout">
                             {Math.trunc(
                               ((selectedTournament.prize_pool * (p.percentage || 0)) / 100) * 100

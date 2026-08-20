@@ -24,6 +24,7 @@ import { TournamentClock } from '../../components/tournament/TournamentClock';
 import { HandForHandBanner } from '../../components/tournament/HandForHandBanner';
 import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay';
 import { reportError } from '../../utils/errorReporter';
+import { spinMultiplierLabel } from '../../utils/spinReveal';
 
 type TabId =
   | 'detail'
@@ -783,7 +784,11 @@ export default function TournamentDetails({
         <div className="tournament-title">
           <h2>{tournament.name}</h2>
           <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>
-          <button className="qr-btn" onClick={() => void shareTournament()} aria-label="Share this tournament">
+          <button
+            className="qr-btn"
+            onClick={() => void shareTournament()}
+            aria-label="Share this tournament"
+          >
             ⊞
           </button>
         </div>
@@ -831,8 +836,8 @@ export default function TournamentDetails({
             (tournament as any).tournament_type === 'SPIN') && (
             <p style={{ color: '#fbbf24', fontWeight: 700 }}>
               SPIN & GO{' '}
-              {(tournament as any).spin_multiplier
-                ? `— ${(tournament as any).spin_multiplier}x MULTIPLIER`
+              {spinMultiplierLabel(tournament as any)
+                ? `— ${spinMultiplierLabel(tournament as any)} MULTIPLIER`
                 : '— Multiplier revealed at start'}
             </p>
           )}
@@ -1150,9 +1155,7 @@ export default function TournamentDetails({
                 <div className="info-row">
                   <span className="info-label">Spin Multiplier:</span>
                   <span className="info-value" style={{ color: '#fbbf24', fontWeight: 700 }}>
-                    {(tournament as any).spin_multiplier
-                      ? `${(tournament as any).spin_multiplier}x`
-                      : 'Revealed at game start'}
+                    {spinMultiplierLabel(tournament as any) ?? 'Revealed at game start'}
                   </span>
                 </div>
               )}
@@ -1388,7 +1391,9 @@ export default function TournamentDetails({
               levels={blindLevels}
               currentLevel={Number((tournament as any)?.current_level) || 1}
               levelStartTime={
-                (tournament as any)?.level_start_time || tournament.started_at || tournament.start_time
+                (tournament as any)?.level_start_time ||
+                tournament.started_at ||
+                tournament.start_time
               }
               isPaused={tournament.status === 'PAUSED'}
             />
@@ -1404,7 +1409,8 @@ export default function TournamentDetails({
               tournamentId={tournament.id}
               currentBigBlind={
                 blindLevels.find(
-                  (l: { level: number; bigBlind: number }) => l.level === (Number((tournament as any)?.current_level) || 1)
+                  (l: { level: number; bigBlind: number }) =>
+                    l.level === (Number((tournament as any)?.current_level) || 1)
                 )?.bigBlind ||
                 blindLevels[0]?.bigBlind ||
                 0

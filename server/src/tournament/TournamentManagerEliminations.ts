@@ -13,7 +13,11 @@ import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { computePlacePrize } from './payoutMath.js';
-
+import {
+  resolvePayoutStructure,
+  isSpinTournament,
+  remainingPoolAfterAwards,
+} from './payoutStructure.js';
 
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
   protected startEliminationChecker(): void {
@@ -423,7 +427,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const { data: tournament } = await supabase
       .from('tournaments')
       .select(
-        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant'
+        // spin_multiplier + tournament_type: a Spin's payout split is a pure
+        // function of its multiplier, so the spec can rebuild the structure
+        // when the stored column is unreadable. See payoutStructure.ts.
+        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, spin_multiplier'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -433,16 +440,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // award happens once at finishTournament (top finishers are registered
     // into the target tournament). Per-elimination cash would double-dip.
     const isSatellite = (tournament as any)?.variant === 'satellite';
-    if (!isSatellite && tournament?.payout_structure) {
-      let payouts = tournament.payout_structure;
-      if (typeof payouts === 'string') {
-        try {
-          payouts = JSON.parse(payouts);
-        } catch {
-          payouts = [];
-        }
-      }
-      if (Array.isArray(payouts)) {
+    if (!isSatellite && tournament) {
+      // resolvePayoutStructure parses the stored column and, for a Spin whose
+      // column is missing or malformed, rebuilds it from the canonical spec.
+      // Places 2..N are paid HERE, minutes before finishTournament reads the
+      // same column again — so the two reads must agree, and a Spin that can
+      // reconstruct its own split is how they are made to.
+      const payouts = resolvePayoutStructure(tournament as any);
+      if (payouts) {
         prize = computePlacePrize(Number(tournament.prize_pool || 0), payouts, position);
       }
     }
@@ -920,7 +925,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // TOURNEY-AUDIT 2026-07-24: bounty flags added so the champion's own
       // bounty head can be paid below.
       .select(
-        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, satellite_target_id'
+        // spin_multiplier: lets a Spin rebuild its own payout split from the
+        // spec rather than falling through to "winner takes the whole pool",
+        // which on a 10x+ Spin is a 20% overpay on top of money already sent
+        // to 2nd and 3rd at elimination. See payoutStructure.ts.
+        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, spin_multiplier, satellite_target_id'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -947,36 +956,72 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       (tournament as any)?.variant === 'satellite' ||
       ((tournament as any)?.tournament_type || '').toUpperCase() === 'SATELLITE';
     let winnerPrize = 0;
-    if (!isSatelliteFinish && tournament?.payout_structure) {
-      let payouts = tournament.payout_structure;
-      if (typeof payouts === 'string') {
-        try {
-          payouts = JSON.parse(payouts);
-        } catch {
-          payouts = [];
-        }
-      }
-      const firstPlace = Array.isArray(payouts) ? payouts.find((p: any) => p.place === 1) : null;
-      if (firstPlace) {
+    if (!isSatelliteFinish) {
+      // resolvePayoutStructure returns the stored structure when it is usable
+      // and, for a Spin, rebuilds it from spinTier(spin_multiplier) when it is
+      // not. So a Spin never reaches the fallback below.
+      const payouts = resolvePayoutStructure(tournament as any);
+      if (payouts) {
         // PAYOUT-INTEGRITY 2026-08-20: same residual rule as every other place
-        // (see computePlacePrize). For a single-place structure (Spins) place 1
-        // IS the last place, so the winner receives the whole pool exactly.
+        // (see computePlacePrize). For a single-place structure (a 2x-5x Spin)
+        // place 1 IS the last place, so the winner receives the whole pool
+        // exactly; on 80/20 and 80/12/8 the parts sum to the pool to the cent.
         winnerPrize = computePlacePrize(Number(tournament.prize_pool || 0), payouts, 1);
       } else {
-        // FALLBACK: no place 1 in structure — award 100% of prize pool to winner
-        // Round 53: Math.round, not trunc — same IEEE-drift family as the rest of Round 40.
-        console.warn(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] payout_structure missing place 1 — awarding full prize pool to winner`
+        // FALLBACK: no usable structure. Winner-take-all is the right net for
+        // an MTT whose structure never wrote — but it must be CAPPED.
+        //
+        // PAYOUT-INTEGRITY 2026-08-20 (second pass): this used to award 100% of
+        // prize_pool unconditionally. Places 2..N are paid at ELIMINATION, so
+        // if the column became unreadable between those payments and this read,
+        // the pool paid out well over 100%. A prize pool cannot pay out more
+        // than it holds, whatever a fallback believes, so the winner gets what
+        // is actually left. This applies to every format; the Spin case above
+        // is a stronger fix on top of it, not a replacement for it.
+        // An unreadable award list would make `alreadyAwarded` 0 — the
+        // OVERPAYING direction, and the exact "a failed query reads as nobody
+        // is left" shape that has bitten this file before. So it is retried,
+        // and a persistent failure is reported as CRITICAL rather than
+        // absorbed. It is still paid: leaving a champion unpaid over a
+        // transient read is the worse of the two failures, and it is
+        // recoverable where an unpaid winner needs a human.
+        let awarded: Array<{ prize: number }> | null = null;
+        let awardedErr: { message: string } | null = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const res = await supabase
+            .from('tournament_players')
+            .select('prize')
+            .eq('tournament_id', this.tournamentId)
+            .neq('user_id', winnerId)
+            .gt('prize', 0);
+          if (!res.error) {
+            awarded = (res.data ?? []) as Array<{ prize: number }>;
+            awardedErr = null;
+            break;
+          }
+          awardedErr = res.error;
+          if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 500));
+        }
+
+        const alreadyAwarded = (awarded ?? []).reduce(
+          (sum: number, r: any) => sum + Number(r?.prize || 0),
+          0
         );
-        winnerPrize = Math.round((tournament.prize_pool || 0) * 100) / 100;
+        const pool = Number(tournament?.prize_pool || 0);
+        winnerPrize = remainingPoolAfterAwards(pool, alreadyAwarded);
+
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] ${awardedErr ? 'CRITICAL: ' : ''}` +
+              `No usable payout_structure` +
+              `${isSpinTournament(tournament as any) ? ' and no spin_multiplier to rebuild it from' : ''}` +
+              ` — paying the winner the UNSPENT pool (${winnerPrize} of ${pool}; ` +
+              `${alreadyAwarded} already paid to ${(awarded ?? []).length} finisher(s))` +
+              `${awardedErr ? ` — award read FAILED after 3 attempts (${awardedErr.message}), so "already paid" may be understated and this may be an OVERPAY` : ''}`
+          ),
+          'TournamentthistournamentIdslic.No_usable_payout_structure'
+        );
       }
-    } else if (!isSatelliteFinish) {
-      // No payout_structure at all — award full prize pool
-      // Round 53: Math.round, not trunc — same IEEE-drift family as the rest of Round 40.
-      console.warn(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] No payout_structure — awarding full prize pool to winner`
-      );
-      winnerPrize = Math.round((tournament?.prize_pool || 0) * 100) / 100;
     }
 
     if (winnerPrize > 0) {
@@ -1257,7 +1302,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to union wallet ${club.union_id.slice(0, 8)}`
             );
           }
-
         } else {
           // Standalone club — rake goes to the club's OPERATIONAL BANK
           // (clubs.chip_treasury + total_rake), not the owner's personal wallet.

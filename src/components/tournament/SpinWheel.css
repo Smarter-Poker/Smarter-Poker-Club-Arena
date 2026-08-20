@@ -86,11 +86,7 @@
   position: absolute;
   inset: -30px;
   border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(96, 165, 250, 0.28),
-    rgba(96, 165, 250, 0) 68%
-  );
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.28), rgba(96, 165, 250, 0) 68%);
   animation: swGlowPulse 2.2s ease-in-out infinite;
 }
 
@@ -287,6 +283,18 @@
 .sw__status-sub {
   font-size: 11px;
   color: #94a3b8;
+}
+
+/* The unlock note under the status line. Deliberately quieter than the
+   status itself: it is context about the ceiling, not part of the draw, and
+   it must not compete with the wheel for attention while the wheel is the
+   whole point. */
+.sw__status-locked {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: #64748b;
 }
 
 .sw__dots i {

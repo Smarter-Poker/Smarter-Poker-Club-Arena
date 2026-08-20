@@ -26,6 +26,24 @@ describe('SPIN_SEATS', () => {
   });
 });
 
+/**
+ * The insert object for one tournament type, bounded by where it actually
+ * ends rather than by a fixed character count.
+ *
+ * These three windows used to be `.slice(0, 900)`. That is a guess about how
+ * long the block is, and on 2026-08-20 it stopped being true: a few added
+ * comment lines pushed `max_players: SPIN_SEATS` past character 900 and the
+ * guard failed against code that was entirely correct. A test that breaks when
+ * a comment is added is a test people learn to ignore.
+ */
+function insertBlock(src: string, tournamentType: string): string {
+  const start = src.indexOf(`tournament_type: '${tournamentType}'`);
+  expect(start, `no ${tournamentType} insert`).toBeGreaterThan(-1);
+  const end = src.indexOf('.select()', start);
+  expect(end, `${tournamentType} insert does not end in .select()`).toBeGreaterThan(start);
+  return src.slice(start, end);
+}
+
 describe('createSpin cannot build a Spin with any other seat count', () => {
   it('inserts the constant, not the config value', () => {
     // The regression: `max_players: config.maxPlayers` let a bad config through.
@@ -34,7 +52,7 @@ describe('createSpin cannot build a Spin with any other seat count', () => {
   });
 
   it('no longer reads the seat count off the spin config at insert time', () => {
-    const spinInsert = SRC.slice(SRC.indexOf("tournament_type: 'SPIN'"), SRC.length).slice(0, 900);
+    const spinInsert = insertBlock(SRC, 'SPIN');
     expect(spinInsert).not.toMatch(/max_players:\s*config\.maxPlayers/);
     expect(spinInsert).toMatch(/max_players:\s*SPIN_SEATS/);
   });
@@ -43,11 +61,11 @@ describe('createSpin cannot build a Spin with any other seat count', () => {
     // Near-miss guard: a first attempt at this patched the SNG insert by
     // mistake, which would have created every future SNG 3-handed instead of
     // its configured 6. Spins are the only format whose seat count is fixed.
-    const sngInsert = SRC.slice(SRC.indexOf("tournament_type: 'SNG'")).slice(0, 900);
+    const sngInsert = insertBlock(SRC, 'SNG');
     expect(sngInsert).toMatch(/max_players:\s*config\.maxPlayers/);
     expect(sngInsert).not.toMatch(/max_players:\s*SPIN_SEATS/);
 
-    const mttInsert = SRC.slice(SRC.indexOf("tournament_type: 'MTT'")).slice(0, 900);
+    const mttInsert = insertBlock(SRC, 'MTT');
     expect(mttInsert).toMatch(/max_players:\s*config\.maxPlayers/);
     expect(mttInsert).not.toMatch(/max_players:\s*SPIN_SEATS/);
   });

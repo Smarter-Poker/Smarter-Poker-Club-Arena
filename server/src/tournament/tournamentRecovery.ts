@@ -10,8 +10,8 @@
 
 import { supabase } from '../services/supabase.js';
 import { computePlacePrize } from './payoutMath.js';
+import { resolvePayoutStructure } from './payoutStructure.js';
 import { reportError } from '../services/errorReporter.js';
-
 
 /**
  * TOURNEY-AUDIT 2026-07-24: Recover tournaments stuck in COMPLETING by PAYING
@@ -103,9 +103,7 @@ export async function refundAndCloseCancelledTournament(
       for (const t of txRows ?? []) {
         if (
           t.type === 'debit' &&
-          (t.category === 'tournament_buyin' ||
-            t.category === 'rebuy' ||
-            t.category === 'addon')
+          (t.category === 'tournament_buyin' || t.category === 'rebuy' || t.category === 'addon')
         ) {
           paid += Number(t.amount || 0);
         } else if (t.type === 'credit' && t.category === 'refund') {
@@ -202,23 +200,20 @@ export async function recoverStuckCompletingTournaments(
   try {
     let q = supabase
       .from('tournaments')
-      .select('id, name, prize_pool, payout_structure')
+      // variant / tournament_type / spin_multiplier: a rescued Spin whose
+      // payout_structure is unreadable would otherwise pay NOBODY (an empty
+      // structure makes computePlacePrize return 0 for every place). The spec
+      // rebuilds it from the multiplier. Same rule as the two live payout
+      // sites — see payoutStructure.ts.
+      .select('id, name, prize_pool, payout_structure, variant, tournament_type, spin_multiplier')
       .eq('status', 'COMPLETING');
     if (onlyTournamentId) q = q.eq('id', onlyTournamentId);
     const { data: stuck } = await q;
     for (const t of stuck ?? []) {
       try {
         // Parse + normalize payout structure
-        let payouts: Array<{ place: number; percentage: number }> = [];
-        try {
-          const raw =
-            typeof t.payout_structure === 'string'
-              ? JSON.parse(t.payout_structure)
-              : t.payout_structure;
-          if (Array.isArray(raw)) payouts = raw;
-        } catch {
-          payouts = [];
-        }
+        const payouts: Array<{ place: number; percentage: number }> =
+          resolvePayoutStructure(t as any) ?? [];
         // PAYOUT-INTEGRITY 2026-08-20: this used to be a THIRD independent
         // prize formula (alongside eliminatePlayer and finishTournament), so a
         // tournament rescued here could be paid a cent differently from one

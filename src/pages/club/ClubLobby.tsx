@@ -135,6 +135,13 @@ export default function ClubLobby() {
         if (cancelled || !isMountedRef.current) return;
 
         setResolvedClubId(resolvedId);
+        // UNION LAW (Dan 2026-08-20): the club the player entered through owns
+        // the chips they sit down with and the rake they generate.
+        try {
+          useUserStore.getState().setCurrentClub(resolvedId);
+        } catch {
+          /* non-fatal */
+        }
 
         const { data: ucRow } = await supabase
           .from('union_clubs')

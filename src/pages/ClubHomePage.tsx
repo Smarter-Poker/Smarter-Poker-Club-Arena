@@ -43,6 +43,7 @@ import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 import { matchesVariant, matchesTournamentSubFilter } from '../utils/tournamentFilters';
+import { useUserStore } from '../stores/useUserStore';
 
 // Shark Club fallback logo — used when DB logo_url is null
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-card-v25.jpg`;
@@ -285,6 +286,14 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
 
     const setupRealtime = async () => {
       const resolvedId = await resolveClubUUID(clubId);
+      // UNION LAW (Dan 2026-08-20): remember the club the player entered
+      // through. Buy-ins draw chips from THIS club and rake is earned for it,
+      // so the club context must survive the hop into a union table.
+      try {
+        useUserStore.getState().setCurrentClub(resolvedId);
+      } catch {
+        /* non-fatal */
+      }
       if (!isMounted) return;
 
       // Check if this club is in a union — if so, listen on union_id in addition to club_id

@@ -359,6 +359,7 @@ import {
 } from '../lib/tableSeatGeometry';
 import { resolveSkin, resolveBackground } from '../lib/tableTheme';
 import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
+import { useUserStore } from '../stores/useUserStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
@@ -8475,6 +8476,11 @@ export default function TablePage({
                   p_seat_number: selectedSeat,
                   p_amount: amount,
                   p_auto_rebuy: autoRebuy || false,
+                  // UNION LAW (Dan 2026-08-20): the club the player entered
+                  // through. Chips come out of THAT club's wallet and the rake
+                  // is earned for that club only — club wallets are never
+                  // commingled. Ignored while union.club_scoped_chips is off.
+                  p_club_id: useUserStore.getState().currentClubId ?? null,
                 });
                 if (rpcErr) {
                   reportError(rpcErr, 'TablePage.atomic_table_buyin_FAILED');

@@ -59,25 +59,22 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { reportError } from '../utils/errorReporter';
+import { isVibrationAllowed, fireVibration } from '../utils/vibrationGate';
+import { isSoundAllowed, persistSoundPreference } from '../utils/soundGate';
 export const haptic = {
   /** Check if vibrations are enabled (reads from localStorage) */
+  // AUDIT 2026-08-19: the in-table vibration switch writes
+  // 'ca_vibration_enabled' while this only read 'vibrationsEnabled'. Honour
+  // BOTH — either switch being off silences haptics.
+  // AUDIT 2026-08-20: that rule was right but lived only here, while five other
+  // haptic implementations each did their own thing. It now lives in
+  // src/utils/vibrationGate.ts, which also gives this path one-event-one-buzz.
   _isEnabled() {
-    try {
-      // ANIMATION/SOUND AUDIT 2026-08-19: the in-table vibration switch
-      // (useTableSound) writes 'ca_vibration_enabled' while this only ever
-      // read 'vibrationsEnabled' (written by SoundSettings). The table
-      // toggle therefore did nothing. Honour BOTH keys — either switch
-      // being off silences haptics.
-      if (localStorage.getItem('ca_vibration_enabled') === 'false') return false;
-      return localStorage.getItem('vibrationsEnabled') !== 'false';
-    } catch {
-      return true;
-    }
+    return isVibrationAllowed();
   },
   /** Internal runner — validates support + preference before firing */
   _fire(pattern: number | number[]) {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled())
-      navigator.vibrate(pattern);
+    fireVibration(pattern);
   },
 
   // ─── Standard Tiers ──────────────────────────────────────────────────
@@ -303,10 +300,19 @@ class SoundService {
 
   setEnabled(enabled: boolean) {
     this.enabled = enabled;
+    // AUDIT 2026-08-20: persist to BOTH sound keys. Previously each caller wrote
+    // only its own, so the two switches drifted and whichever was read last on
+    // the next mount silently undid the other.
+    persistSoundPreference(enabled);
   }
 
+  /**
+   * Must agree with shouldPlay(), or an
+   * `if (soundService.isEnabled()) soundService.playX()` site would report
+   * audible while the engine refused to play.
+   */
   isEnabled(): boolean {
-    return this.enabled;
+    return this.enabled && isSoundAllowed();
   }
 
   /** Enable/disable a specific sound category (e.g. 'action', 'chat', 'win'). */
@@ -352,7 +358,10 @@ class SoundService {
   // (e.g., fold + raise + all-in in quick succession during multi-way pots).
 
   private shouldPlay(priority: SoundPriority, category?: SoundCategory): boolean {
-    if (!this.enabled) return false;
+    // AUDIT 2026-08-20: `this.enabled` only ever reflected the IN-TABLE toggle,
+    // because the Settings switch writes storage and never calls setEnabled().
+    // Consult the shared gate so either switch genuinely silences the engine.
+    if (!this.enabled || !isSoundAllowed()) return false;
     // Category gate — user can silence a whole category via SoundSettings
     if (category && !this.categoryEnabled[category]) return false;
     const rank = SOUND_PRIORITY_RANK[priority] ?? 0;

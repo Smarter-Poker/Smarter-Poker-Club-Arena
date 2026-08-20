@@ -7,6 +7,8 @@
  *        haptic('success');
  */
 
+import { fireVibration } from './vibrationGate';
+
 type HapticStyle = 'light' | 'medium' | 'heavy' | 'success' | 'error' | 'double' | 'allIn' | 'tap';
 
 const PATTERNS: Record<HapticStyle, number[]> = {
@@ -20,13 +22,14 @@ const PATTERNS: Record<HapticStyle, number[]> = {
   tap: [8],
 };
 
+/**
+ * ANIMATION/SOUND AUDIT 2026-08-20: this used to call navigator.vibrate
+ * directly, checking nothing. It was the one haptic path that honoured NEITHER
+ * vibration switch — so a player who turned vibration off was still buzzed by
+ * every call site importing this helper. Routed through the shared gate.
+ */
 export function haptic(style: HapticStyle = 'light'): void {
-  if (typeof navigator === 'undefined' || !navigator.vibrate) return;
-  try {
-    navigator.vibrate(PATTERNS[style] || PATTERNS.light);
-  } catch {
-    /* silently ignore on restricted contexts */
-  }
+  fireVibration(PATTERNS[style] || PATTERNS.light);
 }
 
 export default haptic;

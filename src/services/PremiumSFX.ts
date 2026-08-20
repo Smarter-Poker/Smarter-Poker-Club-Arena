@@ -25,6 +25,7 @@
 
 import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
+import { isSoundAllowed } from '../utils/soundGate';
 
 // Musical note frequencies (Hz) — equal temperament tuning
 const NOTE = {
@@ -70,7 +71,9 @@ function getCtx(): AudioContext | null {
 /** Check if sounds are enabled */
 function isEnabled(): boolean {
   try {
-    return localStorage.getItem(STORAGE_KEYS.SOUNDS) !== 'false';
+    // AUDIT 2026-08-20: this read only the SETTINGS key, so the in-table Sounds
+    // toggle never silenced premium cues. Both switches now go through one gate.
+    return isSoundAllowed();
   } catch (err) {
     reportError(err, 'PremiumSFX.play');
     return true;

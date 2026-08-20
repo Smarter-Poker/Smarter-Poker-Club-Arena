@@ -24,6 +24,7 @@ import {
   LeaveTableIcon,
 } from './TableMenuIcons';
 import { reportError } from '../../utils/errorReporter';
+import { isSoundAllowed } from '../../utils/soundGate';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -300,8 +301,9 @@ export function TableMenu({
   // real mute/volume settings instead of a fourth localStorage key.
   useEffect(() => {
     if (isOpen && !prevOpenRef.current) {
-      const soundOff = localStorage.getItem('table_sound_muted') === 'true';
-      if (!soundOff) {
+      // AUDIT 2026-08-20: this read 'table_sound_muted', a key NOTHING in the
+      // app has ever written — so the check was always false and gated nothing.
+      if (isSoundAllowed()) {
         try {
           soundService.playButtonClick();
         } catch (e) {

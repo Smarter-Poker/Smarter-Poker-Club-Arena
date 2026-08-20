@@ -9,13 +9,14 @@
 import { useCallback } from 'react';
 import './NumericKeypad.css';
 import { reportError } from '../../utils/errorReporter';
+import { fireVibration } from '../../utils/vibrationGate';
 
 // Haptic feedback utility
 const triggerHaptic = (pattern: number | number[] = 8) => {
   try {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate(pattern);
-    }
+    // AUDIT 2026-08-20: private copy that called navigator.vibrate directly,
+    // so neither vibration switch reached it. Routed through the shared gate.
+    fireVibration(pattern);
   } catch (err) {
     reportError(err, 'NumericKeypad.Error');
     /* silent */

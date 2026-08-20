@@ -1220,13 +1220,44 @@
  * The matching half of this rule lives in SeatSlot.tsx (HoleCard), which must
  * not emit an inline transform for hero cards; an inline style would beat
  * `transform: none` below and put the fan straight back. */
+/* ROW GEOMETRY — owned by the flex CHILD, whatever element that happens to be.
+   ANIMATION AUDIT 2026-08-20: the overlap and the hand-size guards below used
+   to be written against `.seat__card`, which was correct only while the card
+   WAS the flex child. The per-card "show this after the hand" feature wrapped
+   every hero card in a `<span class="seat__card-pick">`, and that silently
+   broke both halves of this layout:
+
+     1. `.seat__card:first-child` began matching EVERY card, because each card
+        is now the only child of its own wrapper. So the negative margin was
+        cancelled on all of them and the row lost its overlap entirely.
+     2. `:has(.seat__card:nth-child(4|5|6))` stopped matching anything at all,
+        so PLO4/5/6 never got their reduced tokens and fell back to the 44px
+        heads-up size.
+
+   Together those made a PLO6 row 6 x 44 = 264px instead of the intended
+   54 + 5 x 21 = 159px — 66% too wide, running straight off the felt, which is
+   the exact "messy / overlapping / off the felt" failure this token system was
+   built to end.
+
+   Writing the geometry against `> *` makes it independent of how the card is
+   wrapped, so the next wrapper (or the squeeze box, which is already a
+   different element) cannot reintroduce this. */
+.seat__cards--hero > * {
+  margin-left: calc(var(--sp-hero-card-step) - var(--sp-hero-card-w));
+  flex: 0 0 auto;
+}
+.seat__cards--hero > *:first-child {
+  margin-left: 0;
+}
+
 .seat__cards--hero .seat__card {
   width: var(--sp-hero-card-w);
   height: var(--sp-hero-card-h);
   border-radius: 6px;
   background: #fff;
-  /* Even, consistent slice for every card after the first; no fan. */
-  margin-left: calc(var(--sp-hero-card-step) - var(--sp-hero-card-w));
+  /* Overlap now lives on the flex child above — a card nested inside a wrapper
+     must not also carry it, or the slice would be applied twice. */
+  margin-left: 0;
   flex: 0 0 auto;
   transform: none;
   /* Dan 2026-08-19, bug list item 4: "cards glitch once before display - all
@@ -1248,23 +1279,16 @@
     0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
-/* Deal-in stagger. Every card is flat (transform: none) — the only thing that
- * differs per card is when it peeks in. PLO hands run to 6, so delays are
- * defined all the way out; without them cards 3+ would all land at once,
- * ahead of the two that are supposed to arrive first. */
-.seat__cards--hero .seat__card:first-child {
-  margin-left: 0;
-  transform: none;
-}
+/* The `transform: none` guard. It exists to beat any inline transform that
+   would put the rejected fan back; it carries no stagger, because Dan asked
+   for the hole cards to arrive together.
 
-/* The per-card `transform: none` guards. They exist to beat any inline
-   transform that would put the rejected fan back; they no longer carry a
-   stagger, because Dan asked for the hole cards to arrive together. */
-.seat__cards--hero .seat__card:nth-child(2),
-.seat__cards--hero .seat__card:nth-child(3),
-.seat__cards--hero .seat__card:nth-child(4),
-.seat__cards--hero .seat__card:nth-child(5),
-.seat__cards--hero .seat__card:nth-child(6) {
+   ANIMATION AUDIT 2026-08-20: this was six rules keyed to :first-child and
+   :nth-child(2..6), which after the .seat__card-pick wrapper landed meant
+   :first-child matched EVERY card and 2..6 matched NONE. The distinction never
+   carried anything — all six set the identical declaration — so one rule over
+   every hero card is both correct and honest about that. */
+.seat__cards--hero .seat__card {
   transform: none;
 }
 
@@ -1277,17 +1301,17 @@
      PLO4  60 + 3 x 25 = 135px
      PLO5  57 + 4 x 23 = 149px
      PLO6  54 + 5 x 21 = 159px */
-.seat__cards--hero:has(.seat__card:nth-child(4)) {
+.seat__cards--hero:has(> *:nth-child(4)) {
   --sp-hero-card-w: 60px;
   --sp-hero-card-h: 84px;
   --sp-hero-card-step: 25px;
 }
-.seat__cards--hero:has(.seat__card:nth-child(5)) {
+.seat__cards--hero:has(> *:nth-child(5)) {
   --sp-hero-card-w: 57px;
   --sp-hero-card-h: 80px;
   --sp-hero-card-step: 23px;
 }
-.seat__cards--hero:has(.seat__card:nth-child(6)) {
+.seat__cards--hero:has(> *:nth-child(6)) {
   --sp-hero-card-w: 54px;
   --sp-hero-card-h: 75px;
   --sp-hero-card-step: 21px;
@@ -2206,17 +2230,17 @@
   }
 
   /* PLO4/5/6 at the tablet breakpoint — all land on a ~104px row. */
-  .seat__cards--hero:has(.seat__card:nth-child(4)) {
+  .seat__cards--hero:has(> *:nth-child(4)) {
     --sp-hero-card-w: 57px;
     --sp-hero-card-h: 80px;
     --sp-hero-card-step: 24px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(5)) {
+  .seat__cards--hero:has(> *:nth-child(5)) {
     --sp-hero-card-w: 54px;
     --sp-hero-card-h: 75px;
     --sp-hero-card-step: 22px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(6)) {
+  .seat__cards--hero:has(> *:nth-child(6)) {
     --sp-hero-card-w: 51px;
     --sp-hero-card-h: 71px;
     --sp-hero-card-step: 20px;
@@ -2299,17 +2323,17 @@
   }
 
   /* PLO4/5/6 at the phone breakpoint — all land on a 100px row. */
-  .seat__cards--hero:has(.seat__card:nth-child(4)) {
+  .seat__cards--hero:has(> *:nth-child(4)) {
     --sp-hero-card-w: 51px;
     --sp-hero-card-h: 71px;
     --sp-hero-card-step: 22px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(5)) {
+  .seat__cards--hero:has(> *:nth-child(5)) {
     --sp-hero-card-w: 48px;
     --sp-hero-card-h: 68px;
     --sp-hero-card-step: 20px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(6)) {
+  .seat__cards--hero:has(> *:nth-child(6)) {
     --sp-hero-card-w: 45px;
     --sp-hero-card-h: 63px;
     --sp-hero-card-step: 19px;
@@ -2384,17 +2408,17 @@
   }
 
   /* PLO4/5/6 at the small phone breakpoint — all land on a ~90px row. */
-  .seat__cards--hero:has(.seat__card:nth-child(4)) {
+  .seat__cards--hero:has(> *:nth-child(4)) {
     --sp-hero-card-w: 45px;
     --sp-hero-card-h: 63px;
     --sp-hero-card-step: 19px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(5)) {
+  .seat__cards--hero:has(> *:nth-child(5)) {
     --sp-hero-card-w: 42px;
     --sp-hero-card-h: 59px;
     --sp-hero-card-step: 18px;
   }
-  .seat__cards--hero:has(.seat__card:nth-child(6)) {
+  .seat__cards--hero:has(> *:nth-child(6)) {
     --sp-hero-card-w: 39px;
     --sp-hero-card-h: 55px;
     --sp-hero-card-step: 16px;

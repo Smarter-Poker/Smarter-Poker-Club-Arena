@@ -6,6 +6,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+// AUDIT 2026-08-20: swipe haptics called navigator.vibrate directly, so neither
+// vibration switch reached them.
+import { fireVibration } from '../utils/vibrationGate';
+
 import { useRef, useCallback, useMemo } from 'react';
 
 interface SwipeConfig<T extends string> {
@@ -53,11 +57,11 @@ export function useSwipeTabs<T extends string>({
           // Swipe left → next tab
           onTabChange(tabs[currentIndex + 1]);
           // Haptic feedback if available
-          if (navigator.vibrate) navigator.vibrate(10);
+          fireVibration(10);
         } else if (dx > 0 && currentIndex > 0) {
           // Swipe right → previous tab
           onTabChange(tabs[currentIndex - 1]);
-          if (navigator.vibrate) navigator.vibrate(10);
+          fireVibration(10);
         }
       }
 

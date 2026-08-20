@@ -10,23 +10,33 @@
  */
 
 import { test, expect } from '@playwright/test';
-
-const BASE_URL = process.env.BASE_URL || 'http://localhost:5173';
+import { assertRendered } from './routes/utils';
 
 /**
  * The app is served under a basename — vite.config.ts sets base
  * '/hub/club-arena/' and main.tsx mounts <BrowserRouter basename="/hub/club-arena">.
  *
  * 2026-08-19: this spec navigated to bare '/', '/profile', '/notifications'.
- * Those are not routes in dev OR in production (smarter.poker/lobby returns
- * 404; smarter.poker/hub/club-arena/lobby returns 200), so the page booted
- * outside its own router, three sub-resources 404'd, and "No console errors on
- * critical pages" failed on every run — asserting on 404s the test itself
- * caused. It has been red on main, which is worse than useless: a permanently
- * failing smoke test trains people to ignore the smoke tests.
+ * Those are not routes in dev OR in production, so the page booted outside its
+ * own router and "No console errors on critical pages" failed on every run —
+ * asserting on 404s the test itself caused. The fix was to prepend
+ * `${BASE_URL}/hub/club-arena` here.
+ *
+ * 2026-08-20: that fix was itself wrong, and had been silently 404ing every
+ * navigation in this file since. BASE_URL ALREADY CONTAINS THE BASE PATH — CI
+ * passes `BASE_URL: https://smarter.poker/hub/club-arena` and
+ * playwright.config.ts normalises it with a trailing slash. Prepending
+ * APP_BASE a second time produced
+ * `https://smarter.poker/hub/club-arena/hub/club-arena/profile`, which is the
+ * catch-all 404. Nobody noticed because every assertion in this file was
+ * `expect(bodyText).toBeTruthy()`, and a 404 page has body text.
+ *
+ * Third time this suite has been bitten by the base path (absolute paths in
+ * routes/, absolute paths in routes/utils.ts, and this). The rule that holds
+ * in all three: paths are RELATIVE and `baseURL` does the work. Never build a
+ * URL by hand here.
  */
-const APP_BASE = '/hub/club-arena';
-const url = (path: string) => `${BASE_URL}${APP_BASE}${path === '/' ? '/' : path}`;
+const url = (path: string) => (path === '/' ? './' : path.replace(/^\//, ''));
 
 // ─── Helper: Navigate and verify page loads ───
 /* NOT `networkidle`. Club Arena holds Supabase Realtime websockets open and
@@ -46,30 +56,33 @@ async function assertPageLoads(page: any, path: string, selector: string, timeou
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Club Arena — Smoke Tests', () => {
+  /* NOT `expect(bodyText).toBeTruthy()`. Every page ever served has body text
+     — the login page, the catch-all 404, a crash boundary. These four checks
+     could not fail. assertRendered requires the SPA to have mounted and the
+     route to exist; signed out it skips, because the route genuinely IS a
+     redirect to /auth. See tests/e2e/routes/utils.ts. */
   test('Homepage loads successfully', async ({ page }) => {
     await page.goto(url('/'), { waitUntil: 'domcontentloaded' });
-    // Should either show the home page or redirect to login
-    const bodyText = await page.textContent('body');
-    expect(bodyText).toBeTruthy();
-    expect(bodyText!.length).toBeGreaterThan(0);
+    await page.waitForTimeout(3000);
+    await assertRendered(page, '/');
   });
 
   test('Profile page loads', async ({ page }) => {
     await page.goto(url('/profile'), { waitUntil: 'domcontentloaded' });
-    const bodyText = await page.textContent('body');
-    expect(bodyText).toBeTruthy();
+    await page.waitForTimeout(3000);
+    await assertRendered(page, '/profile');
   });
 
   test('Notification center loads', async ({ page }) => {
     await page.goto(url('/notifications'), { waitUntil: 'domcontentloaded' });
-    const bodyText = await page.textContent('body');
-    expect(bodyText).toBeTruthy();
+    await page.waitForTimeout(3000);
+    await assertRendered(page, '/notifications');
   });
 
   test('Cashier page loads', async ({ page }) => {
     await page.goto(url('/cashier'), { waitUntil: 'domcontentloaded' });
-    const bodyText = await page.textContent('body');
-    expect(bodyText).toBeTruthy();
+    await page.waitForTimeout(3000);
+    await assertRendered(page, '/cashier');
   });
 
   test('No console errors on critical pages', async ({ page }) => {

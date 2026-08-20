@@ -249,18 +249,33 @@ class PromotionServiceClass {
   }
 
   async getUserClaims(userId: string): Promise<PromotionClaim[]> {
+    /* This embedded `promotions(title, type)` and returned 400 on every call,
+       for every user, since it was written — two separate reasons:
+
+         1. PGRST200. PostgREST can only embed across a real FOREIGN KEY, and
+            promotion_claims had none at all. (Added 2026-08-20 as
+            promotion_claims_promotion_id_fkey — worth having regardless on a
+            table that carries bonus_amount, but no longer load-bearing here.)
+         2. `promotions` has no `title` column. It is `name`.
+
+       The embed is gone rather than corrected because mapClaim() below never
+       reads it and PromotionClaim has no field for it. It fetched data nobody
+       consumed, and in doing so failed the whole query.
+
+       And `if (error) return []` is why nobody ever found out: a user's
+       claimed promotions were silently empty, indistinguishable from having
+       claimed none. An empty list is still the right fallback for a UI list —
+       reporting it is what was missing. */
     const { data, error } = await supabase
       .from('promotion_claims')
-      .select(
-        `
-                *,
-                promotions(title, type)
-            `
-      )
+      .select('id, promotion_id, user_id, status, bonus_amount, wager_progress, wager_required, claimed_at')
       .eq('user_id', userId)
       .order('claimed_at', { ascending: false });
 
-    if (error) return [];
+    if (error) {
+      reportError(error, 'PromotionService.getUserClaims', { userId });
+      return [];
+    }
     return (data || []).map(this.mapClaim);
   }
 

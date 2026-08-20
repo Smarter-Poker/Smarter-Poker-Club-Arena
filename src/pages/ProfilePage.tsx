@@ -383,7 +383,31 @@ export default function ProfilePage() {
             () =>
               supabase
                 .from('training_user_achievements')
-                .select('*, achievement:achievements(*)')
+                /* `achievement:achievements(*)` 400'd on every profile load,
+                   for every user, since it was written: there is no
+                   `achievements` table in this schema. PostgREST said so in
+                   the response body — PGRST200, "Perhaps you meant
+                   'training_achievement_definitions' instead" — and the FK
+                   confirms it (training_user_achievements.achievement_id ->
+                   training_achievement_definitions). Nothing surfaced it,
+                   because the result is read through Promise.allSettled and a
+                   rejected fetch just renders an empty achievement list, and
+                   retryFetch dutifully retried the impossible query 3x a load.
+
+                   The aliases matter too: the definitions table has `icon_url`
+                   and `threshold`, not `icon` and `max_progress`, so the
+                   consumer below would have rendered a blank icon and an
+                   undefined progress cap even once the embed resolved.
+
+                   Explicit columns rather than `*` for the same reason
+                   `select('*')` was removed from the profile readers in
+                   August: a star-select touching one ungranted column makes
+                   Postgres reject the whole statement. */
+                .select(
+                  'id, achievement_id, user_id, progress, unlocked_at, ' +
+                    'achievement:training_achievement_definitions(' +
+                    'id, name, description, icon:icon_url, max_progress:threshold)'
+                )
                 .eq('user_id', authUser.id)
                 .limit(200)
                 .then((r) => r),

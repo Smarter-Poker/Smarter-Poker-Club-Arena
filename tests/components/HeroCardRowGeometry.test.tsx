@@ -32,6 +32,19 @@ import { resolve } from 'node:path';
 
 const css = readFileSync(resolve(__dirname, '../../src/components/table/SeatSlot.css'), 'utf8');
 
+/* Comments in this stylesheet quote CSS at length, braces included, so any
+   rule-level assertion has to strip them first or it matches prose. */
+const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+/** Every innermost `selector { body }` pair, selector whitespace-normalised.
+    @media wrappers are skipped for free: their body contains braces, so the
+    non-greedy `[^{}]*` never matches them. */
+const RULES: { selector: string; body: string }[] = [
+  ...cssNoComments.matchAll(/([^{}]+)\{([^{}]*)\}/g),
+].map((m) => ({ selector: m[1].trim().replace(/\s+/g, ' '), body: m[2] }));
+
+const rulesFor = (selector: string) => RULES.filter((r) => r.selector === selector);
+
 describe('hero hole-card row geometry', () => {
   it('sizes PLO4/5/6 by counting the ROW CHILD, not a specific element', () => {
     for (const n of [4, 5, 6]) {
@@ -63,10 +76,40 @@ describe('hero hole-card row geometry', () => {
     }
   });
 
-  it('never applies the slice twice (wrapper AND card both carrying margin)', () => {
-    const cardRule = css.match(/\.seat__cards--hero \.seat__card\s*\{([^}]*)\}/);
-    expect(cardRule, 'expected a .seat__cards--hero .seat__card rule').toBeTruthy();
-    expect(cardRule![1]).toMatch(/margin-left:\s*0/);
+  it('cancels the slice on a NESTED card without cancelling it on a bare one', () => {
+    /* One invariant, two halves, and the second half is the one that bit.
+     *
+     * (a) A card inside a wrapper must not ALSO carry the slice, or the overlap
+     *     is applied twice.
+     * (b) The rule that does the cancelling must not also match a card that IS
+     *     the flex child.
+     *
+     * This test used to assert (a) by requiring `margin-left: 0` on
+     * `.seat__cards--hero .seat__card` — which is exactly the selector that
+     * violates (b). At 0-2-0 it out-specifies `.seat__cards--hero > *` at
+     * 0-1-0, so an UNWRAPPED card silently lost its overlap: a PLO6 row
+     * measured 6 x 54 = 324px inside a 320px felt. hero-card-row.spec.ts
+     * caught it on 2026-08-20 (rowLeft 477.99 vs feltLeft 480) once the E2E
+     * suite started running signed in.
+     *
+     * `> * .seat__card` matches descendants of the flex child only, so the
+     * wrapped case is unchanged and the bare case keeps its margin. That is
+     * what makes the file comment's "independent of how the card is wrapped"
+     * claim actually true.
+     */
+    const nested = rulesFor('.seat__cards--hero > * .seat__card');
+    expect(
+      nested.some((r) => /margin-left:\s*0/.test(r.body)),
+      'a nested hero card must have the slice cancelled'
+    ).toBe(true);
+
+    for (const rule of rulesFor('.seat__cards--hero .seat__card')) {
+      expect(
+        rule.body,
+        '.seat__cards--hero .seat__card also matches an UNWRAPPED card and ' +
+          'out-specifies the `> *` overlap rule — it must not touch margin-left'
+      ).not.toMatch(/margin-left/);
+    }
   });
 
   it('all four breakpoints define the full 4/5/6 set (none silently missing)', () => {

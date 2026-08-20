@@ -269,6 +269,51 @@ jobs:
   # This job is deliberately cheap (about 15s of tests) so there is never a
   # reason to skip it. It MUST stay blocking.
   # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # CLIENT UNIT TESTS - added 2026-08-20.
+  #
+  # 2,398 tests across 185 files in tests/** ran in NO CI job. The comment on
+  # the server job below spotted half of this ("the root vitest config only
+  # globs tests/**") and added coverage for server/, but nothing was ever added
+  # for the root suite itself, so `npm test` was purely a local habit.
+  #
+  # Proven live rather than argued: on 2026-08-20 a one-line CSS change broke
+  # tests/components/HeroCardRowGeometry.test.tsx and the full pipeline went
+  # green. Every regression those 2,398 tests were written to prevent could be
+  # reintroduced by a passing build.
+  #
+  # The whole suite runs in 13s, so there is never a reason to skip it. It MUST
+  # stay blocking.
+  # ===========================================================================
+  unit:
+    name: Client Unit Tests (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.3.1
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Test Suite
+        run: npm test
+
+      - name: Report
+        if: always()
+        run: |
+          echo "## Client Unit Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`tests/**\` via vitest. Blocking - see the note above this job" >> $GITHUB_STEP_SUMMARY
+          echo "in ci.yml for why it exists." >> $GITHUB_STEP_SUMMARY
+
   server:
     name: Server Engine (typecheck + tests)
     runs-on: ubuntu-latest

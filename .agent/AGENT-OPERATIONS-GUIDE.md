@@ -159,3 +159,46 @@ multitable-walk` (or `trainer-walkthrough`). Read e2e-live/README.md first —
   2026-08-20 API Gateway degradation produced infinite club-home skeletons
   that looked exactly like an app bug; ClubHomePage now has a 15s watchdog
   that surfaces the Retry panel instead).
+
+## 9. WHEN GITHUB ACTIONS IS DOWN — publish it yourself
+
+2026-08-20: every workflow on every commit began failing in 2-5 seconds with
+`runner_name: ""` — jobs never got a runner (org billing / spending limit).
+Nothing had built or deployed for ~20 minutes and nobody noticed, because a
+red X next to a commit looks like a normal test failure.
+
+Tell the two apart before you debug your own code:
+
+    gh run view <id> --json jobs   # runner_name empty + <5s duration = no runner
+    gh run list --limit 20         # EVERY workflow failing, including trivial
+                                   # ones like Silent Revert Guard => infra
+
+When it is infra, your commits are pushed but NOT published. Publish the Club
+Arena bundle yourself — the local path is now as safe as CI:
+
+    cd ~/Documents/club-arena && git worktree add --detach /tmp/ca-pub origin/main
+    ln -s ~/Documents/club-arena/node_modules /tmp/ca-pub/node_modules
+    cd ~/Documents/Smarter-Poker-World-Hub
+    git worktree add --detach /tmp/wh-pub origin/main
+    WH_OVERRIDE=/tmp/wh-pub CA_SRC_OVERRIDE=/tmp/ca-pub \
+      bash scripts/sync-club-arena.sh "chore(club-arena): sync build <sha>"
+
+Both overrides exist so you never have to own the shared checkouts, which are
+routinely mid-rebase or holding another agent's staged work.
+
+The script now REFUSES to publish a bundle that cannot boot: it resolves the
+entry chunk out of index.html and confirms the Supabase URL and anon key are
+actually baked into it. That check exists because the old one ("index.html
+exists") passed a config-less build straight to production on 2026-08-20 and
+every visitor got a blank page (`Uncaught Error: supabaseUrl is required`).
+Never weaken it.
+
+Vercel deploys on git push and does NOT depend on GitHub Actions, so a WH push
+still ships. Verify content-level, never by SHA alone:
+
+    curl -s https://smarter.poker/hub/club-arena/build-info.json
+    # then grep the chunk the live index actually imports for your own string
+
+`vercel` failing with "token ... is not valid" on a machine that is logged in
+means a stale VERCEL_TOKEN in the process environment is shadowing auth.json.
+No .env edit fixes that. Use `bash scripts/vercel-safe.sh <cmd>`.

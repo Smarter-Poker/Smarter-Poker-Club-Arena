@@ -207,13 +207,34 @@ export default function DynamicWallet({
   const fetchVersionRef = useRef(0);
   // Tracked union_id for union_wallets RT channel
   const currentUnionIdRef = useRef<string | null>(null);
+  // Mirrored into state because the realtime effect below binds its BBJ and
+  // union_wallets filters to this value. A ref cannot be a dependency, so the
+  // effect previously keyed on the `isClubInUnion` BOOLEAN — which does not
+  // change when moving from one union club to ANOTHER union club, leaving both
+  // channels subscribed to the PREVIOUS union. The panel then showed a live
+  // Bad Beat Jackpot and Union Bank belonging to the club you just left.
+  const [currentUnionId, setCurrentUnionId] = useState<string | null>(null);
   // Reconnect tracking
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
+  // Bumped by scheduleReconnect and used as a dependency of the realtime
+  // effect, so a reconnect actually TEARS DOWN AND REBUILDS the channels.
+  // Previously the reconnect timer only called fetchData(): one refetch, the
+  // dead channel left dead, no re-arm, and because retryCountRef only advanced
+  // once the backoff never escalated past its first entry.
+  const [channelEpoch, setChannelEpoch] = useState(0);
 
   useEffect(() => {
+    // Reset before resolving. Without this, `resolvedId` kept pointing at the
+    // OLD club while resolveClubUUID was in flight, `loading` stayed false
+    // (it is only ever set false after the first fetch) and `data` was never
+    // cleared — so the previous club's Chip Balance, Club Bank and BBJ
+    // rendered under the new club's header with no skeleton.
+    setResolvedId(null);
+    setCurrentUnionId(null);
+    setFetchError(false);
+    setLoading(true);
     if (!clubId) {
-      setResolvedId(null);
       return;
     }
     resolveClubUUID(clubId)
@@ -314,6 +335,7 @@ export default function DynamicWallet({
 
       // Track union_id for the union_wallets RT channel
       currentUnionIdRef.current = unionId;
+      if (isMounted.current) setCurrentUnionId(unionId ?? null);
 
       setData({
         diamonds: Number(profileRes.data?.diamonds) || 0,
@@ -374,7 +396,11 @@ export default function DynamicWallet({
       reconnectTimerRef.current = null;
       if (!isMounted.current) return;
       retryCountRef.current++;
-      fetchData(); // Full refetch as reconnection fallback
+      fetchData(); // catch up on anything missed while disconnected
+      // ...and rebuild the subscriptions. retryCountRef is reset on SUBSCRIBED,
+      // so a channel that keeps failing walks up BACKOFF_DELAYS instead of
+      // hammering. A channel that recovers starts from the short delay again.
+      setChannelEpoch((e) => e + 1);
     }, delay);
   }, [fetchData]);
 
@@ -440,8 +466,8 @@ export default function DynamicWallet({
           // pool row — a row that will never change again — so the jackpot
           // would freeze on screen. currentUnionIdRef is set by fetchData and
           // this effect re-runs when isClubInUnion flips.
-          filter: currentUnionIdRef.current
-            ? `union_id=eq.${currentUnionIdRef.current}`
+          filter: currentUnionId
+            ? `union_id=eq.${currentUnionId}`
             : `club_id=eq.${resolvedId}`,
         },
         (p) => {
@@ -514,13 +540,20 @@ export default function DynamicWallet({
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        // Was a bare .subscribe(): a failure here was silent, so Club Bank
+        // froze on its last value with nothing reconnecting and nothing shown.
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn(`[DynamicWallet] club channel ${status}`);
+          scheduleReconnect();
+        }
+      });
 
     // ── Union wallets RT channel: instant union bank balance updates ──
     // Dynamic — only created if the club is in a union.
     // Uses the unionId from the most recent fetchData to listen for changes.
     let unionWalletChannel: ReturnType<typeof supabase.channel> | null = null;
-    const unionId = currentUnionIdRef.current;
+    const unionId = currentUnionId;
     if (unionId) {
       unionWalletChannel = supabase
         .channel(`dynamic-wallet-union-${unionId}`)
@@ -558,7 +591,14 @@ export default function DynamicWallet({
             }
           }
         )
-        .subscribe();
+        .subscribe((status: string) => {
+          // Same as the club channel: silent failure froze Union Bank, Rake
+          // Treasury and Union Promo with no recovery path.
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            console.warn(`[DynamicWallet] union channel ${status}`);
+            scheduleReconnect();
+          }
+        });
     }
 
     return () => {
@@ -566,7 +606,8 @@ export default function DynamicWallet({
       supabase.removeChannel(clubChannel);
       if (unionWalletChannel) supabase.removeChannel(unionWalletChannel);
     };
-  }, [userId, resolvedId, isClubInUnion]);
+    // currentUnionId (state, not the ref) so a union->union club switch rebinds.
+  }, [userId, resolvedId, currentUnionId, channelEpoch]);
 
   // ── Role-specific row config ───────────────────────────────────────────────
   // Union figures come from union_wallets, which RLS restricts to union

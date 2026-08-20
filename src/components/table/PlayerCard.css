@@ -207,7 +207,7 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .player-card--winner {
-    animation: winnerPulse 1s ease-in-out infinite;
+    animation: playerCardWinnerPulse 1s ease-in-out infinite;
 }
 
 .player-card__winner-glow {
@@ -220,7 +220,7 @@
     animation: glowPulse 1s ease-in-out infinite;
 }
 
-@keyframes winnerPulse {
+@keyframes playerCardWinnerPulse {
 
     0%,
     100% {

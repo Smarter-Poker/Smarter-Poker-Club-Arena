@@ -1421,10 +1421,10 @@
   flex-direction: column;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  animation: slideIn 0.25s ease;
+  animation: tableSlideIn 0.25s ease;
 }
 
-@keyframes slideIn {
+@keyframes tableSlideIn {
   from {
     transform: translateX(-100%);
   }
@@ -2108,11 +2108,15 @@
     max-width: 600px;
   }
 
-  .seat__avatar-img,
-  .seat__avatar-fallback {
-    width: 64px;
-    height: 64px;
-  }
+  /* Dan 2026-08-20: DELETED a `.seat__avatar-img, .seat__avatar-fallback
+     { width: 64px; height: 64px }` block that lived here. `.seat__avatar` is
+     `--seat-avatar-size` (84px villain / 112px hero) and is a plain
+     `position: relative` box with NO centering, so hard-sizing the image to
+     64px parked it at the slot's TOP-LEFT: every avatar rendered 10px up and
+     10px left of its own slot (20px/20px for hero). That is the
+     "avatars are not connected to the name box" report — the image, not the
+     slot, was off. Avatar size is owned by `--seat-avatar-size` alone; never
+     size `.seat__avatar-img` here again. */
 
   .seat__info {
     padding: 6px 12px;
@@ -2136,11 +2140,11 @@
     max-width: 720px;
   }
 
-  .seat__avatar-img,
-  .seat__avatar-fallback {
-    width: 72px;
-    height: 72px;
-  }
+  /* Dan 2026-08-20: same deletion as the tablet block above — a 72px hard
+     size on `.seat__avatar-img` inside an 84px (112px hero) slot pushed the
+     image 6px left / 12px up on villains and 20px left / 40px up on hero.
+     The image fills its slot (100%/100% in SeatSlot.css); the slot is sized
+     by `--seat-avatar-size`. */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

@@ -40,13 +40,13 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-  animation: slideUp 0.3s ease;
+  animation: shareHandSlideUp 0.3s ease;
   overflow: hidden;
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
-@keyframes slideUp {
+@keyframes shareHandSlideUp {
   from {
     opacity: 0;
     transform: translateY(30px);

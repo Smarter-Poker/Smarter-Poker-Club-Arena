@@ -33,7 +33,7 @@
 CREATE INDEX IF NOT EXISTS idx_hand_history_players_gin
   ON public.hand_history USING gin (players jsonb_path_ops);
 
-CREATE OR REPLACE FUNCTION public.ca_player_stats_full(p_user uuid)
+CREATE OR REPLACE FUNCTION public.ca_player_stats_full(p_user uuid, p_days int DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
@@ -55,7 +55,21 @@ DECLARE
   v_floor timestamptz;
   v_ceil  timestamptz;
   v_need int;
+  -- p_days: analyse only hands newer than this many days (NULL = no time bound,
+  -- i.e. the most recent c_cap hands whenever they were played).
+  v_since timestamptz := CASE WHEN p_days IS NULL OR p_days <= 0
+                              THEN NULL ELSE now() - make_interval(days => p_days) END;
+  -- Lifetime volume, independent of both the cap and the window. This is an
+  -- index-only scan over ca_hand_player_idx (23ms for a 71,700-hand account
+  -- after VACUUM), so the headline "hands played" can be the TRUE number even
+  -- though the behavioural stats below are computed from a sample.
+  v_life_hands int := 0;
+  v_life_first timestamptz;
+  v_life_last  timestamptz;
 BEGIN
+  SELECT count(*)::int, min(created_at), max(created_at)
+  INTO v_life_hands, v_life_first, v_life_last
+  FROM ca_hand_player_idx WHERE user_id = p_user;
   -- Hand selection is deliberately two-step. hand_history.players is JSONB, so a
   -- containment scan has to materialise EVERY hand a player appears in before
   -- ORDER BY/LIMIT can apply (measured: 71,238 rows / 35,807 heap blocks / ~12s
@@ -65,7 +79,9 @@ BEGIN
   SELECT array_agg(hand_id ORDER BY created_at DESC)
   INTO v_ids
   FROM (SELECT hand_id, created_at FROM ca_hand_player_idx
-        WHERE user_id = p_user ORDER BY created_at DESC LIMIT c_cap) q;
+        WHERE user_id = p_user
+          AND (v_since IS NULL OR created_at >= v_since)
+        ORDER BY created_at DESC LIMIT c_cap) q;
 
   -- FORWARD TAIL: hands played since the index was last refreshed are not in
   -- ca_hand_player_idx yet. Without this a player's newest hands — the ones they
@@ -78,6 +94,7 @@ BEGIN
     INTO v_ids
     FROM (SELECT h.id, h.created_at FROM hand_history h
           WHERE h.created_at > v_ceil
+            AND (v_since IS NULL OR h.created_at >= v_since)
             AND h.players @> jsonb_build_array(jsonb_build_object('userId', p_user::text))
           ORDER BY h.created_at DESC LIMIT c_cap) q0;
 
@@ -99,6 +116,7 @@ BEGIN
       INTO v_ids
       FROM (SELECT h.id, h.created_at FROM hand_history h
             WHERE h.created_at < v_floor
+              AND (v_since IS NULL OR h.created_at >= v_since)
               AND h.players @> jsonb_build_array(jsonb_build_object('userId', p_user::text))
             ORDER BY h.created_at DESC LIMIT v_need) q2;
     END IF;
@@ -386,6 +404,15 @@ tourn_recent AS (
 )
 SELECT jsonb_build_object(
   'generated_at', now(),
+  'window_days', p_days,
+  'lifetime', jsonb_build_object(
+    'hands', v_life_hands,
+    'first_hand_at', v_life_first,
+    'last_hand_at', v_life_last,
+    -- True when the indexer has not yet reached this player's oldest hands, so
+    -- the UI can avoid calling a still-growing number "lifetime".
+    'indexed_complete', (SELECT backfill_complete FROM ca_hand_player_idx_state WHERE id)
+  ),
   'user_id', p_user,
   'overall', (SELECT jsonb_build_object(
     'total_hands', hands,

@@ -730,3 +730,140 @@
   background: rgba(245, 158, 11, 0.09);
   color: #fbbf24;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ANALYSIS RANGE + NOTABLE HANDS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.stats-range-row {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.stats-range-row button {
+  flex: 0 0 auto;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.stats-range-row button:hover {
+  color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 212, 255, 0.28);
+}
+
+.stats-range-row button.active {
+  background: rgba(0, 212, 255, 0.12);
+  border-color: rgba(0, 212, 255, 0.45);
+  color: #00d4ff;
+}
+
+.hero-stat-sub {
+  display: block;
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.03em;
+}
+
+.hand-mode-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.hand-mode-row button {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.hand-mode-row button.active {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #f59e0b;
+}
+
+.hand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hand-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(14, 14, 28, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.hand-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hand-row-meta {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hand-row-board {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e5e7eb;
+  letter-spacing: 0.08em;
+}
+
+.hand-row-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.hand-row-profit {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.hand-row-profit.positive {
+  color: #10b981;
+}
+
+.hand-row-profit.negative {
+  color: #ef4444;
+}
+
+.hand-row-pot {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.hand-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.4);
+}

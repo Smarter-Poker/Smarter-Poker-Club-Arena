@@ -138,6 +138,32 @@ interface VariantRow {
   bb100: number;
 }
 
+interface LifetimeStats {
+  hands: number;
+  first_hand_at: string | null;
+  last_hand_at: string | null;
+  /** False while the indexer is still walking back through older history. */
+  indexed_complete: boolean;
+}
+
+interface HandRow {
+  id: string;
+  played_at: string;
+  variant: string;
+  big_blind: number;
+  is_tournament: boolean;
+  position: string | null;
+  pot_size: number;
+  won: number;
+  profit: number;
+  is_winner: boolean;
+  players: number;
+  board: string[] | null;
+  hole_cards: unknown;
+}
+
+type HandMode = 'biggest_won' | 'biggest_lost' | 'recent';
+
 interface StakeRow {
   big_blind: number;
   hands: number;
@@ -170,6 +196,8 @@ interface RecentTournament {
 
 interface FullStats {
   overall: OverallStats;
+  lifetime: LifetimeStats;
+  window_days: number | null;
   daily: DailyPoint[];
   sessions: SessionRow[];
   positions: PositionRow[];
@@ -192,6 +220,14 @@ const TAB_LABELS: Record<StatCategory, string> = {
   tournaments: 'Tournaments',
   analysis: 'Analysis',
 };
+
+// Analysis ranges. `null` = no time bound (the most recent hand_cap hands,
+// whenever they were played) — the previous, only behaviour.
+const RANGES: { key: string; days: number | null; label: string }[] = [
+  { key: '7d', days: 7, label: '7 Days' },
+  { key: '30d', days: 30, label: '30 Days' },
+  { key: 'all', days: null, label: 'All' },
+];
 
 const CHART_COLORS = ['#4169E1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#10b981'];
 
@@ -222,8 +258,17 @@ const EMPTY_OVERALL: OverallStats = {
   hands_capped: false,
 };
 
+const EMPTY_LIFETIME: LifetimeStats = {
+  hands: 0,
+  first_hand_at: null,
+  last_hand_at: null,
+  indexed_complete: false,
+};
+
 const EMPTY_FULL: FullStats = {
   overall: EMPTY_OVERALL,
+  lifetime: EMPTY_LIFETIME,
+  window_days: null,
   daily: [],
   sessions: [],
   positions: [],
@@ -263,7 +308,16 @@ function normalizeFull(data: any): FullStats {
   const t = data?.tournaments ?? {};
   const arr = (v: unknown): any[] => (Array.isArray(v) ? v : []);
 
+  const lt = data?.lifetime ?? {};
+
   return {
+    window_days: typeof data?.window_days === 'number' ? data.window_days : null,
+    lifetime: {
+      hands: num(lt.hands),
+      first_hand_at: lt.first_hand_at ?? null,
+      last_hand_at: lt.last_hand_at ?? null,
+      indexed_complete: lt.indexed_complete === true,
+    },
     overall: {
       total_hands: num(o.total_hands),
       cash_hands: num(o.cash_hands),
@@ -474,6 +528,10 @@ export default function PlayerStatsPage() {
   const [loadError, setLoadError] = useState(false);
   const [servingCache, setServingCache] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [rangeKey, setRangeKey] = useState<string>('all');
+  const [handMode, setHandMode] = useState<HandMode>('biggest_won');
+  const [hands, setHands] = useState<HandRow[] | null>(null);
+  const [handsLoading, setHandsLoading] = useState(false);
   const [category, setCategory] = useState<StatCategory>('overview');
   const statsSwipeHandlers = useSwipeTabs({
     tabs: TABS,
@@ -503,10 +561,11 @@ export default function PlayerStatsPage() {
     if (!hasStatsRef.current) setLoading(true);
 
     try {
+      const windowDays = RANGES.find((r) => r.key === rangeKey)?.days ?? null;
       const { data, error } = await retryFetch(
         () =>
           supabase
-            .rpc('ca_player_stats_full', { p_user: targetUserId })
+            .rpc('ca_player_stats_full', { p_user: targetUserId, p_days: windowDays })
             .then((r: any) => r),
         { maxRetries: 2, isMountedRef: isMounted }
       );
@@ -519,7 +578,9 @@ export default function PlayerStatsPage() {
         hasStatsRef.current = true;
         setLoadError(false);
         setServingCache(false);
-        setCachedFull(targetUserId, resolved);
+        // Only the unbounded view is cached — otherwise a 7-day payload could be
+        // rehydrated on the next visit and read as all-time.
+        if (windowDays === null) setCachedFull(targetUserId, resolved);
 
         // Fire-and-forget: advance the player->hand index past the hands played
         // since the last refresh, so the live window the RPC has to scan stays
@@ -579,7 +640,33 @@ export default function PlayerStatsPage() {
     }
     // toast comes from context and isMounted is a ref wrapper: both stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetUserId]);
+  }, [targetUserId, rangeKey]);
+
+  // Notable hands. Loaded only when the Analysis tab is actually open — the
+  // 'biggest' modes score the whole analysis window, so this is not free.
+  useEffect(() => {
+    if (!targetUserId || category !== 'analysis') return;
+    let alive = true;
+    setHandsLoading(true);
+    supabase
+      .rpc('ca_player_hands', { p_user: targetUserId, p_mode: handMode, p_limit: 10 })
+      .then(
+        ({ data, error }: any) => {
+          if (!alive || !isMounted.current) return;
+          setHands(!error && Array.isArray(data) ? (data as HandRow[]) : []);
+          setHandsLoading(false);
+        },
+        () => {
+          if (!alive || !isMounted.current) return;
+          setHands([]);
+          setHandsLoading(false);
+        }
+      );
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetUserId, category, handMode, rangeKey]);
 
   useVisibilityRefresh(loadAllData);
 
@@ -630,6 +717,7 @@ export default function PlayerStatsPage() {
 
 
   const overall = full?.overall ?? EMPTY_OVERALL;
+  const lifetime = full?.lifetime ?? EMPTY_LIFETIME;
   const tourn = full?.tournaments ?? EMPTY_FULL.tournaments;
 
   const handsWonPct = useMemo(
@@ -847,8 +935,17 @@ export default function PlayerStatsPage() {
         <HandsWonGauge handsWonPct={parseFloat(handsWonPct)} />
         <div className="hero-stats">
           <div className="hero-stat">
-            <span className="hero-stat-label">Total Hands</span>
-            <span className="hero-stat-value cyan">{overall.total_hands.toLocaleString()}</span>
+            <span className="hero-stat-label">
+              {lifetime.hands > overall.total_hands ? 'Hands Played' : 'Total Hands'}
+            </span>
+            <span className="hero-stat-value cyan">
+              {Math.max(lifetime.hands, overall.total_hands).toLocaleString()}
+            </span>
+            {lifetime.hands > overall.total_hands && (
+              <span className="hero-stat-sub">
+                {overall.total_hands.toLocaleString()} analysed
+              </span>
+            )}
           </div>
           <div className="hero-stat">
             <span className="hero-stat-label">Cash Profit</span>
@@ -870,11 +967,39 @@ export default function PlayerStatsPage() {
         </div>
       </div>
 
+      {/* Analysis range. Everything below the hero is computed over this window. */}
+      <div className="stats-range-row">
+        {RANGES.map((r) => (
+          <button
+            key={r.key}
+            className={rangeKey === r.key ? 'active' : ''}
+            onClick={() => setRangeKey(r.key)}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
       {/* Analysis-window and staleness notices: never present a truncated or
           stale figure as though it were a current lifetime total. */}
       {hasData && overall.hands_capped && (
         <div className="stats-notice">
-          Based on your most recent {overall.hand_cap.toLocaleString()} hands.
+          Based on your most recent {overall.hand_cap.toLocaleString()} hands
+          {rangeKey !== 'all' ? ' in this range' : ''}.
+        </div>
+      )}
+      {hasData && !overall.hands_capped && rangeKey !== 'all' && (
+        <div className="stats-notice">
+          {overall.total_hands.toLocaleString()} hands in the last{' '}
+          {RANGES.find((r) => r.key === rangeKey)?.label.toLowerCase()}.
+        </div>
+      )}
+      {/* Small samples: bb/100 swings wildly over a few hundred hands, and a
+          confident-looking number invites the wrong conclusion. */}
+      {hasData && overall.cash_hands > 0 && overall.cash_hands < 1000 && (
+        <div className="stats-notice">
+          {overall.cash_hands.toLocaleString()} cash hands is a small sample — win rate is
+          not yet meaningful.
         </div>
       )}
       {servingCache && (
@@ -1370,6 +1495,70 @@ export default function PlayerStatsPage() {
               )}
             </div>
 
+            {/* Notable hands — every stat above used to be a dead end. */}
+            <div>
+              <div className="stats-section-header">
+                <h3 style={{ color: '#f59e0b' }}>Notable Hands</h3>
+              </div>
+              <div className="hand-mode-row">
+                {(
+                  [
+                    ['biggest_won', 'Biggest Wins'],
+                    ['biggest_lost', 'Worst Losses'],
+                    ['recent', 'Most Recent'],
+                  ] as [HandMode, string][]
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    className={handMode === mode ? 'active' : ''}
+                    onClick={() => setHandMode(mode)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {handsLoading && <div className="hand-empty">Loading hands...</div>}
+              {!handsLoading && hands && hands.length === 0 && (
+                <div className="hand-empty">No hands in this range yet.</div>
+              )}
+              {!handsLoading && hands && hands.length > 0 && (
+                <div className="hand-list">
+                  {hands.map((h) => (
+                    <div className="hand-row" key={h.id}>
+                      <div className="hand-row-main">
+                        <span className="hand-row-meta">
+                          {new Date(h.played_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                          {' · '}
+                          {String(h.variant || '').toUpperCase()}
+                          {h.position ? ` · ${h.position}` : ''}
+                          {h.is_tournament ? ' · MTT' : ` · ${h.big_blind} BB`}
+                          {` · ${h.players} players`}
+                        </span>
+                        {Array.isArray(h.board) && h.board.length > 0 && (
+                          <span className="hand-row-board">
+                            {h.board.map((c) => formatCard(String(c))).join('  ')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="hand-row-result">
+                        <span className={`hand-row-profit ${h.profit >= 0 ? 'positive' : 'negative'}`}>
+                          {h.profit >= 0 ? '+' : ''}
+                          {h.profit.toLocaleString()}
+                        </span>
+                        <span className="hand-row-pot">pot {h.pot_size.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <button className="view-hands-btn" onClick={() => navigate('/hands')}>
+                    Open Full Hand History
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Sessions */}
             <div>
               <div className="stats-section-header">
@@ -1390,6 +1579,21 @@ export default function PlayerStatsPage() {
       </div>
     </div>
   );
+}
+
+// hand_history stores board cards as "8hearts" / "Aspades". Render them as
+// rank + suit symbol rather than dumping the raw token at the player.
+const SUIT_SYMBOLS: Record<string, string> = {
+  hearts: '\u2665',
+  diamonds: '\u2666',
+  clubs: '\u2663',
+  spades: '\u2660',
+};
+
+function formatCard(card: string): string {
+  const m = /^([0-9TJQKA]{1,2})(hearts|diamonds|clubs|spades)$/i.exec(card.trim());
+  if (!m) return card;
+  return `${m[1].toUpperCase()}${SUIT_SYMBOLS[m[2].toLowerCase()] ?? ''}`;
 }
 
 function StatRow({

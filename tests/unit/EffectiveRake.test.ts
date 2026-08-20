@@ -118,15 +118,19 @@ describe('the number that reaches the modal', () => {
   });
 
   it('the cap is converted from big blinds to dollars, like the server', () => {
-    // 3 BB at 2/5 is $15, not $3.
-    const cfg = getRakeConfig(5, 'nlh', 2, { rakePercent: 5, rakeCapBB: 3 });
-    expect(cfg.rakeCap).toBe(15);
+    // 1 BB at 2/5 is $5, not $1. (3 BB would convert to $15, but 2/5 is
+    // capped at $7.50, so it would no longer isolate the conversion.)
+    const cfg = getRakeConfig(5, 'nlh', 2, { rakePercent: 5, rakeCapBB: 1 });
+    expect(cfg.rakeCap).toBe(5);
   });
 
   it('an owner cannot rake above the published ceiling', () => {
+    // The ceiling is the SCHEDULE for the stake, not MAX_RAKE_CAP_BB: at 1/2
+    // the published cap is $5, and 99 BB (or 10 BB, or 3 BB) may not beat it.
     const cfg = getRakeConfig(2, 'nlh', 1, { rakePercent: 99, rakeCapBB: 99 });
     expect(cfg.rakePercent).toBeLessThanOrEqual(10);
-    expect(cfg.rakeCap).toBeLessThanOrEqual(10 * 2);
+    expect(cfg.rakeCap).toBe(5);
+    expect(getRakeConfig(5, 'nlh', 2, { rakeCapBB: 3 }).rakeCap).toBe(7.5);
   });
 
   it('with no override at all, the modal shows exactly the schedule', () => {

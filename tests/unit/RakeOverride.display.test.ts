@@ -49,9 +49,11 @@ describe('with an override — the player sees the override', () => {
   });
 
   it('converts a big-blind cap to cash exactly as the server does', () => {
-    expect(getRakeConfig(2, 'nlh', 1, { rakeCapBB: 3 }).rakeCap).toBe(6);
+    // Each of these sits at or under its stake's published cap, so what is
+    // being checked is purely the BB -> dollars conversion.
+    expect(getRakeConfig(2, 'nlh', 1, { rakeCapBB: 2 }).rakeCap).toBe(4);
     expect(getRakeConfig(0.2, 'nlh', 0.1, { rakeCapBB: 3 }).rakeCap).toBe(0.6);
-    expect(getRakeConfig(25, 'nlh', 10, { rakeCapBB: 3 }).rakeCap).toBe(75);
+    expect(getRakeConfig(25, 'nlh', 10, { rakeCapBB: 0.5 }).rakeCap).toBe(12.5);
   });
 
   it('shows a rake-free table as 0, not as the schedule', () => {
@@ -61,8 +63,13 @@ describe('with an override — the player sees the override', () => {
   });
 
   it('never shows more than the schedule allows', () => {
+    // "The schedule" means the published cap for THAT stake, not MAX_RAKE_CAP_BB.
+    // 1/2 is capped at $5, so 3 BB ($6), 10 BB ($20) and 999 BB all display $5 —
+    // which is what the engine will actually take.
     expect(getRakeConfig(2, 'nlh', 1, { rakePercent: 90 }).rakePercent).toBe(MAX_RAKE_PERCENT);
-    expect(getRakeConfig(2, 'nlh', 1, { rakeCapBB: 999 }).rakeCap).toBe(MAX_RAKE_CAP_BB * 2);
+    expect(getRakeConfig(2, 'nlh', 1, { rakeCapBB: 999 }).rakeCap).toBe(5);
+    expect(getRakeConfig(2, 'nlh', 1, { rakeCapBB: MAX_RAKE_CAP_BB }).rakeCap).toBe(5);
+    expect(getRakeConfig(2, 'nlh', 1, { rakeCapBB: 3 }).rakeCap).toBe(5);
   });
 
   it('treats junk as inherit rather than displaying nonsense', () => {

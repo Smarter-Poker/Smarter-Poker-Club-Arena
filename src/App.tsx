@@ -56,6 +56,7 @@ const ClubCarouselPage = lazy(() => import('./pages/ClubCarouselPage'));
 const ClubHomePage = lazy(() => import('./pages/ClubHomePage'));
 const ClubLobby = lazy(() => import('./pages/club/ClubLobby'));
 const ClubDashboard = lazy(() => import('./pages/club/ClubDashboard'));
+const ClubDataPage = lazy(() => import('./pages/club/ClubDataPage'));
 const CreateClubPage = lazy(() => import('./pages/CreateClubPage'));
 const CreateTablePage = lazy(() => import('./pages/CreateTablePage'));
 const TableConfigPage = lazy(() => import('./pages/TableConfigPage'));
@@ -475,6 +476,16 @@ export default function App() {
                   path="clubs/:clubId/dashboard"
                   element={
                     <AuthGuard>
+                      <PageErrorBoundary pageName="Club Data">
+                        <ClubDataPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/dashboard-full"
+                  element={
+                    <AuthGuard>
                       <PageErrorBoundary pageName="Club Dashboard">
                         <ClubDashboard />
                       </PageErrorBoundary>
@@ -798,12 +809,25 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
+                {/* Club Data is the owner-facing money view: what the club
+                    generated and what it owes the union. The older multi-tab
+                    dashboard stays reachable at clubs/:clubId/dashboard-full. */}
                 <Route
                   path="data"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Dashboard">
-                        <ClubDashboard />
+                      <PageErrorBoundary pageName="Club Data">
+                        <ClubDataPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/data"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Club Data">
+                        <ClubDataPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

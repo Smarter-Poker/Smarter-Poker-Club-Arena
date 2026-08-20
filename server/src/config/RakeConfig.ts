@@ -409,11 +409,14 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
  * IMPORTANT: rakeCap is always an absolute dollar amount.
  *
  * `override` lets a table or club take LESS than the schedule. It can never
- * take more: percent is clamped to MAX_RAKE_PERCENT and the cap to
- * MAX_RAKE_CAP_BB, and anything non-finite falls back to the schedule rather
- * than throwing — a bad row must not be able to stop a table dealing. The
- * clamps are the load-bearing guard: `tables` is UPDATE-able by any club admin
- * through RLS, so the database is not a trusted source for these two numbers.
+ * take more, and that is enforced twice: the raw value is clamped to
+ * MAX_RAKE_PERCENT / MAX_RAKE_CAP_BB so an absurd row cannot get through, and
+ * the result is then min()'d against the published schedule for the stake so
+ * the game's max rake is never exceeded. Anything non-finite falls back to the
+ * schedule rather than throwing — a bad row must not be able to stop a table
+ * dealing. These guards are load-bearing: `tables` is UPDATE-able by any club
+ * admin through RLS, so the database is not a trusted source for these two
+ * numbers.
  *
  * The BBJ fields are deliberately NOT overridable. The jackpot drop is a fixed
  * number of big blinds from the schedule and funds a shared pool; letting one
@@ -448,8 +451,19 @@ export function getFullRakeConfig(
     ? round2(clamp(Number(override!.rakeCapBB), 0, MAX_RAKE_CAP_BB) * bigBlind)
     : null;
 
-  const rakePercent = overridePercent ?? schedulePercent;
-  const rakeCap = overrideCap ?? scheduleCap;
+  // Each game has a max rake, and that maximum is the published schedule for
+  // the stake. An override may only move DOWNWARD from it.
+  //
+  // 2026-08-19: the clamps above bound an override to MAX_RAKE_PERCENT and
+  // MAX_RAKE_CAP_BB, which stops an absurd value but is NOT the published
+  // ceiling. Because the cap is denominated in big blinds, 10 BB was worth far
+  // more than the schedule cap at every stake above micro — $20 at 1/2 against
+  // a $5 cap, $100 at 5/10 against $12.50, $250 at 10/25 against $15. A club
+  // admin can UPDATE these columns through RLS, so this min() is the guard
+  // that actually holds the published rate.
+  const rakePercent =
+    overridePercent !== null ? Math.min(overridePercent, schedulePercent) : schedulePercent;
+  const rakeCap = overrideCap !== null ? Math.min(overrideCap, scheduleCap) : scheduleCap;
 
   // BBJ payout: total % of pool varies by stakes tier (Dan's authoritative table)
   // Distribution is always 50/25/25 split of the total payout amount.

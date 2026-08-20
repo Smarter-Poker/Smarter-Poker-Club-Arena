@@ -61,12 +61,16 @@ describe('no override — the published schedule is untouched', () => {
 
 describe('the cap is given in big blinds and stored in dollars', () => {
   // 3 BB is a very different amount of money at each end of the schedule.
+  // Every row here stays at or under the stake's published cap, so it isolates
+  // the BB -> dollars conversion. Rows that would EXCEED the published cap live
+  // in 'the published cap is a ceiling' below, because the conversion is no
+  // longer the only thing acting on them.
   it.each([
     [0.1, 0.2, 3, 0.6],
     [0.5, 1, 3, 3],
-    [1, 2, 3, 6],
-    [5, 10, 3, 30],
-    [10, 25, 3, 75],
+    [1, 2, 2, 4],
+    [5, 10, 1, 10],
+    [10, 25, 0.5, 12.5],
     [1, 2, 2.5, 5],
     [2, 5, 1.5, 7.5],
   ])('%s/%s with a %s BB cap -> $%s', (sb, bb, capBB, dollars) => {
@@ -82,10 +86,10 @@ describe('the cap is given in big blinds and stored in dollars', () => {
   });
 
   it('feeds the short-handed caps, which are derived AFTER the conversion', () => {
-    const cfg = getFullRakeConfig(1, 2, 'nlh', { rakeCapBB: 3 }); // $6
+    const cfg = getFullRakeConfig(1, 2, 'nlh', { rakeCapBB: 2 }); // $4, under the $5 cap
     const caps = getPlayerCountCaps(cfg.rakeCap);
-    expect(caps.find((c) => c.players === 2)!.cap).toBe(3);
-    expect(caps.find((c) => c.players === 4)!.cap).toBe(6);
+    expect(caps.find((c) => c.players === 2)!.cap).toBe(2);
+    expect(caps.find((c) => c.players === 4)!.cap).toBe(4);
   });
 });
 
@@ -100,9 +104,47 @@ describe('an owner can take less, never more', () => {
     expect(getFullRakeConfig(1, 2, 'nlh', { rakePercent: 90 }).rakePercent).toBe(MAX_RAKE_PERCENT);
   });
 
-  it('clamps an absurd cap', () => {
-    // 999 BB would mean the cap never binds at all.
-    expect(getFullRakeConfig(1, 2, 'nlh', { rakeCapBB: 999 }).rakeCap).toBe(MAX_RAKE_CAP_BB * 2);
+  it('clamps an absurd cap down to the published cap for the stake', () => {
+    // 999 BB would mean the cap never binds at all. MAX_RAKE_CAP_BB stops the
+    // absurdity; the schedule stops it exceeding what 1/2 is allowed to rake.
+    expect(getFullRakeConfig(1, 2, 'nlh', { rakeCapBB: 999 }).rakeCap).toBe(5);
+  });
+
+  describe('the published cap is a ceiling — each game has a max rake', () => {
+    it('never exceeds the scheduled cap at ANY stake, whatever is asked for', () => {
+      for (const row of RAKE_SCHEDULE) {
+        for (const capBB of [1, 3, 5, 10, 999]) {
+          const cfg = getFullRakeConfig(row.sb, row.bb, 'nlh', { rakeCapBB: capBB });
+          expect(
+            cfg.rakeCap,
+            `${row.sb}/${row.bb} asked for ${capBB} BB`
+          ).toBeLessThanOrEqual(row.rakeCap);
+        }
+        for (const pct of [11, 50, 100]) {
+          const cfg = getFullRakeConfig(row.sb, row.bb, 'nlh', { rakePercent: pct });
+          expect(cfg.rakePercent).toBeLessThanOrEqual(row.rakePercent);
+        }
+      }
+    });
+
+    it.each([
+      // stake,      capBB, published cap, what BB->$ alone would have given
+      [1, 2, 3, 5, 6],
+      [5, 10, 3, 12.5, 30],
+      [10, 25, 3, 15, 75],
+      [5, 10, 10, 12.5, 100],
+      [10, 25, 10, 15, 250],
+    ])(
+      '%s/%s with a %s BB cap is held to $%s (unbounded conversion would be $%s)',
+      (sb, bb, capBB, published) => {
+        expect(getFullRakeConfig(sb, bb, 'nlh', { rakeCapBB: capBB }).rakeCap).toBe(published);
+      }
+    );
+
+    it('a below-ceiling override is still honoured exactly', () => {
+      expect(getFullRakeConfig(5, 10, 'nlh', { rakeCapBB: 1 }).rakeCap).toBe(10);
+      expect(getFullRakeConfig(5, 10, 'nlh', { rakePercent: 4 }).rakePercent).toBe(4);
+    });
   });
 
   it('treats a negative as inherit, not as a rake-free table by accident', () => {

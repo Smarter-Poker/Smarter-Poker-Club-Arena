@@ -377,3 +377,46 @@ already failing on the base commit before these changes — verified by stashing
    "Currently 3 BB — that is $6.00 per pot at 1/2 and $30.00 at 5/10."
 
 Suite: 33 rules tests; tsc, build and eslint clean.
+
+## Pass 10 — the rake cap is a ceiling (Dan: "each game has a max rake")
+
+Answering the open question from pass 9. Reviewed both copies of the schedule
+first: `src/config/RakeConfig.ts` and `server/src/config/RakeConfig.ts` hold
+byte-identical 14-row RAKE_SCHEDULEs (10% at every stake, caps $3 -> $15), so
+there was no client/server divergence to unpick.
+
+**The bug.** `getFullRakeConfig` computed `rakeCap = overrideCap ?? scheduleCap`
+with `overrideCap = clamp(capBB, 0, MAX_RAKE_CAP_BB=10) * bigBlind`. The clamp
+bounds the *big-blind* figure but never the resulting cash, and 10 BB is worth
+far more than the published cap at every stake above micro:
+
+| stake | published cap | 10 BB override | multiple |
+|-------|---------------|----------------|----------|
+| 1/2   | $5            | $20            | 4x       |
+| 5/10  | $12.50        | $100           | 8x       |
+| 10/25 | $15           | $250           | 16.7x    |
+
+Both copies now min() the override against the published schedule for the
+stake, for percent as well as cap. The percent min() is a no-op today (every
+schedule row is 10% and MAX_RAKE_PERCENT is 10) but holds the same invariant if
+a row is ever cut below 10%.
+
+**The tests already knew.** Three test blocks were titled for the correct
+behaviour while their assertions pinned the broken one:
+  - server `describe('an owner can take less, never more')` asserted
+    `rakeCapBB: 999 -> MAX_RAKE_CAP_BB * 2` = $20 at 1/2
+  - client `it('never shows more than the schedule allows')` asserted the same
+  - client `it('an owner cannot rake above the published ceiling')` asserted
+    only `<= 10 * bb`
+Conversion-focused rows that happened to exceed the published cap were moved to
+an explicit ceiling block, so BB->dollars is still tested in isolation, and a
+new sweep asserts the invariant across every stake in RAKE_SCHEDULE for
+1/3/5/10/999 BB and 11/50/100 percent.
+
+**Blast radius: none today.** All 3 clubs and every table sit on the -1 inherit
+sentinel, so no live game's rake changes. The fix closes the hole before anyone
+uses the Rake Cap field this audit made functional.
+
+Server engine suite: 76 files / 815 tests. Client rake suites: 96 tests.
+Pre-existing and unrelated: two server TEST files fail `tsc` identically on
+pristine main (TimeBankEngine.manualcountdown, HorseFleetNoDuplicateTables).

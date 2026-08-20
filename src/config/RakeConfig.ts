@@ -488,12 +488,19 @@ export function getRakeConfig(
   const schedulePercent = scheduleMatch ? scheduleMatch.rakePercent : tier.rakePercent;
   const scheduleCap = scheduleMatch ? scheduleMatch.rakeCap : tier.rakeCap;
 
+  // Each game has a max rake — the published schedule for the stake — and an
+  // override may only move downward from it. Mirrors the server exactly; see
+  // the note in server/src/config/RakeConfig.ts. Without the min() this panel
+  // would advertise a cap the engine will never actually take.
   const rakePercent = isRakeSet(override?.rakePercent)
-    ? clampNum(Number(override!.rakePercent), 0, MAX_RAKE_PERCENT)
+    ? Math.min(clampNum(Number(override!.rakePercent), 0, MAX_RAKE_PERCENT), schedulePercent)
     : schedulePercent;
-  // Big blinds -> dollars, exactly as the server does it.
+  // Big blinds -> dollars, exactly as the server does it, then held to the cap.
   const rakeCap = isRakeSet(override?.rakeCapBB)
-    ? Math.round(clampNum(Number(override!.rakeCapBB), 0, MAX_RAKE_CAP_BB) * bb * 100) / 100
+    ? Math.min(
+        Math.round(clampNum(Number(override!.rakeCapBB), 0, MAX_RAKE_CAP_BB) * bb * 100) / 100,
+        scheduleCap
+      )
     : scheduleCap;
   const bbjFeeBB = scheduleMatch ? scheduleMatch.bbjFeeBB : tier.bbjFeeBB;
 

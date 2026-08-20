@@ -898,28 +898,9 @@
   position: relative;
 }
 
-/* Carousel edge fade — always visible to hint at off-screen cards */
 .carouselScrollFade::before,
 .carouselScrollFade::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 40px;
-  pointer-events: none;
-  z-index: 20;
-  opacity: 1;
-  transition: opacity 0.3s ease;
-}
-
-.carouselScrollFade::before {
-  left: 0;
-  background: linear-gradient(90deg, rgba(5, 5, 16, 0.9) 0%, transparent 100%);
-}
-
-.carouselScrollFade::after {
-  right: 0;
-  background: linear-gradient(-90deg, rgba(5, 5, 16, 0.9) 0%, transparent 100%);
+  display: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

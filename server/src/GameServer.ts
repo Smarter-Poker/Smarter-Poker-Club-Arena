@@ -8,7 +8,13 @@
  */
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
-import { supabase } from './services/supabase.js';
+import {
+  supabase,
+  startHandHistoryRetry,
+  stopHandHistoryRetry,
+  drainHandHistoryQueue,
+  handHistoryQueueDepth,
+} from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { TournamentRecurringService } from './services/TournamentRecurringService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
@@ -171,6 +177,13 @@ export class GameServer {
       // for a week).
       this.startFeeReconciler();
 
+      // Step 8b (2026-08-20): drain the hand_history retry queue. hand_history
+      // writes go to zero platform-wide for 30-120s at a time under load (see
+      // the note above insertHandHistoryRow); a hand's payload only exists in
+      // memory at settlement, so a failed write is held and re-attempted here
+      // rather than losing the hand and leaving its rake unattributable.
+      startHandHistoryRetry();
+
       console.log('[GameServer] Running. All services started.');
     } else if (testTableId) {
       // E2E test mode: boot a single table engine for the designated test id.
@@ -227,6 +240,31 @@ export class GameServer {
       clearInterval(this.feeReconcileTimer);
       this.feeReconcileTimer = null;
     }
+
+    // 2026-08-20: flush the hand_history retry queue before the timer dies.
+    // A rolling deploy is one of the situations that fills it, and the queue
+    // is in-process — whatever is still held here when the process exits is
+    // the one class of hand this mechanism cannot save. Best effort, bounded:
+    // never block a shutdown for more than ~6s.
+    if (handHistoryQueueDepth() > 0) {
+      console.log(`[GameServer] flushing ${handHistoryQueueDepth()} queued hand_history row(s)...`);
+      const deadline = Date.now() + 6_000;
+      while (handHistoryQueueDepth() > 0 && Date.now() < deadline) {
+        const before = handHistoryQueueDepth();
+        await drainHandHistoryQueue();
+        if (handHistoryQueueDepth() >= before) break; // making no progress
+      }
+      if (handHistoryQueueDepth() > 0) {
+        reportError(
+          new Error(
+            `[GameServer] shutting down with ${handHistoryQueueDepth()} hand_history row(s) ` +
+              `still unwritten — those hands will have no history row.`
+          ),
+          'GameServer.hand_history_queue_lost_on_shutdown'
+        );
+      }
+    }
+    stopHandHistoryRetry();
     if (this.breakResumeTimer) {
       clearTimeout(this.breakResumeTimer);
       this.breakResumeTimer = null;

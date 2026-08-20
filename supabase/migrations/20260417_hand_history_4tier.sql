@@ -1,3 +1,31 @@
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║  SUPERSEDED 2026-08-20 — DO NOT APPLY                                     ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
+--
+-- This migration was written on 2026-04-17 and never applied. The server code
+-- inserted the four columns anyway and fell back "if the columns don't exist",
+-- so for four months every single hand did two PostgREST round-trips: a 400
+-- followed by a 201. Measured in edge_logs on 2026-08-20: 138 x 400 + 138 x 201
+-- in the same minute, every minute — roughly 238,000 guaranteed-failing
+-- requests a day, hidden behind the graceful fallback.
+--
+-- The decision is to keep the tiers DERIVED rather than stored, and the dead
+-- write has been removed from server/src/services/supabase/handHistory.ts.
+-- Reason: all four tiers are pure functions of columns hand_history already
+-- stores. raw_events is `actions` re-keyed; audit_log is the row's own scalars
+-- re-packed; player_summaries is derived from players + winners + actions; and
+-- dispute_review is literally the other three concatenated with
+-- showdown_results and community_cards. hand_history is already 10 GB across
+-- 2.45M rows and takes 238,583 rows (~1 GB) a day — storing three redundant
+-- copies of the largest payload on the platform would roughly quadruple that
+-- growth and add no information.
+--
+-- Bible V8 §2.18 is satisfied by `buildHandHistoryTiers()` in
+-- server/src/services/supabase/handHistory.ts, which materialises the same four
+-- tiers on demand from a stored row.
+--
+-- Kept on disk as the record of what was intended and why it was not done.
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 --  Bible V8 §2.18 — Hand History 4-Tier Columns
 -- ═══════════════════════════════════════════════════════════════════════════════

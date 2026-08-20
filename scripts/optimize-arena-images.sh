@@ -26,7 +26,16 @@
 #   so re-running is a no-op. Verified quality with RMSE against the original:
 #   the header icons land around 0.4% difference, i.e. visually identical.
 #
-# Usage:  bash scripts/optimize-arena-images.sh [--check]
+# BULK MODE (--bulk) sweeps everything else under public/images/. Those assets
+# are not on the arena's first paint, so this is about repo and deploy weight
+# rather than load time — several are over 1 MB and a few are not referenced
+# from either repo at all. It caps the longest edge at 1024 (nothing in this UI
+# is drawn larger) and recompresses anything whose BYTES-PER-PIXEL says it was
+# never optimised. Bytes-per-pixel is the idempotence key here: after a pass
+# every file lands well under the threshold, so a second run is a no-op. Proved
+# by running it twice and hashing.
+#
+# Usage:  bash scripts/optimize-arena-images.sh [--check|--bulk]
 #         --check writes nothing and exits 1 if any asset is still LARGER than
 #         its render box. The rule is dimensional, not byte-based: recompressing
 #         a file always shaves a few percent, so a "could be smaller" gate would
@@ -35,7 +44,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CHECK=0
+BULK=0
 [ "${1:-}" = "--check" ] && CHECK=1
+[ "${1:-}" = "--bulk" ] && BULK=1
+# Compressed UI art lands at 0.24-0.55 bytes/px; 0.6 sits above every observed
+# post-pass value, so nothing is ever picked up twice.
+BPP_LIMIT=${BPP_LIMIT:-0.6}
+BULK_MAX_EDGE=${BULK_MAX_EDGE:-1024}
 
 command -v magick >/dev/null   || { echo "need imagemagick (brew install imagemagick)"; exit 2; }
 command -v pngquant >/dev/null || { echo "need pngquant (brew install pngquant)"; exit 2; }
@@ -101,6 +116,41 @@ printf "TOTAL: %d KB -> %d KB  (saved %d KB, %d%%)\n" \
   "$((total_before/1024))" "$((total_after/1024))" \
   "$(((total_before-total_after)/1024))" \
   "$(( total_before>0 ? (total_before-total_after)*100/total_before : 0 ))"
+
+if [ "$BULK" = "1" ]; then
+  echo
+  echo "── bulk pass: everything else under public/images/ ──"
+  bulk_before=0; bulk_after=0; bulk_n=0
+  while IFS= read -r f; do
+    case "$TARGETS" in *"$f"*) continue;; esac   # critical-path files are done above
+    before=$(stat -f %z "$f")
+    w=$(magick identify -format '%w' "$f" 2>/dev/null) || continue
+    h=$(magick identify -format '%h' "$f" 2>/dev/null) || continue
+    [ -z "$w" ] || [ -z "$h" ] || [ "$w" = "0" ] || [ "$h" = "0" ] && { bulk_before=$((bulk_before+before)); bulk_after=$((bulk_after+before)); continue; }
+    bpp=$(python3 -c "print(f'{$before/($w*$h):.4f}')" 2>/dev/null || echo 0)
+    over_edge=0
+    [ "$w" -gt "$BULK_MAX_EDGE" ] || [ "$h" -gt "$BULK_MAX_EDGE" ] && over_edge=1
+    over_bpp=$(python3 -c "print(1 if $bpp > $BPP_LIMIT else 0)" 2>/dev/null || echo 0)
+    bulk_before=$((bulk_before+before))
+    if [ "$over_edge" = "0" ] && [ "$over_bpp" = "0" ]; then bulk_after=$((bulk_after+before)); continue; fi
+    tmp="$(mktemp -t optbulk).${f##*.}"
+    magick "$f" -resize "${BULK_MAX_EDGE}x${BULK_MAX_EDGE}>" -strip -quality 88 "$tmp" 2>/dev/null || { rm -f "$tmp"; bulk_after=$((bulk_after+before)); continue; }
+    if [ "${f##*.}" = "png" ]; then
+      pngquant --quality=70-95 --speed 1 --force --output "$tmp.pq" "$tmp" 2>/dev/null && mv "$tmp.pq" "$tmp" || true
+    fi
+    after=$(stat -f %z "$tmp")
+    if [ "$after" -lt "$before" ]; then
+      pct=$(( (before-after)*100/before ))
+      printf "  %-50s %6d KB -> %5d KB (-%d%%)\n" "${f#public/images/}" "$((before/1024))" "$((after/1024))" "$pct"
+      mv "$tmp" "$f"; bulk_after=$((bulk_after+after)); bulk_n=$((bulk_n+1))
+    else
+      rm -f "$tmp"; bulk_after=$((bulk_after+before))
+    fi
+  done < <(find public/images -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' \) | sort)
+  echo
+  printf "BULK: %d file(s) rewritten, %d KB -> %d KB (saved %d KB)\n" \
+    "$bulk_n" "$((bulk_before/1024))" "$((bulk_after/1024))" "$(((bulk_before-bulk_after)/1024))"
+fi
 
 if [ "$CHECK" = "1" ] && [ "$oversized" -gt 0 ]; then
   echo "check: $oversized image(s) exceed their render box — run without --check"

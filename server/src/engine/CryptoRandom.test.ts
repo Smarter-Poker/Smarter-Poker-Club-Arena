@@ -25,7 +25,6 @@
 import { describe, it, expect } from 'vitest';
 import { secureRandomInt, secureRandom, secureShuffle } from './CryptoRandom.js';
 import { Deck } from './PokerEngine.js';
-import { TournamentRecurringService } from '../services/TournamentRecurringService.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -38,7 +37,7 @@ import { TournamentRecurringService } from '../services/TournamentRecurringServi
 function chiSquareUniform(counts: number[]): number {
   const total = counts.reduce((a, b) => a + b, 0);
   const expected = total / counts.length;
-  return counts.reduce((acc, c) => acc + ((c - expected) ** 2) / expected, 0);
+  return counts.reduce((acc, c) => acc + (c - expected) ** 2 / expected, 0);
 }
 
 const cardKey = (c: { rank: string; suit: string }) => `${c.rank}${c.suit}`;
@@ -119,9 +118,7 @@ describe('secureShuffle', () => {
       secureShuffle(arr);
       expect(arr.length).toBe(52);
       expect(new Set(arr).size).toBe(52);
-      expect([...arr].sort((a, b) => a - b)).toEqual(
-        Array.from({ length: 52 }, (_, i) => i)
-      );
+      expect([...arr].sort((a, b) => a - b)).toEqual(Array.from({ length: 52 }, (_, i) => i));
     }
   });
 
@@ -190,82 +187,30 @@ describe('Deck.shuffle', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// rollSpinMultiplier (audit A8)
+// rollSpinMultiplier (audit A8) — DELETED, and pinned deleted
 // ═══════════════════════════════════════════════════════════════════════════════
+//
+// The six tests that lived here exercised TournamentRecurringService's local
+// CSPRNG weighted roll. That method is gone (2026-08-20 second pass): the one
+// and only draw now happens server-side at START, inside
+// fn_spin_draw_multiplier, whose randomness is gen_random_bytes in Postgres —
+// rejection concerns and boundary bugs live in ONE implementation with ONE
+// audit surface. A local roll was the last code path that could pick a
+// multiplier without asking the reserve, so its absence is itself the
+// invariant worth testing now.
 
-describe('TournamentRecurringService.rollSpinMultiplier', () => {
-  // The method is private; the service constructor is inert (it only assigns
-  // fields — no timers start until start() is called), so reaching in is safe
-  // and is far better than duplicating the algorithm in the test.
-  const roll = (tiers: Array<{ multiplier: number; weight: number }>): number =>
-    (new TournamentRecurringService() as any).rollSpinMultiplier(tiers);
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
-  const LIVE_TIERS = [
-    { multiplier: 2, weight: 750_000 },
-    { multiplier: 3, weight: 180_000 },
-    { multiplier: 5, weight: 50_000 },
-    { multiplier: 10, weight: 15_000 },
-    { multiplier: 25, weight: 4_000 },
-    { multiplier: 100, weight: 900 },
-    { multiplier: 240, weight: 100 },
-  ];
-
-  it('only ever returns a declared multiplier', () => {
-    const allowed = new Set(LIVE_TIERS.map((t) => t.multiplier));
-    for (let i = 0; i < 20_000; i++) {
-      expect(allowed.has(roll(LIVE_TIERS))).toBe(true);
-    }
-  });
-
-  it('NEVER awards a zero-weight tier', () => {
-    // This is the boundary bug the old `remainder -= w; if (remainder <= 0)`
-    // loop had: landing exactly on a boundary handed the prize to the next
-    // tier in the list even when that tier's weight was 0.
-    const tiers = [
-      { multiplier: 2, weight: 10 },
-      { multiplier: 240, weight: 0 }, // jackpot, disabled
-      { multiplier: 3, weight: 10 },
-      { multiplier: 1_000, weight: 0 }, // jackpot, disabled
-    ];
-    for (let i = 0; i < 50_000; i++) {
-      const m = roll(tiers);
-      expect(m).not.toBe(240);
-      expect(m).not.toBe(1_000);
-    }
-  });
-
-  it('respects the declared weights', () => {
-    const tiers = [
-      { multiplier: 2, weight: 700_000 },
-      { multiplier: 5, weight: 250_000 },
-      { multiplier: 100, weight: 50_000 },
-    ];
-    const counts: Record<number, number> = { 2: 0, 5: 0, 100: 0 };
-    const N = 40_000;
-    for (let i = 0; i < N; i++) counts[roll(tiers)]++;
-    expect(counts[2] / N).toBeCloseTo(0.7, 1);
-    expect(counts[5] / N).toBeCloseTo(0.25, 1);
-    expect(counts[100] / N).toBeCloseTo(0.05, 1);
-  });
-
-  it('picks the single tier when only one has weight', () => {
-    const tiers = [
-      { multiplier: 2, weight: 0 },
-      { multiplier: 7, weight: 5 },
-      { multiplier: 9, weight: 0 },
-    ];
-    for (let i = 0; i < 500; i++) expect(roll(tiers)).toBe(7);
-  });
-
-  it('degrades safely when every weight is zero', () => {
-    const tiers = [
-      { multiplier: 2, weight: 0 },
-      { multiplier: 5, weight: 0 },
-    ];
-    expect(roll(tiers)).toBe(2);
-  });
-
-  it('degrades safely on an empty tier table', () => {
-    expect(roll([])).toBe(2);
+describe('the local multiplier roll stays deleted', () => {
+  it('no rollSpinMultiplier implementation exists anywhere in the engine', () => {
+    const recurring = readFileSync(
+      path.join(process.cwd(), 'src/services/TournamentRecurringService.ts'),
+      'utf8'
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*$/gm, '');
+    expect(recurring).not.toMatch(/rollSpinMultiplier\s*\(/);
+    expect(recurring).not.toMatch(/Math\.random/);
   });
 });

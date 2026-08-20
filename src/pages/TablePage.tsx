@@ -2808,7 +2808,31 @@ export default function TablePage({
           userId,
           heroSeat: tableState.heroSeat,
         });
-        setLeaveNotice("You're no longer seated at this table — nothing to leave.");
+        if (result.error) {
+          // Engine explicitly refused (unreachable / cashout blocked) — the
+          // seat is still live with chips in it, so the player must stay.
+          setLeaveNotice(result.error);
+        } else {
+          // Dan 2026-08-20 (leave-stuck fix): no error means the player
+          // genuinely holds no active seat row (already left / never fully
+          // seated / reservation cleaned up server-side). The old code showed
+          // a notice but KEPT the client-side seat claim, so the felt read
+          // "YOUR SEAT" and the footer "Seat Reserved, You'll Be Dealt In
+          // Next Hand" forever — the exact "I left but never actually left"
+          // state. There is nothing to cash out, so release the claim and
+          // exit to the lobby like a normal leave.
+          heroSeatRef.current = 0;
+          pendingSeatStackRef.current = 0;
+          setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+          playerStatusService.clearPlayingAt(userId);
+          masterBus.emit('SESSION_ENDED', { tableId, userId });
+          masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: seatAtLeave });
+          masterBus.emit('TABLE_MENU_ACTION', {
+            tableId: tableId ?? '',
+            action: 'CLOSE_TABLE_TAB',
+          });
+          navigate('/');
+        }
       }
     } catch (error) {
       reportError(error, 'TablePage.Exception');
@@ -3574,14 +3598,39 @@ export default function TablePage({
             .select('name, unions:union_id (name)')
             .eq('id', table.club_id)
             .maybeSingle()
-            .then(({ data: clubData }) => {
+            .then(async ({ data: clubData }) => {
               if (!clubData?.name) return;
               const rawUnion = (clubData as { unions?: { name?: string } | { name?: string }[] })
                 .unions;
               const unionName = Array.isArray(rawUnion) ? rawUnion[0]?.name : rawUnion?.name;
+              // Dan 2026-08-20: fleet tables hang off the union's own hub club,
+              // which shares the union's name — the masthead read
+              // "MIDWAY UNION • MIDWAY UNION". The club slot should carry the
+              // club the PLAYER is inside of (their current club), with the
+              // union next to it. Fall back to the table's own club, and never
+              // print the same name twice.
+              let clubName: string | undefined = clubData.name;
+              const viewerClubId = useUserStore.getState().currentClubId;
+              if (
+                unionName &&
+                clubName === unionName &&
+                viewerClubId &&
+                viewerClubId !== table.club_id
+              ) {
+                const { data: viewerClub } = await supabase
+                  .from('clubs')
+                  .select('name')
+                  .eq('id', viewerClubId)
+                  .maybeSingle();
+                if (viewerClub?.name) clubName = viewerClub.name;
+              }
+              if (unionName && clubName === unionName) {
+                // Still identical (no distinct viewer club) — show it once.
+                clubName = undefined;
+              }
               setTableState((prev) => ({
                 ...prev,
-                clubName: clubData.name,
+                clubName,
                 unionName: unionName || undefined,
               }));
             });
@@ -3592,7 +3641,7 @@ export default function TablePage({
           const { data: tournData } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, blind_structure, current_level'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, blind_structure, current_level, started_at'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -3717,7 +3766,17 @@ export default function TablePage({
             } catch {
               /* storage unavailable — show it, a repeat beats never seeing it */
             }
-            if (!alreadySeen) {
+            // sessionStorage is per-TAB, so a fresh tab used to replay a draw
+            // from minutes ago as if it were happening now — a fake reveal of
+            // an old result, which is the same dishonesty as the spoiler in
+            // the other direction. The draw happens at start, so the wheel is
+            // only a live moment within ~90s of started_at; after that the
+            // persistent badge is the record and the wheel stays down.
+            const startedAtMs = tournData.started_at ? Date.parse(tournData.started_at) : NaN;
+            const drawIsFresh = Number.isFinite(startedAtMs)
+              ? Date.now() - startedAtMs < 90_000
+              : true; // no started_at (older rows): keep the old behaviour
+            if (!alreadySeen && drawIsFresh) {
               try {
                 sessionStorage.setItem(seenKey, '1');
               } catch {
@@ -7316,13 +7375,16 @@ export default function TablePage({
   //
   // Collapsing the trigger to a boolean means the effect runs exactly twice
   // per turn: once when the warning window opens, once when it closes.
-  const isTimerWarningActive =
+  // Dan 2026-08-20: warning window is the FINAL 3 SECONDS (was 5), and it
+  // buzzes as well as ticks. The haptic is deliberately NOT gated on the
+  // sound switches — a player with sound off still gets the physical warning
+  // (HapticService itself honors the user's vibration setting).
+  const isTimerWarningWindow =
     tableState.currentPlayerSeat === tableState.heroSeat &&
     tableState.isHandInProgress &&
-    actionTimeRemaining <= 5 &&
-    actionTimeRemaining > 0 &&
-    isSoundEnabled &&
-    ambientSoundsAllowed;
+    actionTimeRemaining <= 3 &&
+    actionTimeRemaining > 0;
+  const isTimerWarningActive = isTimerWarningWindow && isSoundEnabled && ambientSoundsAllowed;
   useEffect(() => {
     if (isTimerWarningActive) {
       soundService.startTimerWarning();
@@ -7330,6 +7392,16 @@ export default function TablePage({
     }
     soundService.stopTimerWarning();
   }, [isTimerWarningActive]);
+  useEffect(() => {
+    if (!isTimerWarningWindow) return;
+    // Heavy pulse immediately, then once per second while the window is open
+    // (mirrors the 1s cadence of soundService.startTimerWarning).
+    import('../services/HapticService').then(({ haptic }) => haptic.heavy());
+    const buzz = window.setInterval(() => {
+      import('../services/HapticService').then(({ haptic }) => haptic.heavy());
+    }, 1000);
+    return () => clearInterval(buzz);
+  }, [isTimerWarningWindow]);
 
   return (
     <div
@@ -7774,16 +7846,19 @@ export default function TablePage({
                         day: 'numeric',
                         year: 'numeric',
                       })}
-                      {tableState.clubName && (
+                      {(tableState.clubName || tableState.unionName) && (
                         <>
                           {' \u00B7 '}
                           <span className="table-brand__club">
                             {tableState.clubName}
                             {/* Union name sits beside the club when the club is
-                                attached to one (Dan 2026-08-18). */}
+                                attached to one (Dan 2026-08-18). Dan 2026-08-20:
+                                clubName is now the VIEWER's club and is omitted
+                                entirely when it would duplicate the union name,
+                                so the union renders standalone in that case. */}
                             {tableState.unionName && (
                               <span className="table-brand__union">
-                                {' \u2022 '}
+                                {tableState.clubName ? ' \u2022 ' : ''}
                                 {tableState.unionName}
                               </span>
                             )}

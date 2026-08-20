@@ -129,6 +129,47 @@
   font-weight: 800;
 }
 
+/* "500x LIVE" — the Reserve Pool can genuinely fund the top of the ladder
+   right now. Rendered only when the same threshold the draw enforces is met,
+   so this is the one lobby claim backed by money rather than copy. Pulsing
+   dot, not pulsing text: it should read as a status light, not a siren. */
+.ngc-spin-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+.ngc-spin-live::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #4ade80;
+  animation: ncSpinLivePulse 1.6s ease-in-out infinite;
+}
+@keyframes ncSpinLivePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ngc-spin-live::before {
+    animation: none;
+  }
+}
+
 .ngc-seats {
   height: 6px;
   border-radius: 3px;

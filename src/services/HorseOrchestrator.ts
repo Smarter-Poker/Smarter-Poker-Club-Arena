@@ -25,12 +25,7 @@
  */
 
 import { supabase } from '../lib/supabase';
-import {
-  SPIN_TIERS,
-  SPIN_SEATS as SPEC_SPIN_SEATS,
-  spinTier,
-  spinRakeRate,
-} from '../config/spinSpec';
+import { SPIN_TIERS, SPIN_SEATS as SPEC_SPIN_SEATS } from '../config/spinSpec';
 import { HydraService } from './HydraService';
 import { tournamentService } from './TournamentService';
 import { QUERY_LIMITS } from '../lib/constants';
@@ -917,14 +912,12 @@ const SPIN_BLIND_STRUCTURE = [
   { level: 5, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 1 },
 ];
 
-const SPIN_MULTIPLIERS = [
-  { multiplier: 2, weight: 75 },
-  { multiplier: 3, weight: 15 },
-  { multiplier: 5, weight: 7 },
-  { multiplier: 10, weight: 2.5 },
-  { multiplier: 25, weight: 0.4 },
-  { multiplier: 100, weight: 0.1 },
-];
+// The local SPIN_MULTIPLIERS table that lived here (EV 2.75, missing
+// 4x/50x/500x — one of the four disagreeing copies of the ladder) is GONE.
+// No config carries a multiplier table any more: the ladder is the FORMAT,
+// defined once in src/config/spinSpec.ts, and the draw happens at start in
+// the engine, through the reserve gate. launchSpin below writes a pre-draw
+// row and decides nothing.
 
 const SPIN_CONFIGS = [
   // NLH Spins
@@ -940,7 +933,6 @@ const SPIN_CONFIGS = [
     horsesToRegister: 3,
     blindStructure: SPIN_BLIND_STRUCTURE,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
   {
     name: '3 Chip Spin NLH',
@@ -954,7 +946,6 @@ const SPIN_CONFIGS = [
     horsesToRegister: 3,
     blindStructure: SPIN_BLIND_STRUCTURE,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
   {
     name: '5 Chip Spin NLH',
@@ -968,7 +959,6 @@ const SPIN_CONFIGS = [
     horsesToRegister: 3,
     blindStructure: SPIN_BLIND_STRUCTURE,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
   {
     name: '10 Chip Spin NLH',
@@ -982,7 +972,6 @@ const SPIN_CONFIGS = [
     horsesToRegister: 3,
     blindStructure: SPIN_BLIND_STRUCTURE,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
   // PLO4 Spins
   {
@@ -997,7 +986,6 @@ const SPIN_CONFIGS = [
     horsesToRegister: 3,
     blindStructure: SPIN_BLIND_STRUCTURE,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
   {
     name: '5 Chip Spin PLO4',
@@ -1011,7 +999,6 @@ const SPIN_CONFIGS = [
     horsesToRegister: 3,
     blindStructure: SPIN_BLIND_STRUCTURE,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
   // PLO5 Spins
   {
@@ -1026,7 +1013,6 @@ const SPIN_CONFIGS = [
     horsesToRegister: 3,
     blindStructure: SPIN_BLIND_STRUCTURE,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
   // PLO8 Spins
   {
@@ -1041,7 +1027,6 @@ const SPIN_CONFIGS = [
     horsesToRegister: 3,
     blindStructure: SPIN_BLIND_STRUCTURE,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
 ];
 
@@ -1627,46 +1612,23 @@ class HorseOrchestrator {
     const config = SPIN_CONFIGS[configIndex];
     if (!config) return { tournamentId: null, registered: 0, multiplier: 0 };
 
-    // ── AUDIT FIX 2026-08-20 ──────────────────────────────────────────────
-    // This path had three defects, all latent (no production row has ever come
-    // from it — every one of the 7,130 spins carries the recurring service's
-    // shape) but all live the moment anyone calls it:
+    // ── AUDIT FIX 2026-08-20 (second pass) ────────────────────────────────
+    // This path's original defects (a local EV-2.75 ladder, a buy-in fee,
+    // the inflated per-seat prize formula) were fixed earlier today by
+    // routing its draw through the reserve-gated RPC. That was still wrong
+    // in a deeper way: ANY multiplier decided at creation sits readable on
+    // the row for the minute before start — and even with every label
+    // hidden, prize_pool = buyIn x multiplier leaks it arithmetically to a
+    // lobby client doing division.
     //
-    //   1. It rolled from a LOCAL multiplier table (EV 2.75, no 4x/50x/500x),
-    //      a fourth copy of the ladder.
-    //   2. It charged buy_in_fee, which doubles the true edge to 14.7% — a
-    //      Spin is priced as the buy-in and nothing else.
-    //   3. prizePool = buyIn x horsesToRegister x multiplier. That is the
-    //      inflated formula TournamentRecurringService documents as a
-    //      "guaranteed house loss": a 3-seat 2x would have paid 6 units
-    //      against 3 collected.
-    //
-    // Now draws through the SAME reserve-gated RPC as every other path, so an
-    // unfundable multiplier cannot be selected here either.
-    let multiplier: number;
-    try {
-      const { data: draw, error: drawErr } = await supabase.rpc('fn_spin_draw_multiplier', {
-        p_club_id: this.getNextClubId(),
-        p_buy_in: config.buyIn,
-        p_tiers: SPIN_TIERS.map((t) => ({
-          multiplier: t.multiplier,
-          freq: t.freq,
-          reserveThresholdX: t.reserveThresholdX,
-        })),
-        p_rake_rate: spinRakeRate(config.buyIn),
-        p_seats: SPEC_SPIN_SEATS,
-      });
-      if (drawErr || !draw?.ok) throw new Error(drawErr?.message || draw?.reason || 'draw_failed');
-      multiplier = Number(draw.multiplier);
-      if (!(multiplier > 0)) throw new Error('draw returned no multiplier');
-    } catch {
-      // Ungated tiers only, so a failed gate can never yield a jackpot.
-      const safe = SPIN_TIERS.filter((t) => t.reserveThresholdX <= 0);
-      multiplier = safe[0].multiplier;
-    }
-    const spinTierSpec = spinTier(multiplier);
-    // The prize is ONE buy-in times the multiplier. Not per seat.
-    const prizePool = Math.round(config.buyIn * multiplier * 100) / 100;
+    // So this path no longer decides anything about the multiplier. It
+    // writes the same pre-draw shape as TournamentRecurringService.createSpin
+    // — spin_multiplier NULL, prize_pool 0, smallest-tier placeholder
+    // structure — and the engine draws through the reserve gate at START,
+    // settles the pool in the same breath, and rewrites stack, blinds and
+    // payouts from the real tier. One draw site, zero seconds of
+    // readable-but-unsettled state.
+    const placeholderTier = SPIN_TIERS[0];
 
     try {
       const gameTypeMap: Record<string, string> = {
@@ -1682,28 +1644,28 @@ class HorseOrchestrator {
         .from('tournaments')
         .insert({
           club_id: this.getNextClubId(),
-          name: `${config.name} (${multiplier}x)`,
+          // The name must not carry the multiplier — and cannot, since no
+          // multiplier exists yet.
+          name: config.name,
           game_type: dbGameType,
           // Lowercase + tournament_type, matching every other creation path.
           // 'SPIN' alone failed the engine's `variant === 'spin'` check AND
           // slipped past a case-sensitive constraint.
           variant: 'spin',
           tournament_type: 'SPIN',
-          spin_multiplier: multiplier,
+          // NULL is what the engine's start-time draw path keys on.
+          spin_multiplier: null,
           buy_in_amount: config.buyIn,
           buy_in_fee: 0,
-          guaranteed_prize: prizePool,
-          prize_pool: prizePool,
-          starting_chips: spinTierSpec?.startingStack ?? config.startingStack,
+          guaranteed_prize: 0,
+          prize_pool: 0,
+          starting_chips: placeholderTier.startingStack,
           max_players: SPEC_SPIN_SEATS,
           min_players: SPEC_SPIN_SEATS,
           current_players: 0,
           status: 'REGISTERING',
           blind_structure: config.blindStructure,
-          payout_structure: (spinTierSpec?.payouts ?? [1]).map((pct, i) => ({
-            place: i + 1,
-            percentage: Math.round(pct * 10000) / 100,
-          })),
+          payout_structure: [{ place: 1, percentage: 100 }],
           late_reg_levels: 0,
           late_reg_mins: 0,
           start_time: new Date(Date.now() + 10_000).toISOString(),
@@ -1713,7 +1675,7 @@ class HorseOrchestrator {
 
       if (error) {
         this.logError(`Spin creation failed: ${error.message}`);
-        return { tournamentId: null, registered: 0, multiplier };
+        return { tournamentId: null, registered: 0, multiplier: 0 };
       }
 
       const { tournamentService } = await import('./TournamentService');
@@ -1742,9 +1704,11 @@ class HorseOrchestrator {
         .eq('id', spin.id);
 
       console.debug(
-        `[Orchestrator] Spin "${config.name}" (${multiplier}x = ${prizePool}) created with ${registered} horses`
+        `[Orchestrator] Spin "${config.name}" created with ${registered} horses — multiplier drawn at start`
       );
-      return { tournamentId: spin.id, registered, multiplier };
+      // multiplier: 0 is honest — it has not been drawn yet. Callers that
+      // want the drawn value read spin_multiplier off the row after start.
+      return { tournamentId: spin.id, registered, multiplier: 0 };
     } catch (err: any) {
       this.logError(`Spin launch error: ${err.message}`);
       return { tournamentId: null, registered: 0, multiplier: 0 };

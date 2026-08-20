@@ -3,40 +3,66 @@
  *  SPIN ENGINE WIRING — source-level guards on the money path
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * These read the server source rather than executing it, because the engine
- * needs a live Postgres and a running tournament to exercise. What actually
- * needs pinning here is not behaviour under load — it is that four specific
- * mistakes cannot come back:
+ * These read the source rather than executing it, because the engine needs a
+ * live Postgres and a running tournament to exercise. What needs pinning is
+ * not behaviour under load — it is that five specific mistakes cannot come
+ * back:
  *
  *   1. A Spin priced like an MTT (buy-in + fee). Dan: "THEY ARE STRAIGHT JUST
  *      10 BUY IN... NO ADDITIONAL RAKE IS ADDED." A fee on top would double
  *      the true house edge from 7.87% to 14.7%.
- *   2. A fourth local multiplier table. Three of them disagreed; the one that
- *      ran was not the one that was documented.
+ *   2. A local multiplier table. FOUR of them disagreed (EV 3.00 / 2.75 /
+ *      2.24 / 2.33); the one that ran was not the one documented.
  *   3. prize_pool overwritten with no ledger row — the leak that put ~1,160
  *      of margin into no ledger at all across 2,091 games.
- *   4. An ungated jackpot: a high multiplier selected without asking whether
- *      the Reserve Pool can pay it.
+ *   4. An ungated jackpot: a multiplier selected without asking the reserve.
+ *   5. A draw that exists BEFORE start. Any creation-time multiplier sits
+ *      readable on the row for a minute — and even with every label hidden,
+ *      prize_pool = buyIn x multiplier leaks it arithmetically. The only
+ *      draw a lobby client cannot read early is one that has not happened.
+ *
+ * 2026-08-20 (second pass): the draw MOVED from creation to start. These
+ * guards now pin the draw's LOCATION as hard as its gating.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const recurring = readFileSync(
-  resolve(__dirname, '../../server/src/services/TournamentRecurringService.ts'),
-  'utf8'
-);
-const engine = readFileSync(
-  resolve(__dirname, '../../server/src/tournament/TournamentManagerBase.ts'),
-  'utf8'
-);
+const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
-/** The object literal of the tournaments insert that creates a Spin. */
+/**
+ * Comments quote the very things these tests ban (that is what a good
+ * comment does — it names the old bug). Never match against them.
+ */
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+const recurringRaw = read('server/src/services/TournamentRecurringService.ts');
+const engineRaw = read('server/src/tournament/TournamentManagerBase.ts');
+const orchestratorRaw = read('src/services/HorseOrchestrator.ts');
+const tournamentServiceRaw = read('src/services/TournamentService.ts');
+
+const recurring = code(recurringRaw);
+const engine = code(engineRaw);
+const orchestrator = code(orchestratorRaw);
+const tournamentService = code(tournamentServiceRaw);
+
+/**
+ * The insert object for the Spin, bounded by where it actually ends. This
+ * used to be `.slice(0, 1600)` — a guess about block length that broke the
+ * SpinSeatCount guard the day comments were added above the line it checked.
+ * A test that fails when a comment is added is a test people learn to ignore.
+ */
 function spinInsertBlock(src: string): string {
   const i = src.indexOf("tournament_type: 'SPIN',");
   expect(i, 'expected a Spin insert').toBeGreaterThan(-1);
-  return src.slice(i, i + 1600);
+  const end = src.indexOf('.select()', i);
+  expect(end, 'Spin insert does not end in .select()').toBeGreaterThan(i);
+  // Walk back to the start of the insert object so buy_in_fee (written above
+  // tournament_type) is inside the window.
+  const start = src.lastIndexOf('.insert(', i);
+  expect(start, 'no .insert( above the Spin marker').toBeGreaterThan(-1);
+  return src.slice(start, end);
 }
 
 describe('a Spin is not priced like an MTT', () => {
@@ -51,44 +77,81 @@ describe('a Spin is not priced like an MTT', () => {
   it('leaves the SNG path alone — those ARE buy-in + rake', () => {
     const i = recurring.indexOf("tournament_type: 'SNG',");
     expect(i).toBeGreaterThan(-1);
-    expect(recurring.slice(i, i + 900)).toMatch(/buy_in_fee:\s*config\.rake/);
+    const end = recurring.indexOf('.select()', i);
+    expect(recurring.slice(i, end)).toMatch(/buy_in_fee:\s*config\.rake/);
   });
 });
 
-describe('one multiplier table, not four', () => {
+describe('one multiplier table, in one place: the spec', () => {
   it('both server files import the canonical spec', () => {
-    /* The `.js` is not optional and not a typo in the source. server/ is
-       `"type": "module"` and every relative import in these two files carries
-       the extension (8 of 8), because Node's ESM resolver will not resolve a
-       bare specifier at runtime.
-       This regex omitted it, so the assertion failed against correct code —
-       and since the client vitest suite ran in no CI job until 2026-08-20,
-       it failed unnoticed on main. */
-    expect(recurring).toMatch(/from '\.\.\/config\/spinSpec\.js'/);
-    expect(engine).toMatch(/from '\.\.\/config\/spinSpec\.js'/);
+    /* The `.js` is not optional: server/ is `"type": "module"` and Node's
+       ESM resolver will not resolve a bare specifier at runtime. */
+    expect(recurringRaw).toMatch(/from '\.\.\/config\/spinSpec\.js'/);
+    expect(engineRaw).toMatch(/from '\.\.\/config\/spinSpec\.js'/);
   });
 
-  it("the engine's two hardcoded fallback tables are gone", () => {
-    // EV 2.2415 and 2.3288 — neither matched the documented design.
-    expect(engine).not.toMatch(/SPIN_STANDARD/);
-    expect(engine).not.toMatch(/SPIN_HYPER/);
-  });
-
-  it('no server file defines its own weighted multiplier literal', () => {
-    // The shape that started all of this: { multiplier: N, weight: N }.
+  it('no file — server OR client — declares its own weighted table', () => {
+    // The shape that started all of this: { multiplier: N, weight: N } and
+    // its client cousin { displayMultiplier: N, probability: N }.
     for (const [name, src] of [
       ['TournamentManagerBase', engine],
       ['TournamentRecurringService', recurring],
+      ['HorseOrchestrator', orchestrator],
+      ['TournamentService', tournamentService],
     ] as const) {
-      const literals = src.match(/\{\s*multiplier:\s*\d+,\s*weight:\s*\d/g) ?? [];
-      // The recurring service keeps ONE derived view built from SPIN_TIERS,
-      // which is a mapping rather than a hardcoded table.
-      expect(literals.length, `${name} declares a hardcoded multiplier table`).toBe(0);
+      const weighted = src.match(/\{\s*multiplier:\s*[\d.]+\s*,\s*weight:\s*[\d.]/g) ?? [];
+      expect(weighted.length, `${name} declares a hardcoded weighted table`).toBe(0);
+      const legacy = src.match(/displayMultiplier:\s*[\d.]/g) ?? [];
+      expect(legacy.length, `${name} still carries the retired bonus-tier shape`).toBe(0);
+      const probability = src.match(/\{\s*multiplier:\s*[\d.]+\s*,\s*probability:\s*[\d.]/g) ?? [];
+      expect(probability.length, `${name} declares a hardcoded probability table`).toBe(0);
     }
   });
 
-  it('derives its multiplier list from SPIN_TIERS', () => {
-    expect(recurring).toMatch(/SPIN_MULTIPLIERS\s*=\s*SPIN_TIERS\.map/);
+  it("the client's display ladder is DERIVED from SPIN_TIERS", () => {
+    expect(tournamentService).toMatch(/SPIN_TIERS\.map\(/);
+  });
+});
+
+describe('the draw happens at START, nowhere else', () => {
+  it('the engine start path calls the reserve-gated RPC', () => {
+    expect(engine).toMatch(/fn_spin_draw_multiplier/);
+  });
+
+  it('creation does NOT draw — not the recurring service, not the orchestrator', () => {
+    // A creation-time multiplier is readable for a minute before start, and
+    // prize_pool = buyIn x multiplier leaks it arithmetically even when
+    // every label is hidden. See guard file header, mistake 5.
+    expect(recurring).not.toMatch(/fn_spin_draw_multiplier/);
+    expect(orchestrator).not.toMatch(/fn_spin_draw_multiplier/);
+  });
+
+  it('creation writes a NULL multiplier for the start path to key on', () => {
+    expect(spinInsertBlock(recurring)).toMatch(/spin_multiplier:\s*null/);
+    expect(spinInsertBlock(orchestrator)).toMatch(/spin_multiplier:\s*null/);
+  });
+
+  it('creation does not put a multiplier-derived amount in prize_pool', () => {
+    // The arithmetic spoiler: any buyIn x multiplier written pre-start.
+    // Scoped to createSpin — MTT and SNG legitimately set their pools at
+    // creation because their pools do not encode a secret.
+    const i = recurring.indexOf('private async createSpin');
+    expect(i, 'expected createSpin').toBeGreaterThan(-1);
+    const next = recurring.indexOf('private async ', i + 10);
+    const body = recurring.slice(i, next > i ? next : undefined);
+    expect(body).not.toMatch(/prize_pool:\s*prizePool/);
+    expect(body).not.toMatch(/buyIn\s*\*\s*multiplier/i);
+    expect(spinInsertBlock(orchestrator)).toMatch(/prize_pool:\s*0/);
+  });
+
+  it('no client-side draw survives anywhere', () => {
+    // Math.random deciding a real prize was engine audit A8; a client-side
+    // roll of any kind is worse. TournamentService.spinMultiplier is gone.
+    expect(tournamentService).not.toMatch(/spinMultiplier\(config/);
+  });
+
+  it("the engine's RPC-down fallback resolves DOWN to the smallest tier", () => {
+    expect(engine).toMatch(/SPIN_TIERS\[0\]\.multiplier/);
   });
 });
 
@@ -98,12 +161,9 @@ describe('every game is booked', () => {
   });
 
   it('reports loudly rather than swallowing a failed settlement', () => {
-    // Losing the ledger row is the whole defect this replaces; it must never
-    // fail silently again. Anchored on the RPC CALL, not the first mention —
-    // the block is preceded by a comment naming the same function.
     const i = engine.indexOf("supabase.rpc('fn_spin_settle_game'");
     expect(i, 'expected a call to fn_spin_settle_game').toBeGreaterThan(-1);
-    const block = engine.slice(i, i + 2200);
+    const block = engine.slice(i, i + 2600);
     expect(block).toMatch(/reportError/);
     expect(block).toMatch(/unbooked/i);
   });
@@ -113,36 +173,21 @@ describe('every game is booked', () => {
   });
 });
 
-describe('the jackpot gate cannot be bypassed', () => {
-  it('draws through the reserve-gated RPC at creation', () => {
-    expect(recurring).toMatch(/fn_spin_draw_multiplier/);
-  });
-
-  it('re-draws through the SAME gate when a multiplier is missing', () => {
-    expect(engine).toMatch(/fn_spin_draw_multiplier/);
-  });
-
-  it('the offline fallback can only pick ALWAYS-AVAILABLE tiers', () => {
-    // A database hiccup must not be able to hand out a jackpot the pool was
-    // never asked about.
-    expect(recurring).toMatch(/reserveThresholdX\s*<=\s*0/);
-  });
-
-  it('a missing multiplier resolves DOWN to the smallest tier, never up', () => {
-    expect(engine).toMatch(/SPIN_TIERS\[0\]\.multiplier/);
-  });
-});
-
-describe('structure scales with the multiplier', () => {
-  it('creation sets stack, blinds and payouts from the tier', () => {
-    const block = spinInsertBlock(recurring);
-    expect(block).toMatch(/starting_chips:\s*spinStack/);
-    expect(block).toMatch(/blind_structure:\s*spinBlinds/);
-    expect(block).toMatch(/payout_structure:\s*spinPayouts/);
-  });
-
-  it('the engine re-applies stack and payouts at start', () => {
+describe('structure scales with the DRAWN tier, applied at start', () => {
+  it('start rewrites stack, blinds, payouts and pool from the tier', () => {
     expect(engine).toMatch(/starting_chips:\s*tier\?\.startingStack/);
+    expect(engine).toMatch(/blind_structure:\s*spinBlinds/);
     expect(engine).toMatch(/payout_structure:/);
+    expect(engine).toMatch(/prize_pool:\s*prizePool/);
+  });
+
+  it('start updates the IN-MEMORY structure too, not just the row', () => {
+    // The level timer and table creation read the in-memory object; a
+    // DB-only write would leave this start running placeholder blinds.
+    expect(engine).toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
+  });
+
+  it('creation writes an honest placeholder, not a fake tier', () => {
+    expect(recurring).toMatch(/SPIN_TIERS\[0\]/);
   });
 });

@@ -17,6 +17,7 @@ import './NeonCard.css';
 import { reportError } from '../../utils/errorReporter';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import { SPIN_TIERS } from '../../config/spinSpec';
+import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 interface TableSettings {
@@ -428,6 +429,17 @@ export function SpinCard({ tournament }: TournamentCardProps) {
   // "Win up to 2" for a format whose whole pitch is 500.
   const maxMult = SPIN_TIERS[SPIN_TIERS.length - 1].multiplier;
 
+  // Is the top of the ladder actually ON the wheel right now? The public
+  // availability view answers with two booleans and nothing else — see
+  // useSpinTierAvailability. "500x LIVE" only renders when the Reserve Pool
+  // genuinely clears the same threshold the draw enforces, which makes it
+  // the one lobby claim here backed by money rather than copy. No club_id or
+  // an unfunded pool renders nothing: an absent boast, never a wrong one.
+  const availability = useSpinTierAvailability(
+    (tournament as unknown as { club_id?: string }).club_id
+  );
+  const liveTop = availability?.can_draw_500x ? 500 : availability?.can_draw_100x ? 100 : null;
+
   return (
     <NeonCard
       to={`/tournaments/${tournament.id}`}
@@ -443,12 +455,18 @@ export function SpinCard({ tournament }: TournamentCardProps) {
         <div className="ngc-val">Buy In {tournament.buy_in_amount + tournament.buy_in_fee}</div>
       </div>
       <div className="ngc-row">
-        <span className="ngc-win">Win up to {maxMult}x</span>
+        <span className="ngc-win">
+          Win up to {maxMult}x{liveTop && <span className="ngc-spin-live">{liveTop}x LIVE</span>}
+        </span>
         <span className="ngc-players">
           {tournament.current_players}/{tournament.max_players}
         </span>
       </div>
-      <Badges names={['winner-takes-all']} />
+      {/* The old hardcoded 'winner-takes-all' badge is gone: it is true for
+          the 2x-5x tiers (~87% of games) and FALSE for 10x and up, which pay
+          two or three places — and the card renders before the draw exists,
+          so it cannot know which this game will be. A claim that is wrong 13%
+          of the time is not a badge, it is a complaint waiting to happen. */}
       <div className="ngc-bottom">
         <span className="ngc-name">{tournament.name}</span>
         <span className="ngc-date">{formatDate(tournament.start_time)}</span>

@@ -711,6 +711,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // Reveal / knockout broadcast. The eliminated player's name is what the
     // reveal overlay must show (the old code sent the KNOCKER's name), and the
     // knocker's name drives the "X knocked out Y" feed line.
+    //
+    // The AVATAR rides along too. KnockoutAnimation was built with an
+    // `eliminatedAvatar` slot — the falling head is a real face when one is
+    // provided — but this payload only ever carried names, so every knockout
+    // in production has shown a bare initial. One extra lookup on a path that
+    // fires a few times per tournament, and the animation's centrepiece
+    // finally exists.
     try {
       const { data: names } = await supabase
         .from('tournament_players')
@@ -719,6 +726,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         .in('user_id', [eliminatedUserId, knockerUserId]);
       const nameOf = (id: string) =>
         (names || []).find((n: any) => n.user_id === id)?.username || 'Player';
+
+      let eliminatedAvatar: string | undefined;
+      try {
+        const { data: avatarRow } = await supabase
+          .from('profiles')
+          .select('avatar_url')
+          .eq('id', eliminatedUserId)
+          .maybeSingle();
+        eliminatedAvatar = avatarRow?.avatar_url || undefined;
+      } catch {
+        /* the head falls as an initial — same as every knockout before today */
+      }
 
       await this.broadcast(
         res.mode === 'mystery' ? 'mystery_bounty_revealed' : 'bounty_collected',
@@ -730,6 +749,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           playerName: nameOf(eliminatedUserId),
           eliminatedName: nameOf(eliminatedUserId),
           eliminatedUserId,
+          eliminatedAvatar,
           knockerName: nameOf(knockerUserId),
           knockerUserId,
           avgBounty: tournament?.bounty_amount || undefined,

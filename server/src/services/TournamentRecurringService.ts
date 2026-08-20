@@ -13,7 +13,6 @@
  * ZERO browser dependency — this is the SERVER version.
  */
 
-import { secureRandomInt } from '../engine/CryptoRandom.js';
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 
@@ -73,7 +72,10 @@ interface SpinConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
-  spinMultipliers: any[];
+  // NOTE deliberately absent: a spinMultipliers field. The ladder is not a
+  // per-config choice — it is THE format, defined once in spinSpec.ts and
+  // drawn through the reserve gate at start. A config that could carry its
+  // own table is how three disagreeing tables happened.
 }
 
 interface XMTTConfig {
@@ -200,26 +202,15 @@ const PAYOUT_STRUCTURES = {
   ],
 };
 
-import {
-  SPIN_TIERS,
-  SPIN_SEATS as SPEC_SPIN_SEATS,
-  spinTier,
-  spinRakeRate,
-  spinBlindsForLevel,
-} from '../config/spinSpec.js';
+import { SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SPIN MULTIPLIERS — Dan's spec, 2026-08-20.
-//
-// This local table used to be one of THREE that disagreed (EV 3.00 designed,
-// 2.75 here, 2.24 in the engine fallback) and this one is what actually ran.
-// The single source of truth is now src/config/spinSpec.ts, mirrored to
-// server/src/config/. Kept as a derived view so nothing downstream breaks.
-// ═══════════════════════════════════════════════════════════════════════════
-const SPIN_MULTIPLIERS = SPIN_TIERS.map((t) => ({
-  multiplier: t.multiplier,
-  weight: t.freq,
-}));
+// The local SPIN_MULTIPLIERS table that lived here — one of THREE that
+// disagreed (EV 3.00 designed, 2.75 here, 2.24 in the engine fallback), and
+// the one that actually ran — is GONE, not merely derived. The draw happens
+// exactly once, at start, in TournamentManagerBase, through
+// fn_spin_draw_multiplier against src/config/spinSpec.ts. This file no
+// longer knows how to pick a multiplier at all, which is the only number of
+// multiplier tables a creation service should have.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HOURLY TOURNAMENT SCHEDULE (24/7 COVERAGE)
@@ -598,7 +589,6 @@ const SPIN_CONFIGS: SpinConfig[] = [
     horsesToRegister: 3,
     blindStructure: BLIND_STRUCTURES.SPIN,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
   {
     name: '3 Chip Spin NLH',
@@ -612,7 +602,6 @@ const SPIN_CONFIGS: SpinConfig[] = [
     horsesToRegister: 3,
     blindStructure: BLIND_STRUCTURES.SPIN,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
   },
   {
     name: '5 Chip Spin PLO4',
@@ -626,7 +615,37 @@ const SPIN_CONFIGS: SpinConfig[] = [
     horsesToRegister: 3,
     blindStructure: BLIND_STRUCTURES.SPIN,
     payoutStructure: [{ place: 1, percentage: 100 }],
-    spinMultipliers: SPIN_MULTIPLIERS,
+  },
+  // SPIN_GAME_TYPES has advertised PLO5 and PLO6 since the spec was written,
+  // and gameTypeMap gained their entries on 2026-08-20 — but no config
+  // actually offered them, so the two game types existed only as a promise.
+  // Both are 3-handed here, comfortably inside the deck-safety caps (PLO5 is
+  // 7-max, PLO6 is 6-max — the seat-cap law in config/tableSeating.ts).
+  {
+    name: '3 Chip Spin PLO5',
+    type: 'spin',
+    gameVariant: 'plo5',
+    buyIn: 3,
+    rake: 0.3,
+    startingStack: 500,
+    maxPlayers: 3,
+    minPlayers: 3,
+    horsesToRegister: 3,
+    blindStructure: BLIND_STRUCTURES.SPIN,
+    payoutStructure: [{ place: 1, percentage: 100 }],
+  },
+  {
+    name: '5 Chip Spin PLO6',
+    type: 'spin',
+    gameVariant: 'plo6',
+    buyIn: 5,
+    rake: 0.5,
+    startingStack: 500,
+    maxPlayers: 3,
+    minPlayers: 3,
+    horsesToRegister: 3,
+    blindStructure: BLIND_STRUCTURES.SPIN,
+    payoutStructure: [{ place: 1, percentage: 100 }],
   },
 ];
 
@@ -1398,83 +1417,29 @@ export class TournamentRecurringService {
       }
       const startTime = new Date(Date.now() + 60 * 1000);
 
-      // THE DRAW. Routed through fn_spin_draw_multiplier so that a high
-      // multiplier is only ever SELECTED when the Reserve Pool can actually
-      // pay it. Excluding an unfundable tier from the draw — rather than
-      // drawing it and refusing afterwards — is what makes an unpayable
-      // jackpot structurally impossible.
+      // THE DRAW DOES NOT HAPPEN HERE ANY MORE (2026-08-20, second pass).
       //
-      // Falls back to the local weighted draw if the RPC is unreachable, so a
-      // database hiccup cannot stop Spins from running. The fallback can only
-      // pick from ALWAYS-AVAILABLE tiers (reserveThresholdX === 0), so it can
-      // never hand out a jackpot the pool cannot cover.
-      let multiplier: number;
-      // Which tiers the pool could NOT fund at the moment of this draw. The
-      // RPC already computes it and it was being thrown away, so the wheel's
-      // locked-segment rendering — CSS, tests and all — had never once run.
-      // Recorded on the row so the wheel shows the gate that actually applied
-      // to THIS draw rather than re-deriving one from a balance that has since
-      // moved. Empty array (not null) on the fallback path: the fallback
-      // restricts itself to always-available tiers, which is a real answer.
-      let lockedTiers: Array<{ multiplier: number; reason?: string; unlocksAt?: number }> = [];
-      try {
-        const { data: draw, error: drawErr } = await supabase.rpc('fn_spin_draw_multiplier', {
-          p_club_id: this.ownerClubId,
-          p_buy_in: config.buyIn,
-          p_tiers: SPIN_TIERS.map((t) => ({
-            multiplier: t.multiplier,
-            freq: t.freq,
-            reserveThresholdX: t.reserveThresholdX,
-          })),
-          // AUDIT FIX 2026-08-20: the gate needs these to work out what this
-          // game itself contributes, which is what makes a tier affordable.
-          // Without them it assumed the defaults and could offer a 4x the pool
-          // could not actually pay — which aborted settlement and left the
-          // game unbooked. Observed on 3 live spins after the cutover.
-          p_rake_rate: spinRakeRate(config.buyIn),
-          p_seats: SPEC_SPIN_SEATS,
-        });
-        if (drawErr || !draw?.ok)
-          throw new Error(drawErr?.message || draw?.reason || 'draw_failed');
-        multiplier = Number(draw.multiplier);
-        if (!(multiplier > 0)) throw new Error('draw returned no multiplier');
-        lockedTiers = Array.isArray(draw.locked)
-          ? draw.locked
-              .map((l: any) => ({
-                multiplier: Number(l?.multiplier),
-                reason: l?.reason ? String(l.reason) : undefined,
-                unlocksAt: Number.isFinite(Number(l?.unlocksAt)) ? Number(l.unlocksAt) : undefined,
-              }))
-              .filter((l: { multiplier: number }) => Number.isFinite(l.multiplier))
-          : [];
-      } catch (drawErr: any) {
-        const safeTiers = SPIN_TIERS.filter((t) => t.reserveThresholdX <= 0).map((t) => ({
-          multiplier: t.multiplier,
-          weight: t.freq,
-        }));
-        multiplier = this.rollSpinMultiplier(safeTiers);
-        // The fallback can only pick from always-available tiers, so every
-        // gated tier is genuinely locked for this draw. Saying so is honest;
-        // showing them unlocked would advertise a prize this draw could never
-        // have produced.
-        lockedTiers = SPIN_TIERS.filter((t) => t.reserveThresholdX > 0).map((t) => ({
-          multiplier: t.multiplier,
-          reason: 'threshold',
-        }));
-        reportError(
-          new Error(
-            `[TournamentRecurring] Spin draw RPC unavailable (${drawErr?.message}) — fell back to ungated tiers, capped at ${safeTiers[safeTiers.length - 1].multiplier}x`
-          ),
-          'TournamentRecurring.spin_draw_fallback'
-        );
-      }
-
-      // Structure scales with the multiplier: 300 chips and 1-minute levels at
-      // 2x, 500 chips and 5-minute levels at 500x. A 2x is over in minutes; a
-      // 500x deserves a real tournament.
-      const tier = spinTier(multiplier);
-      const spinStack = tier?.startingStack ?? config.startingStack;
-      const spinLevelMins = tier?.levelMinutes ?? 3;
+      // Creation used to call fn_spin_draw_multiplier and stamp the result
+      // onto the row a full minute before the tournament started. Hiding the
+      // NUMBER from the lobby (spinReveal.ts) turned out to be theatre of its
+      // own, because the row still carried the answer arithmetically:
+      // prize_pool was set to buyIn x multiplier at creation, so a $5 Spin
+      // showing a $15 pool had told everyone "3x" before the wheel existed.
+      // Any column derived from the multiplier is a spoiler; the only draw a
+      // client cannot read early is one that has not happened yet.
+      //
+      // So the draw now happens at START, in TournamentManagerBase — which
+      // has ALWAYS had a gated draw path for a row with no multiplier, and
+      // which already settles the pool at the same moment. One draw, one
+      // settlement, zero seconds between them: the value never exists
+      // un-acted-upon, and there is nothing for a lobby to leak.
+      //
+      // Until then the row is honest about not knowing: spin_multiplier NULL,
+      // prize_pool 0, and a placeholder structure from the SMALLEST tier —
+      // the one floor every draw shares. Start rewrites stack, blinds,
+      // payouts and pool from the real tier before any card is dealt.
+      const placeholderTier = SPIN_TIERS[0];
+      const spinStack = placeholderTier.startingStack;
       const spinBlinds = Array.from({ length: 12 }, (_, i) => {
         const b = spinBlindsForLevel(i + 1);
         return {
@@ -1482,13 +1447,10 @@ export class TournamentRecurringService {
           smallBlind: b.small,
           bigBlind: b.big,
           ante: 0,
-          duration: spinLevelMins * 60,
+          duration: placeholderTier.levelMinutes * 60,
         };
       });
-      const spinPayouts = (tier?.payouts ?? [1]).map((pct, i) => ({
-        place: i + 1,
-        percentage: Math.round(pct * 10000) / 100,
-      }));
+      const spinPayouts = [{ place: 1, percentage: 100 }];
 
       // SPIN_GAME_TYPES advertises NLH, PLO4, PLO5 and PLO6. This map decides
       // what actually reaches the database, and `plo6` was missing from it —
@@ -1529,11 +1491,15 @@ export class TournamentRecurringService {
           // which IS the advertised 8%. Charging a fee on top as well would
           // make the true edge 14.7%. See src/config/spinSpec.ts.
           buy_in_fee: 0,
-          guaranteed_prize: 0, // Will be calculated after registrations
-          spin_multiplier: multiplier,
-          // Drives the dimmed segments on the wheel. See migration
+          guaranteed_prize: 0,
+          // NULL until start. The draw happens in TournamentManagerBase at
+          // the moment the game begins — see the block comment above. A NULL
+          // here is what start's draw path keys on, and it is also the only
+          // value a lobby snoop can read before the wheel spins.
+          spin_multiplier: null,
+          // Likewise recorded at start, by the same draw. See migration
           // 20260820n_spin_locked_tiers_column.sql.
-          spin_locked_tiers: lockedTiers,
+          spin_locked_tiers: null,
           starting_chips: spinStack,
           // Forced, not read from the config — a Spin is 3-handed by
           // definition. See SPIN_SEATS.
@@ -1567,20 +1533,15 @@ export class TournamentRecurringService {
       // fill only on periodic verification games).
       const spinSeatPlan = horsesForSeatHeldGame(config.maxPlayers);
       const registered = await this.registerHorses(spin.id, spinSeatPlan.horses);
-      // TOURNEY-AUDIT 2026-07-24 [money]: standard Spin&Go economics — the
-      // prize is buyIn x multiplier (ONE unit), not buyIn x players x
-      // multiplier. The old formula set a 3-seat 2x spin's pool to 6 units
-      // (a ~2.75x average payout on every dollar collected — guaranteed
-      // house loss). The GameServer re-rolls the multiplier at start and
-      // overwrites this, but the creation-time value must not be inflated.
-      const prizePool = Math.round(config.buyIn * multiplier * 100) / 100;
-
+      // prize_pool stays 0 until start. It used to be set to
+      // buyIn x multiplier here, which was the arithmetic spoiler described
+      // above — the pool amount IS the multiplier, just divided by the
+      // buy-in. Start computes and writes the real pool in the same breath
+      // as the draw and the reserve settlement.
       const { error: spinUpdateErr } = await supabase
         .from('tournaments')
         .update({
           current_players: registered,
-          prize_pool: prizePool,
-          guaranteed_prize: prizePool,
           status: 'REGISTERING',
         })
         .eq('id', spin.id);
@@ -1750,33 +1711,10 @@ export class TournamentRecurringService {
     }
   }
 
-  /**
-   * Dan 2026-07-28 (engine audit A8): this decided a REAL prize multiplier — the
-   * 240x tier is a 0.01% jackpot paid in actual money — with Math.random(), a
-   * predictable PRNG, while the engine already ships a CSPRNG. V8's xorshift128+
-   * state is recoverable from a modest run of observed outputs, so a player who
-   * could watch enough spins could in principle know which lobby was about to
-   * deal a jackpot before entering it.
-   *
-   * Two changes:
-   *   - the draw is now `secureRandomInt`, which is rejection-sampled and so
-   *     exactly uniform over the integer weight space (the weights are integers
-   *     summing to 1,000,000, so no float arithmetic is involved at all);
-   *   - the comparison is `r < weight` on a descending remainder rather than
-   *     `random -= weight; if (random <= 0)`. The old form let a ZERO-weight tier
-   *     win: once the remainder landed exactly on a boundary, `0 <= 0` returned
-   *     the next tier in the list even if its weight was 0.
-   */
-  private rollSpinMultiplier(multipliers: Array<{ multiplier: number; weight: number }>): number {
-    const totalWeight = multipliers.reduce((sum, m) => sum + m.weight, 0);
-    if (!(totalWeight > 0)) return multipliers[0]?.multiplier ?? 2;
-
-    let r = secureRandomInt(totalWeight);
-    for (const { multiplier, weight } of multipliers) {
-      if (r < weight) return multiplier;
-      r -= weight;
-    }
-
-    return multipliers[multipliers.length - 1].multiplier;
-  }
+  // rollSpinMultiplier — the local CSPRNG weighted draw (engine audit A8) —
+  // is deleted. It was the RPC-unreachable fallback for a draw this service
+  // no longer performs: the draw now happens once, at start, inside
+  // TournamentManagerBase, and ITS fallback resolves DOWN to the smallest
+  // tier rather than rolling locally. A creation-time local roll was the
+  // last code path that could pick a multiplier without asking the reserve.
 }

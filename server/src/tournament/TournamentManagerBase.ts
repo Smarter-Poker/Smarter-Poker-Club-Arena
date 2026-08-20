@@ -18,6 +18,7 @@ import {
   SPIN_SEATS as SPEC_SPIN_SEATS,
   spinTier,
   spinRakeRate,
+  spinBlindsForLevel,
 } from '../config/spinSpec.js';
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
@@ -468,19 +469,27 @@ export abstract class TournamentManagerBase {
       // existing. No debit, no credit, no row. Measured across 2,091 completed
       // spins: ~1,160 in no ledger at all.
       //
-      // The tables are gone. The multiplier now comes from the gated draw at
-      // creation, and every movement is booked by fn_spin_settle_game:
+      // The tables are gone, and as of the second 2026-08-20 pass THIS is
+      // where the draw itself lives. Creation used to draw and stamp the row
+      // a minute early, which leaked the answer no matter how carefully the
+      // labels were hidden — prize_pool = buy_in x multiplier IS the
+      // multiplier, readable by any lobby client doing division. The only
+      // draw a client cannot read early is one that has not happened yet, so
+      // the multiplier is decided HERE, at start, and settled in the same
+      // breath by fn_spin_settle_game:
       //   collected  = seats x buy_in      (no fee on top — a Spin is not 10+1)
       //   house_rake = rake_rate x collected, FIXED, to rake_records
       //   reserve_in = the remainder, into the pool
       //   prize_pool = buy_in x multiplier, drawn FROM the pool
       if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
         let spinMultiplier = tournament.spin_multiplier || 0;
-        // Only set when THIS path draws. A row that already carried its
-        // multiplier also already carries the locked tiers recorded at
-        // creation, and overwriting them with a gate evaluated now — against a
-        // pool balance that has moved since — would make the wheel show a
-        // restriction that never applied to this draw.
+        // Set when THIS path draws — the normal case. A row that already
+        // carries a multiplier (created before the draw moved to start, or a
+        // restart re-entering this block after the draw committed) also
+        // already carries the locked tiers recorded with that draw, and
+        // overwriting them with a gate evaluated now — against a pool balance
+        // that has moved since — would make the wheel show a restriction that
+        // never applied.
         let redrawnLockedTiers: Array<{
           multiplier: number;
           reason?: string;
@@ -488,9 +497,11 @@ export abstract class TournamentManagerBase {
         }> | null = null;
 
         if (!spinMultiplier || spinMultiplier <= 0) {
-          // Creation always draws. Reaching here means the row was written by
-          // something older; draw now, through the SAME gate, so a missing
-          // value can never become an ungated jackpot.
+          // THE DRAW. Through fn_spin_draw_multiplier, so a high multiplier
+          // is only ever SELECTED when the Reserve Pool can pay it — an
+          // unfundable tier is excluded from the draw rather than drawn and
+          // refused, which is what makes an unpayable jackpot structurally
+          // impossible.
           try {
             const { data: draw } = await supabase.rpc('fn_spin_draw_multiplier', {
               p_club_id: tournament.club_id,
@@ -519,14 +530,22 @@ export abstract class TournamentManagerBase {
             /* handled below */
           }
           if (!spinMultiplier || spinMultiplier <= 0) {
-            // Last resort: the SMALLEST tier. A missing multiplier must never
-            // resolve to a large one — that would pay a jackpot the pool was
-            // never asked about.
+            // Draw RPC unreachable. Resolve DOWN to the SMALLEST tier, never
+            // up and never a local roll: a database hiccup must not be able
+            // to hand out a jackpot the pool was never asked about, and a 2x
+            // is the one prize every funded pool can always cover.
             spinMultiplier = SPIN_TIERS[0].multiplier;
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw RPC unreachable at start — resolved down to ${spinMultiplier}x`
+              ),
+              'Tournament.spin_draw_rpc_down'
+            );
+          } else {
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw: ${spinMultiplier}x through the reserve gate`
+            );
           }
-          console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin multiplier was missing — drew ${spinMultiplier}x through the reserve gate`
-          );
         }
 
         const buyIn = tournament.buy_in_amount || 0;
@@ -587,6 +606,23 @@ export abstract class TournamentManagerBase {
           }
         }
 
+        // Structure scales with the drawn tier: 300 chips and 1-minute
+        // levels at 2x, 500 chips and 5-minute levels at 500x. Since the
+        // draw moved to start, creation writes only a smallest-tier
+        // placeholder, so the blinds MUST be rewritten here — before
+        // createTablesAndSeatPlayers below reads them — or a 500x would run
+        // on 1-minute levels.
+        const spinBlinds = Array.from({ length: 12 }, (_, i) => {
+          const b = spinBlindsForLevel(i + 1);
+          return {
+            level: i + 1,
+            smallBlind: b.small,
+            bigBlind: b.big,
+            ante: 0,
+            duration: (tier?.levelMinutes ?? 3) * 60,
+          };
+        });
+
         await supabase
           .from('tournaments')
           .update({
@@ -594,6 +630,7 @@ export abstract class TournamentManagerBase {
             spin_multiplier: spinMultiplier,
             is_premium_spin: spinMultiplier >= 100,
             starting_chips: tier?.startingStack ?? tournament.starting_chips,
+            blind_structure: spinBlinds,
             payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
               place: i + 1,
               percentage: Math.round(pct * 10000) / 100,
@@ -603,7 +640,16 @@ export abstract class TournamentManagerBase {
           .eq('id', this.tournamentId);
 
         tournament.prize_pool = prizePool;
+        tournament.spin_multiplier = spinMultiplier;
+        // The in-memory object drives table creation and the level timer, so
+        // it must agree with what was just written — the DB write alone would
+        // leave this start running on the placeholder structure.
+        tournament.blind_structure = spinBlinds;
         if (tier?.startingStack) tournament.starting_chips = tier.startingStack;
+        if (this.tournamentCache) {
+          this.tournamentCache.blind_structure = spinBlinds;
+          this.tournamentCache.spin_multiplier = spinMultiplier;
+        }
       }
 
       // Migrate registrations (registered -> playing)

@@ -4,8 +4,13 @@
  */
 
 export type { BlindLevel } from '../config/blindStructures';
-export { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE, PAYOUT_STRUCTURES } from '../config/blindStructures';
+export {
+  BLIND_STRUCTURES,
+  SPIN_BLIND_STRUCTURE,
+  PAYOUT_STRUCTURES,
+} from '../config/blindStructures';
 import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE, type BlindLevel } from '../config/blindStructures';
+import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR } from '../config/spinSpec';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
@@ -44,8 +49,6 @@ function unregisterReasonText(reason: string | undefined): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-
 
 export interface PayoutStructure {
   place: number;
@@ -108,8 +111,7 @@ const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
   not_authorised:
     'Only the owner or an admin can create tournaments here. A club inside a union does not create its own — the union creates them.',
   buy_in_must_not_be_negative: 'Buy-in cannot be negative.',
-  max_players_must_be_positive:
-    'Set a maximum number of players. Zero means nobody can register.',
+  max_players_must_be_positive: 'Set a maximum number of players. Zero means nobody can register.',
   blind_structure_required: 'Choose a blind structure.',
   payout_structure_required: 'Choose a payout structure.',
   payouts_must_total_100: 'Payout percentages have to add up to 100%.',
@@ -179,111 +181,52 @@ export interface TournamentConfig {
 // STANDARD STRUCTURES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-
-
-
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // SPIN CONFIGURATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── PROFITABLE Spin Economics (Pool-Based) ──────────────────────────────────
+// ── SPIN ECONOMICS — DERIVED, NOT DECLARED ─────────────────────────────────
 //
-// MODEL:
-//   3 players each pay (buy_in + 10% fee).
-//   Total collected   = 3 × buy_in  +  3 × fee   (fee = 10% of buy_in)
-//   Club guaranteed   = 3 × fee                   (always kept — 10% rake)
-//   Prize pool fund   = 3 × buy_in
+// This section used to hold SPIN_BONUS_TIERS: a full "pool-based" economic
+// model (10% fee, 2x base payout, bonusBuyIns, an EV-3.0 probability table
+// in two flavours) that contradicted the shipped format on every axis — a
+// Spin charges NO fee, the pool model is the Reserve Pool in Supabase, and
+// the draw happens server-side at start through fn_spin_draw_multiplier.
+// It was one of the FOUR disagreeing multiplier tables the 2026-08-20 audit
+// found, and the only one still declaring its own probabilities by hand.
 //
-//   DEFAULT PAYOUT (most spins — 67% of the pot goes to winner):
-//     Winner receives  = 2 × buy_in
-//     Pool deposit     = 1 × buy_in   (saved into spin_bonus_pool)
+// What remains is a DISPLAY view derived from the canonical spec, so this
+// file cannot drift from the format again. Nothing here decides anything:
+// the engine draws, the reserve gates, this just labels.
 //
-//   BONUS PAYOUT (random trigger — drawn from the pool):
-//     Winner receives  = 2 × buy_in + bonus_amount
-//     bonus_amount     ≤ current pool balance  (NEVER goes negative)
-//
-//   This guarantees clubs/unions ALWAYS profit from the 10% fee, while
-//   the 1× buy_in saved per default spin funds exciting jackpot-style
-//   bonus payouts when the pool has enough balance.
-//
-// MULTIPLIER DISPLAY:
-//   The "multiplier" shown to players is purely cosmetic (the wheel spin).
-//   The actual payout is determined by the pool-backed algorithm below.
-//
-// ─────────────────────────────────────────────────────────────────────────────
+// `standard` and `hyper` are intentionally the SAME ladder. The old split
+// pretended two economies existed; in the shipped format the tier changes
+// level length via spinSpec, not the multiplier distribution. Both keys are
+// kept because CreateTournamentModal indexes by spinType.
 
-export const SPIN_RAKE_PERCENT = 0.1; // 10% fee on buy-in
+export interface SpinDisplayTier {
+  multiplier: number;
+  /** Percentage, from the spec frequencies. Display only. */
+  probability: number;
+  isPremium: boolean;
+}
 
-// Pool contribution per spin: 1 buy-in saved from the 3 collected.
-// EVERY spin deposits 1× buy_in to pool, then bonus draws happen.
-// This ensures the pool is self-sustaining and club net = exactly 10%.
-export const SPIN_POOL_CONTRIBUTION_MULTIPLIER = 1; // × buy_in per spin (always)
+// Normalised by the ACTUAL total, not the nominal denominator, so the
+// display percentages sum to exactly 100 even if the spec's frequencies are
+// ever retuned without re-totalling to SPIN_FREQ_DENOMINATOR.
+const SPEC_TOTAL_FREQ = SPIN_TIERS.reduce((s, t) => s + t.freq, 0) || SPIN_FREQ_DENOMINATOR;
 
-// Maximum negative pool balance a club/union can carry (in chips).
-// When pool is negative, future 2× spin deposits pay it back.
-export const SPIN_POOL_MAX_NEGATIVE = -500;
+const SPEC_DISPLAY_TIERS: SpinDisplayTier[] = SPIN_TIERS.map((t) => ({
+  multiplier: t.multiplier,
+  probability: Math.round((t.freq / SPEC_TOTAL_FREQ) * 100 * 10000) / 10000,
+  // "Premium" = reserve-gated. The old table hardcoded >= 50; deriving it
+  // from reserveThresholdX means a spec change cannot orphan this flag.
+  isPremium: t.reserveThresholdX > 0,
+}));
 
-// Bonus trigger tiers — probability-weighted random check at game start.
-// Probabilities are balanced so expected pool draw = expected pool deposit (1× buy_in).
-// This guarantees the club/union net return = exactly 10% over time.
-//
-// Economics per spin (e.g. $1 buy-in):
-//   3 players pay $1.10 each ($1 buy-in + $0.10 fee)
-//   House keeps $0.30 (10% rake) — this is the ONLY house revenue
-//   Prize pool = $3.00 (all 3 buy-ins)
-//   Base payout = $2.00 (2× buy_in to winner)
-//   Pool deposit = $1.00 per spin (always)
-//   Pool draw = bonusBuyIns × buy_in (for bonus tiers)
-//   Expected payout = $3.00 (pool nets to zero over time)
-//   "Free rake spin" (3×) = 3 in, 3 out — players see no rake
-export const SPIN_BONUS_TIERS = {
-  standard: [
-    // ~76.19% of spins: default (2× payout, 1× deposited to pool, 0 drawn)
-    { displayMultiplier: 2, probability: 76.1904, bonusBuyIns: 0 },
-    // ~14.29% of spins: free-rake spin (3× payout, 1× deposited, 1× drawn — net 0)
-    { displayMultiplier: 3, probability: 14.2857, bonusBuyIns: 1 },
-    // ~5.71% of spins: medium bonus (5× payout, 1× deposited, 3× drawn)
-    { displayMultiplier: 5, probability: 5.7143, bonusBuyIns: 3 },
-    // ~2.38% of spins: large bonus (10× payout, 1× deposited, 8× drawn)
-    { displayMultiplier: 10, probability: 2.381, bonusBuyIns: 8 },
-    // ~0.95% of spins: big bonus (25× payout, 1× deposited, 23× drawn)
-    { displayMultiplier: 25, probability: 0.9524, bonusBuyIns: 23 },
-    // ~0.38% of spins: jackpot (50× payout, 1× deposited, 48× drawn)
-    { displayMultiplier: 50, probability: 0.381, bonusBuyIns: 48, isPremium: true },
-    // ~0.10% of spins: mega jackpot (100× payout, 1× deposited, 98× drawn)
-    { displayMultiplier: 100, probability: 0.0952, bonusBuyIns: 98, isPremium: true },
-  ],
-  // AUDIT F6 (2026-08-15): this table computed to EV 3.000034 — fractionally
-  // HOUSE-NEGATIVE (the failing "hyper EV should be < 3.0" test was right).
-  // Moved 0.001 percentage points from the 50x tier to the 2x tier:
-  // probabilities still sum to exactly 100.000, EV is now 2.999554 (house
-  // edge ~0.015%, same direction as standard's 2.999994), and the pool
-  // draw expectation drops below the 1.00-per-spin deposit, so the bonus
-  // pool can no longer drift negative over volume.
-  hyper: [
-    { displayMultiplier: 2, probability: 79.563, bonusBuyIns: 0 },
-    { displayMultiplier: 3, probability: 11.6788, bonusBuyIns: 1 },
-    { displayMultiplier: 5, probability: 5.1095, bonusBuyIns: 3 },
-    { displayMultiplier: 10, probability: 2.1898, bonusBuyIns: 8 },
-    { displayMultiplier: 25, probability: 0.8759, bonusBuyIns: 23 },
-    { displayMultiplier: 50, probability: 0.437, bonusBuyIns: 48, isPremium: true },
-    { displayMultiplier: 100, probability: 0.146, bonusBuyIns: 98, isPremium: true },
-  ],
-};
-
-// Legacy export — kept for backwards compat but now routes through pool system
-export const SPIN_MULTIPLIERS: Record<string, SpinMultiplier[]> = {
-  standard: SPIN_BONUS_TIERS.standard.map((t) => ({
-    multiplier: t.displayMultiplier,
-    probability: t.probability,
-    isPremium: t.isPremium || false,
-  })),
-  hyper: SPIN_BONUS_TIERS.hyper.map((t) => ({
-    multiplier: t.displayMultiplier,
-    probability: t.probability,
-    isPremium: t.isPremium || false,
-  })),
+export const SPIN_MULTIPLIERS: Record<string, SpinDisplayTier[]> = {
+  standard: SPEC_DISPLAY_TIERS,
+  hyper: SPEC_DISPLAY_TIERS,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -317,8 +260,6 @@ export const BOUNTY_PRESETS: Record<string, BountyConfig> = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // HYPER-TURBO STRUCTURE (for Spins)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -622,9 +563,15 @@ class TournamentService {
     });
 
     if (rpcError) throw rpcError;
-    const result = rpcResult as { success?: boolean; error?: string; tournament_id?: string } | null;
+    const result = rpcResult as {
+      success?: boolean;
+      error?: string;
+      tournament_id?: string;
+    } | null;
     if (!result?.success) {
-      throw new Error(TOURNAMENT_CREATE_ERRORS[result?.error ?? ''] ?? 'Could not create tournament');
+      throw new Error(
+        TOURNAMENT_CREATE_ERRORS[result?.error ?? ''] ?? 'Could not create tournament'
+      );
     }
 
     const { data } = await supabase
@@ -2112,60 +2059,30 @@ class TournamentService {
   // SPIN & GO
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Spin the multiplier wheel for a Spin & Go
-   */
-  /**
-   * Spin the multiplier wheel — now pool-aware.
-   * Returns the display multiplier, bonus buy-ins requested, and premium flag.
-   * The caller (TournamentEngine) is responsible for checking pool balance
-   * and capping the actual bonus payout.
-   */
-  spinMultiplier(config: SpinMultiplier[]): {
-    multiplier: number;
-    isPremium: boolean;
-    bonusBuyIns: number;
-  } {
-    const random = Math.random() * 100;
-    let cumulative = 0;
-
-    // Find matching tier from the legacy config array
-    for (let i = 0; i < config.length; i++) {
-      const tier = config[i];
-      cumulative += tier.probability;
-      if (random <= cumulative) {
-        // Look up bonusBuyIns from SPIN_BONUS_TIERS (match by multiplier)
-        const bonusTier = SPIN_BONUS_TIERS.standard.find(
-          (bt) => bt.displayMultiplier === tier.multiplier
-        );
-        return {
-          multiplier: tier.multiplier,
-          isPremium: tier.isPremium || false,
-          bonusBuyIns: bonusTier?.bonusBuyIns ?? 0,
-        };
-      }
-    }
-
-    // Fallback to lowest multiplier (no bonus)
-    return { multiplier: config[0].multiplier, isPremium: false, bonusBuyIns: 0 };
-  }
+  // `spinMultiplier()` — a Math.random() weighted roll against the legacy
+  // table — is DELETED, not kept for compatibility. It had no callers (the
+  // client TournamentEngine it served was removed in the server-authoritative
+  // migration), and a client-side draw is wrong twice over: Math.random is
+  // predictable, and no client may ever decide a real prize. The one draw
+  // lives server-side, at start, behind the reserve gate.
 
   /**
-   * Create and start a Spin & Go
+   * Create a Spin & Go on demand. Writes the same pre-draw shape as every
+   * other creation path: no fee (a Spin is priced as the buy-in, nothing on
+   * top), no multiplier (the engine draws through the reserve gate at start),
+   * winner-take-all placeholder payout (start rewrites it from the tier).
    */
-  async createSpin(clubId: string, buyIn: number, rake: number): Promise<Tournament> {
-    // Multiplier is NOT selected here — it's rolled at game start in TournamentEngine
-    // This preserves the "surprise" element of Spin & Go
+  async createSpin(clubId: string, buyIn: number): Promise<Tournament> {
     const config: TournamentConfig = {
       name: `Spin & Go ${buyIn}`,
       type: 'spin',
       buyIn,
-      rake,
+      rake: 0,
       startingStack: 500,
       maxPlayers: 3,
       minPlayers: 3,
       blindStructure: SPIN_BLIND_STRUCTURE,
-      payoutStructure: [{ place: 1, percentage: 100 }], // Winner takes all
+      payoutStructure: [{ place: 1, percentage: 100 }],
       lateRegistrationLevels: 0,
       isRebuy: false,
       addOnAvailable: false,

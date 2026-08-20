@@ -49,6 +49,7 @@ import { getClubLevel } from '../../utils/clubLevels';
 import ClubChat from '../../components/club/ClubChat';
 import styles from './ClubDashboard.module.css';
 import { reportError } from '../../utils/errorReporter';
+import { clubGamesOrFilter } from '../../utils/unionScope';
 
 interface ClubInfo {
   id: string;
@@ -467,6 +468,8 @@ export default function ClubDashboard() {
       // viewed club before this club's own authorization result comes back.
       setNotAMember(false);
 
+      // P2-1: union games carry the union container as club_id
+      const gamesScope = await clubGamesOrFilter(uuid);
       const [clubResult, statsResult, playersResult, roleResult, tablesResult] = await Promise.all([
         supabase
           .from('clubs')
@@ -490,7 +493,7 @@ export default function ClubDashboard() {
           .select(
             'id, name, game_type, game_variant, stakes, small_blind, big_blind, status, current_players, max_players, created_at, is_deleted'
           )
-          .eq('club_id', uuid)
+          .or(gamesScope)
           .order('created_at', { ascending: false })
           .limit(50),
       ]);

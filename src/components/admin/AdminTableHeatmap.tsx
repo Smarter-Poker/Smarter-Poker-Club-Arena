@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import haptic from '../../utils/haptic';
 import { reportError } from '../../utils/errorReporter';
+import { clubGamesOrFilter } from '../../utils/unionScope';
 
 interface TableRow {
   id: string;
@@ -71,7 +72,9 @@ export default function AdminTableHeatmap({
           .select(
             'id, name, status, current_players, max_players, small_blind, big_blind, game_variant'
           )
-          .eq('club_id', clubId)
+          // P2-1: include the union's tables (union games carry the union
+          // container as club_id, a plain club filter shows an empty club)
+          .or(await clubGamesOrFilter(clubId))
           .eq('is_deleted', false);
         if (heatmapErr) reportError(heatmapErr, 'AdminTableHeatmap.Load_failed');
         if (isMounted.current && data) setFetchedTables(data);

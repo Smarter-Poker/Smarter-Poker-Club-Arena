@@ -24,6 +24,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { fmt, fmtChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { clubGamesOrFilter } from '../utils/unionScope';
 import { confirmDialog } from '../components/common/confirmDialog';
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -212,6 +213,8 @@ function DashboardTab({ clubId }: { clubId: string }) {
       setLoading(true);
       setLoadError(null);
       const uuid = await resolveClubUUID(clubId);
+      // P2-1: union games carry the union container as club_id
+      const gamesScope = await clubGamesOrFilter(uuid);
 
       // Parallel: club health metrics + audit stats + acquisition + cashout velocity
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -230,7 +233,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
             supabase
               .from('tables')
               .select('id, current_players, status')
-              .eq('club_id', uuid)
+              .or(gamesScope)
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMounted }
         ),
@@ -1892,13 +1895,15 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
     (async () => {
       try {
         const uuid = await resolveClubUUID(clubId);
+        // P2-1: union games carry the union container as club_id
+        const gamesScope = await clubGamesOrFilter(uuid);
         // Generate recommendations based on club state
         const [{ data: members }, { data: tables }, { data: annCount }] = await Promise.all([
           supabase
             .from('club_members')
             .select('user_id, is_active, role, last_active_at', { count: 'exact' })
             .eq('club_id', uuid),
-          supabase.from('tables').select('id, current_players, status').eq('club_id', uuid),
+          supabase.from('tables').select('id, current_players, status').or(gamesScope),
           supabase.from('club_announcements').select('id', { count: 'exact' }).eq('club_id', uuid),
         ]);
         const mems = members || [];
@@ -2185,6 +2190,8 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
     (async () => {
       try {
         const uuid = await resolveClubUUID(clubId);
+        // P2-1: union games carry the union container as club_id
+        const gamesScope = await clubGamesOrFilter(uuid);
         const [{ data: _members, count: memberCount }, { data: tables }, { data: sessions }] =
           await Promise.all([
             supabase
@@ -2194,7 +2201,7 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
             supabase
               .from('tables')
               .select('id, current_players, status, total_hands_dealt:hands_dealt')
-              .eq('club_id', uuid),
+              .or(gamesScope),
             supabase
               .from('player_sessions')
               .select('total_hands, net_result, duration_minutes')

@@ -24,6 +24,7 @@ import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { CSV_BOM, toCSV } from '../../utils/clubSettingsRules';
 import { reportError } from '../../utils/errorReporter';
 import './StatsExport.css';
+import { clubGamesOrFilter } from '../../utils/unionScope';
 
 interface StatsExportProps {
   clubId?: string;
@@ -123,7 +124,8 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
       const { data: clubTables, error: tablesErr } = await supabase
         .from('tables')
         .select('id')
-        .eq('club_id', resolvedId)
+        // P2-1: union-aware — include tables the club's union created
+        .or(await clubGamesOrFilter(resolvedId))
         .order('created_at', { ascending: false })
         .limit(200);
       if (tablesErr) throw tablesErr;

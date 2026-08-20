@@ -27,6 +27,7 @@ import {
   Bar,
 } from 'recharts';
 import { reportError } from '../../utils/errorReporter';
+import { clubGamesOrFilter } from '../../utils/unionScope';
 
 interface FinancialDashboardProps {
   clubId: string;
@@ -247,7 +248,8 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       const { count, error } = await supabase
         .from('tables')
         .select('id', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
+        // P2-1: union-aware — count the union's active tables too
+        .or(await clubGamesOrFilter(resolvedId))
         .eq('status', 'active');
       if (!error && count !== null) setActiveTableCount(count);
     } catch (e) {

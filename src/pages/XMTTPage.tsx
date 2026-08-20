@@ -19,6 +19,8 @@ import styles from './XMTTPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { fmt, fmtChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { clubGamesOrFilter } from '../utils/unionScope';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
@@ -91,16 +93,23 @@ export default function XMTTPage() {
       const targetClub = cId || clubId;
       if (!targetClub) return;
       try {
+        // P2-2: this filter was triple-broken. (1) The URL param may be the
+        // 6-digit integer club code, and eq('club_id', <int>) on a uuid
+        // column matches nothing. (2) Union tournaments carry the union
+        // container as club_id, so a plain club filter hid every union MTT.
+        // (3) The type filter used the SELECT alias 'type' (not a real
+        // column) with lowercase values — tournament_type holds 'MTT'.
+        const uuid = await resolveClubUUID(targetClub);
         let query = supabase
           .from('tournaments')
           .select(
             'id, name, status, type:tournament_type, buy_in:buy_in_amount, max_players, registered_count:current_players, start_time, created_at, prize_pool, club_id'
           )
-          .eq('club_id', targetClub)
+          .or(await clubGamesOrFilter(uuid))
           .order('start_time', { ascending: false });
 
-        // Filter to MTT types
-        query = query.in('type', ['mtt', 'xmtt']);
+        // Filter to MTT types (real column name, real uppercase values)
+        query = query.in('tournament_type', ['MTT', 'XMTT']);
 
         const { data, error } = await query;
         if (error) throw error;
@@ -301,7 +310,10 @@ export default function XMTTPage() {
     }
   };
 
-  const filtered = filter === 'all' ? tournaments : tournaments.filter((t) => t.status === filter);
+  const filtered =
+    filter === 'all'
+      ? tournaments
+      : tournaments.filter((t) => String(t.status).toLowerCase() === filter);
 
   if (loading) return <PageSkeleton variant="dashboard" />;
 
@@ -328,7 +340,7 @@ export default function XMTTPage() {
             onClick={() => setFilter(f)}
           >
             {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
-            {f !== 'all' && ` (${tournaments.filter((t) => t.status === f).length})`}
+            {f !== 'all' && ` (${tournaments.filter((t) => String(t.status).toLowerCase() === f).length})`}
           </button>
         ))}
       </nav>

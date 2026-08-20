@@ -1,0 +1,38 @@
+-- Applied to production via Supabase MCP on 2026-08-20 (DROP INDEX
+-- CONCURRENTLY, run outside a transaction so live hand writes never blocked).
+-- Mirrored here as applied.
+--
+-- Two indexes on hand_history had never been used, on a table taking 421,709
+-- writes. Every insert paid to maintain both.
+--
+--   idx_hand_history_table          (table_id)                    51 MB, 0 scans
+--   idx_hand_history_table_created  (table_id, created_at DESC)   450 MB, 0 scans
+--
+-- Both are provably redundant rather than merely idle:
+--
+--   * (table_id) is a strict PREFIX of idx_hand_history_table_created_id
+--     (table_id, created_at, id) -- 2,392,150 scans -- and of
+--     idx_hand_history_table_handnum (table_id, hand_number DESC) -- 506,287
+--     scans. Postgres serves any table_id = ? lookup from either.
+--   * The DESC variant is covered by scanning that same composite BACKWARD,
+--     which is exactly what the planner already did: 0 scans on the 450 MB
+--     DESC index while the 155 MB composite took 2.39M. It was also 3x the
+--     size of an index covering MORE columns, i.e. badly bloated.
+--
+-- Verified after dropping, on the real table:
+--   ... WHERE table_id = ? ORDER BY created_at DESC LIMIT 20
+--       -> Index Scan Backward using idx_hand_history_table_created_id
+--   SELECT count(*) ... WHERE table_id = ?
+--       -> Index Only Scan using idx_hand_history_table_handnum
+--
+-- hand_history index footprint: 1583 MB -> 1082 MB.
+--
+-- NOT dropped, deliberately: idx_ca_hand_player_idx_user_time (568 MB) and
+-- hand_state_snapshots_table_updated_idx (275 MB) are also at 0 scans, but
+-- neither has a demonstrable superset index the way these two did. Idle is not
+-- the same as redundant -- a rarely-run report would still want them -- so
+-- that is a judgement call to make with someone who knows the reporting, not
+-- a cleanup to do silently.
+
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_hand_history_table;
+DROP INDEX CONCURRENTLY IF EXISTS public.idx_hand_history_table_created;

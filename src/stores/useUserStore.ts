@@ -141,9 +141,17 @@ export const useUserStore = create<UserState>()(
         set({ isLoading: true });
 
         try {
+          /**
+           * Dan 2026-08-20: `select('*')` here 403'd on every single load.
+           * `profiles` has 114 columns and `authenticated` may SELECT 103 —
+           * email, phone, stripe_customer_id and eight others are deliberately
+           * ungranted, and Postgres rejects the whole statement rather than
+           * the column. The store therefore never populated and the failure
+           * was invisible. Explicit columns, all of them granted.
+           */
           const { data, error } = await supabase
             .from('profiles')
-            .select('*')
+            .select('id, username, display_name, avatar_url, tier, created_at')
             .eq('id', userId)
             .maybeSingle();
 
@@ -167,7 +175,11 @@ export const useUserStore = create<UserState>()(
             display_name: data.display_name,
             avatar_url: data.avatar_url,
             vip_level: data.tier || 'bronze', // DB uses `tier`, not `vip_level`
-            stats: data.stats || DEFAULT_STATS,
+            // `stats` is NOT a column on profiles (verified against the live
+            // schema), so this was always DEFAULT_STATS via the `||`. Kept
+            // explicit so the default reads as intent rather than as a
+            // fallback quietly covering a missing field.
+            stats: DEFAULT_STATS,
             created_at: data.created_at,
           };
 

@@ -87,3 +87,55 @@ the storefront, and the legitimate flow (player edits a pending request,
 staff acknowledge/complete it) has to be understood before the policy is
 tightened, or real payouts break. The fix shape is the same one-liner — a
 `WITH CHECK` that pins `amount` and restricts `status` transitions by role.
+
+---
+
+# Storefront UI / CX review — what was checked and what was found
+
+The rest of the storefront review. Recorded in full because most of it is a
+list of things that turned out to be RIGHT, and the next person should not
+have to re-derive that.
+
+## Already correct — verified, deliberately not touched
+
+`StoreTab` (the customer-facing surface) is in good shape:
+
+* **Buy confirmation** — `role="dialog"`, `aria-modal`, `aria-labelledby`,
+  initial focus on Confirm, Escape to close (in its own effect so it reads the
+  live `processing` value), background scroll locked.
+* **Empty states are distinguished** — "Loading the shop..." vs "The club shop
+  is currently empty" (with an admin-only *Add First Item* CTA) vs "No items
+  match your filters" with a *Clear Filters* button. The three are genuinely
+  different states, which is the bug class that bit the audit log.
+* **Sale pricing** — struck-through original beside the effective price, and
+  `effectivePrice()` is shared with the server-side decision.
+* **Insufficient funds** — states the exact shortfall, and correctly does NOT
+  upsell a chip purchase (chips are not purchasable).
+* **Availability** — `unavailableReason()` mirrors `fn_shop_item_availability`
+  (sold out / not yet / ended / owned / limit reached) so the card and the
+  server agree before the member commits.
+* **Mobile** — `.categoryFilters` scrolls horizontally, breakpoints at 640px
+  and 480px, and a `prefers-reduced-motion` block.
+* **Purchase integrity** — `/api/club-arena/marketplace-purchase` runs as
+  service_role, re-decides the price server-side, claims stock atomically via
+  `fn_claim_shop_purchase`, debits with `fn_debit_chips`, and releases the
+  stock claim if a later step fails. The client never sends a price.
+
+## Fixed here
+
+* **Category chips had no toggle semantics.** Seven identical "button" nodes
+  to a screen reader, with the active state carried only by a CSS class. Now a
+  labelled `role="group"` with `aria-pressed` per chip.
+* **Stale doc comment** at the top of `MarketplacePage.tsx` still described a
+  "Get Chips — diamonds -> club chips" tab. That tab and that conversion were
+  removed on 2026-08-19; the comment now records that instead of advertising a
+  path that no longer exists.
+
+## Not changed, on purpose
+
+The five tab components are ~2,700 lines and were being actively rebuilt by
+other agents during this review (stackable consumables, sale pricing, promos,
+refunds, limited stock, the admin purchase ledger all landed within hours).
+Sweeping edits there would have collided with in-flight work for marginal
+gain, so the storefront changes here are deliberately small and surgical. The
+substantive win from this review is the diamond-minting hole above.

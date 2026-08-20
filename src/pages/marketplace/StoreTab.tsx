@@ -259,10 +259,16 @@ export default function StoreTab({
       )}
 
       {/* Category filters */}
-      <div className={styles.categoryFilters}>
+      {/* A filter chip row is a set of toggles, not a list of unrelated
+          buttons: without aria-pressed a screen reader reads seven identical
+          "button" nodes and cannot say which category is active. The visual
+          state was carried only by a CSS class. */}
+      <div className={styles.categoryFilters} role="group" aria-label="Filter items by category">
         {categoryNames.map((cat) => (
           <button
             key={cat}
+            type="button"
+            aria-pressed={categoryFilter === cat}
             className={`${styles.categoryBtn} ${categoryFilter === cat ? styles.categoryBtnActive : ''}`}
             onClick={() => setCategoryFilter(cat)}
           >

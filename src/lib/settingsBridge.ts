@@ -9,6 +9,7 @@
  * key and profiles.settings, and the table read neither.
  */
 import type { TableUserSettings } from '../hooks/useTableSettings';
+import { normalizeCardBack, SELECTABLE_CARD_BACK_IDS } from '../components/table/CardImage';
 
 /**
  * 2026-08-18 — this page used to persist ~30 settings to localStorage and to
@@ -50,7 +51,6 @@ export interface UserSettings {
   achievementNotifications: boolean;
   friendAlerts: boolean;
   settlementAlerts: boolean;
-
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -66,14 +66,12 @@ export const DEFAULT_SETTINGS: UserSettings = {
   confirmAllIn: true,
   autoMuckWinners: false,
 
-
   tournamentReminders: true,
   clubActivity: true,
   handWonNotifications: false,
   achievementNotifications: true,
   friendAlerts: true,
   settlementAlerts: true,
-
 };
 
 /**
@@ -100,10 +98,12 @@ export function validateSettings(raw: unknown): UserSettings {
     soundEnabled: bool('soundEnabled'),
     soundVolume: num('soundVolume', 0, 100),
     theme: enumVal('theme', ['dark', 'light', 'auto']),
-    cardBack: enumVal(
-      'cardBack',
-      CARD_BACKS.map((b) => b.id)
-    ),
+    // 2026-08-20: this used to whitelist against the eight TABLE ids only, so
+    // a card back bought in the store (burgundy, navy, holographic, carbon,
+    // club crest, diamond foil...) was REJECTED here and silently reverted to
+    // the default — diamonds spent, nothing applied. Accept every selectable
+    // id; normalizeCardBack maps it to a real design at render time.
+    cardBack: enumVal('cardBack', [...SELECTABLE_CARD_BACK_IDS]),
     fourColorDeck: bool('fourColorDeck'),
     animationSpeed: enumVal('animationSpeed', ['slow', 'normal', 'fast']),
     showPotOdds: bool('showPotOdds'),
@@ -180,7 +180,11 @@ export function fromTableSettings(t: TableUserSettings, base: UserSettings): Use
     ...base,
     soundEnabled: t.isSoundEnabled,
     soundVolume: t.soundVolume,
-    cardBack: CARD_BACKS.some((b) => b.id === t.cardBack) ? t.cardBack : base.cardBack,
+    // Keep any selectable id (store purchases included); only a genuinely
+    // unknown id falls back to what the settings page already had.
+    cardBack: SELECTABLE_CARD_BACK_IDS.includes(t.cardBack)
+      ? t.cardBack
+      : normalizeCardBack(t.cardBack) || base.cardBack,
     fourColorDeck: t.fourColorDeck,
     animationSpeed: t.animationSpeed >= 1.5 ? 'slow' : t.animationSpeed <= 0.5 ? 'fast' : 'normal',
     showPotOdds: t.showPotOdds,

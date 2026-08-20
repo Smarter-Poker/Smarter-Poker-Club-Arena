@@ -48,16 +48,38 @@ export function resolveBackground(bid: string): string {
 // portrait (750x1624) and therefore crop to a near-featureless slice on a wide
 // viewport.
 
-/** Pure-CSS designed backdrop. Zero network dependency — always paints. */
+/**
+ * AMBIENCE — painted ON TOP of the artwork.
+ *
+ * 2026-08-20 follow-up: guaranteeing a layer *underneath* stopped the page
+ * being empty when an asset fails, but it did nothing for the reported
+ * symptom, because the artwork does load — it is simply almost invisible.
+ * Measured: bg_midnight averages RGB(22,26,32) with a brightest pixel of
+ * 49/255, and the whole set runs 33-92. They are also authored portrait
+ * (750x1624), so `cover` on a wide viewport crops them to a near-uniform
+ * near-black slice. A backdrop hidden *behind* that reads exactly as blank.
+ *
+ * So the ambience moves above the art: a soft pool lifts the centre where the
+ * table sits, and a vignette frames the edges. The artwork still reads —
+ * these are translucent — but the page is now unmistakably a lit room instead
+ * of a void, on every design and at every viewport ratio.
+ */
+export const DEFAULT_TABLE_AMBIENCE = [
+  // Vignette frames the edges (topmost)
+  'radial-gradient(ellipse 120% 100% at 50% 55%, transparent 30%, rgba(0,0,0,0.5) 100%)',
+  // Soft pool of light where the table sits
+  'radial-gradient(ellipse 88% 60% at 50% 46%, rgba(84,116,168,0.30) 0%, rgba(38,54,86,0.16) 45%, transparent 74%)',
+].join(', ');
+
+/**
+ * Pure-CSS designed floor, painted UNDER the artwork. Zero network
+ * dependency — this is what guarantees the page is never blank.
+ */
 export const DEFAULT_TABLE_BACKDROP = [
   // Fine diagonal weave — texture that survives any upscale
   'repeating-linear-gradient(45deg, rgba(255,255,255,0.014) 0px, rgba(255,255,255,0.014) 1px, transparent 1px, transparent 14px)',
-  // Warm pool of light under the table
-  'radial-gradient(ellipse 90% 62% at 50% 46%, rgba(56,78,116,0.42) 0%, rgba(24,34,54,0.24) 42%, transparent 72%)',
-  // Cool corner falloff so the frame reads as a room
-  'radial-gradient(ellipse 120% 100% at 50% 60%, transparent 28%, rgba(0,0,0,0.55) 100%)',
   // Deep base gradient
-  'linear-gradient(180deg, #0c1220 0%, #0a1020 45%, #05080f 100%)',
+  'linear-gradient(180deg, #101828 0%, #0b1424 45%, #060a12 100%)',
 ].join(', ');
 
 /** Solid base colour — the last line of defence behind every layer. */
@@ -71,13 +93,19 @@ export const DEFAULT_TABLE_BACKDROP_COLOR = '#0a1020';
  */
 export function resolveBackgroundLayers(bid?: string | null): string {
   const asset = resolveBackground(bid || 'midnight');
-  return asset ? `url(${asset}), ${DEFAULT_TABLE_BACKDROP}` : DEFAULT_TABLE_BACKDROP;
+  // Paint order, top to bottom: ambience over artwork over the always-paints
+  // CSS floor. Layers fail independently, so the floor survives any asset
+  // problem and the ambience survives even that.
+  return asset
+    ? `${DEFAULT_TABLE_AMBIENCE}, url(${asset}), ${DEFAULT_TABLE_BACKDROP}`
+    : `${DEFAULT_TABLE_AMBIENCE}, ${DEFAULT_TABLE_BACKDROP}`;
 }
 
-/** Matching background-size list: artwork covers, CSS layers cover. */
-export const TABLE_BACKGROUND_SIZE = 'cover, auto, cover, cover, cover';
+// Five layers: vignette, pool, artwork, weave, base. Only the weave tiles.
+/** Matching background-size list. */
+export const TABLE_BACKGROUND_SIZE = 'cover, cover, cover, auto, cover';
 /** Matching background-position list. */
 export const TABLE_BACKGROUND_POSITION =
   'center center, center center, center center, center center, center center';
 /** Matching background-repeat list — only the weave tiles. */
-export const TABLE_BACKGROUND_REPEAT = 'no-repeat, repeat, no-repeat, no-repeat, no-repeat';
+export const TABLE_BACKGROUND_REPEAT = 'no-repeat, no-repeat, no-repeat, repeat, no-repeat';

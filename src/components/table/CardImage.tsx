@@ -262,13 +262,44 @@ export const CARD_BACK_IDS = [
 
 const DEFAULT_CARD_BACK = 'classic_blue';
 
-/** Map legacy/invalid ids onto real designs rather than rendering nothing. */
+/**
+ * Map legacy/invalid ids onto real designs rather than rendering nothing.
+ *
+ * 2026-08-20 — THE STORE AND THE TABLE SPOKE DIFFERENT LANGUAGES.
+ * CardBackSelector sells twelve designs by id (black, red, blue, white,
+ * classic, burgundy, navy, gold, holographic, carbon, club-branded,
+ * diamond-foil). Only five of those ids existed here, so buying any of the
+ * other seven — six of them PAID, up to 300 diamonds each — resolved to the
+ * default back. Worse, settingsBridge whitelisted cardBack against the eight
+ * table ids, so those purchases were rejected at the persistence layer and
+ * silently reverted: diamonds spent, nothing changed, no error.
+ *
+ * Every purchasable id now maps to a real design, and the paid tiers each map
+ * to a DISTINCT one so a purchase always visibly changes the card back.
+ * (Bespoke artwork for holographic/carbon/club-crest/diamond-foil is still
+ * outstanding; these mappings make the purchases honest in the meantime.)
+ */
 const CARD_BACK_ALIASES: Record<string, string> = {
+  // legacy / free tier
   classic: 'classic_red',
   black: 'classic_blue',
   blue: 'classic_blue',
   red: 'classic_red',
+  white: 'royal',
+  // paid tier — each maps to a distinct real design
+  burgundy: 'classic_red',
+  navy: 'classic_blue',
+  holographic: 'galaxy',
+  carbon: 'neon',
+  'club-branded': 'dragon',
+  'diamond-foil': 'diamond',
 };
+
+/** Every id the store can hand us, canonical + purchasable aliases. */
+export const SELECTABLE_CARD_BACK_IDS: readonly string[] = [
+  ...CARD_BACK_IDS,
+  ...Object.keys(CARD_BACK_ALIASES),
+];
 
 export function normalizeCardBack(style: string | undefined | null): string {
   if (!style) return DEFAULT_CARD_BACK;

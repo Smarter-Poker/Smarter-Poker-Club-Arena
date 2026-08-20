@@ -11,6 +11,7 @@ import {
   resolveSkin,
   resolveBackground,
   resolveBackgroundLayers,
+  DEFAULT_TABLE_AMBIENCE,
   DEFAULT_TABLE_BACKDROP,
   DEFAULT_TABLE_BACKDROP_COLOR,
   TABLE_BACKGROUND_SIZE,
@@ -116,10 +117,14 @@ describe('resolveBackgroundLayers — never blank', () => {
     expect(layers).not.toContain('url()');
   });
 
-  it('layers the selected artwork ON TOP of the backdrop', () => {
+  it('layers the selected artwork ON TOP of the always-paints floor', () => {
+    // (The translucent ambience sits above the artwork — see the ambience
+    // suite below. What matters here is that the floor is the LAST layer, so
+    // it can never be the thing that goes missing.)
     const layers = resolveBackgroundLayers('midnight');
-    expect(layers.startsWith('url(')).toBe(true);
+    expect(layers).toContain('url(');
     expect(layers.indexOf('url(')).toBeLessThan(layers.indexOf(DEFAULT_TABLE_BACKDROP));
+    expect(layers.endsWith(DEFAULT_TABLE_BACKDROP)).toBe(true);
   });
 
   it('an unknown id renders exactly the default design', () => {
@@ -147,5 +152,48 @@ describe('resolveBackgroundLayers — never blank', () => {
     expect(countTopLevel(TABLE_BACKGROUND_SIZE)).toBe(layers);
     expect(countTopLevel(TABLE_BACKGROUND_POSITION)).toBe(layers);
     expect(countTopLevel(TABLE_BACKGROUND_REPEAT)).toBe(layers);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AMBIENCE ABOVE THE ARTWORK (2026-08-20 follow-up)
+// ═══════════════════════════════════════════════════════════════════════════
+// Guaranteeing a layer underneath stopped the page being EMPTY when an asset
+// fails, but the reported symptom was a background that loads and still reads
+// as blank: the designs average RGB(22,26,32) with a brightest pixel of
+// 49/255 and are authored portrait, so `cover` crops them to a near-uniform
+// near-black slice on a wide viewport. The ambience therefore has to sit ON
+// TOP of the artwork to lift it.
+
+describe('table background ambience', () => {
+  it('paints the ambience ABOVE the artwork', () => {
+    const layers = resolveBackgroundLayers('midnight');
+    expect(layers.indexOf(DEFAULT_TABLE_AMBIENCE)).toBeLessThan(layers.indexOf('url('));
+  });
+
+  it('keeps the always-paints floor BELOW the artwork', () => {
+    const layers = resolveBackgroundLayers('midnight');
+    expect(layers.indexOf('url(')).toBeLessThan(layers.indexOf(DEFAULT_TABLE_BACKDROP));
+  });
+
+  it.each(['midnight', 'not_a_background', '', null, undefined])(
+    'still paints both ambience and floor for %p',
+    (bid) => {
+      const layers = resolveBackgroundLayers(bid as string);
+      expect(layers).toContain(DEFAULT_TABLE_AMBIENCE);
+      expect(layers).toContain(DEFAULT_TABLE_BACKDROP);
+    }
+  );
+
+  it('the ambience is translucent so the artwork still reads through it', () => {
+    // A fully opaque ambience layer would hide every design and make the
+    // picker meaningless. Every colour stop must carry an alpha < 1.
+    const colourStops = DEFAULT_TABLE_AMBIENCE.match(/rgba?\([^)]*\)/g) || [];
+    expect(colourStops.length).toBeGreaterThan(0);
+    for (const stop of colourStops) {
+      const parts = stop.replace(/rgba?\(|\)/g, '').split(',');
+      const alpha = parts.length === 4 ? Number(parts[3]) : 1;
+      expect(alpha, stop).toBeLessThan(1);
+    }
   });
 });

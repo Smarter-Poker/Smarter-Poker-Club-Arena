@@ -763,7 +763,10 @@ export default function CashierPage() {
       const seen = new Set<string>();
       const merged = [...wtData, ...clData]
         .filter((tx) => {
-          if (tx._source === 'chip_ledger' && authoritative.has(econKey(tx.amount, tx.created_at))) {
+          if (
+            tx._source === 'chip_ledger' &&
+            authoritative.has(econKey(tx.amount, tx.created_at))
+          ) {
             return false;
           }
           if (seen.has(tx.id)) return false;
@@ -1576,13 +1579,16 @@ export default function CashierPage() {
           <DynamicWallet
             userId={user.id}
             clubId={clubId}
-            variant={
-              isInUnion && (userRole === 'owner' || isUnionOwner)
-                ? 'union'
-                : userRole === 'owner'
-                  ? 'owner'
-                  : 'player'
-            }
+            /**
+             * WALLET SEPARATION LAW (Dan 2026-08-20). This is the CLUB
+             * cashier — the screen for moving THIS club's chips. It used to
+             * flip to the union panel whenever the viewer happened to own the
+             * union, replacing Club Bank with Union Bank on the very screen
+             * where a mint or a payout is authorised. Owning the union does
+             * not make its treasury this club's balance. Union funds are
+             * managed on the union's own surfaces; never here.
+             */
+            variant={userRole === 'owner' ? 'owner' : 'player'}
             onBuyDiamonds={() => navigate(`/vip`)}
             onMintChips={() => setAction('mint')}
             onOpenBBJ={() => clubId && navigate(`/clubs/${clubId}/jackpot`)}

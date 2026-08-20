@@ -44,6 +44,15 @@ import { reportError } from '../utils/errorReporter';
 import { SHARK_CLUB_ID, QUERY_LIMITS } from '../lib/constants';
 import { matchesVariant, matchesTournamentSubFilter } from '../utils/tournamentFilters';
 import { useUserStore } from '../stores/useUserStore';
+import LobbyAdStrip from '../components/lobby/LobbyAdStrip';
+import {
+  IconTrophy,
+  IconLeaderboard,
+  IconMembers,
+  IconShareLink,
+  IconSearch,
+  IconSort,
+} from '../components/icons/LobbyIcons';
 
 // Shark Club fallback logo — used when DB logo_url is null
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-card-v25.jpg`;
@@ -128,18 +137,69 @@ interface WalletBalances {
   diamonds: number;
 }
 
-type MainFilter = 'ALL' | 'CASH GAMES' | 'TOURNAMENTS';
-type CashVariant = 'ALL' | "Hold'em" | 'Omaha';
+/**
+ * ── GAME ACTION BAR (Dan 2026-08-20) ─────────────────────────────────────────
+ *
+ * The lobby used to filter through THREE stacked rows: a main tab
+ * (ALL / CASH GAMES / TOURNAMENTS), then a variant row whose contents changed
+ * depending on the tab, then a status row. Finding Omaha took two taps through
+ * a control that rearranged itself between them, and the two rows appeared and
+ * vanished as the tab changed, so the grid jumped up and down the page.
+ *
+ * One bar now lists every game type the platform runs, flat. Status is a
+ * refinement of a chosen type, so that row appears only once a type is picked,
+ * and ordering moved to an explicit sort control instead of being implied by
+ * whichever tab happened to be selected.
+ */
+type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
+type SortKey = 'recommended' | 'stakes_high' | 'stakes_low' | 'players' | 'starting_soon';
 type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
 type CashSubFilter = 'all' | 'live' | 'empty' | 'full';
 type TournamentSubFilter = 'all' | 'running' | 'registering' | 'late_reg' | 'starting_soon';
 
+const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'MIXED'];
+const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
+
+const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
+  { key: 'ALL', label: 'All' },
+  { key: 'HOLDEM', label: "Hold'em" },
+  { key: 'OMAHA', label: 'Omaha' },
+  { key: 'MIXED', label: 'Mixed' },
+  { key: 'MTT', label: 'MTT' },
+  { key: 'SNG', label: 'Sit & Go' },
+  { key: 'SPIN', label: 'Spin' },
+];
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'recommended', label: 'Recommended' },
+  { key: 'stakes_high', label: 'Stakes: high to low' },
+  { key: 'stakes_low', label: 'Stakes: low to high' },
+  { key: 'players', label: 'Most players' },
+  { key: 'starting_soon', label: 'Starting soonest' },
+];
+
+/** Which tournament tab a GameType maps onto, for the shared variant matcher. */
+const TOURN_VARIANT_FOR: Partial<Record<GameType, TournVariant>> = {
+  MTT: 'MTT',
+  SNG: 'SN',
+  SPIN: 'Spin-It',
+};
+
+/** Classify a cash table into the bar's three cash types. */
+function cashKind(t: { game_variant?: string }): 'HOLDEM' | 'OMAHA' | 'MIXED' {
+  const v = (t.game_variant || '').toLowerCase();
+  // 'short' is Short Deck, which is a Hold'em variant — it belongs with NLH,
+  // not in the Mixed bucket where an unlisted string falls.
+  if (v.includes('nlh') || v.includes('holdem') || v.includes("hold'em") || v.includes('short'))
+    return 'HOLDEM';
+  if (v.includes('plo') || v.includes('omaha')) return 'OMAHA';
+  return 'MIXED';
+}
+
 // ── Lobby ordering (used by the ALL view): Hold'em → Omaha → Mixed for cash ──
 function cashRank(t: { game_variant?: string }): number {
-  const v = (t.game_variant || '').toLowerCase();
-  if (v.includes('nlh') || v.includes('holdem') || v.includes('short')) return 0; // Hold'em family
-  if (v.includes('plo') || v.includes('omaha')) return 1; // Omaha
-  return 2; // Mixed / everything else
+  const kind = cashKind(t);
+  return kind === 'HOLDEM' ? 0 : kind === 'OMAHA' ? 1 : 2;
 }
 // Tournaments open for registration (or not past late-reg) come first, soonest first.
 function tournamentOpenFirst(
@@ -193,11 +253,16 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
   const [showBBJInfo, setShowBBJInfo] = useState(false);
-  const [activeMainFilter, setActiveMainFilter] = useState<MainFilter>('ALL');
-  const [cashVariant, setCashVariant] = useState<CashVariant>('ALL');
-  const [tournVariant, setTournVariant] = useState<TournVariant>('ALL');
-  const [cashSubFilter, setCashSubFilter] = useState<CashSubFilter>('live');
-  const [tournamentSubFilter, setTournamentSubFilter] = useState<TournamentSubFilter>('running');
+  const [gameType, setGameType] = useState<GameType>('ALL');
+  const [sortKey, setSortKey] = useState<SortKey>('recommended');
+  const [sortOpen, setSortOpen] = useState(false);
+  // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
+  // 'running', which was invisible: picking a game type silently hid every
+  // empty table and every tournament still taking registrations, so a club
+  // with 30 open games could look empty the moment a player filtered. A filter
+  // the player did not choose must not remove rows.
+  const [cashSubFilter, setCashSubFilter] = useState<CashSubFilter>('all');
+  const [tournamentSubFilter, setTournamentSubFilter] = useState<TournamentSubFilter>('all');
   const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
@@ -947,57 +1012,76 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     }
   };
 
-  // Filter tables
-  const showTournaments = activeMainFilter === 'TOURNAMENTS';
+  // Which halves of the lobby the chosen type can produce. Derived once so the
+  // filters, the status row and the empty state cannot disagree about it.
+  const showsCash = gameType === 'ALL' || CASH_TYPES.includes(gameType);
+  const showsTournaments = gameType === 'ALL' || TOURNAMENT_TYPES.includes(gameType);
+  const showTournaments = TOURNAMENT_TYPES.includes(gameType);
 
-  const filteredTables = useMemo(
-    () =>
-      tables
-        .filter((table) => {
-          if (activeMainFilter === 'TOURNAMENTS') return false;
+  const filteredTables = useMemo(() => {
+    if (!showsCash) return [];
 
-          // Game variant filter
-          let passesGameFilter = true;
-          if (cashVariant === "Hold'em") {
-            passesGameFilter =
-              table.game_variant?.toLowerCase().includes('nlh') ||
-              table.game_variant?.toLowerCase().includes('holdem');
-          } else if (cashVariant === 'Omaha') {
-            passesGameFilter =
-              table.game_variant?.toLowerCase().includes('plo') ||
-              table.game_variant?.toLowerCase().includes('omaha');
-          }
-          if (!passesGameFilter) return false;
+    const rows = tables.filter((table) => {
+      if (gameType !== 'ALL' && cashKind(table) !== gameType) return false;
 
-          // Cash game status filter (skip if ALL tab is active)
-          if (activeMainFilter === 'ALL') return true;
+      // Status refines a chosen type; on ALL there is no type to refine.
+      if (gameType === 'ALL') return true;
+      if (cashSubFilter === 'live') return table.current_players > 0;
+      if (cashSubFilter === 'empty') return table.current_players === 0;
+      if (cashSubFilter === 'full') return table.current_players >= table.max_players;
+      return true;
+    });
 
-          if (cashSubFilter === 'live') return table.current_players > 0;
-          if (cashSubFilter === 'empty') return table.current_players === 0;
-          if (cashSubFilter === 'full') return table.current_players >= table.max_players;
-          return true;
-        })
-        .sort((a, b) => cashRank(a) - cashRank(b)),
-    [tables, activeMainFilter, cashVariant, cashSubFilter]
-  );
+    const bb = (t: TableData) => Number(t.big_blind) || 0;
+    switch (sortKey) {
+      case 'stakes_high':
+        return rows.sort((a, b) => bb(b) - bb(a));
+      case 'stakes_low':
+        return rows.sort((a, b) => bb(a) - bb(b));
+      case 'players':
+        return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
+      case 'starting_soon':
+        // Cash tables have no start time. Rather than sorting them by an
+        // absent field (which is a no-op that LOOKS like a sort), fall back to
+        // the busiest first — the nearest cash equivalent of "starting soon".
+        return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
+      case 'recommended':
+      default:
+        // Hold'em → Omaha → Mixed, busiest first inside each family.
+        return rows.sort(
+          (a, b) => cashRank(a) - cashRank(b) || (b.current_players || 0) - (a.current_players || 0)
+        );
+    }
+  }, [tables, gameType, showsCash, cashSubFilter, sortKey]);
 
-  // Filter tournaments
-  const filteredTournaments = useMemo(
-    () =>
-      tournaments
-        .filter((t) => {
-          if (activeMainFilter === 'CASH GAMES') return false;
+  const filteredTournaments = useMemo(() => {
+    if (!showsTournaments) return [];
 
-          // Tournament variant filter (MTT / SN / Spin-It)
-          if (!matchesVariant(t, tournVariant)) return false;
+    const variant: TournVariant = TOURN_VARIANT_FOR[gameType] ?? 'ALL';
+    const rows = tournaments.filter((t) => {
+      if (!matchesVariant(t, variant)) return false;
+      if (gameType === 'ALL') return true;
+      return matchesTournamentSubFilter(t, tournamentSubFilter);
+    });
 
-          // Status sub-filter — skipped while the ALL tab is active.
-          if (activeMainFilter === 'ALL') return true;
-          return matchesTournamentSubFilter(t, tournamentSubFilter);
-        })
-        .sort(tournamentOpenFirst),
-    [tournaments, activeMainFilter, tournVariant, tournamentSubFilter]
-  );
+    const buyIn = (t: TournamentData) =>
+      (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
+    switch (sortKey) {
+      case 'stakes_high':
+        return rows.sort((a, b) => buyIn(b) - buyIn(a));
+      case 'stakes_low':
+        return rows.sort((a, b) => buyIn(a) - buyIn(b));
+      case 'players':
+        return rows.sort((a, b) => (b.current_players || 0) - (a.current_players || 0));
+      case 'starting_soon':
+        return rows.sort(
+          (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+        );
+      case 'recommended':
+      default:
+        return rows.sort(tournamentOpenFirst);
+    }
+  }, [tournaments, gameType, showsTournaments, tournamentSubFilter, sortKey]);
 
   const formatNumber = (num: number) => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1140,61 +1224,223 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
           layer (PersistentTableLayer in App.tsx), which now shows it on EVERY
           non-/table route — a per-page copy here would double-render it. */}
       {/* Animations moved to ClubHomePage.css */}
-      {/* ═══════════════════════════════════════════════════════════════════
-                QUICK ACTION ICONS ROW
-            ═══════════════════════════════════════════════════════════════════ */}
-      <div className="club-home__actions-row">
-        {!clubIdOverride && (
-          <button
-            className="club-home__back-btn"
-            onClick={() => {
-              haptic.light();
-              navigate('/clubs');
-            }}
-          >
-            ‹‹
-          </button>
-        )}
-        <div className="club-home__quick-icons">
-          <button
-            className="quick-icon"
-            title="Events"
-            onClick={() => {
-              haptic.selection();
-              navigate(`/clubs/${clubId}/detail`);
-            }}
-          >
-            <span className="icon-events"></span>
-          </button>
-          <button
-            className="quick-icon"
-            title="Leaderboard"
-            onClick={() => {
-              haptic.selection();
-              navigate('/leaderboard');
-            }}
-          >
-            <span className="icon-leaderboard"></span>
-          </button>
-        </div>
-      </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
-                BAD BEAT JACKPOT TICKER — live pool + recent real hits
-            ═══════════════════════════════════════════════════════════════════ */}
-      {(bbjScope.clubUuid || bbjScope.unionId) && (
-        <div className="club-home__bbj-ticker">
-          <BBJTicker
-            clubId={bbjScope.clubUuid}
-            unionId={bbjScope.unionId}
-            poolAmount={jackpotAmount}
+          LOBBY HEADER — rebuilt 2026-08-20 (Dan).
+          One header block instead of four loosely-stacked rows. Every icon in
+          here was an emoji glyph (trophy / bar-chart / two-people / chain-link)
+          rendered from the platform font, so the same header drew differently
+          on every device and broke the house no-emoji-in-source rule. All of
+          them are inline SVG on currentColor now — see LobbyIcons.tsx.
+      ═══════════════════════════════════════════════════════════════════ */}
+      <header className="lobby-top">
+        <div className="lobby-top__bar">
+          {!clubIdOverride && (
+            <button
+              className="lobby-top__back"
+              aria-label="Back to clubs"
+              onClick={() => {
+                haptic.light();
+                navigate('/clubs');
+              }}
+            >
+              &#8249;&#8249;
+            </button>
+          )}
+
+          <div className="lobby-top__quick">
+            <button
+              className="lobby-quick"
+              onClick={() => {
+                haptic.selection();
+                navigate(`/clubs/${clubId}/detail`);
+              }}
+            >
+              <IconTrophy />
+              <span>Events</span>
+            </button>
+            <button
+              className="lobby-quick"
+              onClick={() => {
+                haptic.selection();
+                navigate('/leaderboard');
+              }}
+            >
+              <IconLeaderboard />
+              <span>Ranks</span>
+            </button>
+          </div>
+
+          <button
+            className="lobby-top__search"
+            aria-label="Search games"
             onClick={() => {
-              haptic.selection();
-              setShowBBJInfo(true);
+              haptic.light();
+              setSortOpen(false);
             }}
-          />
+          >
+            <IconSearch />
+          </button>
         </div>
-      )}
+
+        {/* ── Bad Beat Jackpot — live pool + recent real hits ── */}
+        {(bbjScope.clubUuid || bbjScope.unionId) && (
+          <div className="lobby-top__bbj">
+            <BBJTicker
+              clubId={bbjScope.clubUuid}
+              unionId={bbjScope.unionId}
+              poolAmount={jackpotAmount}
+              onClick={() => {
+                haptic.selection();
+                setShowBBJInfo(true);
+              }}
+            />
+          </div>
+        )}
+
+        {/* ── Club identity + wallet ── */}
+        <div className="lobby-top__main">
+          <div className="lobby-club">
+            <div className="lobby-club__avatar">
+              {club.logo_url || club.avatar_url ? (
+                <img src={club.logo_url || club.avatar_url} alt={club.name} loading="lazy" />
+              ) : Number(club.club_id) === SHARK_CLUB_ID ? (
+                <img src={SHARK_CLUB_FALLBACK_LOGO} alt="Shark Club" loading="lazy" />
+              ) : (
+                <span className="lobby-club__avatar-fallback">&#9824;</span>
+              )}
+            </div>
+
+            <div className="lobby-club__info">
+              <h2 className="lobby-club__name" title={club.name}>
+                {club.name}
+              </h2>
+              <div className="lobby-club__meta">
+                <span className="lobby-club__id">ID {club.club_id}</span>
+                <span className="lobby-club__members">
+                  <IconMembers />
+                  {(club.member_count || 0).toLocaleString()}
+                </span>
+                {club.online_count > 0 && (
+                  <span className="lobby-club__online">
+                    {club.online_count.toLocaleString()} online
+                  </span>
+                )}
+              </div>
+
+              {/* Club level.
+                  Dan 2026-08-20: this page already loaded the level, already
+                  called the recompute_club_levels RPC to correct a stale one,
+                  and already fired a "Level Up!" toast when it rose — while
+                  rendering the level itself NOWHERE. Players were congratulated
+                  on reaching a level they could not see, and the stylesheet had
+                  carried .club-level-badge / .club-level-progress rules with no
+                  markup behind them. The work was being done; it just was not
+                  reaching the screen. */}
+              {clubLevel && (
+                <div className="lobby-club__level">
+                  <span
+                    className="club-level-badge"
+                    style={{ background: clubLevel.gradient }}
+                    title={`Level ${clubLevel.level} — ${clubLevel.tierLabel}`}
+                  >
+                    <span className="club-level-badge__number">Lv.{clubLevel.level}</span>
+                    <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
+                  </span>
+                  <span className="club-level-progress">
+                    <span className="club-level-progress__bar">
+                      <span
+                        className="club-level-progress__fill"
+                        style={{
+                          // Clamped: a club past its next threshold returns >100
+                          // and overflowed the bar's rounded corners.
+                          width: `${Math.max(0, Math.min(100, clubLevel.progressPercent))}%`,
+                          background: clubLevel.gradient,
+                        }}
+                      />
+                    </span>
+                    <span className="club-level-progress__text">
+                      {Math.round(Math.max(0, Math.min(100, clubLevel.progressPercent)))}%
+                    </span>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <button
+              className="lobby-club__share"
+              aria-label="Share club invite link"
+              title="Share"
+              onClick={async () => {
+                haptic.medium();
+                const shareUrl = `${window.location.origin}/clubs/${clubId}`;
+                try {
+                  if (navigator.share) {
+                    await navigator.share({
+                      title: club.name,
+                      text: `Join ${club.name} on Smarter Poker!`,
+                      url: shareUrl,
+                    });
+                  } else {
+                    await navigator.clipboard.writeText(shareUrl);
+                    toast.success('Club link copied!');
+                  }
+                } catch (e) {
+                  reportError(e, 'ClubHomePage.async');
+                  /* user cancelled share */
+                }
+              }}
+            >
+              <IconShareLink />
+            </button>
+          </div>
+
+          {/* ── Wallet ──
+              WALLET SEPARATION LAW (Dan 2026-08-20): this is a CLUB screen, so
+              it renders CLUB money. The variant used to become 'union' whenever
+              a union owner opened one of his own clubs, which replaced Club
+              Bank with Union Bank / Rake Treasury / Clubs Wallet / Backup BBJ —
+              the union's books, on the club's lobby. Owning both does not merge
+              them; one wallet never gets access to the other. Union figures are
+              managed on the union's own surfaces and appear nowhere here.
+
+              showBBJ is false because BBJTicker directly above already owns the
+              jackpot; two live copies of one number is how they eventually
+              disagree. */}
+          {currentUserId && resolvedClubId && (
+            <div className="lobby-top__wallet">
+              <DynamicWallet
+                userId={currentUserId}
+                clubId={resolvedClubId}
+                variant={isOwner || userRole === 'owner' ? 'owner' : 'player'}
+                showBBJ={false}
+                onBuyDiamonds={() => {
+                  haptic.medium();
+                  navigate(`/clubs/${clubId}/detail`);
+                }}
+                onMintChips={() => {
+                  haptic.medium();
+                  navigate(`/clubs/${clubId}/cashier`);
+                }}
+                onOpenBBJ={() => {
+                  haptic.medium();
+                  navigate(`/clubs/${clubId}/bbj`);
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* ── Club notice. Rendered only when the club has actually written one:
+            the old copy printed the AUTHORING PLACEHOLDER ("Enter the club
+            introduction...(5000 characters limit)") to every player of every
+            club that had not set a description. ── */}
+        {club.description && club.description.trim().length > 0 && (
+          <div className="lobby-top__notice">
+            <p>{club.description}</p>
+          </div>
+        )}
+      </header>
 
       <BBJInfoModal
         isOpen={showBBJInfo}
@@ -1204,163 +1450,87 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
       />
 
       {/* ═══════════════════════════════════════════════════════════════════
-                CLUB CARD + WALLET DISPLAY (side-by-side layout)
-            ═══════════════════════════════════════════════════════════════════ */}
-      <div className="club-home__club-section">
-        <div className="club-home__club-card">
-          <div className="club-card__avatar">
-            {club.logo_url || club.avatar_url ? (
-              <img src={club.logo_url || club.avatar_url} alt={club.name} loading="lazy" />
-            ) : Number(club.club_id) === SHARK_CLUB_ID ? (
-              <img src={SHARK_CLUB_FALLBACK_LOGO} alt="Shark Club" loading="lazy" />
-            ) : (
-              <span className="club-card__avatar-placeholder">&#9824;</span>
-            )}
-          </div>
-          <div className="club-card__info">
-            <h2 className="club-card__name">{club.name}</h2>
-            <div className="club-card__meta">
-              <span className="club-card__id">ID: {club.club_id}</span>
-              <span className="club-card__members">
-                {(club.member_count || 0).toLocaleString()}
-                {club.online_count > 0 && (
-                  <span className="club-card__online">
-                    {' '}
-                    / {club.online_count.toLocaleString()} online
-                  </span>
-                )}
-              </span>
-              <button
-                className="club-card__share"
-                title="Share"
-                onClick={async () => {
-                  haptic.medium();
-                  const shareUrl = `${window.location.origin}/clubs/${clubId}`;
-                  try {
-                    if (navigator.share) {
-                      await navigator.share({
-                        title: club.name,
-                        text: `Join ${club.name} on Smarter Poker!`,
-                        url: shareUrl,
-                      });
-                    } else {
-                      await navigator.clipboard.writeText(shareUrl);
-                      toast.success('Club link copied!');
-                    }
-                  } catch (e) {
-                    reportError(e, 'ClubHomePage.async');
-                    /* user cancelled share */
-                  }
-                }}
-              >
-                <span className="icon-link"></span>
-              </button>
-            </div>
-          </div>
+          GAME ACTION BAR — every game type, flat, plus explicit sorting
+      ═══════════════════════════════════════════════════════════════════ */}
+      <div className="game-bar">
+        <div className="game-bar__types" role="tablist" aria-label="Game type">
+          {GAME_TYPE_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              role="tab"
+              aria-selected={gameType === tab.key}
+              className={`game-bar__type ${gameType === tab.key ? 'is-active' : ''}`}
+              onClick={() => {
+                haptic.selection();
+                setGameType(tab.key);
+                setSortOpen(false);
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* ── Wallet — upper-right, always rendered ── */}
-        {currentUserId && resolvedClubId && (
-          <div className="club-home__wallet-compact">
-            <DynamicWallet
-              userId={currentUserId}
-              clubId={resolvedClubId}
-              variant={isInUnion && isOwner ? 'union' : userRole === 'owner' ? 'owner' : 'player'}
-              onBuyDiamonds={() => {
-                haptic.medium();
-                navigate(`/clubs/${clubId}/detail`);
-              }}
-              onMintChips={() => {
-                haptic.medium();
-                navigate(`/clubs/${clubId}/cashier`);
-              }}
-              onOpenBBJ={() => {
-                haptic.medium();
-                navigate(`/clubs/${clubId}/bbj`);
-              }}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-                CLUB INTRODUCTION
-            ═══════════════════════════════════════════════════════════════════ */}
-      <div className="club-home__intro">
-        <p>{club.description || 'Enter the club introduction...(5000 characters limit).'}</p>
-      </div>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-                GAME TYPE FILTERS
-            ═══════════════════════════════════════════════════════════════════ */}
-      <div className="club-home__filters">
-        <button className="filter-search" onClick={() => haptic.light()}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <path d="M21 21l-4.3-4.3"></path>
-          </svg>
-        </button>
-        {(['ALL', 'CASH GAMES', 'TOURNAMENTS'] as MainFilter[]).map((filter) => (
+        <div className="game-bar__sort">
           <button
-            key={filter}
-            className={`filter-tab ${activeMainFilter === filter ? 'active' : ''}`}
+            className={`game-bar__sort-btn ${sortKey !== 'recommended' ? 'is-set' : ''}`}
+            aria-haspopup="listbox"
+            aria-expanded={sortOpen}
             onClick={() => {
-              haptic.selection();
-              setActiveMainFilter(filter);
+              haptic.light();
+              setSortOpen((o) => !o);
             }}
           >
-            {filter}
+            <IconSort />
+            <span>{SORT_OPTIONS.find((o) => o.key === sortKey)?.label ?? 'Sort'}</span>
           </button>
-        ))}
-        <button className="filter-more" onClick={() => haptic.light()}>
-          ▼
-        </button>
-      </div>
 
-      {/* SUB-FILTERS: Variants */}
-      {activeMainFilter !== 'ALL' && (
-        <div className="club-home__sub-filters" style={{ marginTop: '0px', marginBottom: '8px' }}>
-          {activeMainFilter === 'CASH GAMES' ? (
+          {sortOpen && (
             <>
-              {(['ALL', "Hold'em", 'Omaha'] as CashVariant[]).map((sf) => (
-                <button
-                  key={sf}
-                  className={`sub-filter-tab ${cashVariant === sf ? 'active' : ''}`}
-                  onClick={() => {
-                    haptic.selection();
-                    setCashVariant(sf);
-                  }}
-                >
-                  {sf}
-                </button>
-              ))}
-            </>
-          ) : (
-            <>
-              {(['ALL', 'MTT', 'Spin-It', 'SN'] as TournVariant[]).map((sf) => (
-                <button
-                  key={sf}
-                  className={`sub-filter-tab ${tournVariant === sf ? 'active' : ''}`}
-                  onClick={() => {
-                    haptic.selection();
-                    setTournVariant(sf);
-                  }}
-                >
-                  {sf}
-                </button>
-              ))}
+              {/* Click-away shield. Without it the menu could only be closed by
+                  re-tapping the button, which on a phone is the one place a
+                  thumb is unlikely to go next. */}
+              <div className="game-bar__sort-shield" onClick={() => setSortOpen(false)} />
+              <ul className="game-bar__sort-menu" role="listbox" aria-label="Sort games by">
+                {SORT_OPTIONS.map((opt) => (
+                  <li key={opt.key}>
+                    <button
+                      role="option"
+                      aria-selected={sortKey === opt.key}
+                      className={sortKey === opt.key ? 'is-active' : ''}
+                      onClick={() => {
+                        haptic.selection();
+                        setSortKey(opt.key);
+                        setSortOpen(false);
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </>
           )}
         </div>
-      )}
+      </div>
 
-      {/* SUB-FILTERS: Status */}
-      {activeMainFilter !== 'ALL' && (
-        <div className="club-home__sub-filters" style={{ marginTop: '0px' }}>
-          {activeMainFilter === 'CASH GAMES' ? (
-            // Cash game status sub-filters
-            <>
-              {(
+      {/* ═══════════════════════════════════════════════════════════════════
+          CLUB / UNION AD STRIP — directly under the action bar
+      ═══════════════════════════════════════════════════════════════════ */}
+      <LobbyAdStrip
+        clubId={bbjScope.clubUuid || resolvedClubId}
+        unionId={bbjScope.unionId}
+        onOpen={() => {
+          haptic.selection();
+          navigate(`/clubs/${clubId}/announcements`);
+        }}
+      />
+
+      {/* ── STATUS REFINEMENT — only once a game type is chosen ── */}
+      {gameType !== 'ALL' && (
+        <div className="club-home__sub-filters">
+          {showsCash
+            ? (
                 [
                   { key: 'all', label: 'All Tables' },
                   { key: 'live', label: 'Live Games' },
@@ -1378,12 +1548,8 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                 >
                   {sf.label}
                 </button>
-              ))}
-            </>
-          ) : (
-            // Tournament status sub-filters
-            <>
-              {(
+              ))
+            : (
                 [
                   { key: 'all', label: 'All' },
                   { key: 'running', label: 'Running' },
@@ -1403,8 +1569,6 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
                   {sf.label}
                 </button>
               ))}
-            </>
-          )}
         </div>
       )}
 

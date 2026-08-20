@@ -6,12 +6,21 @@
  * Compact wallet display positioned below the club card.
  * Shows BBJ banner + role-specific wallet balance rows with action buttons.
  *
- * Three variants auto-detected from role:
+ * Three variants, chosen EXPLICITLY by the caller — never inferred:
  *   'player' — Chip Balance, Agent Wallet, Promo Wallet
  *   'owner'  — Club Bank, Agent Wallet, Promo Wallet
- *   'union'  — Union Bank, Clubs Wallet, Promo Wallet, Backup BBJ
+ *   'union'  — Union Bank, Rake Treasury, Clubs Wallet, Promo Wallet, Backup BBJ
  *
- * All variants: Diamond Balance (+buy), BBJ main pool
+ * ── WALLET SEPARATION LAW (Dan 2026-08-20, binding) ─────────────────────────
+ * Union money and club money are DIFFERENT MONEY and must never appear on the
+ * same panel. Owning both does not merge them: a union owner standing in one
+ * of his own clubs is a CLUB owner in that context and sees the CLUB's ledgers
+ * only. The 'union' variant is legal on union-scoped surfaces alone (union
+ * dashboard / union cashier) and is NEVER auto-selected — see effectiveVariant
+ * below for the regression this replaced.
+ *
+ * All variants: Diamond Balance (+buy). The BBJ banner is opt-out via
+ * `showBBJ` for surfaces that already render a dedicated jackpot ticker.
  *
  * Real-time data flow:
  *   1. Initial fetch via Supabase REST
@@ -31,6 +40,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { WalletIcon, type WalletIconName } from '../icons/LobbyIcons';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
@@ -64,6 +74,13 @@ interface DynamicWalletProps {
   userId: string;
   clubId: string;
   variant?: WalletVariant;
+  /**
+   * Render the BBJ banner. Default true. The club lobby passes false because
+   * BBJTicker already owns the jackpot up there — two live copies of the same
+   * number, animating on two separate subscriptions, is the kind of duplication
+   * that eventually shows two DIFFERENT figures on one screen.
+   */
+  showBBJ?: boolean;
   onBuyDiamonds?: () => void;
   onMintChips?: () => void;
   onOpenBBJ?: () => void;
@@ -171,6 +188,7 @@ export default function DynamicWallet({
   userId,
   clubId,
   variant = 'player',
+  showBBJ = true,
   onBuyDiamonds,
   onMintChips,
   onOpenBBJ,
@@ -248,21 +266,28 @@ export default function DynamicWallet({
       });
   }, [clubId]);
 
-  // Effective variant.
+  // Effective variant — the caller's choice, full stop.
   //
-  // This used to upgrade to 'union' whenever `isClubInUnion` was true, which is
-  // derived purely from clubs.union_id — it says the club BELONGS to a union,
-  // not that this VIEWER owns that union. So every ordinary club owner inside a
-  // union was shown the union's whole treasury as their own primary balance,
-  // labelled "Union Bank", with a "+ Mint Chips" button attached — and minting
-  // is union-locked for member clubs, so that button could never work. It also
-  // overrode the parents (CashierPage, ClubHomePage), which already compute the
-  // union variant correctly from isUnionOwner.
+  // WALLET SEPARATION LAW (Dan 2026-08-20). Two successive versions of this
+  // line auto-promoted a club surface to the union panel:
   //
-  // `data.scope` comes from fn_club_money_panel and is the server's own answer
-  // to "what is this caller permitted to see", so it is the right gate.
-  const effectiveVariant: WalletVariant =
-    variant === 'owner' && data.scope === 'union' ? 'union' : variant;
+  //   v1  `isClubInUnion ? 'union' : variant`
+  //         — true for EVERY club inside a union, so ordinary member-club
+  //           owners saw the union's whole treasury as their own balance.
+  //   v2  `variant === 'owner' && data.scope === 'union' ? 'union' : variant`
+  //         — narrower, and still wrong. `scope` answers "may this caller READ
+  //           union figures", which is a PERMISSION question, not a "which
+  //           wallet am I standing in" question. Dan owns both Shark Club and
+  //           its union, so scope came back 'union' inside the Shark Club
+  //           lobby and the club's own panel was replaced by Union Bank / Rake
+  //           Treasury / Clubs Wallet / Backup BBJ. Two separate pots of money
+  //           rendered as one balance sheet on a club screen.
+  //
+  // Being permitted to see union money elsewhere is not permission to show it
+  // HERE. The surface decides: club surfaces pass 'player'/'owner', union
+  // surfaces pass 'union'. Nothing infers it. Do not reintroduce a promotion
+  // rule of any shape.
+  const effectiveVariant: WalletVariant = variant;
 
   // Animated values
   const animDiamonds = useAnimatedCounter(data.diamonds);
@@ -337,6 +362,14 @@ export default function DynamicWallet({
       currentUnionIdRef.current = unionId;
       if (isMounted.current) setCurrentUnionId(unionId ?? null);
 
+      // WALLET SEPARATION LAW: a club-scoped panel never even HOLDS union
+      // figures. Gating only at render time leaves the numbers sitting in
+      // component state where the next edit can surface them by accident —
+      // which is exactly how Union Bank reached the Shark Club lobby. On a
+      // club surface these stay 0 and are never rendered, so there is nothing
+      // to leak.
+      const unionScoped = variant === 'union';
+
       setData({
         diamonds: Number(profileRes.data?.diamonds) || 0,
         chipBalance: Number(memberRes.data?.chip_balance) || 0,
@@ -346,12 +379,12 @@ export default function DynamicWallet({
         agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
         clubBank: num(panel.club_treasury),
         clubTreasury: num(panel.club_treasury),
-        unionBank: num(panel.union_bank),
-        unionRake: num(panel.rake_treasury),
-        unionPromo: num(panel.union_promo),
-        clubsWallet: num(panel.clubs_wallet),
+        unionBank: unionScoped ? num(panel.union_bank) : 0,
+        unionRake: unionScoped ? num(panel.rake_treasury) : 0,
+        unionPromo: unionScoped ? num(panel.union_promo) : 0,
+        clubsWallet: unionScoped ? num(panel.clubs_wallet) : 0,
         clubProjectedRakeback: num(panel.club_projected_rakeback),
-        projectedClubsShare: num(panel.projected_clubs_share),
+        projectedClubsShare: unionScoped ? num(panel.projected_clubs_share) : 0,
         nextCloseAt: (panel.next_close_at as string | null) ?? null,
         scope: (panel.scope as WalletData['scope']) ?? null,
       });
@@ -365,7 +398,7 @@ export default function DynamicWallet({
         setLoading(false);
       }
     }
-  }, [userId, resolvedId]);
+  }, [userId, resolvedId, variant]);
 
   useEffect(() => {
     if (resolvedId) fetchData();
@@ -480,9 +513,7 @@ export default function DynamicWallet({
           // pool row — a row that will never change again — so the jackpot
           // would freeze on screen. currentUnionIdRef is set by fetchData and
           // this effect re-runs when isClubInUnion flips.
-          filter: currentUnionId
-            ? `union_id=eq.${currentUnionId}`
-            : `club_id=eq.${resolvedId}`,
+          filter: currentUnionId ? `union_id=eq.${currentUnionId}` : `club_id=eq.${resolvedId}`,
         },
         (p) => {
           if (isMounted.current) {
@@ -522,7 +553,7 @@ export default function DynamicWallet({
           scheduleReconnect();
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[DynamicWallet] ⏱️ Realtime channel timed out');
+          console.warn('[DynamicWallet] Realtime channel timed out');
           scheduleReconnect();
         }
       });
@@ -568,7 +599,12 @@ export default function DynamicWallet({
     // Uses the unionId from the most recent fetchData to listen for changes.
     let unionWalletChannel: ReturnType<typeof supabase.channel> | null = null;
     const unionId = currentUnionId;
-    if (unionId) {
+    // WALLET SEPARATION LAW: this channel writes unionBank / unionRake /
+    // unionPromo straight into state, bypassing the scoping applied in
+    // fetchData. A club surface must not subscribe to it at all — otherwise a
+    // single union_wallets UPDATE would refill the very fields fetchData
+    // deliberately zeroed.
+    if (unionId && variant === 'union') {
       unionWalletChannel = supabase
         .channel(`dynamic-wallet-union-${unionId}`)
         .on(
@@ -616,7 +652,7 @@ export default function DynamicWallet({
       if (unionWalletChannel) supabase.removeChannel(unionWalletChannel);
     };
     // currentUnionId (state, not the ref) so a union->union club switch rebinds.
-  }, [userId, resolvedId, currentUnionId, channelEpoch]);
+  }, [userId, resolvedId, currentUnionId, channelEpoch, variant]);
 
   // ── Role-specific row config ───────────────────────────────────────────────
   // Union figures come from union_wallets, which RLS restricts to union
@@ -633,7 +669,7 @@ export default function DynamicWallet({
 
   type WalletRow = {
     label: string;
-    icon: string;
+    icon: WalletIconName;
     value: number;
     hint?: string;
     known?: boolean;
@@ -641,12 +677,12 @@ export default function DynamicWallet({
 
   const ROW_CONFIG: Record<WalletVariant, WalletRow[]> = {
     player: [
-      { label: 'Chip Balance', icon: '🪙', value: animRow1 },
-      { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
-      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
+      { label: 'Chip Balance', icon: 'chip', value: animRow1 },
+      { label: 'Agent Wallet', icon: 'agent', value: animRow2 },
+      { label: 'Promo Wallet', icon: 'promo', value: animRow3 },
     ],
     owner: [
-      { label: 'Club Bank', icon: '🏦', value: animRow1 },
+      { label: 'Club Bank', icon: 'bank', value: animRow1 },
       // A club inside a union is paid 90% of the rake it generated at the
       // weekly close. Showing what is owed turns an opaque balance into
       // something an owner can plan against.
@@ -654,19 +690,19 @@ export default function DynamicWallet({
         ? [
             {
               label: 'Due at close',
-              icon: '📈',
+              icon: 'rakeback',
               value: data.clubProjectedRakeback,
               hint: `90% rakeback · ${closeDay}`,
             } as WalletRow,
           ]
         : []),
-      { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
-      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
+      { label: 'Agent Wallet', icon: 'agent', value: animRow2 },
+      { label: 'Promo Wallet', icon: 'promo', value: animRow3 },
     ],
     union: [
       {
         label: 'Union Bank',
-        icon: '🏦',
+        icon: 'bank',
         value: animRow1,
         known: unionFiguresKnown,
         // Dan 2026-08-20: rake used to be credited to the bank AND the
@@ -681,7 +717,7 @@ export default function DynamicWallet({
         // holds the union's own money. They do not overlap and they do not sum
         // into one spendable figure, so the hint says what leaves and when.
         label: 'Rake Treasury',
-        icon: '💠',
+        icon: 'treasury',
         value: animTreasury,
         known: unionFiguresKnown,
         hint: unionFiguresKnown
@@ -690,14 +726,14 @@ export default function DynamicWallet({
       },
       {
         label: 'Clubs Wallet',
-        icon: '🅰️',
+        icon: 'agent',
         value: animRow2,
         known: unionFiguresKnown,
         hint: unionFiguresKnown ? 'member club banks' : undefined,
       },
       {
         label: 'Promo Wallet',
-        icon: '🎟️',
+        icon: 'promo',
         value: animRow3,
         known: unionFiguresKnown,
         // The 25% promo slice accrues inside the BBJ pool and is swept across
@@ -750,30 +786,33 @@ export default function DynamicWallet({
           aria-label="Retry loading wallet data"
           title="Failed to load — tap to retry"
         >
-          ⚠️ Tap to retry
+          Balances unavailable · Retry
         </button>
       )}
 
-      {/* ── BBJ Banner ────────────────────────────────────────────────────── */}
-      <div
-        className="dw__bbj"
-        onClick={onOpenBBJ}
-        onKeyDown={handleBbjKeyDown}
-        role="button"
-        tabIndex={0}
-        aria-label={`Bad Beat Jackpot: ${animBBJ === 0 ? 'no pool' : formatBalance(animBBJ)}`}
-      >
-        <span className="dw__bbj-label">BAD BEAT JACKPOT</span>
-        <span className="dw__bbj-amount">{animBBJ === 0 ? '—' : formatBalance(animBBJ)}</span>
-      </div>
+      {/* ── BBJ Banner — suppressed where a dedicated ticker already owns it ── */}
+      {showBBJ && (
+        <div
+          className="dw__bbj"
+          onClick={onOpenBBJ}
+          onKeyDown={handleBbjKeyDown}
+          role="button"
+          tabIndex={0}
+          aria-label={`Bad Beat Jackpot: ${animBBJ === 0 ? 'no pool' : formatBalance(animBBJ)}`}
+        >
+          <span className="dw__bbj-label">BAD BEAT JACKPOT</span>
+          <span className="dw__bbj-amount">{animBBJ === 0 ? '—' : formatBalance(animBBJ)}</span>
+        </div>
+      )}
 
       {/* ── Wallet Rows ───────────────────────────────────────────────────── */}
       <div className="dw__rows" aria-live="off">
         {/* Diamond Balance */}
         <div className="dw__row dw__row--diamond">
           <span className="dw__row-icon" aria-hidden="true">
-            💎
+            <WalletIcon name="diamond" />
           </span>
+          <span className="dw__row-label">Diamonds</span>
           <span className="dw__row-value">{formatBalance(animDiamonds)}</span>
           {onBuyDiamonds && (
             <button
@@ -796,7 +835,7 @@ export default function DynamicWallet({
             className={`dw__row dw__row--wallet${idx === 0 ? ' dw__row--primary' : ''}`}
           >
             <span className="dw__row-icon" aria-hidden="true">
-              {row.icon}
+              <WalletIcon name={row.icon} />
             </span>
             <span className="dw__row-label">
               {row.label}
@@ -820,11 +859,17 @@ export default function DynamicWallet({
           </div>
         ))}
 
-        {/* Backup BBJ — union pools, and standalone clubs that hold a reserve */}
-        {(effectiveVariant === 'union' || data.backupBBJ > 0) && (
+        {/* Backup BBJ.
+            Union panel: always (it is a union-level reserve).
+            Club panel: ONLY for a standalone club, where the reserve genuinely
+            belongs to that club. A club inside a union is served the UNION's
+            backup figure by fn_club_money_panel, so rendering it here would
+            put union money back on a club screen through the side door —
+            the same leak as Union Bank, one row further down. */}
+        {(effectiveVariant === 'union' || (!isClubInUnion && data.backupBBJ > 0)) && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon" aria-hidden="true">
-              🛡️
+              <WalletIcon name="reserve" />
             </span>
             <span className="dw__row-label">
               Backup BBJ

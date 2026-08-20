@@ -141,49 +141,280 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   QUICK ACTION ICONS ROW
+   LOBBY HEADER — rebuilt 2026-08-20 (Dan)
+   ─────────────────────────────────────────────────────────────────────────────
+   One header block: quick actions, jackpot, club identity + wallet, notice.
+   Previously these were four independent rows each carrying their own
+   `padding: 0.75rem 1rem`, so the top of the lobby spent roughly 40px of a
+   375px screen on gaps alone before a single game was visible.
+
+   Every icon that lived in this file as a CSS `content:` emoji (trophy,
+   bar-chart, two-people, chain-link) is gone. They render from the platform
+   font rather than from this stylesheet, so the header was
+   a different picture and a different size on every device — and bare emoji in
+   source have failed the SWC compiler here before.
 ═══════════════════════════════════════════════════════════════════════════════ */
-.club-home__actions-row {
+.lobby-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 1rem 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025) 0%, transparent 100%);
+}
+
+.lobby-top__bar {
   display: flex;
   align-items: center;
-  padding: 0.5rem 1rem;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
-.club-home__back-btn {
+.lobby-top__back {
   background: transparent;
   border: none;
-  color: white;
-  font-size: 1.5rem;
+  color: #9aa5b6;
+  font-size: 1.35rem;
+  line-height: 1;
   cursor: pointer;
-  padding: 0.25rem 0.5rem;
+  padding: 0 6px;
+  min-width: 32px;
+  min-height: 36px;
+  transition: color 0.2s ease;
 }
 
-.club-home__quick-icons {
+.lobby-top__back:hover {
+  color: #fff;
+}
+
+.lobby-top__quick {
   display: flex;
-  gap: 0.5rem;
+  gap: 6px;
 }
 
-.quick-icon {
-  width: 44px;
-  height: 44px;
+/* Icon + label. The old 44px icon-only tiles were unlabelled emoji, so a
+   trophy had to be guessed at; the label costs a few pixels and removes the
+   guess entirely. */
+.lobby-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
   border-radius: 8px;
-  background: linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, #2c2c42 0%, #1c1c30 100%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: #c3cbd8;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.lobby-quick:hover {
+  border-color: rgba(255, 184, 0, 0.4);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.lobby-quick:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.6);
+  outline-offset: 2px;
+}
+
+.lobby-top__search {
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: #9aa5b6;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.lobby-top__search:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.lobby-top__bbj {
+  width: 100%;
+}
+
+/* ── Club identity + wallet, side by side ──────────────────────────────────
+   The wallet column is capped rather than fixed at 220px: at 375px a rigid
+   220px column left the club card 115px, which truncated the club name to a
+   couple of characters. Below 420px the two stack instead. */
+.lobby-top__main {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.lobby-top__wallet {
+  flex: 0 1 220px;
+  min-width: 0;
+}
+
+.lobby-club {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.32) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.lobby-club__avatar {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
+  border: 2px solid #ffb800;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.lobby-club__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lobby-club__avatar-fallback {
+  color: #ffb800;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.lobby-club__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.lobby-club__name {
+  margin: 0 0 4px;
+  color: #4da3ff;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-shadow: 0 0 12px rgba(24, 119, 242, 0.28);
+  /* A long club name must ellipsis, not wrap: wrapping pushed the meta row
+     down and made the card taller than the wallet beside it. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lobby-club__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: #8892a4;
+  font-size: 0.72rem;
+}
+
+.lobby-club__id {
+  font-variant-numeric: tabular-nums;
+}
+
+.lobby-club__members {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lobby-club__online {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #34d399;
+  font-variant-numeric: tabular-nums;
+}
+
+.lobby-club__online::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.8);
+}
+
+.lobby-club__share {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: #9aa5b6;
   cursor: pointer;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
 }
 
-.icon-events::before {
-  content: '🏆';
-  font-size: 1.2rem;
+.lobby-club__share:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
-.icon-leaderboard::before {
-  content: '📊';
-  font-size: 1.2rem;
+.lobby-club__share:focus-visible {
+  outline: 2px solid rgba(0, 200, 255, 0.6);
+  outline-offset: 2px;
+}
+
+/* ── Club notice ─────────────────────────────────────────────────────────── */
+.lobby-top__notice p {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 0 8px 8px 0;
+  border-left: 3px solid rgba(0, 212, 255, 0.5);
+  background: rgba(0, 0, 0, 0.35);
+  color: #a0a8b4;
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.45;
+  /* Clamp: a club may write up to 5,000 characters and it must not push the
+     game grid off the screen. Full text lives on the club detail page. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 420px) {
+  .lobby-top__main {
+    flex-direction: column;
+  }
+
+  .lobby-top__wallet {
+    flex: 1 1 auto;
+    width: 100%;
+  }
 }
 
 .club-home__bbj {
@@ -241,91 +472,11 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   CLUB CARD + WALLET SECTION — Side-by-side layout
-═══════════════════════════════════════════════════════════════════════════════ */
-.club-home__club-section {
-  display: flex;
-  align-items: flex-start;
-  padding: 0.75rem 1rem;
-  gap: 0.75rem;
-}
-
-/* ── Compact wallet — upper-right, fits beside the club card ── */
-.club-home__wallet-compact {
-  flex-shrink: 0;
-  width: 220px;
-  margin-left: auto;
-}
-
-.club-home__club-card {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 8px;
-  padding: 0.75rem;
-}
-
-.club-card__avatar {
-  width: 50px;
-  height: 50px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: linear-gradient(135deg, #2a2a3e, #1a1a2e);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid #ffb800;
-}
-
-.club-card__avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.club-card__avatar-placeholder {
-  color: #ffb800;
-  font-size: 1.5rem;
-}
-
-.club-card__info {
-  flex: 1;
-}
-
-.club-card__name {
-  color: #1877f2;
-  font-size: 1.05rem;
-  font-weight: 700;
-  margin: 0 0 0.25rem;
-  text-shadow: 0 0 12px rgba(24, 119, 242, 0.3);
-  letter-spacing: 0.02em;
-}
-
-.club-card__meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: #888;
-  font-size: 0.8rem;
-}
-
-.club-card__members::before {
-  content: '👥 ';
-}
-
-.club-card__share {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0.25rem;
-}
-
-.icon-link::before {
-  content: '🔗';
-}
+/* The .club-home__club-section / .club-card__* / .icon-link block that used to
+   live here was REMOVED on 2026-08-20 with the header rebuild — its markup no
+   longer exists (see .lobby-top above) and three of its rules were emoji
+   `content:` declarations. Leaving dead selectors behind is how a stylesheet
+   grows a second, contradictory copy of a component. */
 
 /* Wallet Display */
 .club-home__wallet {
@@ -406,81 +557,173 @@
   box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   CLUB INTRODUCTION
-═══════════════════════════════════════════════════════════════════════════════ */
-.club-home__intro {
-  padding: 0.75rem 1rem;
-}
-
-.club-home__intro p {
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 3px solid rgba(0, 212, 255, 0.5);
-  border-radius: 0 8px 8px 0;
-  padding: 0.85rem 1rem;
-  color: #a0a8b4;
-  font-size: 0.85rem;
-  font-style: italic;
-  margin: 0;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 2px 12px rgba(0, 0, 0, 0.2);
-  line-height: 1.5;
-}
+/* The .club-home__intro block moved into the header as .lobby-top__notice
+   (line-clamped), and the three-row .club-home__filters / .filter-tab stack was
+   replaced by the single .game-bar below. Both sets of markup are gone. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   GAME TYPE FILTERS
+   GAME ACTION BAR — every game type in one flat, scrollable row
+   ─────────────────────────────────────────────────────────────────────────────
+   Replaces the ALL / CASH GAMES / TOURNAMENTS tabs plus the variant row that
+   used to appear beneath them. The old .filter-tab.active also applied
+   `transform: scale(1.05)` inside a horizontally scrolling flex row, so the
+   selected chip overlapped its neighbours and could be clipped at the scroll
+   edge. The active state is a fill and a glow now, with no size change.
 ═══════════════════════════════════════════════════════════════════════════════ */
-.club-home__filters {
+.game-bar {
   display: flex;
   align-items: center;
-  padding: 0.5rem 1rem;
-  gap: 0.25rem;
-  overflow-x: auto;
-  scrollbar-width: none;
+  gap: 8px;
+  padding: 10px 1rem 8px;
 }
 
-.club-home__filters::-webkit-scrollbar {
+.game-bar__types {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  /* Fade the right edge so it reads as "more to scroll" rather than as a row
+     that happens to end at the viewport. */
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent 100%);
+}
+
+.game-bar__types::-webkit-scrollbar {
   display: none;
 }
 
-.filter-tab {
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
-  border: none;
-  background: rgba(255, 255, 255, 0.1);
-  color: #888;
-  font-size: 0.85rem;
-  cursor: pointer;
+.game-bar__type {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa5b6;
+  font-size: 0.78rem;
+  font-weight: 600;
   white-space: nowrap;
-  transition: all 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.filter-tab:hover {
-  background: rgba(255, 255, 255, 0.18);
-  color: #ccc;
-  transform: translateY(-2px);
-}
-
-.filter-tab.active {
-  background: linear-gradient(135deg, #ffb800, #ff8c00);
-  color: #000;
-  font-weight: 700;
-  box-shadow:
-    0 0 16px rgba(255, 184, 0, 0.4),
-    0 4px 12px rgba(0, 0, 0, 0.3);
-  transform: scale(1.05);
-}
-
-.filter-more {
-  background: transparent;
-  border: none;
-  color: #888;
   cursor: pointer;
-  padding: 0.5rem;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.game-bar__type:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #dfe5ee;
+}
+
+.game-bar__type.is-active {
+  background: linear-gradient(135deg, #ffb800, #ff8c00);
+  border-color: rgba(255, 184, 0, 0.75);
+  color: #17130a;
+  font-weight: 800;
+  box-shadow: 0 0 14px rgba(255, 184, 0, 0.35);
+}
+
+.game-bar__type:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.75);
+  outline-offset: 2px;
+}
+
+/* ── Sort control ────────────────────────────────────────────────────────── */
+.game-bar__sort {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.game-bar__sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  max-width: 132px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa5b6;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.game-bar__sort-btn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-bar__sort-btn:hover {
+  color: #dfe5ee;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* A non-default sort is a filter-like state the player can forget they set.
+   Colour it so an unexpected ordering is explained by the control itself. */
+.game-bar__sort-btn.is-set {
+  color: #00c8ff;
+  border-color: rgba(0, 200, 255, 0.45);
+  background: rgba(0, 200, 255, 0.1);
+}
+
+.game-bar__sort-btn:focus-visible {
+  outline: 2px solid rgba(0, 200, 255, 0.6);
+  outline-offset: 2px;
+}
+
+.game-bar__sort-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.game-bar__sort-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 41;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 186px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #262639 0%, #1a1a2c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+.game-bar__sort-menu button {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #c3cbd8;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.game-bar__sort-menu button:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.game-bar__sort-menu button.is-active {
+  color: #ffce5c;
+  background: rgba(255, 184, 0, 0.12);
+  font-weight: 700;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -489,10 +732,11 @@
 .club-home__sub-filters {
   display: flex;
   align-items: center;
-  padding: 0.25rem 1rem 0.5rem;
+  padding: 0 1rem 0.5rem;
   gap: 0.25rem;
   overflow-x: auto;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .club-home__sub-filters::-webkit-scrollbar {
@@ -887,40 +1131,32 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════════════════════════ */
+/* One column at phone widths.
+   This used to force `repeat(2, 1fr)` at <=480px — i.e. ~228px tracks — while
+   the rule above deliberately sets a 300px floor because NeonCard spends ~152px
+   on padding and emblem before any text. The override put the card back into
+   exactly the squeeze the 300px minmax exists to prevent: "BLINDS" rendering as
+   "BLI" and the corner pills overlapping the content, on the phone-first
+   viewport this app is designed for. Mobile gets one full-width card. */
 @media (max-width: 480px) {
-  .club-home__club-section {
-    flex-direction: column;
-  }
-
-  .club-home__wallet {
-    flex-direction: row;
-    justify-content: space-between;
-  }
-
-  .club-home__games {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 380px) {
   .club-home__games {
     grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
   }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    CLUB LEVEL BADGE & PROGRESS
+   (.club-card__level / .club-card__online were the old, never-rendered hooks;
+   the live container is .lobby-club__level in the rebuilt header.)
 ═══════════════════════════════════════════════════════════════════════════════ */
-.club-card__level {
+.lobby-club__level {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-top: 6px;
-}
-
-.club-card__online {
-  color: #00e676;
-  font-size: 0.8em;
+  min-width: 0;
 }
 
 .club-level-badge {

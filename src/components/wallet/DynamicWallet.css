@@ -154,12 +154,34 @@
   background: linear-gradient(180deg, rgba(70, 70, 95, 0.7) 0%, rgba(50, 50, 70, 0.7) 100%);
 }
 
-/* Icon */
+/* Icon — inline SVG on currentColor (was an emoji glyph until 2026-08-20).
+   Flex-centred rather than text-aligned: an <svg> is a replaced element, so
+   `text-align` did nothing to it and the icons sat left-ragged in their
+   column. Colour is inherited so each row can tint its own icon below. */
 .dw__row-icon {
-  font-size: 0.85rem;
   width: 20px;
-  text-align: center;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  color: #7f8ba0;
+}
+
+.dw__row-icon svg {
+  display: block;
+}
+
+.dw__row--diamond .dw__row-icon {
+  color: #c084fc;
+}
+
+.dw__row--primary .dw__row-icon {
+  color: #fbbf24;
+}
+
+.dw__row--backup-bbj .dw__row-icon {
+  color: #6ee7b7;
 }
 
 /* Label — only shown on wallet rows (not diamond row) */
@@ -322,6 +344,18 @@
 .dw__error-badge:hover {
   background: rgba(239, 68, 68, 0.2);
   border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* A warning-triangle emoji used to carry this message's urgency. Text does it
+   instead, so a leading dot supplies the visual weight without a font
+   dependency. */
+.dw__error-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+  flex-shrink: 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

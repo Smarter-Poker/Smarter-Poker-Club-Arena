@@ -592,6 +592,17 @@ jobs:
           echo "## 🎭 Playwright E2E Tests" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Tests ran against: [smarter.poker/hub/club-arena](https://smarter.poker/hub/club-arena)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -z "${{ secrets.SP_EMAIL }}" ] || [ -z "${{ secrets.SP_PASS }}" ]; then
+            echo "> **Signed out — about half the suite skipped itself.**" >> $GITHUB_STEP_SUMMARY
+            echo "> Most routes redirect to \`/auth\`, where there is nothing to assert." >> $GITHUB_STEP_SUMMARY
+            echo "> Those specs used to pass here by asserting the login page had a" >> $GITHUB_STEP_SUMMARY
+            echo "> \`<body>\`; they now skip and say so. Set the repo secrets" >> $GITHUB_STEP_SUMMARY
+            echo "> \`SP_EMAIL\` and \`SP_PASS\` to a **dedicated test player** and every" >> $GITHUB_STEP_SUMMARY
+            echo "> one of them runs — nothing else needs changing." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Signed in via \`SP_EMAIL\` — the auth-gated route specs ran." >> $GITHUB_STEP_SUMMARY
+          fi
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 4: Post-deploy smoke test on smarter.poker

@@ -9,6 +9,7 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { assertRendered } from './utils';
 
 test.describe('Cashier Page — Financial UI', () => {
   test('should load without console errors', async ({ page }) => {
@@ -23,7 +24,7 @@ test.describe('Cashier Page — Financial UI', () => {
     await page.waitForTimeout(2000);
 
     // Page should render (may redirect to login if not authenticated)
-    await expect(page.locator('body')).toBeVisible();
+    await assertRendered(page, 'cashier');
 
     // Filter out known non-critical errors (auth redirects, etc.)
     const criticalErrors = consoleErrors.filter(
@@ -63,7 +64,7 @@ test.describe('Wallet Page — Financial UI', () => {
 
     await page.goto('wallet');
     await page.waitForTimeout(2000);
-    await expect(page.locator('body')).toBeVisible();
+    await assertRendered(page, 'wallet');
 
     const criticalErrors = consoleErrors.filter(
       (e) =>
@@ -93,7 +94,7 @@ test.describe('Admin Dashboard — Financial UI', () => {
   test('should load without crash', async ({ page }) => {
     await page.goto('admin');
     await page.waitForTimeout(2000);
-    await expect(page.locator('body')).toBeVisible();
+    await assertRendered(page, 'admin');
 
     const errorBoundary = page.locator('text=Something went wrong');
     await expect(errorBoundary).not.toBeVisible();
@@ -102,9 +103,9 @@ test.describe('Admin Dashboard — Financial UI', () => {
 
 test.describe('Agent Dashboard — Financial UI', () => {
   test('should load without crash', async ({ page }) => {
-    await page.goto('agent');
+    await page.goto('agent-portal');
     await page.waitForTimeout(2000);
-    await expect(page.locator('body')).toBeVisible();
+    await assertRendered(page, 'agent-portal');
 
     const errorBoundary = page.locator('text=Something went wrong');
     await expect(errorBoundary).not.toBeVisible();
@@ -113,9 +114,9 @@ test.describe('Agent Dashboard — Financial UI', () => {
 
 test.describe('Union Dashboard — Financial UI', () => {
   test('should load without crash', async ({ page }) => {
-    await page.goto('union');
+    await page.goto('union-dashboard');
     await page.waitForTimeout(2000);
-    await expect(page.locator('body')).toBeVisible();
+    await assertRendered(page, 'union-dashboard');
 
     const errorBoundary = page.locator('text=Something went wrong');
     await expect(errorBoundary).not.toBeVisible();
@@ -124,9 +125,9 @@ test.describe('Union Dashboard — Financial UI', () => {
 
 test.describe('Settlement Page — Financial UI', () => {
   test('should load without crash', async ({ page }) => {
-    await page.goto('settlements');
+    await page.goto('settlement-history');
     await page.waitForTimeout(2000);
-    await expect(page.locator('body')).toBeVisible();
+    await assertRendered(page, 'settlement-history');
 
     const errorBoundary = page.locator('text=Something went wrong');
     await expect(errorBoundary).not.toBeVisible();

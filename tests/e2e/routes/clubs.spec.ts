@@ -1,77 +1,64 @@
 import { test, expect } from '@playwright/test';
+import { expectRoute } from './utils';
 
 test.describe('Club Management', () => {
     test('should show clubs list page', async ({ page }) => {
-        await page.goto('clubs');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'clubs');
     });
 
     test('should show create club page', async ({ page }) => {
-        await page.goto('clubs/create');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'clubs/create', { expectText: 'Create Your Club' });
     });
 
     test('should show club detail page', async ({ page }) => {
-        await page.goto('clubs/demo');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'clubs/demo');
     });
 
     test('should show club lobby', async ({ page }) => {
-        await page.goto('clubs/demo/lobby');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'clubs/demo/lobby');
     });
 
     test('should show club dashboard', async ({ page }) => {
-        await page.goto('clubs/demo/dashboard');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'clubs/demo/dashboard');
     });
 
     test('should show club messages', async ({ page }) => {
-        await page.goto('clubs/demo/messages');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'clubs/demo/messages');
     });
 
     test('should show club members', async ({ page }) => {
-        await page.goto('clubs/demo/members');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'clubs/demo/members');
     });
 
     test('should show club announcements', async ({ page }) => {
-        await page.goto('clubs/demo/announcements');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'clubs/demo/announcements');
     });
 });
 
 test.describe('Union Management', () => {
     test('should show unions list page', async ({ page }) => {
-        await page.goto('unions');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'unions', { expectText: 'Create Your Own Union' });
     });
 
     test('should show create union page', async ({ page }) => {
-        await page.goto('unions/create');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'unions/create', { expectText: 'Create Your Union' });
     });
 
     test('should show union detail page', async ({ page }) => {
-        await page.goto('unions/demo');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'unions/demo');
     });
 });
 
 test.describe('Wallet & Cashier', () => {
     test('should show wallet page', async ({ page }) => {
-        await page.goto('wallet');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'wallet');
     });
 
     test('should show transaction history', async ({ page }) => {
-        await page.goto('transactions');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'transactions');
     });
 
     test('should show rakeback page', async ({ page }) => {
-        await page.goto('rakeback');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'rakeback');
     });
 });

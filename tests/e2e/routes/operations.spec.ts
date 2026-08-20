@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { expectRoute, assertRendered } from './utils';
 
 test.describe('Club Operations', () => {
   test('should show clubs list', async ({ page }) => {
-    await page.goto('clubs');
-    await expect(page.locator('body')).toBeVisible();
+    await expectRoute(page, 'clubs');
   });
 
   test('should navigate to club detail when clicking a club', async ({ page }) => {
@@ -32,15 +32,13 @@ test.describe('Club Operations', () => {
 
 test.describe('Table Operations', () => {
   test('should show lobby with table list', async ({ page }) => {
-    await page.goto('');
-    await expect(page.locator('body')).toBeVisible();
+    await expectRoute(page, '');
   });
 });
 
 test.describe('Wallet Operations', () => {
   test('should show wallet page', async ({ page }) => {
-    await page.goto('wallet');
-    await expect(page.locator('body')).toBeVisible();
+    await expectRoute(page, 'wallet');
   });
 
   test('should show rakeback link in wallet', async ({ page }) => {
@@ -50,13 +48,12 @@ test.describe('Wallet Operations', () => {
     await page.waitForTimeout(1000);
     const rakebackLink = page.locator('a[href*="rakeback"]');
     // Just check page loads, auth might block content
-    await expect(page.locator('body')).toBeVisible();
+    await assertRendered(page, 'wallet');
   });
 });
 
 test.describe('Settings Operations', () => {
   test('should show settings page', async ({ page }) => {
-    await page.goto('settings');
-    await expect(page.locator('body')).toBeVisible();
+    await expectRoute(page, 'settings', { expectText: 'Audio' });
   });
 });

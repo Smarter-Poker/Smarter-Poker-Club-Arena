@@ -1,84 +1,84 @@
 import { test, expect } from '@playwright/test';
+import { expectRoute } from './utils';
 
 test.describe('Social Features', () => {
     test('should show friends page', async ({ page }) => {
-        await page.goto('friends');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'friends');
     });
 
     test('should show messages page', async ({ page }) => {
-        await page.goto('messages');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'messages');
     });
 
     test('should show notifications page', async ({ page }) => {
-        await page.goto('notifications');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'notifications');
     });
 });
 
 test.describe('VIP Features', () => {
     test('should show VIP page', async ({ page }) => {
-        await page.goto('vip');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'vip', { expectText: 'Your VIP Benefits' });
     });
 
     test('should show rakeback page', async ({ page }) => {
-        await page.goto('rakeback');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'rakeback');
     });
 
     test('should show bonus page', async ({ page }) => {
-        await page.goto('bonus');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'bonuses');
     });
 });
 
 test.describe('User Profile', () => {
     test('should show profile page', async ({ page }) => {
-        await page.goto('profile');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'profile');
     });
 
     test('should show settings page', async ({ page }) => {
-        await page.goto('settings');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'settings', { expectText: 'Audio' });
     });
 
     test('should show achievements page', async ({ page }) => {
-        await page.goto('achievements');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'achievements', { expectText: 'Daily Login Streak' });
     });
 
     test('should show player stats page', async ({ page }) => {
-        await page.goto('stats');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'stats');
     });
 });
 
 test.describe('Search & Discovery', () => {
     test('should show search page', async ({ page }) => {
-        await page.goto('search');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'search', { expectText: 'Recent Searches' });
     });
 
     test('should show invite page', async ({ page }) => {
-        await page.goto('invite');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'invite');
     });
 });
 
 test.describe('Help & Support', () => {
     test('should show help page', async ({ page }) => {
-        await page.goto('help');
-        await expect(page.locator('body')).toBeVisible();
+        await expectRoute(page, 'help', { expectText: 'Still need help?' });
     });
 });
 
 test.describe('404 Handling', () => {
     test('should handle non-existent routes gracefully', async ({ page }) => {
+        /* The one test in this directory that WANTS the catch-all, so it
+           asserts the opposite of expectRoute. It used to say only
+           `expect(body).toBeVisible()` with the comment "Should show some kind
+           of error or redirect" — which passed whether the 404 rendered, the
+           app crashed, or nothing rendered at all. */
         await page.goto('non-existent-page-12345');
-        await expect(page.locator('body')).toBeVisible();
-        // Should show some kind of error or redirect
+        await page.waitForLoadState('domcontentloaded');
+        await page.waitForTimeout(3000);
+        test.skip(page.url().includes('/auth'), 'signed out — nothing to assert');
+
+        await expect(page.locator('#root')).toBeAttached({ timeout: 15000 });
+        await expect(
+            page.getByText("This page doesn't exist").first(),
+            'an unknown route must render the catch-all, not a blank page'
+        ).toBeVisible({ timeout: 15000 });
     });
 });

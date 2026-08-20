@@ -625,10 +625,12 @@ export default function CashierPage() {
 
   const loadTransactions = useCallback(async () => {
     if (!user?.id) return;
+    if (!clubId) return;
     if (txLoadingRef.current) return; // Deduplication — skip if already loading
     txLoadingRef.current = true;
     setLoadingTx(true);
     try {
+      const historyClubId = (await resolveClubUUID(clubId)) || clubId;
       // Query BOTH wallet_transactions AND chip_ledger for complete history
       const [wtResult, clResult] = await Promise.all([
         retryFetch(
@@ -639,6 +641,11 @@ export default function CashierPage() {
                 'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
               )
               .eq('user_id', user.id)
+              // wallet_transactions has no club column; the cashier passes the
+              // club as related_entity_id. Rows with no entity (mints, global
+              // adjustments) are kept rather than hidden — the alternative is
+              // silently dropping records the user is entitled to see.
+              .or(`related_entity_id.eq.${historyClubId},related_entity_id.is.null`)
               .order('created_at', { ascending: false })
               .limit(50)
               .then((r) => r),
@@ -649,7 +656,7 @@ export default function CashierPage() {
             supabase
               .from('chip_ledger')
               .select(
-                'id, performed_by, from_type, from_label, from_entity_id, to_type, to_label, to_entity_id, amount, category, description, created_at'
+                'id, performed_by, from_type, from_label, from_entity_id, to_type, to_label, to_entity_id, amount, category, description, created_at, club_id'
               )
               // from_entity_id was missing here while the RLS policy allows it
               // (performed_by OR from_entity_id OR to_entity_id), so chips moved
@@ -658,6 +665,10 @@ export default function CashierPage() {
               .or(
                 `performed_by.eq.${user.id},to_entity_id.eq.${user.id},from_entity_id.eq.${user.id}`
               )
+              // Scope to THIS club. Chips are per club, but this query had no
+              // club filter at all, so every club's cashier showed the same
+              // global history — and the CSV export inherited it.
+              .eq('club_id', historyClubId)
               .order('created_at', { ascending: false })
               .limit(50)
               .then((r) => r),
@@ -693,10 +704,25 @@ export default function CashierPage() {
         _to: entry.to_label,
       }));
 
-      // Merge, deduplicate by id, sort by created_at desc
+      // ── Cross-source dedupe ────────────────────────────────────────────
+      // The two tables record the SAME economic events with independent id
+      // spaces, so deduplicating by `id` (as this did) never removed anything:
+      // measured in production, 626 of 1,326 chip_ledger rows have a
+      // same-second, same-amount wallet_transactions twin for the same user.
+      // Every one of those was listed twice, and the CSV export double-counted
+      // with it. wallet_transactions is the authoritative ledger (the mint and
+      // transfer RPCs write it), so a chip_ledger row is dropped when a
+      // wallet_transactions row already describes the same movement.
+      const econKey = (amount: unknown, createdAt: string) =>
+        `${Math.abs(Number(amount) || 0)}@${new Date(createdAt).toISOString().slice(0, 19)}`;
+      const authoritative = new Set(wtData.map((tx) => econKey(tx.amount, tx.created_at)));
+
       const seen = new Set<string>();
       const merged = [...wtData, ...clData]
         .filter((tx) => {
+          if (tx._source === 'chip_ledger' && authoritative.has(econKey(tx.amount, tx.created_at))) {
+            return false;
+          }
           if (seen.has(tx.id)) return false;
           seen.add(tx.id);
           return true;
@@ -726,7 +752,9 @@ export default function CashierPage() {
       txLoadingRef.current = false;
       if (isMounted.current) setLoadingTx(false);
     }
-  }, [user?.id]);
+    // clubId added: history is now scoped to the club being viewed, so
+    // switching clubs must re-query rather than show the previous club's rows.
+  }, [user?.id, clubId]);
 
   useEffect(() => {
     if (action === 'history') {

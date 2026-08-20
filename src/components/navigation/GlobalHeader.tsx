@@ -15,7 +15,7 @@ import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
-import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { generateDefaultAvatar, sizedStorageUrl } from '../../utils/avatarGenerator';
 
 const BASE = MEDIA_BASE;
 
@@ -257,7 +257,9 @@ export default function GlobalHeader() {
             <div className={styles.profileOrb}>
               {avatarUrl ? (
                 <img
-                  src={avatarUrl}
+                  /* 40 CSS px orb — ask Storage for that, not the raw upload
+                     (263 KB on the owner account, on every page load). */
+                  src={sizedStorageUrl(avatarUrl, 40)}
                   alt=""
                   className={styles.profileImg}
                   onError={(e) => {

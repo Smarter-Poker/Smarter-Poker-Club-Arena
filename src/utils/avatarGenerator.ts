@@ -112,10 +112,37 @@ const HUB_ORIGIN = 'https://smarter.poker';
  * (This function used to treat every /avatars/ path as broken and demote
  * library avatars to generated monograms at the table seats.)
  */
+/**
+ * Rewrite a Supabase Storage object URL to the image-transform endpoint so the
+ * bytes that cross the wire match the box the avatar is drawn in.
+ *
+ * Dan 2026-08-20 (measured): uploaded avatars are served at whatever the user
+ * picked. The owner account's is 1179x1509 / 263 KB and every seat draws it at
+ * ~56px. Nine of those is 2.4 MB of avatar on ONE table. Through
+ * /render/image/ at 112px the same picture is 3.5 KB.
+ *
+ * Only public Storage objects are rewritten. Data URIs (the generated SVG
+ * fallbacks), Hub library art under /avatars/, and any third-party URL are
+ * returned untouched — the transform endpoint only serves this project's
+ * buckets, so rewriting anything else would break the image.
+ */
+export function sizedStorageUrl(url: string, px: number): string {
+  if (!url.includes('/storage/v1/object/public/')) return url;
+  const [base, query] = url.split('?');
+  const rendered = base.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/');
+  // 2x the CSS box so it stays sharp on retina, capped: past ~256px the
+  // transform stops being a saving for the sizes we actually draw.
+  const target = Math.min(512, Math.max(32, Math.round(px * 2)));
+  const params = `width=${target}&height=${target}&resize=cover&quality=80`;
+  return query ? `${rendered}?${query}&${params}` : `${rendered}?${params}`;
+}
+
 export function getAvatarWithFallback(
   avatarUrl: string | null | undefined,
   seed: string,
-  name: string
+  name: string,
+  /** CSS pixel size the avatar is drawn at; enables storage-side resizing. */
+  displayPx?: number
 ): string {
   if (avatarUrl && avatarUrl.trim()) {
     // Library avatar → table-optimized bust (absolute URL so it also works
@@ -125,7 +152,7 @@ export function getAvatarWithFallback(
     // Any other Hub-relative avatar path (e.g. already table-optimized)
     if (avatarUrl.startsWith('/avatars/')) return `${HUB_ORIGIN}${avatarUrl}`;
     // Full URL (Supabase storage custom avatars, etc.)
-    return avatarUrl;
+    return displayPx ? sizedStorageUrl(avatarUrl, displayPx) : avatarUrl;
   }
   // Generate deterministic SVG fallback
   return generateAvatarSvg(seed, name);

@@ -678,9 +678,11 @@ export default function DynamicWallet({
         icon: '🏦',
         value: animRow1,
         known: unionFiguresKnown,
-        hint: unionFiguresKnown
-          ? `${formatBalance(data.unionBankUnreserved)} unreserved`
-          : 'union admins only',
+        // Dan 2026-08-20: rake used to be credited to the bank AND the
+        // treasury, so the bank climbed with every hand and this hint had to
+        // explain how much of it was actually free. Rake now lands ONLY in the
+        // treasury, so the bank is the union's own money, full stop.
+        hint: unionFiguresKnown ? "union's own funds" : 'union admins only',
       },
       {
         // The rake treasury is a SUB-ACCOUNT of the union bank, not a second
@@ -691,7 +693,7 @@ export default function DynamicWallet({
         value: animTreasury,
         known: unionFiguresKnown,
         hint: unionFiguresKnown
-          ? `held in bank · ${formatBalance(data.projectedClubsShare)} to clubs ${closeDay}`
+          ? `held in trust · ${formatBalance(data.projectedClubsShare)} to clubs ${closeDay}`
           : 'union admins only',
       },
       {
@@ -706,7 +708,10 @@ export default function DynamicWallet({
         icon: '🎟️',
         value: animRow3,
         known: unionFiguresKnown,
-        hint: unionFiguresKnown ? '25% BBJ slice' : undefined,
+        // The 25% promo slice accrues inside the BBJ pool and is swept across
+        // to this wallet every ~5 minutes, so it steps rather than streams.
+        // Saying so stops it reading as "not being funded".
+        hint: unionFiguresKnown ? '25% BBJ slice · swept every 5 min' : undefined,
       },
     ],
   };

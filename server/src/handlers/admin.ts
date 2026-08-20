@@ -50,11 +50,56 @@ async function authorizeTableAdmin(
 
   const { data: tableRow, error: tErr } = await supabase
     .from('tables')
-    .select('club_id')
+    .select('club_id, union_id')
     .eq('id', tableId)
     .maybeSingle();
   if (tErr || !tableRow?.club_id) {
     return { ok: false, status: 404, error: 'Table or club not found' };
+  }
+
+  // P2-4 (2026-08-20): union-owned tables carry the union's container club as
+  // club_id (UNION LAW), so a member club's admin has no club_members row for
+  // that club and every admin action returned 403. For union tables,
+  // authorize the union owner, union admins, and admin-tier members of ANY
+  // member club of that union.
+  if (tableRow.union_id) {
+    const { data: unionRow } = await supabase
+      .from('unions')
+      .select('owner_id')
+      .eq('id', tableRow.union_id)
+      .maybeSingle();
+    if (unionRow?.owner_id === auth.userId) {
+      return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
+    }
+    const { data: unionAdmin } = await supabase
+      .from('union_admins')
+      .select('user_id')
+      .eq('union_id', tableRow.union_id)
+      .eq('user_id', auth.userId)
+      .maybeSingle();
+    if (unionAdmin) {
+      return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
+    }
+    const { data: memberClubs } = await supabase
+      .from('union_clubs')
+      .select('club_id')
+      .eq('union_id', tableRow.union_id)
+      .limit(100);
+    const clubIds = (memberClubs ?? []).map((r) => r.club_id).filter(Boolean);
+    if (clubIds.length > 0) {
+      const { data: roles } = await supabase
+        .from('club_members')
+        .select('club_id, role')
+        .eq('user_id', auth.userId)
+        .in('club_id', clubIds);
+      const adminRow = (roles ?? []).find((r) =>
+        ['owner', 'admin', 'super_agent'].includes(String(r.role))
+      );
+      if (adminRow) {
+        return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
+      }
+    }
+    return { ok: false, status: 403, error: 'Union admin role required' };
   }
 
   const { data: membership, error: mErr } = await supabase

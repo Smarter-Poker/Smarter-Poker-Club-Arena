@@ -474,6 +474,13 @@ export class RakebackSettlerService {
       // AUDIT 2026-08-19: union treasury conservation sentinel — one cheap RPC
       // per cycle; breaches land in financial_alerts (deduped) and telemetry.
       await this.runUnionTreasurySentinel();
+      // P3-1 2026-08-20: governance + settlement-conservation invariants now
+      // run every settler cycle instead of only inside Monday's PHASE 8 on
+      // the workers. Every rule they enforce fails silently as data drift; a
+      // weekly-only check means up to seven days of unnoticed breakage.
+      // reportError only — never mutates state. Monday's PHASE 8 still
+      // notifies the union owner/admins for critical breaks.
+      await this.runUnionGovernanceSentinel();
     } finally {
       this.isSettling = false;
     }
@@ -700,6 +707,75 @@ export class RakebackSettlerService {
       reportError(
         new Error((e as { message?: string })?.message || String(e)),
         'RakebackSettler.treasury_selftest_threw'
+      );
+    }
+  }
+
+  /**
+   * P3-1 (2026-08-20) — Union governance + settlement conservation sentinel.
+   *
+   * Runs fn_union_governance_check() and fn_settlement_conservation_check()
+   * once per settler cycle (30 min). Both return one row per BROKEN
+   * invariant; an empty result is a healthy system. Any row is surfaced to
+   * engine telemetry via reportError so drift is visible within one cycle
+   * instead of at the next Monday close. Read-only: never mutates state.
+   */
+  private async runUnionGovernanceSentinel(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_union_governance_check', {});
+      if (error) {
+        reportError(
+          new Error(`fn_union_governance_check failed: ${error.message}`),
+          'RakebackSettler.governance_sentinel_rpc'
+        );
+      } else {
+        for (const v of (data ?? []) as Array<{
+          invariant: string;
+          severity: string;
+          offenders: number;
+          detail: string;
+        }>) {
+          reportError(
+            new Error(
+              `UNION GOVERNANCE ${String(v.severity).toUpperCase()} ${v.invariant}: ` +
+                `${v.detail} (${v.offenders} affected)`
+            ),
+            'RakebackSettler.governance_sentinel_breach'
+          );
+        }
+      }
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'RakebackSettler.governance_sentinel_threw'
+      );
+    }
+    try {
+      const { data, error } = await supabase.rpc('fn_settlement_conservation_check', {});
+      if (error) {
+        reportError(
+          new Error(`fn_settlement_conservation_check failed: ${error.message}`),
+          'RakebackSettler.conservation_sentinel_rpc'
+        );
+      } else {
+        for (const c of (data ?? []) as Array<{
+          issue: string;
+          severity: string;
+          detail: string;
+        }>) {
+          reportError(
+            new Error(
+              `SETTLEMENT CONSERVATION ${String(c.severity).toUpperCase()} ` +
+                `${c.issue}: ${c.detail}`
+            ),
+            'RakebackSettler.conservation_sentinel_breach'
+          );
+        }
+      }
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'RakebackSettler.conservation_sentinel_threw'
       );
     }
   }

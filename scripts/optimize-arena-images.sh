@@ -126,11 +126,26 @@ if [ "$BULK" = "1" ]; then
     before=$(stat -f %z "$f")
     w=$(magick identify -format '%w' "$f" 2>/dev/null) || continue
     h=$(magick identify -format '%h' "$f" 2>/dev/null) || continue
-    [ -z "$w" ] || [ -z "$h" ] || [ "$w" = "0" ] || [ "$h" = "0" ] && { bulk_before=$((bulk_before+before)); bulk_after=$((bulk_after+before)); continue; }
-    bpp=$(python3 -c "print(f'{$before/($w*$h):.4f}')" 2>/dev/null || echo 0)
+    # Written as an explicit if, not `A || B || C && { ...; }`. That chain
+    # happens to work in bash, but || and && share precedence and left
+    # associativity, so whether `set -e` aborts on the all-false case depends
+    # on shell and context. Nothing here should rest on that.
+    if [ -z "$w" ] || [ -z "$h" ] || [ "$w" = "0" ] || [ "$h" = "0" ]; then
+      echo "  skip (no dimensions): ${f#public/images/}"
+      bulk_before=$((bulk_before+before)); bulk_after=$((bulk_after+before)); continue
+    fi
+    if ! bpp=$(python3 -c "print(f'{$before/($w*$h):.4f}')" 2>/dev/null); then
+      # Never silently treat an arithmetic failure as "already optimal" — say
+      # so and move on, so a broken toolchain cannot look like a clean pass.
+      echo "  skip (could not compute bytes/pixel): ${f#public/images/}"
+      bulk_after=$((bulk_after+before)); continue
+    fi
     over_edge=0
-    [ "$w" -gt "$BULK_MAX_EDGE" ] || [ "$h" -gt "$BULK_MAX_EDGE" ] && over_edge=1
-    over_bpp=$(python3 -c "print(1 if $bpp > $BPP_LIMIT else 0)" 2>/dev/null || echo 0)
+    if [ "$w" -gt "$BULK_MAX_EDGE" ] || [ "$h" -gt "$BULK_MAX_EDGE" ]; then over_edge=1; fi
+    if ! over_bpp=$(python3 -c "print(1 if $bpp > $BPP_LIMIT else 0)" 2>/dev/null); then
+      echo "  skip (could not compare bytes/pixel): ${f#public/images/}"
+      bulk_after=$((bulk_after+before)); continue
+    fi
     bulk_before=$((bulk_before+before))
     if [ "$over_edge" = "0" ] && [ "$over_bpp" = "0" ]; then bulk_after=$((bulk_after+before)); continue; fi
     tmp="$(mktemp -t optbulk).${f##*.}"

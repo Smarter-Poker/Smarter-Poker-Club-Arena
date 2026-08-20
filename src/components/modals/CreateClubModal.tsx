@@ -266,7 +266,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         const cardBlob = await fetch(dataUrl).then((r) => r.blob());
         const ext = format === 'webp' ? 'webp' : 'png';
         const contentType = format === 'webp' ? 'image/webp' : 'image/png';
-        const cardFileName = `club-cards/${clubData.club_id}-card.${ext}`;
+        // v2 — see ClubCardBackfill: v1 files are whole baked cards.
+        const cardFileName = `club-cards/${clubData.club_id}-card-v2.${ext}`;
 
         const { data: cardUploadData, error: cardUploadError } = await supabase.storage
           .from('club-assets')

@@ -122,9 +122,14 @@ const HUB_ORIGIN = 'https://smarter.poker';
  * /render/image/ at 112px the same picture is 3.5 KB.
  *
  * Only public Storage objects are rewritten. Data URIs (the generated SVG
- * fallbacks), Hub library art under /avatars/, and any third-party URL are
- * returned untouched — the transform endpoint only serves this project's
- * buckets, so rewriting anything else would break the image.
+ * fallbacks), Hub library art under /avatars/, SIGNED storage URLs (a
+ * different path that the transform endpoint does not accept) and any
+ * third-party URL are returned untouched — rewriting any of those would break
+ * the image.
+ *
+ * Note this asks for a SQUARE crop (resize=cover, width == height). Every
+ * avatar surface in the app is a square or circular box, which is what makes
+ * that correct; it is not a general-purpose image resizer.
  */
 export function sizedStorageUrl(url: string, px: number): string {
   if (!url.includes('/storage/v1/object/public/')) return url;
@@ -132,7 +137,15 @@ export function sizedStorageUrl(url: string, px: number): string {
   const rendered = base.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/');
   // 2x the CSS box so it stays sharp on retina, capped: past ~256px the
   // transform stops being a saving for the sizes we actually draw.
-  const target = Math.min(512, Math.max(32, Math.round(px * 2)));
+  //
+  // The Number.isFinite guard is not theoretical. Math.round(NaN) is NaN and
+  // both clamps pass it straight through, so a caller handing us an undefined
+  // or not-yet-measured size would have produced `width=NaN&height=NaN` —
+  // a 400 from the transform endpoint and a broken avatar for every player at
+  // the table. Today's callers pass literals; this is here so the next one
+  // that passes a measured value cannot silently break them.
+  const requested = Number.isFinite(px) ? Math.round(px * 2) : 128;
+  const target = Math.min(512, Math.max(32, requested));
   const params = `width=${target}&height=${target}&resize=cover&quality=80`;
   return query ? `${rendered}?${query}&${params}` : `${rendered}?${params}`;
 }

@@ -401,8 +401,20 @@ class AvatarServiceClass {
     if (!ALLOWED.includes(file.type)) {
       return { error: 'Use a JPG, PNG or WebP image.' };
     }
-    if (file.size > MAX_BYTES) {
-      return { error: `That image is ${(file.size / 1048576).toFixed(1)}MB. The limit is 5MB.` };
+    /**
+     * The 5 MB limit applies to what we UPLOAD, not to what the user picked.
+     *
+     * It used to be checked here, before any downscaling — so a perfectly
+     * ordinary phone photo was rejected outright even though the very next
+     * step would have turned it into ~50 KB. The only thing that genuinely
+     * has to be bounded up front is what we ask the browser to DECODE, since
+     * that is the part that can hurt a low-end device.
+     */
+    const MAX_DECODE_BYTES = 25 * 1024 * 1024;
+    if (file.size > MAX_DECODE_BYTES) {
+      return {
+        error: `That image is ${(file.size / 1048576).toFixed(1)}MB — too large to process. Please pick one under 25MB.`,
+      };
     }
 
     /**
@@ -422,6 +434,15 @@ class AvatarServiceClass {
      */
     const prepared = await downscaleImage(file, 512).catch(() => file);
     const usable = prepared.size < file.size ? prepared : file;
+
+    // Now that the size is final, enforce the real limit. Reaching this means
+    // downscaling could not get the file under 5 MB — which in practice means
+    // the fallback ran and we are holding the original.
+    if (usable.size > MAX_BYTES) {
+      return {
+        error: `That image is still ${(usable.size / 1048576).toFixed(1)}MB after resizing. The limit is 5MB.`,
+      };
+    }
 
     const ext =
       usable.type === 'image/png' ? 'png' : usable.type === 'image/webp' ? 'webp' : 'jpg';

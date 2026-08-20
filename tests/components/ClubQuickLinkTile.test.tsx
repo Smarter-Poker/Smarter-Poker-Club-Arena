@@ -72,12 +72,14 @@ afterEach(() => {
 });
 
 describe('ClubQuickLinkTile', () => {
-  it('shows the target club name on the tile and opens it on tap', async () => {
+  it('carries the target club name in the accessible name/title and opens it on tap', async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
     renderTile({ onSelect });
-    expect(screen.getByText('Alpha Club')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Cashier for Alpha Club/ }));
+    // The v8 tile art owns the visual — the club name lives in aria-label + title
+    const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
+    expect(tileBtn).toHaveAttribute('title', 'Cashier — Alpha Club');
+    await user.click(tileBtn);
     expect(onSelect).toHaveBeenCalledWith(A);
   });
 
@@ -89,9 +91,12 @@ describe('ClubQuickLinkTile', () => {
     expect(onEmpty).toHaveBeenCalledOnce();
   });
 
-  it('hides the quick-switch button for single-club users', () => {
+  it('does not open a popover for single-club users (no switch affordance)', () => {
     renderTile({ clubs: [A] });
-    expect(screen.queryByRole('button', { name: /Switch club/ })).not.toBeInTheDocument();
+    const tileBtn = screen.getByRole('button', { name: /Cashier for Alpha Club/ });
+    // Right-click (the desktop switch gesture) must do nothing with one club
+    fireEvent.contextMenu(tileBtn);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
   it('opens the popover, lists clubs with chip balances, and selects one', async () => {
@@ -105,7 +110,8 @@ describe('ClubQuickLinkTile', () => {
       error: null,
     });
     renderTile({ onSelect });
-    await user.click(screen.getByRole('button', { name: /Switch club/ }));
+    // Right-click is the pointer path to the quick-switch popover
+    fireEvent.contextMenu(screen.getByRole('button', { name: /hold to switch clubs/ }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
     expect(await screen.findByText(`${(1234).toLocaleString()} chips`)).toBeInTheDocument();
     await user.click(screen.getByRole('menuitem', { name: /Bravo Club/ }));
@@ -113,11 +119,12 @@ describe('ClubQuickLinkTile', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
-  it('closes the popover on Escape and returns focus to the trigger', async () => {
+  it('closes the popover on Escape and returns focus to the tile trigger', async () => {
     const user = userEvent.setup();
     renderTile();
-    const trigger = screen.getByRole('button', { name: /Switch club/ });
-    await user.click(trigger);
+    const trigger = screen.getByRole('button', { name: /hold to switch clubs/ });
+    fireEvent.contextMenu(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
@@ -126,7 +133,7 @@ describe('ClubQuickLinkTile', () => {
   it('navigates the popover with arrow keys', async () => {
     const user = userEvent.setup();
     renderTile();
-    await user.click(screen.getByRole('button', { name: /Switch club/ }));
+    fireEvent.contextMenu(screen.getByRole('button', { name: /hold to switch clubs/ }));
     expect(screen.getByRole('menuitem', { name: /Alpha Club/ })).toHaveFocus();
     await user.keyboard('{ArrowDown}');
     expect(screen.getByRole('menuitem', { name: /Bravo Club/ })).toHaveFocus();

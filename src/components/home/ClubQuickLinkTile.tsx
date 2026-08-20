@@ -3,14 +3,14 @@
  *  CLUB QUICK LINK TILE — lobby tile that deep-links into a specific club
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Used by the Cashier and Marketplace bottom-row tiles. Renders the target
- * club's name on the tile, and for multi-club users a quick-switch button
- * (also reachable by long-pressing the tile) that opens a club popover with
+ * Used by the Cashier and Marketplace bottom-row tiles. The target club's
+ * name is carried by the tile's aria-label and title (the v8 tile art owns
+ * the full visual). Multi-club users open a quick-switch popover with club
  * logos, per-club chip balances, keyboard navigation, and managed focus.
  *
- * Tap tile          -> onSelect(targetClub), or onEmpty() with no clubs
- * Tap switch / hold -> popover: ArrowUp/Down/Home/End navigate, Enter/Space
- *                      select, Escape closes and returns focus to the trigger
+ * Tap tile           -> onSelect(targetClub), or onEmpty() with no clubs
+ * Hold / right-click -> popover: ArrowUp/Down/Home/End navigate, Enter/Space
+ *                       select, Escape closes and returns focus to the tile
  *
  * Chips are per club (club_members.chip_balance) — the popover shows the
  * balance for each club so the user can see where their chips are before
@@ -194,6 +194,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   return (
     <div className={styles.cashierTileWrap}>
       <button
+        ref={triggerRef}
         className={styles.tileCard}
         onClick={handleTileClick}
         onPointerEnter={handlePreload}

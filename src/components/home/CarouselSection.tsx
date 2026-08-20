@@ -7,19 +7,8 @@
  * live stats. Single-click navigates to the club's lobby.
  */
 
-import {
-  useState,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useCallback,
-  useMemo,
-  Suspense,
-  lazy,
-} from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
-import { supabase } from '../../lib/supabase';
-import type { useToast } from '../common/Toast';
 import haptic from '../../services/HapticService';
 import PremiumSFX from '../../services/PremiumSFX';
 import { STORAGE_KEYS } from '../../lib/storage';
@@ -58,7 +47,6 @@ export interface CarouselSectionProps {
   clubStats: Record<string, ClubStats>;
   pinnedClubIds: string[];
   navigate: (path: string) => void;
-  toast: ReturnType<typeof useToast>;
   handleContextMenu: (e: React.MouseEvent, club: UserClub) => void;
   handleLongPressStart: (club: UserClub, e: React.TouchEvent) => void;
   handleLongPressEnd: () => void;
@@ -71,7 +59,6 @@ export default function CarouselSection({
   clubStats,
   pinnedClubIds,
   navigate,
-  toast,
   handleContextMenu,
   handleLongPressStart,
   handleLongPressEnd,
@@ -81,7 +68,8 @@ export default function CarouselSection({
   const carouselRef = useRef<HTMLDivElement>(null);
 
   // True only while the user is the one scrolling. Programmatic scrolls
-  // (the centring below) must not trigger the snap haptic/SFX.
+  // (browser scroll restoration, future auto-centring) must not trigger the
+  // snap haptic/SFX.
   const userScrollRef = useRef(false);
 
   // Enhancement #8: Drag-to-reorder state
@@ -118,12 +106,11 @@ export default function CarouselSection({
   // Haptic + SFX when a scroll SNAP settles.
   //
   // Gated on a real user gesture. The scroll event does not distinguish user
-  // scrolling from a programmatic one, so the centring above — which runs on
-  // mount and whenever the club count changes — used to trip this handler and
-  // play the snap sound and buzz the device on page load, with the user having
-  // touched nothing. Feedback for "you snapped a card" must follow an actual
-  // input, so the flag is set by the input events that can start a scroll and
-  // cleared once the snap has been announced.
+  // scrolling from a programmatic one (the old mount-time auto-centring used
+  // to trip this handler and play the snap sound on page load, with the user
+  // having touched nothing). Feedback for "you snapped a card" must follow an
+  // actual input, so the flag is set by the input events that can start a
+  // scroll and cleared once the snap has been announced.
   useEffect(() => {
     const el = carouselRef.current;
     if (!el) return;
@@ -207,8 +194,12 @@ export default function CarouselSection({
     (club: UserClub) => {
       haptic.success();
       PremiumSFX.navigate();
-      localStorage.setItem(STORAGE_KEYS.LAST_VISITED, club.id);
-      localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.LAST_VISITED, club.id);
+        localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
+      } catch {
+        /* quota / private mode — navigation still works */
+      }
       navigate(`/clubs/${club.id}`);
     },
     [navigate]

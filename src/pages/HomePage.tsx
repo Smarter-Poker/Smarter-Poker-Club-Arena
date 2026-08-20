@@ -50,7 +50,6 @@ import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
 import { STORAGE_KEYS } from '../lib/storage';
-import { SHARK_CLUB_ID } from '../lib/constants';
 import styles from './HomePage.module.css';
 import { reportError } from '../utils/errorReporter';
 
@@ -252,17 +251,11 @@ function HomePageInner() {
   // Find Player modal state
   const [showFindPlayerModal, setShowFindPlayerModal] = useState(false);
 
-  // Shark Club stats state
-  const [sharkClubId, setSharkClubId] = useState<string | null>(null);
-  const [sharkClubStats, setSharkClubStats] = useState<{
-    totalMembers: number | null;
-    clubLevel: number | null;
-    activePlayers: number | null;
-  }>({
-    totalMembers: null,
-    clubLevel: null,
-    activePlayers: null,
-  });
+  // NOTE (2026-08-19): dedicated Shark Club stats state/machinery REMOVED.
+  // The featured shark card is gone — the Shark Club renders as a normal
+  // carousel card and its stats flow through the same per-club batch fetch
+  // (fetchAllClubStats) as every other club. The old dedicated pipeline kept
+  // a 20-second poll + realtime channel running with no consumer.
 
   // #15: Online/Offline detection
   useEffect(() => {
@@ -533,240 +526,6 @@ function HomePageInner() {
     }
     toast.info('Welcome to Club Arena — Create or join a club to get started!');
   }, [isLoading, userClubs.length, toast]);
-
-  // Fetch Shark Club stats — ALL data from live Supabase queries
-  // Hardcoded club_id for Shark Club — permanent fixture of the platform
-  const SHARK_CLUB_NUMERIC_ID = SHARK_CLUB_ID;
-  const SHARK_SWR_KEY = STORAGE_KEYS.SHARK_STATS_SWR;
-  const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
-
-  // SWR: show cached Shark Club stats instantly on mount (skip if >5 min old)
-  useEffect(() => {
-    try {
-      const cached = sessionStorage.getItem(SHARK_SWR_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (parsed.totalMembers !== null && parsed.totalMembers > 0 && age < SWR_TTL_MS)
-          setSharkClubStats(parsed);
-      }
-    } catch {
-      /* */
-    }
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-    async function fetchSharkClubStats(retryOnFail = false) {
-      try {
-        if (!isMounted) return;
-
-        // Find Shark Club by club_id = 25450 — include level threshold columns
-        const { data: clubRaw } = await supabase
-          .from('clubs')
-          .select(
-            'id, member_count, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-          )
-          .eq('club_id', SHARK_CLUB_NUMERIC_ID)
-          .maybeSingle();
-
-        const club = clubRaw as any;
-        if (!club || !isMounted) return;
-        setSharkClubId(club.id);
-
-        // Parallelize independent queries: member count + active players
-        const [memberResult, tablesResult] = await Promise.allSettled([
-          ClubsService.getLiveMemberCount(club.id),
-          supabase.from('tables').select('id').eq('club_id', club.id),
-        ]);
-
-        if (!isMounted) return;
-
-        // Use live count if available, fall back to denormalized column when RLS blocks
-        let memberCount = memberResult.status === 'fulfilled' ? memberResult.value : 0;
-        if (memberCount === 0 && club.member_count && club.member_count > 0) {
-          memberCount = club.member_count;
-        }
-
-        let activePlayers = 0;
-        // Try batch RPC first (single query), fall back to 2-query pattern if RPC not deployed
-        try {
-          const { data: rpcCount } = await supabase.rpc('fn_get_active_player_count', {
-            p_club_id: club.id,
-          });
-          activePlayers = Number(rpcCount) || 0;
-        } catch (e) {
-          reportError(e, 'HomePage');
-          // RPC not deployed yet — use legacy 2-query fallback (DISTINCT user_id)
-          if (tablesResult.status === 'fulfilled' && tablesResult.value.data?.length) {
-            const tableIds = tablesResult.value.data.map((t: any) => t.id);
-            const { data: seatRows } = await supabase
-              .from('table_seats')
-              .select('user_id')
-              .in('table_id', tableIds)
-              .is('left_at', null);
-            // Deduplicate by user_id to match the RPC behavior
-            activePlayers = seatRows ? new Set(seatRows.map((s: any) => s.user_id)).size : 0;
-          }
-        }
-
-        // Compute live club level from DB thresholds
-        // Auto-recompute level if stuck at default (1 or null)
-        // Session dedup: only fire the RPC once per session per club
-        let effectiveLevel = club.level || 1;
-        const levelRecomputeKey = `level_recomputed_${club.id}`;
-        if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
-          try {
-            const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
-              p_club_id: club.id,
-            });
-            if (!rpcErr) {
-              sessionStorage.setItem(levelRecomputeKey, '1');
-              const { data: refreshed } = await supabase
-                .from('clubs')
-                .select(
-                  'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-                )
-                .eq('id', club.id)
-                .maybeSingle();
-              if (refreshed && refreshed.level > 1) {
-                effectiveLevel = refreshed.level;
-                club.hierarchy_units_rounded_up =
-                  refreshed.hierarchy_units_rounded_up ?? club.hierarchy_units_rounded_up;
-                club.player_threshold_current =
-                  refreshed.player_threshold_current ?? club.player_threshold_current;
-                club.player_threshold_next =
-                  refreshed.player_threshold_next ?? club.player_threshold_next;
-                club.hierarchy_threshold_current =
-                  refreshed.hierarchy_threshold_current ?? club.hierarchy_threshold_current;
-                club.hierarchy_threshold_next =
-                  refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
-              }
-            }
-          } catch (e) {
-            reportError(e, 'HomePage');
-            // RPC not available — use default level
-          }
-        }
-
-        const levelInfo = getClubLevel({
-          level: effectiveLevel,
-          playerCount: memberCount,
-          hierarchyUnits: club.hierarchy_units_rounded_up || 0,
-          playerThresholdCurrent: club.player_threshold_current || 0,
-          playerThresholdNext: club.player_threshold_next || 0,
-          hierarchyThresholdCurrent: club.hierarchy_threshold_current || 0,
-          hierarchyThresholdNext: club.hierarchy_threshold_next || 0,
-        });
-
-        if (!isMounted) return;
-        // Safety clamp: active players can never exceed member count
-        const clampedActive = Math.min(activePlayers, memberCount);
-        const stats = {
-          totalMembers: memberCount,
-          clubLevel: levelInfo.level,
-          activePlayers: clampedActive,
-        };
-        setSharkClubStats(stats);
-
-        // SWR: cache for instant display on revisit (with TTL timestamp)
-        try {
-          sessionStorage.setItem(SHARK_SWR_KEY, JSON.stringify({ ...stats, cachedAt: Date.now() }));
-        } catch {
-          /* */
-        }
-      } catch (err) {
-        reportError(err, 'HomePage.Failed_to_fetch_Shark_Club_stats');
-        // Single retry after 3s — only on initial mount, not on real-time refreshes
-        if (retryOnFail && isMounted) {
-          setTimeout(() => {
-            if (isMounted) fetchSharkClubStats(false);
-          }, 3000);
-        }
-      }
-    }
-
-    // Fix 3: Skip fetch if cached Shark Club stats are fresh (<5 min)
-    let skipInitialFetch = false;
-    try {
-      const cached = sessionStorage.getItem(SHARK_SWR_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (parsed.totalMembers !== null && parsed.totalMembers > 0 && age < SWR_TTL_MS) {
-          skipInitialFetch = true;
-        }
-      }
-    } catch (e) {
-      reportError(e, 'HomePage.setTimeout');
-      /* */
-    }
-    if (!skipInitialFetch) {
-      fetchSharkClubStats(true);
-    }
-
-    // BUGFIX 2026-07-24: "active players" changes on table_seats (sit/leave), whose
-    // global realtime listener was intentionally removed for write-volume reasons.
-    // Without it the active count never moved. A lightweight 20s poll gives
-    // near-real-time active counts without re-introducing the table_seats firehose.
-    const sharkStatsPoll = setInterval(() => {
-      if (isMounted) fetchSharkClubStats(false);
-    }, 20000);
-
-    // Real-time clubs table updates via MasterBus channel registry
-    const sharkChannelKey = 'clubs-live-stats';
-    const channel = masterBus.getOrCreateChannel(sharkChannelKey);
-
-    // NOTE (2026-04-19): Unfiltered `club_members` and `table_seats` global listeners REMOVED.
-    // `table_seats` is the engine's highest-write table (updates on every hand for every horse),
-    // and listening globally generated massive message volume. Shark Club stats now refresh via
-    // MasterBus CLUB_JOINED/CLUB_LEFT events (already subscribed above) + the filtered clubs listener.
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'clubs',
-          filter: `club_id=eq.${SHARK_CLUB_ID}`,
-        },
-        () => {
-          if (isMounted) fetchSharkClubStats();
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[HomePage] Realtime channel timed out');
-        }
-      });
-
-    // Bus listeners: refresh Shark Club stats when members join/leave any club
-    const unsubJoined = masterBus.subscribeDebounced(
-      'CLUB_JOINED',
-      () => {
-        if (isMounted) fetchSharkClubStats();
-      },
-      1000
-    );
-    const unsubLeft = masterBus.subscribeDebounced(
-      'CLUB_LEFT',
-      () => {
-        if (isMounted) fetchSharkClubStats();
-      },
-      1000
-    );
-
-    return () => {
-      isMounted = false;
-      clearInterval(sharkStatsPoll);
-      unsubJoined();
-      unsubLeft();
-      masterBus.removeRegisteredChannel(sharkChannelKey);
-    };
-  }, []);
 
   // Enhancement #6: Real-time stats refresh for ALL club cards
   // NOTE (2026-04-19): Unfiltered `club_members` + `table_seats` global listeners REMOVED.
@@ -1055,7 +814,7 @@ function HomePageInner() {
   };
 
   // ═══════════════════════════════════════════════════════════════════════════════
-  // USER'S CLUBS — sorted (pinned first), filtered, excluding Shark Club
+  // USER'S CLUBS — sorted (pinned first); Shark Club renders like any other club
   // ═══════════════════════════════════════════════════════════════════════════════
 
   const displayClubs = useMemo(() => {
@@ -1070,7 +829,7 @@ function HomePageInner() {
       return (a.name || '').localeCompare(b.name || '');
     });
     return clubs;
-  }, [userClubs, sharkClubId, pinnedClubIds]);
+  }, [userClubs, pinnedClubIds]);
 
   // Stable string identity of club IDs — avoids .map().join() allocation on every render
   const displayClubIdsKey = useMemo(() => displayClubs.map((c) => c.id).join(','), [displayClubs]);
@@ -1454,7 +1213,6 @@ function HomePageInner() {
               clubStats={clubStats}
               pinnedClubIds={pinnedClubIds}
               navigate={navigate}
-              toast={toast}
               handleContextMenu={handleContextMenu}
               handleLongPressStart={handleLongPressStart}
               handleLongPressEnd={handleLongPressEnd}

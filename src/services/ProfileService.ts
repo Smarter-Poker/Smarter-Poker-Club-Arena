@@ -266,12 +266,15 @@ class ProfileServiceClass {
     // is measured rather than inferred from an empty table.
     const { data, error } = await supabase.rpc('ca_player_stats_full', { p_user: userId });
 
-    if (error || !data) {
-      if (error) reportError(error, 'ProfileService.getStats');
+    if (error) {
+      reportError(error, 'ProfileService.getStats');
       return null;
     }
 
-    const overall = (data as any).overall || {};
+    // No error + no data = a player with no recorded hands. That's a normal
+    // state (brand-new account) and must render as zeros, not as a null
+    // "stats unavailable" error. Null is reserved for real failures above.
+    const overall = (data as any)?.overall || {};
     const totalHands = Number(overall.total_hands) || 0;
 
     if (totalHands === 0) {

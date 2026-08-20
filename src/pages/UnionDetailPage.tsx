@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { unionService, type Union, type UnionClub } from '../services/UnionService';
 import { unionApi } from '../services/UnionApiService';
@@ -71,11 +71,25 @@ export default function UnionDetailPage() {
     if (tablesData) setTables(tablesData);
   });
 
+  const navigate = useNavigate();
   const [union, setUnion] = useState<Union | null>(null);
   const [clubs, setClubs] = useState<UnionClub[]>([]);
   const [tables, setTables] = useState<PokerTable[]>([]);
   const [unionTournaments, setUnionTournaments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // UNION LAW (2026-08-19, Dan): the union surface is the owner's operations
+  // page. Players never see a union card, and a deep link must not leak the
+  // surface either — non-owners bounce back to their clubs, where union games
+  // already appear inside their own club lobby.
+  useEffect(() => {
+    if (!union || !user?.id) return;
+    if (union.ownerId !== user.id) {
+      navigate('/clubs', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [union?.id, union?.ownerId, user?.id]);
+
   const [activeTab, setActiveTabRaw] = useState<
     'overview' | 'clubs' | 'tables' | 'tournaments' | 'financials' | 'settings'
   >(() => getLocalStorage('ca_union_detail_tab', 'overview'));
@@ -828,9 +842,7 @@ export default function UnionDetailPage() {
                 border: '1px solid rgba(139,92,246,0.25)',
               }}
             >
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                Union Activity
-              </h3>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>Union Activity</h3>
               <div
                 style={{
                   display: 'grid',

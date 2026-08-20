@@ -81,7 +81,15 @@ export default function ClubsPage() {
       const cached = localStorage.getItem(STORAGE_KEYS.CLUBS_PAGE_CACHE);
       if (cached) {
         const p = JSON.parse(cached);
-        if (Array.isArray(p) && p.length > 0) return p;
+        if (Array.isArray(p) && p.length > 0) {
+          // UNION LAW: never flash the union house-club card from a stale
+          // cache (pre-law caches may still contain it). The fetch re-adds
+          // it for the owner.
+          return p.filter((m: any) => {
+            const club = m?.club;
+            return club && !(club.union_id && club.id === club.union_id);
+          });
+        }
       }
     } catch {
       /* ignore */

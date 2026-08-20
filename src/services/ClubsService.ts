@@ -308,8 +308,11 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
   // the prompt was a stub. Redeem through the canonical platform RPC —
   // it validates the code, rejects self-referrals, and dedupes server-side.
   // Never allowed to affect the join result.
+  // Pending joins do NOT redeem: the request can still be rejected, and
+  // crediting a referrer for a membership that never existed is unrecoverable.
+  // The code stays in localStorage so a later successful join redeems it.
   try {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && membership?.status !== 'pending') {
       const referralKey = `referral_${resolvedId}`;
       const altKey = `referral_${clubId}`;
       const storedCode =
@@ -477,7 +480,14 @@ export async function getUserMemberships(
       club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
     )
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    // Only real memberships. A join request for an approval-required club
+    // creates a status='pending' row (fn_join_club); without this filter the
+    // requester saw a full club card on the lobby carousel and could open a
+    // club they had NOT been admitted to. This also matches the status set
+    // every 4-club-limit check counts, so "clubs shown" and "clubs counted"
+    // can never disagree.
+    .in('status', ['active', 'approved']);
 
   if (error) {
     if (!_membershipBreaker.isOpen()) {

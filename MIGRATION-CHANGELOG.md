@@ -8212,3 +8212,21 @@ today's carousel rework + quick-links work.
   idx_clubs_name_lower to close the dup-name race server-side. Create paths
   bail immediately with a friendly message on that violation.
 - DailyChallengeService test updated for the strict-diamond redesign.
+
+## 2026-08-20 — Round-3 audit: pending memberships were treated as real
+
+- [P0] getUserMemberships had NO status filter, so the status='pending' row
+  that fn_join_club creates for an approval-required club rendered as a full
+  club card on the lobby carousel — the requester appeared to be, and could
+  navigate as, a member of a club that had not admitted them. This also
+  silently undid the pending-join UX fix from earlier today (the optimistic
+  card was correctly skipped, then the next background fetch added it
+  anyway). Now filtered to ['active','approved'], which is exactly the set
+  every 4-club-limit check counts, so "clubs shown" and "clubs counted" can
+  no longer disagree.
+- [P1] joinClub redeemed the stored referral code even on a pending join —
+  a request that an admin later rejected would still have credited the
+  referrer, unrecoverably. Pending joins now leave the code stored and
+  unredeemed.
+- 4 new regression tests (tests/unit/ClubsServiceMembership.test.ts).
+  Suite 2116 green, tsc clean, prod build clean.

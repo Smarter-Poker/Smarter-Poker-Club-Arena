@@ -15,10 +15,10 @@
     0 20px 50px rgba(0, 0, 0, 0.4);
   position: relative;
   overflow: hidden;
-  animation: slideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: shareableHighlightSlideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
-@keyframes slideUp {
+@keyframes shareableHighlightSlideUp {
   from {
     opacity: 0;
     transform: translateY(30px);

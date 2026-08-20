@@ -19,7 +19,7 @@
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: forwardMessageModalSlideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .header {
@@ -140,7 +140,7 @@
   }
 }
 
-@keyframes slideUp {
+@keyframes forwardMessageModalSlideUp {
   from {
     transform: translateY(20px);
     opacity: 0;

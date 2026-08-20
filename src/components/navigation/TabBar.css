@@ -89,10 +89,10 @@
     align-items: center;
     justify-content: center;
     box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
-    animation: badgePulse 2s ease-in-out infinite;
+    animation: tabBarBadgePulse 2s ease-in-out infinite;
 }
 
-@keyframes badgePulse {
+@keyframes tabBarBadgePulse {
     0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
     50% { box-shadow: 0 0 14px rgba(239, 68, 68, 0.6); }
 }

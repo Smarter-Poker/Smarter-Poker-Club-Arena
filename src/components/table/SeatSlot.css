@@ -911,7 +911,7 @@
   animation: none;
 }
 
-@keyframes activeAvatarPulse {
+@keyframes seatSlotActiveAvatarPulse {
   0%,
   100% {
     box-shadow:

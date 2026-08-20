@@ -405,7 +405,7 @@
    ANIMATIONS
    ═══════════════════════════════════════════════════════════════ */
 
-@keyframes fadeInUp {
+@keyframes handReplayerPageFadeInUp {
     from {
         opacity: 0;
         transform: translateY(10px);
@@ -466,7 +466,7 @@
     width: 100%;
     max-width: 900px;
     margin: var(--space-4) 0;
-    animation: fadeInUp 0.6s ease-out;
+    animation: handReplayerPageFadeInUp 0.6s ease-out;
 }
 
 .analysis-grid {
@@ -497,10 +497,10 @@
 
 .analysis-highlight {
     width: 100%;
-    animation: slideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    animation: handReplayerPageSlideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
-@keyframes slideUp {
+@keyframes handReplayerPageSlideUp {
     from {
         opacity: 0;
         transform: translateY(30px);

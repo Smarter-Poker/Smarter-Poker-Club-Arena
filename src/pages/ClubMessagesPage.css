@@ -92,7 +92,7 @@
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: clubMessagesPageShimmer 1.4s ease-in-out infinite;
 }
 
 .skeleton-lines {
@@ -106,7 +106,7 @@
   height: 12px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.06);
-  animation: shimmer 1.4s ease-in-out infinite;
+  animation: clubMessagesPageShimmer 1.4s ease-in-out infinite;
 }
 
 .skeleton-line--name {
@@ -119,7 +119,7 @@
   animation-delay: 0.2s;
 }
 
-@keyframes shimmer {
+@keyframes clubMessagesPageShimmer {
   0%,
   100% {
     opacity: 0.5;

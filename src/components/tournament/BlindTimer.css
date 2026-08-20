@@ -97,10 +97,10 @@
 
 .countdown.pulse .time {
     color: var(--accent-red);
-    animation: urgentPulse 1s ease-in-out infinite;
+    animation: blindTimerUrgentPulse 1s ease-in-out infinite;
 }
 
-@keyframes urgentPulse {
+@keyframes blindTimerUrgentPulse {
 
     0%,
     100% {

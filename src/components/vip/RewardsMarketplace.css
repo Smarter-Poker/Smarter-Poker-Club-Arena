@@ -109,7 +109,7 @@
 .featured-icon {
   font-size: 56px;
   text-shadow: 0 0 16px rgba(255, 215, 0, 0.3);
-  animation: pulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: rewardsMarketplacePulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .featured-info {
@@ -174,7 +174,7 @@
 }
 
 .featured-redeem-btn.redeeming {
-  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: rewardsMarketplacePulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* Category Tabs */
@@ -427,7 +427,7 @@
 }
 
 .redeem-btn.redeeming {
-  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: rewardsMarketplacePulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .card-glow {
@@ -461,7 +461,7 @@
 }
 
 /* Animations */
-@keyframes pulse {
+@keyframes rewardsMarketplacePulse {
   0%, 100% {
     opacity: 1;
   }

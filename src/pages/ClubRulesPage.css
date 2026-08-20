@@ -115,7 +115,7 @@
    ANIMATIONS
    ═══════════════════════════════════════════════════════════════ */
 
-@keyframes fadeInUp {
+@keyframes clubRulesPageFadeInUp {
   from {
     opacity: 0;
     transform: translateY(4px);

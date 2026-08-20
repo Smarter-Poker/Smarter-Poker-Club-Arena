@@ -89,6 +89,7 @@ import {
   drainHandHistoryQueue,
   handHistoryQueueDepth,
   handHistoryQueueBytes,
+  onHandHistoryRecovered,
   buildHandHistoryTiers,
 } from './handHistory.js';
 
@@ -351,6 +352,43 @@ describe('the background drain', () => {
 
     expect(summary.written).toBe(0);
     expect(handHistoryQueueDepth()).toBe(2);
+  });
+
+  it('tells the table when a held hand finally lands, so the replay opens the right one', async () => {
+    // hand_history_saved was emitted only on the in-line path. Without it here
+    // the client falls back to "my most recent hand", which for a recovered
+    // hand is guaranteed to be the WRONG hand — later ones have landed since.
+    const seen: { tableId: string; handNumber: number; handId: string }[] = [];
+    onHandHistoryRecovered((info) => seen.push(info));
+    try {
+      await queueOne();
+      insertResults = [{ data: { id: 'late-id' }, error: null }];
+      await drainHandHistoryQueue();
+      expect(seen).toEqual([
+        {
+          tableId: '11111111-1111-1111-1111-111111111111',
+          handNumber: GLOBAL_HAND,
+          handId: 'late-id',
+        },
+      ]);
+    } finally {
+      onHandHistoryRecovered(null);
+    }
+  });
+
+  it('a throwing recovery handler cannot lose the hand', async () => {
+    onHandHistoryRecovered(() => {
+      throw new Error('client bus exploded');
+    });
+    try {
+      await queueOne();
+      insertResults = [{ data: { id: 'late-id' }, error: null }];
+      const summary = await drainHandHistoryQueue();
+      expect(summary.written).toBe(1);
+      expect(handHistoryQueueDepth()).toBe(0);
+    } finally {
+      onHandHistoryRecovered(null);
+    }
   });
 
   it('reports nothing and does nothing on an empty queue', async () => {

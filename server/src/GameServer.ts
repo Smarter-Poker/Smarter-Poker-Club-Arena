@@ -12,6 +12,7 @@ import {
   supabase,
   startHandHistoryRetry,
   stopHandHistoryRetry,
+  onHandHistoryRecovered,
   drainHandHistoryQueue,
   handHistoryQueueDepth,
 } from './services/supabase.js';
@@ -184,6 +185,19 @@ export class GameServer {
       // memory at settlement, so a failed write is held and re-attempted here
       // rather than losing the hand and leaving its rake unattributable.
       startHandHistoryRetry();
+      // Tell the table when a hand the queue was holding finally lands, so the
+      // client can open the right replay. Without this the client falls back to
+      // "my most recent hand", which for a recovered hand is always wrong.
+      onHandHistoryRecovered(({ tableId, handNumber, handId }) => {
+        tableStateHub.emitEvent(tableId, {
+          type: 'hand_history_saved',
+          table_id: tableId,
+          hand_number: handNumber,
+          hand_id: handId,
+          recovered: true,
+          timestamp: Date.now(),
+        });
+      });
 
       console.log('[GameServer] Running. All services started.');
     } else if (testTableId) {
@@ -337,6 +351,7 @@ export class GameServer {
         );
       }
     }
+    onHandHistoryRecovered(null);
     stopHandHistoryRetry();
 
 

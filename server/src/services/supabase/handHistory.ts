@@ -427,6 +427,29 @@ async function relinkRakeRecord(row: HandHistoryRow, handId: string): Promise<nu
   return typeof data === 'number' ? data : 0;
 }
 
+/**
+ * Notified when a hand the queue was holding finally lands.
+ *
+ * REVIEW FIX 2026-08-20: `hand_history_saved` was emitted only on the in-line
+ * path. A hand recovered by this queue never got one, so the client fell back
+ * to its "my most recent hand" lookup — and for a recovered hand that lookup is
+ * GUARANTEED to return the wrong hand, because later hands have landed since.
+ * The event exists precisely to remove that race; it has to fire here too.
+ *
+ * A module-level hook rather than a per-entry closure: the queue can hold a
+ * payload for minutes, and capturing an engine callback per hand would keep
+ * dead tables alive and fire into torn-down state.
+ */
+let recoveredHandler:
+  | ((info: { tableId: string; handNumber: number; handId: string }) => void)
+  | null = null;
+
+export function onHandHistoryRecovered(
+  fn: ((info: { tableId: string; handNumber: number; handId: string }) => void) | null
+): void {
+  recoveredHandler = fn;
+}
+
 async function processQueuedHand(entry: QueuedHand, summary: DrainSummary): Promise<void> {
   entry.attempts++;
   let handId = await findExistingHandId(entry.row);
@@ -434,6 +457,17 @@ async function processQueuedHand(entry: QueuedHand, summary: DrainSummary): Prom
 
   if (handId) {
     summary.written++;
+    if (recoveredHandler) {
+      try {
+        recoveredHandler({
+          tableId: entry.row.table_id,
+          handNumber: entry.row.hand_number,
+          handId,
+        });
+      } catch (err) {
+        reportError(err, 'logHandHistory.recovered_handler_failed');
+      }
+    }
     // Only cash hands that actually took rake can have a row to link.
     const rake = Number(entry.row.rake_amount ?? 0);
     const bbj = Number(entry.row.bbj_amount ?? 0);

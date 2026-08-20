@@ -67,3 +67,9 @@ _to_delete/
 .upload-scratch/
 # One-off Playwright probe scripts written to the repo root while debugging.
 _v*.mjs
+
+# Scratch space for ad-hoc production probes (screenshots, one-off .mjs).
+# The COMMITTED walkthrough suite is e2e-live/ — 4.4 MB of throwaway probes and
+# a 232-line-stale duplicate of multitable-walk.mjs were tracked here, which is
+# exactly how the next person edits the wrong copy.
+e2e-work/

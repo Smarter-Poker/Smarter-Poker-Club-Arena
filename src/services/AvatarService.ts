@@ -432,7 +432,14 @@ class AvatarServiceClass {
      * decoder rejects) we upload the ORIGINAL rather than block the user —
      * a slightly heavy avatar beats a broken upload.
      */
-    const prepared = await downscaleImage(file, 512).catch(() => file);
+    const prepared = await downscaleImage(file, 512).catch((err) => {
+      // Falling back to the original is deliberate — a slightly heavy avatar
+      // beats a blocked upload. Reporting it is deliberate too: if the decoder
+      // starts rejecting a whole class of file, that must be visible rather
+      // than showing up months later as a bucket full of 5 MB originals.
+      reportError(err, 'AvatarService.downscale_failed_using_original');
+      return file;
+    });
     const usable = prepared.size < file.size ? prepared : file;
 
     // Now that the size is final, enforce the real limit. Reaching this means

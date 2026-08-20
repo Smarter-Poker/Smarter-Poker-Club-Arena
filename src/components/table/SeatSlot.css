@@ -1917,30 +1917,61 @@
   cursor: grabbing;
 }
 
+/* REVIEW FIX 2026-08-19: the squeeze box IS a .seat__card now (so hero
+   sizing + the cardDealIn / cardFoldOut keyframes apply to it), but the base
+   rule's overflow:hidden would clip the lifting cover — lift it here. The
+   faces carry the radius + shadow instead. */
+.seat__card--squeeze {
+  overflow: visible;
+  box-shadow: none;
+  background: transparent;
+}
+
 .seat__squeeze-flip {
   position: relative;
+  width: 100%;
+  height: 100%;
   perspective: 420px;
+}
+
+.seat__squeeze-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.seat__squeeze-face .card-image,
+.seat__squeeze-face .card-image__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 3px;
 }
 
 .seat__squeeze-face--under {
   /* The card face waiting underneath the cover. */
-  position: relative;
   z-index: 1;
 }
 
 .seat__squeeze-face--cover {
   /* The card back peeling away. Origin at the TOP edge so dragging up lifts
      the bottom edge toward the player — how a live squeeze actually looks. */
-  position: absolute;
-  inset: 0;
   z-index: 2;
   transform-origin: top center;
   transform: rotateX(calc(var(--squeeze-progress, 0) * -150deg));
-  transition: transform 0.12s ease-out;
+  /* Released: ease home over 0.22s. */
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
   backface-visibility: hidden;
   will-change: transform;
   /* Shadow deepens as the card lifts, selling the bend. */
   filter: drop-shadow(0 calc(var(--squeeze-progress, 0) * 10px) calc(var(--squeeze-progress, 0) * 8px) rgba(0, 0, 0, 0.45));
+}
+
+/* While the finger is DOWN, the cover must track it with zero lag. */
+.seat__cards--squeeze:active .seat__squeeze-face--cover {
+  transition: none;
 }
 
 /* Tap hint — the cover bounces up ~25% and settles, teaching the gesture. */

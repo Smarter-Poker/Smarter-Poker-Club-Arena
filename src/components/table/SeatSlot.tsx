@@ -25,7 +25,7 @@ import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
-import { soundService } from '../../services/SoundService';
+import { soundService, haptic } from '../../services/SoundService';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -477,7 +477,11 @@ export const SeatSlot = memo(
         if (squeezeStartYRef.current == null) return;
         const dy = squeezeStartYRef.current - e.clientY;
         if (Math.abs(dy) > 4) squeezeMovedRef.current = true;
-        setProgress(Math.max(0, Math.min(1, dy / 70)));
+        const p = Math.max(0, Math.min(1, dy / 70));
+        // ENHANCEMENT 2026-08-19: one light haptic as the card starts to
+        // bend — the tactile "grip" of a live squeeze.
+        if (p >= 0.15 && squeezeProgressRef.current < 0.15) haptic.light();
+        setProgress(p);
       },
       onPointerUp: () => {
         squeezeStartYRef.current = null;
@@ -997,17 +1001,23 @@ export const SeatSlot = memo(
                 {squeezeDown ? (
                   /* Face-down squeeze box: the BACK lifts away from its top
                      edge as the player drags (driven by --squeeze-progress),
-                     progressively exposing the FACE beneath. */
-                  <div className="seat__squeeze-flip">
-                    <div className="seat__squeeze-face seat__squeeze-face--under">
-                      {card ? (
-                        <CardImage card={card} deckStyle={deckStyle} size="md" />
-                      ) : (
+                     progressively exposing the FACE beneath.
+                     REVIEW FIX 2026-08-19: wrapped in .seat__card so the box
+                     gets hero card sizing AND the deal-in / fold keyframes
+                     (they target .seat__card); the --squeeze modifier lifts
+                     overflow:hidden so the 3D peel is never clipped. */
+                  <div className="seat__card seat__card--squeeze">
+                    <div className="seat__squeeze-flip">
+                      <div className="seat__squeeze-face seat__squeeze-face--under">
+                        {card ? (
+                          <CardImage card={card} deckStyle={deckStyle} size="md" />
+                        ) : (
+                          <CardBack size="md" style={cardBack} />
+                        )}
+                      </div>
+                      <div className="seat__squeeze-face seat__squeeze-face--cover">
                         <CardBack size="md" style={cardBack} />
-                      )}
-                    </div>
-                    <div className="seat__squeeze-face seat__squeeze-face--cover">
-                      <CardBack size="md" style={cardBack} />
+                      </div>
                     </div>
                   </div>
                 ) : (

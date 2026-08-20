@@ -3902,10 +3902,11 @@ export default function TablePage({
           // player joining or leaving the table produced zero audio feedback
           // on the room-message path. (The seat-INSERT path at handleSeatInsert
           // covers DB inserts but skips the hero and misses this bus.)
-          if (soundService.isEnabled()) soundService.playSeatTaken();
+          // REVIEW FIX 2026-08-19: gated for background multi-table tabs (#175).
+          if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playSeatTaken();
           break;
         case 'PLAYER_LEFT':
-          if (soundService.isEnabled()) soundService.playPlayerLeft();
+          if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPlayerLeft();
           break;
         case 'PLAYER_ACTION': {
           // DISABLED: Engine WS now handles PLAYER_ACTION (line ~3805).
@@ -7220,6 +7221,7 @@ export default function TablePage({
                     winningHandName={winnerInfo.handName}
                     deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                     cardBack={userSettings.cardBack}
+                    playSounds={ambientSoundsAllowed}
                   />
                   {(ritResult?.boards?.length ?? 0) >= 2 &&
                     ritResult!.boards.slice(1).map((board, bi) => (
@@ -7275,6 +7277,7 @@ export default function TablePage({
             dealerVisualIndex={dealerVisualIndex}
             seatPositions={seatPositions}
             isVisible={tableState.isHandInProgress && dealerVisualIndex >= 0}
+            playSounds={ambientSoundsAllowed}
           />
 
           {/* Dan 2026-08-15 (item 4) — throwables land ON the villain.

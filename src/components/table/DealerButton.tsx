@@ -18,13 +18,23 @@ export interface DealerButtonProps {
   seatPositions: Array<{ x: number; y: number }>;
   /** Whether the button should be visible */
   isVisible: boolean;
+  /**
+   * REVIEW FIX 2026-08-19: multi-table gate (#175) — background tables must
+   * not tock every hand. TablePage passes its ambientSoundsAllowed.
+   */
+  playSounds?: boolean;
 }
 
 /**
  * Dealer Button — White "D" chip positioned near the current dealer seat.
  * Uses CSS transitions for smooth movement between positions.
  */
-export function DealerButton({ dealerVisualIndex, seatPositions, isVisible }: DealerButtonProps) {
+export function DealerButton({
+  dealerVisualIndex,
+  seatPositions,
+  isVisible,
+  playSounds = true,
+}: DealerButtonProps) {
   // COMPETITOR-PARITY 2026-08-19: one very soft felt 'tock' as the puck lands
   // on its new seat. Skipped on first mount — only actual moves speak. The
   // 600ms delay matches the CSS slide so the sound lands WITH the puck.
@@ -34,9 +44,10 @@ export function DealerButton({ dealerVisualIndex, seatPositions, isVisible }: De
     const prev = prevIndexRef.current;
     prevIndexRef.current = dealerVisualIndex;
     if (prev == null || prev === dealerVisualIndex) return;
+    if (!playSounds) return;
     const t = setTimeout(() => soundService.playDealerButtonMove(), 600);
     return () => clearTimeout(t);
-  }, [dealerVisualIndex, isVisible]);
+  }, [dealerVisualIndex, isVisible, playSounds]);
 
   if (!isVisible || dealerVisualIndex < 0 || dealerVisualIndex >= seatPositions.length) {
     return null;

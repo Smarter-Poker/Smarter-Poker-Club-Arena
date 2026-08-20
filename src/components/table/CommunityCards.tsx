@@ -43,6 +43,13 @@ export interface CommunityCardsProps {
    * back on the board comes from here now.
    */
   cardBack?: string;
+  /**
+   * REVIEW FIX 2026-08-19: multi-table gate (#175). This component owns the
+   * flop/turn/river sounds + haptics; background tables must stay silent.
+   * TablePage passes its ambientSoundsAllowed. Defaults true so the extra
+   * RIT run-boards (which never re-fire stage transitions) are unaffected.
+   */
+  playSounds?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -164,6 +171,7 @@ function CommunityCardsComponent({
   winningHandName,
   deckStyle,
   cardBack,
+  playSounds = true,
 }: CommunityCardsProps) {
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
   const prevStageRef = useRef(stage);
@@ -253,21 +261,21 @@ function CommunityCardsComponent({
       }
 
       if (stage === 'flop') {
-        haptic.medium();
+        if (playSounds) haptic.medium();
         // Bible V8 §5.3: Per-card deal sound — stagger 3 snaps for flop
-        if (soundService.isEnabled()) {
+        if (playSounds && soundService.isEnabled()) {
           soundService.playCommunityCard();
           setTimeout(() => soundService.playCommunityCard(), 120);
           setTimeout(() => soundService.playCommunityCard(), 240);
         }
       } else if (stage === 'turn') {
-        haptic.light();
-        if (soundService.isEnabled()) soundService.playCommunityCard();
+        if (playSounds) haptic.light();
+        if (playSounds && soundService.isEnabled()) soundService.playCommunityCard();
       } else if (stage === 'river') {
-        haptic.medium();
-        if (soundService.isEnabled()) soundService.playCommunityCard();
+        if (playSounds) haptic.medium();
+        if (playSounds && soundService.isEnabled()) soundService.playCommunityCard();
       } else if (stage === 'showdown') {
-        haptic.strong();
+        if (playSounds) haptic.strong();
         setShowdownMode(true);
 
         // Screen shake on showdown
@@ -394,6 +402,7 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   if (prev.stage !== next.stage) return false;
   if (prev.winningHandName !== next.winningHandName) return false;
   if (prev.deckStyle !== next.deckStyle) return false;
+  if (prev.playSounds !== next.playSounds) return false;
   if (JSON.stringify(prev.cards) !== JSON.stringify(next.cards)) return false;
   if (JSON.stringify(prev.highlightedIndices) !== JSON.stringify(next.highlightedIndices))
     return false;

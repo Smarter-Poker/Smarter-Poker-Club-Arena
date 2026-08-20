@@ -11,7 +11,7 @@
 | Vercel Project  | `hub-vanguard`                                                 |
 | Project ID      | `prj_op66GkZyZcygXQKm76iyycfVFAQx`                             |
 | Domain          | `smarter.poker`                                                |
-| Token           | `vcp_8kIgZkEiE0YNlrmUvjdaXfNZxrzPZsdTksANXVsyAhbnjEg1Hl3q470C` |
+| Token           | `<REDACTED:VERCEL_TOKEN — read from .env.local, never commit>` |
 | GitHub Repo     | `Smarter-Poker/Smarter-Poker-World-Hub`                        |
 | Club Arena Path | `public/hub/club-arena/`                                       |
 | Production URL  | `https://smarter.poker/hub/club-arena/`                        |
@@ -27,7 +27,7 @@
 
 ```bash
 curl -X POST "https://api.vercel.com/v13/deployments" \
-  -H "Authorization: Bearer vcp_8kIgZkEiE0YNlrmUvjdaXfNZxrzPZsdTksANXVsyAhbnjEg1Hl3q470C" \
+  -H "Authorization: Bearer <REDACTED:VERCEL_TOKEN — read from .env.local, never commit>" \
   -H "Content-Type: application/json" \
   -d '{"name":"hub-vanguard","project":"prj_op66GkZyZcygXQKm76iyycfVFAQx","gitSource":{"type":"github","org":"Smarter-Poker","repo":"Smarter-Poker-World-Hub","ref":"main"}}'
 ```

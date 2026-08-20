@@ -39,7 +39,7 @@
 - SPA URL: club-arena.vercel.app (direct) / smarter.poker/hub/club-arena (via iframe)
 - Supabase: kuklfnapbkmacvwxktbh.supabase.co
 - Supabase Service Role: <REDACTED-service_role-key>
-- Supabase Anon: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1a2xmbmFwYmttYWN2d3hrdGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MzA4NDQsImV4cCI6MjA4MzMwNjg0NH0.ZGFrUYq7yAbkveFdudh4q_Xk0AZ-jnu4FkX9YKjo
+- Supabase Anon: <REDACTED:SUPABASE_KEY — read from .env.local, never commit>
 - DB Password: <TEST_USER_PASSWORD — see .env.local, never commit>
 - Login: DANIEL@BEKAVACTRADING.COM / <TEST_USER_PASSWORD — see .env.local, never commit>
 - KingFish User: 47965354-0e56-43ef-931c-ddaab82af765

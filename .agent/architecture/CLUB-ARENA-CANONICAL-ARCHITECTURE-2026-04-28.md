@@ -312,7 +312,7 @@ If a push gets blocked, READ THE ERROR — never `--no-verify`.
 | Open Claw SSH                                   | `~/.ssh/openclaw*` (Mac Keychain only)                                   |
 | GitHub PAT (read+write all 4 repos)             | embedded in `~/Documents/club-arena/.git/config` remote URL              |
 | GHCR PAT (read packages for workers image pull) | Mac Keychain `smarter-poker/github-pat-ghcr-read`                        |
-| Vercel token                                    | `vcp_2d90UDeJZkPpQTGZWAwmmuQDmPXWS6CVcKcLqQNPpnVCo` (rotate when needed) |
+| Vercel token                                    | `<REDACTED:VERCEL_TOKEN — read from .env.local, never commit>` (rotate when needed) |
 | CRON_SECRET (workers Bearer)                    | `/opt/workers/.env` on workers VM                                        |
 
 Never commit any of these to git. Never echo them to chat in plaintext.

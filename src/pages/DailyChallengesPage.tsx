@@ -154,7 +154,14 @@ function ChallengeCard({
       <div className={styles.cardBody}>
         <div className={styles.cardTitleRow}>
           <span className={styles.cardTitle}>{c.name}</span>
-          <span className={styles.cardReward}>+{c.chipReward.toLocaleString()} chips</span>
+          <span className={styles.cardReward}>
+            {c.diamondReward > 0 && (
+              <span className={styles.rewardDiamonds}>
+                {'\u25C6'} {c.diamondReward.toLocaleString()}
+              </span>
+            )}
+            <span className={styles.rewardChips}>+{c.chipReward.toLocaleString()} chips</span>
+          </span>
         </div>
         <span className={styles.cardDesc}>{c.description}</span>
         <div className={styles.progressTrack}>
@@ -205,6 +212,13 @@ export default function DailyChallengesPage() {
   const [claimingIds, setClaimingIds] = useState<Set<string>>(new Set());
   const [celebratingIds, setCelebratingIds] = useState<Set<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
+  // Non-null while the celebration overlay is on screen.
+  const [reward, setReward] = useState<{
+    name: string;
+    chips: number;
+    diamonds: number;
+    diamondBalance: number;
+  } | null>(null);
 
   const claimGuardRef = useRef<Set<string>>(new Set());
   const celebrateTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -255,6 +269,17 @@ export default function DailyChallengesPage() {
     };
   }, [loadChallenges]);
 
+  // Auto-dismiss the celebration. Cleared on unmount and on manual dismiss so
+  // a quick tap-away followed by another claim cannot leave a stale timer that
+  // closes the NEXT celebration early.
+  useEffect(() => {
+    if (!reward) return undefined;
+    const t = setTimeout(() => {
+      if (isMountedRef.current) setReward(null);
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [reward]);
+
   // ── Live countdown + automatic daily rollover ──
   useEffect(() => {
     const timer = setInterval(() => {
@@ -292,12 +317,26 @@ export default function DailyChallengesPage() {
       claimGuardRef.current.add(challenge.id);
       setClaimingIds((prev) => new Set(prev).add(challenge.id));
       try {
-        await dailyChallengeService.claimChallenge(
+        const paid = await dailyChallengeService.claimChallenge(
           userId,
           challenge.id,
           challenge.challenge.chipReward
         );
         if (!isMountedRef.current) return;
+
+        // Celebrate with what the SERVER actually paid, never the card's copy
+        // of the reward. If those two ever disagree, showing the client value
+        // would announce diamonds the balance never received.
+        if (paid.alreadyClaimed) {
+          toast.info('You already claimed this one');
+        } else {
+          setReward({
+            name: challenge.challenge.name,
+            chips: paid.chips,
+            diamonds: paid.diamonds,
+            diamondBalance: paid.diamondBalance,
+          });
+        }
         setChallenges((prev) =>
           prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
         );
@@ -316,10 +355,9 @@ export default function DailyChallengesPage() {
         masterBus.emit('MISSION_CLAIMED', {
           missionId: challenge.id,
           tier: challenge.tier,
-          rewardType: 'chips',
-          rewardAmount: challenge.challenge.chipReward,
+          rewardType: paid.diamonds > 0 ? 'diamonds' : 'chips',
+          rewardAmount: paid.diamonds > 0 ? paid.diamonds : paid.chips,
         });
-        toast.success(`+${challenge.challenge.chipReward.toLocaleString()} chips claimed`);
       } catch (err: any) {
         reportError(err, 'DailyChallengesPage.claim_failed');
         if (isMountedRef.current) toast.error(err?.message || 'Failed to claim reward');
@@ -538,6 +576,55 @@ export default function DailyChallengesPage() {
           ))
         )}
       </section>
+
+      {/* Celebration — the payoff moment. Deliberately a full overlay rather
+          than a corner toast: the whole point of a daily loop is that finishing
+          one FEELS like something, and a 3-second slide-in at the edge of the
+          screen does not. Dismisses on tap or after 5s. */}
+      {reward && (
+        <div
+          className={styles.celebrateOverlay}
+          role="dialog"
+          aria-live="assertive"
+          aria-label={`Challenge complete. You earned ${reward.diamonds} diamonds.`}
+          onClick={() => setReward(null)}
+        >
+          <div className={styles.celebrateCard} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.celebrateBurst} aria-hidden="true">
+              {'\u25C6'}
+            </div>
+            <h2 className={styles.celebrateTitle}>Challenge Complete</h2>
+            <p className={styles.celebrateName}>{reward.name}</p>
+
+            {reward.diamonds > 0 && (
+              <div className={styles.celebrateDiamonds}>
+                <span className={styles.celebrateDiamondValue}>
+                  +{reward.diamonds.toLocaleString()}
+                </span>
+                <span className={styles.celebrateDiamondLabel}>
+                  {reward.diamonds === 1 ? 'Diamond' : 'Diamonds'}
+                </span>
+              </div>
+            )}
+
+            {reward.chips > 0 && (
+              <p className={styles.celebrateChips}>
+                +{reward.chips.toLocaleString()} chips
+              </p>
+            )}
+
+            {reward.diamonds > 0 && (
+              <p className={styles.celebrateBalance}>
+                New balance: {reward.diamondBalance.toLocaleString()} diamonds
+              </p>
+            )}
+
+            <button className={styles.celebrateButton} onClick={() => setReward(null)}>
+              Nice
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* How it works */}
       <footer className={styles.footer}>

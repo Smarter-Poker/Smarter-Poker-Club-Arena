@@ -67,7 +67,22 @@ export interface DailyChallenge {
   type: ChallengeType;
   requirement: number;
   chipReward: number;
+  /**
+   * Premium currency payout. Authoritative value lives in
+   * daily_challenge_catalog.diamond_reward -- this copy is for rendering the
+   * card before the claim happens. The server never trusts it.
+   */
+  diamondReward: number;
   icon: string;
+}
+
+/** What a successful claim actually paid out. */
+export interface ClaimResult {
+  claimed: boolean;
+  alreadyClaimed: boolean;
+  chips: number;
+  diamonds: number;
+  diamondBalance: number;
 }
 
 export interface UserDailyChallenge {
@@ -94,6 +109,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 10,
     chipReward: 50,
+    diamondReward: 1,
     icon: '',
   },
   {
@@ -103,6 +119,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 25,
     chipReward: 100,
+    diamondReward: 2,
     icon: '',
   },
   {
@@ -112,6 +129,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 50,
     chipReward: 200,
+    diamondReward: 3,
     icon: '',
   },
   {
@@ -121,6 +139,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 15,
     chipReward: 75,
+    diamondReward: 1,
     icon: '',
   },
   {
@@ -130,6 +149,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 40,
     chipReward: 160,
+    diamondReward: 3,
     icon: '',
   },
   {
@@ -139,6 +159,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 75,
     chipReward: 300,
+    diamondReward: 4,
     icon: '',
   },
   {
@@ -148,6 +169,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 100,
     chipReward: 400,
+    diamondReward: 5,
     icon: '',
   },
 
@@ -159,6 +181,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 3,
     chipReward: 75,
+    diamondReward: 2,
     icon: '',
   },
   {
@@ -168,6 +191,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 5,
     chipReward: 150,
+    diamondReward: 3,
     icon: '',
   },
   {
@@ -177,6 +201,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 10,
     chipReward: 300,
+    diamondReward: 4,
     icon: '',
   },
   {
@@ -186,6 +211,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 7,
     chipReward: 200,
+    diamondReward: 3,
     icon: '',
   },
   {
@@ -195,6 +221,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 15,
     chipReward: 450,
+    diamondReward: 5,
     icon: '',
   },
 
@@ -206,6 +233,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 3,
     chipReward: 60,
+    diamondReward: 2,
     icon: '',
   },
   {
@@ -215,6 +243,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 5,
     chipReward: 120,
+    diamondReward: 2,
     icon: '',
   },
   {
@@ -224,6 +253,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 8,
     chipReward: 200,
+    diamondReward: 3,
     icon: '',
   },
   {
@@ -233,6 +263,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 10,
     chipReward: 260,
+    diamondReward: 4,
     icon: '',
   },
 
@@ -244,6 +275,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 1,
     chipReward: 100,
+    diamondReward: 2,
     icon: '',
   },
   {
@@ -253,6 +285,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 3,
     chipReward: 300,
+    diamondReward: 4,
     icon: '',
   },
   {
@@ -262,6 +295,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 2,
     chipReward: 200,
+    diamondReward: 3,
     icon: '',
   },
 
@@ -273,6 +307,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'big_pots',
     requirement: 1,
     chipReward: 120,
+    diamondReward: 3,
     icon: '',
   },
   {
@@ -282,6 +317,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'big_pots',
     requirement: 3,
     chipReward: 350,
+    diamondReward: 6,
     icon: '',
   },
 
@@ -293,6 +329,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'strong_hands',
     requirement: 1,
     chipReward: 150,
+    diamondReward: 3,
     icon: '',
   },
   {
@@ -302,6 +339,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'strong_hands',
     requirement: 3,
     chipReward: 400,
+    diamondReward: 7,
     icon: '',
   },
 
@@ -313,6 +351,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'friends_added',
     requirement: 1,
     chipReward: 50,
+    diamondReward: 2,
     icon: '',
   },
 ];
@@ -325,6 +364,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 250,
     chipReward: 1000,
+    diamondReward: 12,
     icon: '',
   },
   {
@@ -334,6 +374,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 50,
     chipReward: 1500,
+    diamondReward: 15,
     icon: '',
   },
   {
@@ -343,6 +384,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 10,
     chipReward: 2000,
+    diamondReward: 18,
     icon: '',
   },
   {
@@ -352,6 +394,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'big_pots',
     requirement: 10,
     chipReward: 1200,
+    diamondReward: 15,
     icon: '',
   },
   {
@@ -361,6 +404,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'strong_hands',
     requirement: 8,
     chipReward: 1100,
+    diamondReward: 14,
     icon: '',
   },
   {
@@ -370,6 +414,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 20,
     chipReward: 800,
+    diamondReward: 10,
     icon: '',
   },
 ];
@@ -382,6 +427,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 1000,
     chipReward: 5000,
+    diamondReward: 45,
     icon: '',
   },
   {
@@ -391,6 +437,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 250,
     chipReward: 10000,
+    diamondReward: 55,
     icon: '',
   },
   {
@@ -400,6 +447,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'big_pots',
     requirement: 50,
     chipReward: 6000,
+    diamondReward: 50,
     icon: '',
   },
   {
@@ -409,6 +457,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 50,
     chipReward: 15000,
+    diamondReward: 60,
     icon: '',
   },
 ];
@@ -707,7 +756,7 @@ class DailyChallengeServiceClass {
     userId: string,
     challengeRowId: string,
     rewardAmount: number
-  ): Promise<boolean> {
+  ): Promise<ClaimResult> {
     // Rows that only exist client-side (offline fallback) have a synthetic id,
     // not a uuid. Sending one produces a raw Postgres 22P02 in the user's face.
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeRowId)) {
@@ -719,7 +768,7 @@ class DailyChallengeServiceClass {
     // false rather than raising, so a commit whose response was lost to a
     // network blip no longer surfaces "Challenge already claimed" as an error
     // for chips the player actually received.
-    await retryAsync(async () => {
+    const rpcResult = await retryAsync(async () => {
       const result = await supabase.rpc('claim_daily_challenge', {
         p_user_id: userId,
         p_challenge_row_id: challengeRowId,
@@ -733,6 +782,12 @@ class DailyChallengeServiceClass {
       return result;
     }, 3);
 
+    // The RPC returns what it ACTUALLY paid, read from the catalog -- never the
+    // client's idea of the reward. Showing a celebration with a number the
+    // server did not credit is how a "you won 5 diamonds" toast ends up next to
+    // an unchanged balance.
+    const paid = (rpcResult as any)?.data || {};
+
     // NOTE: no client-side ledger write here. claim_daily_challenge credits via
     // atomic_credit_wallet_and_log under the idempotency key
     // 'challenge_claim:<row id>', which already writes the transaction record.
@@ -741,7 +796,23 @@ class DailyChallengeServiceClass {
     // the catalog value — so any drift made the audit trail disagree with the
     // wallet, and a retry logged the same reward twice.
     masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId });
-    return true;
+    // Header/wallet listeners key off this to repaint the diamond count without
+    // a page refresh.
+    if (Number(paid.diamonds) > 0) {
+      masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+        newBalance: Number(paid.diamondBalance) || 0,
+        delta: Number(paid.diamonds) || 0,
+        source: 'daily_challenge_claim',
+      });
+    }
+
+    return {
+      claimed: paid.claimed === true,
+      alreadyClaimed: paid.alreadyClaimed === true,
+      chips: Number(paid.chips) || 0,
+      diamonds: Number(paid.diamonds) || 0,
+      diamondBalance: Number(paid.diamondBalance) || 0,
+    };
   }
 
   /**
@@ -1005,6 +1076,7 @@ class DailyChallengeServiceClass {
         type: 'hands_played' as ChallengeType,
         requirement: 0,
         chipReward: 0,
+        diamondReward: 0,
         icon: '?',
       };
 

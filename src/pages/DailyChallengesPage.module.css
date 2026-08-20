@@ -473,3 +473,143 @@
     font-size: 0.95rem;
   }
 }
+
+/* ── Reward chips on the card ── */
+.rewardDiamonds {
+  color: #67e8f9;
+  margin-right: 6px;
+}
+
+.rewardChips {
+  color: #fbbf24;
+}
+
+/* ── Celebration overlay ──
+   A full overlay, not an edge toast: finishing a daily should feel like
+   something, and a corner slide-in reads as a system message. */
+.celebrateOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(4, 10, 18, 0.78);
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.18s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.celebrateCard {
+  width: 100%;
+  max-width: 320px;
+  padding: 28px 24px 22px;
+  text-align: center;
+  border-radius: 20px;
+  background: linear-gradient(160deg, #0e2233 0%, #0a1520 100%);
+  border: 1px solid rgba(103, 232, 249, 0.35);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(103, 232, 249, 0.12);
+  animation: popIn 0.42s cubic-bezier(0.175, 0.885, 0.32, 1.4);
+}
+
+@keyframes popIn {
+  0%   { transform: scale(0.82) translateY(12px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.celebrateBurst {
+  font-size: 2.6rem;
+  line-height: 1;
+  color: #67e8f9;
+  text-shadow: 0 0 20px rgba(103, 232, 249, 0.7);
+  animation: burst 0.9s ease-out;
+}
+
+@keyframes burst {
+  0%   { transform: scale(0.3) rotate(-25deg); opacity: 0; }
+  55%  { transform: scale(1.25) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.celebrateTitle {
+  margin: 12px 0 2px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+}
+
+.celebrateName {
+  margin: 0 0 14px;
+  font-size: 0.82rem;
+  color: #8a9aaa;
+}
+
+.celebrateDiamonds {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.celebrateDiamondValue {
+  font-size: 2.4rem;
+  font-weight: 900;
+  color: #67e8f9;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 24px rgba(103, 232, 249, 0.45);
+}
+
+.celebrateDiamondLabel {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #67e8f9;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.celebrateChips {
+  margin: 2px 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.celebrateBalance {
+  margin: 10px 0 0;
+  font-size: 0.72rem;
+  color: #8a9aaa;
+}
+
+.celebrateButton {
+  margin-top: 18px;
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  color: #04121a;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.celebrateButton:hover {
+  transform: translateY(-1px);
+}
+
+/* Respect a stated preference for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .celebrateOverlay,
+  .celebrateCard,
+  .celebrateBurst {
+    animation: none;
+  }
+}

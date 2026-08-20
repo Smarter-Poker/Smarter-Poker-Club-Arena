@@ -628,6 +628,14 @@ export abstract class ServerTableEngineBase {
         });
       }
 
+      // ⚠ D22 (2026-08-20): this object is INERT. It is constructed and
+      // configured per table, but recordHandRake only accumulates into an
+      // in-memory total that nothing ever flushes, and its rakeback tiers
+      // DISAGREE with the live authoritative tiers used by
+      // RakebackSettlerService — which reads rake_records and is the only thing
+      // that actually pays rakeback. Do not re-enable this by flipping a flag:
+      // its numbers are not the platform's numbers.
+      //
       // FIX 104 → RAKE-AUDIT 2026-07-24: RakebackEngine is DISABLED. Its
       // in-memory accumulator was never flushed anywhere (settleRakeback has
       // zero callers), its tier table conflicts with the authoritative

@@ -291,6 +291,11 @@ export class ChannelHub {
 
   // ─── Tournament subscriptions ───────────────────────────────────────────────
 
+  /** B13: is this user currently subscribed to that club's channel? */
+  isInClub(userId: string, clubId: string): boolean {
+    return this.clubSubs.get(clubId)?.has(userId) ?? false;
+  }
+
   joinTournament(userId: string, tournamentId: string): void {
     this._getOrCreateSet(this.tournamentSubs, tournamentId).add(userId);
   }

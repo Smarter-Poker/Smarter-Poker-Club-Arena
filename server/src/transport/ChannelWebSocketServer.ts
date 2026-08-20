@@ -40,6 +40,10 @@ import { supabase } from '../services/supabase.js';
 import { extractBearerToken } from './wsHelpers.js';
 import { channelHub } from '../hub/ChannelHub.js';
 
+/** B13: how long a club-membership verdict may be reused. */
+const CLUB_MEMBERSHIP_TTL_MS = 60_000;
+const CLUB_MEMBERSHIP_CACHE_MAX = 10_000;
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const HEARTBEAT_INTERVAL_MS = 25_000;
@@ -192,6 +196,48 @@ export class ChannelWebSocketServer {
     ws.on('error', () => this.onClose(ws));
   }
 
+  /**
+   * B13: membership verdicts, cached briefly.
+   *
+   * Club membership changes rarely and a reconnect storm must not turn into one
+   * lookup per socket per attempt (the same mistake the engine WebSocket server
+   * made with its ban check). 60s is short enough that a removed member loses
+   * the feed promptly and long enough to collapse a burst.
+   */
+  private clubMembershipCache: Map<string, { member: boolean; readAt: number }> = new Map();
+
+  private async joinClubIfMember(userId: string, clubId: string): Promise<void> {
+    const key = `${userId}|${clubId}`;
+    const hit = this.clubMembershipCache.get(key);
+    if (hit && Date.now() - hit.readAt < CLUB_MEMBERSHIP_TTL_MS) {
+      if (hit.member) channelHub.joinClub(userId, clubId);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('club_members')
+        .select('user_id')
+        .eq('club_id', clubId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      // Fail closed, and do NOT cache an unknown: a transient error must not
+      // pin a user out of their own club for the whole TTL.
+      if (error) return;
+
+      const member = !!data;
+      if (this.clubMembershipCache.size >= CLUB_MEMBERSHIP_CACHE_MAX) {
+        const oldest = this.clubMembershipCache.keys().next().value;
+        if (oldest !== undefined) this.clubMembershipCache.delete(oldest);
+      }
+      this.clubMembershipCache.set(key, { member, readAt: Date.now() });
+      if (member) channelHub.joinClub(userId, clubId);
+    } catch {
+      /* fail closed */
+    }
+  }
+
   // ─── Message routing ───────────────────────────────────────────────────────
 
   private onMessage(conn: ConnectionState, raw: RawData): void {
@@ -247,8 +293,22 @@ export class ChannelWebSocketServer {
         return;
 
       case 'JOIN_CLUB':
+        /**
+         * B13 FIX (2026-08-20): joining a club channel now requires membership.
+         *
+         * This took whatever clubId the client sent and subscribed them to it.
+         * Any authenticated user could therefore join ANY club's channel and
+         * receive its presence feed — who is online, who is at a table, and
+         * every CLUB_PRESENCE_UPDATE broadcast to it. Club rosters are private;
+         * nothing in this path checked that the caller belonged to the club
+         * whose feed they were asking for.
+         *
+         * Fails CLOSED: a lookup error refuses the join rather than defaulting
+         * to allow. The client retries, and an access decision should never be
+         * made optimistically on a database blip.
+         */
         if (typeof msg.clubId === 'string' && msg.clubId) {
-          channelHub.joinClub(userId, msg.clubId);
+          void this.joinClubIfMember(userId, msg.clubId);
         }
         return;
 
@@ -264,7 +324,12 @@ export class ChannelWebSocketServer {
           msg.clubId &&
           (msg.status === 'online' || msg.status === 'at_table' || msg.status === 'away')
         ) {
-          channelHub.updatePresence(userId, msg.clubId, msg.status, msg.currentTableId);
+          // B13: presence WRITES into a club's broadcast feed, so it needs the
+          // same gate as reading it. Subscription implies the membership check
+          // above already passed, which keeps this synchronous and off the DB.
+          if (channelHub.isInClub(userId, msg.clubId)) {
+            channelHub.updatePresence(userId, msg.clubId, msg.status, msg.currentTableId);
+          }
         }
         return;
 

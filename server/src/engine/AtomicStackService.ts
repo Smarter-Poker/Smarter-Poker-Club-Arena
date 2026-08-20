@@ -2,8 +2,27 @@ import { reportError } from '../services/errorReporter.js';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  ATOMIC STACK SERVICE — Race-Condition-Proof Stack Operations
+ *  ATOMIC STACK SERVICE — In-Process Stack Versioning
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * ⚠ D22 (2026-08-20) — READ THIS BEFORE RELYING ON THE NAME.
+ *
+ * "Atomic" here means atomic WITHIN THIS PROCESS. Every version number, every
+ * compare-and-set and every batch settlement below lives in a JavaScript Map.
+ * None of it is a database transaction, and none of it survives a restart.
+ *
+ * What actually makes stack mutation safe on this platform is single-engine
+ * authority: exactly one engine owns a table at a time (see the table-lease
+ * mechanism in GameServer), so there is no second writer to race with. This
+ * class is a consistency check on top of that, not the guarantee itself.
+ *
+ * The distinction matters because the name invites the opposite reading. If you
+ * are about to run two engines against one table, this class will NOT protect
+ * you — the lease will, and this will silently agree with whichever writer got
+ * there first.
+ *
+ * `tableLocks` is vestigial: it is declared, deleted and cleared, and never
+ * acquired or awaited anywhere. It confers no mutual exclusion of any kind.
  *
  * Prevents stack mutation race conditions using versioned optimistic locking:
  * - Each stack read includes a version number

@@ -278,7 +278,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           const showdownHands = this.currentHandShowdownResults.length;
           const wentToShowdown = showdownHands >= 2;
 
-          const RESULT_DISPLAY_FOLD_MS = 1500;
+          // ── Dan 2026-08-20: "if a user wins a hand by raising and taking it,
+          //    the pot animation must be shipped to the player who won — many
+          //    steps and animations are being skipped." ──
+          //
+          // 1500ms could not physically contain the uncontested-win sequence.
+          // The client plays it as two ORDERED beats now (bets sweep into the
+          // pot, 700ms; then the pot travels to the winner, 700ms) plus a beat
+          // to actually read who won. That is ~1400ms of motion before anything
+          // can be read, so the old window cut the pot push off mid-flight and
+          // the next hand was already dealing. Every fold win looked like the
+          // pot teleported.
+          //
+          // 2600ms is the same base a heads-up showdown already gets: sweep
+          // (700) + ship (700) + ~1200ms to register the winner. Hands/hour
+          // drops slightly and that is the intended trade — Dan's rule is that
+          // no beat is ever skipped.
+          const RESULT_DISPLAY_FOLD_MS = 2600;
           const SHOWDOWN_BASE_MS = 2600; // heads-up showdown
           const SHOWDOWN_PER_EXTRA_HAND_MS = 700; // each additional hand to read
           const SHOWDOWN_MAX_MS = 6000; // a big multiway pot must not stall the table

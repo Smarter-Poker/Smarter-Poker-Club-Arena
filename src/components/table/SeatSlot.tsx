@@ -687,9 +687,28 @@ export const SeatSlot = memo(
     let timerStyle: React.CSSProperties | undefined;
     let timerKey: number | string = 'no-turn';
     if (isActive && turnDeadlineMs && turnDeadlineMs > 0) {
-      const durationMs = turnStartTimeMs
-        ? Math.max(1000, turnDeadlineMs - turnStartTimeMs)
-        : 15_000;
+      // ── Dan 2026-08-20: "the yellow countdown timer is not 15 seconds — it
+      //    needs to be exactly 15 seconds long to make the yellow disappear."
+      //
+      // Every table is action_time_seconds = 15 and the engine's deadline
+      // follows from it, so a healthy pair yields exactly 15000. But the ONLY
+      // floor here used to be Math.max(1000, ...), so ANY skewed pair produced
+      // a ring of that length and it was drawn as gospel: a 3s ring looks
+      // identical to a correct one, just wrong. That happens whenever the two
+      // fields are momentarily out of step — a DELTA patch landing
+      // turn_start_time_ms before turn_deadline_ms, or a stale deadline from
+      // the previous turn arriving with a fresh start stamp.
+      //
+      // Clamp to a plausible turn band. Anything outside it is a torn read,
+      // not a real turn length, so fall back to the canonical 15s rather than
+      // rendering a clock we know is wrong.
+      const MIN_PLAUSIBLE_TURN_MS = 5_000;
+      const MAX_PLAUSIBLE_TURN_MS = 180_000;
+      const rawDurationMs = turnStartTimeMs ? turnDeadlineMs - turnStartTimeMs : 15_000;
+      const durationMs =
+        rawDurationMs >= MIN_PLAUSIBLE_TURN_MS && rawDurationMs <= MAX_PLAUSIBLE_TURN_MS
+          ? rawDurationMs
+          : 15_000;
       // Dan 2026-08-18: measure elapsed on the ENGINE's clock, not this
       // device's. turnStartTimeMs is a SERVER timestamp, so subtracting a raw
       // Date.now() from it mixed two clocks: a phone running three seconds
@@ -711,9 +730,23 @@ export const SeatSlot = memo(
         '--sp-timer-yellow-duration': `${(yellowMs / 1000).toFixed(3)}s`,
         '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
       } as React.CSSProperties;
-      // React key so the .seat__info remounts (animation restarts) each
-      // new turn — identified by the authoritative wall-clock deadline.
-      timerKey = turnDeadlineMs;
+      // React key so the .seat__info remounts (animation restarts) each new
+      // turn.
+      //
+      // Dan 2026-08-20: this was keyed on turnDeadlineMs, so ANY movement of
+      // the deadline remounted the node and snapped the ring back to FULL
+      // mid-turn — the countdown visibly restarted and never completed a
+      // clean 15 seconds. Two things move the deadline without starting a new
+      // turn: a time-bank extension, and the engine re-stamping the same turn
+      // (reconnect grace / forceArmTurnTimer).
+      //
+      // The turn's START time is its true identity: it changes exactly once
+      // per turn. Keying on it means a genuine new turn restarts the ring,
+      // while an extension keeps the node mounted and simply lengthens the
+      // running animation — which, with the negative --sp-timer-delay, is
+      // precisely the desired behaviour (the ring keeps draining from where
+      // it is, just more slowly).
+      timerKey = turnStartTimeMs || turnDeadlineMs;
     } else if (isActive && timerProgress !== undefined) {
       // Legacy JS-hook fallback (visible tabs only).
       timerStyle = {

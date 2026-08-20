@@ -1364,9 +1364,30 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     // Humanlike think time comes from the decision engine itself (style- and
     // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
+    //
+    // ── Dan 2026-08-20: "it doesn't matter if it's all horses at the table,
+    //    every action, every animation, every feature and detail needs to play
+    //    out in full. Each turn to check/bet/call/fold, every action needs
+    //    time, nothing can EVER be skipped." ──
+    //
+    // The old floor was 700ms. A single action has to render its label, slide
+    // its chips onto the felt (cpSlideIn 500ms) and be READ before the turn
+    // moves on — 700ms clips the chip slide and makes a horse-heavy table blur
+    // past. Worse, a fold at 700ms cut cardFoldOut (380ms + 55ms stagger)
+    // right as the next seat's action arrived, so the muck barely registered.
+    //
+    // HORSE_MIN_THINK_MS is the floor for the FASTEST possible horse action.
+    // Instant/snap decisions still read as snap (1.8s is fast at a poker
+    // table) but every animation now completes. HorseLogic's own style- and
+    // situation-aware think times above this floor are unchanged, so varied
+    // pacing is preserved.
+    const HORSE_MIN_THINK_MS = 1800;
     const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
     const thinkTimeMs = Math.round(
-      Math.max(700, Math.min(decision.thinkTime || 2500, Math.max(2000, actionTimeMs - 3000)))
+      Math.max(
+        HORSE_MIN_THINK_MS,
+        Math.min(decision.thinkTime || 2500, Math.max(2000, actionTimeMs - 3000))
+      )
     );
 
     const handControllerRef = this.handController;

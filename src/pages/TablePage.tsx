@@ -808,6 +808,15 @@ export default function TablePage({
    */
   const [potCollectTo, setPotCollectTo] = useState<{ dx: number; dy: number } | null>(null);
   const potCollectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Dan 2026-08-20: the pot ships in two ORDERED beats — bets sweep into the
+   * pot, then the pot travels to the winner. These two timers hold the
+   * deferred second beat (chip fan + pot push) so it starts only once the
+   * sweep has landed instead of running on top of it. Both are cancelled at
+   * the hand boundary and on unmount.
+   */
+  const potShipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const potPushDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Guards the diamond charge in handleBuyTimeBank against a double-tap. */
   const buyingTimeBankRef = useRef(false);
   /**
@@ -1665,6 +1674,8 @@ export default function TablePage({
       if (bbjTimerRef.current) clearTimeout(bbjTimerRef.current);
       if (bbjSeatCreditsTimerRef.current) clearTimeout(bbjSeatCreditsTimerRef.current);
       if (handCompleteTimerRef.current) clearTimeout(handCompleteTimerRef.current);
+      if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
+      if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
     };
   }, []);
 
@@ -4829,6 +4840,15 @@ export default function TablePage({
           clearTimeout(potCollectTimerRef.current);
           potCollectTimerRef.current = null;
         }
+        // Deferred pot-ship beats belong to the finished hand.
+        if (potShipTimerRef.current) {
+          clearTimeout(potShipTimerRef.current);
+          potShipTimerRef.current = null;
+        }
+        if (potPushDelayTimerRef.current) {
+          clearTimeout(potPushDelayTimerRef.current);
+          potPushDelayTimerRef.current = null;
+        }
         // ANIMATION AUDIT 2026-08-19: the previous hand's 3s reset timer was
         // NEVER cancelled here. The server's fold-win inter-hand gap is
         // 2000ms, so on every fold-win that stale timer fired ~1s INTO the
@@ -5529,6 +5549,28 @@ export default function TablePage({
           import('../services/HapticService').then(({ haptic }) => haptic.heavy());
         }
         if (winnerIds.length > 0 && potAmount > 0) {
+          // ── Dan 2026-08-20: "many steps and animations are being skipped" ──
+          //
+          // A real hand ships the pot in TWO ordered beats:
+          //   1. every remaining bet sweeps off the felt INTO the pot
+          //   2. only then does the pot travel to the winner
+          //
+          // The server emits WINNERS (-> pot_win) BEFORE hand_complete, and the
+          // final chip sweep is armed by the HAND_COMPLETE handler. So the pot
+          // used to start flying to the winner in the SAME frame the losing
+          // bets were still flying toward it — the two beats collapsed into one
+          // blur and the pot appeared to teleport. On an uncontested "raise and
+          // take it" win, that is the entire animation the player sees.
+          //
+          // Delay the ship by exactly the sweep window when chips are still on
+          // the felt, so the beats read in order. Everything below is captured
+          // now and fired later, because tableStateRef will have been cleared
+          // by the time the delayed callback runs.
+          const betsStillOnFelt =
+            (tableStateRef.current.lastBetAmounts || []).some((a) => (a || 0) > 0) ||
+            streetBetsRef.current.some((a) => (a || 0) > 0) ||
+            collectingChipSeatsRef.current.some(Boolean);
+          const shipDelayMs = betsStillOnFelt ? 700 * getAnimationSpeed() : 0;
           // Pot center in screen px (mirrors the constant 50,45 used by
           // chip-to-pot animations elsewhere).
           // 2026-08-04 FIX: scaler-relative percentages, not viewport. The old
@@ -5555,10 +5597,21 @@ export default function TablePage({
             events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
           }
           if (events.length > 0) {
-            setChipAnimations((prev) => [...prev, ...events]);
-            // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
-            // #175 gated for multi-table: only play on the active tab
-            if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
+            const fireFan = () => {
+              setChipAnimations((prev) => [...prev, ...events]);
+              // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
+              // #175 gated for multi-table: only play on the active tab
+              if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
+            };
+            if (shipDelayMs > 0) {
+              if (potShipTimerRef.current) clearTimeout(potShipTimerRef.current);
+              potShipTimerRef.current = setTimeout(() => {
+                potShipTimerRef.current = null;
+                fireFan();
+              }, shipDelayMs);
+            } else {
+              fireFan();
+            }
           }
 
           // Dan 2026-08-19, bug list item 6: push the POT ITSELF to the winner,
@@ -5576,17 +5629,30 @@ export default function TablePage({
             const soleSeatPct = soleSeatIdx >= 0 ? seatPositions[soleSeatIdx] : null;
             if (soleSeatPct) {
               const winnerPx = seatPctToViewportPx(tableScalerRef.current, soleSeatPct);
-              setPotCollectTo({
+              const collectTo = {
                 dx: Math.round(winnerPx.x - potPos.x),
                 dy: Math.round(winnerPx.y - potPos.y),
-              });
-              if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
-              // Slightly longer than --pd-collect-duration (0.5s) so the pot is
-              // never yanked back to centre mid-slide.
-              potCollectTimerRef.current = setTimeout(() => {
-                potCollectTimerRef.current = null;
-                setPotCollectTo(null);
-              }, 700 * getAnimationSpeed());
+              };
+              // Beat 2 — the pot itself travels, AFTER the sweep has landed.
+              const startPush = () => {
+                setPotCollectTo(collectTo);
+                if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
+                // Slightly longer than --pd-collect-duration (0.5s) so the pot is
+                // never yanked back to centre mid-slide.
+                potCollectTimerRef.current = setTimeout(() => {
+                  potCollectTimerRef.current = null;
+                  setPotCollectTo(null);
+                }, 700 * getAnimationSpeed());
+              };
+              if (shipDelayMs > 0) {
+                if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
+                potPushDelayTimerRef.current = setTimeout(() => {
+                  potPushDelayTimerRef.current = null;
+                  startPush();
+                }, shipDelayMs);
+              } else {
+                startPush();
+              }
             }
           }
         }

@@ -687,7 +687,11 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     const runs = this.runItTwiceEngine.getChosenRuns(this.tableId);
     if (runs < 2) {
-      this.handController.continueRunout();
+      // Dan 2026-08-20: continueRunout() is the INSTANT synchronous loop —
+      // flop, turn and river all land in one tick with no equity updates. A
+      // hand that ends up running ONCE must still be watchable, exactly like
+      // the ordinary all-in path. Pace it.
+      void this.pacedAllInRunout(allInPlayers, this.handController.getState().pot);
       return;
     }
 

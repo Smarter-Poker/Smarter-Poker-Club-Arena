@@ -103,9 +103,23 @@ function DealAnimationComponent({
 
   useEffect(() => {
     if (active && !prevActiveRef.current) {
-      prevActiveRef.current = true;
-
+      // ── Dan 2026-08-20: "the next hand starts and the CARDS MUST BE DEALT" ──
+      //
+      // This used to latch prevActiveRef BEFORE checking activeSeats, then
+      // `return` when the seat list was empty. Because the latch was already
+      // set, the effect could never run again for that hand — the deal
+      // animation was permanently abandoned and no cards ever flew. That is
+      // reachable on every hand where HAND_STARTED lands before the roster
+      // does: first hand after sitting down, after a reconnect, or any time
+      // the discrete event beats the snapshot (which is the common ordering —
+      // events are deferred a macrotask, see EngineStateClient).
+      //
+      // Latch ONLY once we actually have seats to deal to. While the roster is
+      // still empty we leave the latch alone, so the very next render with a
+      // populated roster deals the cards.
       if (activeSeats.length === 0) return;
+
+      prevActiveRef.current = true;
 
       const dealerPos = seatPositions[dealerSeatIndex] || { x: 50, y: 50 };
       const newCards: FlyingCard[] = [];
@@ -182,7 +196,13 @@ function DealAnimationComponent({
       soundTimersRef.current.forEach(clearTimeout);
       soundTimersRef.current = [];
     };
-  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Dan 2026-08-20: activeSeats.length is a dependency so that when the
+    // roster arrives AFTER the hand-start event (the common ordering), this
+    // effect re-runs and actually deals the cards. Without it the empty-roster
+    // early-return above would still mean "no deal animation this hand".
+    // Deliberately the LENGTH, not the array: the parent rebuilds the array
+    // every render, which would restart the deal mid-flight.
+  }, [active, activeSeats.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!visible || cards.length === 0) return null;
 

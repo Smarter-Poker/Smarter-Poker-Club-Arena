@@ -403,6 +403,11 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   if (prev.winningHandName !== next.winningHandName) return false;
   if (prev.deckStyle !== next.deckStyle) return false;
   if (prev.playSounds !== next.playSounds) return false;
+  // AUDIT-2 FIX 2026-08-20: cardBack was missing — it was added as a prop
+  // specifically to stop mismatched backs, but changing the deck in settings
+  // left the board's placeholders and the face-down flop on the OLD back
+  // until some unrelated prop happened to change.
+  if (prev.cardBack !== next.cardBack) return false;
   if (JSON.stringify(prev.cards) !== JSON.stringify(next.cards)) return false;
   if (JSON.stringify(prev.highlightedIndices) !== JSON.stringify(next.highlightedIndices))
     return false;

@@ -246,9 +246,15 @@ function PotDisplayComponent({
   // ANIMATION AUDIT 2026-08-19: during the pot-push (collectTo set) a
   // snapshot may already have zeroed the pot. Show the last real amount for
   // the slide so the pot travels to the winner still reading its value.
+  // AUDIT-2 FIX 2026-08-20: the ref was written during render (a side effect
+  // React StrictMode double-invokes). Capture it in an effect instead; the
+  // render reads the value the previous commit stored, which is exactly the
+  // "last real pot" semantics the pot-push needs.
   const lastNonZeroPotRef = useRef(mainPot);
-  if (mainPot > 0) lastNonZeroPotRef.current = mainPot;
   const displayPot = mainPot > 0 ? mainPot : collectTo ? lastNonZeroPotRef.current : mainPot;
+  useEffect(() => {
+    if (mainPot > 0) lastNonZeroPotRef.current = mainPot;
+  }, [mainPot]);
 
   // Calculate chip visualization
   const chipBreakdown = useMemo(() => getChipBreakdown(displayPot), [displayPot]);

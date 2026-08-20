@@ -166,12 +166,14 @@ export type SoundPriority =
   | 'all_in'
   | 'big_win'
   | 'win'
+  | 'pot_collect'
   | 'showdown'
   | 'raise'
   | 'bet'
   | 'call'
   | 'check'
   | 'fold'
+  | 'shuffle'
   | 'deal'
   | 'community_card'
   | 'timer_warning'
@@ -190,12 +192,20 @@ const SOUND_PRIORITY_RANK: Record<SoundPriority, number> = {
   all_in: 100,
   big_win: 95,
   win: 90,
+  // AUDIT-2 FIX 2026-08-20: playPotCollect used to be rank 'win' (90) and is
+  // played immediately AFTER playWin/playBigWin in the same frame — so
+  // `rank <= currentFramePriority` rejected it EVERY time and the hero never
+  // heard the pot sweep (nor its haptic) on their own wins. Its own rank sits
+  // just under win so it always follows the winner fanfare instead of being
+  // eaten by it.
+  pot_collect: 88,
   showdown: 85,
   raise: 70,
   bet: 60,
   call: 50,
   check: 40,
   fold: 30,
+  shuffle: 25,
   deal: 20,
   community_card: 15,
   timer_warning: 80, // Timer warnings are high-priority (affects gameplay)
@@ -451,7 +461,12 @@ class SoundService {
    * noise riffles + a soft square-up tap.
    */
   playShuffle() {
-    if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
+    // AUDIT-2 FIX 2026-08-20: was priority 'deal' — the SAME rank as
+    // playDeal, so the shuffle at t=0 claimed the 50ms window and the first
+    // flying card's deal sound was swallowed. 'shuffle' sits just above deal
+    // so the riffle itself is never suppressed, and because the window is
+    // only 50ms it no longer masks the per-card slides that follow.
+    if (!this.shouldPlay('shuffle', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
     // Three quick riffle bursts, descending brightness
     this.createNoiseBurst(t, 0.09, 0.1, 4200);
@@ -499,7 +514,10 @@ class SoundService {
    * every hand.
    */
   playDealerButtonMove() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // AUDIT-2 FIX 2026-08-20: category added — with no category this bypassed
+    // every SoundSettings sub-toggle. 'event' is the right bucket for a table
+    // state change, and it no longer competes with the deal-card stream.
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
     this.createNoiseBurst(t, 0.03, 0.08, 900);
     this.playTone(240, 0.05, 0.06, 'sine');
@@ -511,7 +529,9 @@ class SoundService {
    * animated silently).
    */
   playLevelUp() {
-    if (!this.shouldPlay('showdown', 'event') || !this.ensureContext()) return;
+    // AUDIT-2 FIX 2026-08-20: was priority 'showdown' (a semantic misuse that
+    // also let it suppress raises/bets landing in the same window).
+    if (!this.shouldPlay('time_bank', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
     this.playTone(523, 0.16, 0.12, 'triangle'); // C5
     const osc = this.ctx!.createOscillator();
@@ -975,7 +995,10 @@ class SoundService {
    * Pot Collect — chips sweep to winner (satisfying collection sound)
    */
   playPotCollect() {
-    if (!this.shouldPlay('win', 'win') || !this.ensureContext()) return;
+    // AUDIT-2 FIX 2026-08-20: was ('win','win') — identical rank to the
+    // playWin/playBigWin that always precedes it in the same frame, so it was
+    // suppressed 100% of the time on hero wins. Own rank (88) now.
+    if (!this.shouldPlay('pot_collect', 'win') || !this.ensureContext()) return;
 
     // Rapid ascending chip clicks (collecting chips)
     for (let i = 0; i < 6; i++) {
@@ -1028,7 +1051,8 @@ class SoundService {
    * empty case in TablePage — a seat emptied with zero feedback.
    */
   playPlayerLeft() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // AUDIT-2 FIX 2026-08-20: category added (bypassed SoundSettings before).
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.1);
     const osc = this.ctx!.createOscillator();

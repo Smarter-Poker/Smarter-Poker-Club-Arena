@@ -154,6 +154,17 @@ export interface SeatSlotProps {
    */
   cardSqueezeActive?: boolean;
   /**
+   * AUDIT-2 FIX 2026-08-20: the hand number, used as an independent reset
+   * signal for the card-squeeze latch (see the reset effects). Also lets the
+   * seat scope any per-hand visual state without depending on a single event.
+   */
+  handNumber?: number;
+  /**
+   * AUDIT-2 FIX 2026-08-20: multi-table gate (#175). The squeeze flick and its
+   * haptic must stay silent on a background table.
+   */
+  playSounds?: boolean;
+  /**
    * 2026-04-15 Bible V8 §6.1 — server-authoritative absolute wall-clock
    * deadline for the CURRENT active seat (ms since epoch). Combined with
    * `turnStartTimeMs` this drives a pure-CSS `@property` animation on the
@@ -328,6 +339,8 @@ export const SeatSlot = memo(
       isDealing = false,
       isMucking = false,
       cardSqueezeActive = false,
+      handNumber = 0,
+      playSounds = true,
       turnDeadlineMs,
       turnStartTimeMs,
       showPickedCardIndexes,
@@ -448,21 +461,39 @@ export const SeatSlot = memo(
       },
       []
     );
-    // New hand (hero cards cleared at HAND_STARTED) → cards are face down again.
+    const squeezeProgressRef = useRef(0);
+    // New hand → cards are face down again.
+    // AUDIT-2 FIX 2026-08-20: the ONLY reset used to be hero holeCards hitting
+    // 0 (which depends on the HAND_STARTED event landing). If that event was
+    // ever missed — reconnect, observer→player, mid-hand join — squeezeRevealed
+    // stayed latched and the squeeze silently never ran again for the session.
+    // handNumber is an independent, always-advancing signal, so either one
+    // resets. squeezeProgressRef is reset too: it used to survive a mid-drag
+    // unmount (showdown / all-in force-reveal), and the stale >0.55 value made
+    // the NEXT hand's first bare tap reveal the cards with no gesture at all.
     const heroCardCount = player?.isHero ? (player.holeCards?.length ?? 0) : 0;
     useEffect(() => {
       if (heroCardCount === 0) {
         setSqueezeRevealed(false);
+        squeezeProgressRef.current = 0;
         setSqueezeProgress(0);
+        squeezeStartYRef.current = null;
+        squeezeLastTapRef.current = 0;
       }
     }, [heroCardCount]);
+    useEffect(() => {
+      setSqueezeRevealed(false);
+      squeezeProgressRef.current = 0;
+      setSqueezeProgress(0);
+      squeezeStartYRef.current = null;
+      squeezeLastTapRef.current = 0;
+    }, [handNumber]);
     const completeSqueeze = () => {
       setSqueezeRevealed(true);
       squeezeProgressRef.current = 0;
       setSqueezeProgress(0);
-      soundService.playCardSqueeze();
+      if (playSounds) soundService.playCardSqueeze();
     };
-    const squeezeProgressRef = useRef(0);
     const setProgress = (p: number) => {
       squeezeProgressRef.current = p;
       setSqueezeProgress(p);
@@ -480,7 +511,7 @@ export const SeatSlot = memo(
         const p = Math.max(0, Math.min(1, dy / 70));
         // ENHANCEMENT 2026-08-19: one light haptic as the card starts to
         // bend — the tactile "grip" of a live squeeze.
-        if (p >= 0.15 && squeezeProgressRef.current < 0.15) haptic.light();
+        if (p >= 0.15 && squeezeProgressRef.current < 0.15 && playSounds) haptic.light();
         setProgress(p);
       },
       onPointerUp: () => {
@@ -970,11 +1001,22 @@ export const SeatSlot = memo(
                   'seat__card-pick' +
                   (showPickedCardIndexes?.includes(i) ? ' seat__card-pick--marked' : '')
                 }
-                role={onToggleShowCard ? 'button' : undefined}
-                tabIndex={onToggleShowCard ? 0 : undefined}
-                aria-pressed={onToggleShowCard ? !!showPickedCardIndexes?.includes(i) : undefined}
+                /* AUDIT-2 FIX 2026-08-20: while the cards are face down in
+                   squeeze mode this span must NOT be a focusable button — its
+                   handlers early-return, so it announced "Show card 1 after
+                   the hand" and did nothing, and its hover lift fought the
+                   container's grab cursor. The squeeze container owns the
+                   interaction until the cards are open. */
+                role={onToggleShowCard && !squeezeDown ? 'button' : undefined}
+                tabIndex={onToggleShowCard && !squeezeDown ? 0 : undefined}
+                aria-hidden={squeezeDown ? true : undefined}
+                aria-pressed={
+                  onToggleShowCard && !squeezeDown
+                    ? !!showPickedCardIndexes?.includes(i)
+                    : undefined
+                }
                 aria-label={
-                  onToggleShowCard
+                  onToggleShowCard && !squeezeDown
                     ? showPickedCardIndexes?.includes(i)
                       ? `Card ${i + 1} will be shown after the hand. Activate to keep it hidden.`
                       : `Show card ${i + 1} after the hand`
@@ -1102,6 +1144,21 @@ export const SeatSlot = memo(
     if (prev.isMucking !== next.isMucking) return false;
     // COMPETITOR-PARITY 2026-08-19: card squeeze mode flips render structure.
     if (prev.cardSqueezeActive !== next.cardSqueezeActive) return false;
+    // AUDIT-2 FIX 2026-08-20: these were missing from the comparator.
+    // showPickedCardIndexes is the ONLY prop that changes when the hero marks
+    // a card to show, so without it the memo blocked the re-render and the
+    // gold "will be shown" marker never appeared — the click looked dead.
+    if (prev.handNumber !== next.handNumber) return false;
+    if (prev.playSounds !== next.playSounds) return false;
+    if (prev.onToggleShowCard !== next.onToggleShowCard) return false;
+    {
+      const a = prev.showPickedCardIndexes;
+      const b = next.showPickedCardIndexes;
+      if (a !== b) {
+        if (!a || !b || a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+      }
+    }
     // UI-AUDIT #13: gesture toggle must take effect on already-mounted seats.
     if (prev.gesturesEnabled !== next.gesturesEnabled) return false;
 

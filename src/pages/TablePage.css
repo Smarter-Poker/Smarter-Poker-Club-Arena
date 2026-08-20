@@ -1811,10 +1811,20 @@
   align-items: center;
   gap: 2px;
 }
+/* AUDIT-2 FIX 2026-08-20: fixed-width track so every seat's bar is drawn on
+   the same scale — previously the bar sized against the text-width badge, so
+   9% and 100% looked alike. */
+.equity-overlay__track {
+  display: block;
+  width: 44px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
 .equity-overlay__bar {
   display: block;
-  height: 3px;
-  max-width: 100%;
+  height: 100%;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);

@@ -1972,12 +1972,8 @@
   );
 }
 
-/* While the finger is DOWN, the cover must track it with zero lag. */
-.seat__cards--squeeze:active .seat__squeeze-face--cover {
-  transition: none;
-}
-
-/* While the finger is DOWN, the cover must track it with zero lag. */
+/* While the finger is DOWN, the cover must track it with zero lag.
+   (AUDIT-2 2026-08-20: this rule was duplicated verbatim; de-duped.) */
 .seat__cards--squeeze:active .seat__squeeze-face--cover {
   transition: none;
 }
@@ -1999,8 +1995,13 @@
   }
 }
 
-/* The moment the squeeze completes, the real cards pop in. */
-.seat__cards--squeeze-open .seat__card {
+/* The moment the squeeze completes, the real cards pop in.
+   AUDIT-2 FIX 2026-08-20: squeezeRevealed latches for the REST of the hand, so
+   this class is still applied when the hero later folds or the seat re-deals.
+   At equal specificity and a later source position it beat cardFoldOut and
+   cardDealIn — the hero's muck animation simply never played after squeezing.
+   Scope it out of those states so the fold/deal keyframes always win. */
+.seat__cards--squeeze-open:not(.seat__cards--folding):not(.seat__cards--dealing) .seat__card {
   animation: squeezeOpenPop calc(0.32s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
 }
 

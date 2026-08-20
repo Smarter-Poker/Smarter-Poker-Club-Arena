@@ -1584,9 +1584,19 @@ export default function TablePage({
   // lastBetAmounts, which unmounted ChipPhysics and killed the cpCollect
   // sweep mid-flight — chips teleported instead of flying to the pot.
   const collectingChipSeatsRef = useRef<boolean[]>(Array(9).fill(false));
-  useEffect(() => {
-    collectingChipSeatsRef.current = collectingChipSeats;
-  }, [collectingChipSeats]);
+  /**
+   * AUDIT-2 FIX 2026-08-20: the mirror used to be assigned in a useEffect,
+   * which runs AFTER the snapshot-merge effect in the same commit — so a
+   * snapshot batched with setCollectingChipSeats read a stale `false`, zeroed
+   * lastBetAmounts, unmounted ChipPhysics and killed cpCollect mid-flight:
+   * exactly the bug the ref exists to prevent. Every writer now goes through
+   * this setter, which updates the ref SYNCHRONOUSLY before React schedules
+   * the render.
+   */
+  const applyCollectingChipSeats = useCallback((mask: boolean[]) => {
+    collectingChipSeatsRef.current = mask;
+    setCollectingChipSeats(mask);
+  }, []);
   // ANIMATION AUDIT 2026-08-19: per-seat bets recorded from the discrete
   // PLAYER_ACTION / BLINDS_POSTED events. The chips-to-pot sweep used to
   // build its mask from tableStateRef.lastBetAmounts, but the engine's
@@ -1994,10 +2004,13 @@ export default function TablePage({
     if (count > 0 && prevEquityCountRef.current === 0) {
       setShowAllInBanner(true);
       if (allInBannerTimerRef.current) clearTimeout(allInBannerTimerRef.current);
+      // AUDIT-2 FIX 2026-08-20: this window was the ONE unscaled JS timer left.
+      // .allin-banner__text runs calc(1.8s * var(--animation-speed)); at a slow
+      // setting the banner was ripped out of the DOM mid-slam at full opacity.
       allInBannerTimerRef.current = setTimeout(() => {
         allInBannerTimerRef.current = null;
         setShowAllInBanner(false);
-      }, 1800);
+      }, 1800 * getAnimationSpeed());
     }
     prevEquityCountRef.current = count;
   }, [allInEquities.length]);
@@ -4722,7 +4735,17 @@ export default function TablePage({
         // commit phase). Direct inline + immediate setChipAnimations is
         // the surest path to the chips landing in the pot in real-time.
         // #175 gated for multi-table: only play opponent action SFX on the active tab
-        if (soundService.isEnabled() && ambientSoundsAllowed) {
+        //
+        // AUDIT-2 FIX 2026-08-20 (double-fire): this fired for EVERY seat,
+        // including the hero — whose action sound already played locally the
+        // instant they clicked (handleFold/Check/Call/Raise/AllIn). The server
+        // round-trip is far longer than the 50ms priority window, so the hero
+        // heard their own action TWICE, and on a raise it was two DIFFERENT
+        // sounds (local playRaise cascade, then this echo's playChips clink).
+        // The echo is for opponents only; the hero's own feedback is local and
+        // immediate.
+        const isHeroEcho = actionSeat > 0 && actionSeat === tableStateRef.current.heroSeat;
+        if (soundService.isEnabled() && ambientSoundsAllowed && !isHeroEcho) {
           if (action === 'all_in' || action === 'allin') soundService.playAllIn();
           else if (action === 'bet' || action === 'raise' || action === 'call')
             soundService.playChips();
@@ -4818,13 +4841,22 @@ export default function TablePage({
           window.clearTimeout(collectSeatsTimerRef.current);
           collectSeatsTimerRef.current = null;
         }
-        setCollectingChipSeats(Array(9).fill(false));
+        applyCollectingChipSeats(Array(9).fill(false));
         streetBetsRef.current = Array(9).fill(0);
         if (muckTimerRef.current) {
           clearTimeout(muckTimerRef.current);
           muckTimerRef.current = null;
         }
         setMuckingSeats(Array(9).fill(false));
+        // AUDIT-2 FIX 2026-08-20: the ALL IN banner timer was NOT cancelled at
+        // the hand boundary — a hand starting inside the 1.8s window left
+        // "ALL IN" splashed over the fresh deal.
+        if (allInBannerTimerRef.current) {
+          clearTimeout(allInBannerTimerRef.current);
+          allInBannerTimerRef.current = null;
+        }
+        setShowAllInBanner(false);
+        prevEquityCountRef.current = 0;
         // The Show/Muck prompt belongs to the finished hand — close it.
         if (handRevealTimerRef.current) {
           clearTimeout(handRevealTimerRef.current);
@@ -5040,7 +5072,7 @@ export default function TablePage({
               collectMask[i] && !(amt > 0) ? recorded[i] || 0 : amt
             ),
           }));
-          setCollectingChipSeats(collectMask);
+          applyCollectingChipSeats(collectMask);
           if (collectSeatsTimerRef.current) {
             window.clearTimeout(collectSeatsTimerRef.current);
           }
@@ -5048,11 +5080,18 @@ export default function TablePage({
           // unmounted the chips at 82% of the keyframe.
           collectSeatsTimerRef.current = window.setTimeout(() => {
             collectSeatsTimerRef.current = null;
-            setCollectingChipSeats(Array(collectMask.length).fill(false));
-            streetBetsRef.current = Array(9).fill(0);
+            applyCollectingChipSeats(Array(collectMask.length).fill(false));
+            // AUDIT-2 FIX 2026-08-20: this used to blind-wipe ALL bets. A wager
+            // placed during the 700ms sweep (fast first-to-act on the new
+            // street) was erased from the felt AND from streetBetsRef, so the
+            // NEXT sweep missed it and those chips just blinked away. Clear
+            // only the seats this sweep actually collected.
+            streetBetsRef.current = streetBetsRef.current.map((amt, i) =>
+              collectMask[i] ? 0 : amt
+            );
             setTableState((prev) => ({
               ...prev,
-              lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+              lastBetAmounts: prev.lastBetAmounts.map((amt, i) => (collectMask[i] ? 0 : amt)),
             }));
           }, 700 * getAnimationSpeed());
         }
@@ -5252,17 +5291,20 @@ export default function TablePage({
               finalMask[i] && !(amt > 0) ? finalRecorded[i] || 0 : amt
             ),
           }));
-          setCollectingChipSeats(finalMask);
+          applyCollectingChipSeats(finalMask);
           if (collectSeatsTimerRef.current) {
             window.clearTimeout(collectSeatsTimerRef.current);
           }
           collectSeatsTimerRef.current = window.setTimeout(() => {
             collectSeatsTimerRef.current = null;
-            setCollectingChipSeats(Array(finalMask.length).fill(false));
-            streetBetsRef.current = Array(9).fill(0);
+            applyCollectingChipSeats(Array(finalMask.length).fill(false));
+            // See the COMMUNITY_CARDS_DEALT sweep: clear only what we collected.
+            streetBetsRef.current = streetBetsRef.current.map((amt, i) =>
+              finalMask[i] ? 0 : amt
+            );
             setTableState((prev) => ({
               ...prev,
-              lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+              lastBetAmounts: prev.lastBetAmounts.map((amt, i) => (finalMask[i] ? 0 : amt)),
             }));
           }, 700 * getAnimationSpeed());
         }
@@ -5271,16 +5313,33 @@ export default function TablePage({
         // them to the muck during the last ~600ms of the winner display.
         {
           const st = tableStateRef.current;
-          const winners = winnerInfoRef.current?.playerIds || [];
+          // AUDIT-2 FIX 2026-08-20 (winner race): POT_WIN and HAND_COMPLETE can
+          // arrive in the SAME frame, and if HAND_COMPLETE is dispatched first
+          // winnerInfoRef still holds the PREVIOUS hand's winners — the actual
+          // winner would land in loserMask and their cards would fly to the
+          // muck. Only build the mask once winners for THIS hand are known;
+          // engineWinners (from the snapshot) is a second, independent source.
+          const winners = new Set<string>([
+            ...(winnerInfoRef.current?.playerIds || []),
+            ...(st.engineWinners || []).map((w) => w.userId),
+          ]);
           const loserMask = st.players.map(
-            (p) => !!(p && !p.isHero && p.showCards && !winners.includes(p.id))
+            (p) => !!(p && !p.isHero && p.showCards && !winners.has(p.id))
           );
-          if (loserMask.some(Boolean)) {
+          // If we have no winner information at all, a "loser" mask is
+          // meaningless — skip the muck rather than risk mucking the winner.
+          if (winners.size > 0 && loserMask.some(Boolean)) {
             if (muckTimerRef.current) clearTimeout(muckTimerRef.current);
-            muckTimerRef.current = setTimeout(() => {
-              muckTimerRef.current = null;
-              setMuckingSeats(loserMask);
-            }, 2400);
+            // Scaled like the cardFoldOut keyframe it triggers. The showdown
+            // result window is 2.6-6.9s server-side, so 2400ms leaves the muck
+            // fully visible before the 3s client reset.
+            muckTimerRef.current = setTimeout(
+              () => {
+                muckTimerRef.current = null;
+                setMuckingSeats(loserMask);
+              },
+              2400 * getAnimationSpeed()
+            );
           }
         }
         // Bible V8 §5.1 — winner display persists 2.5–3s before the table
@@ -6715,24 +6774,35 @@ export default function TablePage({
     }
   }, [tableState.boardStage, tableState.isHandInProgress]);
 
-  // Timer warning sound — tick when hero's time is running low
+  // Timer warning sound — tick when hero's time is running low.
+  //
+  // AUDIT-2 FIX 2026-08-20 (machine-gun ticking): this effect depended on
+  // `actionTimeRemaining` / `actionTimerProgress`, which the timer hook
+  // updates ~30x per second. Every one of those updates re-ran the effect:
+  // the cleanup called stopTimerWarning() and the body called
+  // startTimerWarning() again — and startTimerWarning plays a tick
+  // IMMEDIATELY. So instead of one tick per second the player got a tick
+  // roughly every 66ms (only the 50ms priority gate throttled it), each with
+  // a haptic. Worse, timer_warning outranks every action sound (rank 80), so
+  // acting inside the last 5 seconds frequently produced NO fold/check/call
+  // sound at all.
+  //
+  // Collapsing the trigger to a boolean means the effect runs exactly twice
+  // per turn: once when the warning window opens, once when it closes.
+  const isTimerWarningActive =
+    tableState.currentPlayerSeat === tableState.heroSeat &&
+    tableState.isHandInProgress &&
+    actionTimeRemaining <= 5 &&
+    actionTimeRemaining > 0 &&
+    isSoundEnabled &&
+    ambientSoundsAllowed;
   useEffect(() => {
-    const isHeroTurn =
-      tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
-    if (isHeroTurn && actionTimeRemaining <= 5 && actionTimeRemaining > 0 && isSoundEnabled) {
+    if (isTimerWarningActive) {
       soundService.startTimerWarning();
-    } else {
-      soundService.stopTimerWarning();
+      return () => soundService.stopTimerWarning();
     }
-    return () => soundService.stopTimerWarning();
-  }, [
-    actionTimeRemaining,
-    actionTimerProgress,
-    tableState.currentPlayerSeat,
-    tableState.heroSeat,
-    tableState.isHandInProgress,
-    isSoundEnabled,
-  ]);
+    soundService.stopTimerWarning();
+  }, [isTimerWarningActive]);
 
   return (
     <div
@@ -7633,15 +7703,23 @@ export default function TablePage({
                     v8Settings.card_squeeze &&
                     tableState.boardStage !== 'showdown'
                   }
+                  handNumber={tableState.handNumber ?? 0}
+                  playSounds={ambientSoundsAllowed}
                 />
 
                 {/* FIX 89: All-In Equity Overlay — shown per seat during all-in */}
                 {allInEquities.length > 0 &&
                   player &&
                   (() => {
-                    const eq = allInEquities.find(
-                      (e) => e.seat === seatNumber || e.userId === player.id
-                    );
+                    // AUDIT-2 FIX 2026-08-20: this was `seat === seatNumber ||
+                    // userId === player.id` — an OR across two identity keys
+                    // returns the FIRST entry matching EITHER, so any seat-
+                    // numbering disagreement silently showed another player's
+                    // equity on this seat. userId is authoritative; seat is
+                    // only a fallback for entries with no userId.
+                    const eq =
+                      allInEquities.find((e) => e.userId === player.id) ??
+                      allInEquities.find((e) => !e.userId && e.seat === seatNumber);
                     if (!eq) return null;
                     const isAhead = eq.equity >= 50;
                     /* ANIMATION AUDIT 2026-08-19: styling moved to
@@ -7656,12 +7734,19 @@ export default function TablePage({
                         className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}`}
                       >
                         {eq.equity}%
-                        {/* IMPROVEMENT PASS 2026-08-19: mini equity bar under
-                            the number — reads at a glance across the table. */}
-                        <span
-                          className="equity-overlay__bar"
-                          style={{ width: `${Math.max(2, Math.min(100, eq.equity))}%` }}
-                        />
+                        {/* Mini equity bar under the number.
+                            AUDIT-2 FIX 2026-08-20: the bar used to size itself
+                            against the BADGE, whose width follows its text —
+                            so "9%" and "100%" rendered nearly identical bars
+                            and the graphic encoded nothing. It now fills a
+                            fixed-width track, so bar lengths are directly
+                            comparable across seats. */}
+                        <span className="equity-overlay__track">
+                          <span
+                            className="equity-overlay__bar"
+                            style={{ width: `${Math.max(2, Math.min(100, eq.equity))}%` }}
+                          />
+                        </span>
                       </div>
                     );
                   })()}

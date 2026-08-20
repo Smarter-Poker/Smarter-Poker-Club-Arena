@@ -183,15 +183,19 @@ export function useTableTimer({
     };
   }, []); // Subscribe once for the hook's lifetime.
 
-  // Timer warning sound
-  useEffect(() => {
-    if (isUrgent && isSoundEnabled) {
-      soundService.startTimerWarning();
-    } else {
-      soundService.stopTimerWarning();
-    }
-    return () => soundService.stopTimerWarning();
-  }, [isUrgent, isSoundEnabled]);
+  // Timer warning sound.
+  //
+  // AUDIT-2 FIX 2026-08-20: REMOVED. Two independent effects were driving the
+  // same singleton warning interval — this one (on `isUrgent`) and TablePage's
+  // (on the hero's turn + <=5s). They fought each other: each one's cleanup
+  // called stopTimerWarning() on the other's interval, and startTimerWarning()
+  // plays a tick immediately, so the two together stuttered the countdown and
+  // could leave the loop running after the turn ended.
+  //
+  // TablePage is now the SOLE owner of the warning loop: it alone knows
+  // whether it is the hero's turn, whether this table is the active one in
+  // multi-table (#175), and the authoritative seconds remaining. This hook
+  // still exposes `isUrgent` for visual urgency styling.
 
   return {
     timeRemaining,

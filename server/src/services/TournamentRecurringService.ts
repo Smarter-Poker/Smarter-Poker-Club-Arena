@@ -15,6 +15,26 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { buyInFor } from '../config/buyIn.js';
+
+/**
+ * Derive the two buy-in columns from ONE whole-dollar total.
+ *
+ * Dan 2026-08-20: "buy ins should always be whole dollars. 20 10 50 5 etc not
+ * 19.8." Every insert below used to write `buy_in_amount: config.buyIn` and
+ * `buy_in_fee: config.rake` — two hand-authored numbers that the player then
+ * paid the SUM of, so the advertised price was 1.1x a round number and never
+ * round itself: 5.50, 11.00, 19.80, 22.00.
+ *
+ * `config.buyIn` is now read as the TOTAL. buyInFor snaps it to the price
+ * ladder and cuts the fee out of it, so the player pays exactly config.buyIn.
+ * `config.rake` is no longer read by anything — it was the second half of a
+ * pair that nothing kept in agreement.
+ */
+function buyInColumns(buyIn: number): { buy_in_amount: number; buy_in_fee: number } {
+  const { prize, fee } = buyInFor(buyIn);
+  return { buy_in_amount: prize, buy_in_fee: fee };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -1044,8 +1064,7 @@ export class TournamentRecurringService {
             game_type: dbGameType,
             variant: config.type === 'mtt' ? 'freezeout' : config.type,
             tournament_type: 'MTT',
-            buy_in_amount: config.buyIn,
-            buy_in_fee: config.rake,
+            ...buyInColumns(config.buyIn),
             guaranteed_prize: config.guarantee || 0,
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
@@ -1222,8 +1241,7 @@ export class TournamentRecurringService {
             game_type: dbGameType,
             variant: config.type === 'mtt' ? 'freezeout' : config.type,
             tournament_type: 'MTT',
-            buy_in_amount: config.buyIn,
-            buy_in_fee: config.rake,
+            ...buyInColumns(config.buyIn),
             guaranteed_prize: config.guarantee || 0,
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
@@ -1343,8 +1361,7 @@ export class TournamentRecurringService {
           game_type: dbGameType,
           variant: 'sng',
           tournament_type: 'SNG',
-          buy_in_amount: config.buyIn,
-          buy_in_fee: config.rake,
+          ...buyInColumns(config.buyIn),
           guaranteed_prize: 0,
           starting_chips: config.startingStack,
           max_players: config.maxPlayers,

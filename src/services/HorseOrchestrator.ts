@@ -31,6 +31,26 @@ import { tournamentService } from './TournamentService';
 import { QUERY_LIMITS } from '../lib/constants';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { buyInFor } from '../utils/buyIn';
+
+/**
+ * Derive the two buy-in columns from ONE whole-dollar total.
+ *
+ * Dan 2026-08-20: "buy ins should always be whole dollars. 20 10 50 5 etc not
+ * 19.8." These inserts used to write `buy_in_amount: config.buyIn` alongside
+ * `buy_in_fee: config.rake` — two hand-authored numbers whose SUM is what the
+ * player actually pays, so every game was priced at 1.1x a round number and so
+ * never round itself: 5.50, 11.00, 19.80, 22.00.
+ *
+ * `config.buyIn` is the TOTAL now; the fee is cut out of it rather than added
+ * on top. Mirrors server/src/services/TournamentRecurringService.ts, which
+ * generates the same games server-side. Spins are exempt and stay rake-free —
+ * their edge lives in the multiplier distribution (src/config/spinSpec.ts).
+ */
+function buyInColumns(buyIn: number): { buy_in_amount: number; buy_in_fee: number } {
+  const { prize, fee } = buyInFor(buyIn);
+  return { buy_in_amount: prize, buy_in_fee: fee };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -1420,8 +1440,7 @@ class HorseOrchestrator {
           name: config.name,
           game_type: dbGameType,
           variant: config.type === 'mtt' ? 'freezeout' : config.type, // freezeout/bounty/progressive_bounty/mystery_bounty
-          buy_in_amount: config.buyIn,
-          buy_in_fee: config.rake,
+          ...buyInColumns(config.buyIn),
           guaranteed_prize: config.guarantee || 0,
           starting_chips: config.startingStack,
           max_players: config.maxPlayers,
@@ -1530,8 +1549,7 @@ class HorseOrchestrator {
           name: config.name,
           game_type: dbGameType,
           variant: 'SNG',
-          buy_in_amount: config.buyIn,
-          buy_in_fee: config.rake,
+          ...buyInColumns(config.buyIn),
           guaranteed_prize: null,
           starting_chips: config.startingStack,
           max_players: config.maxPlayers,

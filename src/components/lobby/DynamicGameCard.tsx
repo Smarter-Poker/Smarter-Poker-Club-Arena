@@ -16,6 +16,7 @@ import './DynamicGameCard.css';
 import './NeonCard.css';
 import { reportError } from '../../utils/errorReporter';
 import { MEDIA_BASE } from '../../utils/mediaBase';
+import { formatBuyInShort } from '../../utils/buyIn';
 import { SPIN_TIERS } from '../../config/spinSpec';
 import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
 
@@ -86,10 +87,20 @@ const VARIANT_DISPLAY: Record<
   plo8: { label: 'PLO', sub: '8', artName: 'plo8', neon: 'blue' },
   pineapple: { label: 'PNPL', artName: 'pineapple', neon: 'purple' },
   short_deck: { label: '6+', sub: 'SD', artName: 'short-deck', neon: 'amber' },
+  // Dan 2026-08-20: `ofc_pineapple` is a live variant — 2 tables were running
+  // under it — and it was absent from this map, so both fell through the
+  // `|| VARIANT_DISPLAY.nlh` fallback on the line that reads it. They rendered
+  // NLH card art and the label "NLH": not a missing file, a CONFIDENTLY WRONG
+  // icon, which is the worse of the two failures because nothing looks amiss.
+  // Both spellings the codebase uses are mapped so neither can fall through.
+  ofc_pineapple: { label: 'OFC', sub: 'PNPL', artName: 'pineapple', neon: 'purple' },
+  ofc: { label: 'OFC', artName: 'pineapple', neon: 'purple' },
 };
 
 const TOURNEY_VARIANT_MAP: Record<string, string> = {
   NLH: 'nlh',
+  OFC: 'ofc',
+  OFC_PINEAPPLE: 'ofc_pineapple',
   PLO4: 'plo4',
   PLO5: 'plo5',
   PLO6: 'plo6',
@@ -110,6 +121,9 @@ const TOURNEY_VARIANT_MAP: Record<string, string> = {
 // already names game-card-icons/ as a directory that must go through this
 // helper; this file was the one place that did not.
 const ICON_BASE = `${MEDIA_BASE}game-card-icons/`;
+// Buy-in rendering goes through ONE helper so a lobby card can never disagree
+// with the details page about what a game costs. See src/utils/buyIn.ts.
+
 const NEON_HEX: Record<string, string> = {
   red: '#ff2d43',
   blue: '#22a7ff',
@@ -119,6 +133,33 @@ const NEON_HEX: Record<string, string> = {
   green: '#39d17a',
 };
 const art = (name: string) => `${ICON_BASE}${name}.png`;
+
+/**
+ * Broken-art handler (Dan 2026-08-20: "fix any and all broken icons").
+ *
+ * Every <img> here used to answer a 404 by HIDING itself — `visibility:hidden`
+ * on the emblem, `display:none` on the badges. That is why broken icons were
+ * so hard to find: a missing file did not look broken, it looked like a card
+ * that simply had no art, and the emblem box still held its layout space as a
+ * blank rectangle. Nothing was logged either, so a typo in an art name could
+ * ship and sit in the lobby indefinitely.
+ *
+ * Now: swap to a known-good placeholder ONCE (the card is still readable and
+ * visibly generic), report it so the bad name reaches Sentry instead of dying
+ * in the DOM, and only hide if the placeholder itself fails — which would mean
+ * the whole icon directory is unreachable, not that one name is wrong.
+ */
+const FALLBACK_ART = 'freezeout';
+function handleArtError(e: React.SyntheticEvent<HTMLImageElement>, name: string) {
+  const img = e.currentTarget;
+  if (img.dataset.fallbackApplied === '1') {
+    img.style.visibility = 'hidden';
+    return;
+  }
+  img.dataset.fallbackApplied = '1';
+  reportError(new Error(`lobby art missing: ${name}.png`), 'DynamicGameCard.art_404');
+  img.src = art(FALLBACK_ART);
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 function parseSettings(settings: TableSettings | string | undefined): TableSettings {
@@ -192,15 +233,31 @@ interface NeonCardProps {
   emblem: string;
   bbj?: boolean;
   maxLabel?: string;
+  /**
+   * Dan 2026-08-20: "if a game is live and running with players playing... it
+   * should have some kind of pulse or movement or something that shows its
+   * live."
+   *
+   * A lobby's job is to send a player to a game that is ALREADY happening — an
+   * empty table and a nine-handed one looked identical here apart from a
+   * player count you had to stop and read. This drives a breathing neon rim
+   * and a LIVE status light, so the difference is visible before any number is.
+   *
+   * "Live" is not the same question for the two card families, so each caller
+   * answers it for itself: a cash table is live when someone is SEATED (its
+   * status column stays 'running' whether or not a single player is there),
+   * and a tournament is live when its status is RUNNING.
+   */
+  live?: boolean;
   children?: React.ReactNode;
   onDelete?: () => void;
 }
-function NeonCard({ to, neon, emblem, bbj, maxLabel, children, onDelete }: NeonCardProps) {
+function NeonCard({ to, neon, emblem, bbj, maxLabel, live, children, onDelete }: NeonCardProps) {
   return (
     <div className="ngc-wrap">
       <Link
         to={to}
-        className="ngc"
+        className={`ngc${live ? ' ngc--live' : ''}`}
         style={{ ['--neon' as string]: NEON_HEX[neon] || NEON_HEX.gold } as React.CSSProperties}
       >
         <div className="ngc-corner">
@@ -213,7 +270,7 @@ function NeonCard({ to, neon, emblem, bbj, maxLabel, children, onDelete }: NeonC
               src={art(emblem)}
               alt=""
               loading="lazy"
-              onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')}
+              onError={(e) => handleArtError(e, emblem)}
             />
           </div>
           <div className="ngc-info">{children}</div>
@@ -246,7 +303,7 @@ const Badges = ({ names }: { names: string[] }) =>
           alt={n}
           title={n}
           loading="lazy"
-          onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
+          onError={(e) => handleArtError(e, n)}
         />
       ))}
     </div>
@@ -287,6 +344,9 @@ export function CashGameCard({ table, isAdmin, onDelete }: CashCardProps) {
       neon={v.neon}
       emblem={v.artName}
       bbj
+      // A cash table's status stays 'running' whether or not anyone is sitting
+      // at it, so seated players — not status — is what makes it live.
+      live={(table.current_players || 0) > 0}
       onDelete={isAdmin && onDelete ? () => onDelete(table.id) : undefined}
     >
       <div className="ngc-head">
@@ -344,15 +404,18 @@ export function TournamentCard({ tournament }: TournamentCardProps) {
     (tournament as unknown as { is_xmtt?: boolean }).is_xmtt || tournament.max_players >= 40;
   const emblem = isXMTT ? 'xmtt' : 'mtt';
   const label = `${isXMTT ? 'XMTT' : 'MTT'} · ${v.label}${v.sub || ''}`;
-  const isFree = tournament.buy_in_amount === 0;
   const isLive = tournament.status === 'running' || tournament.status === 'RUNNING';
-  const buyin = isFree ? 'FREE' : `${tournament.buy_in_amount + tournament.buy_in_fee}`;
+  // `${a + b}` printed the raw float — 19.8 for an 18 + 1.80 game, and
+  // 5.5 for 5 + 0.50. formatBuyInShort prints the whole-dollar TOTAL, which
+  // after the buy-in fix is what the player actually pays.
+  const buyin = formatBuyInShort(tournament.buy_in_amount, tournament.buy_in_fee);
 
   return (
     <NeonCard
       to={`/tournaments/${tournament.id}`}
       neon="gold"
       emblem={emblem}
+      live={isLive}
       maxLabel={seatLabel(tournament.max_players)}
     >
       <div className="ngc-head">
@@ -391,6 +454,7 @@ export function SNGCard({ tournament }: TournamentCardProps) {
       to={`/tournaments/${tournament.id}`}
       neon="gold"
       emblem="sng"
+      live={isLive}
       maxLabel={seatLabel(tournament.max_players)}
     >
       <div className="ngc-head">
@@ -398,7 +462,9 @@ export function SNGCard({ tournament }: TournamentCardProps) {
           Sit &amp; Go · {v.label}
           {v.sub || ''}
         </div>
-        <div className="ngc-val">Buy In {tournament.buy_in_amount + tournament.buy_in_fee}</div>
+        <div className="ngc-val">
+          Buy In {formatBuyInShort(tournament.buy_in_amount, tournament.buy_in_fee)}
+        </div>
       </div>
       <div className="ngc-row">
         <span className="ngc-players">
@@ -445,6 +511,7 @@ export function SpinCard({ tournament }: TournamentCardProps) {
       to={`/tournaments/${tournament.id}`}
       neon="green"
       emblem="spin"
+      live={tournament.status === 'RUNNING' || tournament.status === 'running'}
       maxLabel={`${tournament.max_players || 3} MAX`}
     >
       <div className="ngc-head">
@@ -452,7 +519,9 @@ export function SpinCard({ tournament }: TournamentCardProps) {
           Spin-It · {v.label}
           {v.sub || ''}
         </div>
-        <div className="ngc-val">Buy In {tournament.buy_in_amount + tournament.buy_in_fee}</div>
+        <div className="ngc-val">
+          Buy In {formatBuyInShort(tournament.buy_in_amount, tournament.buy_in_fee)}
+        </div>
       </div>
       <div className="ngc-row">
         <span className="ngc-win">

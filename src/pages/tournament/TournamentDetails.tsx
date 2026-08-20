@@ -25,6 +25,7 @@ import { HandForHandBanner } from '../../components/tournament/HandForHandBanner
 import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay';
 import { reportError } from '../../utils/errorReporter';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
+import { formatBuyIn } from '../../utils/buyIn';
 
 type TabId =
   | 'detail'
@@ -949,27 +950,56 @@ export default function TournamentDetails({
             )}
 
             {/* Quick Stats */}
+            {/* Dan 2026-08-20: aligned to the reference lobby card.
+                "Status" was dropped — it restated the countdown directly above
+                it ("Running since…"), spending a stat cell on a fact already on
+                screen. Blinds Up and Late Registration take its place: both are
+                questions a player at the table actually asks, and neither was
+                answerable from this page. Current Level also used to cram the
+                level AND the time remaining into one cell ("Lv 3 · 4:12"); the
+                clock half is now its own Blinds Up stat, which is what it was. */}
             <div className="quick-stats">
               <div className="stat">
-                <span className="stat-label">Status</span>
-                <span className="stat-value">{tournament.status}</span>
-              </div>
-              <div className="stat">
-                <span className="stat-label">Current Level</span>
+                <span className="stat-label">Blinds Up</span>
                 <span className="stat-value">
                   {(() => {
-                    // Reference clockTick so this re-renders every second.
-                    void clockTick;
-                    if (tournament.status !== 'RUNNING') {
-                      return tournament.current_level || '-';
-                    }
+                    void clockTick; // re-render every second
+                    if (tournament.status !== 'RUNNING') return '—';
                     try {
                       const ls = tournamentService.getCurrentLevelState(tournament);
                       const secs = Math.max(0, Math.floor(ls.timeRemainingSeconds));
                       const mm = Math.floor(secs / 60);
                       const ss = (secs % 60).toString().padStart(2, '0');
-                      const label = ls.currentLevel?.isBreak ? 'Break' : `Lv ${ls.levelIndex + 1}`;
-                      return `${label} · ${mm}:${ss}`;
+                      return `${mm}:${ss}`;
+                    } catch {
+                      return '—';
+                    }
+                  })()}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">Late Registration</span>
+                <span className="stat-value">
+                  {(() => {
+                    const levels = Number((tournament as any).late_reg_levels) || 0;
+                    const mins = Number((tournament as any).late_reg_mins) || 0;
+                    if (levels > 0) return `level ${levels}`;
+                    if (mins > 0) return `${mins} min`;
+                    return 'Closed';
+                  })()}
+                </span>
+              </div>
+              <div className="stat">
+                <span className="stat-label">Current Level</span>
+                <span className="stat-value">
+                  {(() => {
+                    void clockTick;
+                    if (tournament.status !== 'RUNNING') {
+                      return tournament.current_level || 0;
+                    }
+                    try {
+                      const ls = tournamentService.getCurrentLevelState(tournament);
+                      return ls.currentLevel?.isBreak ? 'Break' : ls.levelIndex + 1;
                     } catch {
                       return tournament.current_level || 1;
                     }
@@ -977,7 +1007,7 @@ export default function TournamentDetails({
                 </span>
               </div>
               <div className="stat">
-                <span className="stat-label">Remaining</span>
+                <span className="stat-label">Remaining Players</span>
                 <span className="stat-value">
                   {
                     entries.filter((e) => e.status === 'playing' || e.status === 'registered')
@@ -1025,7 +1055,11 @@ export default function TournamentDetails({
               <div className="info-row">
                 <span className="info-label">Buy-in:</span>
                 <span className="info-value">
-                  {tournament.buy_in_amount}+{tournament.buy_in_fee || 0} chips
+                  {/* Was `{amount}+{fee} chips` — "18+1.8 chips", which leads
+                      with the half of the price that is NOT what the player
+                      pays and never states the total at all. formatBuyIn puts
+                      the total first and the split in parentheses: "20 (18 + 2)". */}
+                  {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)}
                   {(tournament as any).is_rebuy && <span className="badge-reentry">Rebuy</span>}
                 </span>
               </div>
@@ -1712,18 +1746,16 @@ export default function TournamentDetails({
                 ✕
               </button>
               <h2>Sign Up</h2>
-              <div className="signup-row">
-                <span className="signup-label">Buy-in:</span>
-                <span className="signup-value">{tournament.buy_in_amount} chips</span>
-              </div>
-              <div className="signup-row">
-                <span className="signup-label">Rake (fee):</span>
-                <span className="signup-value">{tournament.buy_in_fee || 0} chips</span>
-              </div>
+              {/* One line, not three.
+                  This asked the player to read "Buy-in 18", "Rake 1.8" and
+                  "Total 19.8" and work out for themselves which number leaves
+                  their wallet — on the confirmation step, the one screen where
+                  the charge must be unambiguous. It is a single row now, in the
+                  same notation the rest of the app uses: "20 (18 + 2)". */}
               <div className="signup-row total">
-                <span className="signup-label">Total:</span>
+                <span className="signup-label">Entry Fee:</span>
                 <span className="signup-value">
-                  {tournament.buy_in_amount + (tournament.buy_in_fee || 0)} chips
+                  {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)}
                 </span>
               </div>
               {(tournament as any).is_bounty && (

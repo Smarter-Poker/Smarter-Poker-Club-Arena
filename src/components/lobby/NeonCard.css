@@ -64,16 +64,46 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Dan 2026-08-20: cap the BOX, not just the image.
+     .ngc-content is min-height:132px and the image carried its own
+     `max-height: 120px` — but the source art is portrait (nlh is 291x400,
+     sng 269x400, xmtt 264x400), so on a wide grid track `max-width: 100%`
+     was never the binding constraint and the 120px height ran past the
+     card's 22px padding box. That is the emblem "cut off at the top" in the
+     lobby. A bounded box with the image bound to the box cannot overflow,
+     whatever the source aspect ratio turns out to be. */
+  max-height: 108px;
+  align-self: center;
+  /* Belt and braces. .ngc-emblem is a shrinkable flex item with min-width:0,
+     so `max-width:100%` on the child resolves against a box that may already
+     have been squeezed — the art then painted straight through the card's
+     rounded border. Verified in a headless-Chrome render of this exact CSS:
+     the PINEAPPLE emblem clipped to "INEAPPLE" at the card's left edge. */
+  overflow: hidden;
 }
 .ngc-emblem img {
-  /* Dan 2026-08-19: the emblem box shrinks to as little as 56px (see the clamp
-     above) but the image was pinned to max-width:100px with no object-fit, so
-     on narrow grid tracks the trophy overflowed its box and got clipped by the
-     card padding — the "cut off and distorted" icons. Bound the image to the
-     BOX rather than a fixed pixel width, and preserve its aspect ratio. */
-  max-height: 120px;
-  max-width: 100%;
+  /* WIDTH-FIRST, and the height cap must be an EXPLICIT LENGTH.
+     Two failures were measured in headless Chrome getting here:
+
+       1. `max-height: 108px` driving the size with `width: auto` following —
+          a portrait source (pineapple 346x400) then computed a width of
+          108 * 346/400 = 93px inside an ~80px box and painted through the
+          card's rounded border.
+       2. `width: 100%` + `max-height: 100%` — the fix for (1), and still
+          wrong. A percentage max-height resolves against the parent's height,
+          but .ngc-emblem is a centred flex item whose height comes FROM its
+          content. That circular dependency makes browsers compute the
+          max-height as `none`, so it constrained nothing: measured 92x126
+          inside a 108px box, 18px clipped off the art.
+
+     An explicit length has nothing to resolve against. width:100% fixes the
+     horizontal axis, max-height caps the vertical, and object-fit letterboxes
+     the art inside the resulting box at its true aspect ratio.
+     KEEP THIS A LENGTH — a percentage here silently does nothing. */
+  width: 100%;
   height: auto;
+  max-width: 100%;
+  max-height: 108px;
   object-fit: contain;
   filter: drop-shadow(0 7px 11px rgba(0, 0, 0, 0.6));
 }
@@ -170,6 +200,110 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIVE GAME — a card with players actually at it (Dan 2026-08-20)
+   ───────────────────────────────────────────────────────────────────────────
+   "if a game is live and running with players playing... it should have some
+   kind of pulse or movement or something that shows its live."
+
+   An empty table and a nine-handed one were the same card apart from a player
+   count you had to stop and read. Two signals now, both cheap:
+
+     1. the neon rim BREATHES  — peripheral, readable while scanning
+     2. a LIVE status light    — explicit, readable when you stop
+
+   Deliberately restrained. Every card in a busy club lobby can be live at
+   once, so anything louder than this becomes a wall of flashing and stops
+   meaning anything. Slow (2.4s), low-amplitude, and it animates box-shadow +
+   opacity only — both compositor-friendly, so a lobby of 40 live cards on a
+   phone does not repaint the grid on every frame.
+═══════════════════════════════════════════════════════════════════════════ */
+.ngc--live {
+  animation: ncLiveBreathe 2.4s ease-in-out infinite;
+}
+
+@keyframes ncLiveBreathe {
+  0%,
+  100% {
+    box-shadow:
+      0 20px 42px rgba(0, 0, 0, 0.62),
+      0 0 34px -10px var(--neon);
+  }
+  50% {
+    box-shadow:
+      0 20px 42px rgba(0, 0, 0, 0.62),
+      0 0 46px -4px var(--neon);
+  }
+}
+
+/* The explicit signal rides on the SEAT COUNT rather than a third corner pill.
+   A pill in .ngc-corner was tried first and rendered wrong: .ngc-head reserves
+   a fixed right-hand gutter for exactly two pills (max-players + BBJ), so a
+   third pushed the group left and overlapped the card's own label — verified
+   in a headless render, where it read "SIT & GO · NLH●LIVE" on one line.
+
+   The seat count is the better host anyway: "9/9 players" IS the live fact, it
+   exists on every card type including cash tables (which have no countdown
+   slot to colour), and it needs no new layout at all. */
+.ngc--live .ngc-players {
+  color: #7cffb0;
+  font-weight: 800;
+}
+
+.ngc--live .ngc-players::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.9);
+  animation: ncLiveDot 1.6s ease-in-out infinite;
+}
+
+@keyframes ncLiveDot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* The tournament countdown slot swaps to the word LIVE. Pulse the dot, not the
+   word — pulsing text in a list reads as a siren rather than a status. */
+.ngc-cd--live::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: ncLiveDot 1.6s ease-in-out infinite;
+}
+
+/* Motion is the whole mechanism here, so reduced-motion needs a REPLACEMENT
+   signal, not just `animation: none` — otherwise these users lose the live
+   cue entirely. They keep the brighter rim and the status light, held still. */
+@media (prefers-reduced-motion: reduce) {
+  .ngc--live {
+    animation: none;
+    box-shadow:
+      0 20px 42px rgba(0, 0, 0, 0.62),
+      0 0 46px -4px var(--neon);
+  }
+
+  .ngc--live .ngc-players::before,
+  .ngc-cd--live::before {
+    animation: none;
+  }
+}
+
 .ngc-seats {
   height: 6px;
   border-radius: 3px;
@@ -199,8 +333,20 @@
      held, distorting each icon. width/height alone do not stop that; the
      explicit `flex: 0 0 auto` does. */
   flex: 0 0 auto;
-  width: 46px;
-  height: 46px;
+
+  /* Dan 2026-08-20 — NORMALISE ON HEIGHT, NOT INTO A SQUARE.
+     This was a 46x46 box with object-fit:contain, which only looks right if
+     the art is square. It is not, and not even close: straddle.png is 400x54
+     (7.4:1) and rendered as a 46px-wide, SIX-pixel-tall sliver, while
+     sng.png at 269x400 rendered ~31px wide. Side by side in one badge row
+     the icons had no common visual weight and several read as broken.
+
+     A mixed-aspect icon set is normalised by giving every icon the SAME
+     HEIGHT and letting width follow. max-width is the guard for the extreme
+     banner ratios so one wide badge cannot eat the whole row. */
+  height: 34px;
+  width: auto;
+  max-width: 84px;
   object-fit: contain;
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.65));
 }

@@ -491,6 +491,14 @@ export class RakebackSettlerService {
       // migration keeps setting tables.union_id on existing tables, which
       // pulls historical rake_records into scope after a day was finalized).
       await this.runUnionRakeRollupCatchup();
+      // 2026-08-20: persist this week's ECO (union win tax / loss rebate) so an
+      // invoice issued today can be reproduced tomorrow after live data moves
+      // on. Idempotent per (union, club, week) and a complete no-op while ECO
+      // is disabled, which it is by default. Deliberately NOT inside the
+      // settlement transaction: it reads the reconciliation report (~7s over a
+      // week) and that must never run while FOR UPDATE locks are held on
+      // union_wallets and clubs.chip_treasury.
+      await this.runUnionEcoRecord();
     } finally {
       this.isSettling = false;
     }
@@ -717,6 +725,47 @@ export class RakebackSettlerService {
       reportError(
         new Error((e as { message?: string })?.message || String(e)),
         'RakebackSettler.treasury_selftest_threw'
+      );
+    }
+  }
+
+  /**
+   * Persist the current week's ECO adjustment (2026-08-20).
+   *
+   * ECO is an INVOICE ADJUSTMENT with no automatic chip distribution; this
+   * only writes the computed figure to union_eco_ledger so the weekly invoice
+   * stays reproducible. No-ops entirely unless a union has eco_enabled set.
+   */
+  private async runUnionEcoRecord(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_union_eco_record_current_week', {});
+      if (error) {
+        reportError(
+          new Error(`fn_union_eco_record_current_week failed: ${error.message}`),
+          'RakebackSettler.eco_record_rpc'
+        );
+        return;
+      }
+      const unions = ((data as { unions?: unknown[] } | null)?.unions ?? []) as Array<{
+        success?: boolean;
+        clubs?: number;
+        error?: string;
+        union_id?: string;
+      }>;
+      for (const u of unions) {
+        if (u?.success === false) {
+          reportError(
+            new Error(`ECO record failed for ${u.union_id}: ${u.error}`),
+            'RakebackSettler.eco_record_failed'
+          );
+        } else if ((u?.clubs ?? 0) > 0) {
+          console.log(`[RakebackSettler] ECO recorded for ${u.clubs} club(s)`);
+        }
+      }
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'RakebackSettler.eco_record_threw'
       );
     }
   }

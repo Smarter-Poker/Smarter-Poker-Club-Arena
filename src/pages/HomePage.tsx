@@ -181,19 +181,8 @@ function HomePageInner() {
 
   // Per-club stats for featured card rendering
   const [clubStats, setClubStats] = useState<Record<string, ClubStats>>({});
-  // Refresh counter — incremented on each fetchUserData call to force stats re-fetch
-  const [statsRefreshKey, setStatsRefreshKey] = useState(0);
   // Guard: prevent welcome toast from firing before first server fetch completes
   const hasFetchedOnceRef = useRef(false);
-  // Track last successful fetch timestamp for stale cache indicator
-  const [lastFetchTs, setLastFetchTs] = useState<number | null>(() => {
-    try {
-      const ts = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE_TS);
-      return ts ? Number(ts) : null;
-    } catch {
-      return null;
-    }
-  });
 
   // Enhancement #2: Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -336,24 +325,9 @@ function HomePageInner() {
           });
           if (getIsMounted && !getIsMounted()) return;
           setUserClubs(lawFilteredClubs);
-          // Enhancement #9: Update SWR cache
-          // Fix 4/5: Only increment statsRefreshKey when club IDs actually changed
-          // to avoid N×3 RPC cascade on every fetch
+          // Enhancement #9: Update SWR cache (stats re-fetch keys off
+          // displayClubIdsKey — no manual refresh counter needed)
           try {
-            const prevCache = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
-            const prevIds = prevCache
-              ? JSON.parse(prevCache)
-                  .map((c: any) => c.id)
-                  .sort()
-                  .join(',')
-              : '';
-            const newIds = lawFilteredClubs
-              .map((c: UserClub) => c.id)
-              .sort()
-              .join(',');
-            if (prevIds !== newIds) {
-              setStatsRefreshKey((k) => k + 1);
-            }
             localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify(lawFilteredClubs));
             localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE_TS, String(Date.now()));
           } catch {
@@ -400,7 +374,6 @@ function HomePageInner() {
         if (!getIsMounted || getIsMounted()) {
           setIsLoading(false);
           hasFetchedOnceRef.current = true;
-          setLastFetchTs(Date.now());
         }
       }
     },
@@ -1051,7 +1024,6 @@ function HomePageInner() {
       isMounted = false;
       clearInterval(allStatsPoll);
     };
-    // Fix 5: Removed statsRefreshKey from deps — was causing N×3 RPC cascade
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
   }, [displayClubs.length, displayClubIdsKey]);
 

@@ -8166,3 +8166,29 @@ any future MCP-driven backfill: a timeout is not proof the statement did not run
     fn_rakeback_recompute_periods (exact equalShareCents + tier parity, paid
     weeks immutable) and backfilled every pending period: owed-to-players went
     from ~nothing to 119,039.91 across 1,927 rows, none still zero.
+
+## 2026-08-19 — Dirty-tree rescue + post-rework audit (Cowork session 2)
+
+Finished all stranded local commits/dirty files, then line-by-line audited
+today's carousel rework + quick-links work.
+
+- Dirty-tree reconcile: local commits 2d979c6cf/c652300c9 and 8 dirty files
+  were all either already on origin (byte-identical), superseded by the
+  newer carousel rework (logo contain vs the deliberate 1:1 cover, instant
+  centering vs centering removal, ConnectionIndicator stub), or broken
+  (lobbyTiles -v8 art landed properly later via c6398e263). Shipping the
+  stale HomePage.module.css would have deleted the 187-line cashier
+  quick-link CSS block — extracted-only shipping avoided that. Local tree
+  reset clean to origin/main; scratch junk (fix_css.py, fix_panel_css.py,
+  .unlink_test, .agent/_claude_tmp) removed.
+- b8023ad16 fixes: dead shark-stats pipeline removed from HomePage (234
+  lines: 20s poll + realtime channel + SWR cache with no consumer since the
+  featured card was removed); ClubQuickLinkTile triggerRef never attached
+  after the switch-button redesign (Escape focus return was broken);
+  ProfileService.getStats returned null for brand-new players instead of
+  zero defaults; CarouselSection unused hook imports + stale comments;
+  stale ClubQuickLinkTile tests rewritten for the long-press/right-click
+  design; tests/stubs/sentry-node.ts + vitest alias unblocks client suites
+  importing server services. Suite: 2104/2104 green.
+- This commit: removed dead statsRefreshKey/lastFetchTs state (set every
+  fetch, read nowhere — one wasted re-render per fetch on the hottest page).

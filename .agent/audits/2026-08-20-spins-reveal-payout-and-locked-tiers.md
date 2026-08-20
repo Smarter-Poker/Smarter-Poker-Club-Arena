@@ -124,9 +124,21 @@ and 21:41:57.9 → 21:42:05.1), and settlement books the pool at start. Patching
 exact class of damage this work exists to prevent. Racing a 3-second window
 against production money to test a guard is a worse trade than the guard.
 
-A `started_at=is.null` conditional PATCH makes losing the race a no-op and is
-the safe way to force one; the script is at `/tmp/force_spin2.sh` on Dan's Mac
-if someone wants to run it. The passive check:
+A `started_at=is.null` conditional PATCH makes losing the race a no-op, and is
+necessary — but it is **not sufficient**, which I learned the cheap way.
+
+That predicate also matches **4,349 historical CANCELLED spins**: they never
+started, so they never got a `started_at`. My first script would have rewritten
+the multiplier on all of them in a single PATCH. It never fired — verified
+afterwards, the 10x/25x/100x row counts are still exactly 142 / 60 / 5 / 2 / 1
+with zero 80/20 structures, so nothing was touched — but that was luck.
+
+**Bound a PATCH by an id you selected, not by a predicate you hope is narrow.**
+`/tmp/force_spin_10x.sh` on Dan's Mac does it properly: SELECT the newest spin
+created in the last 20 seconds with `started_at IS NULL`, then PATCH
+`id=eq.<that id>` while keeping `started_at=is.null` as the race guard.
+
+The passive check:
 
 ```sql
 SELECT t.spin_multiplier, t.prize_pool,
@@ -185,11 +197,32 @@ data. An under-seeded test club would show it.
 
 ---
 
-## W4 — the sweeper is scheduled
+## W4 — the sweeper is scheduled, and has run
 
 `pages/api/cron/spin-sweep.js` in the World Hub, registered in
 `scripts/openclaw-cron-dispatcher.py` at `*/15`, deployed with
-`bash scripts/deploy-openclaw.sh` (91 jobs, 0 errors, NRestarts 0).
+`bash scripts/deploy-openclaw.sh`.
+
+Watched one full fire cycle, per the handoff's DONE WHEN:
+
+```
+21:44:46  Registered: /api/cron/spin-sweep  [{'minute': '*/15'}]
+21:45:00  Firing -> vercel 404 [0.6s]     <- Vercel had not deployed the route yet
+21:49:29  production /api/health serves df396be4
+22:00:02  Firing -> vercel 200 [7.7s]
+```
+
+and the row it wrote:
+
+```
+probe_heartbeats  spin-sweep  ok  6827ms  {"alerts": [], "failed": 0, "settled": 0}  22:00:09Z
+```
+
+The 404 at 21:45 is the honest sequence, not a defect: Open Claw was deployed
+before Vercel finished. It is recorded because a future reader seeing one 404
+in the journal should know it was expected.
+
+The deploy itself: 91 jobs registered, 0 errors, systemd NRestarts 0.
 
 Per `Smarter-Poker-World-Hub/CLAUDE.md` §11 this went to Open Claw, never
 `vercel.json`. §11.5 CHECK 6b caps `pages/api/cron/` at 45 files; it held 27,

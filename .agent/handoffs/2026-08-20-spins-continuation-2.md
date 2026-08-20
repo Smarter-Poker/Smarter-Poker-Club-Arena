@@ -69,8 +69,10 @@ log and polled.
   **See "still open" below — the end-to-end run is NOT done.**
 - **W3** — locked tiers reach the wheel, persisted at draw time on a new
   `tournaments.spin_locked_tiers` column. The wheel names the cheapest unlock.
-- **W4** — the sweeper runs every 15 minutes on Open Claw. A thin or short pool
-  returns 500 on purpose; the reasoning is in the file header.
+- **W4** — the sweeper runs every 15 minutes on Open Claw. Watched a full fire
+  cycle: `22:00:02 → vercel 200 [7.7s]`, heartbeat row `ok / 0 alerts / 0
+settled`. A thin or short pool returns 500 on purpose; the reasoning is in
+  the file header.
 - **W7 (part)** — `FlashTransition`, `SpinItWheel`, `spinIt.ts` and
   `MysteryBountyReveal` deleted. 15 keyframes out of the global namespace.
 
@@ -89,9 +91,24 @@ patching `spin_multiplier` after settlement desyncs `prize_pool` from the
 ledger. Racing that window against production money to test a guard is a worse
 trade than the guard.
 
-The safe way, and the script is already on Dan's Mac at `/tmp/force_spin2.sh`:
-a conditional PATCH filtered on `started_at=is.null`, so **losing the race is a
-no-op** rather than damage. Run it, let one 10x and one 25x complete, then:
+The safe way needs **two** bounds, and I only had one at first — worth reading
+before you write your own version.
+
+My first attempt was a PostgREST PATCH filtered on
+`variant=eq.spin&started_at=is.null&spin_multiplier=lt.10`. The
+`started_at=is.null` half is right and necessary: settlement books the pool at
+start, so losing the race must be a no-op rather than damage. But that filter
+**also matches 4,349 historical CANCELLED spins**, which never started and so
+never got a `started_at`. A single successful PATCH would have rewritten the
+multiplier on every one of them. It never fired — verified afterwards, the
+10x/25x/100x counts are still exactly 142/60/5/2/1 with zero 80/20 structures —
+but that was luck, not design.
+
+**A PATCH must be bounded by an id you selected, not by a predicate you hope is
+narrow.** `/tmp/force_spin_10x.sh` on Dan's Mac does it properly: SELECT the
+newest spin created in the last 20 seconds with `started_at IS NULL`, then
+PATCH `id=eq.<that id>` while KEEPING `started_at=is.null` as a guard. Run it
+as `bash /tmp/force_spin_10x.sh 10`, then again with `25`. Then:
 
 ```sql
 SELECT t.spin_multiplier, t.prize_pool,

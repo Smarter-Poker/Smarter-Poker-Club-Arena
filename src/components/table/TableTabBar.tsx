@@ -38,6 +38,12 @@ export interface TableTabBarProps {
   onAddTable: () => void;
   jackpotAmount?: number;
   maxTables?: number;
+  /**
+   * Supabase realtime link is down or reconnecting. Multi-tabling players
+   * cannot otherwise tell that their tables have stopped receiving updates —
+   * every tab looks identical to a healthy one.
+   */
+  realtimeDown?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -51,6 +57,7 @@ export function TableTabBar({
   onAddTable,
   jackpotAmount,
   maxTables = 4,
+  realtimeDown = false,
 }: TableTabBarProps) {
   const emptySlots = maxTables - tabs.length;
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
@@ -126,6 +133,22 @@ export function TableTabBar({
 
   return (
     <div className="table-tab-bar">
+      {/* Realtime link warning — one honest global chip. WS_* events describe
+          the Supabase realtime connection, not any single table, so this is
+          deliberately not rendered per-tab. */}
+      {realtimeDown && (
+        <div
+          className="table-tab-bar__offline"
+          role="status"
+          title="Reconnecting to the live feed — your seats and chips are safe on the server."
+        >
+          <span className="table-tab-bar__offline-dot" aria-hidden="true">
+            ●
+          </span>
+          <span className="table-tab-bar__offline-label">Reconnecting…</span>
+        </div>
+      )}
+
       {/* Table Tabs */}
       <div className="table-tab-bar__tabs">
         {tabs.map((tab, i) => {

@@ -451,6 +451,18 @@ const kbBlock = SRC.slice(
   SRC.indexOf('Swipe Gesture Handling'));
 check('keyboard shortcuts: inert while hidden (no Tab/1-4 hijack on other pages)',
   kbBlock.includes('if (hidden) return;'));
+// Dan 2026-08-20: the WS_* handlers used to churn a new tables array on every
+// realtime blip to drive a "disconnection indicator" that did not exist. Assert
+// both halves of the fix: no array churn, and a real chip that is actually fed.
+check('realtime: WS handlers no longer churn the tables array',
+  !/WS_DISCONNECTED', \(\) => \{[\s\S]{0,120}setTables/.test(SRC) &&
+  SRC.includes("useMasterBusSubscription('WS_DISCONNECTED', () => setRealtimeDown(true))"));
+check('realtime: reconnect clears the warning (WS_CONNECTED subscribed)',
+  SRC.includes("useMasterBusSubscription('WS_CONNECTED', () => setRealtimeDown(false))"));
+check('realtime: the warning is actually rendered (fed to TableTabBar)',
+  SRC.includes('realtimeDown={realtimeDown}') &&
+  TABBAR.includes('table-tab-bar__offline') && TABBAR.includes('realtimeDown'));
+
 check('hidden tables muted: no ambient sound follows the player off-route',
   SRC.includes('isActive={idx === activeIndex && !hidden}') &&
   SRC.includes('isMultiTable={tables.length > 1 || hidden}'));

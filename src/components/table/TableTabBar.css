@@ -398,3 +398,47 @@
     height: 30px;
   }
 }
+
+/* ── Realtime link warning ───────────────────────────────────────────────────
+   Dan 2026-08-20: a multi-tabling player had no way to tell that the live feed
+   had dropped — every tab kept rendering its last known state and looked
+   perfectly healthy. One honest chip, because the underlying WS_* events
+   describe the Supabase realtime link and not any single table. */
+.table-tab-bar__offline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: rgba(255, 176, 32, 0.14);
+  border: 1px solid rgba(255, 176, 32, 0.42);
+  color: #ffc45a;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.table-tab-bar__offline-dot {
+  font-size: 0.6rem;
+  line-height: 1;
+  animation: table-tab-bar-offline-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes table-tab-bar-offline-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-tab-bar__offline-dot {
+    animation: none;
+  }
+}

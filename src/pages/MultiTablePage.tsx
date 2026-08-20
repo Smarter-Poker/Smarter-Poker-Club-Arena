@@ -485,14 +485,24 @@ export default function MultiTablePage() {
     { debounce: 300 }
   );
 
-  useMasterBusSubscription('WS_DISCONNECTED', () => {
-    // Force re-render to show disconnection indicator
-    setTables((prev) => [...prev]);
-  });
-
-  useMasterBusSubscription('WS_RECONNECTING', () => {
-    setTables((prev) => [...prev]);
-  });
+  /**
+   * Dan 2026-08-20 (audit): these two handlers used to do
+   * `setTables((prev) => [...prev])` with the comment "force re-render to show
+   * disconnection indicator". There was no such indicator — TabInfo carries no
+   * connection field and TableTabBar rendered none — so the only effect was a
+   * brand-new tables array on every realtime blip, re-rendering up to four
+   * mounted poker tables for no visual change and defeating the
+   * same-reference optimisation in updateTableInfo (the P1-2 fix above).
+   *
+   * The indicator now actually exists. WS_* describes the SUPABASE REALTIME
+   * link (see supabaseConnectionWatchdog — the payload is a url, not a
+   * tableId), so it is surfaced honestly as ONE global chip rather than faked
+   * per-tab.
+   */
+  const [realtimeDown, setRealtimeDown] = useState(false);
+  useMasterBusSubscription('WS_DISCONNECTED', () => setRealtimeDown(true));
+  useMasterBusSubscription('WS_RECONNECTING', () => setRealtimeDown(true));
+  useMasterBusSubscription('WS_CONNECTED', () => setRealtimeDown(false));
 
   // ─── Derived state ───────────────────────────────────────────────────
   const activeTableId = tables[activeIndex]?.id || '';
@@ -947,6 +957,7 @@ export default function MultiTablePage() {
               onTabSelect={handleTabSelect}
               onAddTable={handleAddTable}
               maxTables={MAX_TABLES}
+              realtimeDown={realtimeDown}
             />
             {tables.length > 1 && (
               <button

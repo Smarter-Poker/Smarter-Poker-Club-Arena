@@ -316,7 +316,12 @@ export default function HandReplay({
       <header className="replay-header">
         <h1>HAND DETAIL</h1>
         <div className="header-actions">
-          <button className="action-btn star">☆</button>
+          {/* STAR REMOVED 2026-08-20. It had no onClick, and there is nothing
+              behind it: no favourites table, no is_starred column, no service
+              method anywhere in the repo. HandReplay IS rendered (the table's
+              replay modal and HandHistoryPage), so players saw a favourite
+              affordance on their own hands and pressing it did nothing. A
+              favourites feature needs somewhere to store them first. */}
           <button className="action-btn play" onClick={handlePlay}>
             {isPlaying ? '▮' : '▶'}
           </button>

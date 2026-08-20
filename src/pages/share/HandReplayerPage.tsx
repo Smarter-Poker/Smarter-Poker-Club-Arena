@@ -51,6 +51,9 @@ export default function HandReplayerPage() {
   const [hand, setHand] = useState<HandData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [shareLabel, setShareLabel] = useState<'Share' | 'Link copied' | 'Copy failed'>(
+    'Share'
+  );
   const [currentStep, setCurrentStep] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showAnalysis, setShowAnalysis] = useState(true);
@@ -378,9 +381,29 @@ export default function HandReplayerPage() {
         {/* Share button */}
         <button
           className="share-btn"
-          onClick={() => navigator.share?.({ url: shareUrl, title: 'Check out this hand!' })}
+          onClick={() => {
+            // 2026-08-20: this was `navigator.share?.(...)`. The optional call
+            // swallows itself on every browser without Web Share — desktop
+            // Chrome and Firefox included — so the button did nothing at all
+            // there, with no clipboard fallback and no message.
+            void (async () => {
+              try {
+                if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+                  await navigator.share({ url: shareUrl, title: 'Check out this hand!' });
+                  return;
+                }
+                await navigator.clipboard.writeText(shareUrl);
+                setShareLabel('Link copied');
+                setTimeout(() => setShareLabel('Share'), 2000);
+              } catch (err) {
+                if (err instanceof Error && err.name === 'AbortError') return;
+                setShareLabel('Copy failed');
+                setTimeout(() => setShareLabel('Share'), 2000);
+              }
+            })();
+          }}
         >
-          Share
+          {shareLabel}
         </button>
 
         {/* Club Arena branding */}

@@ -192,6 +192,7 @@ import SessionTimer from '../components/table/SessionTimer';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
+import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
   submitAction,
   respondToRIT,
@@ -264,6 +265,18 @@ interface TableState {
   sidePots: SidePot[];
   communityCards: Card[];
   boardStage: BoardStage;
+  /**
+   * The engine's OWN stage string, unnormalised.
+   *
+   * `boardStage` is deliberately massaged for the board display: it is clamped
+   * so it can never run backwards, and it is derived UPWARD from the
+   * community-card count. That is right for drawing the felt, but it erases any
+   * stage the board has no concept of. `pineapple_discard` is exactly that case
+   * — it happens with three cards already out, so the normaliser rewrote it to
+   * 'flop' and the discard phase was invisible to the client. Keep the raw value
+   * for anything that needs to know what the engine is actually doing.
+   */
+  engineStage: string;
   dealerSeat: number;
   currentPlayerSeat: number;
   heroSeat: number;
@@ -732,6 +745,7 @@ export default function TablePage({
     sidePots: [],
     communityCards: [],
     boardStage: 'preflop',
+    engineStage: 'preflop',
     dealerSeat: 0,
     currentPlayerSeat: 0,
     heroSeat: 0,
@@ -820,6 +834,7 @@ export default function TablePage({
         pot: mapped.pot,
         communityCards: nextCards,
         boardStage: nextStage,
+        engineStage: mapped.boardStage,
         dealerSeat: mapped.dealerSeat,
         currentPlayerSeat: mapped.currentPlayerSeat,
         // AUDIT FIX 2026-07-19: the authoritative WS merge dropped handNumber, so
@@ -856,6 +871,59 @@ export default function TablePage({
       };
     });
   }, [engineSnapshot, USE_ENGINE_WS, userId, tableState.maxPlayers]);
+
+  /**
+   * Crazy Pineapple discard.
+   *
+   * The engine has had the whole path since FIX 120 — a `pineapple_discard`
+   * stage, PINEAPPLE_DISCARD_REQUIRED, `performDiscard`, a discard timer and
+   * `GameServerAPI.submitDiscard`. The client had none of it: `submitDiscard`
+   * had zero call sites anywhere in src/, so on all 103 pineapple tables the
+   * timer expired every hand and the engine's fallback threw away each human's
+   * LAST card regardless of the flop. Horses meanwhile ran
+   * `HorseLogic.decideDiscard` and picked the best card — the bots played the
+   * variant correctly and the people never got to play it at all.
+   */
+  const [pineappleDeadline, setPineappleDeadline] = useState<number | null>(null);
+  const heroPineappleCards = useMemo(() => {
+    if (tableState.engineStage !== 'pineapple_discard') return null;
+    const hero = tableState.players[tableState.heroSeat - 1];
+    if (!hero || hero.status === 'folded') return null;
+    const cards = (hero.holeCards ?? []).filter(Boolean);
+    return cards.length === 3 ? (cards as NonNullable<(typeof cards)[number]>[]) : null;
+  }, [tableState.engineStage, tableState.players, tableState.heroSeat]);
+
+  // The engine starts its auto-discard timer the moment the stage opens, so the
+  // countdown is anchored to when we first see the stage rather than to a
+  // separate broadcast.
+  // `actionTimeSeconds` is declared further down this component, so naming it in
+  // the dep array would be a temporal-dead-zone error rather than a lint gripe.
+  // Same ref pattern the all-in hotkey uses.
+  const actionTimeSecondsRef = useRef(15);
+  useEffect(() => {
+    if (heroPineappleCards) {
+      setPineappleDeadline((prev) => prev ?? Date.now() + actionTimeSecondsRef.current * 1000);
+    } else {
+      setPineappleDeadline(null);
+    }
+  }, [heroPineappleCards]);
+
+  const handlePineappleDiscard = useCallback(
+    async (cardIndex: number): Promise<boolean> => {
+      if (!tableId) return false;
+      const res = await GameServerAPI.submitDiscard(tableId, cardIndex);
+      if (!res?.success) {
+        reportError(
+          new Error(res?.error || 'submitDiscard rejected by engine'),
+          'TablePage.Pineapple_discard_refused'
+        );
+        return false;
+      }
+      soundService.playFold();
+      return true;
+    },
+    [tableId]
+  );
 
   /**
    * Keyboard entry into the ActionPanel's raise UI.
@@ -1359,6 +1427,9 @@ export default function TablePage({
   const actualClubIdRef = useRef<string>('');
   const [actualClubIdLoaded, setActualClubIdLoaded] = useState(false); // Tracks when club_id is available
   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
+  useEffect(() => {
+    actionTimeSecondsRef.current = actionTimeSeconds;
+  }, [actionTimeSeconds]);
 
   // Chat — extracted to useTableChat hook
   // VISIBLE FIX 2026-08-15: throws are broadcast over chat, but useTableChat
@@ -5257,6 +5328,7 @@ export default function TablePage({
             lastBetAmounts: prev.lastBetAmounts.map(() => 0),
             communityCards: [],
             boardStage: 'preflop',
+            engineStage: 'preflop',
           };
         });
         // Re-fetch the hero's cards for the new hand (recovers a dropped insert).
@@ -5711,6 +5783,7 @@ export default function TablePage({
             ...prev,
             communityCards: [],
             boardStage: 'preflop',
+            engineStage: 'preflop',
             pot: 0,
             sidePots: [],
           }));
@@ -8532,6 +8605,28 @@ export default function TablePage({
               <span className="menu-item-label">Diamonds</span>
               <span className="menu-item-arrow">›</span>
             </button>
+            {/* 2026-08-20: TableReactions was mounted and gated on
+                v8Settings.emoji_enabled, but setIsReactionPickerOpen(true) was
+                never called anywhere — the picker itself is `{isOpen && ...}`.
+                So a club owner could switch reactions ON in table settings and
+                players still had no way to send one, while INCOMING reactions
+                kept animating: it looked like everyone else had a button you
+                did not. */}
+            {v8Settings.emoji_enabled && (
+              <button
+                className="menu-item"
+                disabled={tableState.heroSeat <= 0}
+                onClick={() => {
+                  if (tableState.heroSeat <= 0) return;
+                  setIsReactionPickerOpen(true);
+                  setIsSideMenuOpen(false);
+                }}
+              >
+                <span className="menu-item-icon">☺</span>
+                <span className="menu-item-label">Reactions</span>
+                <span className="menu-item-arrow">›</span>
+              </button>
+            )}
             <button
               className="menu-item"
               onClick={() => {
@@ -8792,6 +8887,14 @@ export default function TablePage({
           Confetti, Leave Notice, Cashier, Buy-In, Rabbit Hunt,
           Leaderboard, Session Summary, Tournament Screens — all modals/overlays.
           Extracted to TableModalsLayer to keep TablePage under control. */}
+      <PineappleDiscard
+        isOpen={!!heroPineappleCards}
+        cards={heroPineappleCards ?? []}
+        onDiscard={handlePineappleDiscard}
+        deadline={pineappleDeadline}
+        deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
+      />
+
       <TableModalsLayer
         tableId={tableId}
         userId={userId}

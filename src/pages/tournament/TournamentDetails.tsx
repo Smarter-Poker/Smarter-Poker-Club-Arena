@@ -3,7 +3,7 @@
  * premium-style tournament registration (PLAY CHIPS ONLY)
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { tournamentService } from '../../services/TournamentService';
 import { WalletService } from '../../services/WalletService';
@@ -29,7 +29,6 @@ type TabId =
   | 'detail'
   | 'blinds'
   | 'chips'
-  | 'payouts'
   | 'entries'
   | 'ranking'
   | 'unions'
@@ -671,14 +670,73 @@ export default function TournamentDetails({
       .replace(',', '');
   };
 
+  /**
+   * Share this tournament. 2026-08-20: both the ID chip's "⊞" and the footer
+   * "Share" rendered with NO onClick at all — visible, enabled, and inert on a
+   * live routed page. Web Share where available, clipboard everywhere else;
+   * `navigator.share?.()` on its own silently does nothing on desktop Chrome and
+   * Firefox, which is most of the people looking at a tournament page.
+   */
+  const shareTournament = useCallback(async () => {
+    const url = `${window.location.origin}/tournaments/${tournament?.id ?? ''}`;
+    const title = tournament?.name || 'Tournament';
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({ title, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      toast?.success?.('Tournament link copied');
+    } catch (err) {
+      // AbortError just means the player dismissed the share sheet.
+      if (err instanceof Error && err.name === 'AbortError') return;
+      toast?.error?.('Could not share this tournament');
+    }
+  }, [tournament?.id, tournament?.name, toast]);
+
+  // 2026-08-20: 'blinds' and 'chips' were declared in TabId and imported as
+  // components (BlindLevelProgress, LiveChipCounts) but never given a tab or a
+  // render block, so a registered player could not see the blind schedule or the
+  // live chip counts at all — core information for an MTT. ('payouts' was in the
+  // union too, but the Rewards tab below already renders the payout structure,
+  // so it was a duplicate rather than a gap; it is dropped from the union.)
   const tabs: { id: TabId; label: string }[] = [
     { id: 'detail', label: 'Detail' },
+    { id: 'blinds', label: 'Blinds' },
+    { id: 'chips', label: 'Chips' },
     { id: 'entries', label: 'Entries' },
     { id: 'ranking', label: 'Ranking' },
     { id: 'unions', label: 'Unions' },
     { id: 'tables', label: 'Tables' },
     { id: 'rewards', label: 'Rewards' },
   ];
+
+  /**
+   * The stored structure uses `durationMinutes` (or `duration_minutes` on older
+   * rows); BlindLevelProgress wants `duration`. Passing the row straight through
+   * renders every level as 0 minutes.
+   */
+  const blindLevels = useMemo(() => {
+    const raw =
+      typeof tournament?.blind_structure === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(tournament.blind_structure as string);
+            } catch {
+              return [];
+            }
+          })()
+        : tournament?.blind_structure || [];
+    if (!Array.isArray(raw)) return [];
+    return raw.map((b: Record<string, unknown>, i: number) => ({
+      level: Number(b.level ?? i + 1),
+      smallBlind: Number(b.smallBlind ?? b.small_blind ?? 0),
+      bigBlind: Number(b.bigBlind ?? b.big_blind ?? 0),
+      ante: Number(b.ante ?? 0),
+      duration: Number(b.duration ?? b.durationMinutes ?? b.duration_minutes ?? 0),
+      isBreak: Boolean(b.isBreak ?? b.is_break ?? false),
+    }));
+  }, [tournament?.blind_structure]);
 
   if (isLoading) {
     return (
@@ -725,7 +783,9 @@ export default function TournamentDetails({
         <div className="tournament-title">
           <h2>{tournament.name}</h2>
           <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>
-          <button className="qr-btn">⊞</button>
+          <button className="qr-btn" onClick={() => void shareTournament()} aria-label="Share this tournament">
+            ⊞
+          </button>
         </div>
 
         {/* Tournament Description */}
@@ -1322,6 +1382,40 @@ export default function TournamentDetails({
           </div>
         )}
 
+        {activeTab === 'blinds' &&
+          (blindLevels.length > 0 ? (
+            <BlindLevelProgress
+              levels={blindLevels}
+              currentLevel={Number((tournament as any)?.current_level) || 1}
+              levelStartTime={
+                (tournament as any)?.level_start_time || tournament.started_at || tournament.start_time
+              }
+              isPaused={tournament.status === 'PAUSED'}
+            />
+          ) : (
+            <div className="empty-state">
+              <p>No blind structure published for this tournament yet.</p>
+            </div>
+          ))}
+
+        {activeTab === 'chips' &&
+          (tournament.status === 'RUNNING' || tournament.status === 'COMPLETED' ? (
+            <LiveChipCounts
+              tournamentId={tournament.id}
+              currentBigBlind={
+                blindLevels.find(
+                  (l: { level: number; bigBlind: number }) => l.level === (Number((tournament as any)?.current_level) || 1)
+                )?.bigBlind ||
+                blindLevels[0]?.bigBlind ||
+                0
+              }
+            />
+          ) : (
+            <div className="empty-state">
+              <p>Chip counts appear once the tournament is under way.</p>
+            </div>
+          ))}
+
         {activeTab === 'rewards' &&
           (() => {
             const entryCount = entries.length || tournament.current_players || 0;
@@ -1525,7 +1619,9 @@ export default function TournamentDetails({
 
         {/* Footer Actions */}
         <div className="details-footer">
-          <button className="btn btn-share">Share</button>
+          <button className="btn btn-share" onClick={() => void shareTournament()}>
+            Share
+          </button>
           {(() => {
             const myEntry = entries.find((e) => e.user_id === user?.id);
 

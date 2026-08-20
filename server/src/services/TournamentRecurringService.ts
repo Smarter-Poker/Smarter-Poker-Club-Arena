@@ -114,6 +114,17 @@ interface HourlyTournamentBlock {
 const SHARK_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const JAQK_CLUB_ID = 'a0000000-0000-0000-0000-000000000001';
 
+// Dan 2026-08-19: "MAKE SURE THAT THE GAMES ARE CREATED BY MIDWAY UNION FOR ALL
+// CASH GAMES, MTT, SIT N GO'S AND SPINS."
+//
+// Cash tables already spawn from the union (HorseFleetManager FIX 201), but the
+// recurring MTT / SNG / Spin schedulers below were still round-robining
+// ownership between SHARK and JAQK and never setting union_id at all. A DB
+// trigger back-filled union_id afterwards, so they LOOKED union-owned while
+// their club_id said otherwise — which is why one MTT was still sitting under
+// Club JAQK. Every scheduled game now names the union explicitly, at creation.
+const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
+
 const BLIND_STRUCTURES = {
   TURBO: [
     { level: 1, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 4 },
@@ -718,14 +729,11 @@ export class TournamentRecurringService {
   private xmttInterval: ReturnType<typeof setInterval> | null = null;
   private isRunning = false;
 
-  private clubIds = [SHARK_CLUB_ID, JAQK_CLUB_ID];
-  private clubIndex = 0;
-
-  private getNextClubId(): string {
-    const id = this.clubIds[this.clubIndex % this.clubIds.length];
-    this.clubIndex++;
-    return id;
-  }
+  // RETIRED 2026-08-19. Scheduled tournaments are created BY the union, not
+  // alternated between its member clubs. SHARK_CLUB_ID / JAQK_CLUB_ID remain
+  // referenced elsewhere for rake-routing fallbacks only.
+  private readonly ownerClubId = MIDWAY_UNION_ID;
+  private readonly ownerUnionId = MIDWAY_UNION_ID;
 
   start(): void {
     if (this.isRunning) {
@@ -1146,7 +1154,8 @@ export class TournamentRecurringService {
         const { data, error } = await supabase
           .from('tournaments')
           .insert({
-            club_id: this.getNextClubId(),
+            club_id: this.ownerClubId,
+            union_id: this.ownerUnionId,
             name: config.name,
             game_type: dbGameType,
             variant: config.type === 'mtt' ? 'freezeout' : config.type,
@@ -1266,7 +1275,8 @@ export class TournamentRecurringService {
       const { data: sng, error } = await supabase
         .from('tournaments')
         .insert({
-          club_id: this.getNextClubId(),
+          club_id: this.ownerClubId,
+          union_id: this.ownerUnionId,
           name: config.name,
           game_type: dbGameType,
           variant: 'sng',
@@ -1356,7 +1366,8 @@ export class TournamentRecurringService {
       const { data: spin, error } = await supabase
         .from('tournaments')
         .insert({
-          club_id: this.getNextClubId(),
+          club_id: this.ownerClubId,
+          union_id: this.ownerUnionId,
           name: `${config.name} (${multiplier}x)`,
           game_type: dbGameType,
           variant: 'spin',

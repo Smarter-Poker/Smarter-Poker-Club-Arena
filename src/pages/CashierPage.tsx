@@ -405,11 +405,26 @@ export default function CashierPage() {
 
   useVisibilityRefresh(() => loadPendingCashouts());
 
+  // Guards every async loader below against a club switch landing mid-flight.
+  // Without it a slow response for club A could resolve AFTER club B is on
+  // screen and overwrite B's role, union status, club name and recipient list.
+  // That is not cosmetic: userRole/isUnionOwner drive canSend/canMint/
+  // canDistribute and the tab set, so a stale 'owner' hands someone a Mint tab
+  // in a club where they are a member; and clubName is written verbatim into
+  // the ChipFlowService audit trail, so a send could be recorded against the
+  // wrong club's name. DynamicWallet already uses this exact pattern.
+  const contextVersionRef = useRef(0);
+  useEffect(() => {
+    contextVersionRef.current += 1;
+  }, [clubId]);
+
   const loadUserContext = async () => {
     if (!clubId || !user?.id) return;
+    const myVersion = contextVersionRef.current;
+    const stale = () => contextVersionRef.current !== myVersion;
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      if (!isMounted.current) return;
+      if (!isMounted.current || stale()) return;
 
       // PERF: Parallelize role + club data queries (was 4 sequential, now 2 parallel)
       const [memberResult, clubResult] = await Promise.all([
@@ -437,7 +452,7 @@ export default function CashierPage() {
           { maxRetries: 2, isMountedRef: isMounted }
         ),
       ]);
-      if (!isMounted.current) return;
+      if (!isMounted.current || stale()) return;
 
       const role = memberResult?.data?.role || 'member';
       setUserRole(role);
@@ -458,7 +473,7 @@ export default function CashierPage() {
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMounted }
         );
-        if (!isMounted.current) return;
+        if (!isMounted.current || stale()) return;
         setIsUnionOwner(unionData?.owner_id === user.id);
       } else {
         setIsInUnion(false);
@@ -482,6 +497,8 @@ export default function CashierPage() {
 
   const loadRecipients = async (forceRefresh = false) => {
     if (!user?.id || !clubId) return;
+    const myVersion = contextVersionRef.current;
+    const stale = () => contextVersionRef.current !== myVersion;
 
     // Check cache — skip fetch if fresh data exists (60s TTL)
     if (
@@ -536,7 +553,7 @@ export default function CashierPage() {
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMounted }
         );
-        if (!isMounted.current) return;
+        if (!isMounted.current || stale()) return;
 
         if (agentRecord?.id) {
           query = query.eq('agent_id', agentRecord.id);
@@ -563,7 +580,7 @@ export default function CashierPage() {
       if (needNames.length > 0) {
         const chunkSize = 200;
         for (let i = 0; i < needNames.length; i += chunkSize) {
-          if (!isMounted.current) return;
+          if (!isMounted.current || stale()) return;
           const chunk = needNames.slice(i, i + chunkSize);
           const { data: profiles } = await retryFetch(
             () =>
@@ -588,7 +605,7 @@ export default function CashierPage() {
         .map((m) => m.user_id);
       const agentMap: Record<string, { commission_rate: number; is_prepaid: boolean }> = {};
       if (agentUserIds.length > 0) {
-        if (!isMounted.current) return;
+        if (!isMounted.current || stale()) return;
         const { data: agentRecords } = await retryFetch(
           () =>
             supabase

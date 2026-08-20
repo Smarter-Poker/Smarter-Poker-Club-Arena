@@ -98,11 +98,31 @@ class SupabaseConnectionWatchdog {
       });
       clearTimeout(timeout);
 
-      if (response.ok || response.status === 200 || response.status === 404) {
-        this.markConnected();
-      } else {
+      /* ANY HTTP response proves the network path and the service are alive,
+         which is the only thing this watchdog measures. It is a CONNECTIVITY
+         check, not an authorization one.
+
+         This used to accept 200 and 404 only. `HEAD /rest/v1/` answers 401 to
+         every caller — verified against production 2026-08-20 with the legacy
+         anon JWT, with the sb_publishable_ key, and with an Authorization
+         header alongside either. PostgREST's root simply does not authorize.
+
+         So the check could never pass, on any deploy, ever. Five failures at
+         5s/10s/20s put every client into markDisconnected() within ~45s of
+         load: WS_DISCONNECTED on the master bus, the "realtime down" chip lit
+         on the multi-table page, ConnectionIndicator showing "Reconnecting…"
+         — all on a perfectly healthy connection. And because markConnected()
+         was unreachable, the realtime re-subscribe and the offline-queue
+         replay it guards never ran, so a REAL drop could not recover through
+         the component built to recover from it.
+
+         5xx is the one class of status that means the service itself is
+         failing; everything below it means the server answered us. */
+      if (response.status >= 500) {
         this.markFailure();
         this.scheduleRetry();
+      } else {
+        this.markConnected();
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {

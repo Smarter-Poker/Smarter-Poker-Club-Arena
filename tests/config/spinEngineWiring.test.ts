@@ -57,8 +57,15 @@ describe('a Spin is not priced like an MTT', () => {
 
 describe('one multiplier table, not four', () => {
   it('both server files import the canonical spec', () => {
-    expect(recurring).toMatch(/from '\.\.\/config\/spinSpec'/);
-    expect(engine).toMatch(/from '\.\.\/config\/spinSpec'/);
+    /* The `.js` is not optional and not a typo in the source. server/ is
+       `"type": "module"` and every relative import in these two files carries
+       the extension (8 of 8), because Node's ESM resolver will not resolve a
+       bare specifier at runtime.
+       This regex omitted it, so the assertion failed against correct code —
+       and since the client vitest suite ran in no CI job until 2026-08-20,
+       it failed unnoticed on main. */
+    expect(recurring).toMatch(/from '\.\.\/config\/spinSpec\.js'/);
+    expect(engine).toMatch(/from '\.\.\/config\/spinSpec\.js'/);
   });
 
   it("the engine's two hardcoded fallback tables are gone", () => {

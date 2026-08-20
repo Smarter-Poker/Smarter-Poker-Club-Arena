@@ -200,14 +200,27 @@ const PAYOUT_STRUCTURES = {
   ],
 };
 
-const SPIN_MULTIPLIERS = [
-  { multiplier: 2, weight: 75 },
-  { multiplier: 3, weight: 15 },
-  { multiplier: 5, weight: 7 },
-  { multiplier: 10, weight: 2.5 },
-  { multiplier: 25, weight: 0.4 },
-  { multiplier: 100, weight: 0.1 },
-];
+import {
+  SPIN_TIERS,
+  SPIN_SEATS as SPEC_SPIN_SEATS,
+  spinTier,
+  spinRakeRate,
+  spinBlindsForLevel,
+} from '../config/spinSpec';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SPIN MULTIPLIERS — Dan's spec, 2026-08-20.
+//
+// This local table used to be one of THREE that disagreed (EV 3.00 designed,
+// 2.75 here, 2.24 in the engine fallback) and this one is what actually ran.
+// The single source of truth is now src/config/spinSpec.ts, mirrored to
+// server/src/config/. Kept as a derived view so nothing downstream breaks.
+// ═══════════════════════════════════════════════════════════════════════════
+const SPIN_MULTIPLIERS = SPIN_TIERS.map((t) => ({
+  multiplier: t.multiplier,
+  weight: t.freq,
+}));
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HOURLY TOURNAMENT SCHEDULE (24/7 COVERAGE)
@@ -1385,7 +1398,59 @@ export class TournamentRecurringService {
         );
       }
       const startTime = new Date(Date.now() + 60 * 1000);
-      const multiplier = this.rollSpinMultiplier(config.spinMultipliers);
+
+      // THE DRAW. Routed through fn_spin_draw_multiplier so that a high
+      // multiplier is only ever SELECTED when the Reserve Pool can actually
+      // pay it. Excluding an unfundable tier from the draw — rather than
+      // drawing it and refusing afterwards — is what makes an unpayable
+      // jackpot structurally impossible.
+      //
+      // Falls back to the local weighted draw if the RPC is unreachable, so a
+      // database hiccup cannot stop Spins from running. The fallback can only
+      // pick from ALWAYS-AVAILABLE tiers (reserveThresholdX === 0), so it can
+      // never hand out a jackpot the pool cannot cover.
+      let multiplier: number;
+      try {
+        const { data: draw, error: drawErr } = await supabase.rpc('fn_spin_draw_multiplier', {
+          p_club_id: this.ownerClubId,
+          p_buy_in: config.buyIn,
+          p_tiers: SPIN_TIERS.map((t) => ({
+            multiplier: t.multiplier,
+            freq: t.freq,
+            reserveThresholdX: t.reserveThresholdX,
+          })),
+        });
+        if (drawErr || !draw?.ok) throw new Error(drawErr?.message || draw?.reason || 'draw_failed');
+        multiplier = Number(draw.multiplier);
+        if (!(multiplier > 0)) throw new Error('draw returned no multiplier');
+      } catch (drawErr: any) {
+        const safeTiers = SPIN_TIERS.filter((t) => t.reserveThresholdX <= 0).map((t) => ({
+          multiplier: t.multiplier,
+          weight: t.freq,
+        }));
+        multiplier = this.rollSpinMultiplier(safeTiers);
+        reportError(
+          new Error(
+            `[TournamentRecurring] Spin draw RPC unavailable (${drawErr?.message}) — fell back to ungated tiers, capped at ${safeTiers[safeTiers.length - 1].multiplier}x`
+          ),
+          'TournamentRecurring.spin_draw_fallback'
+        );
+      }
+
+      // Structure scales with the multiplier: 300 chips and 1-minute levels at
+      // 2x, 500 chips and 5-minute levels at 500x. A 2x is over in minutes; a
+      // 500x deserves a real tournament.
+      const tier = spinTier(multiplier);
+      const spinStack = tier?.startingStack ?? config.startingStack;
+      const spinLevelMins = tier?.levelMinutes ?? 3;
+      const spinBlinds = Array.from({ length: 12 }, (_, i) => {
+        const b = spinBlindsForLevel(i + 1);
+        return { level: i + 1, smallBlind: b.small, bigBlind: b.big, ante: 0, duration: spinLevelMins * 60 };
+      });
+      const spinPayouts = (tier?.payouts ?? [1]).map((pct, i) => ({
+        place: i + 1,
+        percentage: Math.round(pct * 10000) / 100,
+      }));
 
       const gameTypeMap: Record<string, string> = {
         nlh: 'NLH',
@@ -1404,18 +1469,27 @@ export class TournamentRecurringService {
           variant: 'spin',
           tournament_type: 'SPIN',
           buy_in_amount: config.buyIn,
-          buy_in_fee: config.rake,
+          // A SPIN IS NOT PRICED LIKE AN MTT. Dan, 2026-08-20: "THEY ARE
+          // STRAIGHT JUST 10 BUY IN... NO ADDITIONAL RAKE IS ADDED." The rake
+          // is engineered into the multiplier distribution instead — the
+          // frequency table expects 2.7638, and (3 - 2.7638) / 3 = 7.87%,
+          // which IS the advertised 8%. Charging a fee on top as well would
+          // make the true edge 14.7%. See src/config/spinSpec.ts.
+          buy_in_fee: 0,
           guaranteed_prize: 0, // Will be calculated after registrations
           spin_multiplier: multiplier,
-          starting_chips: config.startingStack,
+          starting_chips: spinStack,
           // Forced, not read from the config — a Spin is 3-handed by
           // definition. See SPIN_SEATS.
           max_players: SPIN_SEATS,
           min_players: SPIN_SEATS,
           current_players: 0,
           status: 'REGISTERING',
-          blind_structure: config.blindStructure,
-          payout_structure: config.payoutStructure || [],
+          blind_structure: spinBlinds,
+          // Paid places scale with the multiplier: winner-take-all below 10x,
+          // 80/20 at 10x, 80/12/8 at 25x and up. A 100x where second place
+          // gets nothing is a worse story than one where all three cash.
+          payout_structure: spinPayouts,
           start_time: startTime.toISOString(),
           late_reg_levels: 0,
           late_reg_mins: 0,

@@ -13,6 +13,12 @@ import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
 import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
 import { TableBalancer } from '../engine/TableBalancer.js';
+import {
+  SPIN_TIERS,
+  SPIN_SEATS as SPEC_SPIN_SEATS,
+  spinTier,
+  spinRakeRate,
+} from '../config/spinSpec';
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
@@ -445,88 +451,86 @@ export abstract class TournamentManagerBase {
         return;
       }
 
-      // Spin & Go: use multiplier from creation (already rolled by TournamentRecurringService)
-      // Only re-roll if somehow missing (safety fallback)
+      // ═══════════════════════════════════════════════════════════════
+      // SPIN & GO — settle the money through the Reserve Pool
+      // ═══════════════════════════════════════════════════════════════
+      // This block used to carry TWO hardcoded multiplier tables (EV 2.2415
+      // and 2.3288) which disagreed with the two other tables elsewhere in the
+      // codebase, and it OVERWROTE prize_pool with buy_in x multiplier — so
+      // whenever the multiplier was under 3.0 (~93% of games) the difference
+      // between what players contributed and what the pool held simply stopped
+      // existing. No debit, no credit, no row. Measured across 2,091 completed
+      // spins: ~1,160 in no ledger at all.
+      //
+      // The tables are gone. The multiplier now comes from the gated draw at
+      // creation, and every movement is booked by fn_spin_settle_game:
+      //   collected  = seats x buy_in      (no fee on top — a Spin is not 10+1)
+      //   house_rake = rake_rate x collected, FIXED, to rake_records
+      //   reserve_in = the remainder, into the pool
+      //   prize_pool = buy_in x multiplier, drawn FROM the pool
       if (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') {
         let spinMultiplier = tournament.spin_multiplier || 0;
 
         if (!spinMultiplier || spinMultiplier <= 0) {
-          // Safety fallback — roll now if creation didn't set one
-          const SPIN_STANDARD = [
-            { multiplier: 2, weight: 925000 }, // 92.50% → EV 1.8500
-            { multiplier: 3, weight: 50000 }, //  5.00% → EV 0.1500
-            { multiplier: 5, weight: 18000 }, //  1.80% → EV 0.0900
-            { multiplier: 10, weight: 5000 }, //  0.50% → EV 0.0500
-            { multiplier: 25, weight: 1500 }, //  0.15% → EV 0.0375
-            { multiplier: 100, weight: 400 }, //  0.04% → EV 0.0400
-            { multiplier: 240, weight: 100 }, //  0.01% → EV 0.0240
-          ];
-
-          const SPIN_HYPER = [
-            { multiplier: 2, weight: 910000 }, // 91.00% → EV 1.8200
-            { multiplier: 3, weight: 55000 }, //  5.50% → EV 0.1650
-            { multiplier: 5, weight: 22000 }, //  2.20% → EV 0.1100
-            { multiplier: 10, weight: 8000 }, //  0.80% → EV 0.0800
-            { multiplier: 25, weight: 3500 }, //  0.35% → EV 0.0875
-            { multiplier: 100, weight: 400 }, //  0.04% → EV 0.0400
-            { multiplier: 240, weight: 100 }, //  0.01% → EV 0.0240
-          ];
-
-          const SPIN_MULTIPLIERS = tournament.spin_type === 'hyper' ? SPIN_HYPER : SPIN_STANDARD;
-          // Dan 2026-07-28 (engine audit A8): crypto-grade draw, matching
-          // TournamentRecurringService.rollSpinMultiplier. Was Math.random(), on
-          // a code path that sets a real prize multiplier. `r < weight` on a
-          // descending remainder also stops a zero-weight tier from winning on
-          // an exact boundary, which `roll -= w; if (roll <= 0)` allowed.
-          const totalWeight = SPIN_MULTIPLIERS.reduce((s, m) => s + m.weight, 0);
-          let roll = nodeCrypto.randomInt(totalWeight);
-          spinMultiplier = SPIN_MULTIPLIERS[SPIN_MULTIPLIERS.length - 1].multiplier;
-          for (const tier of SPIN_MULTIPLIERS) {
-            if (roll < tier.weight) {
-              spinMultiplier = tier.multiplier;
-              break;
-            }
-            roll -= tier.weight;
+          // Creation always draws. Reaching here means the row was written by
+          // something older; draw now, through the SAME gate, so a missing
+          // value can never become an ungated jackpot.
+          try {
+            const { data: draw } = await supabase.rpc('fn_spin_draw_multiplier', {
+              p_club_id: tournament.club_id,
+              p_buy_in: tournament.buy_in_amount || 0,
+              p_tiers: SPIN_TIERS.map((t) => ({
+                multiplier: t.multiplier,
+                freq: t.freq,
+                reserveThresholdX: t.reserveThresholdX,
+              })),
+            });
+            spinMultiplier = Number(draw?.multiplier) || 0;
+          } catch {
+            /* handled below */
+          }
+          if (!spinMultiplier || spinMultiplier <= 0) {
+            // Last resort: the SMALLEST tier. A missing multiplier must never
+            // resolve to a large one — that would pay a jackpot the pool was
+            // never asked about.
+            spinMultiplier = SPIN_TIERS[0].multiplier;
           }
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin multiplier was missing — rolled ${spinMultiplier}x as fallback`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin multiplier was missing — drew ${spinMultiplier}x through the reserve gate`
           );
         }
 
-        // Prize pool = buy_in * multiplier (NOT net_buy_in * players * multiplier)
-        // Round 40 RE-RUN: Math.round (not Math.trunc) for IEEE 754 drift safety —
-        // same family as the chop-pot fix (commit 9900b874) and calculateRake fix.
         const buyIn = tournament.buy_in_amount || 0;
+        const seats = tournament.current_players || SPEC_SPIN_SEATS;
+        const tier = spinTier(spinMultiplier);
         const prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
 
-        // SPIN MARGIN 2026-08-20: this line OVERWRITES the pool that
-        // registration accumulated, and until now the difference simply
-        // ceased to exist.
-        //
-        // Each registration charges buy_in + fee, books the fee to
-        // rake_records and ADDS the buy_in to prize_pool, so a 3-handed Spin
-        // arrives here holding 3 x buy_in. The pool then becomes
-        // buy_in x multiplier. Since the multiplier averages 2.55 against the
-        // 3.0 that break-even requires, the house keeps the difference on
-        // ~93% of Spins and funds an overlay on the rest -- and NO row was
-        // ever written either way.
-        //
-        // Measured over 2,106 completed Spins (every one 3-handed):
-        //   2x  1,628 spins  contributed 10,476  paid  6,984   house +3,492
-        //   3x    280 spins  contributed  1,734  paid  1,734   break-even
-        //   5x    136 spins  contributed    876  paid  1,460   house  -584
-        //   10x    60 spins  contributed    348  paid  1,160   house  -812
-        //   25x     2 spins  contributed     12  paid    100   house   -88
-        //   net: 2,008 retained beyond the booked entry fees, in no ledger.
-        //
-        // The margin is now recorded so it can be reported and reconciled.
-        // player_contributions is deliberately LEFT NULL: the union rake
-        // rollup selects `player_contributions IS NOT NULL AND rake_amount > 0`,
-        // so this row is visible and auditable WITHOUT silently redirecting
-        // revenue to clubs and unions. Whether they should share in the Spin
-        // margin is Dan's call, not a side effect of making it visible.
-        const contributedPool = Math.round((tournament.prize_pool || 0) * 100) / 100;
-        const spinMargin = Math.round((contributedPool - prizePool) * 100) / 100;
+        // Book it. This is the row that does not exist today.
+        try {
+          const { data: settle, error: settleErr } = await supabase.rpc('fn_spin_settle_game', {
+            p_tournament_id: this.tournamentId,
+            p_club_id: tournament.club_id,
+            p_buy_in: buyIn,
+            p_seats: seats,
+            p_multiplier: spinMultiplier,
+            p_rake_rate: spinRakeRate(buyIn),
+          });
+          if (settleErr || !settle?.ok) {
+            throw new Error(settleErr?.message || settle?.reason || 'settle_failed');
+          }
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x — pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
+          );
+        } catch (settleErr: any) {
+          // The game still runs and players are still paid; what is lost is the
+          // ledger row, so it is reported loudly rather than swallowed.
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED (${settleErr?.message}) — prize pool is correct but this game is unbooked`
+            ),
+            'Tournament.spin_settle_failed'
+          );
+        }
 
         await supabase
           .from('tournaments')
@@ -534,46 +538,16 @@ export abstract class TournamentManagerBase {
             prize_pool: prizePool,
             spin_multiplier: spinMultiplier,
             is_premium_spin: spinMultiplier >= 100,
+            starting_chips: tier?.startingStack ?? tournament.starting_chips,
+            payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
+              place: i + 1,
+              percentage: Math.round(pct * 10000) / 100,
+            })),
           })
           .eq('id', this.tournamentId);
 
-        if (spinMargin !== 0 && tournament.club_id) {
-          const { error: marginErr } = await supabase.from('rake_records').insert({
-            hand_id: null,
-            table_id: null,
-            club_id: tournament.club_id,
-            rake_amount: spinMargin,
-            pot_size: Math.abs(spinMargin),
-            num_players: tournament.current_players ?? 0,
-            bbj_contribution: 0,
-            is_tournament: true,
-            tournament_id: this.tournamentId,
-            source: 'TournamentManagerBase.spin_margin',
-            metadata: {
-              kind: 'spin_margin',
-              multiplier: spinMultiplier,
-              buy_in: buyIn,
-              contributed_pool: contributedPool,
-              prize_pool: prizePool,
-              // positive: the house retained it. negative: the house funded
-              // an overlay out of its own pocket.
-              direction: spinMargin > 0 ? 'house_retained' : 'house_funded_overlay',
-            },
-          });
-          if (marginErr) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] spin margin ${spinMargin} not recorded: ${marginErr.message}`
-              ),
-              'Tournament.spin_margin_unrecorded'
-            );
-          }
-        }
-
         tournament.prize_pool = prizePool;
-        console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN MULTIPLIER: ${spinMultiplier}x — Prize Pool: ${prizePool}`
-        );
+        if (tier?.startingStack) tournament.starting_chips = tier.startingStack;
       }
 
       // Migrate registrations (registered -> playing)
@@ -1363,75 +1337,6 @@ export abstract class TournamentManagerBase {
     }
   }
 
-  /**
-   * Horses take their add-on when the add-on period opens.
-   *
-   * Like tournament rebuys, add-ons had NEVER executed in production - the
-   * 'addon' wallet_transactions category has no rows in all of history -
-   * because process_tournament_rebuy's only caller was the SPA and there are
-   * no human players yet. The period opened, the broadcast fired, and nothing
-   * ever bought one.
-   *
-   * Every rule (add-ons offered, not already taken, inside the add-on level
-   * window, sufficient club chips) is enforced inside
-   * process_tournament_rebuy, together with the chip debit and the prize-pool
-   * increment, in one transaction. Add-ons are NOT raked, per Dan's rule, so
-   * that call books no rake row and the whole amount reaches the pool.
-   *
-   * Horses only; a real player's add-on stays their own decision.
-   */
-  protected async tryTournamentAddOns(): Promise<void> {
-    if (!this.tournamentCache?.add_on_available) return;
-    try {
-      const { data: rows, error: rowsErr } = await supabase
-        .from('tournament_players')
-        .select('user_id, add_on')
-        .eq('tournament_id', this.tournamentId)
-        .eq('status', 'playing');
-      if (rowsErr || !rows || rows.length === 0) return;
-
-      const candidates = rows
-        .filter((r: { add_on?: boolean | null }) => !r.add_on)
-        .map((r: { user_id: string }) => r.user_id);
-      if (candidates.length === 0) return;
-
-      const { data: horseRows } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('id', candidates)
-        .eq('is_horse', true);
-      if (!horseRows || horseRows.length === 0) return;
-
-      let taken = 0;
-      const declined = new Map<string, number>();
-      for (const h of horseRows) {
-        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-          p_tournament_id: this.tournamentId,
-          p_user_id: h.id,
-          p_rebuy_type: 'addon',
-          // null: let the server price it (add-ons are charged at face value).
-          p_cost: null,
-          p_chips: null,
-          p_current_level: this.currentLevel,
-        });
-        if (error) {
-          declined.set(error.message, (declined.get(error.message) || 0) + 1);
-          continue;
-        }
-        if ((data as { success?: boolean } | null)?.success === true) taken++;
-      }
-
-      console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ONS: ${taken} taken` +
-          (declined.size > 0
-            ? ` — declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
-            : '')
-      );
-    } catch (err) {
-      reportError(err, 'Tournament.tournament_addon_threw');
-    }
-  }
-
   protected async triggerAddOnPeriod(): Promise<void> {
     if (this.addOnPeriodTriggered) return;
     this.addOnPeriodTriggered = true;
@@ -1477,9 +1382,6 @@ export abstract class TournamentManagerBase {
       startLevel: rebuyLevelCap,
       endLevel: rebuyLevelCap + addonLevels,
     });
-
-    // Offer the add-on to the field now that the window is open.
-    await this.tryTournamentAddOns();
 
     // NOTE: Add-on period end is now handled by the level-up handler (finalizeAfterAddOn)
     // No more hardcoded 60-second timer!

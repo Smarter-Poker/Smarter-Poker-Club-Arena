@@ -279,7 +279,7 @@
     0 0 4px rgba(0, 255, 255, 0.8),
     0 0 12px rgba(0, 212, 255, 0.9),
     0 0 20px rgba(0, 150, 255, 0.7);
-  animation: statReveal 0.6s ease-out both;
+  animation: clubCardPanelStatReveal 0.6s ease-out both;
 }
 
 /* Staggered reveal for each stat column */
@@ -293,7 +293,7 @@
   animation-delay: 0.45s;
 }
 
-@keyframes statReveal {
+@keyframes clubCardPanelStatReveal {
   from {
     opacity: 0;
     transform: translateY(8px);
@@ -320,7 +320,7 @@
     0 0 20px rgba(0, 255, 136, 0.4);
   /* Chain: entrance reveal first, then infinite pulse after 0.6s delay */
   animation:
-    statReveal 0.6s ease-out both,
+    clubCardPanelStatReveal 0.6s ease-out both,
     activePulse 2s ease-in-out 0.6s infinite;
 }
 
@@ -358,6 +358,6 @@
     0 0 20px rgba(0, 255, 136, 0.4);
   /* Must re-declare animation chain — this selector has higher specificity */
   animation:
-    statReveal 0.6s ease-out both,
+    clubCardPanelStatReveal 0.6s ease-out both,
     activePulse 2s ease-in-out 0.6s infinite;
 }

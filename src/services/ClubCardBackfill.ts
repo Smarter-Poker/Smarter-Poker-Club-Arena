@@ -63,7 +63,10 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
       const blob = await fetch(dataUrl).then((r) => r.blob());
       const ext = format === 'webp' ? 'webp' : 'png';
       const contentType = format === 'webp' ? 'image/webp' : 'image/png';
-      const fileName = `club-cards/${club.club_id}-card.${ext}`;
+      // v2: the v1 filenames hold whole baked cards (id plate + name + stats),
+      // which ClubCardPanel double-renders. Versioning the name means those are
+      // ignored rather than served from cache while the new art uploads.
+      const fileName = `club-cards/${club.club_id}-card-v2.${ext}`;
 
       // 3. Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage

@@ -40,10 +40,10 @@
   height: 200px;
   background: radial-gradient(circle, rgba(255, 215, 0, 0.4) 0%, transparent 70%);
   transform: translate(-50%, -50%);
-  animation: pulse 2s ease-in-out infinite;
+  animation: badBeatJackpotPagePulse 2s ease-in-out infinite;
 }
 
-@keyframes pulse {
+@keyframes badBeatJackpotPagePulse {
   0%,
   100% {
     transform: translate(-50%, -50%) scale(1);

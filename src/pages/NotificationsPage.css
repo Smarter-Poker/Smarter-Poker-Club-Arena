@@ -220,10 +220,10 @@
   background: #10b981;
   border-radius: 50%;
   box-shadow: 0 0 10px rgba(16, 185, 129, 0.8);
-  animation: pulse 2s infinite;
+  animation: notificationsPagePulse 2s infinite;
 }
 
-@keyframes pulse {
+@keyframes notificationsPagePulse {
   0%,
   100% {
     opacity: 1;

@@ -152,12 +152,12 @@
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0%, transparent 100%);
   border: 1px solid rgba(255, 215, 0, 0.08);
   border-radius: 8px;
-  animation: slideInLeft 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: vIPActivityHistorySlideInLeft 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
   animation-delay: var(--reveal-delay, 0s);
   transition: all 0.3s ease;
 }
 
-@keyframes slideInLeft {
+@keyframes vIPActivityHistorySlideInLeft {
   from {
     opacity: 0;
     transform: translateX(-12px);

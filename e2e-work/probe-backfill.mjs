@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+import fs from 'fs';
+const AUTH='/tmp/e2e-work/auth.json';
+const b=await chromium.launch({headless:true});
+const ctx=await b.newContext({viewport:{width:1280,height:900},deviceScaleFactor:2,...(fs.existsSync(AUTH)?{storageState:AUTH}:{})});
+const p=await ctx.newPage();
+const ups=[];
+p.on('response',r=>{ if(r.url().includes('club-cards/')) ups.push(`${r.request().method()} ${r.status()} ${r.url().split('/').pop().split('?')[0]}`); });
+await p.goto('https://smarter.poker/hub/club-arena/',{waitUntil:'domcontentloaded',timeout:45000});
+await p.waitForTimeout(16000);
+await p.keyboard.press('Escape').catch(()=>{});
+await p.waitForTimeout(2500);
+console.log('club-card requests:'); [...new Set(ups)].forEach(u=>console.log('  '+u));
+await p.screenshot({path:'/tmp/e2e-shots/vis-cards.png', clip:{x:140,y:320,width:1000,height:420}});
+await ctx.storageState({path:AUTH}).catch(()=>{});
+await b.close();

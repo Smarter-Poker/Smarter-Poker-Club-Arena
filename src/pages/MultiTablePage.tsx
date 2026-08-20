@@ -170,13 +170,28 @@ export default function MultiTablePage() {
    * swallowing it. Never auto-close a table to make room: that would cash a
    * player out of a live game without consent.
    */
-  const capNoticeAtRef = useRef(0);
+  /**
+   * Throttled PER REASON, not globally.
+   *
+   * The first version kept one timestamp for all three. That meant a player
+   * who tapped "+" and was then seated into a tournament by the engine within
+   * four seconds got the trivial "+" notice and had the seating one silently
+   * dropped — the one case that actually costs money, suppressed by the one
+   * that costs nothing. Exactly the swallowing this function exists to stop.
+   *
+   * 'seated' is also never suppressed by the others: it is rare, it is the
+   * only one the player cannot cause themselves, and missing it means blinding
+   * out of a paid tournament.
+   */
+  const capNoticeAtRef = useRef<Record<string, number>>({});
   const notifyCapReached = useCallback(
     (reason: 'add' | 'route' | 'seated') => {
-      // One notice per 4s: the route effect and a bus event can fire together.
       const now = Date.now();
-      if (now - capNoticeAtRef.current < 4000) return;
-      capNoticeAtRef.current = now;
+      // 'route' and 'add' can fire together for one user action — the route
+      // effect and a bus event — so they share a window. 'seated' has its own.
+      const key = reason === 'seated' ? 'seated' : 'user-action';
+      if (now - (capNoticeAtRef.current[key] ?? 0) < 4000) return;
+      capNoticeAtRef.current[key] = now;
       const msg =
         reason === 'seated'
           ? `You are already playing ${MAX_TABLES} tables. Close one to open the table you were just seated at.`

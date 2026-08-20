@@ -43,10 +43,10 @@
 }
 
 .rabbit-hunt__button--loading {
-    animation: pulse 1s ease-in-out infinite;
+    animation: rabbitPulse 1s ease-in-out infinite;
 }
 
-@keyframes pulse {
+@keyframes rabbitPulse {
 
     0%,
     100% {
@@ -87,13 +87,13 @@
     background: linear-gradient(135deg, rgba(255, 184, 0, 0.1) 0%, rgba(255, 138, 0, 0.05) 100%);
     border: 1px solid rgba(255, 184, 0, 0.2);
     border-radius: 12px;
-    animation: fadeIn 0.3s ease;
+    animation: rabbitFadeIn 0.3s ease;
     backdrop-filter: blur(16px) saturate(1.2);
     -webkit-backdrop-filter: blur(16px) saturate(1.2);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-@keyframes fadeIn {
+@keyframes rabbitFadeIn {
     from {
         opacity: 0;
         transform: translateY(10px);

@@ -307,10 +307,10 @@
     height: 6px;
     background: #F02849;
     border-radius: 50%;
-    animation: pulse 2s ease-in-out infinite;
+    animation: liveChipCountsPulse 2s ease-in-out infinite;
 }
 
-@keyframes pulse {
+@keyframes liveChipCountsPulse {
     0%, 100% {
         opacity: 1;
     }
@@ -345,14 +345,14 @@
 }
 
 .lcc-badge.danger {
-    animation: blink 1.5s ease-in-out infinite;
+    animation: liveChipCountsBlink 1.5s ease-in-out infinite;
 }
 
 .lcc-badge.warning {
     opacity: 0.7;
 }
 
-@keyframes blink {
+@keyframes liveChipCountsBlink {
     0%, 100% {
         opacity: 1;
     }

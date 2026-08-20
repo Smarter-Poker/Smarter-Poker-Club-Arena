@@ -16,7 +16,6 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import ClubPromotionRulesModal from '../components/modals/ClubPromotionRulesModal';
 import { masterBus } from '../core/MasterBus';
 import { sanitizeInput } from '../utils/sanitizeInput';
-import { buildClubSlug, escapeIlikePattern } from '../utils/clubSlug';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -512,7 +511,7 @@ export default function CreateClubPage() {
       const { data: existing } = await supabase
         .from('clubs')
         .select('id')
-        .ilike('name', escapeIlikePattern(form.name.trim()))
+        .ilike('name', form.name.trim())
         .limit(1);
 
       if (existing && existing.length > 0) {
@@ -528,6 +527,13 @@ export default function CreateClubPage() {
     }
 
     try {
+      // Generate URL-friendly slug
+      const slug = form.name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
       // Determine the logo value for insert.
       // IMPORTANT: consumers (carousel, club cards, getUserMemberships) read
       // logo_url / avatar_url — the bare `logo` column is legacy. Write all of
@@ -537,7 +543,8 @@ export default function CreateClubPage() {
         form.iconId !== 'custom' && selectedIcon
           ? `images/club-icons/icon-${form.iconId}.png`
           : null;
-      const logoUrlValue = form.iconId !== 'custom' && selectedIcon ? selectedIcon.src : null;
+      const logoUrlValue =
+        form.iconId !== 'custom' && selectedIcon ? selectedIcon.src : null;
 
       // Insert club with collision retry for random club_id
       let data: any = null;
@@ -555,8 +562,7 @@ export default function CreateClubPage() {
           .insert({
             club_id: clubIdNumber,
             name: sanitizeInput(form.name.trim()),
-            // clubs.slug is UNIQUE — retries append the club_id (see utils/clubSlug)
-            slug: buildClubSlug(form.name, clubIdNumber, attempt),
+            slug,
             description: sanitizeInput(form.description.trim()) || null,
             owner_id: user.id,
             is_public: form.isPublic,
@@ -581,12 +587,6 @@ export default function CreateClubPage() {
         }
 
         lastInsertError = insertError;
-        // Name uniqueness (idx_clubs_name_lower) can never be fixed by a
-        // retry — the name doesn't change between attempts. Bail with the
-        // friendly message immediately.
-        if (insertError?.message?.includes('idx_clubs_name_lower')) {
-          throw new Error('A club with this name already exists. Please choose a different name.');
-        }
         // If not a unique constraint error, don't retry
         if (
           insertError &&

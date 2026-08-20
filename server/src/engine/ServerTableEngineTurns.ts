@@ -24,6 +24,21 @@ import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
+  /**
+   * Dan 2026-08-20: a queued pre-action (auto-check / auto-fold / auto-call)
+   * used to fire synchronously at 0ms the instant the turn arrived — the seat
+   * never visibly took its turn, and with several players holding pre-actions
+   * a whole street resolved instantly and looked like they had been skipped.
+   *
+   * Shorter than a horse's think time because the player already decided, but
+   * never zero: the seat lights up, holds a readable beat, and only then does
+   * the action land.
+   *
+   * Instance field, not a static, so a test can drive pre-action ORDER without
+   * spending its real-world seconds.
+   */
+  protected preActionVisibleMs = 900;
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // TURN TIMER MANAGEMENT
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -1212,7 +1227,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     this.timeBankActivatedThisTurn = timeBankAlreadyUsedThisTurn;
   }
 
-  protected handleTurnChange(event: HandEvent, players: SeatedPlayer[]): void {
+  /**
+   * Dan 2026-08-20: async because a queued pre-action now holds a visible beat
+   * before it lands (see preActionVisibleMs). Callers treat this as
+   * fire-and-forget — the clock it arms and the pre-action it may execute are
+   * both self-contained — so the one call site voids the promise and keeps its
+   * existing try/catch + forceArmTurnTimer fallback for a synchronous throw.
+   */
+  protected async handleTurnChange(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     if (event.type !== 'TURN_CHANGE' || !this.handController) return;
 
     const seat = event.seat;
@@ -1253,6 +1275,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // false on rejection (a pre-action resolved against a bet level the
       // engine then re-validates is the reachable case) — the old try/catch
       // never saw that and returned anyway, leaving the seat with no clock.
+      //
+      // ── Dan 2026-08-20: a pre-action is still an ACTION and must be seen ──
+      //
+      // This used to fire synchronously, at 0ms, the instant the turn arrived:
+      // the seat lit up and its check/fold/call was already applied in the same
+      // tick. The seat never visibly "took its turn" — with several players
+      // holding pre-actions, a whole street resolved instantly and looked like
+      // those players had been skipped.
+      //
+      // The player has already decided, so this is shorter than a horse's think
+      // time — but it is never zero. The seat lights up, holds a readable beat,
+      // and only then does the action land.
+      await this.sleep(this.preActionVisibleMs);
+      // The hand can be replaced while we hold that beat.
+      if (!this.running || !this.handController) return;
+      {
+        const st = this.handController.getState();
+        if (st.currentPlayerSeat !== seat) return;
+      }
       let preApplied = false;
       try {
         preApplied = this.handController!.performAction(
@@ -1381,7 +1422,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // table) but every animation now completes. HorseLogic's own style- and
     // situation-aware think times above this floor are unchanged, so varied
     // pacing is preserved.
-    const HORSE_MIN_THINK_MS = 1800;
+    // Dan 2026-08-20: "THE GAME SPEED NEEDS TO SLOW DOWN TO FEEL MORE REAL.
+    // Focus more on the user experience rather than getting more hands dealt."
+    // Raised 1800 -> 2200. A live dealer's table does not fire an action every
+    // second and a half; the extra beat is what makes a horse read as a person
+    // thinking rather than a script executing. This is ON TOP of the 650ms
+    // settle every action now gets in the TURN_CHANGE handler, so the slowest
+    // visible cadence per seat is ~2.85s and the fastest is never instant.
+    const HORSE_MIN_THINK_MS = 2200;
     const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
     const thinkTimeMs = Math.round(
       Math.max(

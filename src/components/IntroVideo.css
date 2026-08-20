@@ -69,10 +69,10 @@
     height: 8px;
     background: rgba(0, 200, 255, 0.8);
     border-radius: 50%;
-    animation: pulse-dot 1s ease-in-out infinite;
+    animation: introVideoPulse-dot 1s ease-in-out infinite;
 }
 
-@keyframes pulse-dot {
+@keyframes introVideoPulse-dot {
 
     0%,
     100% {

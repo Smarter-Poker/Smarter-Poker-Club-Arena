@@ -150,10 +150,10 @@
   border-radius: 10px;
   color: #000;
   white-space: nowrap;
-  animation: actionPop 0.2s ease;
+  animation: handReplayPlayerActionPop 0.2s ease;
 }
 
-@keyframes actionPop {
+@keyframes handReplayPlayerActionPop {
   from {
     transform: translateX(-50%) scale(0);
   }

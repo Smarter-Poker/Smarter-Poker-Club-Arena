@@ -8,9 +8,20 @@
  *   - 8 premium backs (diamond-gated, with confirm modal)
  *   - Equipped badge, owned badge, locked + price overlay
  *   - Bus emission on purchase and equip
+ *
+ * Dan 2026-08-20: every thumbnail rendered broken in production. Two causes,
+ * both fixed here:
+ *   1. previews were root-absolute ('/cards/backs/x.webp'). The SPA is served
+ *      from /hub/club-arena/, so every one of them 404'd. They now resolve
+ *      through MEDIA_BASE like the rest of the app's media.
+ *   2. four designs (holographic, carbon, club-branded, diamond-foil) have no
+ *      artwork in the repo at all, so a correct path still cannot paint. Every
+ *      tile now falls back to a styled, per-design placeholder instead of the
+ *      browser's broken-image glyph — a missing asset degrades, never breaks.
  */
 
 import React, { useState, useCallback } from 'react';
+import { MEDIA_BASE } from '../../utils/mediaBase';
 import { masterBus } from '../../core/MasterBus';
 import { haptic } from '../../services/SoundService';
 import './CardBackSelector.css';
@@ -46,22 +57,28 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'black',
     name: 'Black',
-    preview: '/cards/backs/black.webp',
+    preview: `${MEDIA_BASE}cards/backs/black.webp`,
     isDefault: true,
     tier: 'standard',
   },
-  { id: 'red', name: 'Red', preview: '/cards/backs/red.webp', isDefault: true, tier: 'standard' },
+  {
+    id: 'red',
+    name: 'Red',
+    preview: `${MEDIA_BASE}cards/backs/red.webp`,
+    isDefault: true,
+    tier: 'standard',
+  },
   {
     id: 'blue',
     name: 'Blue',
-    preview: '/cards/backs/blue.webp',
+    preview: `${MEDIA_BASE}cards/backs/blue.webp`,
     isDefault: true,
     tier: 'standard',
   },
   {
     id: 'white',
     name: 'White',
-    preview: '/cards/backs/white.webp',
+    preview: `${MEDIA_BASE}cards/backs/white.webp`,
     isDefault: true,
     tier: 'standard',
   },
@@ -70,7 +87,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'classic',
     name: 'Classic',
-    preview: '/cards/backs/classic.webp',
+    preview: `${MEDIA_BASE}cards/backs/classic.webp`,
     isPremium: true,
     price: 50,
     tier: 'premium',
@@ -78,7 +95,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'burgundy',
     name: 'Burgundy',
-    preview: '/cards/backs/burgundy.webp',
+    preview: `${MEDIA_BASE}cards/backs/burgundy.webp`,
     isPremium: true,
     price: 75,
     tier: 'premium',
@@ -86,7 +103,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'navy',
     name: 'Navy',
-    preview: '/cards/backs/navy.webp',
+    preview: `${MEDIA_BASE}cards/backs/navy.webp`,
     isPremium: true,
     price: 75,
     tier: 'premium',
@@ -94,7 +111,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'gold',
     name: 'Premium Gold',
-    preview: '/cards/backs/gold.webp',
+    preview: `${MEDIA_BASE}cards/backs/gold.webp`,
     isPremium: true,
     price: 150,
     tier: 'premium',
@@ -104,7 +121,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'holographic',
     name: 'Holographic',
-    preview: '/cards/backs/holographic.webp',
+    preview: `${MEDIA_BASE}cards/backs/holographic.webp`,
     isPremium: true,
     price: 200,
     tier: 'exclusive',
@@ -112,7 +129,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'carbon',
     name: 'Carbon Fiber',
-    preview: '/cards/backs/carbon.webp',
+    preview: `${MEDIA_BASE}cards/backs/carbon.webp`,
     isPremium: true,
     price: 175,
     tier: 'exclusive',
@@ -120,7 +137,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'club-branded',
     name: 'Club Crest',
-    preview: '/cards/backs/club-branded.jpg',
+    preview: `${MEDIA_BASE}cards/backs/club-branded.jpg`,
     isPremium: true,
     price: 250,
     tier: 'exclusive',
@@ -128,7 +145,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'diamond-foil',
     name: 'Diamond Foil',
-    preview: '/cards/backs/diamond-foil.jpg',
+    preview: `${MEDIA_BASE}cards/backs/diamond-foil.jpg`,
     isPremium: true,
     price: 300,
     tier: 'exclusive',
@@ -139,6 +156,28 @@ const CARD_BACKS: CardBack[] = [
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Per-design placeholder styling, used when a design has no artwork (or the
+// artwork fails to load). Keeps the grid readable instead of showing the
+// browser's broken-image glyph.
+const PLACEHOLDER_STYLES: Record<string, string> = {
+  black: 'linear-gradient(145deg, #23262e 0%, #0d0f14 100%)',
+  red: 'linear-gradient(145deg, #7f1d1d 0%, #3b0a0a 100%)',
+  blue: 'linear-gradient(145deg, #1e3a8a 0%, #0b1733 100%)',
+  white: 'linear-gradient(145deg, #e8eaf0 0%, #a9b0c0 100%)',
+  classic: 'linear-gradient(145deg, #3f4756 0%, #1b1f28 100%)',
+  burgundy: 'linear-gradient(145deg, #6b1230 0%, #2b0714 100%)',
+  navy: 'linear-gradient(145deg, #16305c 0%, #08122a 100%)',
+  gold: 'linear-gradient(145deg, #b8860b 0%, #6b4c05 100%)',
+  holographic: 'linear-gradient(145deg, #7c3aed 0%, #06b6d4 50%, #ec4899 100%)',
+  carbon: 'linear-gradient(145deg, #2a2d33 0%, #101216 100%)',
+  'club-branded': 'linear-gradient(145deg, #14532d 0%, #06210f 100%)',
+  'diamond-foil': 'linear-gradient(145deg, #cbd5e1 0%, #64748b 50%, #e2e8f0 100%)',
+};
+
+function placeholderFor(cardBack: CardBack): string {
+  return PLACEHOLDER_STYLES[cardBack.id] || 'linear-gradient(145deg, #23262e 0%, #0d0f14 100%)';
+}
+
 export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
   currentCardBack,
   ownedCardBacks,
@@ -148,6 +187,8 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
 }) => {
   const [selected, setSelected] = useState(currentCardBack);
   const [confirmPurchase, setConfirmPurchase] = useState<CardBack | null>(null);
+  // Designs whose artwork failed to load — rendered as styled placeholders.
+  const [brokenPreviews, setBrokenPreviews] = useState<Record<string, boolean>>({});
 
   const isOwned = useCallback(
     (cardBack: CardBack): boolean => {
@@ -222,15 +263,27 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
               data-tier={cardBack.tier}
             >
               <div className="card-back-preview">
-                <div className="card-shape">
-                  <img
-                    loading="lazy"
-                    decoding="async"
-                    src={cardBack.preview}
-                    alt={`${cardBack.name} card back`}
-                    className="card-back-preview-img"
-                    draggable={false}
-                  />
+                <div
+                  className="card-shape"
+                  /* Placeholder always paints underneath, so a slow or missing
+                     asset shows a designed tile rather than an empty box. */
+                  style={{ background: placeholderFor(cardBack) }}
+                >
+                  {!brokenPreviews[cardBack.id] && (
+                    <img
+                      loading="lazy"
+                      decoding="async"
+                      src={cardBack.preview}
+                      alt={`${cardBack.name} card back`}
+                      className="card-back-preview-img"
+                      draggable={false}
+                      onError={() =>
+                        setBrokenPreviews((prev) =>
+                          prev[cardBack.id] ? prev : { ...prev, [cardBack.id]: true }
+                        )
+                      }
+                    />
+                  )}
                 </div>
               </div>
 
@@ -255,14 +308,24 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
           <div className="cbs-confirm" onClick={(e) => e.stopPropagation()}>
             <h4 className="cbs-confirm__title">Purchase Card Back</h4>
 
-            <div className="cbs-confirm__preview">
-              <img
-                loading="lazy"
-                decoding="async"
-                src={confirmPurchase.preview}
-                alt={confirmPurchase.name}
-                className="cbs-confirm__img"
-              />
+            <div
+              className="cbs-confirm__preview"
+              style={{ background: placeholderFor(confirmPurchase) }}
+            >
+              {!brokenPreviews[confirmPurchase.id] && (
+                <img
+                  loading="lazy"
+                  decoding="async"
+                  src={confirmPurchase.preview}
+                  alt={confirmPurchase.name}
+                  className="cbs-confirm__img"
+                  onError={() =>
+                    setBrokenPreviews((prev) =>
+                      prev[confirmPurchase.id] ? prev : { ...prev, [confirmPurchase.id]: true }
+                    )
+                  }
+                />
+              )}
             </div>
 
             <p className="cbs-confirm__name">{confirmPurchase.name}</p>

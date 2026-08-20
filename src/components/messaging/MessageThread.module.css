@@ -143,7 +143,7 @@
   height: 6px;
   background: #8b5cf6;
   border-radius: 50%;
-  animation: bounce 1.4s infinite var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  animation: messageThreadBounce 1.4s infinite var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: 0 0 6px rgba(139, 92, 246, 0.5);
 }
 
@@ -159,7 +159,7 @@
   animation-delay: 0.4s;
 }
 
-@keyframes bounce {
+@keyframes messageThreadBounce {
   0%,
   80%,
   100% {

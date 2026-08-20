@@ -208,6 +208,24 @@ function formatStackAsBB(stack: number, bigBlind: number): string {
   return `${bb.toFixed(1)} BB`;
 }
 
+/**
+ * CSS pixel size of the avatar slot, mirrored from `--seat-avatar-size` in
+ * design-tokens.css (villain) and the `.seat--hero` override in SeatSlot.css.
+ *
+ * Dan 2026-08-20 (audit): these were hardcoded as `56` at the call site, which
+ * was correct until 2026-08-15 — the day the token went 56px -> 84px and hero
+ * got its own 112px. The number was never updated, so Storage kept returning
+ * 112px images (the helper doubles for retina) for a box drawn at 84 CSS px,
+ * i.e. 168 device px on a retina phone: every uploaded photo was being
+ * upscaled 1.5x, and the hero's 2x. That is why photo avatars read soft.
+ *
+ * If `--seat-avatar-size` changes again, change these with it. They are only
+ * a request hint — nothing lays out from them — so being a little generous is
+ * cheap and being too small is visible.
+ */
+const SEAT_AVATAR_PX = 84;
+const SEAT_AVATAR_PX_HERO = 112;
+
 /** Returns CSS class for stack depth color coding */
 function getStackDepthClass(stack: number, bigBlind: number): string {
   if (bigBlind <= 0) return '';
@@ -368,6 +386,25 @@ export const SeatSlot = memo(
       prevStackRef.current = player.stack;
       wasSeatedRef.current = true; // Mark as seated after first render
     }, [player?.stack]);
+
+    /**
+     * Which avatar URL (if any) failed to load, so the monogram can take over.
+     *
+     * Dan 2026-08-20 (audit): this used to be done by MUTATING THE DOM from
+     * `onError` — `e.target.style.display = 'none'` plus a `querySelector` on
+     * the parent to un-hide a sibling that was rendered with an inline
+     * `display: none`. Two things wrong with that inside a memo'd component:
+     * React owns those nodes and will happily re-use an element still carrying
+     * a hand-written `display: none`, so a seat that errored once could stay
+     * blank even after a good URL was available; and the workaround for that
+     * was a `key` on both nodes, which forced a full remount (and a re-fetch,
+     * and a flash) every time the URL changed for any reason.
+     *
+     * Storing the failed URL instead of a boolean means recovery is automatic:
+     * a different URL simply is not the failed one, so no reset effect, no
+     * keys, no imperative DOM.
+     */
+    const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
 
     // Winner pop animation — brief scale bounce when isWinner transitions to true
     const [winnerPop, setWinnerPop] = useState(false);
@@ -661,12 +698,28 @@ export const SeatSlot = memo(
 
     // ─── OCCUPIED SEAT ─────────────────────────────────────────────────────
     // Use deterministic SVG avatar (colorful, unique per player) when no real image exists
-    const avatarUrl = getAvatarWithFallback(player.avatar || null, player.id, player.name);
+    // The helper doubles this for retina and asks Storage to resize, so it must
+    // be the CSS box the photo is actually drawn in. Before the sizing existed,
+    // every seat pulled the user's full-resolution upload — 263 KB each on the
+    // owner account, nine of them on a full table.
+    const avatarUrl = getAvatarWithFallback(
+      player.avatar || null,
+      player.id,
+      player.name,
+      player.isHero ? SEAT_AVATAR_PX_HERO : SEAT_AVATAR_PX
+    );
     // 2026-08-04 PokerBros-style: library bust art (/avatars/table|free|vip/*)
     // is a transparent-background character PNG — render it free-floating
     // (no circle crop, no ring, larger) like the reference client. Uploaded
     // photos and generated SVGs keep the circular frame.
     const isBustArt = /\/avatars\/(table|free|vip)\//.test(avatarUrl);
+    // Only true while THIS url is the one that failed, so a new url recovers
+    // on its own. getAvatarWithFallback never returns empty — with no uploaded
+    // avatar it returns a generated `data:` SVG, which cannot 404 — so this is
+    // reachable only for real network URLs (Storage uploads, /avatars/table/*).
+    const avatarBroken = failedAvatarUrl === avatarUrl;
+    // The hero cannot open a menu on themselves.
+    const avatarClickable = !!onAvatarClick && !player.isHero;
 
     // COMPETITOR-PARITY 2026-08-19 (Card Squeeze): single source of truth for
     // "the hero's cards are currently face down awaiting a squeeze".
@@ -840,47 +893,77 @@ export const SeatSlot = memo(
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div
           className={`seat__avatar-wrap${isBustArt ? ' seat__avatar-wrap--bust' : ''}`}
+          /* Kept deliberately. Not rendering the <img> stops the download, but
+             the wrap also holds the circle chrome, the status dot and the
+             position badge, all of which this toggle has always hidden — and
+             the wrap must keep its box either way or every seat's geometry
+             shifts. Hiding stays visual; only the network cost goes away. */
           style={showAvatar ? undefined : { visibility: 'hidden' }}
         >
           {/* Timer is shown via smooth conic-gradient border on the info box below */}
           <div
             className={`seat__avatar${isBustArt ? ' seat__avatar--bust' : ''}`}
-            onClick={(e) => {
-              if (onAvatarClick && !player.isHero) {
-                e.stopPropagation();
-                onAvatarClick();
-              }
-            }}
-            style={{ cursor: onAvatarClick && !player.isHero ? 'pointer' : undefined }}
+            onClick={
+              avatarClickable
+                ? (e) => {
+                    e.stopPropagation();
+                    onAvatarClick?.();
+                  }
+                : undefined
+            }
+            /* Dan 2026-08-20 (audit): clicking an opponent's avatar opens the
+               throwable selector and targets them for Player Notes — but it was
+               a bare onClick on a <div>, so it was mouse-only. No role, no
+               tabIndex, no key handler: unreachable by keyboard and invisible
+               to assistive tech, while the CSS right above it advertises a
+               hover ring for "clickable opponent avatars". */
+            role={avatarClickable ? 'button' : undefined}
+            tabIndex={avatarClickable ? 0 : undefined}
+            aria-label={avatarClickable ? `Player actions for ${player.name}` : undefined}
+            onKeyDown={
+              avatarClickable
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onAvatarClick?.();
+                    }
+                  }
+                : undefined
+            }
           >
-            {player.avatar || !player.isHero ? (
+            {/* Bible V8 §11.1 show_avatars: when the toggle is OFF the image is
+                not rendered at all. It used to render and be hidden with
+                `visibility: hidden` on the wrap, so a player who turned avatars
+                off to save data still downloaded nine of them every table. The
+                wrap itself always renders — the seat's geometry depends on it.
+
+                `alt=""`: the seat is a labelled region that already announces
+                the player's name, so a duplicate here is pure screen-reader
+                noise. The avatar carries no information the name does not. */}
+            {showAvatar && !avatarBroken ? (
               <img
-                key={`avatar-${avatarUrl}`}
                 src={avatarUrl}
-                alt={player.name}
+                alt=""
                 className="seat__avatar-img"
-                loading="lazy"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                  const fb = (e.target as HTMLImageElement).parentElement?.querySelector(
-                    '.seat__avatar-fallback'
-                  );
-                  if (fb) (fb as HTMLElement).style.display = 'flex';
-                }}
+                /* Hero eager + high priority: it is the largest avatar on the
+                   table (1.33x), always in view, and the one the player looks
+                   at first — `lazy` bought nothing there but a deferred request
+                   and a pop-in. Villains stay lazy ON PURPOSE: MultiTablePage
+                   keeps up to four tables mounted with the inactive ones
+                   display:none, and lazy is what stops 27 off-screen avatars
+                   from being fetched before the player has opened those tabs. */
+                loading={player.isHero ? 'eager' : 'lazy'}
+                decoding="async"
+                fetchPriority={player.isHero ? 'high' : 'auto'}
+                onError={() => setFailedAvatarUrl(avatarUrl)}
               />
             ) : null}
-            {player.isHero && !player.avatar ? (
-              <span className="seat__avatar-initial">{player.name.charAt(0).toUpperCase()}</span>
+            {showAvatar && avatarBroken ? (
+              <span className="seat__avatar-fallback seat__avatar-initial">
+                {player.name.charAt(0).toUpperCase() || '?'}
+              </span>
             ) : null}
-            {/* UI-AUDIT #9: key by avatarUrl so a src change remounts the fallback
-                back to display:none, undoing the onError DOM mutation above. */}
-            <span
-              key={`avatar-fallback-${avatarUrl}`}
-              className="seat__avatar-fallback seat__avatar-initial"
-              style={{ display: 'none' }}
-            >
-              {player.name.charAt(0).toUpperCase()}
-            </span>
 
             {/* Folded overlay */}
             {lastAction === 'fold' && <div className="seat__avatar-fold-overlay" />}

@@ -17,12 +17,12 @@
     bottom: 0;
     right: 20px;
     z-index: 1000;
-    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: privateChatSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     backdrop-filter: blur(12px) saturate(1.2);
     -webkit-backdrop-filter: blur(12px) saturate(1.2);
 }
 
-@keyframes slideUp {
+@keyframes privateChatSlideUp {
     from {
         transform: translateY(100%);
         opacity: 0;

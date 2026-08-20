@@ -609,10 +609,10 @@
   box-shadow:
     0 20px 60px rgba(0, 0, 0, 0.6),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: slideUp 0.3s ease-out;
+  animation: tableConfigPageSlideUp 0.3s ease-out;
 }
 
-@keyframes slideUp {
+@keyframes tableConfigPageSlideUp {
   from {
     transform: translateY(20px);
     opacity: 0;

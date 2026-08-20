@@ -85,6 +85,16 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
           );
         }
         // No broadcast here — TURN_CHANGE will follow shortly with full snapshot.
+        //
+        // Dan 2026-08-20: "shortly" meant the SAME TICK, which is the turn bug
+        // again at the START of a hand. The deal animation is the longest one
+        // at the table — 12 cards on an 80ms stagger with a 320ms flight,
+        // ~1.2s — and the blinds fly for another 400ms on top. Both were still
+        // in the air when the first player went on the clock and their action
+        // began. Stamp the moment the blinds land so the first TURN_CHANGE of
+        // the hand stretches to handStartSettleMs and the table is actually
+        // dealt in before anyone acts.
+        this.lastHandStartAtMs = Date.now();
         break;
       }
 
@@ -116,6 +126,56 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         break;
 
       case 'TURN_CHANGE': {
+        // ═══════════════════════════════════════════════════════════════════
+        // Dan 2026-08-20: "every player's action MUST GO IN TURN. Their action
+        // MUST BE DISPLAYED, an animation MUST PLAY after every decision. NO
+        // action for any horse or player can EVER be skipped or rushed. THE
+        // GAME SPEED NEEDS TO SLOW DOWN TO FEEL MORE REAL — focus on the user
+        // experience rather than getting more hands dealt."
+        //
+        // Every action path in the engine — human submit, horse think-timer,
+        // queued pre-action, turn timeout, time-bank expiry, disconnect
+        // auto-action — ends by advancing the turn, and they ALL funnel
+        // through this one event. Previously the ACTION broadcast and this
+        // TURN_CHANGE went out back to back in the same tick, so the acting
+        // seat's chips (cpSlideIn, 500ms) and its action label had no airtime
+        // before the spotlight, the clock and the next player's animation took
+        // over. With several pre-actions queued, an entire betting round could
+        // resolve in a few milliseconds and read as though players had been
+        // skipped entirely.
+        //
+        // One settle beat here paces EVERY action path at once, and cannot be
+        // bypassed by any individual caller. It is deliberately longer than
+        // the 500ms chip slide so the wager is fully on the felt and readable
+        // before the turn moves on.
+        //
+        // This costs hands/hour. That is the intended trade.
+        if (this.running && this.handController) {
+          const handAtAction = this.handCount;
+          const controllerAtAction = this.handController;
+          // A street was just dealt -> the board reveal owns this beat, and it
+          // is longer than an ordinary action's. Anything older than a second
+          // is a normal action, not a fresh board.
+          const justDealtStreet = Date.now() - this.lastStreetDealtAtMs < 1000;
+          // The hand was just dealt -> the deal + blinds own this beat, and it
+          // is the longest of the three.
+          const justStartedHand = Date.now() - this.lastHandStartAtMs < 1000;
+          await this.sleep(
+            justStartedHand
+              ? this.handStartSettleMs
+              : justDealtStreet
+                ? this.streetSettleMs
+                : this.actionSettleMs
+          );
+          // The table can be torn down, or the hand replaced, while we settle.
+          if (
+            !this.running ||
+            this.handController !== controllerAtAction ||
+            this.handCount !== handAtAction
+          ) {
+            break;
+          }
+        }
         // ROOT-CAUSE FIX 2026-04-14 (Dan: "I timed out and the engine moved
         // on without giving me a chance to act"). Prior flow broadcast the
         // snapshot and the discrete turn_change event while
@@ -167,7 +227,18 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // carries the correct turn_deadline_ms — no drift versus the old order.
         this.markProgress();
         try {
-          this.handleTurnChange(event, players);
+          // Dan 2026-08-20: handleTurnChange is async now — a queued
+          // pre-action holds a visible beat before it lands. Deliberately NOT
+          // awaited: for an ordinary turn nothing before startTurnTimer yields,
+          // so the clock is still armed synchronously ahead of the broadcast
+          // below, exactly as before. Only the pre-action path suspends, and it
+          // owns its own turn end-to-end. The .catch keeps the shot-clock
+          // fallback reachable for an ASYNC rejection, which the surrounding
+          // try/catch (synchronous throws only) cannot see.
+          void this.handleTurnChange(event, players).catch((err) => {
+            reportError(err, 'ServerTableEngine.' + this.tableId + '.handleTurnChange_rejected');
+            this.forceArmTurnTimer(event.seat, effectiveActionSec);
+          });
         } catch (err) {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.handleTurnChange_threw');
           this.forceArmTurnTimer(event.seat, effectiveActionSec);
@@ -257,6 +328,16 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // an insurance/RIT window (up to 3 x 20s + 18s) exceeds
         // WATCHDOG_STALL_MS and the watchdog attacks a HEALTHY hand.
         this.markProgress();
+        // Dan 2026-08-20: same bug class as the turn bug. HandController deals
+        // the street and then sets currentPlayerSeat + emits TURN_CHANGE in the
+        // SAME synchronous call, so the board reveal raced the next player's
+        // clock. The flop is the worst case: it lands (300ms) and only then
+        // fans open (420ms, starting ~520ms in), so it needs ~940ms — more
+        // than the 650ms ordinary action settle. Stamping the street here lets
+        // the TURN_CHANGE settle below stretch to streetSettleMs, giving the
+        // board time to finish revealing AND a beat to be read before anyone
+        // is put on the clock.
+        this.lastStreetDealtAtMs = Date.now();
         {
           // Bible V8 §6.2: 2 time bank activations PER STREET. A new street is
           // dealt here, so the allowance refreshes. Without this the limit
@@ -384,6 +465,40 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         break;
 
       case 'WINNERS': {
+        // ═══════════════════════════════════════════════════════════════════
+        // Dan 2026-08-20: same bug class as the turn bug — "a showdown needs
+        // to happen, THEN the pot needs to be shipped."
+        //
+        // HandController.completeHandInner() is SYNCHRONOUS: it emits SHOWDOWN
+        // (every remaining hand turns face up) and then WINNERS (-> pot_win,
+        // which highlights the winner and ships the pot) in the SAME TICK. So
+        // the single most dramatic moment in poker — reading the hands at
+        // showdown — got ZERO airtime. The cards flipped up, the winner lit up
+        // and the pot flew away all on the same frame.
+        //
+        // The SHOWDOWN event has already gone out by the time this handler
+        // runs, so holding here lets the reveal (cardShowdownFlip 350ms + a
+        // 120ms second-card stagger) finish and leaves a beat to actually READ
+        // the hands before the pot moves. Only pause when there is a showdown
+        // to read — a fold-around win has nothing to reveal and keeps its
+        // brisk pace.
+        // REGRESSION FIX 2026-08-20 (self-review): the settle used to sit HERE,
+        // at the very top of this handler — BEFORE the winner state below is
+        // assigned. That was wrong and dangerous.
+        //
+        // handleHandEvent is dispatched fire-and-forget
+        // (`void this.handleHandEvent(...)` in ServerTableEngineDealing), and
+        // HandController.completeHandInner() emits WINNERS and HAND_COMPLETE
+        // back to back in the same synchronous call. So the moment this handler
+        // suspended on an await, the HAND_COMPLETE handler — which READS
+        // currentHandWinnerIds for the hand_complete payload, the payouts, the
+        // BBJ evaluation and the 7-2 bounty — ran to completion first, against
+        // winner state that had not been written yet.
+        //
+        // The settle is purely VISUAL, so it belongs immediately before the
+        // pot_win emission (see below), not before the state commit. Winner
+        // state is now assigned synchronously exactly as it was originally,
+        // and only the pot-ship broadcast waits for the showdown to be read.
         // SWEEP #4 FIX (2026-07-23): Run-It-Twice hands call dealAndResolveRIT(),
         // which pre-sets currentHandWinnerIds / currentHandShowdownResults /
         // currentHandPotSize for board-0 BBJ + 7-2 evaluation, then calls
@@ -487,6 +602,30 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // The TablePage POT_WIN handler resolves seats from winner_ids and
         // splits the pot across them via createPotToWinnerEvent.
         if (this.currentHandWinnerIds.length > 0) {
+          // ── Dan 2026-08-20: "a showdown needs to happen, THEN the pot needs
+          //    to be shipped." ──
+          //
+          // completeHandInner() emits SHOWDOWN (hands turn face up) and WINNERS
+          // in the SAME tick, so without this the reveal, the winner highlight
+          // and the pot ship all landed on one frame. Hold here — AFTER the
+          // winner state above is committed, so nothing that reads it can race
+          // us (see the regression note at the top of this case), and BEFORE
+          // the pot_win broadcast that actually moves the chips.
+          //
+          // Only for a real showdown; a fold-around win has nothing to reveal
+          // and keeps its brisk pace.
+          if (this.running && this.currentHandShowdownResults.length >= 2) {
+            const handAtShowdown = this.handCount;
+            const controllerAtShowdown = this.handController;
+            await this.sleep(this.showdownSettleMs);
+            if (
+              !this.running ||
+              this.handController !== controllerAtShowdown ||
+              this.handCount !== handAtShowdown
+            ) {
+              break;
+            }
+          }
           this.hub?.emitEvent(this.tableId, {
             type: 'pot_win',
             table_id: this.tableId,

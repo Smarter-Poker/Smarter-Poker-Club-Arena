@@ -989,10 +989,10 @@
   max-width: 400px;
   width: 90%;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  animation: slideUp 0.25s ease-out;
+  animation: cashierPageSlideUp 0.25s ease-out;
 }
 
-@keyframes slideUp {
+@keyframes cashierPageSlideUp {
   from {
     opacity: 0;
     transform: translateY(16px);

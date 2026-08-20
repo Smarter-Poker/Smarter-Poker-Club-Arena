@@ -19,7 +19,7 @@ test.describe('Cashier Page — Financial UI', () => {
       }
     });
 
-    await page.goto('/cashier');
+    await page.goto('cashier');
     await page.waitForTimeout(2000);
 
     // Page should render (may redirect to login if not authenticated)
@@ -32,14 +32,18 @@ test.describe('Cashier Page — Financial UI', () => {
         !e.includes('auth') &&
         !e.includes('not authenticated') &&
         !e.includes('AuthSessionMissing') &&
-        !e.includes('Invalid Refresh Token')
+        !e.includes('Invalid Refresh Token') &&
+        // A report-only CSP that carries upgrade-insecure-requests makes the
+        // browser log that it ignored the directive. It is a notice about our
+        // header, not a page error, and it fired on every route.
+        !e.includes('Content Security Policy')
     );
 
     expect(criticalErrors).toHaveLength(0);
   });
 
   test('should render without crash (error boundary not triggered)', async ({ page }) => {
-    await page.goto('/cashier');
+    await page.goto('cashier');
     await page.waitForTimeout(2000);
 
     // ErrorBoundary renders a specific reload button — if present, page crashed
@@ -57,7 +61,7 @@ test.describe('Wallet Page — Financial UI', () => {
       }
     });
 
-    await page.goto('/wallet');
+    await page.goto('wallet');
     await page.waitForTimeout(2000);
     await expect(page.locator('body')).toBeVisible();
 
@@ -67,14 +71,18 @@ test.describe('Wallet Page — Financial UI', () => {
         !e.includes('auth') &&
         !e.includes('not authenticated') &&
         !e.includes('AuthSessionMissing') &&
-        !e.includes('Invalid Refresh Token')
+        !e.includes('Invalid Refresh Token') &&
+        // A report-only CSP that carries upgrade-insecure-requests makes the
+        // browser log that it ignored the directive. It is a notice about our
+        // header, not a page error, and it fired on every route.
+        !e.includes('Content Security Policy')
     );
 
     expect(criticalErrors).toHaveLength(0);
   });
 
   test('should not trigger error boundary', async ({ page }) => {
-    await page.goto('/wallet');
+    await page.goto('wallet');
     await page.waitForTimeout(2000);
     const errorBoundary = page.locator('text=Something went wrong');
     await expect(errorBoundary).not.toBeVisible();
@@ -83,7 +91,7 @@ test.describe('Wallet Page — Financial UI', () => {
 
 test.describe('Admin Dashboard — Financial UI', () => {
   test('should load without crash', async ({ page }) => {
-    await page.goto('/admin');
+    await page.goto('admin');
     await page.waitForTimeout(2000);
     await expect(page.locator('body')).toBeVisible();
 
@@ -94,7 +102,7 @@ test.describe('Admin Dashboard — Financial UI', () => {
 
 test.describe('Agent Dashboard — Financial UI', () => {
   test('should load without crash', async ({ page }) => {
-    await page.goto('/agent');
+    await page.goto('agent');
     await page.waitForTimeout(2000);
     await expect(page.locator('body')).toBeVisible();
 
@@ -105,7 +113,7 @@ test.describe('Agent Dashboard — Financial UI', () => {
 
 test.describe('Union Dashboard — Financial UI', () => {
   test('should load without crash', async ({ page }) => {
-    await page.goto('/union');
+    await page.goto('union');
     await page.waitForTimeout(2000);
     await expect(page.locator('body')).toBeVisible();
 
@@ -116,7 +124,7 @@ test.describe('Union Dashboard — Financial UI', () => {
 
 test.describe('Settlement Page — Financial UI', () => {
   test('should load without crash', async ({ page }) => {
-    await page.goto('/settlements');
+    await page.goto('settlements');
     await page.waitForTimeout(2000);
     await expect(page.locator('body')).toBeVisible();
 

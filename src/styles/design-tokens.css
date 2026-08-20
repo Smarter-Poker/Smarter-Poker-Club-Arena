@@ -182,7 +182,23 @@
   --seat-border: rgba(255, 255, 255, 0.08);
   --seat-active-border: var(--timer-color);
   --seat-allin-border: var(--color-danger);
-  --seat-avatar-size: 84px; /* Dan 2026-08-15: all table avatars 50% larger (was 56px) */
+  /* Dan 2026-08-15: all table avatars 50% larger (was 56px).
+     --seat-avatar-base is THE ONE NUMBER. Responsive blocks override only this;
+     the villain slot equals it and the hero slot is derived from it, so the two
+     can never drift apart again (2026-08-20 audit: the three mobile blocks in
+     SeatSlot.css had been hardcoding the slot in px, which silently defeated
+     the hero's 1.33x on every phone).
+
+     NOTE: --seat-avatar-size is deliberately NOT aliased here. A `:root`
+     declaration of `--seat-avatar-size: var(--seat-avatar-base)` substitutes
+     at the point of DECLARATION — it would freeze the :root value of the base
+     (84px) and inherit that constant downward, so a later
+     `--seat-avatar-base: 57px` on `.seat` would change nothing. The alias
+     lives on `.seat` in SeatSlot.css, where base and size resolve on the same
+     element and the responsive overrides actually take. */
+  --seat-avatar-base: 84px;
+  /* "HERO avatar should always be 33% bigger than the villains" — Dan. */
+  --seat-avatar-hero-ratio: 1.3333;
 
   /* ─── Card Shadows ─── */
   --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);

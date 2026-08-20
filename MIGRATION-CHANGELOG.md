@@ -8309,3 +8309,31 @@ First human seated session at a Spin (commits `f9ea9730b` + follow-ups).
 - Open: spin quick-join (tap a stake tile → engine creates + seats + starts
   → client lands on the table). The parallel agent's Take Seat bar covers
   returning to a HELD seat, not this.
+
+## 2026-08-20 — Cowork live-fix session (Dan watching/playing)
+
+Three deploys, all verified in production (SPA build-info + engine_table_leases.engine_version):
+
+- [P0] LEAVE-TABLE STUCK-RESERVED: engine refused /leave for any player not in
+  the hand roster ("Player not found" → 400 → client refused cashout), which is
+  exactly the reserved-waiting state. Engine now acks not-in-roster leaves
+  (client does DB cleanup); client releases a stale seat claim instead of
+  stranding, and the tab X closes for spectators (was "your chips are still in
+  your seat" shown to people with no seat).
+- [P0] NEVER DEALT IN: wait_for_big_blind gated new joiners for MINUTES on slow
+  tables with zero explanation (reproduced live: fresh seat sat through 6
+  hands). Dealing loop now auto-enters every waiter as post-BB-to-enter
+  (bbOnlyPosts, one live BB) — "You'll Be Dealt In Next Hand" is literally true.
+- [P0] 6-SECOND COUNTDOWN: useTableTimer computed remaining from the DEVICE
+  clock (deadline - Date.now()); a fast device clock ate seconds off every
+  turn (numeric countdown, urgency window, timebank/auto-fold trigger). Now
+  uses serverNow() like the SeatSlot ring. Ring also floored at 15s and
+  recolored neon blue (#00e5ff) with 3s-remaining tick + heavy haptics.
+- [P1] IN-TAB LOBBY: flex min-height:auto blowout made the lobby tab grow to
+  content height (measured 3893px, unscrollable + clipped); ClubBottomNav's
+  position:fixed resolved against the transformed swipe track (parked at
+  y=3870, off-screen). min-height:0 on the container; nav sticky-bottom
+  inside the lobby tab.
+- [P1] Pot redesign (thin POT pill + street-bets pill, no per-action chip
+  flights, sweep on street end), masthead viewer-club • union (was union
+  twice), alarm-clock time-bank widget (20s face + banks remaining).

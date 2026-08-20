@@ -186,10 +186,25 @@ describe('FALLBACK_CATALOG — used when /store-catalog is unreachable', () => {
     expect(FALLBACK_CATALOG.fromServer).toBe(false);
   });
 
-  it('ships usable chip, diamond and VIP tables', () => {
-    expect(FALLBACK_CATALOG.chipPackages.length).toBeGreaterThan(0);
+  it('ships usable diamond and VIP tables', () => {
     expect(FALLBACK_CATALOG.diamondPackages.length).toBeGreaterThan(0);
     expect(FALLBACK_CATALOG.vipPlans.length).toBeGreaterThan(0);
+  });
+
+  it('offers NO way to buy chips — diamonds never convert to chips', () => {
+    // Product rule: diamonds are the global purchasable currency, chips are a
+    // per-club gambling balance, and the two must never convert. The path was
+    // removed on 2026-08-19 and EXECUTE on fn_purchase_chips /
+    // fn_purchase_club_chips is revoked from every role, service_role included.
+    //
+    // This test previously asserted chipPackages.length > 0 — it ENFORCED the
+    // forbidden path, and would have blocked anyone trying to remove it.
+    //
+    // The catalog loader falls back to bundled tables whenever the server sends
+    // an empty list, so leaving a populated chip table in the client would have
+    // silently restored the offer the server had just withdrawn.
+    expect('chipPackages' in FALLBACK_CATALOG).toBe(false);
+    expect(JSON.stringify(FALLBACK_CATALOG)).not.toMatch(/chips/i);
   });
 
   it('quantity-bearing categories declare a unit so the admin form asks for one', () => {

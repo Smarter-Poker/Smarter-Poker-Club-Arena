@@ -5,7 +5,10 @@
  *
  *  IMPORTANT: every package/plan list here is DISPLAY COPY ONLY. The server
  *  holds the authoritative price tables:
- *    - chip packages:    WH pages/api/club-arena/purchase-chips.js
+ *    (Chips are NOT purchasable. Diamonds are the global purchasable currency;
+ *     chips are a per-club gambling balance and the two never convert. The
+ *     conversion path was removed 2026-08-19 and EXECUTE on fn_purchase_chips /
+ *     fn_purchase_club_chips is revoked from every role, service_role included.)
  *    - diamond packages: WH pages/api/store/create-checkout-session.js
  *    - VIP plans:        WH src/data/diamondStoreData.js + store routes
  *  The client only ever sends ids/plan keys — never amounts or prices.
@@ -206,26 +209,6 @@ export const CATEGORIES = [
 export type SortMode = 'newest' | 'price-low' | 'price-high' | 'popular';
 
 /* ═══ Chip packages — mirrors server table in /api/club-arena/purchase-chips ═══ */
-
-export interface ChipPackage {
-  id: string;
-  chips: number;
-  diamonds: number;
-  /** premium over the base rate, computed server-side */
-  valuePct?: number;
-  bonus?: number;
-  popular?: boolean;
-}
-
-// bonus = real extra value vs the base rate (small pack = 100 chips/diamond),
-// e.g. large = 10000/80 = 125 chips/diamond = +25%. Server table is authoritative.
-const FALLBACK_CHIP_PACKAGES: ChipPackage[] = [
-  { id: 'small', chips: 1000, diamonds: 10 },
-  { id: 'medium', chips: 5000, diamonds: 45, bonus: 11 },
-  { id: 'large', chips: 10000, diamonds: 80, bonus: 25, popular: true },
-  { id: 'mega', chips: 50000, diamonds: 350, bonus: 43 },
-  { id: 'ultra', chips: 100000, diamonds: 600, bonus: 67 },
-];
 
 /* ═══ Diamond packages — mirrors VALID_DIAMOND_PACKAGES in create-checkout-session ═══ */
 
@@ -471,7 +454,6 @@ export interface ShopCategoryInfo {
 }
 
 export interface StoreCatalog {
-  chipPackages: ChipPackage[];
   diamondPackages: DiamondPackage[];
   vipPlans: VipPlan[];
   shopCategories: ShopCategoryInfo[];
@@ -494,11 +476,6 @@ const FALLBACK_SHOP_CATEGORIES: ShopCategoryInfo[] = [
 ];
 
 /** Shape guards — the server response is `any` until proven otherwise. */
-const isChipPkg = (p: unknown): p is ChipPackage =>
-  !!p &&
-  typeof (p as ChipPackage).id === 'string' &&
-  Number.isFinite((p as ChipPackage).chips) &&
-  Number.isFinite((p as ChipPackage).diamonds);
 
 const isDiamondPkg = (p: unknown): p is DiamondPackage =>
   !!p &&
@@ -524,7 +501,6 @@ function pick<T>(raw: unknown, guard: (v: unknown) => v is T, fallback: T[]): T[
 }
 
 export const FALLBACK_CATALOG: StoreCatalog = {
-  chipPackages: FALLBACK_CHIP_PACKAGES,
   diamondPackages: FALLBACK_DIAMOND_PACKAGES,
   vipPlans: FALLBACK_VIP_PLANS,
   shopCategories: FALLBACK_SHOP_CATEGORIES,
@@ -549,7 +525,6 @@ export async function loadStoreCatalog(): Promise<StoreCatalog> {
     const data = await res.json();
     if (!data?.success) throw new Error(data?.error || 'catalog unavailable');
     catalogCache = {
-      chipPackages: pick(data.chipPackages, isChipPkg, FALLBACK_CHIP_PACKAGES),
       diamondPackages: pick(data.diamondPackages, isDiamondPkg, FALLBACK_DIAMOND_PACKAGES),
       vipPlans: pick(data.vipPlans, isVipPlan, FALLBACK_VIP_PLANS),
       shopCategories: pick(data.shopCategories, isCategory, FALLBACK_SHOP_CATEGORIES),

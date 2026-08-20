@@ -45,6 +45,8 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
+import DownlineRakePanel from '../components/agent/DownlineRakePanel';
+import { AgentRakeService, type AgentRoleRow } from '../services/AgentRakeService';
 
 // ── SWR Cache helpers (localStorage for cross-session persistence) ──
 const STATS_CACHE_KEY = 'ps_stats_v3_';
@@ -207,11 +209,17 @@ interface FullStats {
   recent_tournaments: RecentTournament[];
 }
 
-type StatCategory = 'overview' | 'performance' | 'positions' | 'tournaments' | 'analysis';
+type StatCategory = 'overview' | 'performance' | 'positions' | 'tournaments' | 'analysis' | 'rake';
 
 // Single source of truth for the tabs: the swipe handler and the pill row both
 // read this, so they can never drift out of sync.
-const TABS: StatCategory[] = ['overview', 'performance', 'positions', 'tournaments', 'analysis'];
+const BASE_TABS: StatCategory[] = [
+  'overview',
+  'performance',
+  'positions',
+  'tournaments',
+  'analysis',
+];
 
 const TAB_LABELS: Record<StatCategory, string> = {
   overview: 'Overview',
@@ -219,6 +227,7 @@ const TAB_LABELS: Record<StatCategory, string> = {
   positions: 'Positions',
   tournaments: 'Tournaments',
   analysis: 'Analysis',
+  rake: 'Rake',
 };
 
 // Analysis ranges. `null` = no time bound (the most recent hand_cap hands,
@@ -533,6 +542,39 @@ export default function PlayerStatsPage() {
   const [hands, setHands] = useState<HandRow[] | null>(null);
   const [handsLoading, setHandsLoading] = useState(false);
   const [category, setCategory] = useState<StatCategory>('overview');
+
+  // RAKE REPORTING IS AN AGENT PRIVILEGE. A player sees no Rake tab at all
+  // until they are promoted; the RPCs refuse them regardless, this just keeps
+  // the tab from appearing. It is also hidden when looking at someone else's
+  // stats page — an agent's book is theirs, not a public profile field.
+  const [agentRoles, setAgentRoles] = useState<AgentRoleRow[] | null>(null);
+  const isOwnProfile = !userId || userId === user?.id;
+
+  useEffect(() => {
+    if (!isOwnProfile || !user?.id) {
+      setAgentRoles([]);
+      return;
+    }
+    let cancelled = false;
+    void AgentRakeService.getMyAgentRoles().then((r) => {
+      if (!cancelled) setAgentRoles(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwnProfile, user?.id]);
+
+  const canSeeRake = (agentRoles?.length ?? 0) > 0;
+  const TABS = useMemo<StatCategory[]>(
+    () => (canSeeRake ? [...BASE_TABS, 'rake'] : BASE_TABS),
+    [canSeeRake]
+  );
+
+  // If the tab disappears (role revoked, or navigating to another profile),
+  // do not strand the view on a tab that no longer exists.
+  useEffect(() => {
+    if (category === 'rake' && !canSeeRake) setCategory('overview');
+  }, [category, canSeeRake]);
   const statsSwipeHandlers = useSwipeTabs({
     tabs: TABS,
     activeTab: category,
@@ -648,20 +690,18 @@ export default function PlayerStatsPage() {
     if (!targetUserId || category !== 'analysis') return;
     let alive = true;
     setHandsLoading(true);
-    supabase
-      .rpc('ca_player_hands', { p_user: targetUserId, p_mode: handMode, p_limit: 10 })
-      .then(
-        ({ data, error }: any) => {
-          if (!alive || !isMounted.current) return;
-          setHands(!error && Array.isArray(data) ? (data as HandRow[]) : []);
-          setHandsLoading(false);
-        },
-        () => {
-          if (!alive || !isMounted.current) return;
-          setHands([]);
-          setHandsLoading(false);
-        }
-      );
+    supabase.rpc('ca_player_hands', { p_user: targetUserId, p_mode: handMode, p_limit: 10 }).then(
+      ({ data, error }: any) => {
+        if (!alive || !isMounted.current) return;
+        setHands(!error && Array.isArray(data) ? (data as HandRow[]) : []);
+        setHandsLoading(false);
+      },
+      () => {
+        if (!alive || !isMounted.current) return;
+        setHands([]);
+        setHandsLoading(false);
+      }
+    );
     return () => {
       alive = false;
     };
@@ -704,7 +744,11 @@ export default function PlayerStatsPage() {
     const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => loadAllData(), 2000);
     const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadAllData(), 2000);
     const unsubChips = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', () => loadAllData(), 2000);
-    const unsubCashout = masterBus.subscribeDebounced('CASHOUT_APPROVED', () => loadAllData(), 2000);
+    const unsubCashout = masterBus.subscribeDebounced(
+      'CASHOUT_APPROVED',
+      () => loadAllData(),
+      2000
+    );
     const unsubCredit = masterBus.subscribeDebounced('CREDIT_UPDATED', () => loadAllData(), 2000);
     return () => {
       unsubHand();
@@ -715,14 +759,15 @@ export default function PlayerStatsPage() {
     };
   }, [loadAllData]);
 
-
   const overall = full?.overall ?? EMPTY_OVERALL;
   const lifetime = full?.lifetime ?? EMPTY_LIFETIME;
   const tourn = full?.tournaments ?? EMPTY_FULL.tournaments;
 
   const handsWonPct = useMemo(
     () =>
-      overall.total_hands > 0 ? ((overall.hands_won / overall.total_hands) * 100).toFixed(1) : '0.0',
+      overall.total_hands > 0
+        ? ((overall.hands_won / overall.total_hands) * 100).toFixed(1)
+        : '0.0',
     [overall]
   );
 
@@ -959,9 +1004,7 @@ export default function PlayerStatsPage() {
               {Math.max(lifetime.hands, overall.total_hands).toLocaleString()}
             </span>
             {lifetime.hands > overall.total_hands && (
-              <span className="hero-stat-sub">
-                {overall.total_hands.toLocaleString()} analysed
-              </span>
+              <span className="hero-stat-sub">{overall.total_hands.toLocaleString()} analysed</span>
             )}
           </div>
           <div className="hero-stat">
@@ -1015,8 +1058,8 @@ export default function PlayerStatsPage() {
           confident-looking number invites the wrong conclusion. */}
       {hasData && overall.cash_hands > 0 && overall.cash_hands < 1000 && (
         <div className="stats-notice">
-          {overall.cash_hands.toLocaleString()} cash hands is a small sample — win rate is
-          not yet meaningful.
+          {overall.cash_hands.toLocaleString()} cash hands is a small sample — win rate is not yet
+          meaningful.
         </div>
       )}
       {servingCache && (
@@ -1041,8 +1084,15 @@ export default function PlayerStatsPage() {
       {/* ── STATS CONTENT ── */}
       <div className="stats-content" {...statsSwipeHandlers}>
         {/* EMPTY STATE — shown on EVERY tab. Previously only Overview had one,
-            so a player with no hands saw a wall of 0.0% rows and empty charts. */}
-        {!hasData && emptyState}
+            so a player with no hands saw a wall of 0.0% rows and empty charts.
+            Rake opts out: an agent who has played no hands themselves still has
+            a downline generating rake, and that is the whole point of the tab. */}
+        {!hasData && category !== 'rake' && emptyState}
+
+        {/* ── RAKE TAB — live downline earnings, agents only ── */}
+        {category === 'rake' && agentRoles && agentRoles.length > 0 && (
+          <DownlineRakePanel roles={agentRoles} />
+        )}
 
         {/* ── OVERVIEW TAB ── */}
         {category === 'overview' && hasData && (
@@ -1269,11 +1319,7 @@ export default function PlayerStatsPage() {
                 <h3 style={{ color: '#f59e0b' }}>Tournament Results</h3>
               </div>
               <div className="stats-grid">
-                <StatRow
-                  label="Entries"
-                  value={tourn.entries.toLocaleString()}
-                  color="#00d4ff"
-                />
+                <StatRow label="Entries" value={tourn.entries.toLocaleString()} color="#00d4ff" />
                 <StatRow label="Cashes" value={tourn.cashes.toLocaleString()} color="#22c55e" />
                 <StatRow
                   label="ITM %"
@@ -1338,7 +1384,7 @@ export default function PlayerStatsPage() {
                       </div>
                       <div className="tournament-item-result">
                         <span className="tournament-item-rank">
-                          {t.finish_rank ? `#${t.finish_rank}` : (t.status || '-')}
+                          {t.finish_rank ? `#${t.finish_rank}` : t.status || '-'}
                         </span>
                         <span
                           className={`tournament-item-net ${num(t.prize) - num(t.buyin) >= 0 ? 'positive' : 'negative'}`}
@@ -1561,7 +1607,9 @@ export default function PlayerStatsPage() {
                         )}
                       </div>
                       <div className="hand-row-result">
-                        <span className={`hand-row-profit ${h.profit >= 0 ? 'positive' : 'negative'}`}>
+                        <span
+                          className={`hand-row-profit ${h.profit >= 0 ? 'positive' : 'negative'}`}
+                        >
                           {h.profit >= 0 ? '+' : ''}
                           {h.profit.toLocaleString()}
                         </span>

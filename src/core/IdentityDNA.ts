@@ -364,9 +364,22 @@ class IdentityDNACore {
    * Load user profile from Supabase profiles table
    */
   async loadUserProfile(userId: string): Promise<UserProfile | null> {
+    /**
+     * Dan 2026-08-20: this was `select('*')` and it ALWAYS failed — 403 on
+     * every load, for signed-in users too. `profiles` has 114 columns but
+     * `authenticated` is granted SELECT on 103: email, phone,
+     * stripe_customer_id, is_farming_flagged and seven others are deliberately
+     * withheld. Postgres refuses the whole statement when a star-select
+     * touches an ungranted column, so the profile silently never loaded and
+     * the catch below wrote it off as an expected anon/RLS denial. It was
+     * neither anon nor RLS — the row policy is `true`.
+     *
+     * Ask for the columns this actually returns. Adding one here means
+     * checking it is granted first.
+     */
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, username, display_name, avatar_url, tier, created_at, updated_at')
       .eq('id', userId)
       .maybeSingle();
 

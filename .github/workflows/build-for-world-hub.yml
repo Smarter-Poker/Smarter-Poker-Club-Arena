@@ -58,6 +58,24 @@ jobs:
           VITE_APP_ENV: production
         run: npm run build
 
+      # Build provenance: record the commit this dist was actually built from,
+      # inside the bundle. Three syncs on 2026-08-19 published a bundle built
+      # from a stale tree while naming the current sha in the commit message;
+      # nothing in the artefact contradicted them. With this file,
+      #   curl -s https://smarter.poker/hub/club-arena/build-info.json
+      # answers "what is actually live" without grepping minified chunks.
+      - name: Stamp build provenance
+        run: |
+          cat > dist/build-info.json <<JSON
+          {
+            "ca_sha": "${{ github.sha }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "built_by": "build-for-world-hub.yml",
+            "run_id": "${{ github.run_id }}"
+          }
+          JSON
+          cat dist/build-info.json
+
       - name: Marker - build succeeded
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)

@@ -26,6 +26,7 @@ import {
 } from '../services/DailyChallengeService';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import { ConfettiEffect } from '../components/effects/ConfettiEffect';
 import styles from './DailyChallengesPage.module.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -706,6 +707,12 @@ export default function DailyChallengesPage() {
             .join(' ')}
           onClick={() => setReward(null)}
         >
+          <ConfettiEffect
+            isActive={true}
+            intensity="heavy"
+            colors={['#00f0ff', '#0ff', '#ffffff']}
+            duration={4000}
+          />
           <div className={styles.celebrateCard} onClick={(e) => e.stopPropagation()}>
             <div className={styles.celebrateBurst} aria-hidden="true">
               {'\u25C6'}

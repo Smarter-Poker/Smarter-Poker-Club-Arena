@@ -138,6 +138,13 @@ export interface ShopPurchase {
   created_at: string;
   item_name?: string | null;
   item_category?: string | null;
+  /**
+   * Set when the purchase was reversed and the chips returned. Without it the
+   * history listed a refunded purchase identically to a live one — the member
+   * saw chips they no longer owed, and an admin got an enabled Refund button
+   * that could only ever come back "already refunded".
+   */
+  refunded_at?: string | null;
 }
 
 export interface InventoryRow {

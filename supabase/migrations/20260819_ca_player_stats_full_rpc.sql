@@ -1,3 +1,6 @@
+DROP FUNCTION IF EXISTS public.ca_player_stats_full(uuid);
+DROP FUNCTION IF EXISTS public.ca_player_stats_full(uuid, int);
+
 -- ============================================================================
 -- 20260819_ca_player_stats_full_rpc.sql
 -- Club Arena Player Stats rebuild (Tier 2 migration — additive only)

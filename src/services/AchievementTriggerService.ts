@@ -95,19 +95,18 @@ class AchievementTriggerServiceClass {
 
     // 6. Update Daily Challenge progress (fire-and-forget, non-blocking)
     try {
-      const progressResults = await Promise.allSettled(
-        [
-          dailyChallengeService.updateProgress(userId, 'hands_played', 1),
-          handData.won ? dailyChallengeService.updateProgress(userId, 'hands_won', 1) : null,
-          handData.showdown ? dailyChallengeService.updateProgress(userId, 'showdowns', 1) : null,
-        ].filter(Boolean) as Promise<any>[]
-      );
+      // ONE round trip for all three counters. This used to be up to three
+      // parallel updateProgress() calls, each doing its own select plus an RPC
+      // per matching row -- roughly 3 selects and 8 RPCs per player per hand at
+      // table speed. bump_challenge_progress does it in a single statement and
+      // returns only the challenges that just crossed into completion.
+      const { completed } = await dailyChallengeService.bumpProgress(userId, {
+        hands_played: 1,
+        ...(handData.won ? { hands_won: 1 } : {}),
+        ...(handData.showdown ? { showdowns: 1 } : {}),
+      });
 
-      // Check if any challenges were completed
-      const anyCompleted = progressResults.some(
-        (r) => r.status === 'fulfilled' && r.value?.completed?.length > 0
-      );
-      if (anyCompleted) {
+      if (completed.length > 0) {
         masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'hand_complete' });
       }
     } catch (dcErr) {

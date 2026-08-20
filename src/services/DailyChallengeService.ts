@@ -419,8 +419,103 @@ class DailyChallengeServiceClass {
   }
 
   /**
-   * Update progress on a challenge type
-   * Called by AchievementTriggerService or directly from game events
+   * Streak, with insurance.
+   *
+   * Server-computed so the freeze can be spent atomically -- freezes are
+   * currency, and the client has no write access to challenge_streak_state.
+   * A freeze covers exactly one missed day once the streak is worth protecting;
+   * the covered day counts, because "your streak was protected" that then shows
+   * a smaller number reads as the protection having failed.
+   */
+  async getStreak(userId: string): Promise<{
+    streak: number;
+    freezesAvailable: number;
+    usedFreeze: boolean;
+    frozenDate: string | null;
+    nextFreezeIn: number | null;
+  }> {
+    const fallback = {
+      streak: 0,
+      freezesAvailable: 0,
+      usedFreeze: false,
+      frozenDate: null,
+      nextFreezeIn: null,
+    };
+    try {
+      const { data, error } = await supabase.rpc('get_challenge_streak', {
+        p_user_id: userId,
+      });
+      if (error) {
+        reportError(error, 'DailyChallengeService.getStreak_failed');
+        return fallback;
+      }
+      return {
+        streak: Number(data?.streak) || 0,
+        freezesAvailable: Number(data?.freezesAvailable) || 0,
+        usedFreeze: data?.usedFreeze === true,
+        frozenDate: data?.frozenDate || null,
+        nextFreezeIn: data?.nextFreezeIn == null ? null : Number(data.nextFreezeIn),
+      };
+    } catch (e) {
+      reportError(e, 'DailyChallengeService.getStreak_threw');
+      return fallback;
+    }
+  }
+
+  /**
+   * Advance SEVERAL challenge types in ONE round trip.
+   *
+   * This is the hot path: it runs for every player on every completed hand.
+   * The per-type updateProgress() below costs a SELECT plus one RPC per
+   * matching row, so a single hand that played + won + reached showdown could
+   * cost ~3 selects and ~8 RPCs per player. bump_challenge_progress does the
+   * whole thing in one statement, server-side, reading each requirement from
+   * daily_challenge_catalog.
+   *
+   * @param amounts e.g. { hands_played: 1, hands_won: 1 }
+   * @returns the challenges that CROSSED into completion on this call
+   */
+  async bumpProgress(
+    userId: string,
+    amounts: Partial<Record<ChallengeType, number>>
+  ): Promise<{ completed: Array<{ id: string; challengeId: string; chipReward: number }> }> {
+    const cleaned: Record<string, number> = {};
+    for (const [k, v] of Object.entries(amounts)) {
+      if (typeof v === 'number' && v > 0) cleaned[k] = v;
+    }
+    if (Object.keys(cleaned).length === 0) return { completed: [] };
+
+    try {
+      const { data, error } = await supabase.rpc('bump_challenge_progress', {
+        p_user_id: userId,
+        p_amounts: cleaned,
+        p_daily_key: this.getTodayKey(),
+        p_weekly_key: this.getWeekKey(),
+        p_monthly_key: this.getMonthKey(),
+      });
+      if (error) {
+        reportError(error, 'DailyChallengeService.bumpProgress_failed');
+        return { completed: [] };
+      }
+      return {
+        completed: (data || []).map((r: any) => ({
+          id: r.id,
+          challengeId: r.challenge_id,
+          chipReward: Number(r.chip_reward) || 0,
+        })),
+      };
+    } catch (e) {
+      reportError(e, 'DailyChallengeService.bumpProgress_threw');
+      return { completed: [] };
+    }
+  }
+
+  /**
+   * Update progress on a SINGLE challenge type.
+   *
+   * Prefer bumpProgress() when advancing more than one type at once -- this
+   * form costs a select plus an RPC per matching row. Kept for callers that
+   * genuinely only move one counter (a friend added, a tournament entered).
    */
   async updateProgress(
     userId: string,

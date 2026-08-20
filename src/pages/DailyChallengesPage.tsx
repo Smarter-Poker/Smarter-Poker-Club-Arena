@@ -37,6 +37,14 @@ interface TieredChallenge extends UserDailyChallenge {
   tier: Tier;
 }
 
+interface StreakInfo {
+  streak: number;
+  freezesAvailable: number;
+  usedFreeze: boolean;
+  frozenDate: string | null;
+  nextFreezeIn: number | null;
+}
+
 interface ChallengeStats {
   totalCompleted: number;
   currentStreak: number;
@@ -190,6 +198,7 @@ export default function DailyChallengesPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [challenges, setChallenges] = useState<TieredChallenge[]>([]);
   const [stats, setStats] = useState<ChallengeStats | null>(null);
+  const [streak, setStreak] = useState<StreakInfo | null>(null);
   const [activeTier, setActiveTier] = useState<Tier>('daily');
   const [claimingIds, setClaimingIds] = useState<Set<string>>(new Set());
   const [celebratingIds, setCelebratingIds] = useState<Set<string>>(new Set());
@@ -203,9 +212,10 @@ export default function DailyChallengesPage() {
   const loadChallenges = useCallback(async (uid: string, withSpinner: boolean) => {
     if (withSpinner) setIsLoading(true);
     try {
-      const [{ daily, weekly, monthly }, challengeStats] = await Promise.all([
+      const [{ daily, weekly, monthly }, challengeStats, streakInfo] = await Promise.all([
         dailyChallengeService.getAllChallenges(uid),
         dailyChallengeService.getStats(uid),
+        dailyChallengeService.getStreak(uid),
       ]);
       if (!isMountedRef.current) return;
       setChallenges([
@@ -214,6 +224,7 @@ export default function DailyChallengesPage() {
         ...monthly,
       ]);
       setStats(challengeStats);
+      setStreak(streakInfo);
     } catch (err) {
       reportError(err, 'DailyChallengesPage.loadChallenges');
       if (isMountedRef.current) toast.error('Failed to load challenges');
@@ -406,35 +417,54 @@ export default function DailyChallengesPage() {
         </div>
       </header>
 
-      {/* Streak banner */}
+      {/* Streak banner — the streak now comes from the server so a freeze can
+          be spent atomically. Freezes are earned (one per 7 days, max 3) and
+          cover a single missed day, so being ill once does not wipe a month of
+          effort and send the most engaged players away for good. */}
       <section className={styles.streakBanner}>
         <div className={styles.streakLeft}>
-          <StreakFire streakCount={stats?.currentStreak || 0} size="md" />
+          <StreakFire streakCount={streak?.streak ?? stats?.currentStreak ?? 0} size="md" />
           <div className={styles.streakInfo}>
             <span className={styles.streakCount}>
-              {stats?.currentStreak || 0} day streak
+              {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} day streak
             </span>
             <span className={styles.streakSub}>
-              Complete a challenge every day to keep it alive
+              {streak?.usedFreeze && streak.frozenDate
+                ? `A streak freeze covered ${new Date(streak.frozenDate + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} for you`
+                : 'Complete a challenge every day to keep it alive'}
             </span>
           </div>
         </div>
-        {stats && (
-          <div className={styles.milestone}>
-            <div className={styles.milestoneTrack}>
-              <div
-                className={styles.milestoneFill}
-                style={{
-                  width: `${Math.min((stats.currentStreak / stats.nextMilestone) * 100, 100)}%`,
-                }}
-              />
-            </div>
-            <span className={styles.milestoneText}>
-              {stats.currentStreak}/{stats.nextMilestone} days to +
-              {stats.milestoneReward.toLocaleString()} chips
+
+        <div className={styles.milestone}>
+          {stats && (
+            <>
+              <div className={styles.milestoneTrack}>
+                <div
+                  className={styles.milestoneFill}
+                  style={{
+                    width: `${Math.min(((streak?.streak ?? stats.currentStreak) / stats.nextMilestone) * 100, 100)}%`,
+                  }}
+                />
+              </div>
+              <span className={styles.milestoneText}>
+                {(streak?.streak ?? stats.currentStreak).toLocaleString()}/
+                {stats.nextMilestone.toLocaleString()} days to +
+                {stats.milestoneReward.toLocaleString()} chips
+              </span>
+            </>
+          )}
+          {streak && (
+            <span className={styles.freezeLine}>
+              {streak.freezesAvailable > 0
+                ? `${streak.freezesAvailable} streak freeze${streak.freezesAvailable === 1 ? '' : 's'} banked`
+                : 'No streak freeze banked'}
+              {streak.nextFreezeIn != null
+                ? ` - next in ${streak.nextFreezeIn} day${streak.nextFreezeIn === 1 ? '' : 's'}`
+                : ''}
             </span>
-          </div>
-        )}
+          )}
+        </div>
       </section>
 
       {/* Summary tiles */}

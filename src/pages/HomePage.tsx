@@ -1537,7 +1537,6 @@ function HomePageInner() {
                     width={640}
                     height={1024}
                   />
-                  <span className={styles.tileLabel}>{tile.alt}</span>
                 </div>
               </button>
             )

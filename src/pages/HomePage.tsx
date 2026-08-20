@@ -45,7 +45,7 @@ import {
   rememberLastClub,
 } from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
-import { getClubLevel } from '../utils/clubLevels';
+import { getClubLevelFromMembers } from '../utils/clubLevels';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -900,22 +900,24 @@ function HomePageInner() {
               }
             }
 
-            // Compute club level
-            const levelInfo = getClubLevel({
-              level: effectiveLevel,
-              playerCount: memberCount,
-              hierarchyUnits: club.hierarchy_units_rounded_up || 0,
-              playerThresholdCurrent: club.player_threshold_current || 0,
-              playerThresholdNext: club.player_threshold_next || 0,
-              hierarchyThresholdCurrent: club.hierarchy_threshold_current || 0,
-              hierarchyThresholdNext: club.hierarchy_threshold_next || 0,
-            });
+            /* Dan 2026-08-20: "a true 'club level' level 1-55 that is
+               determined based on how many players are inside a club."
+
+               This used to be getClubLevel(), a MAX() of a player curve and a
+               HIERARCHY curve — so a club levelled up by appointing agents,
+               and the badge answered a question nobody was asking. Level is
+               now purely member count, on the published 1-55 ladder that
+               public.fn_club_level_for_members mirrors. `effectiveLevel` (the
+               stored clubs.level) is left alone for the progress bars that
+               still read the legacy threshold columns. */
+            const clubLevel = getClubLevelFromMembers(memberCount);
+            void effectiveLevel;
 
             if (isMounted) {
               // Safety clamp: active players can never exceed member count
               statsMap[club.id] = {
                 totalMembers: memberCount,
-                clubLevel: levelInfo.level,
+                clubLevel,
                 activePlayers: Math.min(activePlayers, memberCount),
               };
             }
@@ -950,55 +952,45 @@ function HomePageInner() {
               .in('id', realUnionIds);
 
             if (unionRows && isMounted) {
-              // Fetch member clubs for each union to aggregate active players
-              const { data: unionClubRows } = await supabase
-                .from('union_clubs')
-                .select('union_id, club_id')
-                .in('union_id', realUnionIds);
+              /* ── Dan 2026-08-20: "'active players' isn't working inside the
+                 club cards." ──
 
-              // Aggregate active players from all member clubs per union
+                 For unions it was flatly wrong, not merely stale. This summed
+                 per-club active counts over `union_clubs` — the union's MEMBER
+                 clubs — and never looked at the union's OWN club row, which is
+                 exactly where its tables live. Midway Union had 377 players
+                 seated across 72 running tables and its card read 0. Summing
+                 per-club counts also double-counted anyone seated in two member
+                 clubs at once.
+
+                 fn_union_active_player_counts answers for the union directly:
+                 DISTINCT users across the union's own club row AND its member
+                 clubs, in one query. */
               const unionActiveMap: Record<string, number> = {};
-              if (unionClubRows && unionClubRows.length > 0) {
-                // Get unique member club IDs across all unions
-                const memberClubIds = [...new Set(unionClubRows.map((r: any) => r.club_id))];
-                // Batch-fetch active counts for ALL member clubs in one RPC.
-                const clubActiveMap: Record<string, number> = {};
-                try {
-                  const { data: batchCounts } = await supabase.rpc(
-                    'fn_batch_active_player_counts',
-                    { p_club_ids: memberClubIds }
-                  );
-                  for (const r of batchCounts || [])
-                    clubActiveMap[r.club_id] = Number(r.active_count) || 0;
-                } catch (e) {
-                  reportError(e, 'HomePage.unionBatchActiveCounts');
+              try {
+                const { data: unionCounts } = await supabase.rpc(
+                  'fn_union_active_player_counts',
+                  { p_union_ids: realUnionIds }
+                );
+                for (const r of unionCounts || []) {
+                  unionActiveMap[(r as any).union_id] = Number((r as any).active_count) || 0;
                 }
-                // Sum active counts per union from its member clubs
-                for (const row of unionClubRows) {
-                  const uid = (row as any).union_id;
-                  unionActiveMap[uid] =
-                    (unionActiveMap[uid] || 0) + (clubActiveMap[(row as any).club_id] || 0);
-                }
+              } catch (e) {
+                reportError(e, 'HomePage.unionActiveCounts');
               }
 
               for (const u of unionRows) {
                 const clubId = unionIdToClubId[u.id]; // Map back to clubs.id for statsMap
                 if (!clubId) continue;
                 const totalMembers = u.total_players || u.member_count || 0;
-                const levelInfo = getClubLevel({
-                  level: u.level || 1,
-                  playerCount: totalMembers,
-                  hierarchyUnits: u.hierarchy_units_rounded_up || 0,
-                  playerThresholdCurrent: u.player_threshold_current || 0,
-                  playerThresholdNext: u.player_threshold_next || 0,
-                  hierarchyThresholdCurrent: u.hierarchy_threshold_current || 0,
-                  hierarchyThresholdNext: u.hierarchy_threshold_next || 0,
-                });
-                // Use aggregated active count from member clubs, clamped to totalMembers
+                // Same 1-55 member ladder as a club — a union is measured by
+                // the players under it, on the same scale, so the two numbers
+                // sitting side by side on a carousel mean the same thing.
+                const clubLevel = getClubLevelFromMembers(totalMembers);
                 const unionActive = unionActiveMap[u.id] || 0;
                 statsMap[clubId] = {
                   totalMembers,
-                  clubLevel: levelInfo.level,
+                  clubLevel,
                   activePlayers: Math.min(unionActive, totalMembers),
                 };
               }

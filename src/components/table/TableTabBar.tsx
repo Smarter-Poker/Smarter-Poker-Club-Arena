@@ -16,6 +16,7 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import TableMenu, { createDefaultMenuSections } from './TableMenu';
 import { masterBus } from '../../core/MasterBus';
+import { formatGameTitle } from '../../utils/formatGameTitle';
 import './TableTabBar.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -174,7 +175,8 @@ export function TableTabBar({
                 transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
               }}
             >
-              <span className="table-tab-bar__tab-name">{tab.name}</span>
+              {/* Dan 2026-08-20: variants are acronyms — NLH, not nlh. */}
+              <span className="table-tab-bar__tab-name">{formatGameTitle(tab.name)}</span>
 
               {/* Turn indicator — show timer or pulsing dot */}
               {!isActive && tab.isMyTurn && (

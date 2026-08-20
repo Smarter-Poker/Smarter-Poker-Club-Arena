@@ -35,6 +35,36 @@
  * refresh, and persisting it risks showing a stale one days later.
  */
 
+/**
+ * A tournament result. Present ONLY for tournament sessions.
+ *
+ * Dan 2026-08-20: "tournaments are never displayed by chips, only what place
+ * you finished and how much you made."
+ *
+ * Chip counts are meaningless once a tournament is over — tournament chips have
+ * no cash value, you cannot leave the table with them, and a player who min-
+ * cashed with a huge stack earlier still finished where they finished. The cash
+ * summary's whole vocabulary (profit/loss, biggest pot, peak stack) is the wrong
+ * language for that, so when this block is present the summary renders a
+ * different modal entirely rather than filling chip tiles with zeroes.
+ */
+export interface TournamentResult {
+  /** Tournament name for the header, e.g. "Early Bird Freeroll". */
+  name?: string;
+  /** Finishing position. null while still in play or if the row is unreadable. */
+  finishPlace: number | null;
+  /** Field size, for the "3rd of 128" line. null when unknown. */
+  entrants: number | null;
+  /** Prize money awarded for the finish. 0 for a non-cashing finish. */
+  prize: number;
+  /** Bounty/PKO winnings, separate from the finish prize. */
+  bountyWinnings: number;
+  /** Bounties collected — knockouts. */
+  knockouts: number;
+  rebuys: number;
+  addOns: number;
+}
+
 export interface SessionSummaryPayload {
   /** Elapsed session time in SECONDS (not a timestamp). */
   duration: number;
@@ -47,6 +77,12 @@ export interface SessionSummaryPayload {
   peakStack: number;
   /** Shown in the header when known, e.g. "NLH 1/2". */
   tableName?: string;
+  /**
+   * Set for tournament sessions. Its presence — not a boolean flag — is what
+   * switches the modal, so a tournament can never render half a cash summary
+   * because someone forgot to set the flag.
+   */
+  tournament?: TournamentResult;
 }
 
 type Listener = (payload: SessionSummaryPayload | null) => void;

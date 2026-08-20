@@ -1,8 +1,20 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * CLUB & UNION LEVELS SYSTEM (1-50 Club Arena Style)
+ * CLUB & UNION LEVELS SYSTEM
  * ═══════════════════════════════════════════════════════════════════════════════
- * Two independent axes drive club level:
+ *
+ * TWO SYSTEMS LIVE HERE. Read this before using either.
+ *
+ * 1. THE CLUB LEVEL (1-55, member count only) — what a club card shows.
+ *    getClubLevelFromMembers / getClubLevelInfoFromMembers, below. Added
+ *    2026-08-20 at Dan's request. Mirrors public.club_level_thresholds.
+ *
+ * 2. The legacy dual-axis level (1-50), described below. Still used for the
+ *    progress bars that read the DB's threshold columns, and still what the
+ *    `clubs.level` column holds. NOT the number on the card any more.
+ *
+ * ── Legacy dual-axis system ──
+ * Two independent axes drove club level:
  *   - Player Count  → player_level      (30 * 1.125^(L-1))
  *   - Hierarchy     → hierarchy_level   (2 * 1.086^(L-1))
  *
@@ -25,7 +37,94 @@ export type ClubTier =
   | 'major'
   | 'network'
   | 'enterprise'
-  | 'elite';
+  | 'elite'
+  | 'legendary';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE 1-55 MEMBER-COUNT LADDER — Dan 2026-08-20
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// "we need to create a true 'club level' level 1-55 that is determined based on
+//  how many players are inside a club."
+//
+// The dual-axis formula above (players MAX hierarchy, capped at 50) is kept for
+// the progress bars and for reading legacy DB columns, but it is no longer what
+// decides the number on a club card. It could not be: a club levelled up by
+// appointing agents, so the badge answered "how much structure does this club
+// have" when every player reading it asks "how big is this club".
+//
+// These numbers are the MIRROR of public.club_level_thresholds (migration
+// 20260821000500). If you change one you must change the other — the DB
+// function fn_club_level_for_members and getClubLevelFromMembers below have to
+// agree, or a card and a report will disagree about the same club.
+//
+// Shape of the curve: fast early so a new club sees the number move, brutal
+// late so the top means something. 578 members -> 29, 1,156 -> 33, and 55
+// requires 100,000.
+
+/** min_members required to reach each level, index 0 = level 1. */
+export const CLUB_LEVEL_THRESHOLDS: readonly number[] = [
+  0, 5, 10, 15, 20, // 1-5    Starter
+  25, 30, 35, 40, 45, // 6-10   Small Club
+  50, 60, 70, 80, 90, // 11-15  Growing Club
+  100, 110, 125, 140, 160, // 16-20  Established
+  180, 200, 230, 270, 310, // 21-25  Large Club
+  360, 420, 490, 570, 660, // 26-30  Regional Operator
+  770, 900, 1050, 1200, 1400, // 31-35  Major Operator
+  1650, 1900, 2200, 2600, 3000, // 36-40  Network-Grade Club
+  3500, 4100, 4800, 5600, 6500, // 41-45  Enterprise Club
+  7600, 8900, 10500, 12500, 15000, // 46-50  Elite Network Operator
+  20000, 30000, 45000, 70000, 100000, // 51-55  Legendary Network
+];
+
+export const MAX_CLUB_LEVEL = CLUB_LEVEL_THRESHOLDS.length; // 55
+
+/**
+ * The club's level: the highest rung whose member requirement it has reached.
+ *
+ * Mirrors public.fn_club_level_for_members exactly.
+ */
+export function getClubLevelFromMembers(memberCount: number | null | undefined): number {
+  const members = Math.max(0, Math.floor(memberCount ?? 0));
+  let level = 1;
+  for (let i = 0; i < CLUB_LEVEL_THRESHOLDS.length; i++) {
+    if (members >= CLUB_LEVEL_THRESHOLDS[i]) level = i + 1;
+    else break;
+  }
+  return level;
+}
+
+/** Members needed for the next level, or null at the cap. */
+export function membersToNextClubLevel(memberCount: number | null | undefined): number | null {
+  const members = Math.max(0, Math.floor(memberCount ?? 0));
+  const level = getClubLevelFromMembers(members);
+  if (level >= MAX_CLUB_LEVEL) return null;
+  return Math.max(0, CLUB_LEVEL_THRESHOLDS[level] - members);
+}
+
+/** Full display info for a member-count-derived level. */
+export function getClubLevelInfoFromMembers(memberCount: number | null | undefined): ClubLevelInfo {
+  const members = Math.max(0, Math.floor(memberCount ?? 0));
+  const level = getClubLevelFromMembers(members);
+  const tier = getTierForLevel(level);
+
+  const floor = CLUB_LEVEL_THRESHOLDS[level - 1];
+  const ceiling = level < MAX_CLUB_LEVEL ? CLUB_LEVEL_THRESHOLDS[level] : floor;
+  const progressPercent =
+    level >= MAX_CLUB_LEVEL || ceiling <= floor
+      ? 100
+      : Math.max(0, Math.min(100, Math.floor(((members - floor) / (ceiling - floor)) * 100)));
+
+  return {
+    level,
+    tier,
+    tierLabel: TIER_LABELS[tier],
+    progressPercent,
+    color: TIER_COLORS[tier],
+    gradient: TIER_GRADIENTS[tier],
+    playerLevel: level,
+  };
+}
 
 export interface ClubLevelInfo {
   level: number;
@@ -70,6 +169,10 @@ export interface ClubLevelInput {
 // 41-45 = Enterprise Club  | 46-50 = Elite Network Operator
 
 export function getTierForLevel(level: number): ClubTier {
+  // 51-55 is the new top band that came with the 1-55 member ladder. Reaching
+  // it takes 20,000 members, so it is deliberately out of reach of anything on
+  // the platform today.
+  if (level >= 51) return 'legendary';
   if (level >= 46) return 'elite';
   if (level >= 41) return 'enterprise';
   if (level >= 36) return 'network';
@@ -93,6 +196,7 @@ const TIER_LABELS: Record<ClubTier, string> = {
   network: 'Network-Grade Club',
   enterprise: 'Enterprise Club',
   elite: 'Elite Network Operator',
+  legendary: 'Legendary Network',
 };
 
 const TIER_COLORS: Record<ClubTier, string> = {
@@ -106,6 +210,7 @@ const TIER_COLORS: Record<ClubTier, string> = {
   network: '#8A2BE2', // Blue Violet
   enterprise: '#E5E4E2', // Platinum
   elite: '#00CED1', // Diamond/Cyan
+  legendary: '#FF6FD8', // Legendary magenta
 };
 
 const TIER_GRADIENTS: Record<ClubTier, string> = {
@@ -119,6 +224,7 @@ const TIER_GRADIENTS: Record<ClubTier, string> = {
   network: 'linear-gradient(135deg, #8A2BE2 0%, #4B0082 100%)',
   enterprise: 'linear-gradient(135deg, #E5E4E2 0%, #A9A9A9 100%)',
   elite: 'linear-gradient(135deg, #B9F2FF 0%, #00CED1 100%)',
+  legendary: 'linear-gradient(135deg, #FF6FD8 0%, #3813C2 100%)',
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -178,8 +284,22 @@ export function computeHierarchyUnits(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function getClubLevel(input: ClubLevelInput): ClubLevelInfo {
-  const currentLvl = Math.min(Math.max(input.level || 1, 1), 50);
   const pCount = Math.max(input.playerCount || 0, input.memberCount || 0);
+
+  /* Dan 2026-08-20 — the level a club SHOWS is now the member ladder.
+
+     This used to return `input.level`: the stored clubs.level, a MAX() of the
+     player curve and the hierarchy curve, clamped to 50. Six surfaces call
+     this (club cards, discovery, the hamburger header, the club dashboard,
+     the union page twice), so changing it here rather than at each callsite
+     is what keeps them from disagreeing about the same club.
+
+     The stored level is still honoured as a fallback for a caller that knows a
+     level but not a member count — the union page's per-club rows, for one. */
+  const currentLvl =
+    pCount > 0
+      ? getClubLevelFromMembers(pCount)
+      : Math.min(Math.max(input.level || 1, 1), MAX_CLUB_LEVEL);
   const hUnitsRaw = input.hierarchyUnitsRoundedUp ?? Math.ceil(input.hierarchyUnits || 0);
 
   // Determine sub-levels for display (prefer DB values, fallback to client compute)
@@ -212,7 +332,14 @@ export function getClubLevel(input: ClubLevelInput): ClubLevelInfo {
   progressPercent = Math.max(0, Math.min(100, Math.floor(Math.max(p_prog, h_prog))));
 
   // Max level = 100% progress
-  if (currentLvl >= 50) progressPercent = 100;
+  if (currentLvl >= MAX_CLUB_LEVEL) progressPercent = 100;
+
+  /* When we have a member count, the progress bar must measure the SAME ladder
+     the level came from. Leaving it on the legacy dual-axis maths would show a
+     bar filling toward a level the badge will never display. */
+  if (pCount > 0) {
+    progressPercent = getClubLevelInfoFromMembers(pCount).progressPercent;
+  }
 
   const tier = getTierForLevel(currentLvl);
 

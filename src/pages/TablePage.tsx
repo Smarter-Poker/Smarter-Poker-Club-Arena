@@ -14,7 +14,10 @@
  */
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
-import { publishSessionSummary } from '../services/pendingSessionSummary';
+import {
+  publishSessionSummary,
+  type TournamentResult,
+} from '../services/pendingSessionSummary';
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -246,6 +249,72 @@ import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOURNAMENT RESULT — what the Session Complete popup shows instead of chips
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Read the player's finishing position and winnings for a tournament.
+ *
+ * Dan 2026-08-20: "tournaments are never displayed by chips, only what place
+ * you finished and how much you made."
+ *
+ * `tournament_players` is the record of record: `position` is the finish,
+ * `prize` the payout, `bounty_winnings` / `bounties_collected` the PKO side.
+ * Field size comes from the tournament row.
+ *
+ * Never throws and never blocks the leave: on any failure it returns a result
+ * with nulls, so the summary shows "\u2014" for the place rather than falling back
+ * to a chip panel that would be actively wrong.
+ */
+async function fetchTournamentResult(
+  tournamentId: string,
+  userId: string
+): Promise<TournamentResult> {
+  const empty: TournamentResult = {
+    finishPlace: null,
+    entrants: null,
+    prize: 0,
+    bountyWinnings: 0,
+    knockouts: 0,
+    rebuys: 0,
+    addOns: 0,
+  };
+
+  try {
+    const [{ data: entry }, { data: tourney }] = await Promise.all([
+      supabase
+        .from('tournament_players')
+        .select('position, prize, bounty_winnings, bounties_collected, rebuys, add_on')
+        .eq('tournament_id', tournamentId)
+        .eq('user_id', userId)
+        .maybeSingle(),
+      supabase
+        .from('tournaments')
+        .select('name, current_players')
+        .eq('id', tournamentId)
+        .maybeSingle(),
+    ]);
+
+    return {
+      name: tourney?.name || undefined,
+      finishPlace: entry?.position ?? null,
+      entrants: tourney?.current_players ?? null,
+      prize: Number(entry?.prize) || 0,
+      bountyWinnings: Number(entry?.bounty_winnings) || 0,
+      knockouts: Number(entry?.bounties_collected) || 0,
+      rebuys: Number(entry?.rebuys) || 0,
+      // add_on is a count on some rows and a boolean on older ones; both mean
+      // "how many add-ons", so coerce rather than trusting the column type.
+      addOns:
+        typeof entry?.add_on === 'boolean' ? (entry.add_on ? 1 : 0) : Number(entry?.add_on) || 0,
+    };
+  } catch (err) {
+    reportError(err, 'TablePage.fetchTournamentResult');
+    return empty;
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CONFIG HELPER — Derives rake config from official chart
@@ -2831,6 +2900,20 @@ export default function TablePage({
         // it could not outlive the navigation. Hand the payload to the app-root
         // host first: it renders over whichever lobby the player lands on
         // (HomePage, ClubHomePage or ClubLobby) and survives this unmounting.
+        /* Dan 2026-08-20: "tournaments are never displayed by chips, only what
+           place you finished and how much you made."
+
+           A tournament seat used to publish the cash payload, so the summary
+           showed a chip-denominated "profit", a biggest pot and a peak stack —
+           numbers that mean nothing once the tournament is over, and which
+           rendered as a grid of zeroes next to a bogus profit figure. Fetch the
+           actual result instead; the modal switches on the presence of this
+           block. The fetch is awaited before publishing because the host reads
+           the payload once, on arrival. */
+        const tournamentResult = tableState.tournamentId
+          ? await fetchTournamentResult(tableState.tournamentId, userId)
+          : undefined;
+
         publishSessionSummary({
           duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
           handsPlayed: handsPlayedRef.current,
@@ -2839,6 +2922,8 @@ export default function TablePage({
           profitLoss: sessionPLRef.current,
           biggestPot: biggestPotRef.current,
           peakStack: peakStackRef.current,
+          tableName: tableState.tableName,
+          tournament: tournamentResult,
         });
 
         // Now actually leave. These three used to fire together from the

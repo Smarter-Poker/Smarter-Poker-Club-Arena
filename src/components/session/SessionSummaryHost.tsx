@@ -37,6 +37,7 @@ import {
   subscribeSessionSummary,
   type SessionSummaryPayload,
 } from '../../services/pendingSessionSummary';
+import { formatGameTitle } from '../../utils/formatGameTitle';
 import './SessionSummaryHost.css';
 
 /** Ease-out-back: overshoots slightly then settles. Reads as "landing". */
@@ -93,6 +94,23 @@ function formatChips(n: number): string {
   return Math.abs(v) >= 1000 ? v.toLocaleString() : String(v);
 }
 
+/** 1 -> "1st", 2 -> "2nd", 3 -> "3rd", 11 -> "11th", 22 -> "22nd". */
+function ordinal(n: number): string {
+  const abs = Math.abs(Math.round(n));
+  const tens = abs % 100;
+  if (tens >= 11 && tens <= 13) return `${abs}th`;
+  switch (abs % 10) {
+    case 1:
+      return `${abs}st`;
+    case 2:
+      return `${abs}nd`;
+    case 3:
+      return `${abs}rd`;
+    default:
+      return `${abs}th`;
+  }
+}
+
 export function SessionSummaryHost() {
   const [payload, setPayload] = useState<SessionSummaryPayload | null>(() => peekSessionSummary());
 
@@ -112,13 +130,51 @@ export function SessionSummaryHost() {
     return () => window.removeEventListener('keydown', onKey);
   }, [payload, close]);
 
-  const isProfit = (payload?.profitLoss ?? 0) >= 0;
-  const displayPL = useCountUp(payload?.profitLoss ?? 0, 900, !!payload);
+  /* Dan 2026-08-20: "tournaments are never displayed by chips, only what place
+     you finished and how much you made." The presence of the tournament block
+     switches both the hero and the tiles. */
+  const tourney = payload?.tournament;
+  const isTournament = !!tourney;
+
+  /* A tournament "wins" by cashing, not by ending with more chips than you sat
+     down with — tournament chips are not money. */
+  const totalWon = (tourney?.prize ?? 0) + (tourney?.bountyWinnings ?? 0);
+  const isProfit = isTournament ? totalWon > 0 : (payload?.profitLoss ?? 0) >= 0;
+
+  const heroTarget = isTournament ? totalWon : (payload?.profitLoss ?? 0);
+  const displayPL = useCountUp(heroTarget, 900, !!payload);
 
   const stats = useMemo(() => {
     if (!payload) return [];
     const handsPerHour =
       payload.duration > 60 ? Math.round((payload.handsPlayed / payload.duration) * 3600) : 0;
+
+    if (payload.tournament) {
+      const t = payload.tournament;
+      /* Deliberately no profit/loss, biggest pot, peak stack or win rate here.
+         Every one of those is a chip statistic, and the screenshot that
+         prompted this showed them as a wall of zeroes next to a meaningless
+         "+265 profit" for a tournament seat. */
+      const out = [
+        {
+          label: 'Finished',
+          value: t.finishPlace != null ? ordinal(t.finishPlace) : '—',
+        },
+        { label: 'Entrants', value: t.entrants != null ? String(t.entrants) : '—' },
+        { label: 'Prize', value: formatChips(t.prize) },
+        { label: 'Duration', value: formatDuration(payload.duration) },
+        { label: 'Hands played', value: String(payload.handsPlayed) },
+        { label: 'Hands/hour', value: String(handsPerHour) },
+      ];
+      if (t.knockouts > 0) out.push({ label: 'Knockouts', value: String(t.knockouts) });
+      if (t.bountyWinnings > 0) {
+        out.push({ label: 'Bounties', value: formatChips(t.bountyWinnings) });
+      }
+      if (t.rebuys > 0) out.push({ label: 'Rebuys', value: String(t.rebuys) });
+      if (t.addOns > 0) out.push({ label: 'Add-ons', value: String(t.addOns) });
+      return out;
+    }
+
     const winRate =
       payload.handsPlayed > 0 ? Math.round((payload.handsWon / payload.handsPlayed) * 100) : 0;
 
@@ -155,20 +211,46 @@ export function SessionSummaryHost() {
         </button>
 
         <header className="ssh-head">
-          <span className="ssh-eyebrow">Session Complete</span>
+          <span className="ssh-eyebrow">
+            {isTournament ? 'Tournament Complete' : 'Session Complete'}
+          </span>
           <h2 className="ssh-title" id="ssh-title">
-            {payload.tableName || 'Table session'}
+            {formatGameTitle(
+              (isTournament ? tourney?.name : undefined) ||
+                payload.tableName ||
+                (isTournament ? 'Tournament' : 'Table session')
+            )}
           </h2>
         </header>
 
-        <div className="ssh-hero">
-          <span className="ssh-hero__label">{isProfit ? 'Profit' : 'Loss'}</span>
-          <span className="ssh-hero__value">
-            {isProfit ? '+' : '-'}
-            {formatChips(Math.abs(displayPL))}
-          </span>
-          <span className="ssh-hero__sweep" aria-hidden="true" />
-        </div>
+        {isTournament ? (
+          /* The result IS the finish. Place leads, money follows — the reverse
+             of the cash panel, where the money is the whole story. */
+          <div className="ssh-hero ssh-hero--tourney">
+            <span className="ssh-hero__label">
+              {tourney?.finishPlace != null ? 'Finished' : 'Result'}
+            </span>
+            <span className="ssh-hero__value">
+              {tourney?.finishPlace != null ? ordinal(tourney.finishPlace) : '—'}
+            </span>
+            {tourney?.entrants != null && tourney.entrants > 0 && (
+              <span className="ssh-hero__sub">of {tourney.entrants.toLocaleString()} entrants</span>
+            )}
+            <span className="ssh-hero__sub ssh-hero__sub--money">
+              {totalWon > 0 ? `Won ${formatChips(displayPL)}` : 'No prize'}
+            </span>
+            <span className="ssh-hero__sweep" aria-hidden="true" />
+          </div>
+        ) : (
+          <div className="ssh-hero">
+            <span className="ssh-hero__label">{isProfit ? 'Profit' : 'Loss'}</span>
+            <span className="ssh-hero__value">
+              {isProfit ? '+' : '-'}
+              {formatChips(Math.abs(displayPL))}
+            </span>
+            <span className="ssh-hero__sweep" aria-hidden="true" />
+          </div>
+        )}
 
         <div className="ssh-grid">
           {stats.map((s, i) => (

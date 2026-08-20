@@ -141,6 +141,26 @@
   background-clip: text;
   color: transparent;
 }
+/* ── Tournament hero ──
+   Dan 2026-08-20: a tournament result is a PLACE, not a chip count. The place
+   takes the big type the profit figure gets on a cash session, and the money
+   sits under it as supporting detail. */
+.ssh-hero__sub {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #9aa6bb;
+  letter-spacing: 0.01em;
+}
+.ssh-hero__sub--money {
+  margin-top: 6px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #e6ecf5;
+}
+.ssh-hero--tourney .ssh-hero__value {
+  font-size: clamp(2rem, 10vw, 2.7rem);
+}
+
 /* Light sweep — a single pass, not a loop. Celebratory without being a toy. */
 .ssh-hero__sweep {
   position: absolute;

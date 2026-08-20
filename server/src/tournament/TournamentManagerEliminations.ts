@@ -58,7 +58,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         }
 
         // Find ALL busted players (0 chips) in a single query
-        const { data: busted } = await supabase
+        let { data: busted } = await supabase
           .from('tournament_players')
           .select('user_id, chips')
           .eq('tournament_id', this.tournamentId)
@@ -99,6 +99,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           // >=1 survivor these are all >= 2, leaving 1st for finishTournament.
           // (Exact-tie ordering by hand-start stack for a genuine same-hand double
           // bust is a documented follow-up; distinct places is money-correct now.)
+          // TOURNAMENT REBUYS 2026-08-20: a busted player who is entitled to a
+          // rebuy is not out yet. Before anyone is assigned a finishing place,
+          // give the eligible ones the chance to buy back in; whoever does is
+          // removed from this sweep and keeps playing.
+          //
+          // Until now NOTHING triggered a tournament rebuy or add-on. The
+          // engine has auto-rebuy for CASH tables only, and
+          // process_tournament_rebuy's sole caller was the SPA, which needs a
+          // human at a keyboard. With no humans the feature had never executed
+          // once: zero 'addon' wallet rows in all of history and the last
+          // 'rebuy' row dated 2026-04-19, while events were being scheduled
+          // with rebuy_cost, rebuy_levels 6 and max_rebuys 2 configured and
+          // ready. The money path was correct and simply unreachable.
+          const rebought = await this.tryTournamentRebuys(busted.map((b) => b.user_id));
+          if (rebought.size > 0) {
+            busted = busted.filter((b) => !rebought.has(b.user_id));
+            if (busted.length === 0) {
+              return; // everyone bought back in; nobody is eliminated this pass
+            }
+          }
+
           let bustedOrdered = [...busted].sort((a, b) => (a.chips ?? 0) - (b.chips ?? 0));
 
           // TOURNEY-AUDIT 2026-07-24 [double-pay guard]: if EVERY remaining
@@ -279,6 +300,78 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         this.isProcessingEliminations = false;
       }
     }, 5000);
+  }
+
+  /**
+   * Give busted HORSES their rebuy, exactly as a human would take one.
+   *
+   * Every eligibility rule (rebuys offered, inside the rebuy level window,
+   * under max_rebuys, stack low enough) is enforced inside
+   * process_tournament_rebuy, which also does the chip debit, the prize-pool
+   * increment and the single rake booking in one transaction. So this asks
+   * and lets the database say no -- the refusals ('Rebuy limit reached',
+   * 'Insufficient club chips', 'Rebuy period has closed') are all NORMAL and
+   * are counted, not reported as errors.
+   *
+   * Horses only. A real player's rebuy is their own decision and is taken
+   * through the client.
+   *
+   * Bounded by construction: max_rebuys (2 on the scheduled events) and the
+   * rebuy level window, both enforced server-side, so this cannot loop.
+   */
+  private async tryTournamentRebuys(bustedUserIds: string[]): Promise<Set<string>> {
+    const rebought = new Set<string>();
+    const t = this.tournamentCache as
+      | { is_rebuy?: boolean; rebuy_levels?: number | null; late_reg_levels?: number | null }
+      | undefined;
+    if (!t?.is_rebuy || bustedUserIds.length === 0) return rebought;
+
+    // Cheap pre-check so a closed rebuy period costs no round trips at all.
+    const cap = t.rebuy_levels ?? t.late_reg_levels ?? 0;
+    if (cap > 0 && this.currentLevel > cap) return rebought;
+
+    try {
+      const { data: horseRows, error: horseErr } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('id', bustedUserIds)
+        .eq('is_horse', true);
+      if (horseErr || !horseRows || horseRows.length === 0) return rebought;
+
+      const declined = new Map<string, number>();
+      for (const h of horseRows) {
+        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
+          p_tournament_id: this.tournamentId,
+          p_user_id: h.id,
+          p_rebuy_type: 'rebuy',
+          // null: let the server price it. Passing a client-side quote here
+          // would only risk a spurious 'Price mismatch'.
+          p_cost: null,
+          p_chips: null,
+          p_current_level: this.currentLevel,
+        });
+        if (error) {
+          declined.set(error.message, (declined.get(error.message) || 0) + 1);
+          continue;
+        }
+        if ((data as { success?: boolean } | null)?.success === true) rebought.add(h.id);
+      }
+
+      if (rebought.size > 0) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] ${rebought.size} rebuy(s) taken at level ${this.currentLevel}`
+        );
+      }
+      if (declined.size > 0) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] rebuys declined — ` +
+            [...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')
+        );
+      }
+    } catch (err) {
+      reportError(err, 'Tournament.tournament_rebuy_threw');
+    }
+    return rebought;
   }
 
   protected async eliminatePlayer(userId: string, position: number): Promise<void> {

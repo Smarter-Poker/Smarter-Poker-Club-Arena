@@ -37,6 +37,7 @@
 import { supabase } from './supabase.js';
 import { logBBJCollection } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { raiseFinancialAlert } from './financialAlerts.js';
 
 export type PendingFeeKind = 'rake' | 'bbj_contribution';
 
@@ -103,14 +104,24 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       last_error: fee.lastError,
     });
     if (error && !/duplicate|unique/i.test(error.message || '')) {
-      reportError(
-        new Error(
-          `[A5] Could not queue unbanked ${kind} for hand ${fee.handId ?? fee.handNumber} ` +
-            `(rake ${fee.rake}, bbj ${fee.bbj}): ${error.message}. These chips left the pot and ` +
-            `are now recoverable only by hand.`
-        ),
-        'FeeReconciler.queue_failed'
-      );
+      const detail =
+        `[A5] Could not queue unbanked ${kind} for hand ${fee.handId ?? fee.handNumber} ` +
+        `(rake ${fee.rake}, bbj ${fee.bbj}): ${error.message}. These chips left the pot and ` +
+        `are now recoverable only by hand.`;
+      reportError(new Error(detail), 'FeeReconciler.queue_failed');
+      // Sentry alone is not enough for a money alarm: financial_alerts is the
+      // durable, queryable channel an operator actually reads, and this is the
+      // last line of defence before chips become unrecoverable from data.
+      await raiseFinancialAlert('critical', 'FeeReconciler.queue_failed', detail, {
+        kind,
+        tableId: fee.tableId,
+        clubId: fee.clubId ?? null,
+        handId: fee.handId,
+        handNumber: fee.handNumber,
+        rake: fee.rake,
+        bbj: fee.bbj,
+        dbError: error.message,
+      });
     }
   } catch (err) {
     reportError(err, 'FeeReconciler.queue_threw');
@@ -210,14 +221,23 @@ export async function reconcilePendingFees(): Promise<{
       summary.resolved++;
     } else if (attempts >= MAX_RECONCILE_ATTEMPTS) {
       summary.exhausted++;
-      reportError(
-        new Error(
-          `[A5] Unbanked ${row.kind} for hand ${row.hand_id ?? row.hand_number} still failing after ` +
-            `${attempts} attempts (rake ${row.rake}, bbj ${row.bbj}): ${failureMessage}. ` +
-            `Row ${row.id} left open for manual reconciliation.`
-        ),
-        'FeeReconciler.exhausted'
-      );
+      const detail =
+        `[A5] Unbanked ${row.kind} for hand ${row.hand_id ?? row.hand_number} still failing after ` +
+        `${attempts} attempts (rake ${row.rake}, bbj ${row.bbj}): ${failureMessage}. ` +
+        `Row ${row.id} left open for manual reconciliation.`;
+      reportError(new Error(detail), 'FeeReconciler.exhausted');
+      await raiseFinancialAlert('critical', 'FeeReconciler.exhausted', detail, {
+        pendingFeeId: row.id,
+        kind: row.kind,
+        tableId: row.table_id,
+        clubId: row.club_id,
+        handId: row.hand_id,
+        handNumber: row.hand_number,
+        rake: row.rake,
+        bbj: row.bbj,
+        attempts,
+        lastError: failureMessage,
+      });
     } else {
       summary.stillFailing++;
     }
@@ -332,26 +352,31 @@ export async function auditBBJDrift(
     const unlinkableRows = Number(row?.unlinkable_rows ?? 0);
     const unlinkableChips = Number(row?.unlinkable_chips ?? 0);
     if (unlinkableChips > toleranceChips) {
-      reportError(
-        new Error(
-          `[A5] ${unlinkableChips} chips of BBJ contribution over the last ${windowDays}d sit on ` +
-            `${unlinkableRows} rake_records row(s) with NO hand_id, so they can be reconciled ` +
-            `against the jackpot pool by neither this audit nor fn_bbj_repair_unbanked. ` +
-            `Rising numbers here mean logHandHistory is failing and returning a null id.`
-        ),
-        'FeeReconciler.bbj_unlinkable'
-      );
+      const detail =
+        `[A5] ${unlinkableChips} chips of BBJ contribution over the last ${windowDays}d sit on ` +
+        `${unlinkableRows} rake_records row(s) with NO hand_id, so they can be reconciled ` +
+        `against the jackpot pool by neither this audit nor fn_bbj_repair_unbanked. ` +
+        `Rising numbers here mean logHandHistory is failing and returning a null id.`;
+      reportError(new Error(detail), 'FeeReconciler.bbj_unlinkable');
+      await raiseFinancialAlert('warning', 'FeeReconciler.bbj_unlinkable', detail, {
+        windowDays,
+        unlinkableRows,
+        unlinkableChips,
+      });
     }
 
     if (Math.abs(drift) > toleranceChips) {
-      reportError(
-        new Error(
-          `[A5] BBJ ledger drift over the last ${windowDays}d: rake_records booked ${booked} ` +
-            `of BBJ contribution, bbj_contributions received ${received} (drift ${drift}). ` +
-            `A positive drift means chips left pots and never reached the jackpot pool.`
-        ),
-        'FeeReconciler.bbj_drift'
-      );
+      const detail =
+        `[A5] BBJ ledger drift over the last ${windowDays}d: rake_records booked ${booked} ` +
+        `of BBJ contribution, bbj_contributions received ${received} (drift ${drift}). ` +
+        `A positive drift means chips left pots and never reached the jackpot pool.`;
+      reportError(new Error(detail), 'FeeReconciler.bbj_drift');
+      await raiseFinancialAlert('warning', 'FeeReconciler.bbj_drift', detail, {
+        windowDays,
+        booked,
+        received,
+        drift,
+      });
     }
     return { booked, received, drift, unlinkableRows, unlinkableChips };
   } catch (err) {

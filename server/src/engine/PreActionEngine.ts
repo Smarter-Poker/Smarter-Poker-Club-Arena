@@ -223,8 +223,27 @@ export class PreActionEngine {
       case 'auto_call':
         if (canCheck) {
           action = 'check';
-        } else if (amountToCall <= playerStack) {
-          // Check if the call amount exceeds what the player agreed to
+        } else {
+          /**
+           * A9 FIX (2026-08-20): the cap is checked BEFORE choosing between a
+           * normal call and an all-in call.
+           *
+           * It used to live inside the `amountToCall <= playerStack` branch
+           * only, so the one case it most needed to cover skipped it entirely:
+           * when the bet exceeded the player's stack, control fell to the `else`
+           * and committed `playerStack` — their WHOLE stack — without ever
+           * looking at maxCallAmount.
+           *
+           * A player who pre-set "auto-call up to 50" and then faced a shove had
+           * their entire 5,000 committed. A pre-action is a promise about how
+           * much of your money may move while you are not looking, and this
+           * broke that promise in the most expensive situation there is.
+           *
+           * The cap now governs both paths. Note it is compared against
+           * `amountToCall`, not against the capped amount — a player who agreed
+           * to 50 has not agreed to an all-in for 50 against a 5,000 bet; they
+           * have declined the hand.
+           */
           if (entry.maxCallAmount !== undefined && amountToCall > entry.maxCallAmount) {
             // FSM: validating → invalidated → idle
             fsm.transition('invalidated');
@@ -242,11 +261,8 @@ export class PreActionEngine {
             };
           }
           action = 'call';
-          amount = amountToCall;
-        } else {
-          // All-in call
-          action = 'call';
-          amount = playerStack;
+          // An all-in call is still a call, just bounded by the stack.
+          amount = Math.min(amountToCall, playerStack);
         }
         break;
 

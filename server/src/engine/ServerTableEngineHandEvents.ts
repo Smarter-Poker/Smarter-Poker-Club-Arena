@@ -13,6 +13,7 @@ import type { Street as ShadowStreet } from './eventlog/events.js';
 import { logHandHistory } from '../services/supabase.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { ServerTableEngineSettlement } from './ServerTableEngineSettlement.js';
 
 export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettlement {
@@ -570,10 +571,37 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         rakeTaken: 0,
       });
       if (!result.valid) {
-        reportError(
+        const detail =
           `Hand ${this.handCount} @ ${live.stage}: ` +
-            result.violations.map((v) => v.message).join('; '),
-          `ServerTableEngine.${this.tableId}.street_integrity_violation`
+          result.violations.map((v) => v.message).join('; ');
+        reportError(detail, `ServerTableEngine.${this.tableId}.street_integrity_violation`);
+
+        /**
+         * A conservation or pot-accounting violation means chips were created or
+         * destroyed inside a live hand. That is the most serious thing this
+         * engine can detect about itself, and Sentry alone is the wrong home for
+         * it — financial_alerts is the durable, queryable channel operators
+         * actually read, and raiseFinancialAlert re-escalates a CRITICAL to
+         * Sentry anyway, so this loses nothing and gains a record that survives.
+         *
+         * Fire-and-forget: this runs on the hot path between streets and must
+         * never delay a hand. raiseFinancialAlert never throws or rejects.
+         */
+        const critical = result.violations.some((v) => v.severity === 'critical');
+        void raiseFinancialAlert(
+          critical ? 'critical' : 'warning',
+          'ServerTableEngine.street_integrity_violation',
+          detail,
+          {
+            tableId: this.tableId,
+            handNumber: this.handCount,
+            stage: live.stage,
+            pot: live.pot,
+            chipTotal: result.chipTotal,
+            expectedChipTotal: result.expectedChipTotal ?? null,
+            drift: result.drift ?? null,
+            violations: result.violations.map((v) => ({ type: v.type, severity: v.severity })),
+          }
         );
       }
     } catch (err) {

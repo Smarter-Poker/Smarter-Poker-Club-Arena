@@ -1468,6 +1468,121 @@ class SoundService {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
+   *  SPIN WHEEL — the multiplier draw (2026-08-20)
+   * ═══════════════════════════════════════════════════════════════════════
+   * In a Spin the draw IS the product, and the ticking is most of the drama.
+   * Three cues: the wheel is released, the wheel runs down, the wheel lands.
+   */
+
+  /** Release — a mechanical clunk and a rising sweep as the wheel is let go. */
+  playSpinStart() {
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // The lever
+    this.createNoiseBurst(t, 0.06, 0.22, 2600);
+    this.playTone(160, 0.1, 0.0, 'square', 0.16);
+
+    // Wheel picking up speed
+    const osc = this.ctx!.createOscillator();
+    const gain = this.ctx!.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(90, t + 0.05);
+    osc.frequency.exponentialRampToValueAtTime(300, t + 0.75);
+    const lp = this.ctx!.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(500, t + 0.05);
+    lp.frequency.linearRampToValueAtTime(2200, t + 0.75);
+    gain.gain.setValueAtTime(0.0001, t + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.07, t + 0.4);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+    osc.connect(lp);
+    lp.connect(gain);
+    gain.connect(this.out);
+    osc.start(t + 0.05);
+    osc.stop(t + 0.9);
+
+    haptic.medium();
+  }
+
+  /**
+   * The ticking, scheduled across the whole spin.
+   *
+   * Ticks are spaced on the SAME easing curve as the wheel's rotation, so the
+   * sound decelerates with the visual instead of running at a constant rate
+   * beside it. That coupling is what makes the last few segments feel heavy —
+   * a metronome under a decelerating wheel reads as broken.
+   */
+  playSpinTicking(durationMs: number) {
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
+    const t0 = this.ctx!.currentTime;
+    const dur = Math.max(0.4, durationMs / 1000);
+
+    // Position along the same cubic-bezier-ish ease as the wheel. Solving the
+    // real bezier is overkill; an ease-out cubic tracks it closely enough that
+    // the ear cannot tell, and the tick count falls out of the inverse.
+    const TICKS = 46;
+    for (let i = 0; i < TICKS; i++) {
+      const p = i / TICKS;
+      // Inverse of ease-out-cubic: time at which the wheel has covered p.
+      const at = dur * (1 - Math.pow(1 - p, 1 / 3));
+      const remaining = 1 - p;
+      // Late ticks are louder and lower — the wheel is heavier near the end.
+      const vol = 0.035 + 0.05 * (1 - remaining);
+      this.playTone(1500 - 380 * (1 - remaining), 0.035, at, 'square', vol);
+      if (this.ctx) this.createNoiseBurst(t0 + at, 0.018, vol * 0.7, 5200);
+    }
+  }
+
+  /**
+   * The landing. Scales with the result — a 2× gets a clean stop, a jackpot
+   * gets the full fanfare. Same event, three different sizes of moment.
+   */
+  playSpinMultiplierResult(multiplier: number) {
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // The stop — always present.
+    this.createNoiseBurst(t, 0.08, 0.3, 2200);
+    this.playTone(150, 0.16, 0.0, 'sine', 0.3);
+
+    if (multiplier >= 25) {
+      // Jackpot: rising fanfare, then a bright sustained chord.
+      [523.25, 659.25, 783.99, 1046.5, 1318.51].forEach((f, i) => {
+        this.playTone(f, 0.7, 0.08 + i * 0.07, 'triangle', 0.16);
+      });
+      [1046.5, 1318.51, 1567.98].forEach((f, i) => {
+        this.playTone(f, 1.1, 0.5 + i * 0.04, 'sine', 0.12);
+      });
+      // Coin shower for the biggest tiers
+      if (multiplier >= 100) {
+        for (let i = 0; i < 12; i++) {
+          this.playTone(
+            2093 * (0.92 + Math.random() * 0.16),
+            0.14,
+            0.55 + Math.random() * 0.7,
+            'triangle',
+            0.05
+          );
+        }
+      }
+      haptic.jackpot();
+    } else if (multiplier >= 5) {
+      // Mid: a confident two-note lift. Something happened.
+      this.playTone(523.25, 0.34, 0.06, 'triangle', 0.18);
+      this.playTone(783.99, 0.42, 0.16, 'triangle', 0.16);
+      haptic.strong();
+    } else {
+      // Base: a clean, unfussy settle. Not a sad trombone — most spins are 2×
+      // and making the common case feel like a loss poisons the format.
+      this.playTone(392.0, 0.26, 0.06, 'sine', 0.14);
+      this.playTone(523.25, 0.3, 0.13, 'sine', 0.11);
+      haptic.medium();
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
    *  MYSTERY BOUNTY CHEST — the three beats of the reveal (2026-08-20)
    * ═══════════════════════════════════════════════════════════════════════
    * Dan: "a suspense filled in screen with a treasure chest that needs to be

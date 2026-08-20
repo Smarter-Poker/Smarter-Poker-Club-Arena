@@ -1,0 +1,475 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  SPIN WHEEL — styles (2026-08-20)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Every class and keyframe is prefixed `sw`. @keyframes is a GLOBAL namespace
+ * and this app carries 900+ of them; two definitions of one name resolve by
+ * load order, silently, for both consumers. The prefix is what keeps a new
+ * component out of that failure mode.
+ */
+
+.sw {
+  position: fixed;
+  inset: 0;
+  z-index: 99997;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.sw__backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(30, 64, 120, 0.5), rgba(0, 0, 0, 0) 62%),
+    rgba(3, 5, 12, 0.93);
+  backdrop-filter: blur(8px) saturate(1.15);
+  -webkit-backdrop-filter: blur(8px) saturate(1.15);
+  animation: swBackdropIn 0.4s ease-out both;
+}
+
+@keyframes swBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.sw__stage {
+  position: relative;
+  width: min(340px, 90vw);
+  text-align: center;
+}
+
+.sw__eyebrow {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #60a5fa;
+  text-shadow: 0 0 18px rgba(96, 165, 250, 0.7);
+  animation: swFadeDown 0.5s ease-out both;
+}
+
+.sw__players {
+  margin-top: 5px;
+  font-size: 12px;
+  color: #94a3b8;
+  animation: swFadeDown 0.5s ease-out 0.08s both;
+}
+
+@keyframes swFadeDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Wheel ────────────────────────────────────────────────────────────────── */
+
+.sw__wheel-wrap {
+  position: relative;
+  width: 252px;
+  height: 252px;
+  margin: 22px auto 0;
+}
+
+.sw__glow {
+  position: absolute;
+  inset: -30px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(96, 165, 250, 0.28),
+    rgba(96, 165, 250, 0) 68%
+  );
+  animation: swGlowPulse 2.2s ease-in-out infinite;
+}
+
+/* The glow tracks the tier once it lands — a mega result should not look like
+   a 2×. Colour comes from the tier class on the root. */
+.sw--mid .sw__glow {
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.3), rgba(0, 0, 0, 0) 68%);
+}
+.sw--big .sw__glow {
+  background: radial-gradient(circle, rgba(249, 115, 22, 0.36), rgba(0, 0, 0, 0) 68%);
+}
+.sw--mega .sw__glow {
+  background: radial-gradient(circle, rgba(255, 215, 0, 0.42), rgba(0, 0, 0, 0) 68%);
+}
+
+@keyframes swGlowPulse {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+.sw__wheel {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 5px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.65),
+    inset 0 0 40px rgba(0, 0, 0, 0.55);
+  /* THE CURVE. A long fast middle and a very slow tail, so the last few
+     segments crawl past the pointer and can actually be read. A plain ease-out
+     stops being interesting halfway through and gives away the answer early. */
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.12, 0.72, 0.06, 1);
+  will-change: transform;
+}
+
+/* Each segment is a rotated wedge built with a conic slice. */
+.sw__seg {
+  position: absolute;
+  inset: 0;
+  transform-origin: center center;
+  clip-path: polygon(50% 50%, 50% 0%, 100% 0%, 100% 50%);
+}
+
+.sw__seg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from 0deg,
+    var(--sw-seg-a) 0deg,
+    var(--sw-seg-b) var(--sw-angle),
+    transparent var(--sw-angle)
+  );
+}
+
+.sw__seg.sw--base {
+  --sw-seg-a: #1e3a5f;
+  --sw-seg-b: #16304f;
+}
+.sw__seg.sw--mid {
+  --sw-seg-a: #14532d;
+  --sw-seg-b: #10452a;
+}
+.sw__seg.sw--big {
+  --sw-seg-a: #7c2d12;
+  --sw-seg-b: #6b2410;
+}
+.sw__seg.sw--mega {
+  --sw-seg-a: #78350f;
+  --sw-seg-b: #a16207;
+}
+
+.sw__seg-label {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%) rotate(calc(var(--sw-angle) / 2));
+  transform-origin: center 110px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 900;
+  color: #e2e8f0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.sw__seg.sw--mega .sw__seg-label {
+  color: #fde68a;
+  text-shadow: 0 0 10px rgba(253, 230, 138, 0.8);
+}
+
+.sw__hub {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, #1e293b, #0b1220);
+  border: 3px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+}
+
+/* ── Pointer ──────────────────────────────────────────────────────────────── */
+
+.sw__pointer {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  margin-left: -13px;
+  width: 26px;
+  height: 34px;
+  z-index: 3;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.7));
+}
+
+.sw__pointer-tip {
+  display: block;
+  width: 0;
+  height: 0;
+  border-left: 13px solid transparent;
+  border-right: 13px solid transparent;
+  border-top: 30px solid #fbbf24;
+}
+
+/* Flicks as segments pass beneath — the visual half of the ticking. */
+.sw__pointer--live {
+  animation: swPointerFlick 0.09s linear infinite;
+  transform-origin: top center;
+}
+
+@keyframes swPointerFlick {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-9deg);
+  }
+}
+
+/* The tick slows as the wheel does, so the last segments feel heavy. */
+.sw--settling .sw__pointer--live {
+  animation-duration: 0.26s;
+}
+
+/* ── Status ───────────────────────────────────────────────────────────────── */
+
+.sw__status {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: swFadeDown 0.4s ease-out both;
+}
+
+.sw__status-main {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #e2e8f0;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+}
+
+.sw__status-sub {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.sw__dots i {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: #94a3b8;
+  animation: swDot 1.3s ease-in-out infinite;
+}
+
+.sw__dots i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.sw__dots i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes swDot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* ── Result ───────────────────────────────────────────────────────────────── */
+
+.sw__result {
+  margin-top: 20px;
+  animation: swResultIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes swResultIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.6) translateY(14px);
+    filter: blur(7px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.1) translateY(0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.sw__mult {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(28px, 9vw, 42px);
+  font-weight: 900;
+  line-height: 1;
+  color: #60a5fa;
+  text-shadow: 0 0 24px currentColor;
+}
+
+.sw--mid .sw__mult {
+  color: #34d399;
+}
+.sw--big .sw__mult {
+  color: #fb923c;
+}
+.sw--mega .sw__mult {
+  color: #fbbf24;
+}
+
+/* The PRIZE is the headline, not the multiple. "You are playing for $30" is
+   the fact that matters; the multiple is how it was arrived at. */
+.sw__prize {
+  margin-top: 2px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(34px, 12vw, 56px);
+  font-weight: 900;
+  line-height: 1.05;
+  color: #fff;
+  text-shadow:
+    0 0 26px rgba(255, 255, 255, 0.35),
+    0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.sw__prize-label {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #94a3b8;
+}
+
+.sw__hype {
+  margin-top: 10px;
+  display: inline-block;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.22), rgba(249, 115, 22, 0.14));
+  border: 1px solid rgba(251, 191, 36, 0.6);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #fbbf24;
+  animation: swHype 1.4s ease-in-out infinite;
+}
+
+@keyframes swHype {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.06);
+    filter: brightness(1.25);
+  }
+}
+
+/* ── Confetti (big results only) ──────────────────────────────────────────── */
+
+.sw__confetti {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.sw__conf {
+  position: absolute;
+  width: 7px;
+  height: 12px;
+  border-radius: 2px;
+  background: #fbbf24;
+  --sw-conf-x: calc((var(--sw-c) - 11.5) * 22px);
+  animation: swConfFall 1.8s cubic-bezier(0.2, 0.6, 0.35, 1) both;
+  animation-delay: calc(var(--sw-c) * 34ms);
+}
+
+.sw__conf:nth-child(3n) {
+  background: #60a5fa;
+}
+.sw__conf:nth-child(3n + 1) {
+  background: #34d399;
+}
+
+@keyframes swConfFall {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(0.4);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--sw-conf-x), 300px) rotate(680deg) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+/* The wheel STILL TURNS and still lands on the result — a player who asked for
+   less motion is owed the draw, which is the entire product. What goes is the
+   flicking pointer, the confetti, the pulsing, and most of the duration. */
+@media (prefers-reduced-motion: reduce) {
+  .sw__confetti,
+  .sw__pointer--live {
+    animation: none;
+  }
+  .sw__glow,
+  .sw__hype,
+  .sw__dots i {
+    animation: none;
+  }
+  .sw__wheel {
+    transition-duration: 400ms !important;
+    transition-timing-function: ease-out;
+  }
+  .sw__result,
+  .sw__status,
+  .sw__eyebrow,
+  .sw__players {
+    animation: none;
+  }
+}
+
+@media (max-width: 380px) {
+  .sw__wheel-wrap {
+    width: 216px;
+    height: 216px;
+  }
+  .sw__seg-label {
+    font-size: 11px;
+    transform-origin: center 92px;
+  }
+}

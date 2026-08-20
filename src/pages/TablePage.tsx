@@ -163,6 +163,10 @@ import MysteryBountyChest, {
   type MysteryChestData,
 } from '../components/tournament/MysteryBountyChest';
 import { useAnimationQueue } from '../hooks/useAnimationQueue';
+import SpinWheel, {
+  DEFAULT_SPIN_TIERS,
+  type SpinWheelData,
+} from '../components/tournament/SpinWheel';
 import RebuyModal from '../components/table/RebuyModal';
 import TournamentWinnerOverlay from '../components/table/TournamentWinnerOverlay';
 // RealtimeChannelService imported if needed for future use
@@ -224,13 +228,13 @@ import { TablePerfMonitor } from '../components/table/TablePerfMonitor';
 import { playerStyleClassifier } from '../services/PlayerStyleClassifier';
 // Phase 9: Previously unwired table components
 import { StreamerMode } from '../components/table/StreamerMode';
+import { SitOutToggle } from '../components/table/SitOutToggle';
 import { BankrollWidget } from '../components/table/BankrollWidget';
 import { HandReveal } from '../components/table/HandReveal';
 import PositionStatsPopup from '../components/table/PositionStatsPopup';
 import { SessionAnalytics } from '../components/table/SessionAnalytics';
 import { SessionTrajectoryMini } from '../components/table/SessionTrajectoryMini';
 import { StreakBadge } from '../components/table/StreakBadge';
-import { SpinItWheel } from '../components/table/SpinItWheel';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
@@ -583,6 +587,8 @@ export default function TablePage({
   const knockout = knockoutQueue.current;
   const mysteryChest = chestQueue.current;
   const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
+  // The Spin multiplier draw. Server-decided, shown once per tournament.
+  const [spinDraw, setSpinDraw] = useState<SpinWheelData | null>(null);
   const chestChannelRef = useRef<ReturnType<typeof masterBus.getOrCreateChannel> | null>(null);
 
   /**
@@ -1166,35 +1172,13 @@ export default function TablePage({
     setTournamentWinner,
   } = useTableTournament();
 
-  /**
-   * Sit out for real.
-   *
-   * Every entry point used to just call `setShowSitOut(true)`: the modal opened
-   * saying "You are sitting out" and started its away timer, but nothing was
-   * ever told to the server. The player stayed live, kept getting dealt in, and
-   * blinded off while a modal assured them they were away.
-   *
-   * `GameServerAPI.setSitOut` never throws — it resolves `{ success: false }` —
-   * so the result has to be inspected, not caught.
-   */
-  const handleSitOut = useCallback(async () => {
-    if (!tableId) return;
-    const res = await setSitOut(tableId, true);
-    if (res?.success) {
-      setSitOutSince(Date.now());
-      setShowSitOut(true);
-    } else {
-      toast?.error?.(res?.error || 'Could not sit out — you are still in the game');
-    }
-  }, [tableId, toast]);
-
   // ─── Table Menu Actions ────────────────────────────────────────────────
   useMasterBusSubscription('TABLE_MENU_ACTION', (event) => {
     if (event.tableId !== tableId) return;
 
     switch (event.action) {
       case 'SIT_OUT':
-        void handleSitOut();
+        setShowSitOut(true);
         break;
       case 'REBUY':
         if (tableState.isTournament) {
@@ -1780,81 +1764,33 @@ export default function TablePage({
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
-  const [tableStraddleEnabled, setTableStraddleEnabled] = useState(false);
-  const [straddleBusy, setStraddleBusy] = useState(false);
+  const [straddleAmount] = useState(4); // 2x big blind
+  const [isStraddleAvailable] = useState(true); // Set based on position
   // Track whether straddle change originated from server (MasterBus) to avoid echo
   const straddleFromServerRef = useRef(false);
 
-  // A straddle is 2x the big blind. This was hardcoded to `4`, which is only
-  // correct at 1/2 — every other table printed the wrong price on the control.
-  const straddleAmount = useMemo(() => {
-    const bb = safeBB(tableState.blinds);
-    return bb > 0 ? Math.round(bb * 2 * 100) / 100 : 0;
-  }, [tableState.blinds]);
-
-  // Was hardcoded `true`. Straddles are a cash-game feature the host can switch
-  // off per table, and there is nothing to straddle from an empty seat.
-  const isStraddleAvailable =
-    tableStraddleEnabled && !tableState.isTournament && tableState.heroSeat > 0;
-
-  /**
-   * Toggle auto-straddle. Server-authoritative.
-   *
-   * This used to be a useEffect on [isStraddleEnabled, tableId] with a
-   * `.catch()` on the end. Two problems:
-   *   1. `GameServerAPI.toggleStraddle` NEVER throws — it resolves
-   *      `{ success: false, error }` — so the catch was dead code and a
-   *      rejected toggle was completely silent. The switch stayed on while the
-   *      server had it off.
-   *   2. The effect ran on mount, so simply opening a table POSTed
-   *      `straddle=false` to the engine before the player touched anything.
-   */
-  const handleToggleStraddle = useCallback(
-    async (next: boolean) => {
-      if (!tableId || straddleBusy) return;
-      const previous = isStraddleEnabled;
-      setStraddleBusy(true);
-      setIsStraddleEnabled(next); // optimistic — reverted below on refusal
-      try {
-        const res = await serverToggleStraddle(tableId, next);
-        if (!res?.success) {
-          setIsStraddleEnabled(previous);
-          reportError(
-            new Error(res?.error || 'toggleStraddle rejected by engine'),
-            'TablePage.Toggle_failed'
-          );
-          toast?.error?.(res?.error || 'Could not change your straddle setting');
-        }
-      } finally {
-        setStraddleBusy(false);
-      }
-    },
-    [tableId, isStraddleEnabled, straddleBusy, toast]
-  );
-
-  // Handle dealer tip.
-  //
-  // 2026-08-20: this went through WalletService.processDealerTip, which called
-  // the `deduct_table_chip_lock` RPC straight from the browser. That wrote
-  // table_seats.stack while the authoritative engine held its own figure in
-  // memory, so the next settlement overwrote the DB and handed the player their
-  // tip back while clubs.chip_treasury kept a copy - the tip minted chips. It
-  // also swallowed every failure and closed the modal regardless.
-  const handleTipDealer = async (amount: number) => {
-    if (!userId || userId === 'guest' || !tableId) {
-      toast.error('Sign in to tip the dealer.');
+  // Bible V8 §4.4: Sync straddle toggle to server
+  useEffect(() => {
+    if (straddleFromServerRef.current) {
+      straddleFromServerRef.current = false;
       return;
     }
-    const res = await GameServerAPI.tipDealer(tableId, amount);
-    if (!res.success) {
-      reportError(
-        new Error(res.error || 'tipDealer rejected by engine'),
-        'TablePage.Tip_processing_failed'
+    if (tableId) {
+      serverToggleStraddle(tableId, isStraddleEnabled).catch((e) =>
+        reportError(e, 'TablePage.Toggle_failed')
       );
-      toast.error(res.error || 'Could not tip - your chips were not moved.');
-      return;
     }
-    toast.success(`Tipped ${amount} to the dealer`);
+  }, [isStraddleEnabled, tableId]);
+
+  // Handle dealer tip
+  const handleTipDealer = async (amount: number) => {
+    if (userId && tableId) {
+      try {
+        await WalletService.processDealerTip(userId, tableId, amount);
+      } catch (error) {
+        reportError(error, 'TablePage.Tip_processing_failed');
+      }
+    }
     setShowTipDealer(false);
   };
 
@@ -1866,19 +1802,13 @@ export default function TablePage({
   const [cashoutMinBuyIn, setCashoutMinBuyIn] = useState(0);
 
   // Handle cashier add chips (deducts from wallet, adds to table stack)
-  // Returns TRUE only when the engine actually credited the stack. The cashier
-  // uses this to decide whether to close; before 2026-08-20 it resolved void on
-  // every rejection path, so a refused top-up closed the modal looking successful.
-  const handleAddChips = async (amount: number): Promise<boolean> => {
+  const handleAddChips = async (amount: number) => {
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
         new Error('Cannot add chips: not authenticated'),
         'TablePage.Cannot_add_chips_not_authenticated'
       );
-      if (typeof window !== 'undefined') {
-        toast.error('Sign in to add chips at this table.');
-      }
-      return false;
+      return;
     }
     try {
       // P0 FIX (sweep #5): GameServerAPI.addChips -> engine -> atomic_table_addon
@@ -1898,7 +1828,7 @@ export default function TablePage({
         if (typeof window !== 'undefined') {
           toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
         }
-        return false;
+        return;
       }
       // Engine ack'd the single debit -- reflect it locally + in session trackers.
       setAccountBalance((prev) => Math.max(0, prev - amount));
@@ -1918,29 +1848,22 @@ export default function TablePage({
       // Emit bus event so other pages (Dashboard, Profile) know about the chip change
       const estimatedNewStack = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
       masterBus.emit('CHIPS_ADDED', { tableId, userId, amount, newStack: estimatedNewStack });
-      return true;
     } catch (error) {
       reportError(error, 'TablePage.Failed_to_add_chips');
       // Surface error to user — alert as fallback since toast not always available
       const msg = error instanceof Error ? error.message : 'Failed to add chips';
       if (typeof window !== 'undefined') toast.error(msg);
-      return false;
     }
   };
 
   // Handle cashier withdraw
-  // Returns TRUE only when the engine actually credited the wallet. See
-  // handleAddChips above for why resolving void was not good enough.
-  const handleWithdrawChips = async (amount: number): Promise<boolean> => {
+  const handleWithdrawChips = async (amount: number) => {
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
         new Error('Cannot withdraw: not authenticated'),
         'TablePage.Cannot_withdraw_not_authenticated'
       );
-      if (typeof window !== 'undefined') {
-        toast.error('Sign in to cash out chips from this table.');
-      }
-      return false;
+      return;
     }
     try {
       // FIX 1 (2026-07-24): server-authoritative partial cash-out. The engine
@@ -1957,7 +1880,7 @@ export default function TablePage({
         if (typeof window !== 'undefined') {
           toast.error(res.error || 'Unable to cash out chips.');
         }
-        return false;
+        return;
       }
       // Engine ack'd \u2014 the wallet was credited; reflect it locally. We do
       // NOT optimistic-update tableState; the next engine broadcast carries the
@@ -1968,12 +1891,10 @@ export default function TablePage({
         (tableState.players[tableState.heroSeat - 1]?.stack || 0) - amount
       );
       masterBus.emit('CHIPS_WITHDRAWN', { tableId, userId, amount, newStack: estimatedNewStack });
-      return true;
     } catch (error) {
       reportError(error, 'TablePage.Failed_to_withdraw_chips');
       const msg = error instanceof Error ? error.message : 'Failed to withdraw chips';
       if (typeof window !== 'undefined') toast.error(msg);
-      return false;
     }
   };
 
@@ -2469,14 +2390,12 @@ export default function TablePage({
         toast.error(rebuyCheck.reason || 'Rebuy not available');
         return;
       }
-      // Get tournament info to get rebuy cost and chips.
-      // 2026-08-20: quote through TournamentService so the modal prints the same
-      // base + house fee that processRebuy actually debits. It used to show the
-      // base only, which enabled Confirm for players who could not pay the total.
+      // Get tournament info to get rebuy cost and chips
       const tournament = await tournamentService.getTournament(tableState.tournamentId);
       if (tournament) {
-        const quote = tournamentService.quoteFromTournament(tournament, 'rebuy');
-        setRebuyData({ cost: quote.baseCost, fee: quote.fee, chips: quote.chips });
+        const rebuyChips = tournament.rebuy_chips || tournament.starting_chips;
+        const rebuyCost = tournament.rebuy_cost || tournament.buy_in_amount;
+        setRebuyData({ cost: rebuyCost, chips: rebuyChips });
         setShowRebuyModal(true);
       }
     } catch (err) {
@@ -3385,7 +3304,7 @@ export default function TablePage({
       const { data: table, error } = await supabase
         .from('tables')
         .select(
-          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, action_time_seconds, straddle_enabled'
+          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, action_time_seconds'
         )
         .eq('id', tableId)
         .maybeSingle();
@@ -3412,12 +3331,6 @@ export default function TablePage({
           lastActions: Array(table.max_players || 6).fill(null),
           lastBetAmounts: Array(table.max_players || 6).fill(0),
         }));
-
-        // The engine refuses toggleStraddle outright when the table has
-        // straddles turned off ('Straddles are not enabled at this table'), so
-        // the control must know the table setting or it offers players a switch
-        // that can only ever fail.
-        setTableStraddleEnabled(table.straddle_enabled === true);
 
         // Store actual club_id for persistence and rake
         actualClubIdRef.current = table.club_id || '';
@@ -3452,7 +3365,7 @@ export default function TablePage({
           const { data: tournData } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, blind_structure, current_level'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, buy_in_amount, blind_structure, current_level'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -3555,6 +3468,41 @@ export default function TablePage({
               spinMultiplier: tournData.spin_multiplier,
             }));
           }
+
+          // ── SPIN WHEEL (2026-08-20, Dan) ──────────────────────────────────
+          // In a Spin the DRAW is the product — the seconds deciding whether
+          // you play for 2x or 100x are why the format exists. We used to skip
+          // it entirely: the table simply opened with a multiplier already
+          // stamped on the tournament name.
+          //
+          // The multiplier is a SERVER fact (crypto-grade draw at creation),
+          // so every seat receives the same value and the wheel is told where
+          // to stop. Nothing is decided on the client, and all three players
+          // watch the same result land at the same moment.
+          //
+          // Shown once per table visit, gated on sessionStorage so a reconnect
+          // mid-tournament does not replay a draw that already happened.
+          if (tournData?.spin_multiplier && tournData.spin_multiplier > 0) {
+            const seenKey = `ca_spin_seen:${table.tournament_id}`;
+            let alreadySeen = false;
+            try {
+              alreadySeen = sessionStorage.getItem(seenKey) === '1';
+            } catch {
+              /* storage unavailable — show it, a repeat beats never seeing it */
+            }
+            if (!alreadySeen) {
+              try {
+                sessionStorage.setItem(seenKey, '1');
+              } catch {
+                /* ignore */
+              }
+              setSpinDraw({
+                multiplier: Number(tournData.spin_multiplier),
+                buyIn: Number(tournData.buy_in_amount) || 0,
+                tiers: DEFAULT_SPIN_TIERS,
+              });
+            }
+          }
         }
 
         // Subscribe to tournament break + add-on events via Realtime
@@ -3585,40 +3533,10 @@ export default function TablePage({
                     if (userId && userId !== 'guest') {
                       walBal = await WalletService.getPlayerBalance(userId, { tableId });
                     }
-                    // 2026-08-20: `addonData.addOnCost || 0` silently priced the
-                    // add-on at ZERO whenever the broadcast omitted the field --
-                    // which made canAfford unconditionally true and let players
-                    // buy at a price the modal had never shown them. Fall back to
-                    // the authoritative tournament row, and include the house fee
-                    // that processAddOn charges on top.
-                    let cost = Number(addonData.addOnCost) || 0;
-                    let chips = Number(addonData.addOnChips) || 0;
-                    let fee = Number(addonData.addOnFee) || 0;
-                    if (!cost || !chips || !fee) {
-                      const quote = await tournamentService.getChipPurchaseQuote(
-                        table.tournament_id as string,
-                        'addon'
-                      );
-                      if (quote) {
-                        if (!cost) cost = quote.baseCost;
-                        if (!chips) chips = quote.chips;
-                        fee = quote.fee;
-                      }
-                    }
-                    if (!cost) {
-                      // Still no price. Opening the modal here would show
-                      // "0 chips" over a live Accept button. Don't.
-                      reportError(
-                        new Error('ADDON_PERIOD_START with no resolvable add-on cost'),
-                        'TablePage.Addon_period_missing_cost'
-                      );
-                      return;
-                    }
                     setAddOnPeriod({
                       active: true,
-                      addOnCost: cost,
-                      addOnFee: fee,
-                      addOnChips: chips,
+                      addOnCost: addonData.addOnCost || 0,
+                      addOnChips: addonData.addOnChips || 0,
                       walletBalance: walBal,
                       timeRemaining: 60,
                     });
@@ -7086,50 +7004,18 @@ export default function TablePage({
     return () => clearInterval(interval);
   }, []);
 
-  // Load waitlist data.
-  //
-  // 2026-08-20: every row rendered as "Player 1", "Player 2"... because the name
-  // was synthesised from the queue position and the profile join the comment
-  // promised was never written. The list was therefore useless for its actual
-  // purpose — seeing who is ahead of you — and "(You)" was the only way to pick
-  // yourself out. Names now resolve the same way the felt resolves them.
+  // Load waitlist data
   const loadWaitlist = useCallback(async () => {
     if (!tableId) return;
     try {
       const entries = await waitlistService.getTableWaitlist(tableId);
-      if (entries.length === 0) {
-        setWaitListPlayers([]);
-        return;
-      }
-
-      const ids = Array.from(new Set(entries.map((e) => e.userId).filter(Boolean)));
-      const profileById = new Map<
-        string,
-        { username?: string; display_name?: string; avatar_url?: string; is_horse?: boolean }
-      >();
-      if (ids.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, avatar_url, is_horse')
-          .in('id', ids);
-        for (const pr of profiles || []) profileById.set(pr.id, pr);
-      }
-
       setWaitListPlayers(
-        entries.map((e) => {
-          const pr = profileById.get(e.userId);
-          return {
-            playerId: e.userId,
-            // Horses are identities whose `username` a DB trigger forces to
-            // lowercase; display_name holds the properly-cased name. Same rule
-            // the seat roster uses. Falls back to the position only when the
-            // profile genuinely could not be read.
-            playerName: pr?.display_name || pr?.username || `Player ${e.position}`,
-            avatar: pr?.avatar_url || undefined,
-            position: e.position,
-            joinedAt: new Date(e.joinedAt),
-          };
-        })
+        entries.map((e) => ({
+          playerId: e.userId,
+          playerName: `Player ${e.position}`, // Would come from profile join
+          position: e.position,
+          joinedAt: new Date(e.joinedAt),
+        }))
       );
     } catch (error) {
       reportError(error, 'TablePage.Failed_to_load_waitlist');
@@ -7255,6 +7141,16 @@ export default function TablePage({
           chestQueue.complete();
           setChestRemoteOpened(false);
         }}
+        playSounds={ambientSoundsAllowed}
+      />
+
+      {/* ── Spin multiplier draw (2026-08-20) ───────────────────────────────
+          A takeover, like the chest: it happens before the cards and it is the
+          reason the player opened a Spin. Server-decided, identical on every
+          seat. */}
+      <SpinWheel
+        data={spinDraw}
+        onDone={() => setSpinDraw(null)}
         playSounds={ambientSoundsAllowed}
       />
 
@@ -7405,7 +7301,7 @@ export default function TablePage({
                       id: 'sitout',
                       label: 'Sit Out',
                       icon: <SitOutIcon />,
-                      onClick: () => void handleSitOut(),
+                      onClick: () => setShowSitOut(true),
                     },
                     ...(tableState.isTournament
                       ? [
@@ -8535,40 +8431,6 @@ export default function TablePage({
               <span className="menu-item-label">VIP</span>
               <span className="menu-item-arrow">›</span>
             </button>
-            {/* StraddleToggle was imported by this file and never rendered, so
-                `setIsStraddleEnabled` had exactly one caller — the STRADDLE_TOGGLED
-                bus echo — and a player had no way to switch straddling on. Only
-                shown when the host enabled straddles for this table; the engine
-                rejects the toggle outright otherwise. */}
-            {isStraddleAvailable && (
-              <div className="menu-item menu-item--embed">
-                <StraddleToggle
-                  tableId={tableId || ''}
-                  playerId={userId}
-                  isEnabled={isStraddleEnabled}
-                  onToggle={(enabled) => void handleToggleStraddle(enabled)}
-                  amount={straddleAmount}
-                  isAvailable
-                />
-              </div>
-            )}
-            {/* Tip Dealer had no entry point at all - setShowTipDealer(true) was
-                never called anywhere, so the modal, its styles and its handler
-                were dead code. Seated players only: the chips come off the
-                table stack, not the wallet. */}
-            <button
-              className="menu-item"
-              disabled={tableState.heroSeat <= 0}
-              onClick={() => {
-                if (tableState.heroSeat <= 0) return;
-                setShowTipDealer(true);
-                setIsSideMenuOpen(false);
-              }}
-            >
-              <span className="menu-item-icon">◈</span>
-              <span className="menu-item-label">Tip Dealer</span>
-              <span className="menu-item-arrow">›</span>
-            </button>
             <button
               className="menu-item"
               onClick={() => {
@@ -8605,7 +8467,7 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                void handleSitOut();
+                setShowSitOut(true);
                 setIsSideMenuOpen(false);
               }}
             >
@@ -8664,15 +8526,7 @@ export default function TablePage({
             className="floating-im-back"
             onClick={() => {
               soundService.playButtonClick();
-              if (!tableId) return;
-              // `.catch` was dead code — setSitOut resolves { success: false }
-              // rather than throwing, so a refused sit-in was silent and the
-              // player thought they were back in the game.
-              void setSitOut(tableId, false).then((res) => {
-                if (!res?.success) {
-                  toast?.error?.(res?.error || 'Could not sit back in — try again');
-                }
-              });
+              if (tableId) setSitOut(tableId, false).catch((e) => console.error(e));
             }}
           >
             I'm Back
@@ -9046,23 +8900,11 @@ export default function TablePage({
           }
           if (settingsUpdate.showStackInBB !== undefined) toggleV8Setting('show_stack_in_bb');
           if (settingsUpdate.sitOutNextHand !== undefined) {
-            const wanted = settingsUpdate.sitOutNextHand;
-            setSitOutNextHand(wanted);
-            if (tableId) {
-              // Same dead-.catch problem as the other three sit-out entry
-              // points: revert the switch when the server refuses so it never
-              // shows a state the server does not hold.
-              void setSitOut(tableId, wanted).then((res) => {
-                if (!res?.success) {
-                  setSitOutNextHand(!wanted);
-                  reportError(
-                    new Error(res?.error || 'setSitOut rejected by engine'),
-                    'TablePage.Failed'
-                  );
-                  toast?.error?.(res?.error || 'Could not change your sit-out setting');
-                }
-              });
-            }
+            setSitOutNextHand(settingsUpdate.sitOutNextHand);
+            if (tableId)
+              setSitOut(tableId, settingsUpdate.sitOutNextHand).catch((e) =>
+                reportError(e, 'TablePage.Failed')
+              );
           }
           if (settingsUpdate.autoMuckWinners !== undefined)
             updateSetting('autoMuckWinners', settingsUpdate.autoMuckWinners);
@@ -9084,20 +8926,15 @@ export default function TablePage({
         // Add-On
         addOnPeriod={addOnPeriod}
         rebuyProcessing={rebuyProcessing}
-        // Returns the outcome. This used to swallow the error and resolve void,
-        // so AddOnModal printed "Add-On Accepted -- +N chips added" over a
-        // purchase the server had just refused.
         onAddOnAccept={async () => {
-          if (!tableState.tournamentId || !userId || rebuyProcessing) return false;
+          if (!tableState.tournamentId || !userId || rebuyProcessing) return;
           setRebuyProcessing(true);
           try {
             await tournamentService.processAddOn(tableState.tournamentId, userId);
             toast?.success('Add-on accepted — chips added to your stack');
             setAddOnPeriod((prev) => ({ ...prev, active: false }));
-            return true;
           } catch (err: any) {
             toast?.error(err.message || 'Add-on failed');
-            return false;
           } finally {
             setRebuyProcessing(false);
           }

@@ -316,25 +316,80 @@ export class RunItTwiceEngine {
     // FIX 171: Use chosenRuns for consistency with dealDualBoards
     const runs = state.chosenRuns || state.maxRuns || 2;
 
-    if (runs === 3 && board3Winner) {
-      const third = Math.trunc((state.pot / 3) * 100) / 100;
-      const remainder = state.pot - third * 2;
+    /**
+     * A9 FIX (2026-08-20): split by the number of boards that actually resolved.
+     *
+     * This used to read `if (runs === 3 && board3Winner)`. A three-run hand
+     * whose third winner was falsy fell into the TWO-way branch and divided the
+     * whole pot between boards 1 and 2 — so the player who won board three got
+     * nothing and the other two shared a third of the pot that was never
+     * theirs. And it was reachable by design, not just by accident: the offer
+     * path initialises `board3Winner = ''`, which is falsy.
+     *
+     * The split is now driven by the winners that are actually present. Chips
+     * are conserved either way — the remainder always goes to the last share,
+     * so the parts sum to the pot exactly — but they now go to the right people,
+     * and a three-run hand that resolves fewer than three boards is reported
+     * rather than silently reshaped into a different game.
+     *
+     * KNOWN LIMITATION, unchanged here: `state.pot` is a single number, so a
+     * multi-way all-in with SIDE POTS is split as one pot. Fixing that needs the
+     * side-pot structure threaded into the RIT state, which is a larger change
+     * than this correction.
+     */
+    const declaredRuns = runs === 3 ? 3 : 2;
+    const declared = [board1Winner, board2Winner, board3Winner].slice(0, declaredRuns);
+    const resolvedCount = declared.filter(
+      (w) => typeof w === 'string' && w.length > 0
+    ).length;
 
-      const winners = [board1Winner, board2Winner, board3Winner];
-      const amounts = [third, third, remainder];
+    // Each board that was RUN is worth an equal share of the pot, regardless of
+    // whether it produced a winner. The last share carries the rounding
+    // remainder so the parts always sum to the pot exactly.
+    const share = Math.trunc((state.pot / declaredRuns) * 100) / 100;
+    const lastShare = Math.round((state.pot - share * (declaredRuns - 1)) * 100) / 100;
+    const award = (playerId: string, amount: number) => {
+      if (amount <= 0) return;
+      distribution.set(playerId, Math.round(((distribution.get(playerId) || 0) + amount) * 100) / 100);
+    };
 
-      for (let i = 0; i < 3; i++) {
-        distribution.set(winners[i], (distribution.get(winners[i]) || 0) + amounts[i]);
-      }
-    } else {
-      const halfPot = Math.trunc((state.pot / 2) * 100) / 100;
-      const otherHalf = state.pot - halfPot;
-
-      if (board1Winner === board2Winner) {
-        distribution.set(board1Winner, state.pot);
+    let unresolvedChips = 0;
+    for (let i = 0; i < declaredRuns; i++) {
+      const amount = i === declaredRuns - 1 ? lastShare : share;
+      const winner = declared[i];
+      if (typeof winner === 'string' && winner.length > 0) {
+        award(winner, amount);
       } else {
-        distribution.set(board1Winner, halfPot);
-        distribution.set(board2Winner, otherHalf);
+        unresolvedChips = Math.round((unresolvedChips + amount) * 100) / 100;
+      }
+    }
+
+    if (unresolvedChips > 0) {
+      /**
+       * A board that was run but produced no winner cannot be awarded, and its
+       * share is NOT the other boards' to take — that is exactly the mis-split
+       * this fix exists to stop. An undecidable share is chopped among the
+       * players who were entitled to contest it, which conserves the pot without
+       * paying anyone for a board they did not win.
+       */
+      const contenders =
+        state.allPlayerIds && state.allPlayerIds.length > 0
+          ? state.allPlayerIds
+          : [...new Set(declared.filter((w): w is string => typeof w === 'string' && w.length > 0))];
+
+      reportError(
+        new Error(
+          `[RunItTwice] Hand ${state.handId} ran ${declaredRuns} boards but ${declaredRuns - resolvedCount} ` +
+            `produced no winner. ${unresolvedChips} chips chopped among ${contenders.length} contender(s) ` +
+            `rather than awarded to the other boards.`
+        ),
+        'RunItTwiceEngine.unresolved_board'
+      );
+
+      if (contenders.length > 0) {
+        const chop = Math.trunc((unresolvedChips / contenders.length) * 100) / 100;
+        const chopLast = Math.round((unresolvedChips - chop * (contenders.length - 1)) * 100) / 100;
+        contenders.forEach((p, idx) => award(p, idx === contenders.length - 1 ? chopLast : chop));
       }
     }
 

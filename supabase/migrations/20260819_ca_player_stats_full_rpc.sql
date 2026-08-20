@@ -26,7 +26,7 @@
 --   only. Stats are club-visible by design (same as player_stats RLS).
 --
 -- ROLLBACK:
---   DROP FUNCTION IF EXISTS public.ca_player_stats_full(uuid);
+--   DROP FUNCTION IF EXISTS public.ca_player_stats_full(uuid, int);
 --   DROP INDEX IF EXISTS public.idx_hand_history_players_gin;
 -- ============================================================================
 
@@ -504,7 +504,7 @@ SELECT jsonb_build_object(
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION public.ca_player_stats_full(uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.ca_player_stats_full(uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.ca_player_stats_full(uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.ca_player_stats_full(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.ca_player_stats_full(uuid, int) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.ca_player_stats_full(uuid, int) FROM anon;
+GRANT EXECUTE ON FUNCTION public.ca_player_stats_full(uuid, int) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.ca_player_stats_full(uuid, int) TO service_role;

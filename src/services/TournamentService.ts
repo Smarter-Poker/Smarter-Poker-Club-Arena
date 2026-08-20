@@ -1661,11 +1661,16 @@ class TournamentService {
       entryCount = entryRows.filter((r) => !horseIds.has(r.user_id)).length;
     }
 
-    // Count rebuys and add-ons from wallet_transactions (always available)
-    // RAKE-AUDIT 2026-07-24: rebuy/add-on debits now INCLUDE the 10% house fee
-    // (charged as of this fix). Only the base cost feeds the prize pool, so the
-    // fee portion is stripped here — previously 100% of rebuy/add-on money
-    // (fee-free) inflated the pool and the house collected nothing.
+    // Count rebuys and add-ons from wallet_transactions (always available).
+    // Only the BASE cost feeds the prize pool.
+    //
+    // A rebuy/re-entry debit is base + fee, so the fee is divided back out.
+    // An ADD-ON debit is the base cost already: Dan's rule (2026-08-20) is
+    // "ADD ON'S AREN'T RAKED. ONLY REBUYS.", so process_tournament_rebuy
+    // charges add-ons at face value. Dividing an add-on by (1 + feeRatio)
+    // here would silently shave ~9% off the prize pool for every add-on
+    // taken. (No historical add-on rows exist to be re-interpreted: the
+    // 'addon' category has never been written.)
     let rebuyTotal = 0;
     let addonTotal = 0;
     const feeRatio = this.getTournamentFeeRatio(tournament);
@@ -1679,9 +1684,11 @@ class TournamentService {
       if (rebuyTxns) {
         for (const tx of rebuyTxns) {
           const gross = Math.abs(tx.amount || 0);
-          const cost = Math.round((gross / (1 + feeRatio)) * 100) / 100;
-          if (tx.category === 'addon') addonTotal += cost;
-          else rebuyTotal += cost;
+          if (tx.category === 'addon') {
+            addonTotal += Math.round(gross * 100) / 100;
+          } else {
+            rebuyTotal += Math.round((gross / (1 + feeRatio)) * 100) / 100;
+          }
         }
       }
     } catch (e: unknown) {
@@ -1689,8 +1696,12 @@ class TournamentService {
     }
 
     // Calculate total prize pool
+    // Math.round, not Math.trunc: every term is already 2dp, so the only
+    // difference is IEEE 754 error. 482.99999999999 truncates to 482.99 and
+    // quietly loses a cent that players actually paid in. Same reasoning as
+    // the Round 40 trunc->round fixes on the payout side.
     const calculatedPool =
-      Math.trunc(((entryCount || 0) * buyIn + rebuyTotal + addonTotal) * 100) / 100;
+      Math.round(((entryCount || 0) * buyIn + rebuyTotal + addonTotal) * 100) / 100;
     const finalPool = guarantee > 0 ? Math.max(calculatedPool, guarantee) : calculatedPool;
 
     // Update tournament

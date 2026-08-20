@@ -539,6 +539,7 @@ export function HandReplayPlayer({
             max={100}
             value={progress}
             onChange={handleSeek}
+            aria-label="Hand replay position percent"
           />
 
           <div className="replay-player__speed">

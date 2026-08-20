@@ -77,6 +77,17 @@ export function SitOutModal({
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
+  // Reset the destructive confirm on every close.
+  //
+  // The overlay dismisses via onClose without touching `showLeaveConfirm`, so
+  // a player who tapped "Leave Table", thought better of it and tapped outside
+  // reopened the modal straight into the confirm step — with "Leave" sitting
+  // exactly where "Return to Game" had been the moment before. One tap cashed
+  // them out of the table.
+  useEffect(() => {
+    if (!isOpen) setShowLeaveConfirm(false);
+  }, [isOpen]);
+
   // Count UP from when sit-out began. One interval for the lifetime of the
   // open modal — the old countdown listed `displayTime` in its own dependency
   // array, so it tore down and recreated the interval on every single tick.
@@ -198,7 +209,11 @@ export function SitOutModal({
               >
                 Return to Game
               </button>
-              <button className="sitout-modal__leave-btn" onClick={() => setShowLeaveConfirm(true)}>
+              <button
+                type="button"
+                className="sitout-modal__leave-btn"
+                onClick={() => setShowLeaveConfirm(true)}
+              >
                 Leave Table
               </button>
             </>
@@ -207,12 +222,14 @@ export function SitOutModal({
               <span>Leave and cash out your chips?</span>
               <div className="sitout-modal__confirm-actions">
                 <button
+                  type="button"
                   className="sitout-modal__confirm-no"
                   onClick={() => setShowLeaveConfirm(false)}
+                  autoFocus
                 >
                   Cancel
                 </button>
-                <button className="sitout-modal__confirm-yes" onClick={handleLeave}>
+                <button type="button" className="sitout-modal__confirm-yes" onClick={handleLeave}>
                   Leave
                 </button>
               </div>

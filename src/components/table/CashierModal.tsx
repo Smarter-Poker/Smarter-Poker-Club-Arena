@@ -32,8 +32,13 @@ export interface CashierTransaction {
 export interface CashierModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddChips: (amount: number) => Promise<void>;
-  onWithdrawChips: (amount: number) => Promise<void>;
+  /**
+   * Resolve TRUE only when the chips actually moved. Resolving FALSE keeps the
+   * modal open with the amount intact so the player can retry or correct it.
+   * `void` is accepted for older callers and is treated as success.
+   */
+  onAddChips: (amount: number) => Promise<boolean | void>;
+  onWithdrawChips: (amount: number) => Promise<boolean | void>;
   currentStack: number;
   accountBalance: number;
   minBuyIn: number;
@@ -54,6 +59,18 @@ function formatAmount(amount: number, currency: string = ''): string {
     return Math.round(amount).toLocaleString('en-US');
   }
   return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * Parse a user-typed amount to a non-negative, cent-accurate number inside the
+ * allowed range. Returns 0 for anything unparseable so the confirm button stays
+ * disabled rather than submitting NaN.
+ */
+function clampToCents(raw: string | number, max: number): number {
+  const n = typeof raw === 'number' ? raw : parseFloat(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const ceiling = Number.isFinite(max) && max > 0 ? max : n;
+  return Math.round(Math.min(n, ceiling) * 100) / 100;
 }
 
 function formatTime(date: Date): string {
@@ -84,9 +101,25 @@ export function CashierModal({
 }: CashierModalProps) {
   const [activeTab, setActiveTab] = useState<CashierTab>('add');
   const [amount, setAmount] = useState(0);
-  const [visibleQuick, setVisibleQuick] = useState<boolean[]>([]);
+  // The quick-amount buttons animate in. They used to start as [] — which
+  // renders every one of them at opacity: 0 — and only got seeded inside
+  // handleTabChange, so on first open 25/50/75/MAX were invisible (but still
+  // clickable) until you tapped a tab. Seed them true; the open effect replays
+  // the stagger.
+  const [visibleQuick, setVisibleQuick] = useState<boolean[]>([true, true, true, true]);
+  // In-flight guard. `isProcessing` is an optional prop no caller passes, so it
+  // was never able to stop a double tap on Confirm from firing two top-ups.
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  // Held in a ref so the focus-trap effect does not re-run (and re-steal focus)
+  // every time the parent re-renders with a fresh inline onClose closure.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   // Calculate limits
   const canAddAmount = useMemo(() => {
@@ -98,6 +131,8 @@ export function CashierModal({
     // Can only withdraw down to min buy-in
     return Math.max(0, currentStack - minBuyIn);
   }, [currentStack, minBuyIn]);
+
+  const activeMax = activeTab === 'add' ? canAddAmount : canWithdrawAmount;
 
   // Quick amount options
   const quickAmounts = useMemo(() => {
@@ -121,12 +156,13 @@ export function CashierModal({
 
   const handleTabChange = useCallback(
     (tab: CashierTab) => {
+      if (busyRef.current) return;
       setActiveTab(tab);
       setAmount(0);
+      setSubmitError(null);
       setVisibleQuick([]);
       animTimers.current.forEach(clearTimeout);
       animTimers.current = [];
-      const max = tab === 'add' ? canAddAmount : canWithdrawAmount;
       [0, 1, 2, 3].forEach((i) => {
         const t = setTimeout(() => {
           setVisibleQuick((prev) => [...prev, true]);
@@ -134,24 +170,44 @@ export function CashierModal({
         animTimers.current.push(t);
       });
     },
-    [canAddAmount, canWithdrawAmount]
+    []
   );
 
   // Handle confirm
   const handleConfirm = useCallback(async () => {
-    if (amount <= 0 || isProcessing) return;
+    // busyRef, not the `busy` state: two taps inside one React batch both read
+    // the stale state value and both would go through.
+    if (amount <= 0 || isProcessing || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setSubmitError(null);
     haptic.medium();
 
     try {
-      if (activeTab === 'add') {
-        await onAddChips(amount);
-      } else {
-        await onWithdrawChips(amount);
+      const result =
+        activeTab === 'add' ? await onAddChips(amount) : await onWithdrawChips(amount);
+      // Explicit `false` means the engine refused. Anything else (including the
+      // legacy `void`) counts as success.
+      if (result === false) {
+        setSubmitError(
+          activeTab === 'add'
+            ? 'Those chips were not added. Your wallet was not charged.'
+            : 'Those chips were not cashed out. Your stack is unchanged.'
+        );
+        return;
       }
       setAmount(0);
       onClose();
     } catch (error) {
       reportError(error, 'CashierModal.Cashier_error');
+      setSubmitError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Something went wrong. Nothing was moved — please try again.'
+      );
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
     }
   }, [amount, activeTab, isProcessing, onAddChips, onWithdrawChips, onClose]);
 
@@ -168,7 +224,10 @@ export function CashierModal({
   const handleFocusTrap = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        // Never dismiss mid-request: the player would lose the only surface
+        // that tells them whether the chips moved.
+        if (busyRef.current) return;
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab' || !modalRef.current) return;
@@ -193,8 +252,19 @@ export function CashierModal({
         }
       }
     },
-    [onClose]
+    []
   );
+
+  // Fresh state on every open. Without this the modal reopens showing the
+  // previous attempt's amount and error banner.
+  useEffect(() => {
+    if (!isOpen) return;
+    setAmount(0);
+    setSubmitError(null);
+    setActiveTab('add');
+    busyRef.current = false;
+    setBusy(false);
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -240,7 +310,9 @@ export function CashierModal({
   return (
     <div
       className="cashier-overlay"
-      onClick={onClose}
+      onClick={() => {
+        if (!busy) onClose();
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="table-cashier-title"
@@ -251,7 +323,12 @@ export function CashierModal({
           <h2 id="table-cashier-title" className="cashier-modal__title">
             Cashier
           </h2>
-          <button className="cashier-modal__close" onClick={onClose}>
+          <button
+            className="cashier-modal__close"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Close cashier"
+          >
             ×
           </button>
         </div>
@@ -312,14 +389,22 @@ export function CashierModal({
         >
           <div className="cashier-modal__input-wrapper">
             <span className="cashier-modal__currency">{currency}</span>
+            {/* parseInt threw away the cents on every 25/50/75/MAX value (they are
+                truncated to 2dp), so editing after a quick tap silently changed the
+                amount. parseFloat + snap-to-cent keeps them. */}
             <input
               type="number"
               className="cashier-modal__input"
               value={amount || ''}
-              onChange={(e) => setAmount(Math.max(0, parseInt(e.target.value) || 0))}
+              onChange={(e) => setAmount(clampToCents(e.target.value, activeMax))}
+              onBlur={() => setAmount((prev) => clampToCents(prev, activeMax))}
               placeholder="0"
               min={0}
-              max={activeTab === 'add' ? canAddAmount : canWithdrawAmount}
+              step={0.01}
+              max={activeMax}
+              disabled={busy}
+              aria-label={activeTab === 'add' ? 'Amount to add' : 'Amount to withdraw'}
+              aria-invalid={amount > 0 && !isValidAmount}
             />
           </div>
           <div className="cashier-modal__limit">
@@ -337,8 +422,13 @@ export function CashierModal({
             <button
               key={label}
               className={`cashier-modal__quick-btn ${amount === value ? 'cashier-modal__quick-btn--active' : ''}`}
-              onClick={() => setAmount(value)}
-              disabled={value <= 0}
+              type="button"
+              onClick={() => {
+                setSubmitError(null);
+                setAmount(value);
+              }}
+              disabled={value <= 0 || busy}
+              aria-pressed={amount === value}
               style={{
                 opacity: visibleQuick[idx] ? 1 : 0,
                 transform: visibleQuick[idx] ? 'scale(1)' : 'scale(0.85)',
@@ -363,14 +453,22 @@ export function CashierModal({
           </span>
         </div>
 
+        {/* Failure notice — the modal used to close as if it had worked */}
+        {submitError && (
+          <div className="cashier-modal__error" role="alert" aria-live="assertive">
+            {submitError}
+          </div>
+        )}
+
         {/* Confirm Button */}
         <div className="cashier-modal__actions">
           <button
-            className={`cashier-modal__confirm-btn ${!isValidAmount || isProcessing ? 'cashier-modal__confirm-btn--disabled' : ''}`}
+            type="button"
+            className={`cashier-modal__confirm-btn ${!isValidAmount || isProcessing || busy ? 'cashier-modal__confirm-btn--disabled' : ''}`}
             onClick={handleConfirm}
-            disabled={!isValidAmount || isProcessing}
+            disabled={!isValidAmount || isProcessing || busy}
           >
-            {isProcessing ? (
+            {isProcessing || busy ? (
               <>
                 <span className="cashier-modal__spinner" />
                 Processing...

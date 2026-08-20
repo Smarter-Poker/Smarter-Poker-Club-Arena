@@ -35,10 +35,19 @@ export interface WaitListModalProps {
   players: WaitListPlayer[];
   myPlayerId: string;
   onLeaveWaitList: () => void;
-  onAutoSeatChange?: (enabled: boolean) => void;
-  autoSeatEnabled?: boolean;
   avgWaitTimeMinutes?: number;
 }
+
+/*
+ * REMOVED 2026-08-20: `onAutoSeatChange` / `autoSeatEnabled`.
+ *
+ * The auto-seat switch was gated on `onAutoSeatChange` being supplied, and no
+ * caller ever supplied it, so it never rendered. That was the only thing
+ * keeping it honest: there is no `auto_seat` column on `table_waitlists` and
+ * nothing anywhere that seats a waiting player automatically, so the switch had
+ * nothing behind it. Rendering it would have promised a feature the platform
+ * does not have. Re-add it together with the server side, not before.
+ */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
@@ -72,12 +81,17 @@ export function WaitListModal({
   players,
   myPlayerId,
   onLeaveWaitList,
-  onAutoSeatChange,
-  autoSeatEnabled = true,
   avgWaitTimeMinutes = 5,
 }: WaitListModalProps) {
   const [showConfirmLeave, setShowConfirmLeave] = useState(false);
   const [visiblePlayers, setVisiblePlayers] = useState<Set<number>>(new Set());
+
+  // Same stale-confirm trap as SitOutModal: the confirm step survived a close,
+  // so reopening the wait list dropped the destructive "Leave" button exactly
+  // where the player's thumb had last been.
+  useEffect(() => {
+    if (!isOpen) setShowConfirmLeave(false);
+  }, [isOpen]);
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Cleanup stagger timers on unmount
@@ -203,23 +217,14 @@ export function WaitListModal({
           </div>
         </div>
 
-        {/* Auto-Seat Toggle */}
-        {myPosition > 0 && onAutoSeatChange && (
-          <label className="waitlist-modal__auto-seat">
-            <input
-              type="checkbox"
-              checked={autoSeatEnabled}
-              onChange={(e) => onAutoSeatChange(e.target.checked)}
-            />
-            <span className="waitlist-modal__toggle-slider" />
-            <span className="waitlist-modal__toggle-label">Auto-seat when available</span>
-          </label>
-        )}
-
         {/* Actions */}
         <div className="waitlist-modal__actions">
           {myPosition > 0 && !showConfirmLeave && (
-            <button className="waitlist-modal__leave-btn" onClick={() => setShowConfirmLeave(true)}>
+            <button
+              type="button"
+              className="waitlist-modal__leave-btn"
+              onClick={() => setShowConfirmLeave(true)}
+            >
               Leave Wait List
             </button>
           )}
@@ -229,12 +234,15 @@ export function WaitListModal({
               <span>Are you sure you want to leave?</span>
               <div className="waitlist-modal__confirm-actions">
                 <button
+                  type="button"
                   className="waitlist-modal__confirm-no"
                   onClick={() => setShowConfirmLeave(false)}
+                  autoFocus
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   className="waitlist-modal__confirm-yes"
                   onClick={() => {
                     haptic.light();

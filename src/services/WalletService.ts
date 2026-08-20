@@ -709,41 +709,19 @@ export const WalletService = {
     return true;
   },
 
-  /**
-   * Process dealer tip from player's table stack
-   */
-  async processDealerTip(userId: string, tableId: string, amount: number): Promise<boolean> {
-    if (amount <= 0) throw new Error('Tip amount must be positive');
-
-    // Attempt atomic RPC first: UPDATE ... SET amount = amount - $1 WHERE amount >= $1
-    const { error: rpcError } = await retryAsync(
-      () =>
-        supabase.rpc('deduct_table_chip_lock', {
-          p_user_id: userId,
-          p_table_id: tableId,
-          p_amount: amount,
-        }),
-      3
-    );
-
-    if (rpcError) {
-      reportError(rpcError, 'WalletService.processDealerTip', { userId, tableId, amount });
-      throw new Error(`Failed to deduct dealer tip: ${rpcError.message}`);
-    }
-
-    // Record tip transaction
-    await this.logTransaction(
-      userId,
-      'PLAYER',
-      amount,
-      'debit',
-      'TIP',
-      'Dealer tip at table',
-      tableId
-    );
-
-    return true;
-  },
+  // NOTE: processDealerTip was REMOVED on 2026-08-20. It called
+  // `deduct_table_chip_lock` from the browser, which wrote `table_seats.stack`
+  // while the authoritative engine held its own figure in memory. The next
+  // settlement overwrote the DB from memory, so the player's stack came back
+  // while `clubs.chip_treasury` kept the tip: the tip MINTED chips. It also
+  // wrote the audit row as a separate, non-atomic step, and that row claimed a
+  // PLAYER wallet debit that had never happened.
+  //
+  // Dealer tips now go client -> GameServerAPI.tipDealer -> POST /tipdealer ->
+  // ServerTableEngine.tipDealer -> atomic_table_dealer_tip(), which does the
+  // seat debit, the treasury credit and the audit row in one transaction with
+  // the seat row locked, and is rejected mid-hand. The RPC is granted to
+  // service_role only, so this path cannot be resurrected from the browser.
 
   // NOTE: processInsurance was removed — insurance is settled server-side by the
   // authoritative engine (it called the non-existent deduct_table_chip_lock RPC

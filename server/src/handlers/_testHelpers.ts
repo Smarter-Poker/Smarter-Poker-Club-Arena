@@ -81,6 +81,8 @@ export function mockEngine(overrides: Record<string, unknown> = {}): unknown {
     heartbeat: vi.fn().mockReturnValue({ ok: true }),
     setPreAction: vi.fn().mockReturnValue({ success: true }),
     addChips: vi.fn().mockReturnValue({ success: true }),
+    withdrawChips: vi.fn().mockReturnValue({ success: true }),
+    tipDealer: vi.fn().mockReturnValue({ success: true, newStack: 90 }),
     leaveTable: vi.fn().mockReturnValue({ success: true }),
     sitOut: vi.fn().mockReturnValue({ success: true }),
     toggleStraddle: vi.fn().mockReturnValue({ success: true }),

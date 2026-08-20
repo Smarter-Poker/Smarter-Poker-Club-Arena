@@ -179,3 +179,12 @@
         opacity: 1;
     }
 }
+
+/* Total row — added 2026-08-20 alongside the fee line, so the player can see
+   base + house fee and the single number that will leave their wallet. */
+.rebuyRow--total {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 6px;
+  padding-top: 8px;
+  font-weight: 700;
+}

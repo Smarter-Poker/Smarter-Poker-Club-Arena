@@ -1224,6 +1224,58 @@ class TournamentService {
   }
 
   /**
+   * PRICE QUOTE — what the player will actually be charged.
+   *
+   * 2026-08-20: RebuyModal and AddOnModal printed the BASE cost only, while
+   * processRebuy/processAddOn charge base + the 10% house fee. A player with a
+   * balance between the two saw an enabled Confirm button, pressed it, and got
+   * "Insufficient chips" from the server. Both modals now quote through here so
+   * the number on the button is the number that leaves the wallet.
+   */
+  async getChipPurchaseQuote(
+    tournamentId: string,
+    kind: 'rebuy' | 'addon'
+  ): Promise<{ baseCost: number; fee: number; totalCost: number; chips: number } | null> {
+    const tournament = await this.getTournament(tournamentId);
+    if (!tournament) return null;
+    return this.quoteFromTournament(tournament, kind);
+  }
+
+  /** Same quote, when the caller already holds the tournament row. */
+  quoteFromTournament(
+    tournament: {
+      buy_in_amount?: number | null;
+      buy_in_fee?: number | null;
+      starting_chips?: number | null;
+      rebuy_cost?: number | null;
+      rebuy_chips?: number | null;
+      addon_cost?: number | null;
+      addon_chips?: number | null;
+    },
+    kind: 'rebuy' | 'addon'
+  ): { baseCost: number; fee: number; totalCost: number; chips: number } {
+    // Mirrors processRebuy / processAddOn exactly. If these ever diverge the
+    // player is quoted one price and charged another, so keep them together.
+    const baseCost = Number(
+      (kind === 'rebuy' ? tournament.rebuy_cost : tournament.addon_cost) ||
+        tournament.buy_in_amount ||
+        0
+    );
+    const chips = Number(
+      (kind === 'rebuy' ? tournament.rebuy_chips : tournament.addon_chips) ||
+        tournament.starting_chips ||
+        0
+    );
+    const fee = this.calcTournamentFee(tournament, baseCost);
+    return {
+      baseCost,
+      fee,
+      totalCost: Math.round((baseCost + fee) * 100) / 100,
+      chips,
+    };
+  }
+
+  /**
    * RAKE-AUDIT 2026-07-24: Record a collected tournament/SNG fee in the rake
    * ledger (rake_records, attributed to the paying player) and the
    * tournament/union total_rake counters. Pass a NEGATIVE fee to record a

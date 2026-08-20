@@ -2563,3 +2563,29 @@ body.ca-raising .bankroll-widget {
   font-weight: 500;
   white-space: nowrap;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SIDE-MENU EMBEDDED CONTROL
+   For rows that host a real control (StraddleToggle) rather than a button.
+   Added 2026-08-20: StraddleToggle was imported by TablePage and never
+   rendered, so a player had no way to turn straddling on at all.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.menu-item--embed {
+  cursor: default;
+  padding: 10px 20px;
+}
+
+.menu-item--embed:hover {
+  background: transparent;
+}
+
+/* Disabled menu rows (e.g. Tip Dealer while not seated) must read as
+   unavailable rather than silently doing nothing when tapped. */
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.menu-item:disabled:hover {
+  background: transparent;
+}

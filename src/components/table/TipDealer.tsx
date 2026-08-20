@@ -9,14 +9,15 @@
  * - Flying chip animation trigger
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { haptic } from '../../services/SoundService';
 import './TipDealer.css';
 
 export interface TipDealerProps {
   isOpen: boolean;
   onClose: () => void;
-  onTip: (amount: number) => void;
+  /** May be async. The modal stays open and locked until it settles. */
+  onTip: (amount: number) => void | Promise<void>;
   currency?: string;
   defaultAmounts?: number[];
   balance: number;
@@ -31,32 +32,76 @@ export function TipDealer({
   balance,
 }: TipDealerProps) {
   const [customAmount, setCustomAmount] = useState('');
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+
+  // Clear the typed amount between openings so a reopened modal never arrives
+  // pre-loaded with the last tip the player typed.
+  useEffect(() => {
+    if (isOpen) {
+      setCustomAmount('');
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleTip = (amount: number) => {
+  const parsedCustom = parseFloat(customAmount);
+  // The submit button used to be enabled for "0" and for "-5": it only checked
+  // `!customAmount` (truthiness of the STRING) and the upper bound. "0" is a
+  // non-empty string, so Tip was live on a tip that could never succeed.
+  const customValid = Number.isFinite(parsedCustom) && parsedCustom > 0 && parsedCustom <= balance;
+
+  const handleTip = async (amount: number) => {
+    // busyRef, not `busy`: two taps in the same React batch both read the stale
+    // state and both would fire a tip.
+    if (busyRef.current) return;
+    const snapped = Math.round(amount * 100) / 100;
+    if (!(snapped > 0) || snapped > balance) return;
+    busyRef.current = true;
+    setBusy(true);
     haptic.light();
-    if (amount > 0 && amount <= balance) {
-      onTip(amount);
-      onClose();
+    try {
+      // The modal is closed out by the CALLER on success (it toasts and clears
+      // `isOpen` itself). Awaiting means the modal cannot be dismissed out from
+      // under an in-flight request, and a refused tip no longer looks accepted.
+      await onTip(snapped);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
     }
   };
 
   const handleCustomSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const amount = parseFloat(customAmount);
-    if (!isNaN(amount) && amount > 0) {
-      handleTip(amount);
-    }
+    if (!customValid) return;
+    void handleTip(parsedCustom);
   };
 
   return (
-    <div className="tip-overlay" onClick={onClose}>
+    <div
+      className="tip-overlay"
+      onClick={() => {
+        if (!busy) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tip-modal-title"
+    >
       <div className="tip-modal" onClick={(e) => e.stopPropagation()}>
         <div className="tip-modal__header">
           <span className="tip-modal__icon">◉</span>
-          <h3 className="tip-modal__title">Tip Dealer</h3>
-          <button className="tip-modal__close" onClick={onClose}>
+          <h3 id="tip-modal-title" className="tip-modal__title">
+            Tip Dealer
+          </h3>
+          <button
+            type="button"
+            className="tip-modal__close"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Close tip dealer"
+          >
             ×
           </button>
         </div>
@@ -65,9 +110,10 @@ export function TipDealer({
           {defaultAmounts.map((amount) => (
             <button
               key={amount}
+              type="button"
               className="tip-modal__preset-btn"
-              onClick={() => handleTip(amount)}
-              disabled={amount > balance}
+              onClick={() => void handleTip(amount)}
+              disabled={amount > balance || busy}
             >
               <span className="tip-modal__chip">{amount}</span>
               <span className="tip-modal__chip-label">
@@ -85,15 +131,14 @@ export function TipDealer({
             placeholder="Custom Amount"
             value={customAmount}
             onChange={(e) => setCustomAmount(e.target.value)}
-            min="0"
+            min="0.01"
+            step="0.01"
             max={balance}
+            disabled={busy}
+            aria-label="Custom tip amount"
           />
-          <button
-            type="submit"
-            className="tip-modal__submit"
-            disabled={!customAmount || parseFloat(customAmount) > balance}
-          >
-            Tip
+          <button type="submit" className="tip-modal__submit" disabled={!customValid || busy}>
+            {busy ? '...' : 'Tip'}
           </button>
         </form>
 

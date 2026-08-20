@@ -16,6 +16,7 @@ import HandReplay from '../replay/HandReplay';
 import { GameRulesModal } from './GameRulesModal';
 import SitOutModal from './SitOutModal';
 import WaitListModal from './WaitListModal';
+import { waitlistService } from '../../services/WaitlistService';
 import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
 import { RunItTwicePrompt, RunItTwiceResult, type RitResultData } from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
@@ -204,7 +205,7 @@ export interface TableModalsLayerProps {
 
   // Tip Dealer
   showTipDealer: boolean;
-  onTipDealer: (amount: number) => void;
+  onTipDealer: (amount: number) => void | Promise<void>;
   onCloseTipDealer: () => void;
 
   // Leave Notice
@@ -221,8 +222,8 @@ export interface TableModalsLayerProps {
   cashoutMinBuyIn: number;
   buyInProcessingRef: React.MutableRefObject<boolean>;
   onCloseCashier: () => void;
-  onAddChips: (amount: number) => Promise<void> | void;
-  onWithdrawChips: (amount: number) => Promise<void> | void;
+  onAddChips: (amount: number) => Promise<boolean | void> | boolean | void;
+  onWithdrawChips: (amount: number) => Promise<boolean | void> | boolean | void;
 
   // Bust Rebuy
   bustRebuyOpen: boolean;
@@ -297,17 +298,19 @@ export interface TableModalsLayerProps {
   addOnPeriod: {
     active: boolean;
     addOnCost: number;
+    addOnFee?: number;
     addOnChips: number;
     walletBalance: number;
     timeRemaining: number;
   };
   rebuyProcessing: boolean;
-  onAddOnAccept: () => Promise<void>;
+  /** Resolves false when the add-on was refused — see AddOnModal.onAccept. */
+  onAddOnAccept: () => Promise<boolean | void>;
   onAddOnDecline: () => void;
 
   // Tournament Rebuy
   showRebuyModal: boolean;
-  rebuyData: { cost: number; chips: number } | null;
+  rebuyData: { cost: number; fee?: number; chips: number } | null;
   onConfirmRebuy: () => Promise<void>;
   onCloseRebuyModal: () => void;
 
@@ -623,15 +626,37 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       <SitOutModal
         isOpen={showSitOut}
         onClose={onCloseSitOut}
+        /**
+         * 2026-08-20: this closed the modal FIRST and then fired a
+         * `.catch()`-guarded sit-in. `GameServerAPI.setSitOut` never throws —
+         * it resolves `{ success: false, error }` — so a refused sit-in was
+         * completely silent and the player was returned to a felt they were
+         * still sitting out of. Close only after the server agrees.
+         */
         onReturn={() => {
-          onReturnFromSitOut();
-          if (tableId) {
-            setSitOut(tableId, false).catch((e) =>
-              reportError(e, 'TableModalsLayer.Return_failed')
-            );
+          if (!tableId) {
+            onReturnFromSitOut();
+            return;
           }
+          void setSitOut(tableId, false).then((res) => {
+            if (res?.success) {
+              onReturnFromSitOut();
+            } else {
+              reportError(
+                new Error(res?.error || 'setSitOut(false) rejected by engine'),
+                'TableModalsLayer.Return_failed'
+              );
+            }
+          });
         }}
-        onLeaveTable={() => navigate('/')}
+        /**
+         * 2026-08-20: was `() => navigate('/')`. "Leave Table" navigated away
+         * without ever leaving the table — no cash-out, no seat release. The
+         * player's chips stayed locked in a seat they had walked away from, and
+         * the blinds kept coming. `onConfirmLeaveTable` is the real path, and it
+         * was already being passed into this component for the other exit.
+         */
+        onLeaveTable={onConfirmLeaveTable}
         sitOutSince={sitOutSince}
         tableName={tableName}
       />
@@ -644,7 +669,23 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         blinds={blinds}
         players={waitListPlayers}
         myPlayerId={userId}
-        onLeaveWaitList={onCloseWaitList}
+        /**
+         * 2026-08-20: this was `onCloseWaitList` — the confirm button and the
+         * cancel button did exactly the same thing. A player who confirmed
+         * "leave the wait list" stayed queued and could be called to a table
+         * they had walked away from. `waitlistService.leaveWaitlist` existed
+         * the whole time with zero callers in the table UI.
+         */
+        onLeaveWaitList={() => {
+          if (!tableId) {
+            onCloseWaitList();
+            return;
+          }
+          void waitlistService
+            .leaveWaitlist(tableId)
+            .catch((e) => reportError(e, 'TableModalsLayer.Leave_waitlist_failed'))
+            .finally(() => onCloseWaitList());
+        }}
       />
 
       {/* Insurance Modal */}
@@ -865,12 +906,11 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       <CashierModal
         isOpen={showCashier}
         onClose={onCloseCashier}
-        onAddChips={async (amount: number) => {
-          await onAddChips(amount);
-        }}
-        onWithdrawChips={async (amount: number) => {
-          await onWithdrawChips(amount);
-        }}
+        // The success flag has to survive this hop — the old wrappers awaited
+        // and then threw the result away, so the cashier could never tell a
+        // refused top-up from a completed one and always closed as if it worked.
+        onAddChips={async (amount: number) => await onAddChips(amount)}
+        onWithdrawChips={async (amount: number) => await onWithdrawChips(amount)}
         currentStack={heroStack}
         accountBalance={accountBalance}
         minBuyIn={safeBB(blinds) * 40}
@@ -989,6 +1029,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         <AddOnModal
           isVisible={addOnPeriod.active}
           addOnCost={addOnPeriod.addOnCost}
+          addOnFee={addOnPeriod.addOnFee ?? 0}
           addOnChips={addOnPeriod.addOnChips}
           walletBalance={addOnPeriod.walletBalance}
           timeRemaining={addOnPeriod.timeRemaining}
@@ -1002,6 +1043,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         <RebuyModal
           isOpen={showRebuyModal}
           rebuyCost={rebuyData.cost}
+          rebuyFee={rebuyData.fee ?? 0}
           rebuyChips={rebuyData.chips}
           walletBalance={accountBalance || 0}
           onConfirm={onConfirmRebuy}

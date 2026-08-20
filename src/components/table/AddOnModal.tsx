@@ -13,17 +13,31 @@ import { haptic, soundService } from '../../services/SoundService';
 
 interface AddOnModalProps {
   isVisible: boolean;
+  /** Base add-on cost — the part that feeds the prize pool. */
   addOnCost: number;
+  /**
+   * House fee charged ON TOP of addOnCost (10% by default). The modal used to
+   * be unaware of it and quoted the base only, while processAddOn debits
+   * base + fee.
+   */
+  addOnFee?: number;
   addOnChips: number;
   walletBalance: number;
   timeRemaining: number; // seconds
-  onAccept: () => Promise<void>;
+  /**
+   * Resolve TRUE when the chips were actually added, FALSE when the purchase
+   * was refused. Before 2026-08-20 this was `Promise<void>` and the parent
+   * swallowed its own errors, so the modal announced "Add-On Accepted — +N
+   * chips added" on every failed add-on.
+   */
+  onAccept: () => Promise<boolean | void>;
   onDecline: () => void;
 }
 
 export default function AddOnModal({
   isVisible,
   addOnCost,
+  addOnFee = 0,
   addOnChips,
   walletBalance,
   timeRemaining: initialTime,
@@ -33,19 +47,31 @@ export default function AddOnModal({
   const [countdown, setCountdown] = useState(initialTime);
   const [processing, setProcessing] = useState(false);
   const [decided, setDecided] = useState(false);
-  const [result, setResult] = useState<'accepted' | 'declined' | 'insufficient' | null>(null);
+  const [result, setResult] = useState<
+    'accepted' | 'declined' | 'insufficient' | 'failed' | null
+  >(null);
+  const [failureMessage, setFailureMessage] = useState<string | null>(null);
+  const processingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onDeclineRef = useRef(onDecline);
   onDeclineRef.current = onDecline;
   const decidedRef = useRef(false);
 
-  const canAfford = walletBalance >= addOnCost;
+  const totalCost = Math.round((addOnCost + addOnFee) * 100) / 100;
+  // Gate on the TOTAL, and never on a zero price. `addOnCost` is fed from a
+  // realtime broadcast that defaults it to 0 when the field is missing; a 0
+  // price made canAfford unconditionally true and let players buy at a price
+  // the modal never actually showed them.
+  const priceKnown = totalCost > 0;
+  const canAfford = priceKnown && walletBalance >= totalCost;
 
   useEffect(() => {
     if (!isVisible) {
       setDecided(false);
       decidedRef.current = false;
       setResult(null);
+      setFailureMessage(null);
+      processingRef.current = false;
       setProcessing(false);
       return;
     }
@@ -75,26 +101,44 @@ export default function AddOnModal({
   }, [isVisible, initialTime]);
 
   const handleAccept = async () => {
+    // The confirm sound used to fire BEFORE this guard, so a locked-out or
+    // double tap still played "purchase confirmed" at the player.
+    if (processingRef.current || processing || decided || !canAfford) return;
+    processingRef.current = true;
     soundService.playBuyInConfirm();
-    if (processing || decided) return;
+    haptic.medium();
     setProcessing(true);
     try {
-      await onAccept();
-      setDecided(true);
-      setResult('accepted');
+      const ok = await onAccept();
       if (timerRef.current) clearInterval(timerRef.current);
+      setDecided(true);
+      // Explicit false = refused. `void` (legacy callers) still counts as success.
+      setResult(ok === false ? 'failed' : 'accepted');
+      if (ok === false) {
+        setFailureMessage('The add-on was not completed. Your wallet was not charged.');
+      }
     } catch (err: any) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setDecided(true);
       if (err?.message?.includes('Insufficient')) {
         setResult('insufficient');
+      } else {
+        setResult('failed');
+        setFailureMessage(
+          typeof err?.message === 'string' && err.message
+            ? err.message
+            : 'The add-on was not completed. Your wallet was not charged.'
+        );
       }
-      setDecided(true);
-      if (timerRef.current) clearInterval(timerRef.current);
+    } finally {
+      processingRef.current = false;
+      setProcessing(false);
     }
-    setProcessing(false);
   };
 
   const handleDecline = () => {
-    if (processing || decided) return;
+    if (processingRef.current || processing || decided) return;
+    haptic.light();
     setDecided(true);
     setResult('declined');
     if (timerRef.current) clearInterval(timerRef.current);
@@ -177,6 +221,36 @@ export default function AddOnModal({
                 {addOnCost.toLocaleString()} chips
               </span>
             </div>
+            {addOnFee > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '8px 16px',
+                  marginBottom: 4,
+                }}
+              >
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>House Fee</span>
+                <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
+                  {addOnFee.toLocaleString()} chips
+                </span>
+              </div>
+            )}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '8px 16px',
+                marginBottom: 4,
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                paddingTop: 12,
+              }}
+            >
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Total Charged</span>
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
+                {totalCost.toLocaleString()} chips
+              </span>
+            </div>
             <div
               style={{
                 display: 'flex',
@@ -208,15 +282,21 @@ export default function AddOnModal({
               </span>
             </div>
 
-            {!canAfford && (
+            {!priceKnown && (
               <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
-                Insufficient balance for add-on
+                Add-on price unavailable — cannot purchase right now
+              </div>
+            )}
+            {priceKnown && !canAfford && (
+              <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
+                Insufficient balance — you need {totalCost.toLocaleString()} chips
               </div>
             )}
 
             {/* Buttons */}
             <div style={{ display: 'flex', gap: 12 }}>
               <button
+                type="button"
                 onClick={handleDecline}
                 style={{
                   flex: 1,
@@ -234,6 +314,7 @@ export default function AddOnModal({
                 Decline
               </button>
               <button
+                type="button"
                 onClick={handleAccept}
                 disabled={!canAfford || processing}
                 style={{
@@ -252,7 +333,11 @@ export default function AddOnModal({
                   minHeight: 48,
                 }}
               >
-                {processing ? 'Processing...' : `Accept Add-On`}
+                {processing
+                  ? 'Processing...'
+                  : priceKnown
+                    ? `Accept for ${totalCost.toLocaleString()}`
+                    : 'Accept Add-On'}
               </button>
             </div>
           </>
@@ -272,6 +357,21 @@ export default function AddOnModal({
             {result === 'insufficient' && (
               <div style={{ color: '#ef4444', fontSize: 16, fontWeight: 600 }}>
                 Insufficient Balance — Add-On Denied
+              </div>
+            )}
+            {result === 'failed' && (
+              <div style={{ color: '#ef4444', fontSize: 15, fontWeight: 600 }} role="alert">
+                Add-On Failed
+                <div
+                  style={{
+                    color: 'rgba(255,255,255,0.65)',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    marginTop: 6,
+                  }}
+                >
+                  {failureMessage}
+                </div>
               </div>
             )}
           </div>

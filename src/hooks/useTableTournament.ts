@@ -30,6 +30,11 @@ export interface TournamentBreakState {
 export interface AddOnPeriodState {
   active: boolean;
   addOnCost: number;
+  /**
+   * House fee charged on top of addOnCost. Quoted from TournamentService so the
+   * modal shows the same number the server debits (2026-08-20).
+   */
+  addOnFee: number;
   addOnChips: number;
   walletBalance: number;
   timeRemaining: number;
@@ -37,6 +42,8 @@ export interface AddOnPeriodState {
 
 export interface RebuyData {
   cost: number;
+  /** House fee charged on top of `cost`. See AddOnPeriodState.addOnFee. */
+  fee: number;
   chips: number;
 }
 
@@ -103,6 +110,7 @@ export function useTableTournament(): UseTableTournamentReturn {
   const [addOnPeriod, setAddOnPeriod] = useState<AddOnPeriodState>({
     active: false,
     addOnCost: 0,
+    addOnFee: 0,
     addOnChips: 0,
     walletBalance: 0,
     timeRemaining: 60,

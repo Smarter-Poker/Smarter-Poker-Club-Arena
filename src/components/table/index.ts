@@ -187,7 +187,11 @@ export { EmojiPicker } from './EmojiPicker';
 export { SessionStatsTracker } from './SessionStatsTracker';
 
 // Quick Action Bar
-export { QuickActionBar } from './QuickActionBar';
+// REMOVED 2026-08-20: QuickActionBar, PreActionPanel and InsurancePanel.
+// All three were unreferenced anywhere in src/ or tests/ — QuickActionBar only
+// survived through this barrel, which nothing imported it from. QuickActionBar
+// also shipped two buttons with no content and no handler, so any surface that
+// had rendered it would have shown the player two dead squares.
 
 // Mini-HUD (Opponent Statistics)
 export { default as MiniHUD } from './MiniHUD';

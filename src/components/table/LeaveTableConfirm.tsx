@@ -7,14 +7,14 @@
  * stack size and asking for confirmation before executing the cashout.
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './LeaveTableConfirm.css';
 
 interface LeaveTableConfirmProps {
   isOpen: boolean;
   currentStack: number;
   tableName: string;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -26,25 +26,54 @@ export default function LeaveTableConfirm({
   onCancel,
 }: LeaveTableConfirmProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  // In-flight guard. Leaving a table cashes the stack out; `onConfirm` does a
+  // round trip, and until now nothing stopped a second tap during it from
+  // firing a second cash-out.
+  const [leaving, setLeaving] = useState(false);
+  const leavingRef = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      leavingRef.current = false;
+      setLeaving(false);
+    }
+  }, [isOpen]);
 
   // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Escape' && !leavingRef.current) onCancel();
     };
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
   }, [isOpen, onCancel]);
 
-  const handleConfirm = useCallback(() => {
-    onConfirm();
+  const handleConfirm = useCallback(async () => {
+    // leavingRef, not `leaving`: two taps inside one React batch both read the
+    // stale state value.
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    setLeaving(true);
+    try {
+      await onConfirm();
+    } finally {
+      if (leavingRef.current) {
+        leavingRef.current = false;
+        setLeaving(false);
+      }
+    }
   }, [onConfirm]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="leave-confirm__backdrop" onClick={onCancel}>
+    <div
+      className="leave-confirm__backdrop"
+      onClick={() => {
+        if (!leaving) onCancel();
+      }}
+    >
       <div
         className="leave-confirm__dialog"
         ref={dialogRef}
@@ -84,14 +113,22 @@ export default function LeaveTableConfirm({
           chips at <strong>{tableName}</strong>. Your chips will be returned to your wallet.
         </p>
         <div className="leave-confirm__actions">
-          <button className="leave-confirm__btn leave-confirm__btn--cancel" onClick={onCancel}>
+          <button
+            type="button"
+            className="leave-confirm__btn leave-confirm__btn--cancel"
+            onClick={onCancel}
+            disabled={leaving}
+            autoFocus
+          >
             Stay
           </button>
           <button
+            type="button"
             className="leave-confirm__btn leave-confirm__btn--confirm"
-            onClick={handleConfirm}
+            onClick={() => void handleConfirm()}
+            disabled={leaving}
           >
-            Leave Table
+            {leaving ? 'Leaving…' : 'Leave Table'}
           </button>
         </div>
       </div>

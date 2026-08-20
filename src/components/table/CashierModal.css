@@ -491,3 +491,21 @@
     padding: 6px 4px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FAILURE NOTICE
+   Added 2026-08-20. Before this, a rejected add/withdraw closed the cashier
+   with no message at all, so the player had no way to tell a refused top-up
+   from a successful one except by watching their stack.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.cashier-modal__error {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(231, 76, 60, 0.55);
+  background: rgba(231, 76, 60, 0.12);
+  color: #ffb3aa;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}

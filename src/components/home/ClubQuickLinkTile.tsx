@@ -230,31 +230,8 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
             width={640}
             height={1024}
           />
-          <span className={styles.tileLabel}>
-            {tile.alt}
-            {clubName && <span className={styles.tileClubName}>{clubName}</span>}
-          </span>
         </div>
       </button>
-
-      {hasSwitch && (
-        <button
-          ref={triggerRef}
-          className={styles.cashierSwitchBtn}
-          onClick={(e) => {
-            e.stopPropagation();
-            haptic.light();
-            if (menuOpen) closeMenu(false);
-            else openMenu();
-          }}
-          aria-label={`Switch club for ${tile.alt}`}
-          aria-expanded={menuOpen}
-          aria-haspopup="menu"
-          title="Switch club"
-        >
-          {'⇄'}
-        </button>
-      )}
 
       {menuOpen && (
         <>

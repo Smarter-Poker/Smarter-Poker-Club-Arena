@@ -1465,11 +1465,17 @@
     0 0 48px rgba(255, 215, 0, 0.25),
     0 0 80px rgba(255, 215, 0, 0.1),
     0 4px 16px rgba(0, 0, 0, 0.5);
-  animation: winnerAvatarGlow 1.2s ease-in-out infinite;
+  animation: seatWinnerAvatarGlow 1.2s ease-in-out infinite;
   transform: scale(1.08);
 }
 
-@keyframes winnerAvatarGlow {
+/* AUDIT 2026-08-20 (global keyframe collision): `winnerAvatarGlow` is also
+   defined in components/common/Avatar.css with a DIFFERENT body and a
+   different duration (2s infinite vs this 1.2s). @keyframes is a GLOBAL
+   namespace, so whichever stylesheet loaded last won for BOTH — the winning
+   seat's avatar glow was not reliably the one written for it. Renamed so the
+   table owns its own. */
+@keyframes seatWinnerAvatarGlow {
   0%,
   100% {
     box-shadow:

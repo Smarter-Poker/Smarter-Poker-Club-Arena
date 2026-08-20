@@ -1967,10 +1967,16 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .table-page--shake {
-  animation: screenShake calc(0.4s * var(--animation-speed, 1)) ease-out;
+  animation: tableWinShake calc(0.4s * var(--animation-speed, 1)) ease-out;
 }
 
-@keyframes screenShake {
+/* AUDIT 2026-08-20 (global keyframe collision): this was named `screenShake`,
+   the SAME name ThrowAnimation.css uses for a DIFFERENT animation built on
+   var(--impact-shake-intensity). @keyframes is a GLOBAL namespace — whichever
+   stylesheet loaded last won for BOTH consumers. When ThrowAnimation won, the
+   big-win shake resolved an undefined variable, producing an invalid transform
+   and NO SHAKE AT ALL on a 50BB+ win. Renamed so each owns its own name. */
+@keyframes tableWinShake {
   0% {
     transform: translate(0, 0);
   }

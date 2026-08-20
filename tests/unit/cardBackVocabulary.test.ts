@@ -64,12 +64,12 @@ describe('every store design renders a real card back', () => {
 });
 
 describe('paid designs are distinguishable', () => {
-  it('the exclusive tier maps to four DISTINCT designs', () => {
+  it('the exclusive tier resolves to their real un-aliased designs', () => {
     // If these collapsed onto one design, four separate purchases would look
     // identical and the store would be selling the same thing four times.
     const exclusive = ['holographic', 'carbon', 'club-branded', 'diamond-foil'];
     const resolved = exclusive.map(normalizeCardBack);
-    expect(new Set(resolved).size).toBe(exclusive.length);
+    expect(resolved).toEqual(exclusive);
   });
 
   it('no paid design resolves to the same back as plain black', () => {

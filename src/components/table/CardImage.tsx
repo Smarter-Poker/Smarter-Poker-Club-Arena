@@ -258,6 +258,10 @@ export const CARD_BACK_IDS = [
   'gold',
   'neon',
   'royal',
+  'holographic',
+  'carbon',
+  'club-branded',
+  'diamond-foil',
 ] as const;
 
 const DEFAULT_CARD_BACK = 'classic_blue';
@@ -289,10 +293,6 @@ const CARD_BACK_ALIASES: Record<string, string> = {
   // paid tier — each maps to a distinct real design
   burgundy: 'classic_red',
   navy: 'classic_blue',
-  holographic: 'galaxy',
-  carbon: 'neon',
-  'club-branded': 'dragon',
-  'diamond-foil': 'diamond',
 };
 
 /** Every id the store can hand us, canonical + purchasable aliases. */

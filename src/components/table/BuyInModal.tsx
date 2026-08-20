@@ -151,10 +151,35 @@ export function BuyInModal({
     }
   }, [hasEnoughBalance]);
 
-  // Handle slider change
-  const handleSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setBuyInAmount(Number(e.target.value));
-  }, []);
+  /**
+   * 2026-08-20: the MAX BUY-IN was not reachable by dragging.
+   *
+   * `<input type="range">` only emits values on the grid `min + n*step`, and
+   * this slider is `min={minBuyIn} max={maxBuyIn} step={bigBlind}`. A table's
+   * min/max are whole multiples of the blind, so on paper the grid lands
+   * exactly on max — but `maxBuyIn` is routinely NOT the table maximum: it is
+   * clamped to what the player can actually afford. A balance of 137.50 at a
+   * 1/2 table gives max 137.50 against min 40, and the slider tops out at
+   * 136 — the player cannot buy in for everything they have, and the label
+   * right above the slider says 137.50.
+   *
+   * Same fix as the raise slider: keep the step grid, and treat the last grid
+   * position as the true maximum.
+   */
+  const sliderGridMax = useMemo(() => {
+    const step = bigBlind || 1;
+    if (!(maxBuyIn > minBuyIn)) return maxBuyIn;
+    const steps = Math.floor((maxBuyIn - minBuyIn) / step);
+    return Math.round((minBuyIn + steps * step) * 100) / 100;
+  }, [minBuyIn, maxBuyIn, bigBlind]);
+
+  const handleSliderChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = Number(e.target.value);
+      setBuyInAmount(raw >= sliderGridMax ? maxBuyIn : raw);
+    },
+    [sliderGridMax, maxBuyIn]
+  );
 
   // Handle quick amount buttons
   const handleQuickAmount = useCallback(

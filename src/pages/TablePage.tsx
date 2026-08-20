@@ -6224,9 +6224,22 @@ export default function TablePage({
         if (!v8Settings.auto_time_bank) {
           setShowTimeBank(true);
         }
-        GameServerAPI.activateTimeBank(tableId, userId).catch(() => {
-          // Server rejected — fall back to auto-fold
-          handleTimerAutoFold();
+        // 2026-08-20: this was `.catch(() => handleTimerAutoFold())`, and the
+        // comment on it said "Server rejected — fall back to auto-fold".
+        // That fallback could NEVER run. GameServerAPI.activateTimeBank does
+        // not throw: every failure — non-OK status, unreachable server, a
+        // thrown fetch — is converted into a resolved `{ success: false }`.
+        //
+        // So on the one path where the player is by definition not watching —
+        // their shot clock just expired — a refused time bank left the client
+        // showing borrowed time it did not have, and the auto-fold the code
+        // intended never happened. Check the result.
+        void GameServerAPI.activateTimeBank(tableId, userId).then((result) => {
+          if (!result?.success) {
+            setTimeBankActive(false);
+            setShowTimeBank(false);
+            handleTimerAutoFold();
+          }
         });
       } else {
         handleTimerAutoFold();
@@ -6236,16 +6249,36 @@ export default function TablePage({
   });
 
   // Handle immediate UI Activation when button is clicked
-  const handleActivateTimeBank = useCallback(() => {
+  /**
+   * 2026-08-20: this button could leave the clock LYING to the player.
+   *
+   * `setTimeBankActive(true)` was applied optimistically and never reverted,
+   * and the only failure handling was `.catch(...)` — which can never run.
+   * `GameServerAPI.activateTimeBank` does not throw: every failure path (a
+   * non-OK status, an unreachable server, a thrown fetch) is converted into a
+   * resolved `{ success: false, error }`. So the catch was dead code and the
+   * result was discarded.
+   *
+   * The consequence is not cosmetic. If the server refuses — no uses left, not
+   * hero's turn, the table moved on — the UI showed a time bank running while
+   * the REAL shot clock kept counting down, and hero sat watching borrowed
+   * time that did not exist until they were auto-folded.
+   *
+   * Await it, revert on refusal, and say why. This is the same
+   * optimistic-then-revert shape the fold/check/call handlers in this file
+   * already use.
+   */
+  const handleActivateTimeBank = useCallback(async () => {
     if (!tableId || !userId || timeBanksRemaining <= 0) return;
-    // Server-authoritative: just send the request; server manages countdown
     setTimeBankActive(true);
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-    GameServerAPI.activateTimeBank(tableId, userId).catch((e) =>
-      reportError(e, 'TablePage.activateTimeBank')
-    );
+    const result = await GameServerAPI.activateTimeBank(tableId, userId);
+    if (!result?.success) {
+      setTimeBankActive(false);
+      toast?.error?.(result?.error || 'Could not start your time bank');
+    }
   }, [tableId, userId, timeBanksRemaining]);
 
   /**
@@ -6447,6 +6480,15 @@ export default function TablePage({
     setShowRaiseSlider(true);
   };
 
+  /**
+   * The all-in hotkey has to reach `handleActionPanelAction`, which is declared
+   * further down this component — naming it in the effect's dep array below
+   * would be a temporal-dead-zone error, not merely a lint complaint. A ref
+   * kept current by its own effect breaks the ordering cycle without moving
+   * either block.
+   */
+  const allInHotkeyRef = useRef<(() => void) | null>(null);
+
   // ── Keyboard Shortcuts for Table Actions ──
   // Two key sets coexist (Phase 2 T1-10 / spec §5.5 "MUST IMPROVE"):
   //   F / C / R / A — original mnemonic (Fold / Check-Call / Raise / All-in)
@@ -6478,11 +6520,29 @@ export default function TablePage({
       } else if (key === 'r' || key === 'e') {
         e.preventDefault();
         handleRaise();
+      } else if (key === 'a') {
+        // 2026-08-20: the comment above has advertised "F / C / R / A —
+        // (Fold / Check-Call / Raise / All-in)" since this block was written,
+        // and A was never implemented. Three of the four documented keys
+        // worked; the fourth did nothing. Now it shoves, through the same
+        // handler the ALL IN button uses, so there is one code path.
+        e.preventDefault();
+        allInHotkeyRef.current?.();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isHeroTurnContext, handleFold, handleCheck, handleCall]);
+
+  // Keep the all-in hotkey pointed at the current handler (see allInHotkeyRef).
+  useEffect(() => {
+    allInHotkeyRef.current = () => {
+      void handleActionPanelAction('allin');
+    };
+    return () => {
+      allInHotkeyRef.current = null;
+    };
+  });
 
   // Unified action handler for ActionPanel component
   //Server is authoritative — all actions go through submitAction

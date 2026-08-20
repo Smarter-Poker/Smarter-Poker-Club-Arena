@@ -54,10 +54,8 @@ export function resolveBackground(bid: string): string {
  * 2026-08-20 follow-up: guaranteeing a layer *underneath* stopped the page
  * being empty when an asset fails, but it did nothing for the reported
  * symptom, because the artwork does load — it is simply almost invisible.
- * Measured: bg_midnight averages RGB(22,26,32) with a brightest pixel of
- * 49/255, and the whole set runs 33-92. They are also authored portrait
- * (750x1624), so `cover` on a wide viewport crops them to a near-uniform
- * near-black slice. A backdrop hidden *behind* that reads exactly as blank.
+ * Update 2026-08-20: Backgrounds were regenerated in landscape (2560x1440) with higher luma (55-85),
+ * so they are no longer near-black or heavily cropped on wide viewports. A backdrop hidden *behind* that reads exactly as blank.
  *
  * So the ambience moves above the art: a soft pool lifts the centre where the
  * table sits, and a vignette frames the edges. The artwork still reads —

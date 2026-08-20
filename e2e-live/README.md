@@ -55,3 +55,18 @@ sit"]`; the buy-in confirm is `button.buy-in-modal__confirm` ("BUY CHIPS").
    "Action needed … Act now →" — match /Return to game|Act now/i.
 7. The hamburger nav drawer sometimes restores open over the arena and hides
    the club list — dismiss with the Close control + Escape before asserting.
+8. Never assert on a fixed sleep after an action the SERVER completes.
+   atomic_table_buyin returns 204 well before the felt repaints, so a flat 6s
+   wait declared "not seated" on a seat we had already bought — and the
+   teardown then skipped a table we were really sitting at. Poll for the
+   state you want.
+9. Bound EVERY click. An unbounded `.click()` on a locator that never appears
+   burns Playwright's 30s default and throws, failing a run at teardown after
+   every real assertion had passed.
+10. 40 horses play these tables continuously, so a seat that was open when the
+    lobby was listed is often gone by the time you arrive. Walk the candidates
+    cheapest-first rather than failing on the race.
+11. Teardown lives in `lib/leave-all.mjs` and follows the DOCK, not the tab
+    bar: the dock is rebuilt from server truth (table_seats where left_at IS
+    NULL) on every arrival, so it is the honest list of what you are still
+    sitting at. Both the walk and the sweeper call it — one implementation.

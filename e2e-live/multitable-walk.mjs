@@ -5,6 +5,7 @@
 // and an empty/anonymous arena triggers a fresh credential login.
 import { chromium } from 'playwright';
 import fs from 'fs';
+import { leaveAllSeats } from './lib/leave-all.mjs';
 const AUTH=process.env.E2E_AUTH||'/tmp/e2e-work/auth.json';
 const S=(n)=>`${process.env.E2E_SHOTS||'/tmp/e2e-shots'}/mt-${n}.png`;
 const R=[]; const check=(n,ok,d='')=>{R.push({n,ok});console.log(`${ok?'PASS':'FAIL'} ${n}${d?' -- '+d:''}`)};
@@ -99,9 +100,28 @@ try{
   const parse=(l)=>{const m=l.t.match(/BLINDS ([\d.]+) \/ ([\d.]+) (\d+)\/(\d+)/); return m?{...l,bb:+m[2],seated:+m[3],cap:+m[4]}:null;};
   const cands=links.map(parse).filter(Boolean).filter(x=>x.seated<x.cap).sort((a,b)=>a.bb-b.bb);
   console.log('CHEAPEST OPEN: '+JSON.stringify(cands[0]));
-  const t1=cands[0]||links[0];
-  await page.goto('https://smarter.poker'+t1.h,{waitUntil:'domcontentloaded',timeout:40000});
-  await page.waitForTimeout(10000);
+
+  /**
+   * 40 horses are playing these tables continuously, so a seat counted as open
+   * when the lobby was listed is often gone by the time we arrive. Walk the
+   * candidates cheapest-first until one actually lets us sit, instead of
+   * failing the whole run on a race we can simply retry.
+   */
+  // Seats render a beat after the felt does; an instant check reported every
+  // candidate as full and walked the whole queue for nothing.
+  async function openSeatHere(){
+    return await page.locator('[aria-label*="open - click to sit"]').first()
+      .waitFor({state:'visible',timeout:8000}).then(()=>true).catch(()=>false);
+  }
+  const queue=(cands.length?cands:[links[0]]).slice(0,4);
+  let t1=queue[0];
+  for (const cand of queue){
+    await page.goto('https://smarter.poker'+cand.h,{waitUntil:'domcontentloaded',timeout:40000});
+    await page.waitForTimeout(10000);
+    t1=cand;
+    if (await openSeatHere()) break;
+    console.log(`NOTE: ${cand.h.split('/table/')[1]} filled up before we arrived -- next candidate`);
+  }
   console.log('T1 BUTTONS: '+JSON.stringify((await page.locator('button').allInnerTexts()).map(t=>t.replace(/\s+/g,' ').trim()).filter(Boolean).slice(0,25)));
   await page.screenshot({path:S('02-table1')});
   body=await page.innerText('body');
@@ -119,13 +139,24 @@ try{
   body=await page.innerText('body');
   if (/Spectating, Tap An Open Seat/i.test(body)) {
     const seat=page.locator('[aria-label*="open - click to sit"]').first();
-    await seat.click({timeout:15000});
+    const sat=await seat.click({timeout:15000}).then(()=>true).catch(()=>false);
+    if(!sat) console.log('NOTE: no open seat clickable at ' + t1.h.split('/table/')[1]);
     await page.waitForTimeout(2500);
     await page.screenshot({path:S('02b-buyin')});
     const conf=page.locator('button.buy-in-modal__confirm').first();
     if (await conf.isVisible().catch(()=>false)) {
       console.log('BUYIN BTN: '+await conf.innerText());
-      await conf.click(); await page.waitForTimeout(6000);
+      await conf.click({timeout:10000}).catch(()=>{});
+      /**
+       * atomic_table_buyin returns 204 well before the felt repaints — a flat
+       * 6s wait asserted "not seated" on a seat the server had already sold us,
+       * and then the teardown skipped a table we were really sitting at. Poll
+       * for the spectator footer to clear instead of guessing a duration.
+       */
+      for (let w=0; w<12; w++) {
+        await page.waitForTimeout(2000);
+        if (!/Spectating, Tap An Open Seat/i.test(await page.innerText('body'))) break;
+      }
     }
     body=await page.innerText('body');
   }
@@ -134,7 +165,10 @@ try{
   check('hero seated at table 1 (buy-in accepted)', seatedNow, body.match(/Seat Reserved[^\n]*|Spectating[^\n]*/i)?.[0]||'');
 
   // ---- + ADD TABLE (HUD upper-left, aria-label="Open another table") ----
-  const plus=page.locator('button[aria-label="Open another table"], button.add-chips-icon-btn').first();
+  // Two entry points open the lobby tab: the in-table HUD control, and the
+  // tab bar's empty-slot buttons (which only exist once a second table is
+  // mounted). Both now carry the same accessible name; accept either.
+  const plus=page.locator('button[aria-label="Open another table"], button.add-chips-icon-btn, button.table-tab-bar__add').first();
   const plusVisible=await plus.waitFor({state:'visible',timeout:20000}).then(()=>true).catch(()=>false);
   check('+ add-table button visible (upper-left HUD)', plusVisible);
   if(plusVisible){
@@ -207,45 +241,8 @@ try{
     check('dock returns to live table (SPA, socket intact)', page.url().includes('/table/') && /POT|Fold|Check|Call|Waiting|Seat Reserved|Post|Blind/i.test(await page.innerText('body')));
   } else skip('dock return','no Return to game control visible');
 
-  // ---- CLEANUP: leave every SEATED table (menus exist per mounted table;
-  // pick the visible one in the active HUD corner, x<200, w>0) ----
-  async function activeMenuBtn(){
-    const hs=await page.locator('button[aria-label="Table menu"]').elementHandles();
-    for (const h of hs){ const bb=await h.boundingBox(); if (bb && bb.width>0 && bb.x<200 && bb.y<120) return h; }
-    return null;
-  }
-  let leaves=0;
-  for (let i=0;i<6;i++){
-    if (!page.url().includes('/table/')) {
-      // the dock re-renders for a beat after a leave -- give it two chances
-      let r2ok=false;
-      for(let w=0;w<2 && !r2ok;w++){
-        await page.waitForTimeout(4000);
-        const r2=page.locator('text=/Return to game|Act now/i').first();
-        if (await r2.isVisible().catch(()=>false))
-          r2ok=await r2.click({timeout:8000}).then(()=>true).catch(()=>false);
-      }
-      if(!r2ok) break;
-      await page.waitForTimeout(4000);
-    }
-    const foot=await page.locator('.action-panel-wrapper, [class*="spectator-footer"]').first().innerText().catch(()=>'');
-    if (/Spectating, Tap An Open Seat/i.test(foot)) {
-      // not seated here -- switch to another table tab if one exists
-      const otherTab=page.locator('[class*="table-tab-bar__tab"]:not([class*="--active"]):not(:has-text("Lobby"))').first();
-      if (await otherTab.isVisible().catch(()=>false)) { await otherTab.click(); await page.waitForTimeout(3000); continue; }
-      break;
-    }
-    const menu=await activeMenuBtn();
-    if (!menu) break;
-    await menu.click(); await page.waitForTimeout(1200);
-    const leave=page.locator('text=Leave Table').first();
-    if (!(await leave.isVisible().catch(()=>false))) { await page.keyboard.press('Escape'); break; }
-    await leave.click(); await page.waitForTimeout(1200);
-    const confL=page.locator('.leave-confirm__btn:not(.leave-confirm__btn--cancel)').last();
-    if (await confL.isVisible().catch(()=>false)) { await confL.click(); await page.waitForTimeout(6000); leaves++; }
-    else { await page.keyboard.press('Escape'); break; }
-  }
-  await page.screenshot({path:S('08-after-cleanup')});
+  // ---- CLEANUP: leave every live seat (shared, dock-driven teardown) ----
+  const leaves=await leaveAllSeats(page, { rounds: 5 });
   check('left all seated tables (stack refunded, session clean)', leaves>=1, `leaves=${leaves}`);
   check('no page errors during walk', errs.length===0, errs.slice(0,2).join(' | '));
 }catch(e){ check('walk completed', false, e.message.slice(0,160)); await page.screenshot({path:S('99-err')}).catch(()=>{}); }

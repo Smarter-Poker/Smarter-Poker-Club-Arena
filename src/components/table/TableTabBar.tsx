@@ -191,6 +191,7 @@ export function TableTabBar({
                   className="table-tab-bar__close"
                   onClick={(e) => handleClose(e, tab.id)}
                   title="Close table"
+                  aria-label={`Close ${tab.name}`}
                 >
                   ×
                 </button>
@@ -206,6 +207,12 @@ export function TableTabBar({
             className="table-tab-bar__add"
             onClick={onAddTable}
             title="Add table"
+            // Dan 2026-08-20: the only accessible name these had was their
+            // text content, "+". Screen readers announced a bare plus sign,
+            // and nothing could address them by name. Matches the in-table
+            // HUD control, which already carries aria-label="Open another
+            // table", so both entry points announce the same thing.
+            aria-label="Open another table"
           >
             +
           </button>

@@ -7,7 +7,16 @@
  * live stats. Single-click navigates to the club's lobby.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  Suspense,
+  lazy,
+} from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import { supabase } from '../../lib/supabase';
 import type { useToast } from '../common/Toast';
@@ -79,7 +88,6 @@ export default function CarouselSection({
 }: CarouselSectionProps) {
   const carouselRef = useRef<HTMLDivElement>(null);
   const sharkCardRef = useRef<HTMLDivElement>(null);
-  const hasScrolledRef = useRef(false);
 
   // Enhancement #8: Drag-to-reorder state
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -123,18 +131,34 @@ export default function CarouselSection({
     return orderedClubs.slice(half);
   }, [orderedClubs]);
 
-  // Auto-scroll to center the Shark Club card on initial mount only
-  useEffect(() => {
-    if (hasScrolledRef.current) return;
-    if (sharkCardRef.current && carouselRef.current) {
-      sharkCardRef.current.scrollIntoView({
-        behavior: 'auto', // Instant scroll so it doesn't "snap to center" visibly
-        inline: 'center',
-        block: 'nearest',
-      });
-      hasScrolledRef.current = true;
-    }
-  }, []);
+  // Centre the featured Shark Club card.
+  //
+  // This used to be a useEffect with [] deps, so it fired exactly once on the
+  // FIRST render — at which point `orderedClubs` is still the initial
+  // `displayClubs` (empty while the parent is fetching). With no left-hand
+  // cards the featured card IS the first element, so "centre it" resolves to
+  // scrollLeft ~ 0 and does nothing visible. A one-shot ref then latched, so
+  // when the clubs finally arrived and pushed the card rightwards nothing ever
+  // re-centred it. The row sat left-aligned until `scroll-snap-type: x
+  // mandatory` re-snapped to the nearest snap point — which is the reported
+  // "everything is shifted left, then jumps to normal after a few seconds".
+  //
+  // Three changes:
+  //   * useLayoutEffect, so the scroll lands BEFORE the browser paints and
+  //     there is no frame at the wrong offset;
+  //   * keyed on the card count, so it re-centres when the clubs actually
+  //     arrive rather than only on the empty first pass;
+  //   * scrollLeft set directly rather than scrollIntoView, which also scrolls
+  //     ancestors and can drag the whole page vertically on mount.
+  useLayoutEffect(() => {
+    const wrap = carouselRef.current;
+    const card = sharkCardRef.current;
+    if (!wrap || !card) return;
+    // .clubCarousel is position: relative, so it is the offsetParent and
+    // offsetLeft is already relative to the scroll container.
+    const target = card.offsetLeft - (wrap.clientWidth - card.offsetWidth) / 2;
+    wrap.scrollLeft = Math.max(0, target);
+  }, [orderedClubs.length]);
 
   // Enhancement #7: Haptic on scroll snap
   useEffect(() => {

@@ -191,6 +191,22 @@
   text-shadow: 0 0 10px rgba(253, 230, 138, 0.8);
 }
 
+/* ── Locked tiers ─────────────────────────────────────────────────────────── */
+/* A multiplier the Reserve Pool cannot yet fund. Shown, not hidden: a visible
+   500x you cannot win yet is anticipation and is honest about the ceiling,
+   where silently shrinking the wheel makes the format look smaller than it is.
+   Dimmed and desaturated so it reads as unavailable at a glance without
+   needing a legend. */
+.sw__seg--locked::before {
+  filter: grayscale(0.9) brightness(0.45);
+}
+
+.sw__seg--locked .sw__seg-label {
+  color: #64748b;
+  text-shadow: none;
+  opacity: 0.75;
+}
+
 .sw__hub {
   position: absolute;
   top: 50%;
@@ -366,6 +382,51 @@
   font-weight: 800;
   letter-spacing: 3px;
   color: #94a3b8;
+}
+
+/* ── Payout split ─────────────────────────────────────────────────────────── */
+/* At 2x-5x only first place cashes. Saying so on the reveal is kinder than
+   letting second place discover it at the end of a three-minute tournament. */
+.sw__splits {
+  margin-top: 12px;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+}
+
+.sw__split {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sw__split:first-child {
+  background: rgba(251, 191, 36, 0.13);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.sw__split-place {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #94a3b8;
+}
+
+.sw__split-amt {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 800;
+  color: #e2e8f0;
+}
+
+.sw__split:first-child .sw__split-amt {
+  color: #fbbf24;
 }
 
 .sw__hype {

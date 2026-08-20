@@ -73,7 +73,24 @@ describe('wheel layout', () => {
   it('alternates small and large so a near-miss is REAL, not staged', () => {
     const order = buildWheelOrder(DEFAULT_SPIN_TIERS);
     // Interleaved from both ends: smallest, largest, 2nd smallest, 2nd largest...
-    expect(order.map((t) => t.multiplier)).toEqual([2, 100, 3, 50, 5, 25, 10]);
+    // Note 2x sits directly beside 500x, which is the whole point: the most
+    // common result is adjacent to the rarest, so the near-miss is a property
+    // of the layout rather than something staged for effect.
+    expect(order.map((t) => t.multiplier)).toEqual([2, 500, 3, 100, 4, 50, 5, 25, 10]);
+  });
+
+  it('every big tier has a small neighbour, so no dead zone exists', () => {
+    const order = buildWheelOrder(DEFAULT_SPIN_TIERS);
+    const big = (m: number) => m >= 25;
+    for (let i = 0; i < order.length; i++) {
+      if (!big(order[i].multiplier)) continue;
+      const prev = order[(i - 1 + order.length) % order.length].multiplier;
+      const next = order[(i + 1) % order.length].multiplier;
+      expect(
+        big(prev) && big(next),
+        `${order[i].multiplier}x is surrounded by big tiers — a whole arc of the wheel would be unreachable excitement`
+      ).toBe(false);
+    }
   });
 
   it('keeps every tier — none may be silently dropped from the wheel', () => {
@@ -227,6 +244,52 @@ describe('SpinWheel — sequence', () => {
     runToResult();
     expect(big.container.querySelector('.sw__confetti')).toBeTruthy();
     expect(screen.getByText('MEGA JACKPOT')).toBeTruthy();
+  });
+});
+
+describe('SpinWheel — locked tiers and payout splits', () => {
+  it('shows a tier the pool cannot fund as LOCKED rather than hiding it', () => {
+    const { container } = render(
+      <SpinWheel
+        data={{ ...SPIN, lockedMultipliers: [100, 500] }}
+        onDone={() => {}}
+      />
+    );
+    // Still on the wheel — a visible 500x you cannot win yet is anticipation.
+    expect(container.querySelectorAll('.sw__seg').length).toBe(DEFAULT_SPIN_TIERS.length);
+    expect(container.querySelectorAll('.sw__seg--locked').length).toBe(2);
+  });
+
+  it('marks nothing locked when the pool can fund everything', () => {
+    const { container } = render(<SpinWheel data={SPIN} onDone={() => {}} />);
+    expect(container.querySelectorAll('.sw__seg--locked').length).toBe(0);
+  });
+
+  it('says who cashes — only first place below 10x', () => {
+    const { container } = render(
+      <SpinWheel data={{ ...SPIN, multiplier: 5 }} onDone={() => {}} />
+    );
+    runToResult();
+    expect(container.querySelectorAll('.sw__split').length).toBe(1);
+  });
+
+  it('shows all three places at 25x and above, with the real amounts', () => {
+    const { container } = render(
+      <SpinWheel data={{ ...SPIN, buyIn: 10, multiplier: 500 }} onDone={() => {}} />
+    );
+    runToResult();
+    const amts = [...container.querySelectorAll('.sw__split-amt')].map((n) => n.textContent);
+    // 10 x 500 = 5,000 pool -> 80/12/8
+    expect(amts).toEqual(['4,000', '600', '400']);
+  });
+
+  it('shows two places at exactly 10x', () => {
+    const { container } = render(
+      <SpinWheel data={{ ...SPIN, buyIn: 10, multiplier: 10 }} onDone={() => {}} />
+    );
+    runToResult();
+    const amts = [...container.querySelectorAll('.sw__split-amt')].map((n) => n.textContent);
+    expect(amts).toEqual(['80', '20']);
   });
 });
 

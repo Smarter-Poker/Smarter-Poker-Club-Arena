@@ -46,6 +46,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { fireVibration } from '../../utils/vibrationGate';
+import { SPIN_TIERS, spinTier } from '../../config/spinSpec';
 import './SpinWheel.css';
 
 export interface SpinTier {
@@ -64,6 +65,16 @@ export interface SpinWheelData {
   currency?: string;
   /** Names of the three players, shown while the wheel decides. */
   playerNames?: string[];
+  /**
+   * Multipliers the Reserve Pool cannot currently fund. They are shown on the
+   * wheel as LOCKED rather than hidden: a visible 500x you cannot win yet is
+   * anticipation and is honest about the format, where silently shrinking the
+   * wheel makes the ceiling look lower than it is.
+   *
+   * The engine excludes these from the draw entirely, so a locked tier can
+   * never be the result.
+   */
+  lockedMultipliers?: number[];
 }
 
 export interface SpinWheelProps {
@@ -74,16 +85,14 @@ export interface SpinWheelProps {
 
 type Phase = 'idle' | 'intro' | 'spinning' | 'settling' | 'result';
 
-/** Default ladder — matches SPIN_BONUS_TIERS.standard. */
-export const DEFAULT_SPIN_TIERS: SpinTier[] = [
-  { multiplier: 2, weight: 76.1904 },
-  { multiplier: 3, weight: 14.2857 },
-  { multiplier: 5, weight: 5.7143 },
-  { multiplier: 10, weight: 2.381 },
-  { multiplier: 25, weight: 0.9524 },
-  { multiplier: 50, weight: 0.381 },
-  { multiplier: 100, weight: 0.0952 },
-];
+/**
+ * The ladder shown on the wheel, derived from the canonical spec so the wheel
+ * can never advertise a tier the engine cannot draw (or omit one it can).
+ */
+export const DEFAULT_SPIN_TIERS: SpinTier[] = SPIN_TIERS.map((t) => ({
+  multiplier: t.multiplier,
+  weight: t.freq,
+}));
 
 const INTRO_MS = 900;
 const SPIN_MS = 4200;
@@ -120,6 +129,10 @@ export function tierClass(multiplier: number): string {
 }
 
 export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheelProps) {
+  const locked = useMemo(
+    () => new Set(data?.lockedMultipliers ?? []),
+    [data?.lockedMultipliers]
+  );
   const [phase, setPhase] = useState<Phase>('idle');
   const [rotation, setRotation] = useState(0);
   const [displayPrize, setDisplayPrize] = useState(0);
@@ -302,14 +315,18 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
             {order.map((tier, i) => (
               <div
                 key={`${tier.multiplier}-${i}`}
-                className={`sw__seg ${tierClass(tier.multiplier)}`}
+                className={`sw__seg ${tierClass(tier.multiplier)}${
+                  locked.has(tier.multiplier) ? ' sw__seg--locked' : ''
+                }`}
                 style={{
                   ['--sw-i' as string]: i,
                   ['--sw-angle' as string]: `${segmentAngle}deg`,
                   transform: `rotate(${i * segmentAngle}deg)`,
                 }}
               >
-                <span className="sw__seg-label">{tier.multiplier}×</span>
+                <span className="sw__seg-label">
+                  {tier.multiplier}×{locked.has(tier.multiplier) ? ' \u00B7' : ''}
+                </span>
               </div>
             ))}
             <div className="sw__hub" />
@@ -343,6 +360,23 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
               })}
             </div>
             <div className="sw__prize-label">PRIZE POOL</div>
+
+            {/* Who actually cashes. At 2x-5x only the winner does, and saying
+                so up front is kinder than letting second place find out at the
+                end of a three-minute tournament. */}
+            <div className="sw__splits">
+              {(spinTier(data.multiplier)?.payouts ?? [1]).map((pct, i) => (
+                <span key={i} className="sw__split">
+                  <span className="sw__split-place">
+                    {['1st', '2nd', '3rd'][i] ?? `${i + 1}th`}
+                  </span>
+                  <span className="sw__split-amt">
+                    {currency}
+                    {(Math.round(prize * pct * 100) / 100).toLocaleString()}
+                  </span>
+                </span>
+              ))}
+            </div>
             {data.multiplier >= 25 && (
               <div className="sw__hype">
                 {data.multiplier >= 100 ? 'MEGA JACKPOT' : 'JACKPOT SPIN'}

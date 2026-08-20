@@ -1467,6 +1467,134 @@ class SoundService {
   }
 
   /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  MYSTERY BOUNTY CHEST — the three beats of the reveal (2026-08-20)
+   * ═══════════════════════════════════════════════════════════════════════
+   * Dan: "a suspense filled in screen with a treasure chest that needs to be
+   * CLICKED TO OPEN, then some animation followed by an EXPLOSION with the
+   * amount revealed."
+   *
+   * Three cues for three beats, deliberately distinct so the ear can follow
+   * the story even if the player looks away: the chest LANDS, the lid CREAKS,
+   * the thing BLOWS. playMysteryBountyReveal then carries the reveal itself.
+   */
+
+  /** Chest lands — heavy wooden thud with an iron rattle, then a suspense drone. */
+  playMysteryChestLand() {
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Weight: low thud
+    this.playTone(70, 0.34, 0.0, 'sine', 0.4);
+    this.playTone(105, 0.22, 0.01, 'triangle', 0.22);
+    // Timber: broadband knock
+    this.createNoiseBurst(t, 0.1, 0.24, 600);
+    // Iron fittings rattling from the drop
+    this.createNoiseBurst(t + 0.09, 0.07, 0.1, 4200);
+    this.createNoiseBurst(t + 0.17, 0.05, 0.06, 5200);
+
+    // Suspense drone underneath — slow rise, unresolved on purpose. This is
+    // the bed the "tap to open" prompt sits on.
+    const osc = this.ctx!.createOscillator();
+    const gain = this.ctx!.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(48, t + 0.1);
+    osc.frequency.linearRampToValueAtTime(66, t + 1.9);
+    const lp = this.ctx!.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(300, t + 0.1);
+    lp.frequency.linearRampToValueAtTime(700, t + 1.9);
+    gain.gain.setValueAtTime(0.0001, t + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.075, t + 1.2);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 2.1);
+    osc.connect(lp);
+    lp.connect(gain);
+    gain.connect(this.out);
+    osc.start(t + 0.1);
+    osc.stop(t + 2.15);
+
+    haptic.medium();
+  }
+
+  /** Lid creaks open — hinge groan rising as the seam splits. */
+  playMysteryChestOpen() {
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Latch pops first — you hear the lock give before the hinge moves.
+    this.createNoiseBurst(t, 0.04, 0.26, 3600);
+    this.playTone(880, 0.07, 0.0, 'square', 0.12);
+
+    // Hinge groan: detuned saw pair sliding up, band-passed so it reads as
+    // wood-and-iron rather than as a synth sweep.
+    [0, 3].forEach((detune, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      const bp = this.ctx!.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = 5;
+      bp.frequency.setValueAtTime(320, t + 0.05);
+      bp.frequency.exponentialRampToValueAtTime(1500, t + 0.75);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(105 + detune, t + 0.05);
+      osc.frequency.exponentialRampToValueAtTime(240 + detune, t + 0.75);
+      gain.gain.setValueAtTime(0.0001, t + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.1 - i * 0.03, t + 0.3);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+      osc.connect(bp);
+      bp.connect(gain);
+      gain.connect(this.out);
+      osc.start(t + 0.05);
+      osc.stop(t + 0.9);
+    });
+
+    // Light escaping the seam — a shimmer that promises the payoff.
+    [1975.53, 2637.02, 3520.0].forEach((f, i) => {
+      this.playTone(f, 0.5, 0.35 + i * 0.07, 'sine', 0.07);
+    });
+
+    haptic.strong();
+  }
+
+  /** The explosion — flash, shockwave, and a shower of coins. */
+  playMysteryChestExplosion() {
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // The crack: full-band burst.
+    this.createNoiseBurst(t, 0.16, 0.42, 9000);
+    this.createNoiseBurst(t + 0.02, 0.3, 0.3, 1800);
+
+    // Sub-bass drop you feel more than hear.
+    const sub = this.ctx!.createOscillator();
+    const subGain = this.ctx!.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(150, t);
+    sub.frequency.exponentialRampToValueAtTime(32, t + 0.55);
+    subGain.gain.setValueAtTime(0.55, t);
+    subGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.65);
+    sub.connect(subGain);
+    subGain.connect(this.out);
+    sub.start(t);
+    sub.stop(t + 0.7);
+
+    // Coin shower — a scatter of metallic pings over ~700ms. Randomised
+    // spacing so it reads as coins falling, not as an arpeggio.
+    const coins = [2093.0, 2637.02, 3135.96, 3520.0, 4186.01];
+    for (let i = 0; i < 14; i++) {
+      const f = coins[i % coins.length] * (0.94 + Math.random() * 0.12);
+      this.playTone(f, 0.16, 0.12 + Math.random() * 0.6, 'triangle', 0.055);
+    }
+
+    // Triumphant major chord landing under the shower.
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+      this.playTone(f, 0.9, 0.18 + i * 0.03, 'sine', 0.13);
+    });
+
+    haptic.jackpot();
+  }
+
+  /**
    * Mystery Bounty Reveal — suspenseful pause then dramatic reveal
    */
   playMysteryBountyReveal() {

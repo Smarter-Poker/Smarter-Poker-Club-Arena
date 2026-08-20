@@ -1,0 +1,357 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  KNOCKOUT ANIMATION — styles (2026-08-20)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Every keyframe here is prefixed `ko` and every class `.ko`. That is not
+ * decoration: @keyframes is a GLOBAL namespace, and this app carries 772 of
+ * them. Two definitions of the same name with different bodies resolve by load
+ * order, silently, for both consumers — a bug class that cost real hours on
+ * 2026-08-20 (screenShake, card-deal, winnerAvatarGlow). A unique prefix is
+ * how a new component avoids joining that list.
+ */
+
+.ko {
+  position: absolute;
+  inset: 0;
+  z-index: 480;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* A knockout lands while you may be IN a hand. It must never eat a click on
+     the fold button — this overlay is something you see, not something you
+     interact with. */
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ko__vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0) 22%,
+    rgba(0, 0, 0, 0.55) 72%,
+    rgba(0, 0, 0, 0.78) 100%
+  );
+  animation: koVignetteIn 0.34s ease-out both;
+}
+
+@keyframes koVignetteIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── Impact burst ─────────────────────────────────────────────────────────── */
+
+.ko__burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+}
+
+.ko__ray {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 120px;
+  margin-left: -1.5px;
+  background: linear-gradient(to top, rgba(255, 209, 102, 0), rgba(255, 209, 102, 0.85));
+  transform-origin: bottom center;
+  transform: rotate(calc(var(--ko-ray-i) * 60deg)) translateY(-14px) scaleY(0);
+  animation: koRay 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--ko-ray-i) * 18ms);
+}
+
+@keyframes koRay {
+  0% {
+    transform: rotate(calc(var(--ko-ray-i) * 60deg)) translateY(-14px) scaleY(0);
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(calc(var(--ko-ray-i) * 60deg)) translateY(-60px) scaleY(1);
+    opacity: 0;
+  }
+}
+
+.ko__shockwave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 90px;
+  height: 90px;
+  margin: -45px 0 0 -45px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 209, 102, 0.9);
+  animation: koShockwave 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes koShockwave {
+  0% {
+    transform: scale(0.2);
+    opacity: 0.95;
+    border-width: 5px;
+  }
+  100% {
+    transform: scale(4.2);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+/* ── Content ──────────────────────────────────────────────────────────────── */
+
+.ko__stack {
+  position: relative;
+  text-align: center;
+  padding: 0 16px;
+  max-width: 92vw;
+}
+
+.ko__stamp {
+  font-size: clamp(30px, 11vw, 56px);
+  font-weight: 900;
+  letter-spacing: 3px;
+  line-height: 1;
+  color: #fff;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.65),
+    0 0 26px rgba(255, 90, 60, 0.75),
+    0 0 60px rgba(255, 90, 60, 0.4);
+  /* Slams in past its resting size and settles — the overshoot IS the impact. */
+  animation: koStampSlam 0.42s cubic-bezier(0.2, 1.5, 0.35, 1) both;
+}
+
+@keyframes koStampSlam {
+  0% {
+    transform: scale(2.6) rotate(-8deg);
+    opacity: 0;
+    filter: blur(7px);
+  }
+  55% {
+    transform: scale(0.92) rotate(1.5deg);
+    opacity: 1;
+    filter: blur(0);
+  }
+  75% {
+    transform: scale(1.05) rotate(-0.5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.ko__names {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  animation: koNamesIn 0.4s ease-out 0.16s both;
+}
+
+@keyframes koNamesIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ko__knocker {
+  color: #ffd166;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+.ko__verb {
+  color: #9aa4b2;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* Struck through: the visual grammar of a name coming off the board. */
+.ko__eliminated {
+  color: #cbd5e1;
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 90, 60, 0.95);
+  text-decoration-thickness: 2px;
+  opacity: 0.85;
+  animation: koStrike 0.5s ease-out 0.3s both;
+}
+
+@keyframes koStrike {
+  from {
+    opacity: 1;
+    filter: brightness(1.4);
+  }
+  to {
+    opacity: 0.85;
+    filter: brightness(1);
+  }
+}
+
+/* ── Payout beat ──────────────────────────────────────────────────────────── */
+
+.ko__bounty {
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 9px 18px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 209, 102, 0.18), rgba(255, 160, 40, 0.1));
+  border: 1px solid rgba(255, 209, 102, 0.5);
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  animation: koBountyIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes koBountyIn {
+  0% {
+    transform: scale(0.5) translateY(14px);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.12) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.ko__bounty-plus,
+.ko__bounty-amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  color: #ffd166;
+  text-shadow: 0 0 18px rgba(255, 209, 102, 0.6);
+}
+
+.ko__bounty-plus {
+  font-size: 18px;
+}
+
+.ko__bounty-amount {
+  font-size: clamp(22px, 7vw, 34px);
+  letter-spacing: 0.5px;
+}
+
+.ko__bounty-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  color: rgba(255, 209, 102, 0.75);
+  margin-left: 3px;
+}
+
+.ko__head-growth {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #4ade80;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+  animation: koNamesIn 0.4s ease-out 0.14s both;
+}
+
+/* ── Coin shower ──────────────────────────────────────────────────────────── */
+
+.ko__coins {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  width: 0;
+  height: 0;
+}
+
+.ko__coin {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #fff2c4, #ffd166 46%, #d99a1f 100%);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
+  /* Each coin gets its own arc from the index, so ten elements read as a
+     scatter rather than as ten copies of one animation. */
+  --ko-coin-x: calc((var(--ko-coin-i) - 4.5) * 26px);
+  animation: koCoinFly 1.15s cubic-bezier(0.22, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--ko-coin-i) * 38ms);
+}
+
+@keyframes koCoinFly {
+  0% {
+    transform: translate(0, 0) scale(0.4) rotate(0deg);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--ko-coin-x), 128px) scale(1) rotate(420deg);
+    opacity: 0;
+  }
+}
+
+/* Hero treatment — warmer, brighter. You took the head; it should feel like it. */
+.ko--hero .ko__stamp {
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.65),
+    0 0 30px rgba(255, 209, 102, 0.9),
+    0 0 70px rgba(255, 209, 102, 0.5);
+}
+
+.ko--hero .ko__shockwave {
+  border-color: rgba(255, 235, 160, 0.95);
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+/* The information still arrives; only the movement is removed. A player who
+   asked for less motion still needs to know they were paid. */
+@media (prefers-reduced-motion: reduce) {
+  .ko__ray,
+  .ko__shockwave,
+  .ko__coins {
+    display: none;
+  }
+  .ko__vignette,
+  .ko__stamp,
+  .ko__names,
+  .ko__bounty,
+  .ko__head-growth,
+  .ko__eliminated {
+    animation: none;
+  }
+  .ko__stamp {
+    transform: none;
+  }
+}
+
+@media (max-width: 380px) {
+  .ko__stamp {
+    letter-spacing: 1.5px;
+  }
+  .ko__names {
+    font-size: 12px;
+  }
+}

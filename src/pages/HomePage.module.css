@@ -347,7 +347,7 @@
     rgba(10, 20, 40, 0.8) 100%
   );
   background-size: 200% 100%;
-  animation: skeletonShimmer 2s infinite;
+  animation: skeletonShimmerBg 2s infinite;
   border-radius: 12px;
   display: flex;
   align-items: center;
@@ -366,7 +366,14 @@
   }
 }
 
-@keyframes skeletonShimmer {
+/* ANIMATION AUDIT 2026-08-20: this file defined `skeletonShimmer` TWICE with
+   materially different bodies — this one moves background-position, the other
+   moves transform: translateX. The later definition silently won for BOTH
+   consumers, so the skeleton below (which sets background-size: 200% 100% and
+   needs a background sweep) was instead given translateX(-100% -> 100%) and
+   slid the entire card across the screen rather than shimmering.
+   Two techniques, two names. */
+@keyframes skeletonShimmerBg {
   0% {
     background-position: 200% 0;
   }
@@ -1219,7 +1226,7 @@
   position: absolute;
   inset: 0;
   background: linear-gradient(90deg, transparent 0%, rgba(0, 212, 255, 0.06) 50%, transparent 100%);
-  animation: skeletonShimmer 1.8s ease-in-out infinite;
+  animation: skeletonShimmerSweep 1.8s ease-in-out infinite;
 }
 
 .skeletonCardFeatured {
@@ -1245,7 +1252,9 @@
   margin: 8px auto 0;
 }
 
-@keyframes skeletonShimmer {
+/* Paired with .skeletonCard::after, an inset overlay that sweeps across.
+   Renamed from `skeletonShimmer` — see the note on skeletonShimmerBg above. */
+@keyframes skeletonShimmerSweep {
   0% {
     transform: translateX(-100%);
   }

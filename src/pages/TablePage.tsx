@@ -156,6 +156,12 @@ import { useToast } from '../components/common/Toast';
 import TournamentBreakScreen from '../components/table/TournamentBreakScreen';
 import AddOnModal from '../components/table/AddOnModal';
 import TournamentAnnouncementOverlay from '../components/table/TournamentAnnouncementOverlay';
+import KnockoutAnimation, {
+  type KnockoutData,
+} from '../components/tournament/KnockoutAnimation';
+import MysteryBountyChest, {
+  type MysteryChestData,
+} from '../components/tournament/MysteryBountyChest';
 import RebuyModal from '../components/table/RebuyModal';
 import TournamentWinnerOverlay from '../components/table/TournamentWinnerOverlay';
 // RealtimeChannelService imported if needed for future use
@@ -558,6 +564,62 @@ export default function TablePage({
 
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
+
+  // ── Bounty animations (2026-08-20, Dan) ───────────────────────────────────
+  // Both are driven by engine broadcasts that already reach EVERY client at
+  // the table, so both are shared in real time by construction.
+  //
+  // The chest additionally needs a client->table message, because the winner
+  // TAPS it open and the other nine players must see that same tap. That is
+  // `chestChannelRef` below.
+  const [knockout, setKnockout] = useState<KnockoutData | null>(null);
+  const [mysteryChest, setMysteryChest] = useState<MysteryChestData | null>(null);
+  const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
+  const chestChannelRef = useRef<ReturnType<typeof masterBus.getOrCreateChannel> | null>(null);
+
+  /**
+   * Tell the rest of the table the winner just tapped the chest open.
+   *
+   * The winner's own client does NOT wait for this to come back — it opens
+   * locally the instant they tap, so their tap feels immediate. This send
+   * exists purely so the other seats open at the same moment.
+   */
+  const broadcastChestOpen = useCallback(() => {
+    const chan = chestChannelRef.current;
+    if (!chan) return;
+    try {
+      chan.send({
+        type: 'broadcast',
+        event: 'mystery_chest_opened',
+        payload: { tableId, at: Date.now() },
+      });
+    } catch (err) {
+      // A failed broadcast degrades to each spectator's own failsafe timer.
+      // It must never stop the winner from seeing their prize.
+      reportError(err, 'TablePage.broadcastChestOpen');
+    }
+  }, [tableId]);
+
+  // Listen for that tap. Every client subscribes, including the winner's —
+  // runOpen() is idempotent, so the echo of their own broadcast is harmless.
+  useEffect(() => {
+    if (!tableId) return;
+    const chan = masterBus.getOrCreateChannel(`mystery-chest-${tableId}`);
+    chestChannelRef.current = chan;
+    chan.on('broadcast', { event: 'mystery_chest_opened' }, () => {
+      setChestRemoteOpened(true);
+    });
+    if (chan.state !== 'joined') {
+      try {
+        chan.subscribe();
+      } catch (err) {
+        reportError(err, 'TablePage.chestChannel.subscribe');
+      }
+    }
+    return () => {
+      chestChannelRef.current = null;
+    };
+  }, [tableId]);
   const [username, setUsername] = useState<string>('Player');
   const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
@@ -3675,15 +3737,35 @@ export default function TablePage({
                 // it and keep the badges honest: a PKO knockout grows the
                 // winner's head and the eliminated player's head goes to zero.
                 const b = data.payload || {};
-                setAnnouncement({ type: data.type, data: b });
-                try {
-                  if (data.type === 'mystery_bounty_revealed') {
-                    soundService.playMysteryBountyReveal();
-                  } else {
-                    soundService.playBountyCollected();
-                  }
-                } catch {
-                  /* audio is best-effort */
+
+                // ANIMATION 2026-08-20 (Dan): a knockout is the most dramatic
+                // thing that happens in a bounty event, and it used to produce
+                // a one-line text banner. Both types now drive a real
+                // animation, and each OWNS its sound — so the banner and the
+                // duplicate cue here are gone.
+                //
+                // This handler already runs on every client at the table (the
+                // engine broadcasts to the whole table), which is what makes
+                // both animations shared in real time with no new plumbing.
+                if (data.type === 'mystery_bounty_revealed') {
+                  setMysteryChest({
+                    knockerUserId: b.knockerUserId || '',
+                    knockerName: b.knockerName || 'Player',
+                    eliminatedName: b.eliminatedName || 'Player',
+                    amount: Number(b.amount) || 0,
+                    tierLabel: b.tierLabel,
+                    isJackpot: !!b.isJackpot,
+                    avgBounty: Number(b.avgBounty) || undefined,
+                  });
+                  setChestRemoteOpened(false);
+                } else {
+                  setKnockout({
+                    knockerName: b.knockerName || 'Player',
+                    eliminatedName: b.eliminatedName || 'Player',
+                    amount: Number(b.amount) || 0,
+                    addedToHead: Number(b.addedToHead) || 0,
+                    isHero: !!b.knockerUserId && b.knockerUserId === userId,
+                  });
                 }
                 setTableState((prev) => {
                   const next = { ...prev.bountyMap };
@@ -6986,6 +7068,30 @@ export default function TablePage({
             `}</style>
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
+      {/* ── Bounty knockout (2026-08-20) ───────────────────────────────────
+          Non-blocking: it sits over the felt while you may still be in a
+          hand, so it must never eat a click on the action buttons. */}
+      <KnockoutAnimation
+        data={knockout}
+        onDone={() => setKnockout(null)}
+        playSounds={ambientSoundsAllowed}
+      />
+
+      {/* ── Mystery bounty chest (2026-08-20) ──────────────────────────────
+          The opposite case: a takeover, because it is ASKING the winner to
+          tap it. Their tap is broadcast so every other seat opens in step. */}
+      <MysteryBountyChest
+        data={mysteryChest}
+        viewerUserId={userId}
+        remoteOpened={chestRemoteOpened}
+        onBroadcastOpen={broadcastChestOpen}
+        onDone={() => {
+          setMysteryChest(null);
+          setChestRemoteOpened(false);
+        }}
+        playSounds={ambientSoundsAllowed}
+      />
+
       <DisconnectToast heroUserId={userId} disconnectStates={disconnectStates} />
 
       {/* Dan 2026-08-19, bug list item 2: "no winner banner at showdown - just

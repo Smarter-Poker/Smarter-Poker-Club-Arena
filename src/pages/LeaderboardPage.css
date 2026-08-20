@@ -1280,16 +1280,11 @@
    ANIMATIONS
    ═══════════════════════════════════════════════════════════════ */
 
-@keyframes leaderboardPageFadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* ANIMATION AUDIT 2026-08-20: a SECOND definition of leaderboardPageFadeInUp
+   lived here (8px vs the 12px one above). Same intent, so the duplicate is
+   removed rather than renamed — two names for one motion is how a stylesheet
+   drifts. Every consumer now resolves to the single definition above instead
+   of to whichever one happened to be parsed last. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    SKELETON LOADING (Initiative 1)

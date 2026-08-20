@@ -369,12 +369,19 @@ const _horsesLoadedForTable: Record<string, boolean> = {};
 const _win = window as any;
 
 /**
- * ANIMATION AUDIT 2026-08-19: single source of truth for where chip flights
- * land. Mirrors `.pot-area` in TablePage.css (top: 32.99%, left: 49.9% of the
- * table scaler) — the flights used to aim at {50, 45} and consistently landed
- * below the pot. If .pot-area moves, move this with it.
+ * Single source of truth for where chip flights land — the pot's visual
+ * centre as a percentage of the table scaler.
+ *
+ * LIVE E2E FIX 2026-08-20: this was {x:49.9, y:33} to mirror `.pot-area`'s
+ * base rule (top:32.99%) in TablePage.css. But TableVisualHotfix.css ships
+ * `.table-page .pot-area { top: 19% !important }` (Dan 2026-08-17 — pot moved
+ * up for clear air above the board), which ALWAYS wins (two-class specificity
+ * + !important). So the pot actually renders at 19% and chips aimed at 33
+ * landed ~14% of table-height below it. `.pot-area` is a zero-size anchor
+ * with translate(-50%,-50%), so its top% IS the pot's centre. Aim there.
+ * If either the base rule or the hotfix moves the pot, move this with it.
  */
-const POT_ANCHOR_PCT = { x: 49.9, y: 33 };
+const POT_ANCHOR_PCT = { x: 49.9, y: 19 };
 if (!_win.__pokerLocks) {
   _win.__pokerLocks = {
     handActive: false,

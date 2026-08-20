@@ -482,18 +482,23 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // the hands before the pot moves. Only pause when there is a showdown
         // to read — a fold-around win has nothing to reveal and keeps its
         // brisk pace.
-        if (this.running && this.currentHandShowdownResults.length >= 2) {
-          const handAtShowdown = this.handCount;
-          const controllerAtShowdown = this.handController;
-          await this.sleep(this.showdownSettleMs);
-          if (
-            !this.running ||
-            this.handController !== controllerAtShowdown ||
-            this.handCount !== handAtShowdown
-          ) {
-            break;
-          }
-        }
+        // REGRESSION FIX 2026-08-20 (self-review): the settle used to sit HERE,
+        // at the very top of this handler — BEFORE the winner state below is
+        // assigned. That was wrong and dangerous.
+        //
+        // handleHandEvent is dispatched fire-and-forget
+        // (`void this.handleHandEvent(...)` in ServerTableEngineDealing), and
+        // HandController.completeHandInner() emits WINNERS and HAND_COMPLETE
+        // back to back in the same synchronous call. So the moment this handler
+        // suspended on an await, the HAND_COMPLETE handler — which READS
+        // currentHandWinnerIds for the hand_complete payload, the payouts, the
+        // BBJ evaluation and the 7-2 bounty — ran to completion first, against
+        // winner state that had not been written yet.
+        //
+        // The settle is purely VISUAL, so it belongs immediately before the
+        // pot_win emission (see below), not before the state commit. Winner
+        // state is now assigned synchronously exactly as it was originally,
+        // and only the pot-ship broadcast waits for the showdown to be read.
         // SWEEP #4 FIX (2026-07-23): Run-It-Twice hands call dealAndResolveRIT(),
         // which pre-sets currentHandWinnerIds / currentHandShowdownResults /
         // currentHandPotSize for board-0 BBJ + 7-2 evaluation, then calls
@@ -597,6 +602,30 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // The TablePage POT_WIN handler resolves seats from winner_ids and
         // splits the pot across them via createPotToWinnerEvent.
         if (this.currentHandWinnerIds.length > 0) {
+          // ── Dan 2026-08-20: "a showdown needs to happen, THEN the pot needs
+          //    to be shipped." ──
+          //
+          // completeHandInner() emits SHOWDOWN (hands turn face up) and WINNERS
+          // in the SAME tick, so without this the reveal, the winner highlight
+          // and the pot ship all landed on one frame. Hold here — AFTER the
+          // winner state above is committed, so nothing that reads it can race
+          // us (see the regression note at the top of this case), and BEFORE
+          // the pot_win broadcast that actually moves the chips.
+          //
+          // Only for a real showdown; a fold-around win has nothing to reveal
+          // and keeps its brisk pace.
+          if (this.running && this.currentHandShowdownResults.length >= 2) {
+            const handAtShowdown = this.handCount;
+            const controllerAtShowdown = this.handController;
+            await this.sleep(this.showdownSettleMs);
+            if (
+              !this.running ||
+              this.handController !== controllerAtShowdown ||
+              this.handCount !== handAtShowdown
+            ) {
+              break;
+            }
+          }
           this.hub?.emitEvent(this.tableId, {
             type: 'pot_win',
             table_id: this.tableId,

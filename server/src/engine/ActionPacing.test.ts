@@ -154,6 +154,27 @@ describe('celebrations are not superseded by the next hand either', () => {
   });
 });
 
+describe('REGRESSION: a visual settle must never delay a STATE commit', () => {
+  const events = read('ServerTableEngineHandEvents.ts');
+
+  it('winner state is assigned BEFORE the showdown settle, not after', () => {
+    // handleHandEvent is dispatched fire-and-forget, and completeHandInner()
+    // emits WINNERS and HAND_COMPLETE back to back in one synchronous call. If
+    // the settle sits before the winner-state commit, the HAND_COMPLETE
+    // handler - which reads currentHandWinnerIds for the payload, the payouts,
+    // the BBJ evaluation and the 7-2 bounty - overtakes it and runs against
+    // unwritten state. The settle is purely visual and MUST come after.
+    const assign = events.indexOf('this.currentHandWinnerIds = ');
+    const settle = events.indexOf('await this.sleep(this.showdownSettleMs)');
+    const potWin = events.indexOf("type: 'pot_win'");
+    expect(assign).toBeGreaterThan(-1);
+    expect(settle).toBeGreaterThan(-1);
+    expect(potWin).toBeGreaterThan(-1);
+    expect(settle).toBeGreaterThan(assign);
+    expect(potWin).toBeGreaterThan(settle);
+  });
+});
+
 describe('the end of a hand is not rushed either', () => {
   const dealing = read('ServerTableEngineDealing.ts');
 

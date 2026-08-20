@@ -226,6 +226,11 @@ export async function createClub(clubData: {
     }
 
     lastError = insertError;
+    // Name uniqueness (idx_clubs_name_lower) can never be fixed by a retry —
+    // the name doesn't change between attempts.
+    if (insertError?.message?.includes('idx_clubs_name_lower')) {
+      throw new Error('A club with this name already exists. Please choose a different name.');
+    }
     if (
       insertError &&
       !insertError.message?.includes('duplicate') &&

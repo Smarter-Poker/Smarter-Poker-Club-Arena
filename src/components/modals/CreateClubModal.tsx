@@ -239,6 +239,11 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         }
 
         lastInsertError = insertError;
+        // Name uniqueness (idx_clubs_name_lower) can never be fixed by a
+        // retry — the name doesn't change between attempts.
+        if (insertError?.message?.includes('idx_clubs_name_lower')) {
+          throw new Error('A club with this name already exists');
+        }
         if (
           insertError &&
           !insertError.message?.includes('duplicate') &&

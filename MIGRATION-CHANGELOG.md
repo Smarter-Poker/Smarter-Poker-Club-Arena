@@ -8192,3 +8192,23 @@ today's carousel rework + quick-links work.
   importing server services. Suite: 2104/2104 green.
 - This commit: removed dead statsRefreshKey/lastFetchTs state (set every
   fetch, read nowhere — one wasted re-render per fetch on the hottest page).
+
+## 2026-08-20 — Create/Join re-audit round 2 (Cowork session)
+
+- clubs.slug is UNIQUE but all creates derived it from the name only —
+  different names normalizing to the same slug made creation fail 3x with a
+  generic error. utils/clubSlug now makes retries collision-proof (append
+  club_id) with an all-symbol-name fallback; wired into all 3 create paths.
+  8 unit tests.
+- Join-with-referral was a stub (code stored, never redeemed).
+  ClubsService.joinClub now redeems via redeem_referral_code after a
+  successful join — fire-and-forget, never affects the join.
+- Duplicate-name ilike checks now pattern-escaped ("100%" matched as a
+  wildcard); CreateClubModal no longer stores multi-MB base64 data URLs in
+  clubs.logo_url when storage upload fails.
+- Migration 20260820_club_slug_backfill_and_unique_name.sql (APPLIED):
+  backfilled the 3 NULL production slugs (shark-club, midway-union,
+  club-jaqk — slug routing was dead for all of them) and added unique index
+  idx_clubs_name_lower to close the dup-name race server-side. Create paths
+  bail immediately with a friendly message on that violation.
+- DailyChallengeService test updated for the strict-diamond redesign.

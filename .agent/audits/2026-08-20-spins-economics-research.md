@@ -190,3 +190,105 @@ production; this is research plus a defect report.
 - [GGPoker Spin & Gold 2026: buy-ins, payouts, odds, rake — YourPokerDream](https://www.yourpokerdream.com/online-poker/spingo-jackpot-tournaments/spin-gold-ggpoker-network/)
 - [GGPoker Spin and Gold complete guide — WorldPokerDeals](https://worldpokerdeals.com/blog/spin-gold-the-ultimate-guide-on-ggpoker-network)
 - [Spin & Gold — GGPoker](https://ggpoker.com/poker-games/spin-gold/)
+
+---
+
+## ADDENDUM — BUILT, 2026-08-20
+
+Dan supplied the full specification the same day. Everything in the
+recommendation above is now implemented. What changed against the research:
+
+### The pricing question is settled, by arithmetic
+
+Dan: *"SPINS ARE DIFFERENT THEN MTT OR SIT N GO TOURNAMENTS WHERE THEY ARE
+STRUCTURED AS BUY IN + RAKE (10+1)... THEY ARE STRAIGHT JUST 10 BUY IN... NO
+ADDITIONAL RAKE IS ADDED."*
+
+The supplied reference material contradicted that in one line (*"Each player
+pays $1.08"*). Dan's framing is the correct one and the frequency table proves
+it rather than merely supporting it:
+
+```
+E[multiplier]        = 27,638,000 / 10,000,000 = 2.7638
+buy-in only:      (3     − 2.7638) / 3     = 7.87%   ≈ the advertised 8%
+buy-in + 8% on top: (3.24 − 2.7638) / 3.24 = 14.70%  ≈ nobody advertises this
+```
+
+So `buy_in_fee` is now **0** on the Spin creation path, and there is a test
+asserting it — this is exactly the kind of thing a later reader "fixes" back
+into the MTT shape by pattern-matching.
+
+### The money model
+
+```
+collected   = seats × buy_in          every player pays exactly buy_in
+house_rake  = rake_rate × collected   FIXED, booked to rake_records every game
+reserve_in  = collected − house_rake  everything else
+reserve_out = buy_in × multiplier     the whole prize, from the pool
+```
+
+The pool absorbs 100% of the variance; the house takes the advertised rake win
+or lose. `E[prize] = E[mult] × buy_in = reserve_in` by construction, so the
+pool is net-neutral over volume and its balance is a direct measure of
+solvency.
+
+This is deliberately simpler than the reference's *"a percentage of the surplus
+from every 2x and 3x plus a fixed 0.75–1.25% contribution"*. That version leaves
+the house edge varying game to game and the pool's drift hard to reason about;
+this one has an invariant you can assert, and it produces the same long-run
+economics.
+
+### The gate
+
+A high multiplier is **not eligible to be selected** until the pool can pay it
+— 100× at 1.5× its own jackpot, 500× at 2.0×, measured against the highest
+stake running. Excluding it from the draw rather than drawing and refusing is
+what makes an unpayable jackpot structurally impossible. A CHECK constraint
+enforces non-negativity at the database as well.
+
+Rehearsed on production and cleaned back to zero rows:
+
+- 600 draws on an empty pool never selected a locked tier
+- 100× unlocked at exactly 1500 (10 × 100 × 1.5), not a cent earlier
+- a 2× booked rake 2.10 = 7% of 30, prize 20
+- re-settling the same tournament returned `already_settled`
+- a 500× was paid **by the pool** and the balance never went negative
+
+### Shipped
+
+| | |
+|---|---|
+| `src/config/spinSpec.ts` | canonical table, mirrored to `server/src/config/`, byte-identical enforced by test |
+| `supabase/migrations/20260820_spin_reserve_pool.sql` | pool state, ledger, 4 RPCs, RLS, applied |
+| `TournamentRecurringService` | gated draw, `buy_in_fee: 0`, spec-driven stack/blinds/payouts |
+| `TournamentManagerBase` | two hardcoded tables deleted; settles through the ledger |
+| `SpinWheel` | spec ladder, locked tiers shown not hidden, payout split on the reveal |
+
+**Tables reduced from three to one.** While writing the guards, one failed and
+was right to: I had *renamed* the old table rather than deleting it, leaving a
+dead copy of the exact structure that caused the drift. A test now asserts zero
+hardcoded `{ multiplier, weight }` literals in either server file.
+
+### ⚠ ONE THING DAN MUST DO
+
+**The Reserve Pool is unseeded, so 100× and 500× are locked and Spins top out
+at 50×.** That is the spec working as designed — the seed is operator money and
+is explicitly not taken from player contributions — but nothing above 50× can
+appear until it is funded:
+
+```sql
+SELECT fn_spin_reserve_seed(
+  '<club_id>'::uuid,
+  <seed_amount>,      -- ≥ 2 full 500x jackpots at the highest stake offered
+  <highest_stake>,
+  <ceiling>           -- suggested: 8 x that jackpot
+);
+```
+
+At a $10 top stake that is a 10,000 seed with a 40,000 ceiling.
+
+### Still open
+
+The ~1,160 of historical margin identified above sits in no ledger and is not
+backfilled. It is test-money on test tournaments, and the mechanism that
+created it is now closed, so this is recorded rather than corrected.

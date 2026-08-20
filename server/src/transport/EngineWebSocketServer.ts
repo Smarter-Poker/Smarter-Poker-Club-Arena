@@ -54,6 +54,13 @@ const MAX_INBOUND_MESSAGE_BYTES = 4 * 1024;
 // Close codes (must be in the 4000–4999 application-defined range per RFC 6455)
 export const CLOSE_AUTH_FAILED = 4401;
 export const CLOSE_BANNED = 4403; // Round 70: banned by club / union blacklist
+
+/**
+ * B11: how long a blacklist verdict may be reused. Short on purpose — a ban is
+ * an urgent moderation action and must not sit behind a long cache.
+ */
+const BAN_CACHE_TTL_MS = 30_000;
+const BAN_CACHE_MAX = 10_000;
 export const CLOSE_TABLE_NOT_FOUND = 4404;
 export const CLOSE_RATE_LIMITED = 4429;
 export const CLOSE_SERVER_ERROR = 4500;
@@ -124,11 +131,46 @@ interface ConnectionState {
 
 // ─── Default JWT verification (Supabase) ──────────────────────────────────────
 
+/**
+ * B11 FIX (2026-08-20): cache successful token verifications briefly.
+ *
+ * Every (re)connect called supabase.auth.getUser over the network. A reconnect
+ * storm — which is exactly what follows an engine restart or a client-side
+ * network blip, i.e. the moment the platform is already under load — turned
+ * into one auth round trip per socket per attempt.
+ *
+ * Only SUCCESSES are cached, and only for 30 seconds. Caching a failure would
+ * lock a user out for the TTL after a transient auth outage, and a long TTL
+ * would keep a revoked session alive; 30s bounds that to less than the time it
+ * takes an admin to notice they revoked something, while collapsing a burst of
+ * reconnects to a single call. The JWT's own expiry still applies underneath.
+ */
+const TOKEN_CACHE_TTL_MS = 30_000;
+const TOKEN_CACHE_MAX = 5_000;
+const tokenCache = new Map<string, { userId: string; verifiedAt: number }>();
+
+function cacheToken(token: string, userId: string): void {
+  // Bounded: drop the oldest insertion when full. Map preserves insertion order,
+  // so the first key is the coldest. Without this a long-lived process with
+  // rotating tokens grows this map without limit.
+  if (tokenCache.size >= TOKEN_CACHE_MAX) {
+    const oldest = tokenCache.keys().next().value;
+    if (oldest !== undefined) tokenCache.delete(oldest);
+  }
+  tokenCache.set(token, { userId, verifiedAt: Date.now() });
+}
+
 async function defaultVerifyToken(token: string): Promise<{ userId: string } | null> {
   if (!token) return null;
+  const hit = tokenCache.get(token);
+  if (hit && Date.now() - hit.verifiedAt < TOKEN_CACHE_TTL_MS) {
+    return { userId: hit.userId };
+  }
+  if (hit) tokenCache.delete(token);
   try {
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data?.user) return null;
+    cacheToken(token, data.user.id);
     return { userId: data.user.id };
   } catch {
     return null;
@@ -147,6 +189,13 @@ export class EngineWebSocketServer {
   private readonly onResync?: (tableId: string, userId: string) => void;
   /** tableId -> { restricted, readAt } — see IP_RESTRICTION_TTL_MS. */
   private ipRestrictionCache: Map<string, { restricted: boolean; readAt: number }> = new Map();
+  /**
+   * B11: tableId -> its club and that club's union. A table's club membership
+   * does not change for the life of the table, so this needs no TTL.
+   */
+  private tableScopeCache: Map<string, { clubId: string; unionId: string | null }> = new Map();
+  /** B11: `${userId}|${clubId}|${unionId}` -> ban verdict, see BAN_CACHE_TTL_MS. */
+  private banCache: Map<string, { banned: boolean; readAt: number }> = new Map();
 
   constructor(opts: EngineWebSocketServerOptions) {
     this.hub = opts.hub;
@@ -302,25 +351,52 @@ export class EngineWebSocketServer {
   // ─── Round 70: blacklist gate ───────────────────────────────────────────
   /**
    * Check if `userId` is banned from `tableId`'s club (or its union).
-   * Returns true if an active ban row exists. Cached briefly so repeated
-   * reconnects from the same banned user don't hammer the DB.
+   *
+   * B11 FIX (2026-08-20): this doc comment used to say "Cached briefly so
+   * repeated reconnects from the same banned user don't hammer the DB" and
+   * there was no cache of any kind. Three SEQUENTIAL queries ran on every
+   * single connect — tables, then clubs, then blacklists — so a reconnect
+   * storm multiplied by three against a database already absorbing the storm.
+   *
+   * Now both halves are cached, with different lifetimes because they have
+   * genuinely different volatility:
+   *   - a table's club and that club's union do not change for the life of the
+   *     table, so they are cached until the process restarts
+   *   - a ban CAN be added at any moment, so the verdict is cached for 30s:
+   *     long enough to collapse a burst, short enough that an owner banning
+   *     someone sees it take effect while they are still looking at the screen
+   *
+   * Only the two lookup queries are avoided on a hit; nothing about the ban
+   * decision itself is weakened.
    */
   private async isBannedFromTable(tableId: string, userId: string): Promise<boolean> {
-    // Resolve the table's club + union (single query, no caching here — table
-    // membership in a club is stable for the lifetime of the table).
-    const { data: tableRow } = await supabase
-      .from('tables')
-      .select('club_id')
-      .eq('id', tableId)
-      .maybeSingle();
-    if (!tableRow?.club_id) return false;
+    let scope = this.tableScopeCache.get(tableId);
+    if (!scope) {
+      const { data: tableRow } = await supabase
+        .from('tables')
+        .select('club_id')
+        .eq('id', tableId)
+        .maybeSingle();
+      if (!tableRow?.club_id) return false;
 
-    const { data: clubRow } = await supabase
-      .from('clubs')
-      .select('union_id')
-      .eq('id', tableRow.club_id)
-      .maybeSingle();
+      const { data: clubRow } = await supabase
+        .from('clubs')
+        .select('union_id')
+        .eq('id', tableRow.club_id)
+        .maybeSingle();
 
+      scope = { clubId: tableRow.club_id as string, unionId: (clubRow?.union_id as string) ?? null };
+      this.tableScopeCache.set(tableId, scope);
+    }
+
+    const banKey = `${userId}|${scope.clubId}|${scope.unionId ?? '-'}`;
+    const cachedBan = this.banCache.get(banKey);
+    if (cachedBan && Date.now() - cachedBan.readAt < BAN_CACHE_TTL_MS) {
+      return cachedBan.banned;
+    }
+
+    const tableRow = { club_id: scope.clubId };
+    const clubRow = { union_id: scope.unionId };
     const nowIso = new Date().toISOString();
     let q = supabase
       .from('blacklists')
@@ -333,7 +409,13 @@ export class EngineWebSocketServer {
     q = q.or(orParts.join(','));
 
     const { data: bans } = await q.limit(1);
-    return !!(bans && bans.length > 0);
+    const banned = !!(bans && bans.length > 0);
+    if (this.banCache.size >= BAN_CACHE_MAX) {
+      const oldest = this.banCache.keys().next().value;
+      if (oldest !== undefined) this.banCache.delete(oldest);
+    }
+    this.banCache.set(banKey, { banned, readAt: Date.now() });
+    return banned;
   }
 
   // ─── IP Restriction (2026-08-19) ────────────────────────────────────────

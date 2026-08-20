@@ -1066,6 +1066,23 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * C19: is this table at a point where stopping it destroys nothing?
+   *
+   * True when the engine is already stopped, or when it has parked at the
+   * hand-for-hand gate — which the deal loop only reaches BETWEEN hands. A
+   * table that is drained has no cards in the air, no pot mid-settlement and
+   * no player owed an action, so a shutdown can take it without abandoning a
+   * hand.
+   *
+   * Deliberately public and deliberately narrow: `handController === null` is
+   * nearly the same test, but it is briefly true during setup as well, and a
+   * drain must not mistake "not started yet" for "finished cleanly".
+   */
+  isDrained(): boolean {
+    return !this.running || this.isWaitingForHandForHand();
+  }
+
+  /**
    * True while this table is stopped ON PURPOSE (hand-for-hand pause, or the
    * table FSM parked in 'paused'). The watchdog and the /health stall
    * detector must treat this as healthy: before this existed, a hand-for-hand
@@ -1672,11 +1689,36 @@ export abstract class ServerTableEngineBase {
     const snapshot = await getActiveHandSnapshotFull(this.tableId);
     if (!snapshot) return false;
 
+    /**
+     * B10 FIX (2026-08-20): actually USE the persisted disconnect states.
+     *
+     * They were written on every snapshot and read back only to be counted in
+     * this log line. The engine then restarted believing every seated player
+     * was connected, so anyone who had dropped before the crash was handed a
+     * full turn clock on every orbit until the heartbeat checker re-detected
+     * them — the table paying that player's entire think-time, every hand, for
+     * no reason.
+     *
+     * The HAND is still not resumed, and that remains the right call: players
+     * keep their last-known stacks and a fresh hand is dealt. But connectivity
+     * is a property of the PLAYER, not of the abandoned hand, so it survives.
+     *
+     * pending_deadlines is deliberately NOT rehydrated: every one of those
+     * deadlines belongs to the hand we are about to abandon, so reinstating
+     * them would fire turn timers for a hand that no longer exists. It is kept
+     * in the snapshot for forensics (and for the full-resume work in PR-E),
+     * which is why it is counted here rather than dropped from the write.
+     */
+    const restoredFsm = this.disconnectEngine.restoreFsmStates(
+      this.tableId,
+      snapshot.disconnectStates
+    );
+
     console.warn(
       `[ServerTableEngine:${this.tableId}] CRASH RECOVERY: Found incomplete hand #${snapshot.handNumber} ` +
         `(stage: ${snapshot.stage}, last updated: ${snapshot.updatedAt}). ` +
-        `${snapshot.pendingDeadlines.length} pending deadlines, ` +
-        `${Object.keys(snapshot.disconnectStates).length} disconnect-FSM entries. ` +
+        `${snapshot.pendingDeadlines.length} pending deadlines (not rehydrated — they belong to the abandoned hand), ` +
+        `${Object.keys(snapshot.disconnectStates).length} disconnect-FSM entries, ${restoredFsm} restored. ` +
         `Marking hand complete and starting fresh — players retain their last-known stacks.`
     );
 

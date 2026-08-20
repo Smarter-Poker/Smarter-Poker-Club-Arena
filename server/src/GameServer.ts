@@ -238,15 +238,59 @@ export class GameServer {
     // releaseTables never throws and never blocks shutdown.
     await releaseTables();
 
-    // Stop all table engines
-    for (const [id, engine] of this.tableEngines) {
-      await engine.stop();
+    /**
+     * C19 FIX (2026-08-20): drain in-flight hands, then stop everything at once.
+     *
+     * This used to stop engines one at a time, each awaiting its own teardown
+     * (which now includes a snapshot flush). With 40 tables that is 40 serial
+     * round trips inside a 20s shutdown budget, so the tail of the list was
+     * routinely SIGKILLed rather than stopped — and every table still mid-hand
+     * had that hand abandoned outright: cards dealt, chips committed, no
+     * settlement.
+     *
+     * Now: ask every table to park AFTER its current hand (pauseAfterHand is
+     * exactly that primitive — the deal loop only reaches the gate between
+     * hands), wait a bounded window for them to arrive, then tear down in
+     * parallel. A table that does not drain in time is stopped anyway, so
+     * shutdown is still strictly bounded; the drain converts the common case
+     * from "abandon ~40 hands" into "abandon none".
+     */
+    const DRAIN_BUDGET_MS = 12_000;
+    const DRAIN_POLL_MS = 250;
+    const engines = [...this.tableEngines.values()];
+    if (engines.length > 0) {
+      for (const engine of engines) {
+        try {
+          engine.pauseAfterHand(DRAIN_BUDGET_MS);
+        } catch {
+          /* a table that cannot be asked to pause is stopped below regardless */
+        }
+      }
+      const drainDeadline = Date.now() + DRAIN_BUDGET_MS;
+      let pending = engines.filter((e) => !e.isDrained()).length;
+      while (pending > 0 && Date.now() < drainDeadline) {
+        await new Promise((r) => setTimeout(r, DRAIN_POLL_MS));
+        pending = engines.filter((e) => !e.isDrained()).length;
+      }
+      console.log(
+        pending === 0
+          ? `[GameServer] Drained all ${engines.length} table(s) between hands`
+          : `[GameServer] Drain window elapsed with ${pending}/${engines.length} table(s) still mid-hand — stopping anyway`
+      );
     }
+
+    // Stop all table engines IN PARALLEL. allSettled so one engine that throws
+    // on teardown cannot strand the rest half-stopped.
+    await Promise.allSettled(engines.map((engine) => engine.stop()));
     this.tableEngines.clear();
 
     // Stop all tournament engines
-    for (const [id, tm] of this.tournamentEngines) {
-      tm.stop();
+    for (const [, tm] of this.tournamentEngines) {
+      try {
+        tm.stop();
+      } catch {
+        /* keep tearing the rest down */
+      }
     }
     this.tournamentEngines.clear();
 
@@ -1129,6 +1173,24 @@ export class GameServer {
           if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
         }
 
+        /**
+         * C19 FIX (2026-08-20): stagger the starts.
+         *
+         * After a restart NO table has an engine, so this loop used to construct
+         * and start every one of them inside a single tick: hundreds of engines
+         * each immediately loading seats, reading table config and arming timers,
+         * against a database simultaneously absorbing the reconnect storm. It
+         * also synchronised every table's hand cadence, so from then on they all
+         * dealt, settled and wrote snapshots in lockstep — which is what turns
+         * one table's all-in equity computation into a stall visible on all of
+         * them.
+         *
+         * A few tens of milliseconds between starts costs nothing (this sweep
+         * runs every 5s regardless) and spreads both the connection burst and
+         * the steady-state cadence.
+         */
+        const ENGINE_START_STAGGER_MS = 40;
+        let startedThisSweep = 0;
         for (const row of (ready || []) as Array<{ table_id: string; player_count: number }>) {
           // Skip if already running
           if (this.tableEngines.has(row.table_id)) continue;
@@ -1137,6 +1199,9 @@ export class GameServer {
           // enforcement is off — a lease problem must never be the reason a
           // table fails to start.
           if (!(await claimTable(row.table_id))) continue;
+
+          if (startedThisSweep > 0) await this.sleep(ENGINE_START_STAGGER_MS);
+          startedThisSweep++;
 
           console.log(
             `[GameServer] Starting engine for cash table ${row.table_id} (${row.player_count} players)`

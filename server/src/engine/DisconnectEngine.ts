@@ -452,6 +452,52 @@ export class DisconnectEngine {
     return out;
   }
 
+  /**
+   * B10 FIX (2026-08-20): restore the FSM from a persisted snapshot.
+   *
+   * getFsmStatesForTable has been writing disconnect_states into every hand
+   * snapshot for a long time, and nothing ever read it back — the engine
+   * restarted believing every seated player was CONNECTED. That is not
+   * cosmetic: a player who dropped before the crash then got a full turn clock
+   * on every orbit after it, so each absent seat cost the table its entire
+   * think-time before auto-folding, on every hand, until the heartbeat checker
+   * noticed them missing again.
+   *
+   * Restoring the projection is safe in a way that resuming the HAND is not:
+   * these entries describe a player's connectivity, which survives the process
+   * that observed it, and any player who is genuinely back re-registers on
+   * their next heartbeat within seconds.
+   *
+   * SAT_OUT and CONNECTED are seeded as-is. MISSING/DISCONNECTED are seeded
+   * with their original disconnectedAt, so the grace window continues from when
+   * the player actually dropped rather than restarting from the crash — a
+   * restart must not hand an absent player a fresh grace period.
+   */
+  restoreFsmStates(tableId: string, states: Record<string, DisconnectFsmEntry>): number {
+    let restored = 0;
+    for (const [playerId, entry] of Object.entries(states || {})) {
+      if (!entry || !entry.state) continue;
+      const key = `${tableId}:${playerId}`;
+      // Never clobber live state: if this player has already been registered
+      // (they reconnected during startup) the fresh observation wins.
+      if (this.playerStates.has(key)) continue;
+
+      const connected = entry.state === 'CONNECTED';
+      const sittingOut = entry.state === 'SAT_OUT';
+      this.playerStates.set(key, {
+        playerId,
+        tableId,
+        isConnected: connected || sittingOut,
+        lastHeartbeat: entry.sinceMs || Date.now(),
+        consecutiveTimeouts: 0,
+        isSittingOut: sittingOut,
+        disconnectedAt: connected || sittingOut ? undefined : entry.sinceMs || Date.now(),
+      });
+      restored++;
+    }
+    return restored;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // PRIVATE
   // ═══════════════════════════════════════════════════════════════════════════

@@ -11,6 +11,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { SPIN_TIERS } from '../../config/spinSpec';
 import './SpinAndGoLobby.css';
 import { retryAsync } from '../../utils/retryAsync';
 import { reportError } from '../../utils/errorReporter';
@@ -33,7 +34,11 @@ interface SpinTournament {
 
 // Pool-based multipliers — display values for the wheel UI.
 // Balanced probabilities: expected payout = 3× buy_in, club net = 10%.
-const SPIN_MULTIPLIERS = [2, 3, 5, 10, 25, 50, 100];
+// AUDIT FIX 2026-08-20: this was a hardcoded [2,3,5,10,25,50,100] — it omitted
+// 4x and 500x entirely, so the lobby advertised a shorter ladder than the
+// engine actually draws from and never mentioned the top jackpot at all.
+// Derived from the canonical spec so it cannot drift again.
+const SPIN_MULTIPLIERS = SPIN_TIERS.map((t) => t.multiplier);
 
 const MULTIPLIER_PROBABILITIES: { [key: number]: number } = {
   2: 76.19,
@@ -223,22 +228,12 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
                   <div className="prize-wheel">
                     {SPIN_MULTIPLIERS.map((multiplier) => {
                       const prob = MULTIPLIER_PROBABILITIES[multiplier] || 0;
-                      // Prize = 2× buy_in base + bonus buy-ins from pool
-                      const bonusBuyIns =
-                        multiplier === 2
-                          ? 0
-                          : multiplier === 3
-                            ? 1
-                            : multiplier === 5
-                              ? 3
-                              : multiplier === 10
-                                ? 8
-                                : multiplier === 25
-                                  ? 23
-                                  : multiplier === 50
-                                    ? 48
-                                    : 98;
-                      const prize = Math.trunc(t.buyIn * (2 + bonusBuyIns));
+                      // AUDIT FIX 2026-08-20: this reconstructed the prize from
+                      // a hardcoded bonusBuyIns ladder belonging to the retired
+                      // pool model. It happened to agree for the tiers it listed
+                      // (2 + bonus == multiplier) but silently had no answer for
+                      // 4x or 500x. The prize IS buy-in x multiplier.
+                      const prize = Math.trunc(t.buyIn * multiplier);
                       return (
                         <div key={multiplier} className="prize-tier">
                           <span className="prize-multiplier">{multiplier}x</span>

@@ -424,7 +424,8 @@ export default function MarketplacePage() {
   /* ═══ Render ═══ */
   // FAILSAFE: ensure skeleton does not display indefinitely.
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    // Browser build has no NodeJS namespace -- infer the platform's timer type.
+    let timer: ReturnType<typeof setTimeout> | undefined;
     if (loading) {
       timer = setTimeout(() => {
         if (mountedRef.current) {
@@ -495,7 +496,7 @@ export default function MarketplacePage() {
       </nav>
 
       {/* Failure banners — these used to be silent on every refresh path */}
-      {shopError && tab === 'store' && (
+      {shopError && (
         <div className={styles.errorBanner} role="alert">
           <span>Could not load the shop: {shopError}</span>
           <button className={styles.inlineLink} onClick={refreshAll} disabled={refreshing}>

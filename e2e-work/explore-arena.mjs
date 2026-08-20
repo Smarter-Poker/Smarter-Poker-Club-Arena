@@ -1,0 +1,14 @@
+import { chromium } from 'playwright';
+import fs from 'fs';
+const browser = await chromium.launch({ headless: true });
+const ctx = await browser.newContext({ viewport:{width:1280,height:900}, storageState:'/tmp/e2e-work/auth.json' });
+const page = await ctx.newPage();
+await page.goto('https://smarter.poker/hub/club-arena/', { waitUntil:'domcontentloaded', timeout:45000 });
+await page.waitForTimeout(9000);
+console.log('URL:', page.url());
+await page.screenshot({ path:'/tmp/e2e-shots/arena-00-home.png', fullPage:false });
+const txt = (await page.innerText('body')).replace(/\n{2,}/g,'\n');
+console.log('BODY (first 1400):\n' + txt.slice(0,1400));
+const links = await page.locator('a[href*="table"], a[href*="tournament"]').evaluateAll(els => els.slice(0,10).map(e=>({href:e.getAttribute('href'), text:(e.innerText||'').replace(/\s+/g,' ').slice(0,60)})));
+console.log('TABLE/TOURN LINKS:', JSON.stringify(links,null,1).slice(0,800));
+await browser.close();

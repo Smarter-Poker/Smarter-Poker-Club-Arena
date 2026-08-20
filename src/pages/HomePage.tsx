@@ -23,6 +23,7 @@ import {
   type ErrorInfo,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
 import { backfillClubCards } from '../services/ClubCardBackfill';
@@ -792,6 +793,18 @@ function HomePageInner() {
 
   const displayClubs = useMemo(() => {
     const clubs = [...userClubs];
+
+    // Inject Shark Club if not present (so it functions as the public featured demo)
+    if (!clubs.some((c) => Number(c.club_id) === SHARK_CLUB_ID)) {
+      clubs.push({
+        id: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
+        club_id: SHARK_CLUB_ID,
+        name: 'Shark Club',
+        member_count: 580,
+        entity_type: 'club',
+      });
+    }
+
     // Phase 7 #3: Sort -- pinned first, then by member count descending, then alphabetical tiebreaker
     clubs.sort((a, b) => {
       const aPinned = pinnedClubIds.includes(a.id) ? 1 : 0;

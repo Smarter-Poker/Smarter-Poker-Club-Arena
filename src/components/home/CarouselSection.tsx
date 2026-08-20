@@ -260,13 +260,11 @@ export default function CarouselSection({
                 activePlayers={stats?.activePlayers ?? 0}
                 clubId={club.club_id}
                 cardImageUrl={
-                  Number(club.club_id) === SHARK_CLUB_ID ? undefined : club.card_image_url
-                }
-                logoUrl={
                   Number(club.club_id) === SHARK_CLUB_ID
-                    ? `${MEDIA_BASE}images/shark-club-logo.jpg`
-                    : club.logo_url
+                    ? `${MEDIA_BASE}images/shark-club-card.jpg`
+                    : club.card_image_url
                 }
+                logoUrl={Number(club.club_id) === SHARK_CLUB_ID ? undefined : club.logo_url}
                 entityType={club.entity_type || 'club'}
               />
             </PageErrorBoundary>

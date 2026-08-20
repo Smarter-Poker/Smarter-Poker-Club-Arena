@@ -224,6 +224,28 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
     hasDataRef.current = false;
   }, [clubId]);
 
+  // ── Watchdog: a hung fetch must never strand the skeleton forever ──
+  // Dan 2026-08-20 (real-browser E2E finding): entering a club intermittently
+  // sat on the loading skeleton for 60s+ — a supabase fetch in loadClubData
+  // stalled without resolving OR rejecting, so the finally{} that clears
+  // `loading` never ran. Classic house bug shape: silent hang, no error, no
+  // retry path. If the load is still pending after 15s, report it, unstick
+  // the dedup ref so a retry can actually run, and drop `loading` — with no
+  // club data that renders the existing "Club Not Found / Retry" panel; with
+  // cached data it simply ends a background refresh that was going nowhere.
+  useEffect(() => {
+    if (!loading) return;
+    const watchdog = setTimeout(() => {
+      reportError(
+        new Error('club home initial load exceeded 15s (stalled fetch)'),
+        'ClubHomePage.load_watchdog_timeout'
+      );
+      loadingRef.current = false;
+      setLoading(false);
+    }, 15000);
+    return () => clearTimeout(watchdog);
+  }, [loading]);
+
   // SWR: show cached club data instantly on mount
   useEffect(() => {
     if (!clubId) return;
@@ -720,9 +742,7 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
         // Union governance (2026-08-19): union clubs see the UNION's tables
         // plus their OWN private club games. Other clubs' private games are
         // never visible here.
-        tableQuery.or(
-          `union_id.eq.${unionId},and(club_id.eq.${resolvedId},is_private.eq.true)`
-        );
+        tableQuery.or(`union_id.eq.${unionId},and(club_id.eq.${resolvedId},is_private.eq.true)`);
       } else {
         tableQuery.in('club_id', unionClubIds);
       }

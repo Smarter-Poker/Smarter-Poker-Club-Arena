@@ -153,6 +153,14 @@ jobs:
       # scripts/ci/supabase-invariants.allowlist.json. Regenerate the manifest with
       # scripts/ci/gen-schema-manifest.mjs when the schema changes.
       - name: Supabase Invariants — Phantom References (tables + RPCs)
+        # Credentials let the check ask the LIVE schema before failing, so a
+        # manifest that has simply gone stale (schema is applied straight to
+        # prod via the Supabase MCP; the snapshot refreshes daily) no longer
+        # reds somebody else's unrelated commit. A reference that is missing
+        # from BOTH the snapshot and the live schema still fails the build.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -o pipefail
           echo "## Supabase Phantom-Reference Check" >> $GITHUB_STEP_SUMMARY

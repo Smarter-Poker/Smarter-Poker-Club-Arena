@@ -937,7 +937,8 @@
       "delta_holdings",
       "delta_tx_net",
       "unexplained_delta",
-      "tournament_stacks"
+      "tournament_stacks",
+      "club_wallets_total"
     ],
     "chip_transactions": [
       "id",
@@ -8154,7 +8155,8 @@
       "current_bounty",
       "table_id",
       "seat_number",
-      "chip_count"
+      "chip_count",
+      "club_id"
     ],
     "tournament_registrations": [
       "id",
@@ -9043,7 +9045,7 @@
       "settled_at",
       "house_residual"
     ],
-    "union_rake_paid_daily": ["union_id", "day", "club_id", "rake_paid_all", "rake_paid_humans"],
+    "union_rake_paid_daily_user": ["union_id", "day", "user_id", "rake_amount"],
     "union_rake_rollup_days": ["union_id", "day", "records_seen", "computed_at"],
     "union_rakeback_log": [
       "id",

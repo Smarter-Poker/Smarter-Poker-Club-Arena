@@ -186,9 +186,19 @@
   }
 }
 
-/* Locked: a slow breath, so the chest reads as containing something alive. */
+/* Locked: a slow breath, so the chest reads as containing something alive.
+ *
+ * ESCALATING TENSION. --mbc-tension counts 0..6 seconds while the chest sits
+ * unopened, and drives both the speed and the amplitude of the rattle. Suspense
+ * held at one intensity stops being suspense and becomes a paused screen; a
+ * chest that strains harder the longer you leave it also quietly says that
+ * something is going to happen whether or not you tap.
+ *
+ * Duration shortens 1.9s -> 0.7s and the shake grows, both clamped so it can
+ * never become a seizure risk or a blur. */
 .mbc--locked .mbc__chest {
-  animation: mbcChestBreathe 1.9s ease-in-out infinite;
+  --mbc-amp: calc(1deg + var(--mbc-tension, 0) * 0.34deg);
+  animation: mbcChestBreathe calc(1.9s - var(--mbc-tension, 0) * 0.2s) ease-in-out infinite;
 }
 
 @keyframes mbcChestBreathe {
@@ -197,13 +207,13 @@
     transform: scale(1) rotate(0deg);
   }
   25% {
-    transform: scale(1.028) rotate(-1.1deg);
+    transform: scale(1.028) rotate(calc(var(--mbc-amp) * -1));
   }
   50% {
     transform: scale(1.04) rotate(0deg);
   }
   75% {
-    transform: scale(1.028) rotate(1.1deg);
+    transform: scale(1.028) rotate(var(--mbc-amp));
   }
 }
 
@@ -212,8 +222,24 @@
   animation-play-state: paused;
 }
 
-.mbc__chest--tappable:active {
-  transform: scale(0.95);
+/* PRESS PHYSICALITY. A button that only reacts on click feels like a link. A
+   lid you can feel yourself pushing down on is what makes the tap land. The
+   pause is important: the chest stops straining while you hold it, so the
+   release is what sets it off. */
+.mbc--pressed .mbc__chest {
+  animation-play-state: paused;
+  transform: scale(0.93) translateY(4px);
+  transition: transform 0.08s ease-out;
+}
+
+.mbc--pressed .mbc__glow {
+  opacity: 1;
+  transform: scale(1.18);
+}
+
+.mbc--pressed .mbc__seam {
+  opacity: 1;
+  filter: blur(3.5px);
 }
 
 .mbc__chest--tappable:focus-visible {
@@ -427,6 +453,104 @@
   );
   opacity: 0;
   pointer-events: none;
+}
+
+/* ── Seam sparks (locked) ─────────────────────────────────────────────────── */
+/* The chest is straining. Sparks escaping the seam say that better than any
+   amount of extra glow, and they scale with the same tension variable. */
+
+.mbc__sparks {
+  position: absolute;
+  left: 50%;
+  bottom: 80px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.mbc__spark {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff3cd, rgba(255, 209, 102, 0));
+  --mbc-spark-x: calc((var(--mbc-s) - 3) * 22px);
+  animation: mbcSpark calc(1.4s - var(--mbc-tension, 0) * 0.09s) ease-out infinite;
+  animation-delay: calc(var(--mbc-s) * 170ms);
+}
+
+@keyframes mbcSpark {
+  0% {
+    transform: translate(var(--mbc-spark-x), 0) scale(0.5);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(var(--mbc-spark-x) * 1.4), -46px) scale(1.1);
+    opacity: 0;
+  }
+}
+
+/* ── God-rays (opening onward) ────────────────────────────────────────────── */
+/* These are what sell "something enormous is inside" rather than "a box
+   opened". Anchored at the seam so they read as coming FROM the chest. */
+
+.mbc__rays {
+  position: absolute;
+  left: 50%;
+  bottom: 92px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.mbc__ray {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 12px;
+  height: 190px;
+  margin-left: -6px;
+  transform-origin: bottom center;
+  background: linear-gradient(
+    to top,
+    rgba(255, 240, 190, 0.85),
+    rgba(255, 209, 102, 0.32) 45%,
+    rgba(255, 209, 102, 0) 100%
+  );
+  filter: blur(2px);
+  transform: rotate(calc(var(--mbc-r) * 26deg - 104deg)) scaleY(0);
+  animation: mbcRayOut 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(0.28s + var(--mbc-r) * 26ms);
+}
+
+@keyframes mbcRayOut {
+  0% {
+    transform: rotate(calc(var(--mbc-r) * 26deg - 104deg)) scaleY(0);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(calc(var(--mbc-r) * 26deg - 104deg)) scaleY(1);
+    opacity: 0.75;
+  }
+}
+
+/* Once revealed, the rays turn slowly — a steady halo behind the number rather
+   than a frozen starburst. */
+.mbc--revealed .mbc__rays {
+  animation: mbcRaysTurn 22s linear infinite;
+}
+
+@keyframes mbcRaysTurn {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── OPENING ──────────────────────────────────────────────────────────────── */
@@ -732,6 +856,33 @@
     0 2px 0 rgba(0, 0, 0, 0.5);
 }
 
+/* What the number MEANS. A big figure with no reference point is just a big
+   figure — this line is what makes a jackpot read as a jackpot. */
+.mbc__multiple {
+  margin-top: 7px;
+  display: inline-block;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: var(--mbc-tier, #ffd166);
+  animation: mbcMultipleIn 0.4s ease-out 0.5s both;
+}
+
+@keyframes mbcMultipleIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .mbc__won-by {
   margin-top: 8px;
   font-size: 12px;
@@ -740,6 +891,33 @@
 
 .mbc__won-by strong {
   color: #ffd166;
+}
+
+.mbc__queued {
+  margin-top: 14px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+/* ── Tier theming ─────────────────────────────────────────────────────────── */
+/* The chest itself should tell you something before it opens. The seam, the
+   glow and the lock all take the tier colour, so a grand prize looks different
+   from a min prize from the first frame — without revealing the amount. */
+
+.mbc__seam {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 209, 102, 0) 0%,
+    var(--mbc-tier, rgba(255, 226, 150, 0.95)) 50%,
+    rgba(255, 209, 102, 0) 100%
+  );
+}
+
+.mbc__lock {
+  background: linear-gradient(180deg, var(--mbc-tier, #ffd166), #d99a1f 60%, #a8750f);
 }
 
 /* Jackpot — the only tier that gets a permanent halo. */
@@ -777,8 +955,22 @@
   .mbc__embers,
   .mbc__coins,
   .mbc__flash,
-  .mbc__shock {
+  .mbc__shock,
+  .mbc__sparks {
     display: none;
+  }
+  /* Rays STAY — they are the reveal, not decoration — but they arrive without
+     the sweep and never rotate. */
+  .mbc__ray {
+    animation: none;
+    transform: rotate(calc(var(--mbc-r) * 26deg - 104deg)) scaleY(1);
+    opacity: 0.5;
+  }
+  .mbc--revealed .mbc__rays {
+    animation: none;
+  }
+  .mbc__multiple {
+    animation: none;
   }
   .mbc__chest,
   .mbc__glow,

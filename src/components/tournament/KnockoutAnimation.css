@@ -65,21 +65,21 @@
   margin-left: -1.5px;
   background: linear-gradient(to top, rgba(255, 209, 102, 0), rgba(255, 209, 102, 0.85));
   transform-origin: bottom center;
-  transform: rotate(calc(var(--ko-ray-i) * 60deg)) translateY(-14px) scaleY(0);
+  transform: rotate(calc(var(--ko-ray-i) * 45deg)) translateY(-14px) scaleY(0);
   animation: koRay 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: calc(var(--ko-ray-i) * 18ms);
 }
 
 @keyframes koRay {
   0% {
-    transform: rotate(calc(var(--ko-ray-i) * 60deg)) translateY(-14px) scaleY(0);
+    transform: rotate(calc(var(--ko-ray-i) * 45deg)) translateY(-14px) scaleY(0);
     opacity: 0;
   }
   45% {
     opacity: 1;
   }
   100% {
-    transform: rotate(calc(var(--ko-ray-i) * 60deg)) translateY(-60px) scaleY(1);
+    transform: rotate(calc(var(--ko-ray-i) * 45deg)) translateY(-60px) scaleY(1);
     opacity: 0;
   }
 }
@@ -94,6 +94,14 @@
   border-radius: 50%;
   border: 3px solid rgba(255, 209, 102, 0.9);
   animation: koShockwave 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* A second, slower ring chasing the first. One ring reads as a UI effect; two
+   at different speeds reads as force propagating. */
+.ko__shockwave--2 {
+  border-color: rgba(255, 90, 60, 0.7);
+  animation-duration: 0.9s;
+  animation-delay: 0.1s;
 }
 
 @keyframes koShockwave {
@@ -116,6 +124,130 @@
   text-align: center;
   padding: 0 16px;
   max-width: 92vw;
+}
+
+/* ── The head ─────────────────────────────────────────────────────────────── */
+/* A bounty IS a head. Showing the busted player's face crack and drop makes the
+   abstraction concrete, and gives the money a visible source to come from. */
+
+.ko__head {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  margin: 0 auto 6px;
+  animation: koHeadIn 0.42s cubic-bezier(0.2, 1.5, 0.35, 1) both;
+}
+
+@keyframes koHeadIn {
+  0% {
+    transform: scale(2) translateY(-30px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.ko__head-disc {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(160deg, #334155, #1e293b);
+  border: 3px solid rgba(255, 90, 60, 0.9);
+  box-shadow:
+    0 0 26px rgba(255, 90, 60, 0.55),
+    inset 0 2px 8px rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Desaturated and dimmed — this player is out. */
+  filter: grayscale(0.85) brightness(0.75);
+  animation: koHeadFall 1.1s cubic-bezier(0.5, 0, 0.75, 0) 0.5s both;
+}
+
+.ko__head-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ko__head-initial {
+  font-size: 30px;
+  font-weight: 900;
+  color: #94a3b8;
+}
+
+/* The head tips over and drops out of frame — eliminated, not just dimmed. */
+@keyframes koHeadFall {
+  0% {
+    transform: rotate(0deg) translateY(0);
+    opacity: 1;
+  }
+  25% {
+    transform: rotate(-12deg) translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(-58deg) translateY(64px);
+    opacity: 0;
+  }
+}
+
+/* Cracks spread across the disc before it falls. */
+.ko__crack {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 0;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(255, 90, 60, 0.7));
+  transform-origin: top center;
+  animation: koCrack 0.3s ease-out both;
+}
+
+.ko__crack--1 {
+  transform: rotate(18deg);
+  animation-delay: 0.16s;
+}
+.ko__crack--2 {
+  transform: rotate(142deg);
+  animation-delay: 0.22s;
+}
+.ko__crack--3 {
+  transform: rotate(255deg);
+  animation-delay: 0.28s;
+}
+
+@keyframes koCrack {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: 42px;
+    opacity: 1;
+  }
+}
+
+.ko__head-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 90, 60, 0.6);
+  animation: koHeadRing 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes koHeadRing {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
 }
 
 .ko__stamp {
@@ -265,13 +397,93 @@
   margin-left: 3px;
 }
 
-.ko__head-growth {
-  margin-top: 8px;
-  font-size: 11px;
-  font-weight: 700;
+/* ── PKO split ────────────────────────────────────────────────────────────── */
+/* Players consistently miss that half the head becomes their OWN bounty — which
+   changes how everyone at the table should play against them for the rest of
+   the tournament. Two destinations, shown as two, not as a footnote. */
+
+.ko__split {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  animation: koSplitIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes koSplitIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ko__split-arm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.ko__split-amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffd166;
+  text-shadow: 0 0 12px rgba(255, 209, 102, 0.5);
+}
+
+.ko__split-amount--head {
   color: #4ade80;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
-  animation: koNamesIn 0.4s ease-out 0.14s both;
+  text-shadow: 0 0 12px rgba(74, 222, 128, 0.5);
+}
+
+.ko__split-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+/* The divider grows outward from the middle — the head visibly dividing. */
+.ko__split-divider {
+  width: 1px;
+  height: 26px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0)
+  );
+  animation: koSplitDivider 0.45s ease-out both;
+}
+
+@keyframes koSplitDivider {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* ── Queue hint ───────────────────────────────────────────────────────────── */
+/* Without this, a player who busted two people watches one celebration end and
+   another begin with no explanation of why. */
+
+.ko__queued {
+  margin-top: 10px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #94a3b8;
+  animation: koNamesIn 0.4s ease-out 0.2s both;
 }
 
 /* ── Coin shower ──────────────────────────────────────────────────────────── */
@@ -313,7 +525,10 @@
   }
 }
 
-/* Hero treatment — warmer, brighter. You took the head; it should feel like it. */
+/* ── Hero treatment ───────────────────────────────────────────────────────── */
+/* YOU took the head. That is a materially different event from watching someone
+   else take one, and it should not look the same. */
+
 .ko--hero .ko__stamp {
   text-shadow:
     0 2px 0 rgba(0, 0, 0, 0.65),
@@ -325,24 +540,91 @@
   border-color: rgba(255, 235, 160, 0.95);
 }
 
+/* A short kick on the whole overlay at the moment of impact. Scoped to
+   .ko--hero.ko--impact so it fires once, on the beat, and only for the player
+   who earned it — a table-wide shake for someone else's knockout would be
+   noise, and a shake that outlasted the impact would be nausea.
+
+   The variables are declared HERE rather than inherited, because an animation
+   referencing a var that is out of scope resolves to an invalid transform and
+   silently does nothing — the exact failure that killed the big-win screen
+   shake before the 2026-08-20 sweep. */
+.ko--hero.ko--impact .ko__stack {
+  --ko-kick: 5px;
+  animation:
+    koHeroKick 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97) both,
+    koStackHold 0s linear 0.42s forwards;
+}
+
+@keyframes koHeroKick {
+  0% {
+    transform: translate(0, 0) scale(1.03);
+  }
+  15% {
+    transform: translate(calc(var(--ko-kick) * -1), 2px) scale(1.02);
+  }
+  30% {
+    transform: translate(var(--ko-kick), -2px) scale(1.01);
+  }
+  45% {
+    transform: translate(calc(var(--ko-kick) * -0.6), 1px) scale(1);
+  }
+  60% {
+    transform: translate(calc(var(--ko-kick) * 0.4), -1px) scale(1);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+/* Parks the stack at rest so the kick cannot leave a residual transform. */
+@keyframes koStackHold {
+  to {
+    transform: none;
+  }
+}
+
+.ko--hero .ko__bounty {
+  border-color: rgba(255, 235, 160, 0.85);
+  box-shadow:
+    0 8px 34px rgba(0, 0, 0, 0.55),
+    0 0 34px rgba(255, 209, 102, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
 /* ── Reduced motion ───────────────────────────────────────────────────────── */
 /* The information still arrives; only the movement is removed. A player who
    asked for less motion still needs to know they were paid. */
 @media (prefers-reduced-motion: reduce) {
   .ko__ray,
   .ko__shockwave,
-  .ko__coins {
+  .ko__coins,
+  .ko__crack,
+  .ko__head-ring {
     display: none;
   }
   .ko__vignette,
   .ko__stamp,
   .ko__names,
   .ko__bounty,
-  .ko__head-growth,
-  .ko__eliminated {
+  .ko__eliminated,
+  .ko__head,
+  .ko__split,
+  .ko__split-divider,
+  .ko__queued {
     animation: none;
   }
   .ko__stamp {
+    transform: none;
+  }
+  /* The head must NOT fall — a motion-sensitive player still needs to see
+     whose head it was, and a dropped element just leaves a hole. */
+  .ko__head-disc {
+    animation: none;
+  }
+  /* No kick, ever. This is the element most likely to be unpleasant. */
+  .ko--hero.ko--impact .ko__stack {
+    animation: none;
     transform: none;
   }
 }

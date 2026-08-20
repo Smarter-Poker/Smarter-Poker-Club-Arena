@@ -71,6 +71,8 @@ export interface MysteryBountyChestProps {
   onBroadcastOpen?: () => void;
   /** Set when another client's broadcast says the chest is open. */
   remoteOpened?: boolean;
+  /** How many more chests are waiting behind this one. */
+  queuedBehind?: number;
   /** False on a background table — visuals still run, audio does not. */
   playSounds?: boolean;
 }
@@ -147,10 +149,21 @@ export default function MysteryBountyChest({
   onDone,
   onBroadcastOpen,
   remoteOpened = false,
+  queuedBehind = 0,
   playSounds = true,
 }: MysteryBountyChestProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [displayAmount, setDisplayAmount] = useState(0);
+  /**
+   * How long the winner has been staring at a locked chest, in whole seconds.
+   *
+   * Suspense that stays at one intensity stops being suspense — it becomes a
+   * paused screen. The chest rattles harder and the glow tightens the longer
+   * it goes unopened, which also quietly communicates that something is going
+   * to happen whether or not they tap.
+   */
+  const [tension, setTension] = useState(0);
+  const [pressed, setPressed] = useState(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const rafRef = useRef<number | null>(null);
   const openedRef = useRef(false);
@@ -327,14 +340,32 @@ export default function MysteryBountyChest({
     }
   }, [remoteOpened, data, phase, runOpen]);
 
+  // ── Escalating tension while it sits locked ───────────────────────────────
+  useEffect(() => {
+    if (phase !== 'locked') {
+      setTension(0);
+      return;
+    }
+    const id = setInterval(() => setTension((t) => Math.min(t + 1, 6)), 1000);
+    return () => clearInterval(id);
+  }, [phase]);
+
   if (!data || phase === 'idle') return null;
 
   const currency = data.currency ?? '';
   const canTap = isWinner && phase === 'locked';
+  // "50x the average bounty" tells you what the number MEANS. A big figure with
+  // no reference point is just a big figure — this is what makes a jackpot read
+  // as a jackpot rather than as an unusually long number.
+  const multiple =
+    data.avgBounty && data.avgBounty > 0 ? data.amount / data.avgBounty : null;
 
   return (
     <div
-      className={`mbc mbc--${phase}${isJackpot ? ' mbc--jackpot' : ''}`}
+      className={`mbc mbc--${phase}${isJackpot ? ' mbc--jackpot' : ''}${
+        pressed ? ' mbc--pressed' : ''
+      }`}
+      style={{ ['--mbc-tension' as string]: tension, ['--mbc-tier' as string]: tier.color }}
       role="dialog"
       aria-modal="true"
       aria-label="Mystery bounty"
@@ -364,10 +395,28 @@ export default function MysteryBountyChest({
           type="button"
           className={`mbc__chest${canTap ? ' mbc__chest--tappable' : ''}`}
           onClick={handleOpenClick}
+          /* Press physicality: the chest sinks under the finger and releases.
+             A button that only reacts on click feels like a link; a lid you can
+             feel yourself pushing on is what makes the tap satisfying. Pointer
+             events rather than mouse/touch pairs so one path covers both. */
+          onPointerDown={() => canTap && setPressed(true)}
+          onPointerUp={() => setPressed(false)}
+          onPointerLeave={() => setPressed(false)}
+          onPointerCancel={() => setPressed(false)}
           disabled={!canTap}
           aria-label={canTap ? 'Tap to open the mystery bounty chest' : 'Mystery bounty chest'}
         >
           <span className="mbc__glow" aria-hidden="true" />
+
+          {/* Sparks escaping the seam while it is locked — the chest is
+              straining to open, which is the whole feeling of the beat. */}
+          {phase === 'locked' && (
+            <span className="mbc__sparks" aria-hidden="true">
+              {Array.from({ length: 7 }, (_, i) => (
+                <span key={i} className="mbc__spark" style={{ ['--mbc-s' as string]: i }} />
+              ))}
+            </span>
+          )}
 
           <span className="mbc__chest-lid" aria-hidden="true">
             <span className="mbc__lid-band" />
@@ -377,6 +426,17 @@ export default function MysteryBountyChest({
 
           {/* The light escaping from inside, revealed as the lid lifts. */}
           <span className="mbc__inner-light" aria-hidden="true" />
+
+          {/* God-rays fanning out of the open chest. These are what sell the
+              idea that something enormous is inside, rather than that a box
+              opened. Only rendered once the lid is actually moving. */}
+          {(phase === 'opening' || phase === 'explosion' || phase === 'revealed') && (
+            <span className="mbc__rays" aria-hidden="true">
+              {Array.from({ length: 9 }, (_, i) => (
+                <span key={i} className="mbc__ray" style={{ ['--mbc-r' as string]: i }} />
+              ))}
+            </span>
+          )}
 
           <span className="mbc__chest-base" aria-hidden="true">
             <span className="mbc__base-band" />
@@ -436,9 +496,25 @@ export default function MysteryBountyChest({
               {currency}
               {displayAmount.toLocaleString()}
             </div>
+            {/* What the number MEANS. A big figure with no reference point is
+                just a big figure; "50x the average bounty" is what makes a
+                jackpot read as a jackpot. Only shown when it is actually
+                notable — 1.1x is noise. */}
+            {multiple !== null && multiple >= 2 && (
+              <div className="mbc__multiple">
+                {multiple >= 10 ? Math.round(multiple) : multiple.toFixed(1)}× the average bounty
+              </div>
+            )}
+
             <div className="mbc__won-by">
               won by <strong>{data.knockerName}</strong>
             </div>
+          </div>
+        )}
+
+        {queuedBehind > 0 && (
+          <div className="mbc__queued">
+            +{queuedBehind} more bount{queuedBehind > 1 ? 'ies' : 'y'} to reveal
           </div>
         )}
       </div>

@@ -162,6 +162,7 @@ import KnockoutAnimation, {
 import MysteryBountyChest, {
   type MysteryChestData,
 } from '../components/tournament/MysteryBountyChest';
+import { useAnimationQueue } from '../hooks/useAnimationQueue';
 import RebuyModal from '../components/table/RebuyModal';
 import TournamentWinnerOverlay from '../components/table/TournamentWinnerOverlay';
 // RealtimeChannelService imported if needed for future use
@@ -572,8 +573,16 @@ export default function TablePage({
   // The chest additionally needs a client->table message, because the winner
   // TAPS it open and the other nine players must see that same tap. That is
   // `chestChannelRef` below.
-  const [knockout, setKnockout] = useState<KnockoutData | null>(null);
-  const [mysteryChest, setMysteryChest] = useState<MysteryChestData | null>(null);
+  //
+  // QUEUED, not a plain useState. A three-way all-in busts two players, the
+  // engine processes eliminations one at a time, so two broadcasts land
+  // milliseconds apart — a single state slot meant the second overwrote the
+  // first and one of the two knockouts was never shown. Two heads taken, one
+  // celebration. See src/hooks/useAnimationQueue.ts.
+  const knockoutQueue = useAnimationQueue<KnockoutData>();
+  const chestQueue = useAnimationQueue<MysteryChestData>();
+  const knockout = knockoutQueue.current;
+  const mysteryChest = chestQueue.current;
   const [chestRemoteOpened, setChestRemoteOpened] = useState(false);
   const chestChannelRef = useRef<ReturnType<typeof masterBus.getOrCreateChannel> | null>(null);
 
@@ -3748,7 +3757,7 @@ export default function TablePage({
                 // engine broadcasts to the whole table), which is what makes
                 // both animations shared in real time with no new plumbing.
                 if (data.type === 'mystery_bounty_revealed') {
-                  setMysteryChest({
+                  chestQueue.enqueue({
                     knockerUserId: b.knockerUserId || '',
                     knockerName: b.knockerName || 'Player',
                     eliminatedName: b.eliminatedName || 'Player',
@@ -3759,12 +3768,13 @@ export default function TablePage({
                   });
                   setChestRemoteOpened(false);
                 } else {
-                  setKnockout({
+                  knockoutQueue.enqueue({
                     knockerName: b.knockerName || 'Player',
                     eliminatedName: b.eliminatedName || 'Player',
                     amount: Number(b.amount) || 0,
                     addedToHead: Number(b.addedToHead) || 0,
                     isHero: !!b.knockerUserId && b.knockerUserId === userId,
+                    eliminatedAvatar: b.eliminatedAvatar || undefined,
                   });
                 }
                 setTableState((prev) => {
@@ -7073,7 +7083,8 @@ export default function TablePage({
           hand, so it must never eat a click on the action buttons. */}
       <KnockoutAnimation
         data={knockout}
-        onDone={() => setKnockout(null)}
+        queuedBehind={knockoutQueue.pending}
+        onDone={knockoutQueue.complete}
         playSounds={ambientSoundsAllowed}
       />
 
@@ -7085,8 +7096,9 @@ export default function TablePage({
         viewerUserId={userId}
         remoteOpened={chestRemoteOpened}
         onBroadcastOpen={broadcastChestOpen}
+        queuedBehind={chestQueue.pending}
         onDone={() => {
-          setMysteryChest(null);
+          chestQueue.complete();
           setChestRemoteOpened(false);
         }}
         playSounds={ambientSoundsAllowed}

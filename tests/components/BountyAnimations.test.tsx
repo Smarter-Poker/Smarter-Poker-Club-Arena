@@ -53,7 +53,12 @@ const CHEST = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.useFakeTimers();
+  // Fake requestAnimationFrame too: both components drive their count-up with
+  // rAF, and without this advanceTimersByTime never moves the number.
+  vi.useFakeTimers({
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date',
+             'requestAnimationFrame', 'cancelAnimationFrame', 'performance'],
+  });
 });
 
 afterEach(() => {
@@ -92,30 +97,82 @@ describe('KnockoutAnimation', () => {
       vi.advanceTimersByTime(900);
     });
     expect(screen.getByText('BOUNTY')).toBeTruthy();
-    expect(screen.getByText(/2,500/)).toBeTruthy();
   });
 
-  it('states the PKO head growth, which players consistently miss', () => {
+  it('counts the bounty UP rather than printing it', () => {
+    const { container } = render(<KnockoutAnimation data={KO} onDone={() => {}} />);
+    const amount = () =>
+      (container.querySelector('.ko__bounty-amount') as HTMLElement | null)?.textContent;
+
+    act(() => {
+      vi.advanceTimersByTime(900);
+    });
+    // Mid-climb it must NOT already read the final figure.
+    act(() => {
+      vi.advanceTimersByTime(120);
+    });
+    expect(amount()).not.toBe('2,500');
+
+    // ...and it must arrive exactly, not approximately. Scoped to the bounty
+    // element because the PKO split beat renders the same figure again.
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
+    expect(amount()).toBe('2,500');
+  });
+
+  it('shows the PKO split with BOTH destinations, which players consistently miss', () => {
     render(<KnockoutAnimation data={KO} onDone={() => {}} />);
     act(() => {
-      vi.advanceTimersByTime(900);
+      vi.advanceTimersByTime(1600);
     });
-    expect(screen.getByText(/added to your head/)).toBeTruthy();
+    expect(screen.getByText(/paid to you/)).toBeTruthy();
+    expect(screen.getByText(/onto your head/)).toBeTruthy();
+    expect(screen.getByText('1,250')).toBeTruthy();
   });
 
-  it('omits head growth for a flat bounty', () => {
+  it('omits the split entirely for a flat bounty', () => {
     render(<KnockoutAnimation data={{ ...KO, addedToHead: 0 }} onDone={() => {}} />);
     act(() => {
-      vi.advanceTimersByTime(900);
+      vi.advanceTimersByTime(1600);
     });
-    expect(screen.queryByText(/added to your head/)).toBeNull();
+    expect(screen.queryByText(/onto your head/)).toBeNull();
+  });
+
+  it('shows the eliminated head, which is what the bounty actually is', () => {
+    const { container } = render(<KnockoutAnimation data={KO} onDone={() => {}} />);
+    expect(container.querySelector('.ko__head')).toBeTruthy();
+    // No avatar in the payload -> falls back to the initial rather than a gap.
+    expect(screen.getByText('B')).toBeTruthy();
+  });
+
+  it('uses the eliminated avatar when the payload carries one', () => {
+    const { container } = render(
+      <KnockoutAnimation
+        data={{ ...KO, eliminatedAvatar: 'https://example.test/a.webp' }}
+        onDone={() => {}}
+      />
+    );
+    const img = container.querySelector('.ko__head-img') as HTMLImageElement;
+    expect(img).toBeTruthy();
+    expect(img.getAttribute('src')).toBe('https://example.test/a.webp');
+  });
+
+  it('tells the player more knockouts are queued behind this one', () => {
+    render(<KnockoutAnimation data={KO} onDone={() => {}} queuedBehind={2} />);
+    expect(screen.getByText(/\+2 more knockouts/)).toBeTruthy();
+  });
+
+  it('says nothing about a queue when there is none', () => {
+    render(<KnockoutAnimation data={KO} onDone={() => {}} queuedBehind={0} />);
+    expect(screen.queryByText(/more knockout/)).toBeNull();
   });
 
   it('clears itself and reports done', () => {
     const onDone = vi.fn();
     render(<KnockoutAnimation data={KO} onDone={onDone} />);
     act(() => {
-      vi.advanceTimersByTime(3300);
+      vi.advanceTimersByTime(3700);
     });
     expect(onDone).toHaveBeenCalledTimes(1);
   });
@@ -335,6 +392,135 @@ describe('MysteryBountyChest — real-time sync', () => {
       vi.advanceTimersByTime(15000);
     });
     expect(onBroadcastOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe('MysteryBountyChest — suspense and context', () => {
+  it('escalates tension the longer it sits unopened', () => {
+    const { container } = render(
+      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
+    );
+    act(() => {
+      vi.advanceTimersByTime(750);
+    });
+    const root = container.querySelector('.mbc') as HTMLElement;
+    expect(root.style.getPropertyValue('--mbc-tension')).toBe('0');
+
+    act(() => {
+      vi.advanceTimersByTime(3100);
+    });
+    // Suspense held at one intensity stops being suspense.
+    expect(Number(root.style.getPropertyValue('--mbc-tension'))).toBeGreaterThanOrEqual(3);
+  });
+
+  it('caps the tension so it can never become a strobe', () => {
+    const { container } = render(
+      <MysteryBountyChest data={CHEST} viewerUserId="user-other" onDone={() => {}} />
+    );
+    act(() => {
+      vi.advanceTimersByTime(750);
+      vi.advanceTimersByTime(12000);
+    });
+    const root = container.querySelector('.mbc') as HTMLElement;
+    const t = Number(root.style.getPropertyValue('--mbc-tension'));
+    expect(t).toBeLessThanOrEqual(6);
+  });
+
+  it('gives the winner press feedback, and never the spectator', () => {
+    const { container, rerender } = render(
+      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
+    );
+    act(() => {
+      vi.advanceTimersByTime(750);
+    });
+    fireEvent.pointerDown(screen.getByRole('button'));
+    expect(container.querySelector('.mbc--pressed')).toBeTruthy();
+    fireEvent.pointerUp(screen.getByRole('button'));
+    expect(container.querySelector('.mbc--pressed')).toBeNull();
+
+    rerender(
+      <MysteryBountyChest data={CHEST} viewerUserId="user-other" onDone={() => {}} />
+    );
+    fireEvent.pointerDown(screen.getByRole('button'));
+    expect(container.querySelector('.mbc--pressed')).toBeNull();
+  });
+
+  it('releases the press state if the finger slides off', () => {
+    const { container } = render(
+      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
+    );
+    act(() => {
+      vi.advanceTimersByTime(750);
+    });
+    fireEvent.pointerDown(screen.getByRole('button'));
+    expect(container.querySelector('.mbc--pressed')).toBeTruthy();
+    fireEvent.pointerLeave(screen.getByRole('button'));
+    expect(container.querySelector('.mbc--pressed')).toBeNull();
+  });
+
+  it('says what the number MEANS, not just what it is', () => {
+    render(
+      <MysteryBountyChest data={CHEST} viewerUserId="user-winner" onDone={() => {}} />
+    );
+    act(() => {
+      vi.advanceTimersByTime(750);
+    });
+    fireEvent.click(screen.getByRole('button'));
+    act(() => {
+      vi.advanceTimersByTime(3200);
+    });
+    // 50000 / 1000 = 50x. A big figure with no reference point is just a big figure.
+    expect(screen.getByText(/50× the average bounty/)).toBeTruthy();
+  });
+
+  it('omits the multiple when it is not notable', () => {
+    render(
+      <MysteryBountyChest
+        data={{ ...CHEST, amount: 1100, avgBounty: 1000 }}
+        viewerUserId="user-winner"
+        onDone={() => {}}
+      />
+    );
+    act(() => {
+      vi.advanceTimersByTime(750);
+    });
+    fireEvent.click(screen.getByRole('button'));
+    act(() => {
+      vi.advanceTimersByTime(3200);
+    });
+    // 1.1x is noise, not news.
+    expect(screen.queryByText(/the average bounty/)).toBeNull();
+  });
+
+  it('never divides by zero when no average is known', () => {
+    render(
+      <MysteryBountyChest
+        data={{ ...CHEST, avgBounty: 0 }}
+        viewerUserId="user-winner"
+        onDone={() => {}}
+      />
+    );
+    act(() => {
+      vi.advanceTimersByTime(750);
+    });
+    fireEvent.click(screen.getByRole('button'));
+    act(() => {
+      vi.advanceTimersByTime(3200);
+    });
+    expect(screen.queryByText(/the average bounty/)).toBeNull();
+    expect(screen.queryByText(/NaN|Infinity/)).toBeNull();
+  });
+
+  it('tells the player more bounties are queued behind this one', () => {
+    render(
+      <MysteryBountyChest
+        data={CHEST}
+        viewerUserId="user-winner"
+        onDone={() => {}}
+        queuedBehind={2}
+      />
+    );
+    expect(screen.getByText(/\+2 more bounties/)).toBeTruthy();
   });
 });
 

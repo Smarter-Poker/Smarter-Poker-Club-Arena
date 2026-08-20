@@ -24,7 +24,10 @@ import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import ClubBottomNav from '../components/club/ClubBottomNav';
-import MysteryBountyReveal from '../components/tournament/MysteryBountyReveal';
+import MysteryBountyChest, {
+  type MysteryChestData,
+} from '../components/tournament/MysteryBountyChest';
+import { useAnimationQueue } from '../hooks/useAnimationQueue';
 // LOBBY FIX 2026-08-15: the detail pane below showed a STATIC blind chart and
 // a payout list and nothing else, no clock, no standings, no tables. All three
 // components already existed and worked; two were rendered nowhere in the app.
@@ -45,6 +48,11 @@ export default function TournamentPage() {
   const { clubId, tournamentId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthUser();
+  // Mystery-bounty reveals seen from the lobby. Queued for the same reason the
+  // table queues them: one broadcast per elimination, and a multi-way all-in
+  // produces several within milliseconds.
+  const lobbyChestQueue = useAnimationQueue<MysteryChestData>();
+  const lobbyChest = lobbyChestQueue.current;
   const toast = useToast();
   const currentUser = user || GUEST_USER;
 
@@ -613,11 +621,23 @@ export default function TournamentPage() {
             break;
 
           case 'mystery_bounty_revealed':
-            // TOURNEY-AUDIT 2026-07-24 (sweep 4): relay the server reveal to
-            // the MysteryBountyReveal overlay (it subscribes to this bus event
-            // and requires playerName + amount — previously nothing emitted it).
+            // TOURNEY-AUDIT 2026-07-24 (sweep 4): relay the server reveal so
+            // the overlay can show it — previously nothing emitted this.
+            // 2026-08-20: feed the chest directly as well. QUEUED, because a
+            // multi-way all-in busts more than one player and the engine
+            // broadcasts once per elimination; a single state slot would drop
+            // all but the last.
             if (data?.playerName && data?.amount) {
               masterBus.emit('MYSTERY_BOUNTY_REVEALED', data);
+              lobbyChestQueue.enqueue({
+                knockerUserId: data.knockerUserId || '',
+                knockerName: data.knockerName || 'Player',
+                eliminatedName: data.eliminatedName || data.playerName || 'Player',
+                amount: Number(data.amount) || 0,
+                tierLabel: data.tierLabel,
+                isJackpot: !!data.isJackpot,
+                avgBounty: Number(data.avgBounty) || undefined,
+              });
             }
             break;
 
@@ -1322,8 +1342,18 @@ export default function TournamentPage() {
         />
       )}
 
-      {/* Mystery Bounty Reveal Overlay — auto-listens via masterBus */}
-      <MysteryBountyReveal />
+      {/* ── Mystery bounty (2026-08-20) ─────────────────────────────────────
+          Was MysteryBountyReveal: a purple ENVELOPE that opened itself after
+          1200ms. Replaced with the same chest the table uses, so a player who
+          is watching from the tournament page and one who is sitting at the
+          table see the same event the same way. Two different reveals for one
+          prize is how a product starts feeling assembled rather than built. */}
+      <MysteryBountyChest
+        data={lobbyChest}
+        viewerUserId={user?.id ?? null}
+        queuedBehind={lobbyChestQueue.pending}
+        onDone={lobbyChestQueue.complete}
+      />
 
       {/* Bottom Navigation */}
       {clubId && <ClubBottomNav clubId={clubId} />}

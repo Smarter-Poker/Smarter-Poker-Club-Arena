@@ -764,7 +764,24 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
         'INV-7',
         `seat ${p.seat} (${p.user_id}) was paid ${winnings} but is eligible for only ${cap} ` +
           `across ${settlementPots.length} pot(s): ` +
-          JSON.stringify(settlementPots.map((x) => [x.amount, x.eligiblePlayers]))
+          JSON.stringify(settlementPots.map((x) => [x.amount, x.eligiblePlayers])) +
+          `\n  rake=${rake} bbjFee=${bbjFee} statePot=${st.pot} sawFlop=${st.sawFlop}` +
+          `\n  winners=${JSON.stringify(
+            ((st as unknown as { winners?: unknown[] }).winners ?? []).map((w) => {
+              const ww = w as { userId?: string; amount?: number; potIndex?: number };
+              return [ww.userId, ww.amount, ww.potIndex];
+            })
+          )}` +
+          `\n  seats=${JSON.stringify(
+            (st.players as SeatPlayer[]).map((q) => [
+              q.seat,
+              q.user_id,
+              ctx.seatStart.get(q.seat) ?? 0,
+              q.totalInvested ?? 0,
+              q.stack,
+              q.is_folded ? 'folded' : 'live',
+            ])
+          )}`
       );
     }
   }

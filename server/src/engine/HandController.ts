@@ -39,6 +39,76 @@ import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
 // HAND CONTROLLER
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Scale winners' pre-rake amounts down to the post-rake total, in whole cents.
+ *
+ * Exported and pure so the invariant below can be tested directly rather than
+ * only through a 10,000-hand fuzz run.
+ *
+ * TWO POST-CONDITIONS, both load-bearing:
+ *   1. `sum(result) === round(totalWinnings * 100)` — no chip is created or
+ *      destroyed by the rake deduction.
+ *   2. `result[i] <= round(preRakeAmounts[i] * 100)` — no winner is paid more
+ *      than they were entitled to BEFORE rake. Rake only ever takes away, so a
+ *      winner rising above their pre-rake figure means a cent moved from
+ *      another winner's stack into theirs.
+ *
+ * (2) is the one that was broken. The rounding remainder was handed to
+ * `adjusted[0]` unconditionally, and index 0 is the MAIN-pot winner — by
+ * construction the shortest all-in stack at the table. In a side-pot hand that
+ * player is not eligible for the chips above the main pot, so the cent came out
+ * of a side-pot winner. Found by the D24 chip-conservation fuzzer (INV-7):
+ * main pot 1.93, u3 all-in for 0.32, four side pots above them; u3 was eligible
+ * for 1.93 and was paid 1.94. Totals still balanced, which is exactly why plain
+ * conservation never caught it — the cent moved between players.
+ *
+ * Placing the remainder under the pre-rake caps always succeeds: total headroom
+ * is `rakeCents + remainder`, which is never less than `remainder`.
+ */
+export function scaleWinnerCentsForRake(
+  preRakeAmounts: readonly number[],
+  totalWinnings: number
+): number[] {
+  // Round 40 audit Pass 3 fix: integer-cents arithmetic with Math.round (NOT
+  // Math.trunc) for the float->cents conversion. IEEE 754 drift can make a pot
+  // of "$140.30" actually be 140.29999..., and Math.trunc(140.299... * 100) is
+  // 13479 rather than 13480 — exactly 1c lost per chop pot with any drift.
+  const totalCents = Math.round(totalWinnings * 100);
+  const entitlementCents = preRakeAmounts.map((a) => Math.round(a * 100));
+  const totalWinnerCents = entitlementCents.reduce((s, c) => s + c, 0) || 1;
+
+  const adjusted = entitlementCents.map((c) => Math.round((c * totalCents) / totalWinnerCents));
+
+  let remainder = totalCents - adjusted.reduce((s, a) => s + a, 0);
+
+  // Positive remainder: rounding dust. Place it only where it does not exceed
+  // the winner's pre-rake entitlement.
+  let placedOne = true;
+  while (remainder > 0 && placedOne) {
+    placedOne = false;
+    for (let i = 0; i < adjusted.length && remainder > 0; i++) {
+      if (adjusted[i] >= entitlementCents[i]) continue;
+      adjusted[i]++;
+      remainder--;
+      placedOne = true;
+    }
+  }
+
+  // Negative remainder: rounding overshot. Pull back evenly, never below zero.
+  let pulledOne = true;
+  while (remainder < 0 && pulledOne) {
+    pulledOne = false;
+    for (let i = 0; i < adjusted.length && remainder < 0; i++) {
+      if (adjusted[i] <= 0) continue;
+      adjusted[i]--;
+      remainder++;
+      pulledOne = true;
+    }
+  }
+
+  return adjusted;
+}
+
 export class HandController {
   private config: HandConfig;
   private state: GameState;
@@ -1248,24 +1318,10 @@ export class HandController {
     // After Math.round, adjustedCents.sum may be over OR under totalCents.
     // Two separate distribute loops handle both directions so the post
     // condition `sum(adjustedCents) === totalCents` always holds.
-    const totalCents = Math.round(totalWinnings * 100);
-    const totalWinnerCents = Math.round(totalWinnerAmount * 100) || 1;
-    const adjustedCents = winners.map((w) =>
-      Math.round((Math.round(w.amount * 100) * totalCents) / totalWinnerCents)
+    const adjustedCents = scaleWinnerCentsForRake(
+      winners.map((w) => w.amount),
+      totalWinnings
     );
-    let remainderCents = totalCents - adjustedCents.reduce((s, a) => s + a, 0);
-    for (let i = 0; i < adjustedCents.length && remainderCents > 0; i++) {
-      adjustedCents[i]++;
-      remainderCents--;
-    }
-    // Round can also overshoot by 1-2 cents on multi-winner pots; pull
-    // back evenly without going below 0.
-    for (let i = 0; i < adjustedCents.length && remainderCents < 0; i++) {
-      if (adjustedCents[i] > 0) {
-        adjustedCents[i]--;
-        remainderCents++;
-      }
-    }
     const adjustedAmounts = adjustedCents.map((c) => c / 100);
     const adjustedWinners = winners.map((w, i) => ({ ...w, amount: adjustedAmounts[i] }));
 

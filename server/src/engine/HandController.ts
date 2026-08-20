@@ -152,6 +152,22 @@ export class HandController {
       this.postBombPotAntes();
       this.handFSM.transition('dealing');
       this.dealHoleCards();
+      // 2026-08-20 (chip-conservation property test, D24): this branch used to
+      // go straight from 'dealing' into advanceStage(), which calls
+      // transitionStage('flop') — and 'dealing' -> 'flop' is not a legal edge,
+      // so the FSM REJECTED it and stayed parked on 'dealing' for the whole
+      // hand. Every subsequent transition was then invalid too, so a single
+      // bomb pot logged 'dealing -> flop', 'dealing -> showdown',
+      // 'dealing -> settlement' and 'dealing -> idle' to reportError/Sentry.
+      // state.stage was always correct (transitionStage sets it regardless),
+      // so play was never affected — but the FSM, whose entire job is to make
+      // an illegal hand flow detectable, was reporting a false positive on
+      // every bomb pot and would have masked a real violation.
+      //
+      // A bomb pot IS at preflop; it simply has no preflop betting round. Say
+      // so, and the existing preflop -> flop / preflop -> showdown edges cover
+      // both the normal deal and the everyone-all-in-from-antes runout.
+      this.handFSM.transition('preflop');
       // Bible V8 §4.22: Bomb pot skips preflop betting — deal directly to flop
       this.advanceStage(); // preflop → flop, deals 3 community cards, sets first postflop player
       return;

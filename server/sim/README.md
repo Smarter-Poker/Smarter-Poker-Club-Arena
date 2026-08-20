@@ -31,51 +31,75 @@ A scenario is a TypeScript file that exports a `Scenario`:
 
 ```ts
 // scenarios/02-turn-bet-clears-river.ts
-import { scenario } from '../framework';
+import { scenario } from '../framework.js';
 
 export default scenario('turn bet clears on river', async (sim) => {
-  await sim.startHand({ players: 4, stacks: 200, sb: 1, bb: 2, seed: 0xc0ffee });
+  // dealerSeat=1 -> SB=2, BB=3, UTG=4 (first to act preflop).
+  await sim.startHand({ players: 4, stacks: 200, sb: 1, bb: 2 });
 
-  // Preflop: all limp
-  await sim.act('seat3', 'call', 2);
-  await sim.act('seat4', 'call', 2);
-  await sim.act('seat1', 'call', 1); // SB completes
-  await sim.act('seat2', 'check'); // BB checks
+  // Preflop: everyone limps. Order: UTG -> BTN -> SB -> BB.
+  await sim.act(4, 'call', 2);
+  await sim.act(1, 'call', 2);
+  await sim.act(2, 'call', 1); // SB completes
+  await sim.act(3, 'check'); // BB checks
 
-  // Flop
-  await sim.deal('flop');
-  await sim.act('seat1', 'bet', 10);
-  await sim.act('seat2', 'call', 10);
-  await sim.act('seat3', 'fold');
-  await sim.act('seat4', 'fold');
+  // The engine deals the next street itself once the round closes — there is
+  // no sim.deal(). Assert where you landed instead.
+  sim.assert.stageIs('flop');
+  await sim.act(2, 'bet', 10);
+  await sim.act(3, 'call', 10);
+  await sim.act(4, 'call', 10);
+  await sim.act(1, 'fold');
 
-  // Turn
-  await sim.deal('turn');
-  await sim.act('seat1', 'bet', 20);
-  await sim.act('seat2', 'call', 20);
+  sim.assert.stageIs('turn');
+  await sim.act(2, 'bet', 20);
+  await sim.act(3, 'call', 20);
+  await sim.act(4, 'fold');
 
-  // River — assert bets have CLEARED from the felt
-  await sim.deal('river');
-  sim.assert.lastBetAmountsAllZero(); // no turn bet bleed
-  sim.assert.currentPlayerSeatIs(1); // seat1 (OOP) acts first
+  // River — assert bets have CLEARED from the felt.
+  sim.assert.stageIs('river');
+  sim.assert.currentPlayerSeatIs(2); // SB acts first on every postflop street
 });
 ```
 
+NOTE: `SimStartOptions.seed` is accepted but ignored — the deck is shuffled with
+`secureShuffle` and is deliberately not seedable, so a scenario must not depend
+on specific cards. Assert on structure (stage, turn order, bet display, pot),
+not on holdings.
+
 ## Scenario catalog
 
-- `01-normal-hand.ts` — 4 players, preflop raise, 1 caller, flop check-check, turn bet-fold.
-- `02-turn-bet-clears-river.ts` — reproduces BUG 029: turn bet must clear on river.
-- `03-winner-banner-no-bleed.ts` — reproduces BUG 030: hand-strength label must clear
-  before next pot renders.
-- `04-blinds-to-pot.ts` — SB + BB must appear in `pot` in the SAME snapshot that shows
-  the blind stacks decremented.
-- `05-hero-action-every-street.ts` — hero OOP on every street, must not be skipped.
-- `06-auto-fold-preserves-seat.ts` — reproduces BUG 028: engine auto-fold on time-bank
-  expire must not remove player from players[] (client must keep seat).
-- `07-split-pot.ts` — tie on the river, pot splits evenly.
-- `08-side-pot-all-in.ts` — 3 players, short stack all-in, two others contest side pot.
-- `09-bomb-pot.ts` — bomb pot triggers every N hands, skips preflop betting.
-- `10-hero-fold-card-dim.ts` — hero folds; hole cards must dim but NOT disappear.
+CORRECTION 2026-08-20: this section used to list ten scenarios (`01-normal-hand`
+through `10-hero-fold-card-dim`). Nine of them have never existed on disk. The
+`sim.deal('flop')` call in the example above is not real either — `HandController`
+advances the street itself once the betting round closes, so a scenario just
+keeps calling `sim.act(...)`. Both were written as a plan and then read back as
+a status. What actually exists:
+
+- `02-turn-bet-clears-river.ts` — reproduces BUG 029: a turn bet must clear from
+  the felt on the river.
+
+Writing the other nine is open work. Until then, do not cite this directory as
+covering split pots, side pots, bomb pots or auto-fold: it does not.
+
+## Chip conservation
+
+The property-based half of the simulator lives next to the engine rather than
+here, because it has to run inside `npm test` (the Hetzner deploy gates on that
+suite before it ships anything):
+
+- `src/engine/HandFuzzer.ts` — drives `HandController` through complete
+  randomized hands (all 7 variants, 2-9 seats, micro to deep stacks, antes, Big
+  Blind Antes, straddles, bomb pots, dead blinds, post-BB entries, every rake
+  shape, BBJ on and off) picking a uniformly random LEGAL action each turn, and
+  asserts nine chip-integrity invariants after every single mutation.
+- `src/engine/ChipConservation.property.test.ts` — the vitest leg. ~11,000 hands
+  per run: a fixed corpus that keeps a green build green, plus 1,000 hands from
+  a fresh random seed so every CI run walks new ground.
+- `sim/soak-conservation.ts` — the long soak. `npm run soak -- 2000000`.
+
+A failure prints the invariant, the seed, and a full replay (config, hole cards,
+board, every action), so it is reproducible from the message alone.
 
 ## How it works
 

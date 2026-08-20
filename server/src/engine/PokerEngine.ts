@@ -432,8 +432,7 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   // summed and added to the main (first) pot, contested by all eligible players.
   const getInvestment = (p: SeatPlayer) =>
     Math.max(0, (p.totalInvested ?? p.bet ?? 0) - (p.deadInvested ?? 0));
-  const deadTotal =
-    Math.round(players.reduce((s, p) => s + (p.deadInvested ?? 0), 0) * 100) / 100;
+  const deadTotal = Math.round(players.reduce((s, p) => s + (p.deadInvested ?? 0), 0) * 100) / 100;
   const allContributors = players.filter((p) => getInvestment(p) > 0);
 
   // No live money at all (e.g. everyone folded to dead antes): the dead money
@@ -448,6 +447,28 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   );
   const pots: Pot[] = [];
   let previousLevel = 0;
+  // 2026-08-20 (chip-conservation property test, D24): money contributed at a
+  // level where EVERY contributor has since folded. The old code hit the
+  // `eligiblePlayers.length > 0` guard and silently dropped that level, so the
+  // returned pots no longer summed to the actual pot.
+  //
+  //   4-handed, seats 4 and 5 both raise-call to 1281.48 while seats 1 and 2
+  //   are all-in for less. Both then fold on the flop. Their top level —
+  //   (1281.48 - 811.33) x 2 = 940.30 — had no live claimant, so calculatePots
+  //   returned 2988.51 against a pot of 3928.81. Found by ChipConservation
+  //   property test seeds 99 and 105 (0.7% of random hands).
+  //
+  // The chips were not lost: completeHand scales the winners up to state.pot,
+  // so the table stayed conserved. But that scaling spreads the orphan across
+  // EVERY pot's winner in proportion to their award, which is arbitrary when
+  // side pots have different winners. Uncontested dead money belongs to the
+  // main pot, exactly like an ante — so it is added there instead, and the
+  // partition sums to the pot by construction again.
+  //
+  // Note the unique-top-contributor case never reaches here: returnUncalledBet
+  // refunds that player before completeHand calls this. Only a TIE at the top
+  // where all of the tied players fold can orphan a level.
+  let orphaned = 0;
 
   for (const level of sortedInvestments) {
     if (level === 0) continue;
@@ -460,9 +481,19 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
         amount: contribution * totalContributors,
         eligiblePlayers: eligiblePlayers.map((p) => p.user_id),
       });
+    } else if (totalContributors > 0) {
+      orphaned = Math.round((orphaned + contribution * totalContributors) * 100) / 100;
     }
     previousLevel = level;
   }
+
+  if (orphaned > 0 && pots.length > 0) {
+    pots[0].amount = Math.round((pots[0].amount + orphaned) * 100) / 100;
+    orphaned = 0;
+  }
+  // No live-contested pot at all — the orphan joins the dead money below,
+  // contested by whoever is still in the hand.
+  const deadPool = Math.round((deadTotal + orphaned) * 100) / 100;
 
   // Dead money gets its OWN pot at the bottom of the stack, contested by every
   // non-folded player who put anything in — live or dead.
@@ -487,18 +518,18 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
   // dead pot has the same eligible set as pots[0] and the merge step below
   // folds the two back together — so the common case is byte-for-byte what it
   // was, and only the dead-money-only case changes.
-  if (pots.length > 0 && deadTotal > 0) {
+  if (pots.length > 0 && deadPool > 0) {
     const deadEligible = activePlayers.filter((p) => (p.totalInvested ?? p.bet ?? 0) > 0);
     pots.unshift({
-      amount: deadTotal,
+      amount: deadPool,
       eligiblePlayers: deadEligible.map((p) => p.user_id),
     });
   }
 
   // Merge pots with identical eligible players
   if (pots.length === 0) {
-    return deadTotal > 0
-      ? [{ amount: deadTotal, eligiblePlayers: activePlayers.map((p) => p.user_id) }]
+    return deadPool > 0
+      ? [{ amount: deadPool, eligiblePlayers: activePlayers.map((p) => p.user_id) }]
       : [];
   }
   const merged: Pot[] = [pots[0]];

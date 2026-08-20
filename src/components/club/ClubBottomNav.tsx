@@ -38,7 +38,12 @@ export default function ClubBottomNav({
   }, []);
 
   useEffect(() => {
-    const items = ['messages', 'players', 'cashier', 'data', 'admin'];
+    // Dan 2026-08-20: Marketplace added. This list only drives the staggered
+    // fade-in indices, but it MUST stay in sync with the links rendered below —
+    // an item missing from here never gets its index added to visibleItems, so
+    // it stays at opacity:0 forever. A nav tab that renders invisible is worse
+    // than one that is absent.
+    const items = ['messages', 'players', 'cashier', 'marketplace', 'data', 'admin'];
     staggerTimersRef.current.forEach((t) => clearTimeout(t));
     staggerTimersRef.current = items.map((_, i) =>
       setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
@@ -131,6 +136,7 @@ export default function ClubBottomNav({
     if (path.includes('/messages')) return 'messages';
     if (path.includes('/players') || path.includes('/members')) return 'players';
     if (path.includes('/cashier')) return 'cashier';
+    if (path.includes('/marketplace')) return 'marketplace';
     if (path.includes('/dashboard') || path.includes('/data')) return 'data';
     if (path.includes('/settings') || path.includes('/admin')) return 'admin';
     return 'messages'; // default
@@ -193,13 +199,32 @@ export default function ClubBottomNav({
           <span className={styles.label}>Cashier</span>
         </Link>
 
+        {/* Marketplace (Dan 2026-08-20).
+            /marketplace is a top-level route, not a club-scoped one — there is
+            no /clubs/:clubId/marketplace — so this links to the real path
+            rather than inventing a nested one that would 404. */}
+        <Link
+          to="/marketplace"
+          className={`${styles.navItem} ${activeTab === 'marketplace' ? styles.active : ''}`}
+          style={{
+            opacity: visibleItems.has(3) ? 1 : 0,
+            transform: visibleItems.has(3) ? 'translateY(0)' : 'translateY(8px)',
+            transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          }}
+        >
+          <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zM12 18H6v-4h6v4z" />
+          </svg>
+          <span className={styles.label}>Market</span>
+        </Link>
+
         {/* Data/Dashboard */}
         <Link
           to={`/clubs/${clubId}/dashboard`}
           className={`${styles.navItem} ${activeTab === 'data' ? styles.active : ''}`}
           style={{
-            opacity: visibleItems.has(3) ? 1 : 0,
-            transform: visibleItems.has(3) ? 'translateY(0)' : 'translateY(8px)',
+            opacity: visibleItems.has(4) ? 1 : 0,
+            transform: visibleItems.has(4) ? 'translateY(0)' : 'translateY(8px)',
             transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >
@@ -215,20 +240,20 @@ export default function ClubBottomNav({
             Admin tab into /settings. That also made the `userRole` prop dead
             and `.navItem.disabled` dead CSS. */}
         {hasAdminAccess && (
-        <Link
-          to={`/clubs/${clubId}/settings`}
-          className={`${styles.navItem} ${activeTab === 'admin' ? styles.active : ''}`}
-          style={{
-            opacity: visibleItems.has(4) ? 1 : 0,
-            transform: visibleItems.has(4) ? 'translateY(0)' : 'translateY(8px)',
-            transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-          </svg>
-          <span className={styles.label}>Admin</span>
-        </Link>
+          <Link
+            to={`/clubs/${clubId}/settings`}
+            className={`${styles.navItem} ${activeTab === 'admin' ? styles.active : ''}`}
+            style={{
+              opacity: visibleItems.has(5) ? 1 : 0,
+              transform: visibleItems.has(5) ? 'translateY(0)' : 'translateY(8px)',
+              transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+            }}
+          >
+            <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+            </svg>
+            <span className={styles.label}>Admin</span>
+          </Link>
         )}
       </div>
     </nav>

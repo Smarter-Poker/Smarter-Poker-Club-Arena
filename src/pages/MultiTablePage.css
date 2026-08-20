@@ -325,6 +325,146 @@
 }
 
 /* ── In-tab tournament drill-down (Dan 2026-08-19) ──────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAKE SEAT BAR (Dan 2026-08-20)
+   ─────────────────────────────────────────────────────────────────────────────
+   Shown at the top of the in-tab lobby whenever a live table tab exists. The
+   global LiveTablesBar dock does not cover this case — dockStateFor returns
+   'none' while the table container is VISIBLE, and the in-tab lobby is the
+   visible container — so a player who opened the lobby from the in-table "+"
+   had no way back to their seat but to find the right tab, possibly with a
+   fold-out clock running.
+
+   Sticky, not fixed: .multi-table-page__lobby-tab is the scroll container, and
+   `position: fixed` inside the transformed swipe track resolves against the
+   track rather than the viewport — the same trap already documented above for
+   ClubBottomNav, which measured at y=3870 before it was made sticky.
+   ───────────────────────────────────────────────────────────────────────────── */
+.multi-table-page__take-seat {
+  position: sticky;
+  top: 0;
+  z-index: 70; /* above the back-pill (60) so it is never overlapped */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, rgba(14, 20, 28, 0.97) 0%, rgba(10, 14, 20, 0.97) 100%);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.28);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.multi-table-page__take-seat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.multi-table-page__take-seat-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4ade80;
+}
+
+.multi-table-page__take-seat-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #dfe6ef;
+  /* Table names run long ("Union Late Night Turbo (NLH)") and must not wrap
+     this bar onto a second line — it is pinned above the lobby and every extra
+     row is a row of games the player cannot see. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multi-table-page__take-seat-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.4);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.multi-table-page__take-seat-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.55);
+}
+
+.multi-table-page__take-seat-btn:active {
+  transform: translateY(0);
+}
+
+.multi-table-page__take-seat-btn:focus-visible {
+  outline: 2px solid rgba(16, 185, 129, 0.9);
+  outline-offset: 2px;
+}
+
+.multi-table-page__take-seat-clock {
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.32);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+}
+
+/* It is the player's turn somewhere: a fold-out clock is running, so this
+   stops being a convenience and becomes the most important thing on screen. */
+.multi-table-page__take-seat--urgent {
+  border-bottom-color: rgba(239, 68, 68, 0.55);
+  animation: mtpTakeSeatUrgent 1.4s ease-in-out infinite;
+}
+
+.multi-table-page__take-seat--urgent .multi-table-page__take-seat-label {
+  color: #fca5a5;
+}
+
+.multi-table-page__take-seat--urgent .multi-table-page__take-seat-btn {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.5);
+}
+
+@keyframes mtpTakeSeatUrgent {
+  0%,
+  100% {
+    background: linear-gradient(180deg, rgba(40, 14, 18, 0.97) 0%, rgba(24, 10, 14, 0.97) 100%);
+  }
+  50% {
+    background: linear-gradient(180deg, rgba(66, 18, 24, 0.97) 0%, rgba(40, 12, 18, 0.97) 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .multi-table-page__take-seat--urgent {
+    animation: none;
+    background: linear-gradient(180deg, rgba(60, 16, 22, 0.97) 0%, rgba(36, 12, 16, 0.97) 100%);
+  }
+}
+
+/* The tournament drill-in renders the take-seat bar in normal flow AND an
+   absolutely-positioned back-pill at top:10px. Push the pill clear of the bar
+   so the two do not stack on the same pixels. */
+.multi-table-page__lobby-tab--tournament .multi-table-page__lobby-back {
+  top: 62px;
+}
+
 /* Floating "back to lobby" pill shown while a lobby tab renders
    TournamentDetails in place. Matches the tab bar's dark glass + cyan accent. */
 .multi-table-page__lobby-back {

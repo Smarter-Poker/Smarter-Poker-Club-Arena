@@ -81,7 +81,14 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  flex: 1;
+  /* `flex: 1` alone is `1 1 0%` with an AUTO min-width, and a flex item refuses
+     to shrink below its content — so with 6 tabs on a 375px phone (Msgs,
+     Players, Cashier, Market, Data, Admin) the row overflowed instead of
+     dividing. min-width:0 lets each cell take its true 1/6 and hand the
+     overflow to the label's existing ellipsis. Added 2026-08-20 with the
+     Marketplace tab, which is what pushed staff from five tabs to six. */
+  flex: 1 1 0;
+  min-width: 0;
   padding: 8px 4px;
   text-decoration: none;
   color: rgba(255, 255, 255, 0.5);
@@ -154,6 +161,29 @@
   text-overflow: ellipsis;
   max-width: 100%;
   text-align: center;
+}
+
+/* Six tabs on a narrow phone. At 375px each cell is ~58px wide and the
+   horizontal margin/padding eats 16 of them, so "CASHIER" and "PLAYERS" hit
+   the ellipsis and read as "CASHI…". Tightening the gutters below 400px buys
+   back the characters instead of shortening the words — the house rule is
+   short labels precisely because this row truncates (CLAUDE.md §9). */
+@media (max-width: 400px) {
+  .navItem {
+    margin: 0 1px;
+    padding: 8px 2px;
+    gap: 3px;
+  }
+
+  .label {
+    font-size: 9px;
+    letter-spacing: 0.2px;
+  }
+
+  .icon {
+    width: 21px;
+    height: 21px;
+  }
 }
 
 /* Notification badge */

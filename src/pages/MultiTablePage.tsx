@@ -721,9 +721,81 @@ export default function MultiTablePage() {
     );
   }, []);
 
+  /**
+   * ─── TAKE SEAT (Dan 2026-08-20) ─────────────────────────────────────────
+   * "when you are already sitting at a table but hit the + button to add
+   *  another game and you are inside the lobby, there needs to be a 'take
+   *  seat' button at the top of the page."
+   *
+   * The global LiveTablesBar dock covers the case where the player NAVIGATES
+   * AWAY from the table container — but dockStateFor returns 'none' whenever
+   * the container is visible (`if (!hidden) return { kind: 'none' }`), and the
+   * in-tab lobby IS the container, visible, on /table/*. So the one route into
+   * the lobby that a seated player takes most often — the in-table "+" — was
+   * exactly the route with no way back to their seat except finding the right
+   * tab in the tab bar. Their hand can be running while they look.
+   *
+   * Rendered only when a live table tab actually exists; on a lobby tab that
+   * is the player's only tab there is no seat to take and no bar.
+   */
+  const takeSeatTarget = (() => {
+    const live = tables.filter((t) => !isLobbyTab(t));
+    if (live.length === 0) return null;
+    // Same preference order as the global dock, for one reason: a player who
+    // has learnt what "return" does at the dock must not find it means
+    // something different here. Turn first (a fold-out clock is running),
+    // then the tab they were last on, then the oldest.
+    const urgent = live
+      .filter((t) => t.isMyTurn)
+      .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
+    const target = urgent ?? live.find((t) => t.id === lastActiveTableIdRef.current) ?? live[0];
+    return {
+      target,
+      isUrgent: Boolean(urgent),
+      seconds: urgent ? secondsLeft(urgent) : undefined,
+      liveCount: live.length,
+    };
+  })();
+
+  const renderTakeSeatBar = () => {
+    if (!takeSeatTarget) return null;
+    const { target, isUrgent, seconds, liveCount } = takeSeatTarget;
+    return (
+      <div
+        className={`multi-table-page__take-seat${isUrgent ? ' multi-table-page__take-seat--urgent' : ''}`}
+      >
+        <div className="multi-table-page__take-seat-info">
+          <span className="multi-table-page__take-seat-label">
+            {isUrgent ? 'Your turn' : liveCount > 1 ? `${liveCount} games running` : 'Game running'}
+          </span>
+          <span className="multi-table-page__take-seat-name">{target.name}</span>
+        </div>
+        <button
+          type="button"
+          className="multi-table-page__take-seat-btn"
+          onClick={() => {
+            const idx = tables.findIndex((t) => t.id === target.id);
+            if (idx !== -1) setActiveIndex(idx);
+          }}
+        >
+          Take Seat
+          {isUrgent && seconds !== undefined && (
+            <span className="multi-table-page__take-seat-clock">{seconds}s</span>
+          )}
+        </button>
+      </div>
+    );
+  };
+
   const renderLobbyTab = (table: TableInstance) =>
     table.lobbyTournamentId ? (
-      <div className="multi-table-page__lobby-tab">
+      // Drilling into a tournament from the in-tab lobby strands the player
+      // exactly as the lobby itself did, so the bar rides along. It renders in
+      // normal flow above the details page; the back-pill is absolute at
+      // top:10px and would otherwise sit on top of it, so that branch offsets
+      // the pill (see .multi-table-page__lobby-tab--tournament in the CSS).
+      <div className="multi-table-page__lobby-tab multi-table-page__lobby-tab--tournament">
+        {renderTakeSeatBar()}
         <button
           className="multi-table-page__lobby-back"
           onClick={() => clearLobbyTournament(table.id)}
@@ -734,6 +806,7 @@ export default function MultiTablePage() {
       </div>
     ) : (
       <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
+        {renderTakeSeatBar()}
         {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
       </div>
     );

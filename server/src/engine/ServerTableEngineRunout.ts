@@ -48,6 +48,43 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected actionSettleMs = 650;
 
   /**
+   * Dan 2026-08-20: the beat a freshly dealt board gets before the first
+   * postflop actor goes on the clock. HandController deals the street and
+   * emits TURN_CHANGE in the same synchronous call, so without this the reveal
+   * raced the next action.
+   *
+   * Sized for the worst case, the flop: it lands (ccFlopLand 300ms) and only
+   * then fans open (ccFlopFanOpen 420ms, starting ~520ms in) — ~940ms of
+   * animation — plus a beat to actually read the board.
+   */
+  protected streetSettleMs = 1400;
+
+  /**
+   * Dan 2026-08-20: the beat between hands turning face up at showdown and the
+   * pot shipping. completeHandInner() emits SHOWDOWN and WINNERS in the SAME
+   * tick, so the reveal had zero airtime before the winner lit up and the pot
+   * flew away. Covers cardShowdownFlip (350ms + 120ms second-card stagger) and
+   * leaves time to read the hands. Applied only when 2+ hands actually reached
+   * showdown; a fold-around win has nothing to reveal.
+   */
+  protected showdownSettleMs = 1600;
+
+  /** Wall-clock stamp of the last street dealt — see streetSettleMs. */
+  protected lastStreetDealtAtMs = 0;
+
+  /**
+   * Dan 2026-08-20: the beat between the hand being dealt and the first player
+   * going on the clock. The deal is the longest animation at the table — 12
+   * cards on an 80ms stagger with a 320ms flight (~1.2s) — and the blinds fly
+   * for another 400ms after it. Both used to still be in the air when the
+   * first action began.
+   */
+  protected handStartSettleMs = 1500;
+
+  /** Wall-clock stamp of the blinds landing — see handStartSettleMs. */
+  protected lastHandStartAtMs = 0;
+
+  /**
    * ANIMATION AUDIT 2026-08-19: true from the moment an all-in runout begins
    * until the hand completes. While set, broadcastCurrentState reveals every
    * non-folded player's hole cards (ServerTableEngine.ts) — standard poker:

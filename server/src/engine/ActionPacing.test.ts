@@ -31,7 +31,10 @@ describe('every action gets a settle beat before the turn moves on', () => {
     // Every action path — human submit, horse think-timer, pre-action, turn
     // timeout, time-bank expiry, disconnect auto-action — funnels through
     // TURN_CHANGE. One settle here paces all of them and cannot be bypassed.
-    expect(events).toContain('await this.sleep(this.actionSettleMs)');
+    // The settle is a ternary now (hand-start / street / ordinary action all
+    // route through the same await), so assert the await and the fallback.
+    expect(events).toMatch(/await this\.sleep\(/);
+    expect(events).toContain('this.actionSettleMs');
   });
 
   it('the settle beat outlives the 500ms chip slide (cpSlideIn)', () => {
@@ -84,6 +87,46 @@ describe('horses act at human speed — never instantly', () => {
 
   it('the floor is applied as a MAX (a lower decision cannot win)', () => {
     expect(turns).toMatch(/Math\.max\(\s*HORSE_MIN_THINK_MS/);
+  });
+});
+
+describe('the SAME bug class, everywhere it occurs — nothing is superseded in its own tick', () => {
+  const events = read('ServerTableEngineHandEvents.ts');
+  const runout = read('ServerTableEngineRunout.ts');
+  const num = (src: string, name: string) => {
+    const m = src.match(new RegExp(`${name}\\s*=\\s*(\\d+)`));
+    expect(m, `${name} must be defined`).toBeTruthy();
+    return Number(m![1]);
+  };
+
+  it('SHOWDOWN gets airtime before the pot ships', () => {
+    // completeHandInner() emits SHOWDOWN and WINNERS in the same synchronous
+    // call, so without this the reveal, the winner highlight and the pot ship
+    // all landed on one frame.
+    expect(events).toContain('await this.sleep(this.showdownSettleMs)');
+    // Must cover cardShowdownFlip (350ms) + its 120ms second-card stagger.
+    expect(num(runout, 'showdownSettleMs')).toBeGreaterThan(470);
+  });
+
+  it('only pauses for a REAL showdown (a fold win keeps its pace)', () => {
+    expect(events).toContain('this.currentHandShowdownResults.length >= 2');
+  });
+
+  it('a freshly dealt BOARD is revealed before the next player is on the clock', () => {
+    expect(events).toContain('this.lastStreetDealtAtMs = Date.now()');
+    // The flop lands (300ms) then fans open (420ms starting ~520ms in) = ~940ms.
+    expect(num(runout, 'streetSettleMs')).toBeGreaterThan(940);
+  });
+
+  it('the DEAL finishes before the first action of the hand', () => {
+    expect(events).toContain('this.lastHandStartAtMs = Date.now()');
+    // 12 cards on an 80ms stagger + a 320ms flight = ~1.2s, plus 400ms blinds.
+    expect(num(runout, 'handStartSettleMs')).toBeGreaterThan(1200);
+  });
+
+  it('every settle re-checks the hand after sleeping', () => {
+    expect(events).toContain('controllerAtShowdown');
+    expect(events).toContain('controllerAtAction');
   });
 });
 

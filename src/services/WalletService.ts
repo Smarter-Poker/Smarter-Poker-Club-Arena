@@ -18,6 +18,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
 import { reportError } from '../utils/errorReporter';
+import { useUserStore } from '../stores/useUserStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // IDEMPOTENCY (Audit finding M1)
@@ -792,7 +793,29 @@ export const WalletService = {
   /**
    * Get player wallet balance (shorthand for the most common query)
    */
-  async getPlayerBalance(userId: string): Promise<number> {
+  async getPlayerBalance(
+    userId: string,
+    opts?: { clubId?: string | null; tableId?: string | null }
+  ): Promise<number> {
+    // UNION LAW (Dan 2026-08-20): under club-scoped chips a player spends the
+    // chips of the club they entered through, not the global player wallet.
+    // fn_player_spendable_balance resolves this with EXACTLY the same rule the
+    // buy-in uses, so what we display can never disagree with what the
+    // transaction will actually spend. Falls back to the global wallet when
+    // club scoping is off or no club context resolves.
+    try {
+      const clubId = opts?.clubId ?? useUserStore.getState().currentClubId ?? null;
+      const { data, error } = await supabase.rpc('fn_player_spendable_balance', {
+        p_user_id: userId,
+        p_club_id: clubId,
+        p_table_id: opts?.tableId ?? null,
+      });
+      if (!error && data && typeof (data as any).balance !== 'undefined') {
+        return Number((data as any).balance) || 0;
+      }
+    } catch {
+      /* fall through to the legacy wallet read */
+    }
     const wallet = await this.getWallet(userId, 'PLAYER');
     return wallet?.balance ?? 0;
   },

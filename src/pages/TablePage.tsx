@@ -3413,7 +3413,7 @@ export default function TablePage({
                   try {
                     let walBal = 0;
                     if (userId && userId !== 'guest') {
-                      walBal = await WalletService.getPlayerBalance(userId);
+                      walBal = await WalletService.getPlayerBalance(userId, { tableId });
                     }
                     setAddOnPeriod({
                       active: true,
@@ -3716,7 +3716,7 @@ export default function TablePage({
 
         // Load user's Player Wallet balance for buy-in
         if (userId && userId !== 'guest') {
-          const balance = await WalletService.getPlayerBalance(userId);
+          const balance = await WalletService.getPlayerBalance(userId, { tableId });
           setAccountBalance(balance);
 
           // FIX 136: Check 2-hour re-entry restriction from recent cashout
@@ -3972,7 +3972,7 @@ export default function TablePage({
       if (payload.balance !== undefined) {
         setAccountBalance(payload.balance);
       } else {
-        WalletService.getPlayerBalance(userId)
+        WalletService.getPlayerBalance(userId, { tableId })
           .then(setAccountBalance)
           .catch((e) => reportError(e, 'TablePage.balanceSync'));
       }
@@ -5320,9 +5320,7 @@ export default function TablePage({
             collectSeatsTimerRef.current = null;
             applyCollectingChipSeats(Array(finalMask.length).fill(false));
             // See the COMMUNITY_CARDS_DEALT sweep: clear only what we collected.
-            streetBetsRef.current = streetBetsRef.current.map((amt, i) =>
-              finalMask[i] ? 0 : amt
-            );
+            streetBetsRef.current = streetBetsRef.current.map((amt, i) => (finalMask[i] ? 0 : amt));
             setTableState((prev) => ({
               ...prev,
               lastBetAmounts: prev.lastBetAmounts.map((amt, i) => (finalMask[i] ? 0 : amt)),
@@ -5354,13 +5352,10 @@ export default function TablePage({
             // Scaled like the cardFoldOut keyframe it triggers. The showdown
             // result window is 2.6-6.9s server-side, so 2400ms leaves the muck
             // fully visible before the 3s client reset.
-            muckTimerRef.current = setTimeout(
-              () => {
-                muckTimerRef.current = null;
-                setMuckingSeats(loserMask);
-              },
-              2400 * getAnimationSpeed()
-            );
+            muckTimerRef.current = setTimeout(() => {
+              muckTimerRef.current = null;
+              setMuckingSeats(loserMask);
+            }, 2400 * getAnimationSpeed());
           }
         }
         // Bible V8 §5.1 — winner display persists 2.5–3s before the table

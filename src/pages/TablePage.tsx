@@ -357,7 +357,14 @@ import {
   rotateSeatsForHero,
   seatPixelMap,
 } from '../lib/tableSeatGeometry';
-import { resolveSkin, resolveBackground } from '../lib/tableTheme';
+import {
+  resolveSkin,
+  resolveBackgroundLayers,
+  DEFAULT_TABLE_BACKDROP_COLOR,
+  TABLE_BACKGROUND_SIZE,
+  TABLE_BACKGROUND_POSITION,
+  TABLE_BACKGROUND_REPEAT,
+} from '../lib/tableTheme';
 import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
 import { useUserStore } from '../stores/useUserStore';
 
@@ -6885,10 +6892,16 @@ export default function TablePage({
         // Dan 2026-08-18: the blurred-skin backdrop is GONE ("remove the
         // weird images around the table"). The page shows one of the ten
         // designed, interchangeable backgrounds instead.
-        backgroundImage: `url(${resolveBackground(v8Theme.background_id || 'midnight')})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
+        //
+        // Dan 2026-08-20: "EVERY SINGLE TABLE NEEDS A BACKGROUND... IT SHOULD
+        // NEVER BE BLANK." The selected artwork is layered OVER a pure-CSS
+        // designed backdrop, so a 404 / decode failure / slow first paint can
+        // no longer leave the page empty — see lib/tableTheme.
+        backgroundColor: DEFAULT_TABLE_BACKDROP_COLOR,
+        backgroundImage: resolveBackgroundLayers(v8Theme.background_id),
+        backgroundSize: TABLE_BACKGROUND_SIZE,
+        backgroundPosition: TABLE_BACKGROUND_POSITION,
+        backgroundRepeat: TABLE_BACKGROUND_REPEAT,
       }}
     >
       <style>{`

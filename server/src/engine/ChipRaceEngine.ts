@@ -114,9 +114,30 @@ export class ChipRaceEngine {
     const totalNewChips = Math.floor(totalFractionalCollected / newDenomination);
     let remainingChips = totalNewChips;
 
+    /**
+     * A9 FIX (2026-08-20): make the chip race an actual race.
+     *
+     * The lottery value was `fractionalChips * 1000 + secureRandomInt(1000)`.
+     * The deterministic term dominates the random one by construction, so a
+     * player holding 500 fractional chips scored 500,000-500,999 and one
+     * holding 499 scored 499,000-499,999: the larger holding ALWAYS won. Chance
+     * only ever broke ties between players with an identical fraction. A player
+     * one chip short could never beat a player one chip ahead, in any race, ever
+     * — which is a ranking, not a lottery, and not what a chip race is.
+     *
+     * The standard method deals one card per fractional chip and the highest
+     * card wins: more chips means better ODDS, never a guarantee. That is
+     * exactly "draw N uniforms, keep your highest", and the maximum of N
+     * uniforms on (0,1) has CDF x^N — so drawing a single uniform u and taking
+     * u^(1/N) is the identical distribution at one draw per player instead of
+     * one per chip. Same fairness, no 9,000-syscall race.
+     */
     const playersWithFractions = players.filter((p) => p.fractionalChips > 0);
+    const LOTTERY_PRECISION = 1_000_000;
     for (const player of playersWithFractions) {
-      player.lotteryValue = player.fractionalChips * 1000 + secureRandomInt(1000);
+      // u in (0,1] — never 0, so a player can never be handed a guaranteed loss.
+      const u = (secureRandomInt(LOTTERY_PRECISION) + 1) / LOTTERY_PRECISION;
+      player.lotteryValue = Math.pow(u, 1 / player.fractionalChips);
     }
 
     playersWithFractions.sort((a, b) => b.lotteryValue - a.lotteryValue);

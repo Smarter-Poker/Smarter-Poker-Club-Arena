@@ -801,11 +801,42 @@ export class TournamentRecurringService {
         const existing = await this.getActiveCount(config.type, config.name);
         if (existing > 0) continue;
 
-        const result = await this.createTournament(config);
-        if (result.tournamentId) {
-          console.log(
-            `[TournamentRecurring] Launched: "${config.name}" (${result.registered} horses)`
-          );
+        /**
+         * A9 FIX (2026-08-20): the check above is a TOCTOU and always was.
+         *
+         * Two overlapping ticks — or two engine containers — both read zero and
+         * both create. Nothing in the database said "only one of these at a
+         * time", so this guard was advisory. It fires in production: over one
+         * week "Coffee Break Freeroll (PLO4)" was created twice 2.6 SECONDS
+         * apart.
+         *
+         * A partial unique index now backs it —
+         * uq_scheduled_tournament_one_live_per_name on
+         * (tournament_type, name) where the status is pre-start and the type is
+         * MTT/XMTT — so the loser of a race gets a rejected insert instead of a
+         * duplicate scheduled event. That is a benign, EXPECTED outcome here,
+         * not an error: the other racer created the tournament we wanted. Log it
+         * quietly and move on rather than reporting it as a failure.
+         *
+         * SNG and SPIN are deliberately outside the index: they are on-demand
+         * formats that legitimately run many same-named instances at once.
+         */
+        try {
+          const result = await this.createTournament(config);
+          if (result.tournamentId) {
+            console.log(
+              `[TournamentRecurring] Launched: "${config.name}" (${result.registered} horses)`
+            );
+          }
+        } catch (createErr: any) {
+          const msg = String(createErr?.message ?? createErr ?? '');
+          if (createErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
+            console.log(
+              `[TournamentRecurring] "${config.name}" was created concurrently — skipping (this is the duplicate guard working)`
+            );
+            continue;
+          }
+          throw createErr;
         }
       }
     } catch (err: any) {

@@ -260,3 +260,50 @@ describe('a table move must never leave a player holding two live seats', () => 
     expect(code(MANAGER)).toMatch(/Move_dest_seat_write_false_negative/);
   });
 });
+
+describe('seating a tournament twice must not build a second set of tables', () => {
+  /**
+   * start() calls createTablesAndSeatPlayers BEFORE the
+   * "only REGISTERING -> RUNNING" status guard, so calling it on a tournament
+   * that was already RUNNING created a whole second set of tables and re-seated
+   * the field, leaving the originals live.
+   *
+   * Production 2026-08-20: "5 Chip Turbo SNG 6-Max NLH" held THREE tables all
+   * named "Table 1" (20:20:53 real, 20:33:58 and 20:34:04 duplicates), six
+   * players seated twice at tables dealing concurrently, 18,000 chips against
+   * 9,000 issued.
+   */
+  it('adopts tables the tournament already has instead of recreating them', () => {
+    const src = code(BASE);
+    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    expect(fn).toMatch(/existingTables/);
+    expect(fn).toMatch(/tablesToCreate/);
+  });
+
+  it('creates only the shortfall, never a full second set', () => {
+    const src = code(BASE);
+    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    // the create loop must be bounded by the shortfall, not by numTables alone
+    expect(fn).toMatch(/Math\.max\(0,\s*numTables\s*-\s*alreadyHave\)/);
+  });
+
+  it('never re-seats a player who already holds a live seat', () => {
+    const src = code(BASE);
+    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    expect(fn).toMatch(/alreadySeated/);
+    // Anchored to the INSERT itself, not to a slice that runs to end of file:
+    // the row written must come from the filtered list, and must NOT come from
+    // the unfiltered one. (The looser version of this guard passed when the
+    // filter was deleted -- caught by mutation testing.)
+    const ins = fn.slice(fn.indexOf("from('table_seats').insert("));
+    const row = ins.slice(0, ins.indexOf('});'));
+    expect(row).toContain('toSeat[i].user_id');
+    expect(row).not.toContain('players[i].user_id');
+  });
+
+  it('gives a new seat the lowest FREE seat number so it cannot collide', () => {
+    const src = code(BASE);
+    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    expect(fn).toMatch(/while\s*\(taken\.has\(seatNumber\)\)/);
+  });
+});

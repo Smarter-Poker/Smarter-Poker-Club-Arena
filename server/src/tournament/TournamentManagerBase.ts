@@ -889,6 +889,37 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * IDEMPOTENT SEATING 2026-08-20.
+   *
+   * This used to INSERT a fresh set of tables every time it was called, and
+   * seat the whole field into them, with no regard for tables the tournament
+   * already had. start() calls it BEFORE the "only REGISTERING -> RUNNING"
+   * status guard, so calling start() on a tournament that was already RUNNING
+   * built a complete SECOND set of tables and re-seated everybody, leaving the
+   * original tables live and seated.
+   *
+   * Measured in production 2026-08-20: "5 Chip Turbo SNG 6-Max NLH" held THREE
+   * tables all named "Table 1" -- the real one from 20:20:53 (22 hands, dead
+   * after the restart) plus duplicates at 20:33:58 and 20:34:04, each with six
+   * live seats. Six players were seated twice, at tables dealing hands
+   * concurrently with diverging stacks, so the field held 18,000 chips against
+   * 9,000 issued. fn_tournament_chip_conservation_check flagged it at exactly
+   * 2x.
+   *
+   * The duplicate seats also poison every "find this player's seat" lookup --
+   * the chip sync and process_tournament_rebuy both have to choose one row.
+   *
+   * So the function now adopts what already exists:
+   *   - tables the tournament already has are registered, not recreated;
+   *   - only the SHORTFALL is created;
+   *   - players who already hold a live seat are not re-seated;
+   *   - new seats take the lowest free seat number on their table rather than
+   *     a computed one that could collide with an occupied seat.
+   *
+   * Calling it twice is now a no-op, which is the property the boot path
+   * needed all along.
+   */
   protected async createTablesAndSeatPlayers(tournament: any): Promise<void> {
     const { data: players } = await supabase
       .from('tournament_players')
@@ -897,6 +928,44 @@ export abstract class TournamentManagerBase {
       .eq('status', 'playing');
 
     if (!players || players.length === 0) throw new Error('No players');
+
+    // What this tournament ALREADY has.
+    const { data: existingTables } = await supabase
+      .from('tables')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .in('status', ['running', 'waiting'])
+      .order('created_at', { ascending: true });
+
+    const { data: liveSeatRows } = await supabase
+      .from('table_seats')
+      .select('user_id, table_id, seat_number, tables!inner(tournament_id)')
+      .is('left_at', null)
+      .eq('tables.tournament_id', this.tournamentId);
+
+    const alreadySeated = new Set((liveSeatRows ?? []).map((r: any) => r.user_id));
+    const occupiedSeats = new Map<string, Set<number>>();
+    for (const r of liveSeatRows ?? []) {
+      const row = r as any;
+      if (!occupiedSeats.has(row.table_id)) occupiedSeats.set(row.table_id, new Set());
+      occupiedSeats.get(row.table_id)!.add(row.seat_number);
+    }
+
+    for (const t of existingTables ?? []) {
+      if (this.tableEngines.has(t.id)) continue;
+      const engine = new ServerTableEngine(t.id);
+      engine.setHub(tableStateHub);
+      this.tableEngines.set(t.id, engine);
+      this.gameServer.registerTableEngine(t.id, engine);
+      engine
+        .start()
+        .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Adopted_table_engine_error'));
+    }
+    if ((existingTables ?? []).length > 0) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Adopted ${(existingTables ?? []).length} existing table(s) instead of creating duplicates`
+      );
+    }
 
     // Determine table size based on tournament type
     let maxPerTable = tournament.max_players || 9;
@@ -910,8 +979,10 @@ export abstract class TournamentManagerBase {
       maxPerTable = 9; // Standard MTT tables
     }
     const numTables = Math.ceil(players.length / maxPerTable);
+    const alreadyHave = (existingTables ?? []).length;
+    const tablesToCreate = Math.max(0, numTables - alreadyHave);
 
-    for (let i = 0; i < numTables; i++) {
+    for (let i = alreadyHave; i < alreadyHave + tablesToCreate; i++) {
       const blindStructure = tournament.blind_structure || [];
       const firstLevel = blindStructure[0] || { smallBlind: 10, bigBlind: 20 };
 
@@ -945,23 +1016,37 @@ export abstract class TournamentManagerBase {
       this.tableEngines.set(table.id, engine);
     }
 
-    // Round-robin seat players
+    // Round-robin seat ONLY the players who are not already sitting somewhere
+    // in this tournament. Re-seating a seated player is what produced the
+    // duplicate-seat rows described above.
     const tableIds = [...this.tableEngines.keys()];
-    for (let i = 0; i < players.length; i++) {
+    const toSeat = players.filter((p: any) => !alreadySeated.has(p.user_id));
+    if (toSeat.length < players.length) {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${players.length - toSeat.length} player(s) already seated — seating the remaining ${toSeat.length}`
+      );
+    }
+    for (let i = 0; i < toSeat.length; i++) {
       const tableId = tableIds[i % tableIds.length];
-      const seatNumber = Math.floor(i / tableIds.length) + 1;
+      // Lowest free seat on that table, so a new seat can never collide with
+      // one an adopted table is already using.
+      const taken = occupiedSeats.get(tableId) ?? new Set<number>();
+      let seatNumber = 1;
+      while (taken.has(seatNumber)) seatNumber++;
+      taken.add(seatNumber);
+      occupiedSeats.set(tableId, taken);
 
       const { error: seatErr } = await supabase.from('table_seats').insert({
         table_id: tableId,
-        user_id: players[i].user_id,
+        user_id: toSeat[i].user_id,
         seat_number: seatNumber,
-        stack: players[i].chips || tournament.starting_chips,
+        stack: toSeat[i].chips || tournament.starting_chips,
         joined_at: new Date().toISOString(),
       });
       if (seatErr) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${players[i].user_id.slice(0, 8)}: ${seatErr.message}`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${toSeat[i].user_id.slice(0, 8)}: ${seatErr.message}`
           ),
           'TournamentthistournamentIdslic.Failed_to_seat_playersiuser_id'
         );

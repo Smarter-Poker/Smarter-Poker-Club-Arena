@@ -142,6 +142,13 @@ export function InsuranceModal({
     onEvCashout?.(evCashoutAmount);
   }, [evCashoutAmount, offer.equityPercent, onEvCashout]);
 
+  // Slider grid for the coverage range — see the onChange note on the input.
+  const coverageStep = Math.max(1, Math.floor(offer.maxCoverage / 100));
+  const coverageGridMax = useMemo(() => {
+    if (!(offer.maxCoverage > 0)) return offer.maxCoverage;
+    return Math.floor(offer.maxCoverage / coverageStep) * coverageStep;
+  }, [offer.maxCoverage, coverageStep]);
+
   const presets = useMemo(
     () => [
       { label: '25%', value: Math.trunc(offer.maxCoverage * 0.25) },
@@ -265,9 +272,18 @@ export function InsuranceModal({
                 className="insurance-modal__slider"
                 min={0}
                 max={offer.maxCoverage}
-                step={Math.max(1, Math.floor(offer.maxCoverage / 100))}
+                step={coverageStep}
                 value={coverageAmount}
-                onChange={(e) => setCoverageAmount(parseInt(e.target.value))}
+                /* 2026-08-20: a range input only emits `min + n*step`, so with
+                   a derived step the FULL coverage was often unreachable by
+                   dragging — max 1,055 with step 10 tops out at 1,050 and the
+                   player cannot insure the last 5. Treat the last grid stop as
+                   the true maximum, exactly as the raise and buy-in sliders do. */
+                onChange={(e) => {
+                  const raw = parseInt(e.target.value, 10);
+                  setCoverageAmount(raw >= coverageGridMax ? offer.maxCoverage : raw);
+                }}
+                aria-label={`Insurance coverage amount, up to ${offer.maxCoverage}`}
               />
               <div className="insurance-modal__presets">
                 {presets.map((preset) => (

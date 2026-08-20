@@ -313,6 +313,41 @@ export default function ActionPanel({
     [isPreflop, bigBlind, currentBet, callAmount, pot, minRaise, maxRaise, isPotLimit]
   );
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * 2026-08-20: THE SLIDER COULD NOT REACH ITS OWN MAXIMUM — you could not
+   * shove with it.
+   * ═══════════════════════════════════════════════════════════════════════
+   * `<input type="range">` only produces values on the grid `min + n*step`.
+   * The slider is `min={minRaise} max={maxRaise} step={bigBlind}`, so unless
+   * `maxRaise - minRaise` happens to be an exact multiple of the big blind,
+   * dragging fully right stops SHORT of maxRaise and the browser never emits
+   * it. Four of five realistic tables measured:
+   *
+   *   1/2  min 12  max 200    -> tops out at 200    ok (200-12 is even)
+   *   1/2  min 12  max 187.50 -> tops out at 186    1.50 short
+   *   5/10 min 60  max 431    -> tops out at 430    1 short
+   *   PLO  min 12  cap 47     -> tops out at 46     1 short
+   *   .5/1 min 3   max 63.25  -> tops out at 63     0.25 short
+   *
+   * A stack is only an exact multiple of the blind before the first hand, so
+   * in practice hero could NEVER slide to all-in (or, in pot-limit, to the pot
+   * cap). The `+` button and the presets could still get there, which is
+   * exactly why this survived: the panel looked like it worked. The vertical
+   * slider even printed `maxRaise` as its top cap label — a number its own
+   * control could not produce.
+   *
+   * Fix: keep the step grid (it is what makes dragging feel like chips), and
+   * treat the LAST grid position as maxRaise. Nothing else moves: every lower
+   * position is still exactly where it was.
+   */
+  const sliderStep = bigBlind || 1;
+  const sliderGridMax = useMemo(() => {
+    if (!(maxRaise > minRaise)) return maxRaise;
+    const steps = Math.floor((maxRaise - minRaise) / sliderStep);
+    return Math.round((minRaise + steps * sliderStep) * 100) / 100;
+  }, [minRaise, maxRaise, sliderStep]);
+
   // Track last slider value for haptic snap feedback
   const lastSnapRef = useRef<number>(minRaise);
 
@@ -403,7 +438,9 @@ export default function ActionPanel({
   const handleSliderChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = Number(e.target.value);
-      const val = roundToChip(raw, smallestChip, minRaise, maxRaise);
+      // Top of the grid means "all the way" — see sliderGridMax above.
+      const val =
+        raw >= sliderGridMax ? maxRaise : roundToChip(raw, smallestChip, minRaise, maxRaise);
       setRaiseAmount(val);
 
       // Snap feedback — trigger haptic when crossing a BB boundary
@@ -426,7 +463,10 @@ export default function ActionPanel({
         }
       }
     },
-    [bigBlind, presets]
+    // minRaise / maxRaise / smallestChip / sliderGridMax are all read above;
+    // they were missing here and only stayed correct by accident, because
+    // `presets` happens to change whenever they do.
+    [bigBlind, presets, smallestChip, minRaise, maxRaise, sliderGridMax]
   );
 
   const sliderProgress =
@@ -498,9 +538,9 @@ export default function ActionPanel({
                         cancelAmountEdit();
                       }
                     }}
-                    aria-label="Type exact bet amount"
-                    aria-valuemin={minRaise}
-                    aria-valuemax={maxRaise}
+                    aria-label={`Type exact bet amount, between ${formatChips(
+                      minRaise
+                    )} and ${formatChips(maxRaise)}`}
                   />
                 ) : (
                   <button
@@ -562,7 +602,12 @@ export default function ActionPanel({
                 <button
                   className="raise-preset raise-preset--allin"
                   onClick={handleAllIn}
-                  aria-label="Bet all in"
+                  // Never offer a shove hero is not entitled to make. The
+                  // server would reject it, but a button that produces an
+                  // error toast is a broken button.
+                  disabled={!canAllIn}
+                  title={`All in for ${formatChips(allInThreshold)}`}
+                  aria-label={`Bet all in for ${formatChips(allInThreshold)}`}
                 >
                   ALL IN
                 </button>
@@ -577,12 +622,25 @@ export default function ActionPanel({
               >
                 Back
               </button>
+              {/* 2026-08-20: the confirm button said "Raise N" even when N was
+                  hero's whole stack and handleConfirmRaise was about to
+                  dispatch `allin`. Now that the slider can actually reach the
+                  top (see sliderGridMax), that state is one drag away, and a
+                  button that says Raise while it shoves is the same class of
+                  lie the ALL IN label had. Say which action it is. */}
               <button
-                className="raise-confirm"
+                className={`raise-confirm${
+                  raiseAmount >= allInThreshold ? ' raise-confirm--allin' : ''
+                }`}
                 onClick={handleConfirmRaise}
-                aria-label={`Raise ${formatChips(raiseAmount)}`}
+                aria-label={
+                  raiseAmount >= allInThreshold
+                    ? `All in for ${formatChips(raiseAmount)}`
+                    : `Raise to ${formatChips(raiseAmount)}`
+                }
               >
-                Raise {formatChips(raiseAmount)}
+                {raiseAmount >= allInThreshold ? 'All In' : 'Raise'}{' '}
+                {formatChips(raiseAmount)}
               </button>
             </div>
           </div>
@@ -701,7 +759,13 @@ export default function ActionPanel({
             aria-label="All in"
           >
             <span className="action-btn__label">All In</span>
-            <span className="action-btn__amount">{formatChips(maxRaise)}</span>
+            {/* 2026-08-20: this printed `maxRaise`. In POT-LIMIT maxRaise is
+                the POT CAP, not the stack — so in PLO the button read
+                "All In 47" and the tap shoved 300. handleAllIn was fixed to
+                dispatch allInThreshold in August with the note that "sending
+                an amount that contradicts the action is a trap"; the LABEL
+                kept the trap, and the label is the part the player reads. */}
+            <span className="action-btn__amount">{formatChips(allInThreshold)}</span>
             {isDesktop && <span className="action-btn__shortcut">R</span>}
           </button>
         ) : (

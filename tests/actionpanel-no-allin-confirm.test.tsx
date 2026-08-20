@@ -70,7 +70,10 @@ describe('ActionPanel - bet-sizing panel ALL IN', () => {
     const onAction = vi.fn();
     render(<ActionPanel {...baseProps} canRaise confirmAllIn onAction={onAction} />);
     fireEvent.click(screen.getByLabelText('Open raise panel'));
-    fireEvent.click(screen.getByLabelText('Bet all in'));
+    // 2026-08-20: the label now carries the amount ("Bet all in for 500"),
+    // because in pot-limit the shove and the pot cap are different numbers and
+    // a screen reader was told neither. Match on the prefix.
+    fireEvent.click(screen.getByLabelText(/^Bet all in/));
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction.mock.calls[0][0]).toBe('allin');
     expect(screen.queryByText(/CONFIRM ALL-IN/i)).toBeNull();

@@ -32,6 +32,7 @@ export default function PreActionBar({
 }: PreActionBarProps) {
   // ── Hooks MUST be called unconditionally (React rules-of-hooks) ──────────
   const swipeStartX = useRef<number | null>(null);
+  const suppressNextClickRef = useRef(false);
 
   // Phase 2 T1-08: spec §5.3 — "You can also SLIDE between them (swipe gesture
   // to switch selection)". The active button list is computed dynamically
@@ -57,6 +58,13 @@ export default function PreActionBar({
       if (startX === null) return;
       const dx = e.clientX - startX;
       if (Math.abs(dx) < 40) return; // tap, not swipe — let the button click fire
+      // A swipe that begins and ends on the SAME button still produces a
+      // click, so the gesture would both step the selection and toggle the
+      // button under the finger. Suppress that one click.
+      suppressNextClickRef.current = true;
+      window.setTimeout(() => {
+        suppressNextClickRef.current = false;
+      }, 0);
       const currentIdx = preAction ? visibleOrder.indexOf(preAction) : -1;
       // Swipe left (negative dx) → step right in the row; swipe right → step left.
       const direction = dx < 0 ? 1 : -1;
@@ -79,6 +87,7 @@ export default function PreActionBar({
   }
 
   const handleToggle = (action: PreActionType) => {
+    if (suppressNextClickRef.current) return; // this click is the tail of a swipe
     // If clicking the same action, deselect it
     if (preAction === action) {
       onPreActionChange(null);
@@ -133,7 +142,9 @@ export default function PreActionBar({
       <div className="pre-action-buttons">
         {/* Bible V8 §4.15: auto_fold / auto_check_fold */}
         <button
+          type="button"
           className={`pre-action-btn fold ${preAction === 'fold' ? 'active' : ''}`}
+          aria-pressed={preAction === 'fold'}
           onClick={() => handleToggle('fold')}
           title={
             canCheck ? 'Check if possible, fold if forced to act' : 'Fold when action reaches you'
@@ -146,7 +157,9 @@ export default function PreActionBar({
         {/* Bible V8 §4.15: auto_check */}
         {canCheck && (
           <button
+            type="button"
             className={`pre-action-btn check ${preAction === 'check' ? 'active' : ''}`}
+            aria-pressed={preAction === 'check'}
             onClick={() => handleToggle('check')}
             title="Check when action reaches you"
           >
@@ -158,7 +171,9 @@ export default function PreActionBar({
         {/* FIX 185: Bible V8 §4.15: auto_call — call current bet (distinct from call any) */}
         {!canCheck && currentBet > 0 && (
           <button
+            type="button"
             className={`pre-action-btn call ${preAction === 'call' ? 'active' : ''}`}
+            aria-pressed={preAction === 'call'}
             onClick={() => handleToggle('call')}
             title={`Call ${currentBet} when action reaches you`}
           >
@@ -171,7 +186,9 @@ export default function PreActionBar({
 
         {/* Bible V8 §4.15: auto_call_any — call any bet including subsequent raises */}
         <button
+          type="button"
           className={`pre-action-btn call-any ${preAction === 'callAny' ? 'active' : ''}`}
+          aria-pressed={preAction === 'callAny'}
           onClick={() => handleToggle('callAny')}
           title="Call any bet when action reaches you"
         >

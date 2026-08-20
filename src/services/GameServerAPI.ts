@@ -708,7 +708,6 @@ export default {
   toggleStraddle,
   addChips,
   removeChips,
-  tipDealer,
   getTableState,
   respondToRIT,
   respondToInsurance,
@@ -716,38 +715,3 @@ export default {
   showHand,
   submitDiscard, // FIX 120: Crazy Pineapple
 };
-
-/**
- * Tip the dealer out of the table stack. Server-authoritative, exactly like
- * `removeChips`: the engine reduces its in-memory seat stack and credits the
- * club treasury in one step, and rejects the tip mid-hand.
- *
- * The old client-side path called the `deduct_table_chip_lock` RPC straight
- * from the browser, writing `table_seats.stack` while the engine held a
- * different figure in memory. Settlement then overwrote the DB from memory, so
- * the player got the tip back and the club kept a copy of it.
- *
- * @param tableId Table ID
- * @param amount Tip amount, in chips
- */
-export async function tipDealer(tableId: string, amount: number): Promise<ActionResult> {
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(`${GAME_SERVER_URL}/tipdealer`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ tableId, amount }),
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to tip dealer via GameServerAPI');
-    }
-
-    const data = await res.json();
-    return { success: data.success, error: data.error };
-  } catch (err: any) {
-    console.error(`[GameServerAPI] tipDealer error:`, err);
-    return { success: false, error: err.message || 'Network error' };
-  }
-}

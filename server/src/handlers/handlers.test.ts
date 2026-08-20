@@ -57,7 +57,6 @@ import { handleHeartbeat } from './heartbeat.js';
 import { handlePreaction } from './preaction.js';
 import { handleAddchips } from './addchips.js';
 import { handleWithdrawchips } from './withdrawchips.js';
-import { handleTipdealer } from './tipdealer.js';
 import { handleLeave } from './leave.js';
 import { handleSitout } from './sitout.js';
 import { handleStraddle } from './straddle.js';
@@ -117,14 +116,6 @@ const POST_CASES: HandlerCase[] = [
     body: { tableId: 't1', amount: 100 },
     invoke: (req, res, gs) => handleWithdrawchips(req, res, { gameServer: gs }),
     engineMethod: 'withdrawChips',
-  },
-  {
-    // Dealer tips route through the engine as of 2026-08-20 — the browser used
-    // to hit the deduct_table_chip_lock RPC directly, behind the engine's back.
-    name: 'tipdealer',
-    body: { tableId: 't1', amount: 25 },
-    invoke: (req, res, gs) => handleTipdealer(req, res, { gameServer: gs }),
-    engineMethod: 'tipDealer',
   },
   {
     name: 'sitout',

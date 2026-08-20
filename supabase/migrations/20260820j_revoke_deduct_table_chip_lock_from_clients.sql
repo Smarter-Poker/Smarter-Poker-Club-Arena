@@ -1,3 +1,7 @@
+-- SUPERSEDED 2026-08-20 by 20260820k_remove_dealer_tipping_entirely.sql, which
+-- DROPS deduct_table_chip_lock outright along with the rest of dealer tipping.
+-- Kept because it is already applied in prod. DO NOT RE-APPLY.
+
 -- Applied to prod 2026-08-20 as migration 20260820171145.
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Lock down `deduct_table_chip_lock`.

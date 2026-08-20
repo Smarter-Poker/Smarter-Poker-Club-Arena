@@ -116,7 +116,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   mint: 'Mint',
   settlement: 'Settlement',
   commission: 'Commission',
-  TIP: 'Dealer Tip',
+  // 'TIP' intentionally absent: dealer tipping was removed on 2026-08-20
+  // and no row has ever carried this category. Both readers fall back to the
+  // raw category string, so a legacy row would still render.
   INSURANCE: 'Insurance',
   funding: 'Funding',
   promotion: 'Promotion',
@@ -140,7 +142,6 @@ const CATEGORY_ICONS: Record<string, string> = {
   mint: '◆',
   settlement: '≡',
   commission: '◈',
-  TIP: '♥',
   INSURANCE: '⊕',
   funding: '→',
   promotion: '↑',

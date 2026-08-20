@@ -25,7 +25,6 @@ import BBJInfoModal from '../bbj/BBJInfoModal';
 import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
 import type { ThrowEvent } from '../../services/ThrowableService';
-import TipDealer from './TipDealer';
 import DiamondWalletModal from '../wallet/DiamondWalletModal';
 import CashierModal from './CashierModal';
 import BuyInModal from './BuyInModal';
@@ -203,10 +202,6 @@ export interface TableModalsLayerProps {
   onConfettiComplete: () => void;
   onParticleComplete: () => void;
 
-  // Tip Dealer
-  showTipDealer: boolean;
-  onTipDealer: (amount: number) => void | Promise<void>;
-  onCloseTipDealer: () => void;
 
   // Leave Notice
   leaveNotice: string | null;
@@ -222,8 +217,9 @@ export interface TableModalsLayerProps {
   cashoutMinBuyIn: number;
   buyInProcessingRef: React.MutableRefObject<boolean>;
   onCloseCashier: () => void;
-  onAddChips: (amount: number) => Promise<boolean | void> | boolean | void;
-  onWithdrawChips: (amount: number) => Promise<boolean | void> | boolean | void;
+  /** Must report whether the chips actually moved — see CashierModal.onAddChips. */
+  onAddChips: (amount: number) => Promise<boolean>;
+  onWithdrawChips: (amount: number) => Promise<boolean>;
 
   // Bust Rebuy
   bustRebuyOpen: boolean;
@@ -305,7 +301,7 @@ export interface TableModalsLayerProps {
   };
   rebuyProcessing: boolean;
   /** Resolves false when the add-on was refused — see AddOnModal.onAccept. */
-  onAddOnAccept: () => Promise<boolean | void>;
+  onAddOnAccept: () => Promise<boolean>;
   onAddOnDecline: () => void;
 
   // Tournament Rebuy
@@ -462,9 +458,6 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     onConfettiComplete,
     onParticleComplete,
     // Tip
-    showTipDealer,
-    onTipDealer,
-    onCloseTipDealer,
     // Leave Notice
     leaveNotice,
     onDismissLeaveNotice,
@@ -852,12 +845,6 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       />
 
       {/* Tip Dealer Modal */}
-      <TipDealer
-        isOpen={showTipDealer}
-        onClose={onCloseTipDealer}
-        onTip={onTipDealer}
-        balance={heroStack}
-      />
 
       {/* Leave Table Notice */}
       {leaveNotice && (
@@ -906,11 +893,10 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
       <CashierModal
         isOpen={showCashier}
         onClose={onCloseCashier}
-        // The success flag has to survive this hop — the old wrappers awaited
-        // and then threw the result away, so the cashier could never tell a
-        // refused top-up from a completed one and always closed as if it worked.
-        onAddChips={async (amount: number) => await onAddChips(amount)}
-        onWithdrawChips={async (amount: number) => await onWithdrawChips(amount)}
+        // Passed straight through. Wrapping these in `async (a) => { await f(a) }`
+        // is what threw the success flag away originally.
+        onAddChips={onAddChips}
+        onWithdrawChips={onWithdrawChips}
         currentStack={heroStack}
         accountBalance={accountBalance}
         minBuyIn={safeBB(blinds) * 40}

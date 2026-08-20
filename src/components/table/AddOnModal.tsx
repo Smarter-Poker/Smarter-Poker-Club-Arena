@@ -28,9 +28,10 @@ interface AddOnModalProps {
    * Resolve TRUE when the chips were actually added, FALSE when the purchase
    * was refused. Before 2026-08-20 this was `Promise<void>` and the parent
    * swallowed its own errors, so the modal announced "Add-On Accepted — +N
-   * chips added" on every failed add-on.
+   * chips added" on every failed add-on. Required boolean, not `boolean | void`,
+   * so reverting the parent to a void handler fails the build.
    */
-  onAccept: () => Promise<boolean | void>;
+  onAccept: () => Promise<boolean>;
   onDecline: () => void;
 }
 
@@ -112,9 +113,8 @@ export default function AddOnModal({
       const ok = await onAccept();
       if (timerRef.current) clearInterval(timerRef.current);
       setDecided(true);
-      // Explicit false = refused. `void` (legacy callers) still counts as success.
-      setResult(ok === false ? 'failed' : 'accepted');
-      if (ok === false) {
+      setResult(ok ? 'accepted' : 'failed');
+      if (!ok) {
         setFailureMessage('The add-on was not completed. Your wallet was not charged.');
       }
     } catch (err: any) {

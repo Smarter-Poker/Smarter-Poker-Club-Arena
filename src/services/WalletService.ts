@@ -709,19 +709,20 @@ export const WalletService = {
     return true;
   },
 
-  // NOTE: processDealerTip was REMOVED on 2026-08-20. It called
-  // `deduct_table_chip_lock` from the browser, which wrote `table_seats.stack`
-  // while the authoritative engine held its own figure in memory. The next
-  // settlement overwrote the DB from memory, so the player's stack came back
-  // while `clubs.chip_treasury` kept the tip: the tip MINTED chips. It also
-  // wrote the audit row as a separate, non-atomic step, and that row claimed a
-  // PLAYER wallet debit that had never happened.
+  // NOTE: dealer tipping was REMOVED ENTIRELY on 2026-08-20, by product
+  // decision — Smarter Poker does not have dealers to tip and will not be
+  // adding the feature. Everything that implemented it is gone: this service's
+  // processDealerTip, the TipDealer modal, GameServerAPI.tipDealer, the
+  // POST /tipdealer route, the engine's tipDealer method, and both database
+  // functions (atomic_table_dealer_tip and deduct_table_chip_lock).
   //
-  // Dealer tips now go client -> GameServerAPI.tipDealer -> POST /tipdealer ->
-  // ServerTableEngine.tipDealer -> atomic_table_dealer_tip(), which does the
-  // seat debit, the treasury credit and the audit row in one transaction with
-  // the seat row locked, and is rejected mid-hand. The RPC is granted to
-  // service_role only, so this path cannot be resurrected from the browser.
+  // Kept as a note because the old path was actively dangerous and should not
+  // be recreated from memory: it called deduct_table_chip_lock from the
+  // browser, writing table_seats.stack while the authoritative engine held a
+  // different figure in memory. The next settlement overwrote the DB from
+  // memory, so the player's stack came back while clubs.chip_treasury kept the
+  // tip — it MINTED chips. Verified against prod before removal: zero rows had
+  // ever been written with category 'TIP', so nothing was lost.
 
   // NOTE: processInsurance was removed — insurance is settled server-side by the
   // authoritative engine (it called the non-existent deduct_table_chip_lock RPC

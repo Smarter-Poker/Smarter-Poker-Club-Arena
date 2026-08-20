@@ -35,10 +35,17 @@ export interface CashierModalProps {
   /**
    * Resolve TRUE only when the chips actually moved. Resolving FALSE keeps the
    * modal open with the amount intact so the player can retry or correct it.
-   * `void` is accepted for older callers and is treated as success.
+   *
+   * This is deliberately `Promise<boolean>` and NOT `Promise<boolean | void>`.
+   * The original bug was a handler that resolved `void` on every rejection
+   * path, which the modal could not distinguish from success — so it closed as
+   * if the top-up had worked. On 2026-08-20 that regressed once already, when a
+   * merge reverted TablePage's handlers back to `void` while this file kept the
+   * boolean check: it still compiled, and the bug came back silently. Requiring
+   * the boolean makes that revert a build error instead.
    */
-  onAddChips: (amount: number) => Promise<boolean | void>;
-  onWithdrawChips: (amount: number) => Promise<boolean | void>;
+  onAddChips: (amount: number) => Promise<boolean>;
+  onWithdrawChips: (amount: number) => Promise<boolean>;
   currentStack: number;
   accountBalance: number;
   minBuyIn: number;
@@ -184,11 +191,8 @@ export function CashierModal({
     haptic.medium();
 
     try {
-      const result =
-        activeTab === 'add' ? await onAddChips(amount) : await onWithdrawChips(amount);
-      // Explicit `false` means the engine refused. Anything else (including the
-      // legacy `void`) counts as success.
-      if (result === false) {
+      const ok = activeTab === 'add' ? await onAddChips(amount) : await onWithdrawChips(amount);
+      if (!ok) {
         setSubmitError(
           activeTab === 'add'
             ? 'Those chips were not added. Your wallet was not charged.'

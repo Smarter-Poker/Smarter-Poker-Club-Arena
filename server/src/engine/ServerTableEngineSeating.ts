@@ -196,69 +196,6 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   }
 
   /**
-   * Dealer tip — chips move from the player's TABLE STACK to the club treasury.
-   *
-   * Structurally this is a withdraw that pays the house instead of the wallet,
-   * so it follows exactly the same rules:
-   *
-   *  - Between hands only. Chips that are live in a hand belong to the pot, not
-   *    to the player, and cannot be given away.
-   *  - The engine adjusts its in-memory stack in the same step as the DB write.
-   *    The browser used to call `deduct_table_chip_lock` itself, which wrote
-   *    `table_seats.stack` behind the engine's back — settlement then overwrote
-   *    it from memory, handing the player their chips back while the club kept
-   *    the tip. That minted chips, so the RPC is now engine-only.
-   */
-  public async tipDealer(
-    userId: string,
-    amount: number
-  ): Promise<{ success: boolean; error?: string; newStack?: number }> {
-    const player = this.seatedPlayers.find((p) => p.user_id === userId);
-    if (!player) return { success: false, error: 'Player not seated' };
-
-    const tip = Math.round(Number(amount) * 100) / 100;
-    if (!(tip > 0)) return { success: false, error: 'Invalid tip amount' };
-
-    if (this.handController) {
-      return { success: false, error: 'Cannot tip during a hand' };
-    }
-
-    // Guard here as well as in the RPC so the player gets a clean message
-    // instead of a raw Postgres exception string.
-    if (tip > player.stack) {
-      return { success: false, error: 'Cannot tip more than your table stack' };
-    }
-
-    const { error } = await supabase.rpc('atomic_table_dealer_tip', {
-      p_user_id: userId,
-      p_table_id: this.tableId,
-      p_amount: tip,
-    });
-    if (error) {
-      const msg = String(error.message || '');
-      const clean = /Insufficient table chips/i.test(msg)
-        ? 'Cannot tip more than your table stack'
-        : /Duplicate tip/i.test(msg)
-          ? 'That tip was already placed'
-          : /not seated/i.test(msg)
-            ? 'You are not seated at this table'
-            : 'Tip failed';
-      reportError(error, `ServerTableEngine.${this.tableId}.tipDealer_failed`, {
-        userId,
-        amount: tip,
-      });
-      return { success: false, error: clean };
-    }
-
-    player.stack = Math.round((player.stack - tip) * 100) / 100;
-    this.broadcastCurrentState();
-    console.log(
-      `[ServerTableEngine:${this.tableId}] Dealer tip ${tip} from ${userId} (stack now ${player.stack})`
-    );
-    return { success: true, newStack: player.stack };
-  }
-
-  /**
    * A2 FIX (2026-08-08): deliver pending add-ons from the DURABLE ledger.
    *
    * This used to iterate the in-memory `pendingAddOns` map, apply the chips to

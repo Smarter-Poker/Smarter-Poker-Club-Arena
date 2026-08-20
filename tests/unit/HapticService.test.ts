@@ -15,6 +15,7 @@ import {
   useHaptic,
   haptic,
 } from '../../src/services/HapticService';
+import { __resetVibrationCoalescing } from '../../src/utils/vibrationGate';
 
 describe('HapticService', () => {
   const mockVibrate = vi.fn();
@@ -27,6 +28,14 @@ describe('HapticService', () => {
       configurable: true,
     });
     vi.clearAllMocks();
+    // fireVibration coalesces within a 60ms window and suppresses any pattern
+    // that is not STRONGER than the previous one. Every case in this file runs
+    // inside that window, so without a reset the first heavy/error pattern
+    // silently swallowed the five that followed it — the suite went red on main
+    // and the failures looked like HapticService bugs rather than test bleed.
+    // The gate ships `__resetVibrationCoalescing` for exactly this; it was just
+    // never wired up.
+    __resetVibrationCoalescing();
   });
 
   afterEach(() => {

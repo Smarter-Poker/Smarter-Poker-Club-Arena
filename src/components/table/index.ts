@@ -150,9 +150,8 @@ export type { InsuranceModalProps, InsuranceOffer } from './InsuranceModal';
 export { GameRulesModal } from './GameRulesModal';
 export type { GameRulesModalProps, TableRule } from './GameRulesModal';
 
-// Tip Dealer
-export { TipDealer } from './TipDealer';
-export type { TipDealerProps } from './TipDealer';
+// REMOVED 2026-08-20: TipDealer. Dealer tipping is not a feature of this
+// platform and will not be reintroduced — see the note in WalletService.
 
 // Time Bank
 export { TimeBank } from './TimeBank';

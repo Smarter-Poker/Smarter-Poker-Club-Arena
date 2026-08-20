@@ -23,7 +23,6 @@ export type ModalName =
   | 'playerNotes'
   | 'waitList'
   | 'sitOut'
-  | 'tipDealer'
   | 'insurance'
   | 'leaderboard'
   | 'shareHand'

@@ -71,21 +71,27 @@ describe('CashierModal reports what actually happened', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('treats a legacy void-resolving handler as success', async () => {
+  it('does not treat a void-resolving handler as success', async () => {
+    // The contract is `Promise<boolean>`, enforced by the prop type. This test
+    // pins the RUNTIME half of it: if a handler ever slips back to resolving
+    // `undefined` (which is exactly what the original bug was, and what a merge
+    // reverted TablePage to on 2026-08-20), the cashier must NOT close as
+    // though the chips moved.
     const onClose = vi.fn();
     render(
       <CashierModal
         {...base}
         onClose={onClose}
-        onAddChips={vi.fn().mockResolvedValue(undefined)}
-        onWithdrawChips={vi.fn().mockResolvedValue(undefined)}
+        onAddChips={vi.fn().mockResolvedValue(undefined as unknown as boolean)}
+        onWithdrawChips={vi.fn().mockResolvedValue(undefined as unknown as boolean)}
       />
     );
 
     fireEvent.click(screen.getByText('50%'));
     fireEvent.click(screen.getByRole('button', { name: /^Add / }));
 
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('charges once when Confirm is double-tapped', async () => {

@@ -34,6 +34,20 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   protected allInPreShowdownPauseMs = 1200;
 
   /**
+   * Dan 2026-08-20: the settle beat between a player's action landing and the
+   * next player going on the clock. Applied in the TURN_CHANGE handler, so it
+   * paces EVERY action path — human, horse, pre-action, timeout, time-bank
+   * expiry, disconnect auto-action — with no way for a caller to bypass it.
+   *
+   * 650ms > the 500ms cpSlideIn chip slide, so the wager is fully on the felt
+   * and the action label is readable before the spotlight moves.
+   *
+   * Instance field, not a static, so tests can drive turn ORDER without
+   * spending its real-world seconds.
+   */
+  protected actionSettleMs = 650;
+
+  /**
    * ANIMATION AUDIT 2026-08-19: true from the moment an all-in runout begins
    * until the hand completes. While set, broadcastCurrentState reveals every
    * non-folded player's hole cards (ServerTableEngine.ts) — standard poker:

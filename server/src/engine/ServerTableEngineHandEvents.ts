@@ -116,6 +116,43 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         break;
 
       case 'TURN_CHANGE': {
+        // ═══════════════════════════════════════════════════════════════════
+        // Dan 2026-08-20: "every player's action MUST GO IN TURN. Their action
+        // MUST BE DISPLAYED, an animation MUST PLAY after every decision. NO
+        // action for any horse or player can EVER be skipped or rushed. THE
+        // GAME SPEED NEEDS TO SLOW DOWN TO FEEL MORE REAL — focus on the user
+        // experience rather than getting more hands dealt."
+        //
+        // Every action path in the engine — human submit, horse think-timer,
+        // queued pre-action, turn timeout, time-bank expiry, disconnect
+        // auto-action — ends by advancing the turn, and they ALL funnel
+        // through this one event. Previously the ACTION broadcast and this
+        // TURN_CHANGE went out back to back in the same tick, so the acting
+        // seat's chips (cpSlideIn, 500ms) and its action label had no airtime
+        // before the spotlight, the clock and the next player's animation took
+        // over. With several pre-actions queued, an entire betting round could
+        // resolve in a few milliseconds and read as though players had been
+        // skipped entirely.
+        //
+        // One settle beat here paces EVERY action path at once, and cannot be
+        // bypassed by any individual caller. It is deliberately longer than
+        // the 500ms chip slide so the wager is fully on the felt and readable
+        // before the turn moves on.
+        //
+        // This costs hands/hour. That is the intended trade.
+        if (this.running && this.handController) {
+          const handAtAction = this.handCount;
+          const controllerAtAction = this.handController;
+          await this.sleep(this.actionSettleMs);
+          // The table can be torn down, or the hand replaced, while we settle.
+          if (
+            !this.running ||
+            this.handController !== controllerAtAction ||
+            this.handCount !== handAtAction
+          ) {
+            break;
+          }
+        }
         // ROOT-CAUSE FIX 2026-04-14 (Dan: "I timed out and the engine moved
         // on without giving me a chance to act"). Prior flow broadcast the
         // snapshot and the discrete turn_change event while
@@ -167,7 +204,18 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // carries the correct turn_deadline_ms — no drift versus the old order.
         this.markProgress();
         try {
-          this.handleTurnChange(event, players);
+          // Dan 2026-08-20: handleTurnChange is async now — a queued
+          // pre-action holds a visible beat before it lands. Deliberately NOT
+          // awaited: for an ordinary turn nothing before startTurnTimer yields,
+          // so the clock is still armed synchronously ahead of the broadcast
+          // below, exactly as before. Only the pre-action path suspends, and it
+          // owns its own turn end-to-end. The .catch keeps the shot-clock
+          // fallback reachable for an ASYNC rejection, which the surrounding
+          // try/catch (synchronous throws only) cannot see.
+          void this.handleTurnChange(event, players).catch((err) => {
+            reportError(err, 'ServerTableEngine.' + this.tableId + '.handleTurnChange_rejected');
+            this.forceArmTurnTimer(event.seat, effectiveActionSec);
+          });
         } catch (err) {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.handleTurnChange_threw');
           this.forceArmTurnTimer(event.seat, effectiveActionSec);

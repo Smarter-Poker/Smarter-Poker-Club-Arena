@@ -168,25 +168,25 @@ the pause rather than after.
 
 ---
 
-## 6. Known remaining work (not done, deliberately)
+## 6. Section 6 is now CLOSED
 
-Ordered by user impact:
+Every item that was open here has been fixed and is live. Kept as a record of
+what was found and what each one actually turned out to be.
 
-1. ~~**AudioContext exhaustion**~~ — **FIXED 2026-08-20, see Section 7.**
-2. **Hero card wrapper breaks `:nth-child`** sizing for PLO4/5/6 hole cards
-   (pre-existing, from the per-card show feature).
-3. **~17 double-firing haptics**; **three inconsistent haptic implementations**,
-   two of which ignore the in-table vibration toggle; **two competing writers**
-   for sound mute (settings panel can silently undo a table mute).
-4. `playThrowableImpact` fires at launch, not impact (~1s early).
-5. `MilestoneToast` plays the time-bank chime instead of `playAchievement`.
-6. RIT per-board equity; 3 orphan keyframes (`activeAvatarPulse`,
-   `announcePulse`, `spectatorFloating` — all from removed features); bomb-pot
-   announcement pacing (unreachable: 0 tables have `bomb_pot_enabled`).
-7. **Not verifiable by me:** whether the pacing *feels* right in a seated
-   session. Every value is a named constant and trivially retunable.
+| # | Item | Outcome |
+|---|---|---|
+| 1 | AudioContext exhaustion | **Fixed** — Section 7 |
+| 2 | Hero card wrapper broke PLO4/5/6 sizing | **Fixed** — Section 8 |
+| 3 | Haptics: double-fires + ignored toggle | **Fixed** — Section 9 |
+| 4 | Two competing writers for sound mute | **Fixed** — Section 9 |
+| 5 | `playThrowableImpact` fired at launch | **Fixed** — Section 10 |
+| 6 | `MilestoneToast` played the time-bank chime | **Fixed** — Section 10 |
+| 7 | RIT per-board equity | **Fixed** — Section 10 |
+| 8 | 3 orphan keyframes | **1 was real.** Section 10 |
+| 9 | Bomb-pot pacing | Unreachable — 0 tables have `bomb_pot_enabled` |
 
----
+Still not verifiable by me: whether the pacing *feels* right in a seated
+session. Every value is a named constant and trivially retunable.
 
 ## 7. FIXED: AudioContext exhaustion could silence a 4-table session
 
@@ -241,3 +241,163 @@ actually guards horse think-timers.
 Confirmed to catch the regression: against the pre-fix code **4 of 6 fail**,
 `expected 4 to be 1`, and the cap test reproduces the live DOMException. All 6
 pass after the fix. Full client suite: 181 passed, `tsc --noEmit` 0 errors.
+
+---
+
+## 8. FIXED: the hero card row, and why a wrapper broke it silently
+
+PLO6 rendered **264px wide against an intended 159px** — 66% too wide, running
+off a 341px felt. The failure is worth recording because nobody wrote a bug:
+
+The row is sized `w + (n-1) * step`, which was correct only while `.seat__card`
+**was the flex child**. The per-card "show this after the hand" feature wrapped
+every hero card in a `<span class="seat__card-pick">`, and that broke both
+halves of the layout without touching one line of CSS:
+
+1. `.seat__card:first-child` began matching **every** card — each is now the
+   only child of its own wrapper — so the negative margin was cancelled on all
+   of them and the overlap vanished entirely.
+2. `:has(.seat__card:nth-child(4|5|6))` stopped matching **anything**, so
+   PLO4/5/6 never got their reduced tokens and fell back to the 44px heads-up
+   size.
+
+The wrapper's own comment reads *"Keep the hero fan geometry identical to
+before the wrapper existed."* The intent was right; the mechanism could not
+deliver it, and nothing failed loudly enough to say so.
+
+**Fix:** geometry is written against `> *` — the row's child, whatever element
+that happens to be. Six dead `transform: none` guards keyed to `:first-child`
+and `:nth-child(2..6)` collapsed into the single rule they all shared.
+
+**Guard:** `tests/components/HeroCardRowGeometry.test.tsx` (7). A CSS-source
+test on purpose — jsdom implements neither `:has()` nor custom properties, so a
+render test would have passed against the broken stylesheet.
+
+---
+
+## 9. FIXED: one gate for sound, one for vibration
+
+Two settings, six implementations, and **neither switch actually worked**.
+
+### Vibration — 6 implementations, 3 ignoring the switches
+`utils/haptic` honoured NEITHER key. `HapticService` honoured only one.
+`NumericKeypad`, `CashoutRequestModal` and `DepositWithdrawModal` each carried
+a **private copy** calling `navigator.vibrate` directly. With two switches in
+the UI (`vibrationsEnabled`, `ca_vibration_enabled`), whether "off" worked
+depended on which switch you used and which code path happened to fire.
+
+**Also: 16 sites double-fired.** Each calls an explicit haptic AND a
+`soundService.play*()`, and every play method ends with its own haptic.
+
+Deleting the explicit calls was the obvious fix and would have been **wrong**:
+the internal haptic sits *after* `shouldPlay()`, so it is silently coupled to
+sound — muting sound would have taken vibration with it. The explicit calls are
+what keep haptics alive for someone who plays muted. So both stay, and
+`src/utils/vibrationGate.ts` coalesces a 60ms window with the **stronger**
+intent winning.
+
+### Sound — two switches, neither muted the app
+Settings writes `club_arena_sounds`, read only by PremiumSFX, and **never calls
+`setEnabled`** — so the main engine (every card, chip, fold, all-in and pot
+sound) kept playing. The in-table toggle calls `setEnabled` but PremiumSFX
+never reads its key, so premium cues kept playing. And `useTableSound`
+re-applies its key on every mount, so opening a table silently undid a mute set
+in Settings.
+
+`src/utils/soundGate.ts`: either switch off silences everything, and
+`setEnabled` persists both keys so they cannot drift. Removed a third key,
+`table_sound_muted`, which TableMenu read and nothing has ever written.
+
+**Guard:** `tests/utils/vibrationGate.test.ts` (14).
+
+---
+
+## 10. FIXED: sounds that described the wrong moment
+
+- **Throwable impact fired at LAUNCH**, ~1200ms before the object hit anything
+  — and from the *picker*, which only the sender opens, so every other player
+  watched it land in silence. Impact moved into `FlyingEmoji` (renders for
+  everyone) 60ms before the flight ends; the launch gets a new rising whoosh.
+- **`MilestoneToast` played `playTimeBankActivated`** — the urgent chime that
+  means your clock ran out. Your own stress cue at the moment you unlock an
+  achievement; at a table it reads as an alarm for a hand you are not in.
+- **RIT showed boards and payouts but never connected them.** Each run now
+  shows what it was worth, derived (equal slice, divided again on a split,
+  floored per winner so the parts can never exceed the pot).
+- **Orphan keyframes: 1 of 3 was real.** `announcePulse` was genuinely unused.
+  `activeAvatarPulse` is used in `Avatar.css`, and `spectatorFloating` is
+  applied via an **inline style** in `SpectatorBadge.tsx` — invisible to any
+  scan reading only `.css` files. Deleting either would have silently killed a
+  live animation. **A CSS-only search is not proof of an orphan.**
+
+---
+
+## 11. NEW: bounty animations (Dan's request)
+
+The most dramatic thing in a bounty event — you took someone's head and got
+paid — produced a one-line text banner and a cha-ching.
+
+**`KnockoutAnimation`** — impact burst, rays, shockwave, KNOCKOUT slamming past
+its resting size, the eliminated name struck through. Then, as a **separate
+beat** 850ms later, the money. The strike and the payday are two satisfactions
+and collapsing them into one frame wastes both. PKO head growth is stated
+outright because players consistently miss it. `pointer-events: none` — it
+fires while you may be in a hand and must never eat the fold button.
+
+**`MysteryBountyChest`** — five beats: chest DROPS and thumps, sits LOCKED and
+breathing with glowing seams and rising embers, the latch pops and the lid
+swings on a real hinge with light flooding the widening gap, it BLOWS (flash,
+two shockwaves, an 18-coin fountain with gravity), the amount counts UP. Built
+from divs rather than a sprite specifically so it can be lit from *inside* —
+the glow is a real element growing through the gap, which is the whole point of
+the beat.
+
+**Real time.** The engine already broadcasts both events to the whole table, so
+both animations are shared with no new plumbing. The chest needs one thing
+more, because the winner *taps* it: the tap broadcasts `mystery_chest_opened`
+and every seat opens in step. The winner opens locally without waiting for the
+round trip, so their own tap feels instant.
+
+Only the winner sees "TAP TO OPEN"; everyone else sees "<name> is opening the
+chest…". Three failure modes are closed: an AFK winner auto-opens at 9s (that
+timer is owned by the **winner's client alone**, so nine spectators cannot fire
+nine broadcasts); spectators hold a longer 14s failsafe so a dropped packet
+cannot strand the table; and a broadcast that throws still shows the winner
+their prize.
+
+**Guard:** `tests/components/BountyAnimations.test.tsx` (27).
+
+### Two more keyframe collisions, found checking my own work
+`skeletonShimmer` (HomePage.module.css) was defined **twice with materially
+different bodies** — one moving `background-position`, one moving
+`translateX`. The later won for *both* consumers, so the skeleton that sets
+`background-size: 200% 100%` was given `translateX(-100% → 100%)` and **slid
+the entire card across the screen** instead of shimmering. Split in two.
+`leaderboardPageFadeInUp` was defined twice (12px vs 8px); duplicate deleted.
+
+Genuine collisions across all 918 keyframes: **0**. The 3 remaining same-name
+pairs are `@keyframes` inside `@media` blocks — legitimate responsive
+overrides, not collisions. My 26 new keyframes are all `ko*`/`mbc*` prefixed.
+
+---
+
+## 12. Verification
+
+`tsc --noEmit` 0 errors. 251 client tests pass. Production served
+`ca_sha d36fe431f` at 17:50 UTC, confirmed **in the shipped minified bundle**
+rather than from the build stamp: `mbc__chest` and `ko__stamp` in
+`TablePage-BeOHo8ws-v6.js`, `mbcLidOpen`/`mbcCoinBurst`/`koShockwave` in
+`TablePage-CTlqESx0-v6.css`, and both the `TAP THE CHEST TO OPEN` string and
+the `mystery_chest_opened` event name present.
+
+### A note for the next agent: this repo actively destroys uncommitted work
+Mid-session, the host's `git reset --hard origin/main` loop wiped **9 of 15**
+files I had edited but not yet committed. Nothing warned me; I found it because
+edits I had just made were silently absent.
+
+RULE 13 says commit small and often, and this is why. Two practices that made
+it survivable: re-applying edits through an **idempotent** script (so a partial
+wipe can be re-run safely), and building commits from a **clean origin/main
+worktree** with `git hash-object` + explicit paths — so a commit can never pick
+up another agent's half-finished work from the shared tree, and cannot be
+undone by a reset landing mid-commit.

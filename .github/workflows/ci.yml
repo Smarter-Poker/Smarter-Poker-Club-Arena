@@ -152,6 +152,24 @@ jobs:
       # not the stale migrations. Intentional exceptions live in
       # scripts/ci/supabase-invariants.allowlist.json. Regenerate the manifest with
       # scripts/ci/gen-schema-manifest.mjs when the schema changes.
+      # Non-blocking: the runner may not have imagemagick/pngquant, and a
+      # missing tool must not fail an unrelated commit. It reports loudly when
+      # somebody adds an asset far bigger than the box it renders in — the
+      # arena's first paint was 6.21 MB of images before this existed.
+      - name: Image Budget — critical-path assets fit their render box
+        continue-on-error: true
+        run: |
+          if ! command -v magick >/dev/null || ! command -v pngquant >/dev/null; then
+            echo "imagemagick/pngquant unavailable on this runner — skipping image budget."
+            exit 0
+          fi
+          bash scripts/optimize-arena-images.sh --check | tee /tmp/imgbudget.log
+          {
+            echo "## Image Budget"
+            echo ""
+            sed -e 's/^/    /' /tmp/imgbudget.log
+          } >> $GITHUB_STEP_SUMMARY
+
       - name: Supabase Invariants — Phantom References (tables + RPCs)
         # Credentials let the check ask the LIVE schema before failing, so a
         # manifest that has simply gone stale (schema is applied straight to

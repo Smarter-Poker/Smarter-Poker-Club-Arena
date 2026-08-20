@@ -44,6 +44,7 @@ import {
   fetchQuickLinkClubs,
   fetchClubChipBalances,
   clearClubChipBalanceCache,
+  CHIP_BALANCE_EVENTS,
 } from '../utils/clubQuickLink';
 import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
@@ -183,8 +184,11 @@ export default function CashierPage() {
   const RATE_LIMIT_MS = 2000;
 
   // Connection status: track realtime channel health
+  // Starts 'reconnecting', not 'connected': asserting a healthy live link
+  // before any channel has reported SUBSCRIBED is the same unearned claim the
+  // fabricated AML checklist made.
   const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'reconnecting' | 'error'>(
-    'connected'
+    'reconnecting'
   );
   const [message, setMessage] = useState<{
     type: 'success' | 'error' | 'info';
@@ -290,7 +294,23 @@ export default function CashierPage() {
     return () => {
       live = false;
     };
-  }, [user?.id, clubId, clubChipsNonce, isMounted]);
+  }, [user?.id, clubId, clubChipsNonce]);
+
+  // Any chip movement invalidates the per-club figure. Without this the nonce
+  // was bumped in exactly ONE place (the cashout modal's onComplete), so an
+  // inline cashout, a send or a distribute left `myClubChips` showing the
+  // pre-transaction balance — and the modal's Max button would then prefill an
+  // amount the server rejects. CashierClubSwitcher and ClubQuickLinkTile
+  // already subscribe to the same event group and clear the shared memo; this
+  // page was clearing it only from the modal.
+  useMasterBusSubscriptions(
+    [...CHIP_BALANCE_EVENTS],
+    () => {
+      clearClubChipBalanceCache();
+      setClubChipsNonce((n) => n + 1);
+    },
+    { debounce: 500 }
+  );
   const [loadingTx, setLoadingTx] = useState(false);
   const [txFilter, setTxFilter] = useState('all');
   const [txPage, setTxPage] = useState(1);
@@ -331,7 +351,12 @@ export default function CashierPage() {
     setPendingCashouts([]);
     recipientsCacheRef.current = null;
     setTxPage(1);
-    setLoadingContext(true);
+    // Not knowing the new club's chip balance yet is different from it being
+    // zero: null keeps the cashout Max button from prefilling the PREVIOUS
+    // club's figure during the switch.
+    setMyClubChips(null);
+    setRecipients([]);
+    setClubName('');
   }, [clubId]);
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -809,6 +834,13 @@ export default function CashierPage() {
     event: '*',
     onPayload: handleWalletUpdate,
     enabled: !!user?.id,
+    // Without this a dead wallets/cashouts channel was completely silent: the
+    // page has a degraded-connection banner and a realtimeStatus state, but
+    // only the chip_transactions channel ever drove them. Balances could go
+    // stale with the UI still claiming a live connection.
+    onSubscriptionError: () => {
+      if (isMounted.current) setRealtimeStatus('error');
+    },
   });
 
   // Wallet transactions channel — DISABLED (Phase 2 cost cut).
@@ -831,6 +863,13 @@ export default function CashierPage() {
     event: '*',
     onPayload: handleCashoutUpdate,
     enabled: !!user?.id,
+    // Without this a dead wallets/cashouts channel was completely silent: the
+    // page has a degraded-connection banner and a realtimeStatus state, but
+    // only the chip_transactions channel ever drove them. Balances could go
+    // stale with the UI still claiming a live connection.
+    onSubscriptionError: () => {
+      if (isMounted.current) setRealtimeStatus('error');
+    },
   });
 
   // ── Bus Listeners: instant balance refresh from engine events ──
@@ -904,51 +943,72 @@ export default function CashierPage() {
   );
 
   // Supabase Realtime channel for chip_transactions (cross-device sync)
+  //
+  // Registered with a FACTORY. Previously this called getOrCreateChannel and
+  // subscribed directly, with no registerChannelFactory. MasterBus's 30s health
+  // monitor takes the no-factory branch for such a channel and simply removes
+  // it ("No factory for ... -- removed only"), which also aborts Supabase's own
+  // auto-rejoin. The effect deps never change, so nothing rebuilt it: one
+  // transient error and cross-device chip sync was dead for the whole session.
+  //
+  // The subscribe callback also had no 'CLOSED' case, and removeChannel drives
+  // the channel to CLOSED rather than CHANNEL_ERROR — so realtimeStatus stayed
+  // 'connected' and the degraded-connection banner never appeared. On a money
+  // screen that means a stale balance presented as live.
   useEffect(() => {
     if (!user?.id) return;
-    const chipTxnChannel = masterBus
-      .getOrCreateChannel(`cashier-chip-txns-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'chip_transactions',
-          filter: `from_user_id=eq.${user.id}`,
-        },
-        () => {
-          loadBalances(user.id);
-          loadTransactions();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'chip_transactions',
-          filter: `to_user_id=eq.${user.id}`,
-        },
-        () => {
-          loadBalances(user.id);
-          loadTransactions();
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'SUBSCRIBED') {
-          if (isMounted.current) setRealtimeStatus('connected');
-        }
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'CashierPage._Realtime_channel_error');
-          if (isMounted.current) setRealtimeStatus('error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[CashierPage] Realtime channel timed out');
-          if (isMounted.current) setRealtimeStatus('reconnecting');
-        }
-      });
+    const key = `cashier-chip-txns-${user.id}`;
+    const onRowChange = () => {
+      loadBalances(user.id);
+      loadTransactions();
+    };
+    const subscribeChannel = () =>
+      masterBus
+        .getOrCreateChannel(key)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'chip_transactions',
+            filter: `from_user_id=eq.${user.id}`,
+          },
+          onRowChange
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'chip_transactions',
+            filter: `to_user_id=eq.${user.id}`,
+          },
+          onRowChange
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'SUBSCRIBED') {
+            if (isMounted.current) setRealtimeStatus('connected');
+          }
+          if (status === 'CHANNEL_ERROR') {
+            if (err) reportError(err?.message || err, 'CashierPage._Realtime_channel_error');
+            if (isMounted.current) setRealtimeStatus('error');
+          }
+          if (status === 'CLOSED') {
+            if (isMounted.current) setRealtimeStatus('error');
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[CashierPage] Realtime channel timed out');
+            if (isMounted.current) setRealtimeStatus('reconnecting');
+          }
+        });
+
+    // Factory FIRST, so a channel that dies on its very first subscribe can
+    // still be recovered by the health monitor.
+    masterBus.registerChannelFactory(key, subscribeChannel);
+    subscribeChannel();
     return () => {
-      masterBus.removeRegisteredChannel(`cashier-chip-txns-${user.id}`);
+      masterBus.removeChannelFactory(key);
+      masterBus.removeRegisteredChannel(key);
     };
   }, [user?.id, loadBalances, loadTransactions]);
 
@@ -1249,11 +1309,23 @@ export default function CashierPage() {
             return;
           }
 
-          if (balances.PLAYER.available < value) {
+          // Cashout debits club_members.chip_balance for THIS club
+          // (fn_request_cashout), so it must be checked against the per-club
+          // figure. balances.PLAYER.available is the GLOBAL wallet — using it
+          // here let a player request a cashout the server always rejects, and
+          // blocked one it would have allowed. Send is deliberately left on the
+          // global figure because atomic_chip_transfer really does debit that.
+          if (myClubChips === null) {
+            if (isMounted.current)
+              setMessage({ type: 'error', text: 'Still loading your club balance — try again.' });
+            if (isMounted.current) setIsProcessing(false);
+            return;
+          }
+          if (myClubChips < value) {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
+                text: `Insufficient chips in this club. Available: ${myClubChips.toLocaleString()}`,
               });
             if (isMounted.current) setIsProcessing(false);
             return;
@@ -1316,11 +1388,13 @@ export default function CashierPage() {
     setCashoutConfirm({ show: false, value: 0 });
     setIsProcessing(true);
     try {
-      if (balances.PLAYER.available < value) {
+      // Per-club figure: this is the high-value cashout path and the server
+      // debits club_members.chip_balance.
+      if (myClubChips !== null && myClubChips < value) {
         if (isMounted.current)
           setMessage({
             type: 'error',
-            text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
+            text: `Insufficient chips in this club. Available: ${myClubChips.toLocaleString()}`,
           });
         if (isMounted.current) setIsProcessing(false);
         return;
@@ -2108,8 +2182,15 @@ export default function CashierPage() {
                 ))}
                 {action === 'cashout' && (
                   <button
+                    type="button"
                     className={styles.presetBtn}
-                    onClick={() => setAmount(String(balances.PLAYER.available))}
+                    // Per-club, matching what fn_request_cashout debits. This
+                    // prefilled the GLOBAL wallet figure, which for most users
+                    // is far larger than their balance in this club, so "Max"
+                    // produced an amount the server always rejected. Disabled
+                    // until the club figure is known, rather than offering 0.
+                    disabled={myClubChips === null}
+                    onClick={() => setAmount(String(Math.floor(myClubChips ?? 0)))}
                   >
                     Max
                   </button>

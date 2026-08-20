@@ -18,7 +18,7 @@ import {
   SPIN_SEATS as SPEC_SPIN_SEATS,
   spinTier,
   spinRakeRate,
-} from '../config/spinSpec';
+} from '../config/spinSpec.js';
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';

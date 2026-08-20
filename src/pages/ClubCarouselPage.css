@@ -108,24 +108,10 @@
   font-size: 0.85rem;
 }
 
-.header__menu {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  width: 44px;
-  height: 44px;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.header__menu:hover {
-  transform: translateY(-2px);
-}
+/* .header__menu was removed 2026-08-20. It styled a ≡ button this page no
+   longer renders — /clubs uses the shared GlobalHeader hamburger — and the
+   only thing still referencing the class was an E2E test, which passed by
+   skipping itself when the button it expected was not there. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    WALLET ROW

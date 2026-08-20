@@ -1250,14 +1250,28 @@
   margin-left: 0;
 }
 
+/* Cancel the slice on a card that is NESTED inside a flex child, so the overlap
+   is never applied twice.
+
+   Scoped to `> * .seat__card` on purpose. The obvious form,
+   `.seat__cards--hero .seat__card`, also matches a card that IS the flex child
+   — and at 0-2-0 it out-specifies the `> *` rule above at 0-1-0, so it silently
+   cancelled the overlap on any UNWRAPPED card. A PLO6 row then measured
+   6 x 54 = 324px inside a 320px felt instead of 54 + 5 x 21 = 159px, which
+   hero-card-row.spec.ts caught at desktop (rowLeft 477.99 vs feltLeft 480).
+
+   The comment above this block has claimed since 2026-08-19 that writing the
+   geometry against `> *` makes it "independent of how the card is wrapped".
+   That was only true while the wrapper existed. This is what makes it true. */
+.seat__cards--hero > * .seat__card {
+  margin-left: 0;
+}
+
 .seat__cards--hero .seat__card {
   width: var(--sp-hero-card-w);
   height: var(--sp-hero-card-h);
   border-radius: 6px;
   background: #fff;
-  /* Overlap now lives on the flex child above — a card nested inside a wrapper
-     must not also carry it, or the slice would be applied twice. */
-  margin-left: 0;
   flex: 0 0 auto;
   transform: none;
   /* Dan 2026-08-19, bug list item 4: "cards glitch once before display - all

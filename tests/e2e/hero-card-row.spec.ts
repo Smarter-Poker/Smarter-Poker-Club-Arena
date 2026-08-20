@@ -25,13 +25,33 @@ const css = fs.readFileSync(
   'utf8'
 );
 
-const seatHtml = (n: number) => `
+/* Two markups, because the row geometry has to hold for both.
+ *
+ * WRAPPED is what SeatSlot.tsx emits today: each card sits inside its own
+ * `.seat__card-pick` span (added 2026-08-18 for click-to-show).
+ * BARE is a card that IS the flex child, which is what this harness used to
+ * render exclusively and what the row looked like before the wrapper landed.
+ *
+ * The CSS comment claims the geometry is "independent of how the card is
+ * wrapped". It was not: `.seat__cards--hero .seat__card { margin-left: 0 }`
+ * is 0-2-0 and out-specified the `> *` overlap rule at 0-1-0, so a BARE card
+ * lost its overlap entirely and PLO6 measured 6 x 54 = 324px inside a 320px
+ * felt. Testing only one markup is how that shipped. Test both.
+ */
+type Markup = 'wrapped' | 'bare';
+
+const cardHtml = (markup: Markup) =>
+  markup === 'wrapped'
+    ? '<span class="seat__card-pick"><div class="seat__card seat__card--face"></div></span>'
+    : '<div class="seat__card seat__card--face"></div>';
+
+const seatHtml = (n: number, markup: Markup) => `
 <div class="table-scaler">
   <div class="seat seat--hero seat--in-hand">
     <div class="seat__avatar-wrap"><div class="seat__avatar"></div></div>
     <div class="seat__info"><span class="seat__name">HERO</span><span class="seat__stack">1,000</span></div>
     <div class="seat__cards seat__cards--hero">
-      ${Array.from({ length: n }, () => '<div class="seat__card seat__card--face"></div>').join('')}
+      ${Array.from({ length: n }, () => cardHtml(markup)).join('')}
     </div>
   </div>
 </div>`;
@@ -55,8 +75,12 @@ const BREAKPOINTS = [
   { label: 'small phone', width: 375 },
 ];
 
-async function measure(page: import('@playwright/test').Page, n: number) {
-  await page.setContent(`<style>${css}\n${harnessCss}</style>${seatHtml(n)}`);
+async function measure(
+  page: import('@playwright/test').Page,
+  n: number,
+  markup: Markup = 'wrapped'
+) {
+  await page.setContent(`<style>${css}\n${harnessCss}</style>${seatHtml(n, markup)}`);
   return page.evaluate(() => {
     const q = (s: string) => document.querySelector(s)!.getBoundingClientRect();
     const scaler = q('.table-scaler');
@@ -74,6 +98,8 @@ async function measure(page: import('@playwright/test').Page, n: number) {
       rowBottom: row.bottom,
       cardW: card.width,
       cardH: card.height,
+      step: parseFloat(getComputedStyle(document.querySelector('.seat__cards--hero')!)
+        .getPropertyValue('--sp-hero-card-step')),
     };
   });
 }
@@ -83,8 +109,11 @@ for (const bp of BREAKPOINTS) {
     test.use({ viewport: { width: bp.width, height: 900 } });
 
     for (const n of [2, 4, 5, 6]) {
-      test(`${n} cards: centred above the player box, inside the felt`, async ({ page }) => {
-        const m = await measure(page, n);
+      for (const markup of ['wrapped', 'bare'] as const) {
+      test(`${n} cards (${markup}): centred above the player box, inside the felt`, async ({
+        page,
+      }) => {
+        const m = await measure(page, n, markup);
 
         // Item 1: centred on the seat, not offset to one side.
         expect(Math.abs(m.rowCentreX - m.seatCentreX)).toBeLessThanOrEqual(1);
@@ -99,7 +128,14 @@ for (const bp of BREAKPOINTS) {
         // Cards are actually rendered.
         expect(m.cardW).toBeGreaterThan(0);
         expect(m.cardH).toBeGreaterThan(0);
+
+        /* The row is exactly w + (n - 1) * step. Asserting the total width, not
+           just "inside the felt", is what catches a lost overlap on a hand size
+           small enough to still fit: a 4-card row with no overlap is 240px,
+           inside the 320px felt, and wrong. */
+        expect(m.rowRight - m.rowLeft).toBeCloseTo(m.cardW + (n - 1) * m.step, 0);
       });
+      }
     }
 
     test('PLO cards are 50% larger than a hold-em card row was sized for', async ({ page }) => {

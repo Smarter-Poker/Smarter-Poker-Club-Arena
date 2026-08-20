@@ -23,23 +23,51 @@ const BASE = '';
 
 // ── Helper: Open the hamburger menu from the GlobalHeader ──
 async function openHamburgerMenu(page: any) {
-  // The hamburger button renders in GlobalHeader with aria-label="Open Menu"
-  const hamburgerBtn = page.locator('button[aria-label="Open Menu"]');
-  if (await hamburgerBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await hamburgerBtn.click();
-    await page.waitForTimeout(400);
-    return true;
-  }
+  /* GlobalHeader renders `aria-label="Open Menu"` on every route, /clubs
+     included. The old `.header__menu` fallback was dead: that class survives
+     only in ClubCarouselPage.css and no component has emitted it for some
+     time, so the fallback could never fire and its 2s budget was pure delay.
 
-  // Fallback: ClubCarouselPage has its own ≡ button
-  const menuBtn = page.locator('button.header__menu');
-  if (await menuBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-    await menuBtn.click();
-    await page.waitForTimeout(400);
-    return true;
+     15s, not 5s. Signed OUT the header was never reached at all - the app
+     bounced to /auth and these tests skipped - so the old budget was never
+     under load. Signed in, the header renders only after session restore, the
+     profile read and the clubs fetch, and four Playwright workers hit
+     production at once. 5s produced 11 silent skips on a healthy site. */
+  const btn = page.locator('button[aria-label="Open Menu"]').first();
+  try {
+    await btn.waitFor({ state: 'visible', timeout: 15000 });
+  } catch {
+    return false;
   }
+  await btn.click({ timeout: 8000 });
+  await page.waitForTimeout(400);
+  return true;
+}
 
-  return false;
+/* Open the menu, or account honestly for why we could not.
+ *
+ * A signed-out run genuinely cannot test the menu: the route redirects to /auth
+ * and there is no header. That is the ONLY legitimate skip here.
+ *
+ * Anything else - we are on a real page, signed in, and the hamburger is not
+ * there - is a failure, and used to be `test.skip()` at eleven call sites. A
+ * skip is indistinguishable from a pass in the summary line, which is how a
+ * third of this file spent a year reporting success while asserting nothing.
+ * If the menu is genuinely unreachable on a signed-in run, that is the single
+ * most important thing this spec could tell anyone. */
+async function openMenuOrSkip(page: any): Promise<boolean> {
+  if (await isOnAuthPage(page)) {
+    test.skip();
+    return false;
+  }
+  const opened = await openHamburgerMenu(page);
+  if (!opened) {
+    throw new Error(
+      `Hamburger menu button never appeared on ${page.url()} after 15s, and this ` +
+        'is not the /auth page - the menu is unreachable for a signed-in user.'
+    );
+  }
+  return true;
 }
 
 // ── Helper: Navigate and wait for either page load or auth redirect ──
@@ -63,16 +91,7 @@ test.describe('Hamburger Menu — Open / Close', () => {
     await navigateAndWait(page, '/');
 
     // If redirected to auth, skip this test
-    if (await isOnAuthPage(page)) {
-      test.skip();
-      return;
-    }
-
-    const opened = await openHamburgerMenu(page);
-    if (!opened) {
-      test.skip();
-      return;
-    }
+    if (!(await openMenuOrSkip(page))) return;
 
     // The drawer should be visible (check for a section header like "Game Modes")
     const gameModes = page.locator('text=Game Modes');
@@ -97,16 +116,7 @@ test.describe('Hamburger Menu — Profile Card', () => {
   test('should display profile card with View Profile text', async ({ page }) => {
     await navigateAndWait(page, '/');
 
-    if (await isOnAuthPage(page)) {
-      test.skip();
-      return;
-    }
-
-    const opened = await openHamburgerMenu(page);
-    if (!opened) {
-      test.skip();
-      return;
-    }
+    if (!(await openMenuOrSkip(page))) return;
 
     const viewProfile = page.locator('text=View Profile');
     await expect(viewProfile).toBeVisible({ timeout: 3000 });
@@ -170,16 +180,7 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     test(`should navigate to ${link.path} when "${link.label}" is clicked`, async ({ page }) => {
       await navigateAndWait(page, '/');
 
-      if (await isOnAuthPage(page)) {
-        test.skip();
-        return;
-      }
-
-      const opened = await openHamburgerMenu(page);
-      if (!opened) {
-        test.skip();
-        return;
-      }
+      if (!(await openMenuOrSkip(page))) return;
 
       // Find the menu item by text
       const menuItem = page.locator(`span:text-is("${link.label}")`).first();
@@ -200,16 +201,7 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
   test('should toggle Sounds on/off', async ({ page }) => {
     await navigateAndWait(page, '/');
 
-    if (await isOnAuthPage(page)) {
-      test.skip();
-      return;
-    }
-
-    const opened = await openHamburgerMenu(page);
-    if (!opened) {
-      test.skip();
-      return;
-    }
+    if (!(await openMenuOrSkip(page))) return;
 
     // Scroll down to find Sounds toggle
     const soundsLabel = page.locator('span:text-is("Sounds")').first();
@@ -226,16 +218,7 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
   test('should toggle Vibrations on/off', async ({ page }) => {
     await navigateAndWait(page, '/');
 
-    if (await isOnAuthPage(page)) {
-      test.skip();
-      return;
-    }
-
-    const opened = await openHamburgerMenu(page);
-    if (!opened) {
-      test.skip();
-      return;
-    }
+    if (!(await openMenuOrSkip(page))) return;
 
     const vibrationsLabel = page.locator('span:text-is("Vibrations")').first();
     await expect(vibrationsLabel).toBeVisible({ timeout: 5000 });
@@ -249,16 +232,7 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
   test('should toggle Show Stack in BBs on/off', async ({ page }) => {
     await navigateAndWait(page, '/');
 
-    if (await isOnAuthPage(page)) {
-      test.skip();
-      return;
-    }
-
-    const opened = await openHamburgerMenu(page);
-    if (!opened) {
-      test.skip();
-      return;
-    }
+    if (!(await openMenuOrSkip(page))) return;
 
     /* This setting is rendered as "Show Stack in Big Blinds"
        (useUserTableSettings.ts:132), which is the metadata TableSettingsPanel
@@ -276,7 +250,7 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
     await tableSettingsRow.click();
 
     const bbLabel = page.locator('.tsp-item__label:text-is("Show Stack in Big Blinds")').first();
-    await expect(bbLabel).toBeVisible({ timeout: 5000 });
+    await expect(bbLabel).toBeVisible({ timeout: 15000 });
 
     // The toggle is a sibling of the label's wrapper, not of the label itself.
     const bbToggle = bbLabel.locator('../..').locator('button').first();
@@ -290,16 +264,7 @@ test.describe('Hamburger Menu — Keyboard Shortcuts Section', () => {
   test('should display all keyboard shortcuts', async ({ page }) => {
     await navigateAndWait(page, '/');
 
-    if (await isOnAuthPage(page)) {
-      test.skip();
-      return;
-    }
-
-    const opened = await openHamburgerMenu(page);
-    if (!opened) {
-      test.skip();
-      return;
-    }
+    if (!(await openMenuOrSkip(page))) return;
 
     // The section header should be visible
     const sectionHeader = page.locator('text=Keyboard Shortcuts').first();
@@ -333,16 +298,7 @@ test.describe('Hamburger Menu — Log Out', () => {
   test('should show Log Out button', async ({ page }) => {
     await navigateAndWait(page, '/');
 
-    if (await isOnAuthPage(page)) {
-      test.skip();
-      return;
-    }
-
-    const opened = await openHamburgerMenu(page);
-    if (!opened) {
-      test.skip();
-      return;
-    }
+    if (!(await openMenuOrSkip(page))) return;
 
     const logOut = page.locator('span:text-is("Log Out")');
     await expect(logOut).toBeVisible({ timeout: 3000 });
@@ -353,23 +309,19 @@ test.describe('Hamburger Menu — Club Arena Lobby (ClubCarouselPage)', () => {
   test('should open hamburger menu from the ≡ button on /clubs', async ({ page }) => {
     await navigateAndWait(page, '/clubs');
 
-    if (await isOnAuthPage(page)) {
-      test.skip();
-      return;
-    }
+    /* This asserted `button.header__menu`, on the premise that the lobby has
+       its OWN ≡ button. It does not, and has not for some time: /clubs renders
+       the shared GlobalHeader, whose hamburger is
+       `aria-label="Open Menu"` + a CSS-module class. `.header__menu` now lives
+       only in ClubCarouselPage.css, matching nothing.
 
-    // The ClubCarouselPage has a ≡ button with class "header__menu"
-    const menuBtn = page.locator('button.header__menu');
-    if (await menuBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await menuBtn.click();
-      await page.waitForTimeout(400);
+       The old code ended in `else { test.skip() }`, so the button vanishing —
+       the exact regression this test exists to catch — retired the test
+       instead of failing it. */
+    if (!(await openMenuOrSkip(page))) return;
 
-      // Verify the hamburger menu drawer opened
-      const gameModes = page.locator('text=Game Modes');
-      await expect(gameModes).toBeVisible({ timeout: 3000 });
-    } else {
-      test.skip();
-    }
+    const gameModes = page.locator('text=Game Modes');
+    await expect(gameModes).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -377,16 +329,7 @@ test.describe('Hamburger Menu — Version Footer', () => {
   test('should display version information', async ({ page }) => {
     await navigateAndWait(page, '/');
 
-    if (await isOnAuthPage(page)) {
-      test.skip();
-      return;
-    }
-
-    const opened = await openHamburgerMenu(page);
-    if (!opened) {
-      test.skip();
-      return;
-    }
+    if (!(await openMenuOrSkip(page))) return;
 
     // Look for version text (e.g., "Club Arena v1.12")
     const version = page.locator('text=/Club Arena v/');

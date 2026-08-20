@@ -280,8 +280,6 @@ const DEFAULT_CARD_BACK = 'classic_blue';
  *
  * Every purchasable id now maps to a real design, and the paid tiers each map
  * to a DISTINCT one so a purchase always visibly changes the card back.
- * (Bespoke artwork for holographic/carbon/club-crest/diamond-foil is still
- * outstanding; these mappings make the purchases honest in the meantime.)
  */
 const CARD_BACK_ALIASES: Record<string, string> = {
   // legacy / free tier

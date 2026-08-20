@@ -140,8 +140,8 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
 
           {data.totals.refundedAmount > 0 && (
             <div className={styles.grantHint}>
-              Includes {fmtChips(data.totals.refundedAmount)} refunded (gross{' '}
-              {fmtChips(data.totals.grossRevenue)}).
+              Gross {fmtChips(data.totals.grossRevenue)} less {fmtChips(data.totals.refundedAmount)}{' '}
+              refunded.
             </div>
           )}
 

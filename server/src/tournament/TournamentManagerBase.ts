@@ -396,12 +396,36 @@ export abstract class TournamentManagerBase {
       this.tournamentCache = tournament;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
 
-      // Enforce minimum 3 players
+      /**
+       * Enforce minimum 3 players.
+       *
+       * FIX 2026-08-20 [P0]: this counted `status = 'registered'` ONLY, which
+       * made any tournament that got PART WAY through starting permanently
+       * unstartable. start() migrates every registration registered -> playing
+       * further down, then creates tables and seats players, and only then
+       * flips the tournament to RUNNING. If anything throws between the
+       * migration and that flip, the tournament stays REGISTERING with a field
+       * full of 'playing' rows — and from then on this count reads 0, so every
+       * retry stood down before reaching the migration. Nothing ever recovered
+       * it, because the stand-down IS the thing preventing recovery.
+       *
+       * Seen in production: "Union Grand Championship" sat REGISTERING for over
+       * nine hours with 182 players and their buy-ins committed, and "Night Owl
+       * Special" for nearly six with 77, both looping through this branch every
+       * few seconds. Once the rows were flipped back to 'registered' by hand
+       * both started immediately and built 42 and 18 tables respectively — so
+       * the seating path was never the problem, this count was.
+       *
+       * A player marked 'playing' is by definition IN the field, so both
+       * statuses count. The migration below is already idempotent (it only
+       * touches 'registered' rows), and createTablesAndSeatPlayers skips
+       * players who are already seated.
+       */
       const { count: regCount } = await supabase
         .from('tournament_players')
         .select('*', { count: 'exact', head: true })
         .eq('tournament_id', this.tournamentId)
-        .eq('status', 'registered');
+        .in('status', ['registered', 'playing']);
 
       if ((regCount || 0) < 3) {
         /**

@@ -63,14 +63,27 @@ describe('ChipRaceEngine — THE A9 BUG: the race is probabilistic, not a rankin
     // 99 vs 1 fractional chips, one chip to award. Under the old formula the
     // 99-holder won 100% of the time; a real race gives the 1-holder ~1%.
     let underdogWins = 0;
-    const RUNS = 400;
+    /* RUNS is a false-failure budget, not a taste.
+     *
+     * The underdog's odds here are exactly 1 in 100 (99 fractional chips vs 1,
+     * one chip to award), so P(zero wins) = 0.99^RUNS. At RUNS = 400 that is
+     * 1.8% — this test failed the whole Server Engine job on a healthy engine
+     * on 2026-08-20 (run 32405597982), and would do so again roughly every
+     * 55th push. A blocking test that cries wolf twice a month is how people
+     * learn to re-run CI instead of reading it.
+     *
+     * At 3000 it is 8.7e-14, and the races are free: all eight tests in this
+     * file execute in 10ms.
+     */
+    const RUNS = 3000;
     for (let i = 0; i < RUNS; i++) {
       const { result } = race({ big: 199, small: 101 }, 1, 100);
       const small = result.players.find((p) => p.playerId === 'small')!;
       if (small.chipsAwarded > 0) underdogWins++;
     }
     // Any win at all disproves the deterministic ranking. Bounded above so a
-    // uniform-random (unweighted) implementation would also fail this.
+    // uniform-random (unweighted) implementation would also fail this: it would
+    // hand the underdog ~50% where the weighted lottery gives ~1%.
     expect(underdogWins).toBeGreaterThan(0);
     expect(underdogWins).toBeLessThan(RUNS * 0.25);
   });

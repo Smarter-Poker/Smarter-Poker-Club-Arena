@@ -8280,3 +8280,32 @@ continuation handoff `.agent/handoffs/2026-08-20-spins-continuation-2.md`.
   min on Open Claw (fire cycle verified 200 + heartbeat).
 - [P2] tests/e2e/live-animations.spec.ts now covers the wheel, knockout and
   chest in real Chrome against production CSS — 6/6 pass.
+
+## 2026-08-20 (late) — Dan sat down, and the table failed him in ways no test had
+
+First human seated session at a Spin (commits `f9ea9730b` + follow-ups).
+
+- [P0] THE GHOST HERO: seated, dealt in, cards visible, hero glow on — and
+  rendered top-right with NO action buttons, blind-folded every hand.
+  players[].isHero comes from per-player mappers but heroSeat (which drives
+  bottom-centre rotation AND the whole action panel) was written only by
+  load paths that can each lose a race; lose both and you are a ghost at
+  your own seat all session. Fixed with an invariant, not another patched
+  race: whenever players[] holds the signed-in user at a seat and heroSeat
+  disagrees, adopt it (set-only, on proof; eviction still requires the
+  existing proof-of-eviction paths).
+- [P1] SPIN-IT INTRO v2, PokerBros grammar, rebuilt from Dan's reference
+  video frame-by-frame: table visible under vignette + spotlight beam, gold
+  3-2-1, chase-lit disc of nine coloured segments decelerating onto the
+  winner, losers drain to grey. Honesty pinned: chaseSchedule's last step IS
+  the target, zero Math.random, locked tiers walkable but never landable.
+- [P1] Tournament masthead per Dan's spec: "Date · NLH Poker Spins · Club ·
+  Union" / "Level N · blinds · ticking clock" / "Hand #N". Clock seeds from
+  level_started_at, restarts on level_up, renders in its own tiny component.
+- [P1] Spin levels are 3 MINUTES FLAT (Dan's second in-session instruction
+  supersedes the earlier 2-min one), in both spec copies.
+- Verified live: Dan's game "Founders Spin II" (6e80c043) drew 2x at start
+  under the new engine, seated him + 2 horses, table eab2e2e1.
+- Open: spin quick-join (tap a stake tile → engine creates + seats + starts
+  → client lands on the table). The parallel agent's Take Seat bar covers
+  returning to a HELD seat, not this.

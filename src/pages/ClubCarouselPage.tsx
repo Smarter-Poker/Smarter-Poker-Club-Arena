@@ -435,15 +435,22 @@ export default function ClubCarouselPage() {
             clubList.map((c) => c.id)
           );
         if (!isMounted.current) return clubList;
-        if (ucRows && ucRows.length > 0) {
-          const clubToUnionMap = new Map(ucRows.map((r) => [r.club_id, r.union_id]));
-          const loadedUnionIds = new Set(loadedUnions.map((u) => u.id));
-          return clubList.filter((c) => {
-            const parentUnionId = clubToUnionMap.get(c.id);
-            if (!parentUnionId) return true;
-            return !loadedUnionIds.has(parentUnionId);
-          });
-        }
+        const loadedUnionIds = new Set(loadedUnions.map((u) => u.id));
+        const clubToUnionMap = new Map((ucRows ?? []).map((r) => [r.club_id, r.union_id]));
+        return clubList.filter((c) => {
+          // 2026-08-19: a union's own container row shares the union's UUID and
+          // is NOT in union_clubs, so the membership check below kept it and it
+          // rendered as a CLUB card sitting next to the union card of the same
+          // name — "Midway Union" appearing twice, once as a peer of the very
+          // clubs it owns. Drop it: the union is already shown as a union.
+          if (loadedUnionIds.has(c.id)) return false;
+
+          const parentUnionId = clubToUnionMap.get(c.id);
+          if (!parentUnionId) return true;
+          // Member club whose union is displayed: it belongs under the union,
+          // not beside it.
+          return !loadedUnionIds.has(parentUnionId);
+        });
       } catch (e) {
         reportError(e, 'ClubCarouselPage.filter');
         /* fail-open */

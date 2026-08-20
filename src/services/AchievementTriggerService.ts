@@ -11,7 +11,7 @@
 import { supabase, getAuthUser } from '../lib/supabase';
 import { achievementService, ACHIEVEMENTS, type Achievement } from './AchievementService';
 import { pushNotificationService } from './PushNotificationService';
-import { dailyChallengeService } from './DailyChallengeService';
+import { dailyChallengeService, BIG_POT_MIN, isStrongHand } from './DailyChallengeService';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
@@ -104,6 +104,11 @@ class AchievementTriggerServiceClass {
         hands_played: 1,
         ...(handData.won ? { hands_won: 1 } : {}),
         ...(handData.showdown ? { showdowns: 1 } : {}),
+        // Skill/excitement counters, from data this callback already receives
+        // and used to discard. A big pot only counts if it was actually WON --
+        // being in a large pot you lost is not an achievement.
+        ...(handData.won && (handData.potSize || 0) >= BIG_POT_MIN ? { big_pots: 1 } : {}),
+        ...(isStrongHand(handData.handRank) ? { strong_hands: 1 } : {}),
       });
 
       if (completed.length > 0) {

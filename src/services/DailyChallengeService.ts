@@ -23,9 +23,42 @@ export type ChallengeType =
   | 'hands_won'
   | 'showdowns'
   | 'tournaments_played'
+  // Skill/excitement types. Driven by potSize and handRank, which
+  // onHandComplete already receives -- see BIG_POT_MIN and isStrongHand below.
+  | 'big_pots'
+  | 'strong_hands'
   | 'login_streak'
   | 'rakeback_earned'
   | 'friends_added';
+
+/**
+ * A pot at or above this counts as a "big pot" for the big_pots challenges.
+ * The threshold lives in the TYPE rather than the requirement because progress
+ * is counted per type: "win 3 pots of 500+" is expressible, a separate 5000+
+ * tier would need its own type.
+ */
+export const BIG_POT_MIN = 500;
+
+/**
+ * Straight or better, at showdown.
+ *
+ * handRank arrives as a free-form string from the engine ('Full House',
+ * 'full_house', 'FULL HOUSE' have all appeared), so match on a normalised form
+ * rather than exact equality -- a challenge that silently never completes is
+ * worse than not shipping it.
+ */
+export function isStrongHand(handRank?: string): boolean {
+  if (!handRank) return false;
+  const n = handRank.toLowerCase().replace(/[^a-z]+/g, ' ').trim();
+  return (
+    n.includes('straight') ||   // covers 'straight' and 'straight flush'
+    n.includes('flush') ||
+    n.includes('full house') ||
+    n.includes('four of a kind') ||
+    n.includes('quads') ||
+    n.includes('royal')
+  );
+}
 
 export interface DailyChallenge {
   id: string;
@@ -232,6 +265,46 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     icon: '',
   },
 
+  // Big Pot Challenges -- reward the moments worth remembering, not the volume
+  {
+    id: 'big_pot_1',
+    name: 'Big Score',
+    description: 'Win a pot of 500 or more today',
+    type: 'big_pots',
+    requirement: 1,
+    chipReward: 120,
+    icon: '',
+  },
+  {
+    id: 'big_pot_3',
+    name: 'Pot Hunter',
+    description: 'Win 3 pots of 500 or more today',
+    type: 'big_pots',
+    requirement: 3,
+    chipReward: 350,
+    icon: '',
+  },
+
+  // Strong Hand Challenges -- a cold run on volume can still finish these
+  {
+    id: 'strong_hand_1',
+    name: 'Monster Hand',
+    description: 'Make a straight or better today',
+    type: 'strong_hands',
+    requirement: 1,
+    chipReward: 150,
+    icon: '',
+  },
+  {
+    id: 'strong_hand_3',
+    name: 'Hand Collector',
+    description: 'Make 3 straights or better today',
+    type: 'strong_hands',
+    requirement: 3,
+    chipReward: 400,
+    icon: '',
+  },
+
   // Social Challenges
   {
     id: 'friend_1',
@@ -273,6 +346,24 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     icon: '',
   },
   {
+    id: 'weekly_big_pots_10',
+    name: 'Weekly Big Game',
+    description: 'Win 10 pots of 500 or more this week',
+    type: 'big_pots',
+    requirement: 10,
+    chipReward: 1200,
+    icon: '',
+  },
+  {
+    id: 'weekly_strong_hands_8',
+    name: 'Weekly Monster Run',
+    description: 'Make 8 straights or better this week',
+    type: 'strong_hands',
+    requirement: 8,
+    chipReward: 1100,
+    icon: '',
+  },
+  {
     id: 'weekly_showdowns_20',
     name: 'Showdown Machine',
     description: 'Reach 20 showdowns this week',
@@ -300,6 +391,15 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 250,
     chipReward: 10000,
+    icon: '',
+  },
+  {
+    id: 'monthly_big_pots_50',
+    name: 'Monthly Whale',
+    description: 'Win 50 pots of 500 or more this month',
+    type: 'big_pots',
+    requirement: 50,
+    chipReward: 6000,
     icon: '',
   },
   {

@@ -63,6 +63,8 @@ const TYPE_GLYPHS: Record<ChallengeType, string> = {
   hands_won: '★', // star
   showdowns: '♦', // diamond suit
   tournaments_played: '♛', // queen
+  big_pots: '◆', // diamond — the pot
+  strong_hands: '♥', // heart — the hand
   login_streak: '◉',
   rakeback_earned: '◈',
   friends_added: '♣', // club

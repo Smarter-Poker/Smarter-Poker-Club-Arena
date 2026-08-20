@@ -206,7 +206,7 @@ import {
   spinTier,
   spinRakeRate,
   spinBlindsForLevel,
-} from '../config/spinSpec';
+} from '../config/spinSpec.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SPIN MULTIPLIERS — Dan's spec, 2026-08-20.

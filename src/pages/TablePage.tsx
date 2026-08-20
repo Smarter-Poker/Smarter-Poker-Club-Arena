@@ -2885,16 +2885,22 @@ export default function TablePage({
       // kept posting blinds with their chips in it. The sibling handler at the
       // normal leave path already checks this; the tab X did not.
       const forced = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
-      if (!forced?.success) {
+      if (!forced?.success && forced?.error) {
+        // Engine explicitly refused a REAL seated leave — chips are live, stay.
         reportError(
-          new Error(forced?.error || 'force leave rejected'),
+          new Error(forced.error || 'force leave rejected'),
           'TablePage.handleForceLeaveTable.refused'
         );
         setLeaveNotice(
-          forced?.error || 'Could not leave the table — your chips are still in your seat.'
+          forced.error || 'Could not leave the table — your chips are still in your seat.'
         );
         return; // stay on the table; the seat is still live
       }
+      // Dan 2026-08-20: success:false WITHOUT an error means the player holds
+      // no active seat — they are a SPECTATOR (or already cashed out). There
+      // is nothing to refuse; closing the tab is exactly what they asked for.
+      // The old guard showed "your chips are still in your seat" to people
+      // with no seat and made the table impossible to close while watching.
       heroSeatRef.current = 0; // FIX 132: Clear on force leave
       masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
       masterBus.emit('SESSION_ENDED', { tableId, userId });

@@ -52,6 +52,15 @@
 
 .multi-table-page__container {
   flex: 1;
+  /* Dan 2026-08-20 ("I can't scroll down to see all the games"): flex items
+     default to min-height:auto, so the in-tab LOBBY's 3900px of content blew
+     this container up to content height — the slot and lobby tab inherited
+     that height, clientHeight equalled scrollHeight, and overflow-y:auto had
+     nothing to scroll while .multi-table-page's overflow:hidden clipped the
+     rest. min-height:0 pins the container to the viewport so the lobby tab
+     becomes the real scroll surface. Measured live with a headless probe:
+     lobbyTab ch=3893 sh=3893 scrollAfter=0 before; constrained after. */
+  min-height: 0;
   display: flex;
   /* NOTE: will-change:transform removed — it creates a containing block
      for position:fixed descendants, breaking TablePage layout. §FIX-214
@@ -78,6 +87,23 @@
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   contain: layout paint;
+}
+
+/* Dan 2026-08-20 ("bottom row quick links should always be on the footer"):
+   ClubBottomNav is position:fixed, but inside this tab its containing block is
+   the transformed swipe track — the probe measured it parked at y=3870, three
+   screens below the fold. Sticky against this scroll container pins it to the
+   visible bottom at every scroll position instead. The CSS-module class name
+   is hashed, so match on the stable local-name substring. */
+.multi-table-page__lobby-tab nav[class*='bottomNav'] {
+  position: sticky;
+  bottom: 0;
+}
+
+/* The embedded lobby is smaller than the viewport (tab bar above it); forcing
+   100vh of minimum content just adds dead scroll. Fill the tab instead. */
+.multi-table-page__lobby-tab .club-home {
+  min-height: 100%;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

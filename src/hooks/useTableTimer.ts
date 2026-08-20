@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { soundService } from '../services/SoundService';
+import { serverNow } from '../utils/serverClock';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -82,7 +83,16 @@ export function useTableTimer({
       // 0 — NOT a fresh full timer. The old fallback reset an expired turn to
       // initialTime, which could re-fire onTimeout (double time-bank / auto-fold)
       // and disagreed with the CSS ring (which correctly lands at 0).
-      seconds = Math.max(0, (turnDeadlineMs - Date.now()) / 1000);
+      // Dan 2026-08-20 (round 3, "the countdown literally only took 6
+      // seconds"): this line subtracted a SERVER deadline from the DEVICE
+      // clock. A device running N seconds fast starts every 15s turn with
+      // (15 - N) seconds on the clock — Dan's timed 6s is exactly a ~9s-fast
+      // device clock. The seat ring (SeatSlot) was already fixed to measure
+      // on the engine's clock via serverNow(); this hook, which drives the
+      // NUMERIC countdown, the footer seconds, the urgency window and the
+      // time-bank/auto-fold trigger, was still on Date.now(). Same clock for
+      // both from now on.
+      seconds = Math.max(0, (turnDeadlineMs - serverNow()) / 1000);
     }
     setTotalTime(seconds);
     setTimeRemaining(seconds);

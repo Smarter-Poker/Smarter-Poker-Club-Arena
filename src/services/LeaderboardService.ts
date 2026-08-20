@@ -29,6 +29,9 @@ import { reportError } from '../utils/errorReporter';
 interface PlayerStatsRow {
   user_id: string;
   hands_played: number;
+  /** True per-seat count. The RPCs return it AS hands_played; the direct-query
+   *  fallback selects it explicitly so both paths report the same number. */
+  hands_dealt?: number;
   total_winnings: number;
   total_losses: number;
   total_rake?: number;
@@ -132,13 +135,26 @@ export interface HandResultForStats {
 // INTERNAL HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Hands for a row, preferring the true per-seat counter.
+ *
+ * player_stats.hands_played is owned by RakebackSettlerService and only counts
+ * RAKED hands, per settled row rather than per seat - measured at 13.4% of
+ * reality. hands_dealt is the real count. The RPCs already return hands_dealt
+ * in the hands_played slot; the direct-query fallback selects hands_dealt
+ * explicitly, so this prefers it and falls back only if it is absent.
+ */
+function handsOf(row: PlayerStatsRow): number {
+  return Number(row.hands_dealt ?? row.hands_played) || 0;
+}
+
 /** Compute the display value for a stats row given the metric. */
 function metricValue(row: PlayerStatsRow, metric: LeaderboardMetric): number {
   const winnings = Number(row.total_winnings) || 0;
   const losses = Number(row.total_losses) || 0;
   switch (metric) {
     case 'hands_played':
-      return Number(row.hands_played) || 0;
+      return handsOf(row);
     // AUDIT 2026-08-19: vpip/pfr are stored as PERCENTAGES (measured range
     // 0.55..100, mean 40.4), not 0..1 fractions. The previous `* 10000 / 100`
     // multiplied by 100 and rendered a 40% VPIP as "4040%".
@@ -185,7 +201,7 @@ async function decorateWithProfiles(
       value: metricValue(row, metric),
       metric,
       change: Number(row.rank_change) || 0,
-      hands: Number(row.hands_played) || 0,
+      hands: handsOf(row),
       qualified: row.qualified !== false,
       totalRanked: row.total_ranked != null ? Number(row.total_ranked) : undefined,
       baselineDate: row.baseline_date,
@@ -239,7 +255,7 @@ export const LeaderboardService = {
         // Ratio metric, or v2 RPC failed: direct all-time query.
         const metricToColumn: Record<string, string> = {
           profit: 'total_winnings',
-          hands_played: 'hands_played',
+          hands_played: 'hands_dealt',
           vpip: 'vpip',
           pfr: 'pfr',
           tournaments_won: 'tournaments_won',
@@ -249,7 +265,7 @@ export const LeaderboardService = {
         const { data, error } = await supabase
           .from('player_stats')
           .select(
-            'user_id, hands_played, total_winnings, total_losses, total_rake, vpip, pfr, tournaments_played, tournaments_won'
+            'user_id, hands_played, hands_dealt, total_winnings, total_losses, total_rake, vpip, pfr, tournaments_played, tournaments_won'
           )
           .eq('club_id', resolvedClubId)
           .order(orderCol, { ascending: false })

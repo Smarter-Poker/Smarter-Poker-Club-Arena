@@ -364,7 +364,7 @@ export default function LeaderboardPage() {
     }
     // Monotonic request token: a newer request always wins, and an in-flight
     // response that is no longer current is discarded rather than rendered.
-    const myReq = ++reqSeqRef.current;
+    const myReq = ++reqSeqRef.current;  // also invalidates any in-flight loadMore
 
     // SWR: show cached data instantly
     const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}`;
@@ -415,23 +415,37 @@ export default function LeaderboardPage() {
     }
   };
 
-  /** Append the next page. Uses the RPC's offset so ranks stay correct. */
+  /**
+   * Append the next page.
+   *
+   * Guarded by the same request token the main load uses. Without it, changing
+   * metric/period/scope while a page request is in flight merges rows scored by
+   * the OLD filter into the NEW list - and because the offset is derived from
+   * entries.length, the list it appends to may already have been replaced.
+   * A superseded page is discarded rather than rendered.
+   */
   const loadMore = async () => {
     if (loadingMore) return;
+    const isGlobal = scope === 'global';
+    if (!isGlobal && !selectedClubId) return;
+    const myReq = reqSeqRef.current;
+    const offset = entries.length;
     setLoadingMore(true);
     try {
-      const more =
-        scope === 'global'
-          ? await LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, entries.length)
-          : await LeaderboardService.getClubLeaderboard(
-              selectedClubId as string,
-              metric,
-              period,
-              PAGE_SIZE,
-              entries.length
-            );
+      const more = isGlobal
+        ? await LeaderboardService.getGlobalLeaderboard(metric, period, PAGE_SIZE, offset)
+        : await LeaderboardService.getClubLeaderboard(
+            selectedClubId as string,
+            metric,
+            period,
+            PAGE_SIZE,
+            offset
+          );
+      if (myReq !== reqSeqRef.current) return; // filters moved on; drop this page
       if (more.length > 0) {
         setEntries((prev) => {
+          // The list may have been replaced while this was in flight.
+          if (prev.length !== offset) return prev;
           const seen = new Set(prev.map((e) => e.userId));
           return [...prev, ...more.filter((m) => !seen.has(m.userId))];
         });
@@ -440,7 +454,7 @@ export default function LeaderboardPage() {
       reportError(e, 'LeaderboardPage.loadMore');
       toast.error('Could not load more');
     } finally {
-      setLoadingMore(false);
+      if (myReq === reqSeqRef.current) setLoadingMore(false);
     }
   };
 

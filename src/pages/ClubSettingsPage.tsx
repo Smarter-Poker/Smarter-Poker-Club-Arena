@@ -20,7 +20,12 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
 import { reportError } from '../utils/errorReporter';
-import { MAX_RAKE_CAP_BB, MAX_RAKE_PERCENT, RAKE_INHERIT } from '../config/RakeConfig';
+import {
+  MAX_RAKE_CAP_BB,
+  MAX_RAKE_PERCENT,
+  RAKE_INHERIT,
+  getRakeConfig,
+} from '../config/RakeConfig';
 import {
   BUYIN_BB_CEILING,
   BUYIN_BB_FLOOR,
@@ -154,6 +159,25 @@ export default function ClubSettingsPage() {
   // accepts role IN ('owner','admin','manager','agent').
   const canSeeAuditLog = isOwner || userRole === 'admin' || userRole === 'agent';
   const deleteBlockedReason = deleteImpact ? blockingDeletionReason(deleteImpact) : null;
+
+  // What the Rake Cap setting actually means in money, at two reference
+  // stakes. Derived from getRakeConfig — the same function the engine mirrors —
+  // because a local `capBB * bb` cannot see the published ceiling. Before this,
+  // the hint promised "$20.00 per pot at 1/2" for a 10 BB cap while the engine
+  // would take $5.
+  const capPreview = (() => {
+    if (settings.rake_cap < 0) return null;
+    const at = (sb: number, bb: number) =>
+      getRakeConfig(bb, 'nlh', sb, { rakeCapBB: settings.rake_cap }).rakeCap;
+    const low = at(1, 2);
+    const high = at(5, 10);
+    const uncappedLow = Math.round(settings.rake_cap * 2 * 100) / 100;
+    const uncappedHigh = Math.round(settings.rake_cap * 10 * 100) / 100;
+    const limited = uncappedLow > low || uncappedHigh > high;
+    return `Currently ${settings.rake_cap} BB — $${low.toFixed(2)} per pot at 1/2 and $${high.toFixed(
+      2
+    )} at 5/10${limited ? ', held down by the house cap for those stakes.' : '.'}`;
+  })();
   const [loadError, setLoadError] = useState(false);
   // A club id that resolves to no row (deleted club, bad code, or a club RLS
   // hides) used to fall straight through the `if (data)` block: no error, no
@@ -683,26 +707,25 @@ export default function ClubSettingsPage() {
     setDeleteImpact(null);
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      const [members, tables, wallets] = await Promise.all([
-        supabase
-          .from('club_members')
-          .select('user_id', { count: 'exact', head: true })
-          .eq('club_id', resolvedId),
-        supabase
-          .from('tables')
-          .select('id', { count: 'exact', head: true })
-          .eq('club_id', resolvedId)
-          .neq('status', 'closed'),
-        supabase.from('club_wallets').select('chip_balance').eq('club_id', resolvedId),
-      ]);
-      const walletChips = (wallets.data || []).reduce(
-        (sum: number, w: { chip_balance: number | null }) => sum + Number(w.chip_balance || 0),
-        0
-      );
+      // One authoritative read instead of three client queries. The previous
+      // version asked club_wallets directly, and that table has RLS enabled
+      // with NO policies — an owner's SELECT returns no rows rather than an
+      // error, so the guard reported "0 chips" for every club while the wallet
+      // was about to be destroyed by ON DELETE CASCADE. The RPC is
+      // SECURITY DEFINER, owner-gated, and counts both balance columns.
+      const { data, error } = await supabase.rpc('fn_club_deletion_impact', {
+        p_club_id: resolvedId,
+      });
+      if (error) throw error;
+      const impact = (data || {}) as {
+        members?: number;
+        running_tables?: number;
+        wallet_chips?: number | string;
+      };
       setDeleteImpact({
-        members: members.count ?? 0,
-        runningTables: tables.count ?? 0,
-        walletChips,
+        members: Number(impact.members ?? 0),
+        runningTables: Number(impact.running_tables ?? 0),
+        walletChips: Number(impact.wallet_chips ?? 0),
       });
     } catch (e) {
       reportError(e, 'ClubSettingsPage.Failed_to_load_delete_impact');
@@ -1100,15 +1123,7 @@ export default function ClubSettingsPage() {
             <small className="form-hint">
               Most that can be raked from one pot, in big blinds. Blank uses the house cap for each
               stake ($3–$20 depending on blinds).{' '}
-              {settings.rake_cap < 0 ? (
-                'Currently: house cap.'
-              ) : (
-                <>
-                  {`Currently ${settings.rake_cap} BB — that is `}
-                  {`$${(settings.rake_cap * 2).toFixed(2)} per pot at 1/2 and `}
-                  {`$${(settings.rake_cap * 10).toFixed(2)} at 5/10.`}
-                </>
-              )}
+              {settings.rake_cap < 0 ? 'Currently: house cap.' : capPreview}
             </small>
           </div>
           {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It

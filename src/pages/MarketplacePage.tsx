@@ -4,7 +4,8 @@
  *
  *  Tabs:
  *    Store       — club shop items bought with club chips (server-authoritative)
- *    Get Chips   — diamonds -> club chips via /api/club-arena/purchase-chips
+ *    (Get Chips was removed 2026-08-19: chips are won and transferred,
+ *     never bought. The diamonds -> chips conversion no longer exists.)
  *    Diamonds    — real-money diamond packages via Stripe Checkout (/api/store)
  *    Membership  — VIP daily pass / monthly / annual (diamonds or Stripe)
  *    My Items    — delivered inventory (club_shop_inventory) + redemption + history

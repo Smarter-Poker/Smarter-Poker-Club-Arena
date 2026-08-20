@@ -508,6 +508,9 @@ export class RakebackSettlerService {
       // prizes do not add up is repaired (or, where the finisher was never
       // recorded, alerted) within one settler cycle instead of never.
       await this.runTournamentPayoutSweep();
+      // PAYOUT-INTEGRITY 2026-08-20: a live tournament must hold exactly the
+      // chips it issued. Nothing verified this before.
+      await this.runTournamentChipConservation();
     } finally {
       this.isSettling = false;
     }
@@ -761,6 +764,68 @@ export class RakebackSettlerService {
    * is idempotent (verified: first apply credits the shortfall, further
    * applies credit nothing).
    */
+  /**
+   * Tournament chip conservation.
+   *
+   * Chips in play must equal
+   *   players x starting_chips + rebuys x rebuy_chips + add-ons x addon_chips
+   *
+   * Measured when this was written: 5 of 7 RUNNING tournaments exact to the
+   * chip, and the two MULTI-TABLE ones carrying a small excess -- Prime Time
+   * Main Event +261 on 2.19m (0.012%) and Evening Mystery Bounty +100 on
+   * 300k (0.033%). Those same two are the only tournaments holding FRACTIONAL
+   * seat stacks, which a tournament should never have: the hand engine splits
+   * pots to two decimals like cash money, so a tournament accumulates
+   * fractional chips at every odd-chip split.
+   *
+   * The drift is constant rather than per-hand (it stayed at ~258-261 while
+   * rebuys went 65 -> 67 and hands reached 1,194), and a 200,000-hand fuzz of
+   * the chip-conservation property test surfaced only an eligibility
+   * misallocation, never net creation -- so this is not yet root-caused and
+   * is reported, not corrected. Reporting it every cycle is what turns it
+   * from something found by hand into something that cannot hide.
+   *
+   * Tolerance is per player, so pure integer-flooring noise does not alarm.
+   */
+  private async runTournamentChipConservation(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_tournament_chip_conservation_check', {
+        p_tolerance_per_player: 1,
+      });
+      if (error) {
+        reportError(
+          new Error(`fn_tournament_chip_conservation_check failed: ${error.message}`),
+          'RakebackSettler.tournament_chip_conservation_rpc'
+        );
+        return;
+      }
+      const rows = (data ?? []) as Array<{
+        name?: string;
+        players?: number;
+        expected_chips?: number;
+        actual_chips?: number;
+        drift?: number;
+      }>;
+      if (rows.length > 0) {
+        reportError(
+          new Error(
+            `TOURNAMENT CHIPS: ${rows.length} live tournament(s) do not hold the chips they issued — ` +
+              rows
+                .map(
+                  (r) =>
+                    `${r.name}: ${r.actual_chips} vs ${r.expected_chips} expected (drift ${r.drift} over ${r.players} players)`
+                )
+                .join('; ')
+                .slice(0, 1200)
+          ),
+          'RakebackSettler.tournament_chip_drift'
+        );
+      }
+    } catch (err) {
+      reportError(err, 'RakebackSettler.tournament_chip_conservation_threw');
+    }
+  }
+
   private async runTournamentPayoutSweep(): Promise<void> {
     try {
       const { data, error } = await supabase.rpc('fn_tournament_payout_sweep', {

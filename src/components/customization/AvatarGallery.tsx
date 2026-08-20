@@ -358,7 +358,10 @@ export function AvatarGallery({
                       <img
                         loading="lazy"
                         decoding="async"
-                        src={avatar.imageUrl}
+                        /* Tiles render the lightweight derivative when one
+                           exists; imageUrl stays the canonical asset that gets
+                           saved to the profile. */
+                        src={avatar.thumbUrl || avatar.imageUrl}
                         alt={avatar.name}
                         className="ag-item__img"
                         onError={(e) => {

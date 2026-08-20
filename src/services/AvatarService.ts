@@ -30,6 +30,12 @@ export interface Avatar {
   id: string;
   name: string;
   imageUrl: string;
+  /**
+   * Optional lightweight image for grid tiles. When absent, tiles fall back to
+   * imageUrl. Exists because the VIP artwork is 1.1 MB apiece at 1024x1024 and
+   * a gallery paints 74 of them at 48px.
+   */
+  thumbUrl?: string;
   category: 'free' | 'vip' | 'custom';
   isOwned: boolean;
 }
@@ -156,6 +162,7 @@ class AvatarServiceClass {
         id: entry.id,
         name: entry.name,
         imageUrl: entry.image,
+        thumbUrl: entry.thumb,
         category: 'vip',
         // Gating is the caller's business (AvatarGallery knows isVip); the
         // service reports what exists.

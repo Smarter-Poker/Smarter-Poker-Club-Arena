@@ -247,17 +247,16 @@
   border-color: transparent;
 }
 
-/* Dan 2026-08-20: `object-fit: cover` was fine for the square bucket presets
-   and wrong for the new VIP artwork, which is transparent character art at
-   assorted aspect ratios - cover crops it to a slice of torso, so a row of
-   distinct characters reads as a row of near-identical blobs. `contain` shows
-   each design whole; the disc background keeps the circular silhouette that
-   cover was providing for free. */
+/* Dan 2026-08-20: `cover` is right for every source this grid renders - the
+   bucket presets are square, and the VIP tiles render the Hub's pre-cropped
+   125x170 portraits rather than the 1024x1024 originals, so the framing has
+   already been decided by whoever cut them. The disc background keeps a
+   transparent PNG from showing the tile's corners through. */
 .ag-item__img {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  object-fit: contain;
+  object-fit: cover;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }

@@ -44,6 +44,27 @@ function hasSupabaseError(result: unknown): boolean {
   );
 }
 
+/**
+ * PostgREST/Postgres conditions that will fail identically no matter how many
+ * times we ask. Retrying them just burns the caller's timeout budget before its
+ * fallback runs — e.g. PGRST202 (function not found) is precisely the case a
+ * caller's legacy fallback exists for, and it used to cost 3s of backoff first.
+ */
+const NON_RETRYABLE_CODES = new Set([
+  'PGRST202', // schema cache: function/route does not exist
+  'PGRST301', // JWT invalid / not authenticated
+  '42501', // insufficient privilege
+  '42883', // undefined function
+  '42P01', // undefined table
+  '22P02', // invalid text representation (bad argument)
+  '23505', // unique violation
+]);
+
+function isNonRetryable(result: unknown): boolean {
+  const code = (result as any)?.error?.code;
+  return typeof code === 'string' && NON_RETRYABLE_CODES.has(code);
+}
+
 export async function retryFetch<T>(
   fn: () => PromiseLike<T> | Promise<T>,
   options: RetryOptions = {}
@@ -55,7 +76,11 @@ export async function retryFetch<T>(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     // Bail if component unmounted between retries
     if (isMountedRef && !isMountedRef.current) {
-      throw new Error('Component unmounted during retry');
+      // Tagged so callers can tell "the user navigated away" apart from a real
+      // failure and skip error reporting for it.
+      const unmounted = new Error('Component unmounted during retry');
+      unmounted.name = 'Unmounted';
+      throw unmounted;
     }
 
     try {
@@ -67,6 +92,11 @@ export async function retryFetch<T>(
       if (hasSupabaseError(result)) {
         lastResult = result;
         lastError = new Error(`Supabase error: ${(result as any).error.message}`);
+        // Deterministic failure: hand it back now so the caller can fall back
+        // immediately instead of waiting out the backoff for the same answer.
+        if (isNonRetryable(result)) {
+          return result;
+        }
         if (attempt < maxRetries) {
           const delay = baseDelayMs * Math.pow(2, attempt);
           await new Promise((r) => setTimeout(r, delay));
@@ -79,6 +109,10 @@ export async function retryFetch<T>(
       return result;
     } catch (err) {
       lastError = err;
+      // A later attempt THREW, so the earlier attempt's { error } result is no
+      // longer the truth about this call. Returning it below would report a
+      // stale Postgres error instead of the real failure (e.g. a network drop).
+      lastResult = undefined;
       if (attempt < maxRetries) {
         const delay = baseDelayMs * Math.pow(2, attempt);
         await new Promise((r) => setTimeout(r, delay));

@@ -1562,15 +1562,21 @@ export default function PlayerStatsPage() {
             {/* Sessions */}
             <div>
               <div className="stats-section-header">
-                <h3 style={{ color: '#3b82f6' }}>Session History</h3>
+                <h3 style={{ color: '#3b82f6' }}>Cash Sessions</h3>
               </div>
               <SessionHistory userId={targetUserId} initialSessions={sessionRows} />
+              {overall.tourney_hands > 0 && (
+                <div className="stats-notice">
+                  Cash tables only — tournament results are in the Tournaments tab, because a
+                  tournament result is a prize, not chips won at a table.
+                </div>
+              )}
             </div>
 
             {/* Bankroll */}
             <div>
               <div className="stats-section-header">
-                <h3 style={{ color: '#10b981' }}>Bankroll Tracker</h3>
+                <h3 style={{ color: '#10b981' }}>Cash Bankroll</h3>
               </div>
               <BankrollTracker userId={targetUserId} initialSessions={sessionRows} />
             </div>

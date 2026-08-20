@@ -1454,15 +1454,30 @@ export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: stri
             setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
             setDeletingTableId(id);
             try {
-              // Defense-in-depth: scope delete to this club's tables
+              // Defense-in-depth: scope the delete to tables this club can own.
+              // 2026-08-19: this scoped on club_id ALONE. Union games are owned
+              // BY the union, so club_id is the union's id, not club.id — the
+              // UPDATE matched ZERO rows, returned no error, the card was
+              // optimistically removed and the user was told "Table deleted".
+              // The table stayed live and reappeared on reload. Accept either
+              // the club's own tables or its union's.
               const resolvedClubId = club?.id;
               let query = supabase
                 .from('tables')
                 .update({ status: 'deleted', is_active: false, is_deleted: true })
                 .eq('id', id);
-              if (resolvedClubId) query = query.eq('club_id', resolvedClubId);
-              const { error } = await query;
+              if (resolvedClubId) {
+                query = bbjScope.unionId
+                  ? query.or(`club_id.eq.${resolvedClubId},union_id.eq.${bbjScope.unionId}`)
+                  : query.eq('club_id', resolvedClubId);
+              }
+              // Return the affected rows so a no-op cannot masquerade as success.
+              const { data: deleted, error } = await query.select('id');
               if (error) throw error;
+              if (!deleted || deleted.length === 0) {
+                toast.error('That table could not be deleted — you may not own it.');
+                return;
+              }
               setTables((prev) => prev.filter((t) => t.id !== id));
               toast.success('Table deleted');
             } catch (err) {

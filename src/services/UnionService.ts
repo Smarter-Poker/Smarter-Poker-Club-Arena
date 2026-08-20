@@ -518,10 +518,15 @@ class UnionServiceClass {
       // Live ledger is rake_records (rake_history is dead — last row 2026-05-01).
       try {
         const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        // 2026-08-19: this filtered ONLY on member club ids, but union games are
+        // now owned BY the union — rake_records.club_id is the union's own id,
+        // which is not in clubIds. So the union dashboard reported 0 weekly rake
+        // while the union was actively raking (600 rake-wallet credits in 15
+        // minutes at the time this was found). Include the union itself.
         const { data: rakeData } = await supabase
           .from('rake_records')
           .select('club_id, rake_amount')
-          .in('club_id', clubIds)
+          .in('club_id', [...clubIds, unionId])
           .gte('created_at', oneWeekAgo)
           .limit(QUERY_LIMITS.BULK);
         for (const r of rakeData || []) {

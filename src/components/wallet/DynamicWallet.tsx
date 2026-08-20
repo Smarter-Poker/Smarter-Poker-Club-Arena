@@ -98,8 +98,6 @@ interface WalletData {
   unionPromo: number;
   /** Sum of member clubs' operational banks — the real union-level figure. */
   clubsWallet: number;
-  /** Union bank minus the rake treasury held inside it. */
-  unionBankUnreserved: number;
   /** What Monday's close hands back to THIS club / to all clubs. */
   clubProjectedRakeback: number;
   projectedClubsShare: number;
@@ -190,7 +188,6 @@ export default function DynamicWallet({
     unionRake: 0,
     unionPromo: 0,
     clubsWallet: 0,
-    unionBankUnreserved: 0,
     clubProjectedRakeback: 0,
     projectedClubsShare: 0,
     nextCloseAt: null,
@@ -353,7 +350,6 @@ export default function DynamicWallet({
         unionRake: num(panel.rake_treasury),
         unionPromo: num(panel.union_promo),
         clubsWallet: num(panel.clubs_wallet),
-        unionBankUnreserved: num(panel.union_bank_unreserved),
         clubProjectedRakeback: num(panel.club_projected_rakeback),
         projectedClubsShare: num(panel.projected_clubs_share),
         nextCloseAt: (panel.next_close_at as string | null) ?? null,
@@ -600,11 +596,6 @@ export default function DynamicWallet({
                   p.new.promo_wallet !== undefined
                     ? Number(p.new.promo_wallet) || 0
                     : prev.unionPromo,
-                unionBankUnreserved:
-                  p.new.chip_balance !== undefined && p.new.rake_wallet !== undefined
-                    ? Math.round((Number(p.new.chip_balance) - Number(p.new.rake_wallet)) * 100) /
-                      100
-                    : prev.unionBankUnreserved,
               }));
             }
           }
@@ -685,9 +676,10 @@ export default function DynamicWallet({
         hint: unionFiguresKnown ? "union's own funds" : 'union admins only',
       },
       {
-        // The rake treasury is a SUB-ACCOUNT of the union bank, not a second
-        // pot beside it. Without this hint the two rows read as separate money
-        // that sums — they do not.
+        // Dan 2026-08-20: these ARE two separate pots now. The treasury holds
+        // the member clubs' rake in trust until the Monday close; the bank
+        // holds the union's own money. They do not overlap and they do not sum
+        // into one spendable figure, so the hint says what leaves and when.
         label: 'Rake Treasury',
         icon: '💠',
         value: animTreasury,

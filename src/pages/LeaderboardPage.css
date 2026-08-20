@@ -82,10 +82,10 @@
     0 -10px 30px rgba(0, 0, 0, 0.6),
     0 0 30px rgba(0, 212, 255, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  animation: slideUpSpring 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  animation: leaderboardPageSlideUpSpring 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
-@keyframes slideUpSpring {
+@keyframes leaderboardPageSlideUpSpring {
   0% {
     transform: translateY(150%);
     opacity: 0;
@@ -371,10 +371,10 @@
   margin-top: 0.75rem;
   border-radius: 0 0 16px 16px;
   background-size: 200% auto;
-  animation: shimmer 3s infinite linear;
+  animation: leaderboardPageShimmer 3s infinite linear;
 }
 
-@keyframes shimmer {
+@keyframes leaderboardPageShimmer {
   0% {
     background-position: -200% center;
   }
@@ -493,7 +493,7 @@
   padding: 3rem;
   text-align: center;
   color: #6a7a8a;
-  animation: fadeInUp 0.4s ease-out both;
+  animation: leaderboardPageFadeInUp 0.4s ease-out both;
 }
 
 .empty-state {
@@ -749,7 +749,7 @@
    ANIMATIONS
    ───────────────────────────────────────────────────────────────────────────── */
 
-@keyframes fadeInUp {
+@keyframes leaderboardPageFadeInUp {
   from {
     opacity: 0;
     transform: translateY(12px);
@@ -762,7 +762,7 @@
 }
 
 .animate-fade-in-up {
-  animation: fadeInUp 0.4s ease forwards;
+  animation: leaderboardPageFadeInUp 0.4s ease forwards;
 }
 
 .rank-change-anim {
@@ -1280,7 +1280,7 @@
    ANIMATIONS
    ═══════════════════════════════════════════════════════════════ */
 
-@keyframes fadeInUp {
+@keyframes leaderboardPageFadeInUp {
   from {
     opacity: 0;
     transform: translateY(8px);
@@ -1513,7 +1513,7 @@
   background: linear-gradient(145deg, rgba(0, 212, 255, 0.06) 0%, rgba(0, 100, 170, 0.04) 100%);
   border: 1px dashed rgba(0, 212, 255, 0.2);
   border-radius: 14px;
-  animation: fadeInUp 0.5s ease-out 0.3s both;
+  animation: leaderboardPageFadeInUp 0.5s ease-out 0.3s both;
 }
 
 .lb-motivational-icon {

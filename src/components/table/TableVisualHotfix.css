@@ -58,10 +58,13 @@
   border-width: 0 !important;
 }
 
-/* ── 2. Clip the baked gold nameplate off table-variant bust art ────────── */
-.table-page .seat__avatar--bust .seat__avatar-img[src*='/avatars/table/'] {
-  clip-path: inset(0 0 24.5% 0);
-}
+/* ── 2. Clip the baked gold nameplate off table-variant bust art ──────────
+   MOVED 2026-08-20 to SeatSlot.css, unscoped. It is a fact about the asset
+   family (/avatars/table/ art is 125x170 with the plate baked into the bottom
+   26.47%), not about the table page — SimPage renders <SeatSlot> outside
+   `.table-page` and was drawing the plate on top of the real name box. It also
+   has to stay welded to the --sp-bust-clip that compensates for it, and that
+   lives in SeatSlot.css. Nothing to do here; do not re-add a scoped copy. */
 
 /* ── 3. Bet chips rest ON the felt, ~40% of the way to the pot ────────────
    LIVE E2E FIX 2026-08-15: the 1.82 multiplier alone pushed the SIDE seats'

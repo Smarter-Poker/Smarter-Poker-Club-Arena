@@ -39,10 +39,10 @@
   height: 8px;
   background: #10b981;
   border-radius: 50%;
-  animation: pulse 2s infinite;
+  animation: friendActivityFeedPulse 2s infinite;
 }
 
-@keyframes pulse {
+@keyframes friendActivityFeedPulse {
   0% {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);

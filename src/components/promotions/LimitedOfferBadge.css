@@ -15,10 +15,10 @@
 }
 
 .limited-offer-badge.pulse {
-    animation: badgePulse 2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) infinite;
+    animation: limitedOfferBadgeBadgePulse 2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) infinite;
 }
 
-@keyframes badgePulse {
+@keyframes limitedOfferBadgeBadgePulse {
 
     0%,
     100% {

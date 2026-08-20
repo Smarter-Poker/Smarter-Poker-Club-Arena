@@ -15,6 +15,7 @@ import { STORAGE_KEYS } from '../../lib/storage';
 import { SHARK_CLUB_ID } from '../../lib/constants';
 import styles from '../../pages/HomePage.module.css';
 import { PageErrorBoundary } from '../common/PageErrorBoundary';
+import type { ToastContextValue } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 
 // Lazy-load heavy component
@@ -46,6 +47,22 @@ export interface CarouselSectionProps {
   displayClubs: UserClub[];
   clubStats: Record<string, ClubStats>;
   pinnedClubIds: string[];
+  /* Dan 2026-08-20: HomePage passes these three; the interface never declared
+     them, so `tsc -b` failed on TS2322 and BLOCKED every Club Arena build
+     (`npm run build` is `tsc -b && vite build`) — a landmine for whoever
+     pushed the in-flight Shark Club carousel work first.
+
+     Declared optional and unused rather than deleted from the call site: the
+     Shark Club card is rendered by ClubCardPanel further down and these are
+     the values it will want. Nothing here reads them yet, so this is a pure
+     type widening with no runtime effect. */
+  sharkClubId?: string | null;
+  sharkClubStats?: {
+    totalMembers: number | null;
+    clubLevel: number | null;
+    activePlayers: number | null;
+  };
+  toast?: ToastContextValue;
   navigate: (path: string) => void;
   handleContextMenu: (e: React.MouseEvent, club: UserClub) => void;
   handleLongPressStart: (club: UserClub, e: React.TouchEvent) => void;

@@ -1,0 +1,14 @@
+import { chromium } from 'playwright';
+import fs from 'fs';
+const AUTH='/tmp/e2e-work/auth.json';
+const b=await chromium.launch({headless:true});
+const ctx=await b.newContext({viewport:{width:1280,height:900},deviceScaleFactor:2,...(fs.existsSync(AUTH)?{storageState:AUTH}:{})});
+const p=await ctx.newPage();
+await p.goto('https://smarter.poker/hub/club-arena/',{waitUntil:'domcontentloaded',timeout:45000});
+await p.waitForTimeout(11000);
+await p.keyboard.press('Escape').catch(()=>{});
+await p.waitForTimeout(1500);
+await p.screenshot({path:'/tmp/e2e-shots/vis-header.png', clip:{x:0,y:0,width:1280,height:70}});
+await p.screenshot({path:'/tmp/e2e-shots/vis-arena.png'});
+console.log('captured. body starts:', (await p.innerText('body')).replace(/\s+/g,' ').slice(0,70));
+await b.close();

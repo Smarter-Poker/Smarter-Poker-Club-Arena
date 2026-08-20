@@ -61,12 +61,12 @@
 .tier-icon {
   font-size: 32px;
   text-shadow: 0 0 10px currentColor;
-  animation: pulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: vIPStatsHeaderPulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   position: relative;
   z-index: 1;
 }
 
-@keyframes pulse {
+@keyframes vIPStatsHeaderPulse {
   0%, 100% {
     transform: scale(1);
     opacity: 1;
@@ -117,10 +117,10 @@
   border: 1px solid rgba(255, 215, 0, 0.1);
   border-radius: 8px;
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  animation: slideUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: vIPStatsHeaderSlideUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-@keyframes slideUp {
+@keyframes vIPStatsHeaderSlideUp {
   from {
     opacity: 0;
     transform: translateY(12px);
@@ -187,14 +187,14 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  animation: pulse-indicator 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: vIPStatsHeaderPulse-indicator 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .status-indicator.earning {
   background-color: #4ADE80;
 }
 
-@keyframes pulse-indicator {
+@keyframes vIPStatsHeaderPulse-indicator {
   0%, 100% {
     opacity: 1;
     transform: scale(1);

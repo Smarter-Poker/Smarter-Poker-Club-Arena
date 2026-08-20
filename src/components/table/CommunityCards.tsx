@@ -84,6 +84,9 @@ interface CardFaceProps {
   stage: BoardStage;
   deckStyle?: '4color' | '2color';
   cardBack?: string;
+  /** True for the brief window after the winning cards are named — see the
+   *  dead-animation note on the container. Drives ccHighlightPop. */
+  highlightPop?: boolean;
 }
 
 function CardFace({
@@ -94,6 +97,7 @@ function CardFace({
   stage,
   deckStyle,
   cardBack,
+  highlightPop = false,
 }: CardFaceProps) {
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
@@ -105,6 +109,9 @@ function CardFace({
       className={[
         'community-cards__card',
         isHighlighted ? 'community-cards__card--highlighted' : '',
+        // The pop only means anything on a card that is actually part of the
+        // winning hand.
+        isHighlighted && highlightPop ? 'community-cards__card--highlight-pop' : '',
         isFlopDeal ? 'community-cards__card--flop-deal' : '',
         isTurnCard ? 'community-cards__card--turn' : '',
         isRiverCard ? 'community-cards__card--river' : '',
@@ -310,7 +317,10 @@ function CommunityCardsComponent({
     const prevStr = JSON.stringify(prevHighlightRef.current);
     if (highlightStr !== prevStr && highlightedIndices.length > 0) {
       setHighlightPop(true);
-      const timer = setTimeout(() => setHighlightPop(false), 400);
+      // AUDIT 2026-08-20: window was 400ms against a 500ms ccHighlightPop
+      // keyframe — even once wired (see below) it would have been cut at 80%.
+      // Scaled like every other window so a slowed table cannot clip it.
+      const timer = setTimeout(() => setHighlightPop(false), 500 * getAnimationSpeed() + 60);
       prevHighlightRef.current = highlightedIndices;
       return () => clearTimeout(timer);
     }
@@ -345,9 +355,14 @@ function CommunityCardsComponent({
           {stageLabel}
         </div>
       )}
-      <div
-        className={`community-cards__container ${highlightPop ? 'community-cards__container--highlight-pop' : ''}`}
-      >
+      {/* AUDIT 2026-08-20 (dead animation): this used to put
+          `community-cards__container--highlight-pop` on the CONTAINER. The
+          stylesheet only ever defined `.community-cards__card--highlight-pop`
+          (note: card, not container) — its own comment says "applied via JS" —
+          so the winning-hand card pop had NEVER fired in production. The class
+          is applied to the highlighted CARDS now, which is what the keyframe
+          was written for. */}
+      <div className="community-cards__container">
         {slots.map((slot, i) =>
           slot.type === 'card' ? (
             <CardFace
@@ -359,6 +374,7 @@ function CommunityCardsComponent({
               stage={stage}
               deckStyle={deckStyle}
               cardBack={cardBack}
+              highlightPop={highlightPop}
             />
           ) : // Phase 2 T1-07 — per POKERBROS_CLONE_SPEC.md line 485:
           //   "Preflop: cards exist but are hidden/not displayed"

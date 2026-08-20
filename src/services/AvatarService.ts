@@ -62,6 +62,51 @@ const DEFAULT_AVATAR_SVG = generateDefaultAvatar();
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Downscale an image file to fit within `maxPx` on its longest edge, preserving
+ * aspect ratio. Returns a JPEG (or PNG when the source has transparency), or
+ * rejects so the caller can fall back to the original.
+ *
+ * Uses createImageBitmap + canvas: no dependency, and it never decodes the file
+ * twice. Images already inside the box are returned untouched.
+ */
+async function downscaleImage(file: File, maxPx: number): Promise<File> {
+  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return file;
+
+  const bitmap = await createImageBitmap(file);
+  try {
+    const longest = Math.max(bitmap.width, bitmap.height);
+    if (longest <= maxPx) return file;
+
+    const scale = maxPx / longest;
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, 0, 0, w, h);
+
+    // PNG keeps alpha (avatars are often cut-outs); everything else is JPEG,
+    // which is dramatically smaller for photographs.
+    const keepAlpha = file.type === 'image/png';
+    const mime = keepAlpha ? 'image/png' : 'image/jpeg';
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob(resolve, mime, keepAlpha ? undefined : 0.85)
+    );
+    if (!blob) return file;
+
+    const name = file.name.replace(/\.[^.]+$/, '') + (keepAlpha ? '.png' : '.jpg');
+    return new File([blob], name, { type: mime, lastModified: Date.now() });
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+
 class AvatarServiceClass {
   /** In-memory cache to avoid re-fetching storage listings */
   private _presetCache: Avatar[] | null = null;
@@ -356,17 +401,64 @@ class AvatarServiceClass {
     if (!ALLOWED.includes(file.type)) {
       return { error: 'Use a JPG, PNG or WebP image.' };
     }
-    if (file.size > MAX_BYTES) {
-      return { error: `That image is ${(file.size / 1048576).toFixed(1)}MB. The limit is 5MB.` };
+    /**
+     * The 5 MB limit applies to what we UPLOAD, not to what the user picked.
+     *
+     * It used to be checked here, before any downscaling — so a perfectly
+     * ordinary phone photo was rejected outright even though the very next
+     * step would have turned it into ~50 KB. The only thing that genuinely
+     * has to be bounded up front is what we ask the browser to DECODE, since
+     * that is the part that can hurt a low-end device.
+     */
+    const MAX_DECODE_BYTES = 25 * 1024 * 1024;
+    if (file.size > MAX_DECODE_BYTES) {
+      return {
+        error: `That image is ${(file.size / 1048576).toFixed(1)}MB — too large to process. Please pick one under 25MB.`,
+      };
     }
 
-    const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+    /**
+     * Downscale before it ever leaves the browser.
+     *
+     * Dan 2026-08-20 (measured): avatars were stored exactly as supplied. The
+     * owner account's is 1179x1509 / 263 KB and the largest box any of them is
+     * drawn in is 56 CSS px. Serving is already handled — sizedStorageUrl()
+     * asks Supabase's transform endpoint for the display size — but the
+     * original is still what gets stored, backed up and billed, and the
+     * transform has to chew through it on every cold cache.
+     *
+     * 512px square covers every present use at 3x DPR with room to spare.
+     * If anything here fails (no canvas, exotic colour profile, an image the
+     * decoder rejects) we upload the ORIGINAL rather than block the user —
+     * a slightly heavy avatar beats a broken upload.
+     */
+    const prepared = await downscaleImage(file, 512).catch((err) => {
+      // Falling back to the original is deliberate — a slightly heavy avatar
+      // beats a blocked upload. Reporting it is deliberate too: if the decoder
+      // starts rejecting a whole class of file, that must be visible rather
+      // than showing up months later as a bucket full of 5 MB originals.
+      reportError(err, 'AvatarService.downscale_failed_using_original');
+      return file;
+    });
+    const usable = prepared.size < file.size ? prepared : file;
+
+    // Now that the size is final, enforce the real limit. Reaching this means
+    // downscaling could not get the file under 5 MB — which in practice means
+    // the fallback ran and we are holding the original.
+    if (usable.size > MAX_BYTES) {
+      return {
+        error: `That image is still ${(usable.size / 1048576).toFixed(1)}MB after resizing. The limit is 5MB.`,
+      };
+    }
+
+    const ext =
+      usable.type === 'image/png' ? 'png' : usable.type === 'image/webp' ? 'webp' : 'jpg';
     const path = `${userId}/avatar-${Date.now()}.${ext}`;
 
     try {
       const { error: uploadError } = await supabase.storage
         .from(UPLOAD_AVATARS_BUCKET)
-        .upload(path, file, { cacheControl: '3600', upsert: true, contentType: file.type });
+        .upload(path, usable, { cacheControl: '3600', upsert: true, contentType: usable.type });
 
       if (uploadError) {
         reportError(uploadError, 'AvatarService.uploadAvatar');

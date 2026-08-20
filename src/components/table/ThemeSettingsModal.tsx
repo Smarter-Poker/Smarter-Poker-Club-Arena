@@ -462,8 +462,15 @@ function renderAssetPreview(tab: ThemeTab, asset: ThemeAsset) {
   // THEME_PRESET_BUNDLES holds Partial<ThemeSelection>, so both ids are
   // optional - a preset may set only some of the five slots.
   const bundle = THEME_PRESET_BUNDLES[asset.id];
-  const bgSrc = bundle?.background_id ? TABLE_BACKGROUNDS[bundle.background_id] : undefined;
-  const tableSrc = bundle?.table_id ? TABLE_SKINS[bundle.table_id] : undefined;
+  // A preset naming a background id that isn't in the registry (renamed or
+  // removed design) used to yield `undefined` and render a blank preview.
+  // Fall back to the default backdrop artwork so a preview tile is never empty.
+  const bgSrc = bundle?.background_id
+    ? TABLE_BACKGROUNDS[bundle.background_id] || TABLE_BACKGROUNDS.midnight
+    : undefined;
+  const tableSrc = bundle?.table_id
+    ? TABLE_SKINS[bundle.table_id] || TABLE_SKINS.classic_green
+    : undefined;
   if (!bgSrc && !tableSrc) return fallback;
   return (
     <div className="theme-asset__scene">

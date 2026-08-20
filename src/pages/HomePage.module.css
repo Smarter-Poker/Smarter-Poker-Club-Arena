@@ -301,7 +301,7 @@
   align-items: center;
   margin: 4px 0 8px 0;
   position: relative;
-  animation: scaleIn 0.7s ease-out 100ms both;
+  animation: homePageScaleIn 0.7s ease-out 100ms both;
 }
 
 /* Holographic pedestal glow under featured card */
@@ -438,7 +438,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: scaleIn 0.7s ease-out 100ms both;
+  animation: homePageScaleIn 0.7s ease-out 100ms both;
   border-radius: 12px;
   z-index: 10;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
@@ -840,10 +840,10 @@
   box-shadow:
     0 0 6px rgba(0, 255, 136, 0.6),
     0 0 12px rgba(0, 255, 136, 0.3);
-  animation: livePulse 2s ease-in-out infinite;
+  animation: homePageLivePulse 2s ease-in-out infinite;
 }
 
-@keyframes livePulse {
+@keyframes homePageLivePulse {
   0%,
   100% {
     opacity: 1;
@@ -1285,7 +1285,7 @@
   border: 1px solid rgba(0, 212, 255, 0.15);
   background: linear-gradient(135deg, rgba(0, 212, 255, 0.04) 0%, rgba(5, 5, 16, 0.95) 100%);
   text-align: center;
-  animation: fadeInUp 0.5s ease-out backwards;
+  animation: homePageFadeInUp 0.5s ease-out backwards;
   animation-delay: 300ms;
 }
 
@@ -1474,7 +1474,7 @@
    STAGGERED ENTRANCE ANIMATIONS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-@keyframes fadeInUp {
+@keyframes homePageFadeInUp {
   from {
     opacity: 0;
     transform: translateY(30px) scale(0.9);
@@ -1485,7 +1485,7 @@
   }
 }
 
-@keyframes scaleIn {
+@keyframes homePageScaleIn {
   from {
     opacity: 0;
     transform: scale(0.92);
@@ -1545,10 +1545,10 @@
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.6),
     0 0 40px rgba(0, 212, 255, 0.1);
-  animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: homePageSlideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@keyframes slideUp {
+@keyframes homePageSlideUp {
   from {
     opacity: 0;
     transform: translateY(30px);
@@ -1947,7 +1947,7 @@
   border-radius: 50%;
   background: #00ff88;
   box-shadow: 0 0 4px rgba(0, 255, 136, 0.5);
-  animation: livePulse 2s ease-in-out infinite;
+  animation: homePageLivePulse 2s ease-in-out infinite;
 }
 
 /* Enhancement #6: Parallax Background Layers */
@@ -1957,7 +1957,7 @@
 
 /* Enhancement #7: Featured Card Idle Float */
 .featuredCardFloat {
-  animation: scaleIn 0.7s ease-out 100ms both;
+  animation: homePageScaleIn 0.7s ease-out 100ms both;
 }
 
 @keyframes idleFloat {
@@ -2116,7 +2116,7 @@
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.6),
     0 0 40px rgba(0, 212, 255, 0.1);
-  animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: homePageSlideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .shortcutTitle {
@@ -2348,10 +2348,10 @@
   background: rgba(255, 255, 255, 0.6);
   border-radius: 2px;
   filter: blur(2px);
-  animation: progressGlow 2s ease-in-out infinite;
+  animation: homePageProgressGlow 2s ease-in-out infinite;
 }
 
-@keyframes progressGlow {
+@keyframes homePageProgressGlow {
   0%,
   100% {
     opacity: 0.3;

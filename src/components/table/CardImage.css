@@ -156,7 +156,12 @@
    ANIMATIONS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-@keyframes card-deal {
+/* AUDIT 2026-08-20 (global keyframe collision): `card-deal` is also defined in
+   styles/club-engine.css with a DIFFERENT transform (translateY(-100px)
+   rotateY(180deg) vs this one's -20px/90deg). @keyframes is global, so the
+   last stylesheet loaded won for BOTH — one of the two card deals was always
+   animating with the wrong keyframe. Renamed so each owns its own. */
+@keyframes cardImageDeal {
   from {
     opacity: 0;
     transform: translateY(-20px) scale(0.8) rotateY(90deg);
@@ -169,7 +174,7 @@
 }
 
 .card-image--dealing {
-  animation: card-deal 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+  animation: cardImageDeal 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
 }
 
 @keyframes card-flip {

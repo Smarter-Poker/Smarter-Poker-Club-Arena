@@ -318,11 +318,11 @@
   gap: 1rem;
   box-shadow: 0 0 40px rgba(255, 215, 0, 0.6);
   animation:
-    slideUp 0.5s ease-out,
-    glow 2s infinite;
+    achievementsPageSlideUp 0.5s ease-out,
+    achievementsPageGlow 2s infinite;
 }
 
-@keyframes slideUp {
+@keyframes achievementsPageSlideUp {
   from {
     opacity: 0;
     transform: translate(-50%, 100%);
@@ -334,7 +334,7 @@
   }
 }
 
-@keyframes glow {
+@keyframes achievementsPageGlow {
   0%,
   100% {
     box-shadow: 0 0 40px rgba(255, 215, 0, 0.6);

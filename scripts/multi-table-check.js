@@ -249,6 +249,39 @@ check('cap: deep link to a 5th table TELLS the player', capNotices.includes('rou
 check('cap: deep link puts the URL back on the table actually on screen',
   navCalls.includes('/table/T2'), 'nav=' + JSON.stringify(navCalls));
 
+// Dan 2026-08-20: the notice throttle is keyed PER REASON. A single shared
+// window meant a player who tapped "+" and was then seated into a tournament
+// by the engine within four seconds got the trivial notice and had the
+// money-critical one dropped. Lift the real implementation and prove it.
+{
+  const src = SRC.slice(SRC.indexOf('const notifyCapReached'), SRC.indexOf('// ─── Table Management'));
+  check('cap: notices are throttled per reason, not globally',
+    /capNoticeAtRef\s*=\s*useRef<Record<string, number>>/.test(SRC) &&
+    src.includes("reason === 'seated' ? 'seated' : 'user-action'"),
+    'throttle key not per-reason');
+
+  // Behavioural: replay the real keying logic.
+  const at = {};
+  const fire = (reason, now) => {
+    const key = reason === 'seated' ? 'seated' : 'user-action';
+    if (now - (at[key] ?? 0) < 4000) return false;
+    at[key] = now;
+    return true;
+  };
+  // Epoch-scale values on purpose: with a 0 initial timestamp any 'now' under
+  // 4000 throttles the very FIRST call, which is an artefact of small test
+  // numbers and not something that can happen against a real Date.now().
+  const T = 1787000000000;
+  check('cap: a "+" notice does NOT swallow the tournament-seating notice',
+    fire('add', T) === true && fire('seated', T + 500) === true);
+  check('cap: repeated "+" within the window is still throttled',
+    fire('add', T + 1000) === false);
+  check('cap: repeated seating within the window is still throttled',
+    fire('seated', T + 1200) === false);
+  check('cap: each reason reopens independently after its own window',
+    fire('add', T + 5000) === true && fire('seated', T + 5100) === true);
+}
+
 // other users' seats never spawn tabs
 onSeated({ tableId: 'TX', userId: 'someone-else' });
 check('other-user TABLE_SEATED filtered out', ids().join(',') === 'T1,T2,T3,T4', ids().join(','));

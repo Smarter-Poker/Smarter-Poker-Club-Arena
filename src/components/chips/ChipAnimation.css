@@ -72,11 +72,11 @@
 .animated-chip {
   width: 28px;
   height: 28px;
-  animation: chipFly calc(0.6s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: chipAnimationChipFly calc(0.6s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.2, 1) forwards;
   animation-fill-mode: both;
 }
 
-@keyframes chipFly {
+@keyframes chipAnimationChipFly {
   0% {
     transform: translateX(var(--offset)) scale(0.5) rotateX(0deg);
     opacity: 0;

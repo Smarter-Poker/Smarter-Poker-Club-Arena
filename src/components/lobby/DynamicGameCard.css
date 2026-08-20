@@ -815,7 +815,7 @@
 .dgc__status--live {
   background: #dc2626;
   color: white;
-  animation: livePulse 1s ease-in-out infinite;
+  animation: dynamicGameCardLivePulse 1s ease-in-out infinite;
 }
 
 .dgc__status--reg {
@@ -829,7 +829,7 @@
   border: 1px solid #4e4f50;
 }
 
-@keyframes livePulse {
+@keyframes dynamicGameCardLivePulse {
   0%,
   100% {
     box-shadow:

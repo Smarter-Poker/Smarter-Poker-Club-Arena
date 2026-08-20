@@ -22,13 +22,29 @@ interface CardGeneratorOptions {
 }
 
 // Card dimensions — 3:4 aspect ratio
+/**
+ * Dan 2026-08-20: this used to bake a WHOLE card — id plate, logo, name plate
+ * and a stats bar — 600x800. Its only consumer, ClubCardPanel, renders those
+ * as four live DOM zones and puts this image in ZONE 2 alone: a 1/1 viewport
+ * with object-fit: cover. So the two components had opposite ideas of what
+ * this file produces, and nobody ever saw it, because the upload was blocked
+ * by an RLS policy from the day it was written (see
+ * 20260820_club_assets_allow_club_cards_insert.sql). The moment the policy was
+ * fixed and cards started appearing, every club card showed its name and its
+ * MEMBERS/LEVEL/ACTIVE strip twice — once baked into the image, once live
+ * underneath — with the 3:4 image cropped to its middle band by `cover`.
+ *
+ * The live DOM zones win: they update. This now produces ONLY the viewport
+ * art, square, so `cover` fits it exactly.
+ */
 const CARD_WIDTH = 600;
-const CARD_HEIGHT = 800;
+const CARD_HEIGHT = 600;
 
 // Zone heights (proportional to design)
-const ID_PLATE_HEIGHT = 64; // ~8%
-const STATS_BAR_HEIGHT = 160; // ~20% — stats only, no badge pill
-const NAME_PLATE_HEIGHT = 96; // ~12%
+// Viewport art only — the plates and stats bar are live DOM in ClubCardPanel.
+const ID_PLATE_HEIGHT = 0;
+const STATS_BAR_HEIGHT = 0;
+const NAME_PLATE_HEIGHT = 0;
 const VIEWPORT_TOP = ID_PLATE_HEIGHT;
 const VIEWPORT_HEIGHT = CARD_HEIGHT - ID_PLATE_HEIGHT - NAME_PLATE_HEIGHT - STATS_BAR_HEIGHT; // ~52%
 
@@ -49,7 +65,9 @@ export class ClubCardGenerator {
    * Generate a complete club/union card with logo, ID, and name
    */
   static async generateCard(options: CardGeneratorOptions): Promise<CardGeneratorResult> {
-    const { logoUrl, clubId, clubName, entityType = 'club' } = options;
+    // clubId and clubName stay in the options type — callers pass them and the
+    // panel still renders both — but nothing is drawn from them here any more.
+    const { logoUrl, entityType = 'club' } = options;
     const isUnion = entityType === 'union';
 
     const canvas = document.createElement('canvas');
@@ -60,20 +78,12 @@ export class ClubCardGenerator {
     // Draw card background
     this.drawBackground(ctx, isUnion);
 
-    // Draw Zone 1: ID Plate
-    this.drawIdPlate(ctx, clubId, isUnion);
-
-    // Draw Zone 2: Viewport background
+    // Viewport background, then the club's logo cover-filled over it. Nothing
+    // else: the id plate, name plate and stats bar are live DOM zones around
+    // this image, and baking copies of them here is what produced doubled
+    // names and an empty second stats strip on every card.
     this.drawViewportBg(ctx);
-
-    // Draw logo/image in viewport
     await this.drawLogo(ctx, logoUrl);
-
-    // Draw Zone 3: Name Plate
-    this.drawNamePlate(ctx, clubName);
-
-    // Draw Zone 4: Stats Bar placeholder (actual stats are CSS overlays)
-    this.drawStatsBar(ctx, isUnion);
 
     // Prefer WebP
     const webpTest = canvas.toDataURL('image/webp');
@@ -100,38 +110,6 @@ export class ClubCardGenerator {
     ctx.strokeRect(1.5, 1.5, CARD_WIDTH - 3, CARD_HEIGHT - 3);
   }
 
-  /**
-   * Zone 1: ID Plate
-   */
-  private static drawIdPlate(ctx: CanvasRenderingContext2D, clubId: number, isUnion: boolean) {
-    // Background
-    const gradient = ctx.createLinearGradient(0, 0, 0, ID_PLATE_HEIGHT);
-    gradient.addColorStop(0, 'rgba(50, 65, 95, 0.7)');
-    gradient.addColorStop(1, 'rgba(30, 42, 68, 0.85)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, CARD_WIDTH, ID_PLATE_HEIGHT);
-
-    // Bottom border
-    ctx.strokeStyle = 'rgba(100, 140, 200, 0.15)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, ID_PLATE_HEIGHT);
-    ctx.lineTo(CARD_WIDTH, ID_PLATE_HEIGHT);
-    ctx.stroke();
-
-    // Text
-    const label = isUnion ? 'UNION ID' : 'CLUB ID';
-    ctx.font = 'bold 22px "Orbitron", "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetY = 1;
-    ctx.fillStyle = isUnion ? '#f0d070' : '#d0d8e8';
-    ctx.fillText(`${label}: ${clubId}`, CARD_WIDTH / 2, ID_PLATE_HEIGHT / 2);
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetY = 0;
-  }
 
   /**
    * Zone 2: Viewport background (recessed dark area)
@@ -185,76 +163,5 @@ export class ClubCardGenerator {
     });
   }
 
-  /**
-   * Zone 3: Name Plate
-   */
-  private static drawNamePlate(ctx: CanvasRenderingContext2D, clubName: string) {
-    const nameY = VIEWPORT_Y + VIEWPORT_H;
 
-    // Background
-    const gradient = ctx.createLinearGradient(0, nameY, 0, nameY + NAME_PLATE_HEIGHT);
-    gradient.addColorStop(0, 'rgba(18, 28, 50, 0.9)');
-    gradient.addColorStop(1, 'rgba(12, 20, 38, 0.95)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, nameY, CARD_WIDTH, NAME_PLATE_HEIGHT);
-
-    // Top border
-    ctx.strokeStyle = 'rgba(100, 140, 200, 0.1)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, nameY);
-    ctx.lineTo(CARD_WIDTH, nameY);
-    ctx.stroke();
-
-    // Text — auto-size based on name length
-    let fontSize = 32;
-    if (clubName.length > 12) fontSize = 28;
-    if (clubName.length > 18) fontSize = 24;
-    if (clubName.length > 24) fontSize = 20;
-
-    ctx.font = `bold ${fontSize}px "Orbitron", "Segoe UI", sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
-    ctx.shadowBlur = 6;
-    ctx.shadowOffsetY = 2;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(clubName, CARD_WIDTH / 2, nameY + NAME_PLATE_HEIGHT / 2);
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetY = 0;
-  }
-
-  /**
-   * Zone 4: Stats Bar (dark background — actual values are CSS overlays)
-   */
-  private static drawStatsBar(ctx: CanvasRenderingContext2D, isUnion: boolean) {
-    const statsY = CARD_HEIGHT - STATS_BAR_HEIGHT;
-
-    // Background
-    const gradient = ctx.createLinearGradient(0, statsY, 0, CARD_HEIGHT);
-    gradient.addColorStop(0, 'rgba(10, 18, 32, 0.95)');
-    gradient.addColorStop(1, 'rgba(8, 14, 28, 1)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, statsY, CARD_WIDTH, STATS_BAR_HEIGHT);
-
-    // Top border line
-    ctx.strokeStyle = 'rgba(100, 140, 200, 0.12)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, statsY);
-    ctx.lineTo(CARD_WIDTH, statsY);
-    ctx.stroke();
-
-    // Stat labels — no badge pill, just labels + value placeholders
-    const labelColor = isUnion ? '#e8d090' : '#a5eff0';
-    const labelY = statsY + 24;
-    ctx.font = 'bold 14px "Inter", "Roboto", sans-serif';
-    ctx.fillStyle = labelColor;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    ctx.fillText('MEMBERS', CARD_WIDTH * 0.2, labelY);
-    ctx.fillText('LEVEL', CARD_WIDTH * 0.5, labelY);
-    ctx.fillText('ACTIVE', CARD_WIDTH * 0.8, labelY);
-  }
 }

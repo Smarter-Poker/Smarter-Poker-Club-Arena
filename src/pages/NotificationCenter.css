@@ -192,7 +192,7 @@
   font-size: 0.8rem;
   color: #00d4ff;
   opacity: 0;
-  animation: sparkleFloat 2.5s ease-in-out infinite;
+  animation: notificationCenterSparkleFloat 2.5s ease-in-out infinite;
 }
 
 .notif-sparkle-1 {
@@ -256,7 +256,7 @@
   }
 }
 
-@keyframes sparkleFloat {
+@keyframes notificationCenterSparkleFloat {
   0%,
   100% {
     opacity: 0;

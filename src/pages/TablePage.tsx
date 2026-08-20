@@ -357,7 +357,14 @@ import {
   rotateSeatsForHero,
   seatPixelMap,
 } from '../lib/tableSeatGeometry';
-import { resolveSkin, resolveBackground } from '../lib/tableTheme';
+import {
+  resolveSkin,
+  resolveBackgroundLayers,
+  DEFAULT_TABLE_BACKDROP_COLOR,
+  TABLE_BACKGROUND_SIZE,
+  TABLE_BACKGROUND_POSITION,
+  TABLE_BACKGROUND_REPEAT,
+} from '../lib/tableTheme';
 import { adaptServiceHandToPanel } from '../lib/handHistoryAdapter';
 import { useUserStore } from '../stores/useUserStore';
 
@@ -5094,6 +5101,12 @@ export default function TablePage({
             ),
           }));
           applyCollectingChipSeats(collectMask);
+          // SOUND GAP 2026-08-20: the street sweep — every bet on the felt
+          // sliding into the pot, a 550ms cpCollect animation across every
+          // seat that wagered — played in COMPLETE SILENCE. It is one of the
+          // most physical moments at a real table. Same chip-sweep cue the pot
+          // award uses, gated for background multi-table tabs (#175).
+          if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
           if (collectSeatsTimerRef.current) {
             window.clearTimeout(collectSeatsTimerRef.current);
           }
@@ -5352,10 +5365,18 @@ export default function TablePage({
             // Scaled like the cardFoldOut keyframe it triggers. The showdown
             // result window is 2.6-6.9s server-side, so 2400ms leaves the muck
             // fully visible before the 3s client reset.
-            muckTimerRef.current = setTimeout(() => {
-              muckTimerRef.current = null;
-              setMuckingSeats(loserMask);
-            }, 2400 * getAnimationSpeed());
+            muckTimerRef.current = setTimeout(
+              () => {
+                muckTimerRef.current = null;
+                setMuckingSeats(loserMask);
+                // SOUND GAP 2026-08-20: the losers' cards flying to the muck
+                // at showdown animated in silence. The hero's own muck has had
+                // a sound since the Show/Muck modal was wired; the table's did
+                // not. Same card-slide cue.
+                if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playFold();
+              },
+              2400 * getAnimationSpeed()
+            );
           }
         }
         // Bible V8 §5.1 — winner display persists 2.5–3s before the table
@@ -6511,6 +6532,12 @@ export default function TablePage({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
+    // handleFold/handleCheck/handleCall are re-created every render, so this
+    // effect already re-subscribes every render and the closure below is
+    // always fresh. That is what keeps the check-vs-call decision reading a
+    // CURRENT currentBet rather than a stale one — it is load-bearing, not
+    // incidental, so do not "optimise" these into useCallback without also
+    // adding tableState to the deps.
   }, [isHeroTurnContext, handleFold, handleCheck, handleCall]);
 
   // Keep the all-in hotkey pointed at the current handler (see allInHotkeyRef).
@@ -6945,10 +6972,16 @@ export default function TablePage({
         // Dan 2026-08-18: the blurred-skin backdrop is GONE ("remove the
         // weird images around the table"). The page shows one of the ten
         // designed, interchangeable backgrounds instead.
-        backgroundImage: `url(${resolveBackground(v8Theme.background_id || 'midnight')})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
+        //
+        // Dan 2026-08-20: "EVERY SINGLE TABLE NEEDS A BACKGROUND... IT SHOULD
+        // NEVER BE BLANK." The selected artwork is layered OVER a pure-CSS
+        // designed backdrop, so a 404 / decode failure / slow first paint can
+        // no longer leave the page empty — see lib/tableTheme.
+        backgroundColor: DEFAULT_TABLE_BACKDROP_COLOR,
+        backgroundImage: resolveBackgroundLayers(v8Theme.background_id),
+        backgroundSize: TABLE_BACKGROUND_SIZE,
+        backgroundPosition: TABLE_BACKGROUND_POSITION,
+        backgroundRepeat: TABLE_BACKGROUND_REPEAT,
       }}
     >
       <style>{`

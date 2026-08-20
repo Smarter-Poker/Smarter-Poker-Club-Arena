@@ -29,7 +29,7 @@
     }
 }
 
-@keyframes fadeInUp {
+@keyframes animationsFadeInUp {
     from {
         opacity: 0;
         transform: translateY(20px);
@@ -81,7 +81,7 @@
    SCALE ANIMATIONS
    ───────────────────────────────────────────────────────────────────────────── */
 
-@keyframes scaleIn {
+@keyframes animationsScaleIn {
     from {
         opacity: 0;
         transform: scale(0.9);
@@ -105,7 +105,7 @@
     }
 }
 
-@keyframes popIn {
+@keyframes animationsPopIn {
     0% {
         opacity: 0;
         transform: scale(0.5);
@@ -121,7 +121,7 @@
     }
 }
 
-@keyframes pulse {
+@keyframes animationsPulse {
 
     0%,
     100% {
@@ -247,7 +247,7 @@
     }
 }
 
-@keyframes shimmer {
+@keyframes animationsShimmer {
     0% {
         transform: translateX(-100%);
     }
@@ -294,7 +294,7 @@
             transparent,
             rgba(255, 255, 255, 0.08),
             transparent);
-    animation: shimmer 1.5s infinite;
+    animation: animationsShimmer 1.5s infinite;
 }
 
 .skeleton-text {
@@ -384,7 +384,7 @@
     }
 }
 
-@keyframes shake {
+@keyframes animationsShake {
 
     0%,
     100% {
@@ -411,7 +411,7 @@
    ROTATE & FLIP
    ───────────────────────────────────────────────────────────────────────────── */
 
-@keyframes spin {
+@keyframes animationsSpin {
     from {
         transform: rotate(0deg);
     }
@@ -442,7 +442,7 @@
 }
 
 .animate-fade-in-up {
-    animation: fadeInUp 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+    animation: animationsFadeInUp 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
 }
 
 .animate-fade-in-down {
@@ -450,11 +450,11 @@
 }
 
 .animate-scale-in {
-    animation: scaleIn 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+    animation: animationsScaleIn 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
 }
 
 .animate-pop-in {
-    animation: popIn 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+    animation: animationsPopIn 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
 }
 
 .animate-slide-in-bottom {
@@ -553,7 +553,7 @@
     border: 2px solid rgba(0, 212, 255, 0.2);
     border-top-color: #00d4ff;
     border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+    animation: animationsSpin 0.8s linear infinite;
 }
 
 .loading-dots::after {

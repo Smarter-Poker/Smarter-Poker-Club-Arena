@@ -337,10 +337,10 @@
   padding: 28px;
   max-width: 460px;
   width: 100%;
-  animation: slideUp 0.25s ease;
+  animation: marketplacePageSlideUp 0.25s ease;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
 }
-@keyframes slideUp {
+@keyframes marketplacePageSlideUp {
   from {
     transform: translateY(20px);
     opacity: 0;

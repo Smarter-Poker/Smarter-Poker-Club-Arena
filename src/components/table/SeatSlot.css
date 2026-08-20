@@ -11,6 +11,11 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat {
+  /* The villain slot IS the base. Declared here rather than in design-tokens
+     so that base and size resolve on the SAME element — a responsive block
+     that overrides --seat-avatar-base on `.seat` is then picked up by this
+     substitution, which is not true of a `:root` alias (see the note there). */
+  --seat-avatar-size: var(--seat-avatar-base, 84px);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -185,16 +190,18 @@
   border-radius: var(--radius-circle);
   overflow: hidden;
   position: relative;
-  /* Dan 2026-07-28: the acting player's avatar was rendering as a solid black
-     disc. `.seat--active .seat__avatar-wrap::after` is the inner mask that
-     punches the middle out of the conic countdown ring, and it sits at
-     z-index: 1. This element was `position: relative` with `z-index: auto`,
-     which paints it BELOW any positioned sibling that declares a z-index — so
-     the mask covered the photo entirely and the countdown ring read as a
-     filled circle instead of a ring. Lifting the avatar to z-index: 2 puts it
-     above both `::before` (the ring) and `::after` (the mask) while leaving
-     the ring visible in the 4px it extends past the avatar edge. Kept below
-     `.seat__circular-timer` (z-index: 3) so the SVG arc still draws on top. */
+  /* Stacking inside `.seat__avatar-wrap`, low to high:
+       1  (nothing — the conic ring + mask that used to sit here were deleted
+           2026-08-20; see the note in STATE VARIANTS)
+       2  this element, the photo/art itself
+       3  `.seat__circular-timer` (the SVG countdown arc) and
+          `.seat__status-dot`, both of which must draw ON TOP of the photo.
+     Originally added 2026-07-28 to lift the photo above the countdown mask,
+     which was painting the acting player's avatar as a solid black disc. The
+     mask is gone but the value still matters: `position: relative` with
+     `z-index: auto` paints BELOW any positioned sibling that declares a
+     z-index, which would put the status dot's ordering at the mercy of DOM
+     order. Keep it strictly between 1 and 3. */
   z-index: 2;
   border: 2.5px solid rgba(255, 255, 255, 0.15);
   background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1e 100%);
@@ -229,6 +236,29 @@
   box-shadow:
     0 0 16px rgba(255, 255, 255, 0.15),
     0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* Dan 2026-08-20 (audit): the avatar carries a real action (throwables +
+   Player Notes targeting) and now says so — `role="button"` is set in the TSX
+   only when there is a handler, so this selector is exactly "this avatar does
+   something". The cursor used to be an inline style on the same condition;
+   keeping it here means the hit affordance and the focus ring cannot get out
+   of step with each other. `:focus-visible`, not `:focus`, so a mouse click
+   never paints a ring. */
+.seat__avatar[role='button'] {
+  cursor: pointer;
+}
+
+.seat__avatar[role='button']:focus-visible {
+  outline: 2px solid var(--timer-color, #ffd700);
+  outline-offset: 3px;
+  border-radius: var(--radius-circle);
+}
+
+/* Bust art has no circle to outline — square the ring to the art box instead
+   so it does not float around a transparent PNG. */
+.seat__avatar--bust[role='button']:focus-visible {
+  border-radius: 6px;
 }
 
 .seat__avatar-initial {
@@ -277,18 +307,50 @@
 .seat__avatar--bust .seat__avatar-img {
   border-radius: 0;
   object-fit: contain;
-  /* Enlarge the character beyond the 56px slot and anchor it to the
-     nameplate below, PokerBros-style. overflow:visible on the parent lets
-     the head rise above the slot without shifting layout. */
-  transform: scale(var(--sp-bust-scale, 1.45));
-  transform-origin: 50% 88%;
+  /* Dan 2026-08-20: "avatars must be CONNECTED to the name box." Bust art is
+     drawn standing on the bottom edge of its own canvas, so the art's feet
+     have to land on the bottom edge of the slot — the slot's bottom edge is
+     what `--seat-avatar-wrap` margin-bottom tucks into the name box.
+
+     --sp-bust-clip is how much of the slot's bottom is clipped away by
+     clip-path (the /avatars/table/ rule below shaves the baked gold nameplate
+     off that asset family). 0 for everything else. Anchoring the transform to
+     the VISIBLE bottom (100% - clip) means scaling never moves that edge,
+     and translating back down by the same clip puts it exactly on the slot
+     bottom — correct for any --sp-bust-scale at any breakpoint, instead of
+     the old hand-tuned `50% 88%` origin, which left the art floating
+     ~25px above the name box once the clip was applied. */
+  --sp-bust-clip: 0%;
+  object-position: 50% 100%;
+  transform-origin: 50% calc(100% - var(--sp-bust-clip));
+  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-scale, 1.45));
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
 }
 
+/* ─── Baked-nameplate clip for the /avatars/table/ family ───────────────────
+   Every asset under /avatars/table/ is 125x170 with a gold nameplate painted
+   into the artwork, starting at row 125 — so the plate is 45/170 = 26.47% of
+   the image. Clip it off; the seat has a real name box.
+
+   Dan 2026-08-20 (audit): this rule USED to live in TableVisualHotfix.css
+   scoped to `.table-page`, which was wrong twice over. It is a fact about the
+   ASSET, not about the page: SimPage renders <SeatSlot> inside `.sim-page`,
+   so the plate was drawn there in full and — now that the art sits down on the
+   name box instead of floating above it — landed directly on top of the real
+   one. Scoping also split the contract across two files, so the clip and the
+   --sp-bust-clip that compensates for it could silently drift apart. One rule,
+   one place, both values together. Change one, change the other. */
+.seat__avatar--bust .seat__avatar-img[src*='/avatars/table/'] {
+  clip-path: inset(0 0 26.5% 0);
+  --sp-bust-clip: 26.5%;
+}
+
 /* Hover zoom must compose with the base bust scale (was scale(1.08) alone,
-   which would SHRINK a bust from 1.45 back to 1.08) */
+   which would SHRINK a bust from 1.45 back to 1.08) AND keep the
+   clip-compensating translate, or the art would jump up off the name box
+   on hover. */
 .seat:not(.seat--empty):not(.seat--folded) .seat__avatar--bust:hover .seat__avatar-img {
-  transform: scale(calc(var(--sp-bust-scale, 1.45) + 0.1));
+  transform: translateY(var(--sp-bust-clip)) scale(calc(var(--sp-bust-scale, 1.45) + 0.1));
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6)) brightness(1.1);
 }
 
@@ -788,66 +850,50 @@
 
 /* ─── HERO ────────────────────────────────────────────────────────────── */
 
-/* PokerBros-style avatar timer ring — conic gradient around avatar circle */
-.seat--active .seat__avatar-wrap::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    transparent calc(100% - var(--timer-progress, 100%)),
-    var(--timer-color, #ffd700) calc(100% - var(--timer-progress, 100%)),
-    var(--timer-color, #ffd700) 100%
-  );
-  z-index: 1;
-  filter: drop-shadow(0 0 4px var(--timer-glow, rgba(255, 215, 0, 0.5)));
-  transition: opacity 0.3s ease;
-  will-change: background;
-}
+/* Dan 2026-08-20 (audit): DELETED the conic countdown ring, its inner mask and
+   the two timer-urgency overrides that used to live here (~50 lines across
+   `.seat--active/.seat--timer-urgent/.seat--timer-critical
+   .seat__avatar-wrap::before|::after`).
 
-/* Inner mask for avatar timer ring */
-.seat--active .seat__avatar-wrap::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 50%;
-  background: var(--bg-primary, #0a0e17);
-  z-index: 1;
-}
+   They had been DEAD since 2026-08-15. TableVisualHotfix rule 8 does
 
-/* Timer urgency on avatar ring */
-.seat--timer-urgent .seat__avatar-wrap::before {
-  background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    transparent calc(100% - var(--timer-progress, 100%)),
-    #ff6b35 calc(100% - var(--timer-progress, 100%)),
-    #ff6b35 100%
-  ) !important;
-  filter: drop-shadow(0 0 6px rgba(255, 107, 53, 0.6)) !important;
-}
+     .table-page .seat__avatar-wrap::before,
+     .table-page .seat__avatar-wrap::after { display: none !important; }
 
-.seat--timer-critical .seat__avatar-wrap::before {
-  background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    transparent calc(100% - var(--timer-progress, 100%)),
-    #ef4444 calc(100% - var(--timer-progress, 100%)),
-    #ef4444 100%
-  ) !important;
-  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.7)) !important;
-}
+   for EVERY wrap — Dan, verbatim: "the ring is still appearing behind players
+   when the action is on them... make sure thats removed". So nothing here ever
+   painted on the table page, while every one of these rules still cost a
+   `will-change: background` layer promotion on the acting seat, recalculated
+   each timer tick.
+
+   Whose turn it is is carried by `.seat__circular-timer` (the SVG arc, z-index
+   3) and the neon border on `.seat__info`. If a ring is ever wanted again it
+   goes on `.seat__circular-timer`, NOT on a wrap pseudo-element — rule 8 is a
+   deliberate, twice-relitigated decision. */
 
 /* Dan 2026-08-15: "HERO avatar should always be 33% bigger than the villains."
-   Villains use the global --seat-avatar-size (84px). Redeclaring the token on
-   .seat--hero cascades to BOTH .seat__avatar-wrap and .seat__avatar (they each
-   read var(--seat-avatar-size)), so the ring, the mask and the photo all scale
-   together — the two never drift apart. 84 * 1.33 = 111.7 -> 112px. */
-.seat--hero {
-  --seat-avatar-size: 112px;
-  width: 128px; /* was 96px — must clear the wider avatar */
+   Redeclaring the token on .seat--hero cascades to BOTH .seat__avatar-wrap and
+   .seat__avatar (they each read var(--seat-avatar-size)), so ring, mask and
+   photo scale together.
+
+   Dan 2026-08-20 (audit): this was a hardcoded 112px, and "always" was not
+   true. The three responsive blocks below used to set `.seat__avatar-wrap` and
+   `.seat__avatar` to literal px (75/66/57), which out-ordered this declaration
+   — later in the file, same specificity — so on EVERY phone the hero avatar
+   was exactly the same size as the villains'. Deriving from
+   --seat-avatar-base, which is now the only thing the responsive blocks touch,
+   makes the 1.33x hold at every breakpoint by construction. 84 * 1.3333 =
+   111.997 -> 112px, so desktop is unchanged to the pixel. */
+/* `.seat.seat--hero` (0,2,0), not `.seat--hero` (0,1,0): the responsive blocks
+   set `.seat { width: ... }` later in this file, which at equal specificity
+   would win and leave the hero's name box at villain width while its art is
+   1.33x — the desktop proportion (box 8/7 of the slot) would only hold above
+   641px. Deriving both from one token keeps it true everywhere. */
+.seat.seat--hero {
+  --seat-avatar-size: calc(var(--seat-avatar-base, 84px) * var(--seat-avatar-hero-ratio, 1.3333));
+  /* Must clear the wider avatar. 96/84 = 128/112 = 8/7, so deriving keeps the
+     name box in the same proportion to the art at every breakpoint. */
+  width: calc(var(--seat-avatar-size) * 8 / 7);
 }
 
 .seat--hero .seat__avatar {
@@ -897,7 +943,7 @@
   animation: none;
 }
 
-@keyframes activeAvatarPulse {
+@keyframes seatSlotActiveAvatarPulse {
   0%,
   100% {
     box-shadow:
@@ -1465,11 +1511,17 @@
     0 0 48px rgba(255, 215, 0, 0.25),
     0 0 80px rgba(255, 215, 0, 0.1),
     0 4px 16px rgba(0, 0, 0, 0.5);
-  animation: winnerAvatarGlow 1.2s ease-in-out infinite;
+  animation: seatWinnerAvatarGlow 1.2s ease-in-out infinite;
   transform: scale(1.08);
 }
 
-@keyframes winnerAvatarGlow {
+/* AUDIT 2026-08-20 (global keyframe collision): `winnerAvatarGlow` is also
+   defined in components/common/Avatar.css with a DIFFERENT body and a
+   different duration (2s infinite vs this 1.2s). @keyframes is a GLOBAL
+   namespace, so whichever stylesheet loaded last won for BOTH — the winning
+   seat's avatar glow was not reliably the one written for it. Renamed so the
+   table owns its own. */
+@keyframes seatWinnerAvatarGlow {
   0%,
   100% {
     box-shadow:
@@ -2089,10 +2141,10 @@
   color: #ffffff;
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   z-index: 5;
-  animation: equityFadeIn 0.3s ease-out;
+  animation: seatEquityFadeIn 0.3s ease-out;
 }
 
-@keyframes equityFadeIn {
+@keyframes seatEquityFadeIn {
   from {
     opacity: 0;
     transform: scale(0.8);
@@ -2108,17 +2160,17 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 640px) {
+  /* Dan 2026-08-20 (audit): override ONLY --seat-avatar-base. This used to
+     hardcode `.seat__avatar-wrap` and `.seat__avatar` to 75px each, which
+     (a) was a second and third copy of a number the token already owns — the
+     exact drift the comment on `.seat__avatar-wrap` warns about — and (b) came
+     later in the file than `.seat--hero`, at the same specificity, so it
+     silently flattened the hero avatar back to villain size on every phone.
+     One number in, everything downstream follows: villain slot, hero slot
+     (x1.3333), both seat widths, and the bust anchoring. */
   .seat {
+    --seat-avatar-base: 75px;
     width: 88px; /* was 72px -- 1.5x avatars */
-  }
-
-  .seat__avatar-wrap {
-    width: 75px;
-    height: 75px;
-  }
-  .seat__avatar {
-    width: 75px;
-    height: 75px;
   }
 
   .seat__info {
@@ -2203,17 +2255,14 @@
 
 @media (max-width: 480px) {
   .seat {
+    --seat-avatar-base: 66px; /* see the note in the 640px block */
     width: 80px; /* was 66px -- 1.5x avatars */
   }
 
+  /* Only the overlap into the name box is tuned per breakpoint now; the slot
+     size itself comes from --seat-avatar-base above. */
   .seat__avatar-wrap {
-    width: 66px;
-    height: 66px;
     margin-bottom: -5px;
-  }
-  .seat__avatar {
-    width: 66px;
-    height: 66px;
   }
 
   .seat__info {
@@ -2294,17 +2343,12 @@
 
 @media (max-width: 380px) {
   .seat {
+    --seat-avatar-base: 57px; /* see the note in the 640px block */
     width: 72px; /* was 58px -- 1.5x avatars */
   }
 
   .seat__avatar-wrap {
-    width: 57px;
-    height: 57px;
     margin-bottom: -4px;
-  }
-  .seat__avatar {
-    width: 57px;
-    height: 57px;
   }
 
   .seat__info {
@@ -2555,8 +2599,25 @@
      offset to ~2.5% and lets the box rest on the rail with the whole unit,
      bust art included, still inside the canvas. The bust scale stays capped
      because the art is drawn rising from its feet. */
-  --seat-avatar-size: 56px;
   --sp-bust-scale: 1.15;
+}
+
+/* Dan 2026-08-20 (audit): the cap above used to be `--seat-avatar-size: 56px`
+   declared on the WRAPPER. Two problems, one fix.
+
+   1. It set the wrong variable. The seat now derives its slot from
+      --seat-avatar-base, so a wrapper-level --seat-avatar-size was simply
+      ignored by `.seat--hero`.
+   2. It was declared on an ANCESTOR. The responsive blocks declare
+      --seat-avatar-base on `.seat` itself, and an element's own declaration
+      always beats an inherited one — so below 641px the top-row cap silently
+      stopped applying and the art was free to climb into the BBJ banner again
+      on exactly the screens with the least room for it.
+
+   Targeting `.seat` inside the wrapper (0,2,0) puts the cap above the
+   responsive `.seat` rules (0,1,0) at every width. */
+.seat-wrapper--top .seat {
+  --seat-avatar-base: 56px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

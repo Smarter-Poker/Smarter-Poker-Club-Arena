@@ -173,7 +173,7 @@
   line-height: 1.4;
 }
 
-@keyframes slideDown {
+@keyframes advancedStatsSummarySlideDown {
   from {
     opacity: 0;
     transform: translateY(-4px);

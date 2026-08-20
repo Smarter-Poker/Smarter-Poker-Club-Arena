@@ -87,10 +87,10 @@
   background: rgba(255, 255, 255, 0.04);
   border-radius: 10px;
   margin-bottom: 0.5rem;
-  animation: pulse 1.5s infinite;
+  animation: playerActivityFeedPulse 1.5s infinite;
 }
 
-@keyframes pulse {
+@keyframes playerActivityFeedPulse {
   0%,
   100% {
     opacity: 0.4;

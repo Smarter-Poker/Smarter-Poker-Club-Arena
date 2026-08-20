@@ -33,13 +33,13 @@
     padding: var(--space-6);
     text-align: center;
     position: relative;
-    animation: slideUp 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+    animation: installPromptSlideUp 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 0 20px rgba(24, 119, 242, 0.2);
 }
 
-@keyframes slideUp {
+@keyframes installPromptSlideUp {
     from {
         transform: translateY(100%);
         opacity: 0;

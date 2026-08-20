@@ -1,0 +1,12 @@
+import { chromium } from 'playwright';
+import fs from 'fs';
+const AUTH='/tmp/e2e-work/auth.json';
+const b=await chromium.launch({headless:true});
+const ctx=await b.newContext({viewport:{width:1280,height:900}, ...(fs.existsSync(AUTH)?{storageState:AUTH}:{})});
+const p=await ctx.newPage();
+await p.goto('https://smarter.poker/hub/club-arena/',{waitUntil:'domcontentloaded',timeout:45000});
+await p.waitForTimeout(9000);
+console.log('URL:',p.url());
+console.log('BODY:',(await p.innerText('body')).replace(/\s+/g,' ').slice(0,300));
+await p.screenshot({path:'/tmp/e2e-shots/probe-auth.png'});
+await b.close();

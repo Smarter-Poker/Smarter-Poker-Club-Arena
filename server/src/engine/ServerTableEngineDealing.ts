@@ -299,12 +299,28 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           const SHOWDOWN_PER_EXTRA_HAND_MS = 700; // each additional hand to read
           const SHOWDOWN_MAX_MS = 6000; // a big multiway pot must not stall the table
 
-          const resultDisplayMs = wentToShowdown
-            ? Math.min(
-                SHOWDOWN_MAX_MS,
-                SHOWDOWN_BASE_MS + (showdownHands - 2) * SHOWDOWN_PER_EXTRA_HAND_MS
-              )
-            : RESULT_DISPLAY_FOLD_MS;
+          // ── Dan 2026-08-20 (systematic sweep): the BAD BEAT JACKPOT ──
+          //
+          // Same bug class as the turn bug, on the biggest moment the game
+          // has. A BBJ is real money and often life-changing, and the client
+          // plays a full-screen celebration that runs ~9s (phases at 3.5s,
+          // fade at 8s, complete at 8.5s). The table did NOT pause for it: the
+          // window here is at most 6s and typically 2.6s, so the NEXT HAND was
+          // being dealt underneath the celebration while it was still running.
+          //
+          // Nothing about a jackpot should be rushed. Hold the table until the
+          // celebration has actually finished.
+          const BBJ_CELEBRATION_MS = 9000;
+          const bbjHitThisHand = !!this.currentHandBBJHit?.hit;
+
+          const resultDisplayMs = bbjHitThisHand
+            ? BBJ_CELEBRATION_MS
+            : wentToShowdown
+              ? Math.min(
+                  SHOWDOWN_MAX_MS,
+                  SHOWDOWN_BASE_MS + (showdownHands - 2) * SHOWDOWN_PER_EXTRA_HAND_MS
+                )
+              : RESULT_DISPLAY_FOLD_MS;
 
           // Phase 1: Result display time (clients show winner popups during this window)
           await this.sleep(resultDisplayMs);

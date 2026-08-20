@@ -265,10 +265,10 @@
 }
 
 .pulse-anim {
-  animation: onlinePulse 2s infinite;
+  animation: friendsPageOnlinePulse 2s infinite;
 }
 
-@keyframes onlinePulse {
+@keyframes friendsPageOnlinePulse {
   0% {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
   }

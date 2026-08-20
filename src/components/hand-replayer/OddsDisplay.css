@@ -96,10 +96,10 @@
   position: absolute;
   inset: 0;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  animation: shimmer 2s infinite;
+  animation: oddsDisplayShimmer 2s infinite;
 }
 
-@keyframes shimmer {
+@keyframes oddsDisplayShimmer {
   0% {
     transform: translateX(-100%);
   }

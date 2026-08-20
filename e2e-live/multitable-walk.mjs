@@ -31,11 +31,11 @@ async function freshLogin(){
   await page.goto('https://smarter.poker/auth/login',{waitUntil:'domcontentloaded',timeout:40000});
   await page.waitForTimeout(2000);
   const cont=page.locator('button:has-text("Continue To Hub")').first();
-  if(await cont.isVisible().catch(()=>false)){ await cont.click(); }
+  if(await cont.isVisible().catch(()=>false)){ await cont.click({timeout:10000}).catch(()=>{}); }
   else {
     await page.locator('input[type="email"]').first().fill(process.env.SP_EMAIL);
     await page.locator('input[type="password"]').first().fill(process.env.SP_PASS);
-    await page.locator('button:has-text("Sign In"), button[type="submit"]').first().click();
+    await page.locator('button:has-text("Sign In"), button[type="submit"]').first().click({timeout:15000});
   }
   await page.waitForTimeout(6000);
 }
@@ -43,7 +43,7 @@ async function acceptTermsIfShown(){
   const t=page.locator('text=I understand and agree to these terms').first();
   if(await t.isVisible().catch(()=>false)){
     console.log('NOTE: terms modal visible -- acknowledging on owner test account');
-    await page.locator('input[type="checkbox"]').first().check().catch(async()=>{await t.click();});
+    await page.locator('input[type="checkbox"]').first().check().catch(async()=>{await t.click({timeout:8000}).catch(()=>{});});
     await page.locator('button:has-text("Enter Club Arena")').first().click({timeout:10000}).catch(()=>{});
     await page.waitForTimeout(5000);
     return true;
@@ -59,7 +59,7 @@ async function gotoArena(){
   if(/GAME MODES/i.test(b) && /View Profile/i.test(b)){
     console.log('NOTE: nav drawer open on arrival -- closing');
     const close=page.locator('button:has-text("Close"), [aria-label*="close" i]').first();
-    if(await close.isVisible().catch(()=>false)) await close.click().catch(()=>{});
+    if(await close.isVisible().catch(()=>false)) await close.click({timeout:8000}).catch(()=>{});
     await page.keyboard.press('Escape').catch(()=>{});
     await page.waitForTimeout(2000);
   }
@@ -83,13 +83,13 @@ try{
     if(links.length) break;
     // some builds render tables behind a Cash/Games tab -- poke it if present
     const tab=page.locator('button:has-text("Cash"), [role="tab"]:has-text("Cash"), button:has-text("Games")').first();
-    if(await tab.isVisible().catch(()=>false)) await tab.click().catch(()=>{});
+    if(await tab.isVisible().catch(()=>false)) await tab.click({timeout:8000}).catch(()=>{});
     // stalled-fetch hang (ClubHomePage watchdog finding): after ~32s of
     // skeleton, do what a real user does -- reload once, keep polling.
     if(i===7){ console.log('NOTE: club home still loading after 32s -- reloading once (stalled-fetch finding)'); await page.reload({waitUntil:'domcontentloaded'}).catch(()=>{}); await acceptTermsIfShown(); }
     // if the Retry panel surfaced (watchdog fix), press it
     const retry=page.locator('button:has-text("Retry")').first();
-    if(await retry.isVisible().catch(()=>false)) await retry.click().catch(()=>{});
+    if(await retry.isVisible().catch(()=>false)) await retry.click({timeout:8000}).catch(()=>{});
   }
   await page.screenshot({path:S('01-club-home')});
   console.log('TABLE LINKS: '+JSON.stringify(links.slice(0,6)));
@@ -128,7 +128,7 @@ try{
   // buy-in modal?
   const buyBtn=page.locator('button:has-text("Buy In"), button:has-text("BUY IN"), button:has-text("Sit")').first();
   if(await buyBtn.isVisible().catch(()=>false)){
-    await buyBtn.click(); await page.waitForTimeout(6000);
+    await buyBtn.click({timeout:10000}).catch(()=>{}); await page.waitForTimeout(6000);
     await page.screenshot({path:S('03-after-buyin')});
     body=await page.innerText('body');
   }
@@ -172,7 +172,7 @@ try{
   const plusVisible=await plus.waitFor({state:'visible',timeout:20000}).then(()=>true).catch(()=>false);
   check('+ add-table button visible (upper-left HUD)', plusVisible);
   if(plusVisible){
-    await plus.click();
+    await plus.click({timeout:10000});
     // embedded ClubHomePage does its own fetches -- poll up to 40s (the
     // 2026-08-20 API degradation showed these can crawl), pressing the
     // watchdog Retry panel if it appears.
@@ -182,7 +182,7 @@ try{
       body=await page.innerText('body');
       if(await page.locator('.multi-table-page__lobby-tab a[href*="/table/"]').count()>0){ lobbyReady=true; break; }
       const rtry=page.locator('.multi-table-page__lobby-tab button:has-text("Retry")').first();
-      if(await rtry.isVisible().catch(()=>false)) await rtry.click().catch(()=>{});
+      if(await rtry.isVisible().catch(()=>false)) await rtry.click({timeout:8000}).catch(()=>{});
     }
     await page.screenshot({path:S('04-embedded-lobby')});
     check('embedded lobby tab opened (club content, table 1 still mounted)', lobbyReady || /CLUB JAQK|Cash|Tournaments|Games/i.test(body));
@@ -211,9 +211,9 @@ try{
       if (/Spectating, Tap An Open Seat/i.test(body)) {
         const seat2=page.locator('[aria-label*="open - click to sit"]').first();
         if (await seat2.isVisible().catch(()=>false)) {
-          await seat2.click(); await page.waitForTimeout(2500);
+          await seat2.click({timeout:12000}).catch(()=>{}); await page.waitForTimeout(2500);
           const conf2=page.locator('button.buy-in-modal__confirm').first();
-          if (await conf2.isVisible().catch(()=>false)) { await conf2.click(); await page.waitForTimeout(6000); }
+          if (await conf2.isVisible().catch(()=>false)) { await conf2.click({timeout:10000}).catch(()=>{}); await page.waitForTimeout(6000); }
           body=await page.innerText('body');
         }
       }
@@ -236,7 +236,7 @@ try{
 
   const ret=page.locator('text=/Return to game|Act now/i').first();
   if (await ret.isVisible().catch(()=>false)) {
-    await ret.click(); await page.waitForTimeout(5000);
+    await ret.click({timeout:10000}).catch(()=>{}); await page.waitForTimeout(5000);
     await page.screenshot({path:S('07-returned')});
     check('dock returns to live table (SPA, socket intact)', page.url().includes('/table/') && /POT|Fold|Check|Call|Waiting|Seat Reserved|Post|Blind/i.test(await page.innerText('body')));
   } else skip('dock return','no Return to game control visible');

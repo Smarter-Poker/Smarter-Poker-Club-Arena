@@ -12,7 +12,14 @@ import { test, expect } from '@playwright/test';
  * reach the auth page still validate the redirect is correct.
  */
 
-const BASE = '/hub/club-arena';
+/**
+ * Paths are RELATIVE to the configured baseURL, like every other spec here.
+ * This used to be a hardcoded '/hub/club-arena', which happens to work against
+ * production but silently points at the wrong place for any other BASE_URL —
+ * a local dev server serves the app at the root, so every navigation would
+ * have 404'd while the body-visible assertions kept passing.
+ */
+const BASE = '';
 
 // ── Helper: Open the hamburger menu from the GlobalHeader ──
 async function openHamburgerMenu(page: any) {
@@ -37,7 +44,9 @@ async function openHamburgerMenu(page: any) {
 
 // ── Helper: Navigate and wait for either page load or auth redirect ──
 async function navigateAndWait(page: any, path: string) {
-  await page.goto(`${BASE}${path}`);
+  // '' is not a valid URL for goto() — the root case has to resolve to the
+  // baseURL directory explicitly, or every test silently skips on about:blank.
+  await page.goto(`${BASE}${path.replace(/^\//, '')}` || './');
   // Wait for either the actual page or auth redirect
   await page.waitForLoadState('domcontentloaded');
   await page.waitForTimeout(1000);
@@ -165,11 +174,13 @@ test.describe('Hamburger Menu — Navigation Links', () => {
       const menuItem = page.locator(`span:text-is("${link.label}")`).first();
       await expect(menuItem).toBeVisible({ timeout: 3000 });
       await menuItem.click();
-      await page.waitForTimeout(500);
 
-      // After clicking, the URL should contain the expected path
+      // No fixed sleep before the assertion: client-side navigation is not
+      // done on a timer, and a 500 ms guess is exactly what made this spec
+      // flaky once the suite went to 4 workers. toHaveURL already polls —
+      // give it a real budget and let it do that.
       const escapedPath = link.path.replace(/\//g, '\\/');
-      await expect(page).toHaveURL(new RegExp(`.*${escapedPath}`));
+      await expect(page).toHaveURL(new RegExp(`.*${escapedPath}`), { timeout: 10000 });
     });
   }
 });

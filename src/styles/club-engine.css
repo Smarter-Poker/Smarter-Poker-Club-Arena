@@ -697,7 +697,7 @@ pre {
 }
 
 /* Chip Stack Animation */
-@keyframes chip-stack {
+@keyframes clubengineChip-stack {
   0% {
     transform: translateY(-20px);
     opacity: 0;
@@ -710,7 +710,7 @@ pre {
 }
 
 .chip-stack {
-  animation: chip-stack calc(0.3s * var(--animation-speed, 1)) var(--ease-bounce) forwards;
+  animation: clubengineChip-stack calc(0.3s * var(--animation-speed, 1)) var(--ease-bounce) forwards;
 }
 
 /* Win Celebration */
@@ -931,11 +931,11 @@ textarea:focus-visible,
     var(--club-elevated) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  animation: clubengineShimmer 1.5s infinite;
   border-radius: var(--radius-md);
 }
 
-@keyframes shimmer {
+@keyframes clubengineShimmer {
   0% {
     background-position: -200% 0;
   }

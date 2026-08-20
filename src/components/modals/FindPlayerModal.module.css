@@ -24,10 +24,10 @@
   width: 100%;
   max-width: 440px;
   max-height: 90vh;
-  animation: slideIn 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  animation: findPlayerModalSlideIn 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-@keyframes slideIn {
+@keyframes findPlayerModalSlideIn {
   from {
     opacity: 0;
     transform: translateY(-20px) scale(0.95);
@@ -385,7 +385,7 @@
   background: rgba(0, 40, 80, 0.4);
 }
 
-@keyframes fadeIn {
+@keyframes findPlayerModalFadeIn {
   from {
     opacity: 0;
     transform: translateY(10px);

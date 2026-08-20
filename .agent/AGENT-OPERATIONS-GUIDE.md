@@ -8,11 +8,11 @@ disagree, verify reality, then fix this file.
 
 ## 1. KNOW WHICH SHELL YOU ARE IN — the single biggest source of wasted time
 
-| Shell | Where it runs | Network | Delete files | Repo access | Use for |
-|---|---|---|---|---|---|
-| `counselors__host_terminal` | The Mac host, user smarter.poker | YES | YES | ~/Documents/* | push, publish, gh, locks cleanup, node |
-| `device_bash` (Cowork VM) | Sandboxed Linux VM, repo mounts | NO | NO (`rm` fails) | /sessions/*/mnt/* | editing files, running node harnesses |
-| `Bash` (cloud container) | Anthropic cloud sandbox | partial (proxy blocks github repos + smarter.poker) | YES | NO repo | npm lockfile work, Playwright renders |
+| Shell                       | Where it runs                    | Network                                             | Delete files    | Repo access       | Use for                                |
+| --------------------------- | -------------------------------- | --------------------------------------------------- | --------------- | ----------------- | -------------------------------------- |
+| `counselors__host_terminal` | The Mac host, user smarter.poker | YES                                                 | YES             | ~/Documents/\*    | push, publish, gh, locks cleanup, node |
+| `device_bash` (Cowork VM)   | Sandboxed Linux VM, repo mounts  | NO                                                  | NO (`rm` fails) | /sessions/_/mnt/_ | editing files, running node harnesses  |
+| `Bash` (cloud container)    | Anthropic cloud sandbox          | partial (proxy blocks github repos + smarter.poker) | YES             | NO repo           | npm lockfile work, Playwright renders  |
 
 - Host shells are NON-LOGIN: start anything needing node/gh with
   `export PATH="/opt/homebrew/bin:$PATH"`. nvm also exists (~/.nvm).
@@ -28,6 +28,7 @@ disagree, verify reality, then fix this file.
 ## 2. PUSH AND PUBLISH — never end a session unpushed, never hand off
 
 Full mechanics in `.agent/SELF-PUBLISH-PROTOCOL.md`. Summary:
+
 - World Hub: host shell -> clear stale locks -> ensure upstream
   (`git branch --set-upstream-to=origin/main main` if `git status -sb` shows a
   bare `## main`) -> `nohup bash scripts/git-safe-push.sh "msg" > /tmp/push-wh.log 2>&1 &`
@@ -35,8 +36,8 @@ Full mechanics in `.agent/SELF-PUBLISH-PROTOCOL.md`. Summary:
 - Club Arena: if origin moved and the tree holds another agent's uncommitted
   files, merge in a THROWAWAY WORKTREE (never stash their files):
   `git worktree add --detach /tmp/ca-merge origin/main; cd /tmp/ca-merge;
-  git merge --no-edit main; ln -sfn ~/Documents/club-arena/node_modules node_modules;
-  ./node_modules/.bin/tsc --noEmit -p tsconfig.app.json; git push origin HEAD:main;`
+git merge --no-edit main; ln -sfn ~/Documents/club-arena/node_modules node_modules;
+./node_modules/.bin/tsc --noEmit -p tsconfig.app.json; git push origin HEAD:main;`
   then remove the worktree. Pushing CA main triggers: CI, Silent Revert Guard,
   Build for World Hub Sync (publishes arena assets), Auto-Deploy Hetzner Engine
   (server/ changes go LIVE on the game engine). Verify ALL of them:
@@ -50,7 +51,7 @@ Full mechanics in `.agent/SELF-PUBLISH-PROTOCOL.md`. Summary:
 - `VERCEL_TOKEN`: valid tokens live in `Smarter-Poker-World-Hub/.env.local`
   and `club-arena/.env` (sourced from the Vercel CLI session, verified against
   the API). If one ever 401s again, the CLI session at `~/Library/Application
-  Support/com.vercel.cli/auth.json` on the host is the source of truth.
+Support/com.vercel.cli/auth.json` on the host is the source of truth.
 - Supabase: NEW-format keys (`sb_secret_...`, `sb_publishable_...`) in
   `WH/.env.local` and `CA/.env`. Legacy JWT-format keys are REVOKED --
   placeholders marked `<REVOKED-2026-08-16-...>` are intentional, leave them.
@@ -69,6 +70,7 @@ Full mechanics in `.agent/SELF-PUBLISH-PROTOCOL.md`. Summary:
 ## 4. VERIFY AGAINST REALITY, NOT AGAINST FILES — the recurring lesson
 
 Every serious incident this month traces to trusting a stale artifact:
+
 - MIGRATION FILES LIE. Before touching a live DB function, diff against
   `pg_get_functiondef()` on production. A drafted "fix" for atomic_table_buyin
   based on the last migration file would have reverted three later security
@@ -110,7 +112,7 @@ writing code: unknown stays unknown, caps fail closed, never render a guess.
 - Commit early and often -- Antigravity's `git reset --hard origin/main`
   destroys uncommitted work AND unpushed local-only commits. If you must stop
   with unpushed work, `git bundle create .agent/backup-<date>.bundle
-  origin/main..HEAD` first (untracked files survive resets).
+origin/main..HEAD` first (untracked files survive resets).
 
 ## 7. HOUSE RULES QUICK LIST
 
@@ -132,3 +134,28 @@ writing code: unknown stays unknown, caps fail closed, never render a guess.
   `server/src/*.test.ts`. Never loosen an assertion to make it pass.
 - Protected zone: `public/hub/club-arena/` in WH is build output -- never
   hand-edit; commit messages touching it must contain "club-arena".
+
+## 8. REAL-BROWSER E2E — run before claiming UI work done
+
+File-level checks, harnesses and even deployed-chunk greps prove the CODE
+shipped; only a real browser proves the FLOW works. Both repos now carry
+production walkthrough scripts — run the relevant one and read its PASS/FAIL
+lines + screenshots BEFORE reporting any user-facing work as complete.
+
+- Club Arena: `e2e-live/` (plain playwright, standalone). Run from the HOST
+  (network + node_modules): `SP_EMAIL=... SP_PASS=... bash scripts/e2e-host.sh
+multitable-walk` (or `trainer-walkthrough`). Read e2e-live/README.md first —
+  it encodes the selector map and five hard-won rules (single-use refresh
+  tokens, icon-only "+" button, buy-in confirm class, rAF stops in
+  backgrounded tabs, always leave tables at the end).
+- The @playwright/test suite lives in `tests/e2e/` (see playwright.config.ts).
+  The top-level `e2e/` directory is ORPHANED — testDir moved to tests/e2e in
+  3de146acd and nothing runs those specs. Do not add specs there.
+- Screenshots land in /tmp/e2e-shots. To LOOK at them (mandatory for visual
+  claims): cp into a device-mounted folder, stage via device_stage_files,
+  then Read the staged path.
+- A run that fails can be a PRODUCT bug, a TEST bug, or a PLATFORM incident —
+  check https://status.supabase.com before debugging your own code (the
+  2026-08-20 API Gateway degradation produced infinite club-home skeletons
+  that looked exactly like an app bug; ClubHomePage now has a 15s watchdog
+  that surfaces the Retry panel instead).

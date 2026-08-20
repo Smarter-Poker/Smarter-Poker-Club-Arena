@@ -292,3 +292,115 @@ At a $10 top stake that is a 10,000 seed with a 40,000 ceiling.
 The ~1,160 of historical margin identified above sits in no ledger and is not
 backfilled. It is test-money on test tournaments, and the mechanism that
 created it is now closed, so this is recorded rather than corrected.
+
+---
+
+## POST-CUTOVER AUDIT — what the first version got wrong
+
+Dan asked for the system to be pushed live and then audited until it could be
+called correct. The audit found four defects in my own work, one of them
+already live on real money. Recorded plainly, because the pattern matters more
+than the individual bugs.
+
+### 1. The gate had a hole — and it was already firing
+
+The reserve gate only ever guarded **100× and 500×**. But **any** tier above
+~2.76× pays out more than three buy-ins bring in: a 4× pays 4B against a 2.76B
+contribution. On a pool without a cushion even a 4× is unaffordable.
+
+What that did in production: `fn_spin_settle_game` aborted on the non-negative
+CHECK constraint, and because the engine treats settlement as best-effort, **the
+game then ran unbooked** — no ledger row, no rake record. Precisely the hole
+this system exists to close, reintroduced by an incomplete gate. **Three live
+spins hit it within twenty minutes of the cutover.**
+
+Found by *querying for started spins with no ledger row*, not by waiting for an
+alert. This failure mode produces no error: the absence of a row is not
+something anything notices. That is the lesson — for a defect defined by
+missing data, the only detection is a query that looks for the gap.
+
+**Fixed** in four layers: affordability in the draw (spec + RPC), a graceful
+shortfall path that records rather than aborts, three retries on a settle that
+was already idempotent, and `fn_spin_sweep_unbooked()` as a backstop.
+
+### 2. The ladder had leaked into three more places
+
+Fixing `TournamentRecurringService` was not enough:
+
+- **`HorseOrchestrator.launchSpin`** — a third creation path with its own stale
+  table (EV 2.75, no 4×/50×/500×), `buy_in_fee` charged, and
+  `prizePool = buyIn × horsesToRegister × multiplier` — the inflated formula the
+  recurring service itself documents as a guaranteed house loss. Latent: all
+  7,130 production spins carry the recurring service's shape, so it had never
+  run. Live the moment anyone called it.
+- **`SpinAndGoLobby`** — the player-facing ladder was hardcoded
+  `[2,3,5,10,25,50,100]`, omitting 4× and 500×. The lobby advertised a shorter
+  ladder than the engine draws from and never mentioned the top jackpot.
+- Its prize display reconstructed the amount from a `bonusBuyIns` table
+  belonging to the retired pool model — coincidentally correct for the tiers it
+  listed, and with no answer at all for the two it was missing.
+
+### 3. Case sensitivity defeated the first constraint
+
+I added a CHECK that a spin cannot carry a fee. `launchSpin` writes
+`variant: 'SPIN'` — **uppercase** — which walked straight past
+`variant IS DISTINCT FROM 'spin'`, and past the engine's own
+`variant === 'spin'` check, meaning such a row would have been both mispriced
+and never settled. The constraint is now case-insensitive and covers
+`tournament_type`.
+
+Verified by inserting all three shapes: lowercase spin + fee **rejected**,
+uppercase SPIN + fee **rejected**, `sng` + fee **accepted** — because an SNG
+genuinely *is* buy-in + rake and the constraint must not blur that distinction.
+
+### 4. The real lesson
+
+Fixing files one at a time loses to the next file nobody remembered. Three of
+the four defects above were "the same bug in another place". The durable fixes
+were the ones that made the mistake structurally impossible:
+
+| Invariant | Enforced by |
+|---|---|
+| A spin never carries a fee | database CHECK, case-insensitive |
+| The pool never goes negative | database CHECK |
+| An unpayable tier is never offered | affordability gate in draw + spec |
+| A game is never left unbooked | retries + idempotent sweeper |
+| The ladder never forks again | one spec, mirrored, byte-identical test |
+
+---
+
+## SEEDED, AND VERIFIED LIVE
+
+From the **Midway union promo wallet** — operator capital, explicitly not
+player funds — via `fn_spin_reserve_seed_from_union`, which debits the union,
+writes `union_wallet_transactions`, credits the pool and writes
+`spin_reserve_ledger`, atomically and idempotently.
+
+| Club | Seed | Ceiling |
+|---|---|---|
+| Club JAQK | 5,000 | 20,000 |
+| SHARK CLUB | 5,000 | 20,000 |
+| Midway house club *(the one actually running spins)* | 10,000 | 20,000 |
+
+The house club got 2× headroom deliberately: a pool parked exactly on the 500×
+threshold flickers the top tier in and out of the ladder on ordinary traffic —
+correct behaviour, poor product.
+
+Union promo wallet: 36,520.14 → 16,535.07. Three unbooked games backfilled,
+all at zero shortfall.
+
+### Final state
+
+| Check | Result |
+|---|---|
+| Unbooked spins (24h) | **0** |
+| Pool shortfall events | **0** |
+| Negative pools | **0** |
+| Pools where balance ≠ sum(ledger) | **0** |
+| New spins charging a fee | **0** |
+| Settled games with rake booked | **10 / 10** |
+| Clubs able to draw 500× | **3 / 3** |
+| Thin pools | **0** |
+
+4× is now appearing in live draws, which it could not before — that tier did
+not exist in the table that was running.

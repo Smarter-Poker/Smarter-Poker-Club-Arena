@@ -78,9 +78,46 @@ settled`. A thin or short pool returns 500 on purpose; the reasoning is in
 
 ---
 
-## STILL OPEN, in the order I would take them
+## ⚡ SECOND-PASS UPDATE (same day, ~23:00Z) — most of this list is now CLOSED
 
-### 🔴 1. No 10x or 25x Spin has ever paid 2nd and 3rd
+Read `.agent/audits/2026-08-20-spins-reveal-payout-and-locked-tiers.md`
+("SECOND PASS" section) for evidence. Summary of what changed after this
+handoff was written:
+
+- **Item 1 is DONE.** A real 10x and 25x were forced (one-shot BEFORE INSERT
+  trigger, rig dropped after) and completed: 10x paid [8.00, 2.00, 0] =
+  10.00; 25x paid [20.00, 3.00, 2.00] = 25.00. Both sum to the pool exactly.
+- **Item 3 is DONE, structurally.** The draw now happens AT START
+  (TournamentManagerBase), nowhere else — there is no multiplier and no
+  multiplier-derived prize_pool on the row before start, so there is nothing
+  for a lobby client to read early. This also caught what the first pass
+  missed: prize_pool = buyIn x multiplier was itself the spoiler.
+- PLO5/PLO6 spins exist and have run (first draws: 4x and 3x, both booked).
+- The wheel no longer replays in a fresh tab (90s started_at gate).
+- "500x LIVE" lobby badge via v_spin_tier_availability (public two-boolean
+  view; balances stay closed). The false winner-takes-all badge is deleted.
+- Knockout heads carry the real avatar in the broadcast.
+- live-animations e2e now covers wheel/knockout/chest — 6/6 against prod CSS.
+- All local multiplier tables are deleted (W5 fully closed), and
+  spinEngineWiring pins the draw's location across client AND server.
+
+**Still genuinely open after the second pass:**
+
+1. 🟠 Locked wheel segments have never rendered with real data — every pool
+   is well funded, so `spin_locked_tiers` is always `[]`. Under-seed a test
+   club to see them (item 2 below, unchanged).
+2. 🟡 Item 4's list (knockout pacing feel, bomb-pot reachability, a human
+   actually watching these animations at a table) — unchanged.
+3. 🟡 The lobby placeholder for an un-started spin shows smallest-tier
+   structure (300 chips / 1-min levels) until start rewrites it. Honest but
+   slightly misleading for the ~60s registering window; a "structure set at
+   draw" label would be nicer.
+
+The original items below are kept for their reasoning and queries.
+
+---
+
+### ~~🔴 1. No 10x or 25x Spin has ever paid 2nd and 3rd~~ ✅ DONE — see update above
 
 The guard is in and unit-tested; the live path has not run. Those tiers are
 ~1.1% of draws, so a natural one is hours away.

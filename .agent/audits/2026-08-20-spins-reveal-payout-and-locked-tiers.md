@@ -328,3 +328,116 @@ sliced 900 characters from `tournament_type: 'SPIN'` and failed because comments
 were added above the line it checks — against entirely correct code. It now
 bounds on `.select()`, where the insert actually ends. `spinEngineWiring.test.ts`
 has the same 1600-character shape and will break the same way eventually.
+
+---
+
+# SECOND PASS (same day) — the draw moves to START, and the payouts run live
+
+Everything below is the continuation session ("finish up anything and
+everything"). Commits `5f07b7e51`, `456b2d7e2` (CA), migrations
+`spin_locked_tiers_column` (earlier) + `spin_tier_availability_public_view`.
+
+## The deeper W1: prize_pool was the spoiler all along
+
+Hiding the multiplier's labels closed every SURFACE — and left the row
+itself carrying the answer arithmetically: `prize_pool = buyIn x multiplier`
+was written at creation, so a $5 spin showing a $15 pool had said "3x" to
+anyone doing division, a minute before the wheel span. The residual noted in
+the first pass ("spin_multiplier is still SELECTed") understated it: the
+column AND the pool both leaked.
+
+The fix is structural, not cosmetic: **the draw now happens at start,
+nowhere else.**
+
+- `createSpin` (recurring service) and `HorseOrchestrator.launchSpin` write
+  `spin_multiplier: null`, `prize_pool: 0`, a smallest-tier placeholder
+  structure. The recurring service's local CSPRNG fallback roll is DELETED —
+  it was the last code path that could pick a multiplier without asking the
+  reserve. Its six unit tests are replaced by a guard that the method stays
+  deleted.
+- `TournamentManagerBase` start: the "missing multiplier" branch (which
+  always existed) is now the normal path. It draws through the gate, settles
+  the pool in the same breath, and rewrites stack, **blinds** (new — before
+  this, only creation wrote blind_structure, so a start-time draw would have
+  run a 500x on 1-minute levels), payouts and pool — in the row AND in the
+  in-memory object the level timer and table creation read.
+- RPC-down fallback resolves DOWN to 2x. Never a local roll.
+- `TournamentService`'s retired EV-3.0 `SPIN_BONUS_TIERS`, its Math.random
+  `spinMultiplier()`, and `SPIN_RAKE_PERCENT`/pool-model constants are gone;
+  the display ladder is now DERIVED from spinSpec (closing W5 fully).
+- `spinEngineWiring.test.ts` now pins the draw's LOCATION as hard as its
+  gating, across client and server, with comment-stripped and
+  .select()-bounded windows.
+
+**Verified live** (engine deployed 22:29Z): the very next batch drew at
+start — and included the first PLO5 spin ever (drew 4x) and the first PLO6
+(3x), because the configs now exist. All booked: 2 ledger rows + 1 rake row
+each.
+
+## W2 closed for real: the multi-place path has now RUN
+
+Forced via a one-shot BEFORE INSERT trigger with a self-consuming two-row
+queue (10, 25) — after the PATCH near-miss recorded above, the rule was
+"bound the write by something that cannot generalise", and a trigger that
+deletes its own queue rows cannot fire a third time. Rig dropped and
+verified gone (0 trigger / 0 function / 0 table) the moment both spins were
+in flight.
+
+- 25x ($1 buy-in, pool 25.00): 3rd place eliminated at 22:51Z and paid
+  **2.00 at elimination** — exactly 8% of the pool, the first multi-place
+  spin payout in the platform's history.
+
+**DONE-WHEN, met exactly** (both COMPLETED by 22:59Z):
+
+| Game | Pool  | Places paid | Prizes              | Total paid |
+| ---- | ----- | ----------- | ------------------- | ---------- |
+| 10x  | 10.00 | 2           | 8.00 / 2.00 / 0     | **10.00**  |
+| 25x  | 25.00 | 3           | 20.00 / 3.00 / 2.00 | **25.00**  |
+
+Both sum to the pool to the cent — the 120% fallback overpay is not merely
+guarded against, it is now demonstrated absent on the live path. The
+Midway pool afterwards: balance 9,982.00 (10,000 seed + 414.00 deposited −
+432.00 drawn — the two forced jackpots pushed drawn past deposited, which
+is exactly what a reserve is for), 0 unbooked, 0 shortfalls, not thin.
+
+## Also shipped this pass
+
+- **"500x LIVE" lobby badge** — the first surface to advertise the reserve.
+  `v_spin_tier_availability` exposes exactly two booleans per club (same
+  threshold arithmetic as the draw), granted to authenticated AND anon;
+  verified anon 200 on it and anon 401 still on `v_spin_reserve_health`.
+  Client: `useSpinTierAvailability` (module-cached, 60s TTL, absent-never-
+  wrong failure mode) + `.ngc-spin-live` status-light styling.
+- **The false `winner-takes-all` badge on SpinCard is deleted** — untrue for
+  every 10x+ draw, and the card renders before the draw exists.
+- **Wheel replay in a fresh tab is gone**: sessionStorage is per-tab, so a
+  reconnect minutes into a spin replayed the draw as if it were happening —
+  a fake reveal of an old result. Gated on `started_at` within 90s; rows
+  without started_at keep the old behaviour.
+- **Knockout heads are real faces**: the bounty broadcast now carries
+  `eliminatedAvatar` (profiles.avatar_url); TablePage already passed it
+  through, so the client side was wired and waiting.
+- **Real-browser animation coverage** (W8): `live-animations.spec.ts` grew
+  wheel / knockout / chest tests reading `document.getAnimations()` against
+  production CSS. 6/6 pass.
+- The CI phantom-column gate correctly caught that the committed schema
+  manifest predated `spin_locked_tiers`; the manifest now knows it.
+
+## Traps this pass (all cost real minutes)
+
+- **A python anchor that matches EARLIER in the file** spliced a duplicate
+  region into HorseOrchestrator (`s.index` found launchSNG's identical
+  `gameTypeMap` block first). Caught by reading the output, restored via
+  git checkout, redone with Edit on unique anchors. Verify an anchor is
+  unique before using it as a splice point.
+- **Two agents, one working tree.** The other agent's `git commit` raced
+  mine: index.lock + a refs lock killed a husky run and one push loop
+  cherry-picked THEIR HEAD (it shipped fine — their finished commit — but
+  by luck). Rule that held: commit MY paths explicitly, push from a
+  detached /tmp worktree, and read `git rev-parse HEAD` INSIDE the same
+  shell step that commits, never a step later.
+- **Background processes die with the host_terminal session** — nohup +
+  disown did not survive, twice. The DB trigger replaced the polling script
+  entirely, which was the better design anyway: a BEFORE INSERT trigger
+  cannot lose the creation-to-start race, and a self-consuming queue cannot
+  overfire.

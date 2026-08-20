@@ -7940,7 +7940,6 @@ serving assets/index-CZDNUkT--v6.js.
   filters (commas/parens broke the filter; %/\_ matched everything); suggestion
   dropdown gained ArrowUp/Down + Enter keyboard navigation.
 
-
 ## 2026-08-19 — Rake/BBJ audit pass 3: ordering, security, conservation guard
 
 Full write-up: `.agent/audits/2026-08-19-rake-bbj-union-treasury-audit.md`.
@@ -7958,7 +7957,7 @@ Full write-up: `.agent/audits/2026-08-19-rake-bbj-union-treasury-audit.md`.
     grants revoked (both code callers were already dead).
     `get_union_bbj_status` stopped returning hardcoded zeros.
 11. AUDIT HOLE: `fn_sweep_bbj_promo` wrote no union_wallet_transactions row for
-    union-destination sweeps (only the _all variant did) — the reason historical
+    union-destination sweeps (only the \_all variant did) — the reason historical
     sweeps are unauditable. Parity restored.
 12. BBJ pool conservation measured: inflow − outflow − balances = 59,510.86,
     identical to the cent across three measurements under live traffic (so
@@ -8023,7 +8022,7 @@ each measured before and after:
    0.55..100, mean 40.4) but the client multiplied by 100, so a 40% VPIP
    displayed as 4040%. Pre-existing bug, carried in from the old page.
 5. A load in flight caused the next one to be DROPPED (`if (loadingRef.current)
-   return`), so changing filters mid-fetch left the previous filter's data on
+return`), so changing filters mid-fetch left the previous filter's data on
    screen with no retry. Replaced with a monotonic request token that
    supersedes instead of dropping.
 6. Realtime channel was subscribed to `promotion_leaderboards`, which this view
@@ -8046,8 +8045,8 @@ fire-and-forget - reconciled over 5 hours at 100.05% of expected, wins at
 no stale-closure bug there.
 
 DB migration mirror: supabase/migrations/20260819j_leaderboard_correctness_pass.sql
-(dumped from the live catalog). Staging tables _lb_backfill_daily and
-_lb_hands_daily dropped after reconciliation.
+(dumped from the live catalog). Staging tables \_lb_backfill_daily and
+\_lb_hands_daily dropped after reconciliation.
 
 ## 2026-08-19 (final pass) — leaderboard polish + union parity (Cowork/Claude)
 
@@ -8057,6 +8056,7 @@ fail-closed loss gate all still present and accruing: +267 seat-hands and
 matching win/loss deltas over a 25s sample).
 
 Fixed / added:
+
 - Podium places were missing the treatment the list rows already had: no
   keyboard operability, no hand-count context, no unranked marker. Podium is
   now role=button + tabIndex + Enter/Space with the same context line.
@@ -8073,6 +8073,7 @@ Fixed / added:
   its now-unused UnionClubRow type were removed.
 
 Checked, no action needed:
+
 - TablePage's in-table leaderboard calls getClubLeaderboard('profit') and maps
   entry.value, so it inherited the real-profit fix with no change required.
 - A new third trigger on hand_history (trg_hand_history_club_member_stats,
@@ -8108,7 +8109,7 @@ changed.
   15/30 player could outrank a winning 1/2 grinder. New
   player_stats.sum_big_blind accumulates one big_blind per seated player per
   cash hand in the same trigger statement as hands_dealt (no extra cost), and
-  bb/100 = 100*(winnings-losses)/sum_big_blind. Backfilled from hand_history and
+  bb/100 = 100\*(winnings-losses)/sum_big_blind. Backfilled from hand_history and
   reconciled at 100.000% (20,079,332 vs 20,079,296 true big blinds).
   Verified: club board returns 141.94 / 120.92 / 113.90 / 100.11 / 95.44,
   strictly descending, all qualified.
@@ -8180,7 +8181,7 @@ today's carousel rework + quick-links work.
   stale HomePage.module.css would have deleted the 187-line cashier
   quick-link CSS block — extracted-only shipping avoided that. Local tree
   reset clean to origin/main; scratch junk (fix_css.py, fix_panel_css.py,
-  .unlink_test, .agent/_claude_tmp) removed.
+  .unlink_test, .agent/\_claude_tmp) removed.
 - b8023ad16 fixes: dead shark-stats pipeline removed from HomePage (234
   lines: 20s poll + realtime channel + SWR cache with no consumer since the
   featured card was removed); ClubQuickLinkTile triggerRef never attached
@@ -8230,3 +8231,52 @@ today's carousel rework + quick-links work.
   unredeemed.
 - 4 new regression tests (tests/unit/ClubsServiceMembership.test.ts).
   Suite 2116 green, tsc clean, prod build clean.
+
+## 2026-08-20 — Spins: the draw moves to START; multi-place payouts proven live
+
+Two sessions of Spin work (commits `2330da610`, `61a4ad0a8`, `5f07b7e51`,
+`456b2d7e2` + WH `df396be40b`). Full evidence:
+`.agent/audits/2026-08-20-spins-reveal-payout-and-locked-tiers.md` and the
+continuation handoff `.agent/handoffs/2026-08-20-spins-continuation-2.md`.
+
+- [P0] THE DRAW HAPPENS AT START NOW, nowhere else. Hiding the multiplier's
+  labels was theatre while prize_pool = buyIn x multiplier sat readable on
+  the row from creation — a $5 spin showing a $15 pool had told everyone
+  "3x" a minute before the wheel existed. createSpin (recurring service AND
+  HorseOrchestrator) writes spin_multiplier NULL / prize_pool 0 / a
+  smallest-tier placeholder; TournamentManagerBase draws through
+  fn_spin_draw_multiplier at start, settles the pool in the same breath, and
+  rewrites stack, blinds (new — creation used to be the only blind writer),
+  payouts and pool from the drawn tier, in the row AND the in-memory object
+  the level timer reads. Verified live: first post-deploy batch (22:29Z)
+  drew at start with locked tiers recorded and 2 ledger + 1 rake rows each.
+- [P0] The 100%-of-pool payout fallback could pay a 10x+ spin at 120%
+  (places 2..N are paid at elimination, then the fallback handed the winner
+  the whole pool). A spin now rebuilds its split from spinTier(); the
+  fallback is capped at the UNSPENT pool for every format
+  (payoutStructure.ts). PROVEN LIVE: a real 10x and a real 25x were forced
+  via a one-shot BEFORE INSERT trigger (rig dropped and verified gone
+  afterwards). 10x completed paying 2 places, 8.00 + 2.00 = 10.00; 25x paid
+  3 places, 20.00 + 3.00 + 2.00 = 25.00 — the first multi-place spin
+  payouts in the platform's history, each summing to the pool to the cent.
+  Pool after: 9,982.00, 0 unbooked, 0 shortfalls.
+- [P1] Zero hand-declared multiplier tables remain anywhere. Deleted: the
+  recurring service's local CSPRNG fallback roll, HorseOrchestrator's
+  EV-2.75 table, TournamentService's SPIN_BONUS_TIERS (EV-3.0 pool model)
+  and its Math.random spinMultiplier(). spinEngineWiring.test.ts pins the
+  draw's location and the tables' absence across client AND server with
+  comment-stripped, .select()-bounded windows.
+- [P1] PLO5 and PLO6 spin configs exist at last (advertised by the spec
+  since day one, never offered). First PLO5 spin drew 4x, first PLO6 drew
+  3x, both booked.
+- [P2] Wheel: locked tiers persisted at draw time (tournaments.
+  spin_locked_tiers, migration 20260820n) and rendered with unlock
+  thresholds; no replay in a fresh tab (90s started_at gate); the lobby
+  SpinCard advertises the format ceiling plus a "500x LIVE" badge backed by
+  v_spin_tier_availability (migration 20260820p — two booleans, no
+  balances; anon 200 on it, 401 on the health view). The false
+  winner-takes-all badge is gone. Knockout heads are real faces
+  (eliminatedAvatar in the bounty broadcast). Spin sweeper runs every 15
+  min on Open Claw (fire cycle verified 200 + heartbeat).
+- [P2] tests/e2e/live-animations.spec.ts now covers the wheel, knockout and
+  chest in real Chrome against production CSS — 6/6 pass.

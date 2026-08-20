@@ -135,6 +135,26 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           }
         }
 
+        // Dan 2026-08-20 (live repro): "Seat Reserved, You'll Be Dealt In Next
+        // Hand" must be TRUE. A probe seat sat through 6 straight hands still
+        // gated by wait-for-BB — on slow tables the natural BB rotation takes
+        // MINUTES to reach a new seat, and nothing on screen explains the
+        // wait. Every remaining waiter is auto-entered as "post BB to enter":
+        // they pay one live BB (the same fair price PokerBros charges for
+        // immediate entry, via the existing bbOnlyPosts path) and are dealt
+        // into THIS hand. POST /post-bb stays for players who beat the loop
+        // to it; the natural-BB release above still wins when the blind is
+        // reaching their seat anyway, in which case they just post normally.
+        if (this.waitingForBB.size > 0) {
+          for (const userId of Array.from(this.waitingForBB)) {
+            this.waitingForBB.delete(userId);
+            this.postingBBToEnter.add(userId);
+            console.log(
+              `[ServerTableEngine:${this.tableId}] auto post-BB entry for ${userId} — dealt in next hand as promised`
+            );
+          }
+        }
+
         // Dan 2026-08-19, bug list item 17: "when hero busts and adds chips
         // they're never dealt in - stuck on 'Seat Reserved, You'll Be Dealt In
         // Next Hand'."

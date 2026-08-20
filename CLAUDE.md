@@ -31,10 +31,13 @@ cd ~/Documents/Smarter-Poker-World-Hub
 bash scripts/sync-club-arena.sh "feat(ca): <describe what changed>"
 ```
 
-That single script: builds CA with NODE_ENV=production + Sentry sourcemap upload,
-wipes WH `public/hub/club-arena/{index.html,assets/}`, copies the new build,
-stages additions + deletions, commits, and pushes to `main` (which triggers
-the Vercel deploy).
+That script builds CA with NODE_ENV=production, copies the new build to the Hub, and stages it for local preview.
+
+**To actually deploy to production:**
+
+1. Commit your changes in the `club-arena` repository.
+2. `git push` to `main` in `club-arena`.
+3. A GitHub Action (`build-for-world-hub.yml`) will automatically build and sync it to the World Hub repository, which triggers the Vercel deploy.
 
 `SENTRY_AUTH_TOKEN/ORG/PROJECT` are read from `~/Documents/club-arena/.env` if
 not already exported. Bulky static dirs (`cards/`, `images/`, `club-logos/`,
@@ -213,6 +216,7 @@ Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never
 ask Dan for a manual handoff again:
 
 ### What works from the cloud sandbox
+
 - Supabase MCP: full production DB access (migrations, SQL). USE IT.
 - GitHub MCP via device bridge (`mcp__remote-devices__github__*`): full repo
   read/write with Dan's token. `push_files` works for files up to ~65KB each
@@ -222,6 +226,7 @@ ask Dan for a manual handoff again:
   rm is forbidden — mv junk into a `_to_delete/` folder instead.
 
 ### What is BLOCKED from the cloud sandbox (do not waste time retrying)
+
 - Direct git clone/push (proxy MITM: "repo not enabled for this session")
 - `api.github.com` from cloud Bash — same repo gate. Only the device-bridge
   GitHub MCP has repo access (so GitHub Actions run status is NOT readable;
@@ -231,6 +236,7 @@ ask Dan for a manual handoff again:
 - Terminal/IDE computer-use is click-only (no typing)
 
 ### Hard-won traps (cost real hours — memorize)
+
 - STALE STAGING CACHE: re-staging a previously staged device path returns OK
   but the uploads mount silently serves the ORIGINAL session-start snapshot.
   Always copy changed files to a FRESH device path first, then stage that.
@@ -248,6 +254,7 @@ ask Dan for a manual handoff again:
   before editing, or diffs will lie to you.
 
 ### Pushing code (in order of preference)
+
 1. Files < ~65KB: GitHub MCP `push_files` to a branch, then
    `create_pull_request` + `merge_pull_request`. One merge = one deploy.
 2. Large files (e.g. ServerTableEngine.ts, 227KB): CHUNK them. Write base64
@@ -261,6 +268,7 @@ ask Dan for a manual handoff again:
    exact commands so the handoff is one double-click, never copy-paste.
 
 ### Deploying + verifying the engine
+
 - Push to `main` touching `server/**` auto-deploys Hetzner via
   `.github/workflows/auto-deploy-hetzner.yml`. No SSH needed. Docs-only
   pushes (CLAUDE.md, MIGRATION-CHANGELOG.md) do NOT trigger a deploy.

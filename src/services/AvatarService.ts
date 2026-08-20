@@ -113,6 +113,26 @@ async function downscaleImage(file: File, maxPx: number): Promise<File> {
   }
 }
 
+function normalizeAvatarUrl(url: string): string {
+  if (!url) return url;
+
+  // 1. Hub native paths: /avatars/vip/slug.png -> /avatars/table/vip_slug@2x.webp
+  const hubMatch = url.match(/^\/avatars\/(vip|free)\/([^/.]+)\.png$/i);
+  if (hubMatch) {
+    return `/avatars/table/${hubMatch[1]}_${hubMatch[2]}@2x.webp`;
+  }
+
+  // 2. Storage bucket paths: .../social-media/avatars/vip_slug.png -> /avatars/table/vip_slug@2x.webp
+  const bucketMatch = url.match(
+    /\/social-media\/avatars\/(vip|free)_([^/.]+)\.(png|jpg|jpeg|webp)$/i
+  );
+  if (bucketMatch) {
+    return `/avatars/table/${bucketMatch[1]}_${bucketMatch[2]}@2x.webp`;
+  }
+
+  // 3. Already normalized? Just to be safe, if it's /avatars/table/...webp, leave it.
+  return url;
+}
 
 class AvatarServiceClass {
   /** In-memory cache to avoid re-fetching storage listings */
@@ -333,6 +353,7 @@ class AvatarServiceClass {
    */
   async setUserAvatar(userId: string, avatarUrl: string): Promise<boolean> {
     try {
+      avatarUrl = normalizeAvatarUrl(avatarUrl);
       // Update the profile avatar_url (the canonical source)
       const { error: profileError } = await supabase
         .from('profiles')
@@ -479,8 +500,7 @@ class AvatarServiceClass {
       };
     }
 
-    const ext =
-      usable.type === 'image/png' ? 'png' : usable.type === 'image/webp' ? 'webp' : 'jpg';
+    const ext = usable.type === 'image/png' ? 'png' : usable.type === 'image/webp' ? 'webp' : 'jpg';
     const path = `${userId}/avatar-${Date.now()}.${ext}`;
 
     try {

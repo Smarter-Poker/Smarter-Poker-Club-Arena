@@ -217,6 +217,9 @@ export default function DynamicWallet({
   // Reconnect tracking
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
+  // Identifies which (user, club, union) the channels are bound to, so a
+  // reconnect can be told apart from a genuine change of subscription target.
+  const lastSubscriptionTargetRef = useRef<string>('');
   // Bumped by scheduleReconnect and used as a dependency of the realtime
   // effect, so a reconnect actually TEARS DOWN AND REBUILDS the channels.
   // Previously the reconnect timer only called fetchData(): one refetch, the
@@ -415,8 +418,23 @@ export default function DynamicWallet({
   useEffect(() => {
     if (!userId || !resolvedId) return;
 
-    // Reset reconnect state on new subscription
-    retryCountRef.current = 0;
+    // Reset the BACKOFF only when the subscription TARGET actually changes.
+    //
+    // This effect now re-runs on channelEpoch (a reconnect), and an
+    // unconditional reset here wiped retryCountRef on every retry — so the
+    // delay was pinned at BACKOFF_DELAYS[0] (2s) forever and never escalated
+    // to 4/8/16/30s. A club with a flaky realtime connection would retry every
+    // two seconds indefinitely: precisely the thundering herd the comment on
+    // scheduleReconnect warns about, reintroduced by making the effect
+    // re-runnable. Introduced in 294b85db4 and caught auditing my own change.
+    //
+    // Recovery still resets the backoff — the SUBSCRIBED handler below does
+    // that, which is the correct trigger: we connected, so start over.
+    const subscriptionTarget = `${userId}:${resolvedId}:${currentUnionId ?? ''}`;
+    if (lastSubscriptionTargetRef.current !== subscriptionTarget) {
+      lastSubscriptionTargetRef.current = subscriptionTarget;
+      retryCountRef.current = 0;
+    }
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;

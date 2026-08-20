@@ -55,12 +55,6 @@ export interface ClubStats {
 
 export interface CarouselSectionProps {
   displayClubs: UserClub[];
-  sharkClubId: string | null;
-  sharkClubStats: {
-    totalMembers: number | null;
-    clubLevel: number | null;
-    activePlayers: number | null;
-  };
   clubStats: Record<string, ClubStats>;
   pinnedClubIds: string[];
   navigate: (path: string) => void;
@@ -74,8 +68,6 @@ export interface CarouselSectionProps {
 
 export default function CarouselSection({
   displayClubs,
-  sharkClubId,
-  sharkClubStats,
   clubStats,
   pinnedClubIds,
   navigate,
@@ -222,36 +214,6 @@ export default function CarouselSection({
     [navigate]
   );
 
-  // Shark Club click handler — extracted so both onClick and onKeyDown share the same logic
-  const handleSharkClick = useCallback(async () => {
-    haptic.success();
-    PremiumSFX.navigate();
-    if (sharkClubId) {
-      localStorage.setItem(STORAGE_KEYS.LAST_VISITED, sharkClubId);
-      localStorage.setItem(STORAGE_KEYS.LAST_CLUB, sharkClubId);
-      navigate(`/clubs/${sharkClubId}`);
-    } else {
-      // Fallback: query DB with a 5s timeout to prevent indefinite hangs
-      try {
-        const fetchWithTimeout = Promise.race([
-          supabase.from('clubs').select('id').eq('club_id', SHARK_CLUB_ID).maybeSingle(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
-        ]);
-        const { data: sharkClub } = await fetchWithTimeout;
-        if (sharkClub?.id) {
-          localStorage.setItem(STORAGE_KEYS.LAST_VISITED, sharkClub.id);
-          localStorage.setItem(STORAGE_KEYS.LAST_CLUB, sharkClub.id);
-          navigate(`/clubs/${sharkClub.id}`);
-          return;
-        }
-      } catch {
-        // Timed out or failed — fall through to last resort
-      }
-      // Last resort: navigate using the integer club_id (ClubHomePage resolves it)
-      navigate(`/clubs/${SHARK_CLUB_ID}`);
-    }
-  }, [sharkClubId, navigate]);
-
   // Render a single user club card as a featured-style card — memoized to prevent
   // unnecessary re-creation on every render cycle
   const renderClubCard = useCallback(
@@ -306,12 +268,7 @@ export default function CarouselSection({
                 clubLevel={stats?.clubLevel ?? 1}
                 activePlayers={stats?.activePlayers ?? 0}
                 clubId={club.club_id}
-                cardImageUrl={
-                  club.card_image_url ||
-                  (Number(club.club_id) === SHARK_CLUB_ID
-                    ? `${MEDIA_BASE}images/shark-club-card-v25.jpg`
-                    : undefined)
-                }
+                cardImageUrl={club.card_image_url}
                 logoUrl={club.logo_url}
                 entityType={club.entity_type || 'club'}
               />

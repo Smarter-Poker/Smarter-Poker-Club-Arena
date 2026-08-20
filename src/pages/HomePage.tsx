@@ -1051,7 +1051,7 @@ function HomePageInner() {
   // ═══════════════════════════════════════════════════════════════════════════════
 
   const displayClubs = useMemo(() => {
-    const clubs = userClubs.filter((club) => club.id !== sharkClubId);
+    const clubs = [...userClubs];
     // Phase 7 #3: Sort -- pinned first, then by member count descending, then alphabetical tiebreaker
     clubs.sort((a, b) => {
       const aPinned = pinnedClubIds.includes(a.id) ? 1 : 0;
@@ -1443,8 +1443,6 @@ function HomePageInner() {
           <HomePageErrorBoundary>
             <CarouselSection
               displayClubs={displayClubs}
-              sharkClubId={sharkClubId}
-              sharkClubStats={sharkClubStats}
               clubStats={clubStats}
               pinnedClubIds={pinnedClubIds}
               navigate={navigate}

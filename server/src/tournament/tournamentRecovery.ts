@@ -81,7 +81,7 @@ export async function refundAndCloseCancelledTournament(
         .select('type, category, amount')
         .eq('user_id', row.user_id)
         .eq('related_entity_id', tournamentId)
-        .in('category', ['tournament_buyin', 'refund']);
+        .in('category', ['tournament_buyin', 'rebuy', 'addon', 'refund']);
       if (txErr) {
         reportError(
           new Error(
@@ -92,10 +92,25 @@ export async function refundAndCloseCancelledTournament(
         );
         continue;
       }
+      // PAYOUT-INTEGRITY 2026-08-20: rebuys and add-ons count as money paid
+      // for THIS tournament and must come back on a cancellation. The filter
+      // above used to list only 'tournament_buyin', so a player who had
+      // rebought or taken an add-on was refunded their entry and silently lost
+      // everything else -- despite the comment above this block already
+      // stating that ignoring rebuys/add-ons/re-entries was the old bug.
+      // (Re-entries are written with category 'rebuy'.)
       let paid = 0;
       for (const t of txRows ?? []) {
-        if (t.type === 'debit' && t.category === 'tournament_buyin') paid += Number(t.amount || 0);
-        else if (t.type === 'credit' && t.category === 'refund') paid -= Number(t.amount || 0);
+        if (
+          t.type === 'debit' &&
+          (t.category === 'tournament_buyin' ||
+            t.category === 'rebuy' ||
+            t.category === 'addon')
+        ) {
+          paid += Number(t.amount || 0);
+        } else if (t.type === 'credit' && t.category === 'refund') {
+          paid -= Number(t.amount || 0);
+        }
       }
       paid = Math.round(paid * 100) / 100;
       if (paid <= 0) continue; // never paid (legacy free entry) or already refunded

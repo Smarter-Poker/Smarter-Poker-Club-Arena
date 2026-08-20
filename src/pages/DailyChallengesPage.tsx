@@ -67,7 +67,6 @@ const TYPE_GLYPHS: Record<ChallengeType, string> = {
   tournaments_played: '♛', // queen
   big_pots: '◆', // diamond — the pot
   strong_hands: '♥', // heart — the hand
-  friends_added: '♣', // club
 };
 
 const TIER_LABELS: Record<Tier, string> = {

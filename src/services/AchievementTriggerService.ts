@@ -192,7 +192,8 @@ class AchievementTriggerServiceClass {
     supabase
       .rpc('fn_bump_friend_challenge_progress', { p_challenge_type: 'hand_grinder', p_amount: 1 })
       .then(({ error }) => {
-        if (error) console.debug('[AchievementTrigger] friend-challenge bump failed:', error.message);
+        if (error)
+          console.debug('[AchievementTrigger] friend-challenge bump failed:', error.message);
       });
 
     return result;
@@ -269,21 +270,6 @@ class AchievementTriggerServiceClass {
     const higherResult = await achievementService.incrementProgress(userId, 'friends_25');
     if (higherResult.unlocked && higherResult.achievement) {
       result.triggeredAchievements.push(higherResult.achievement);
-    }
-
-    // Update Daily Challenge progress for friends
-    try {
-      const dcResult = await dailyChallengeService.updateProgress(userId, 'friends_added', 1);
-      if (dcResult.completed.length > 0) {
-        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', {
-          userId,
-          source: 'friend_added',
-          at: Date.now(),
-        });
-        notifyChallengesCompleted(dcResult.completed.map((c) => c.challenge));
-      }
-    } catch (dcErr) {
-      console.debug('[AchievementTrigger] Daily challenge friend progress failed:', dcErr);
     }
 
     return result;

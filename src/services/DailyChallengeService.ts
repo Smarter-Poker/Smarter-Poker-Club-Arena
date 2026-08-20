@@ -42,7 +42,6 @@ export const CHALLENGE_TYPES = [
   // onHandComplete already receives -- see BIG_POT_MIN and isStrongHand below.
   'big_pots',
   'strong_hands',
-  'friends_added',
 ] as const;
 
 export type ChallengeType = (typeof CHALLENGE_TYPES)[number];
@@ -268,10 +267,10 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     icon: '',
   },
   {
-    id: 'friends_added_1_10',
-    name: 'Social 1',
-    description: 'Add 1 friends today',
-    type: 'friends_added',
+    id: 'showdowns_1_10',
+    name: 'Showdown Artist',
+    description: 'Reach showdown in 1 hand today',
+    type: 'showdowns',
     requirement: 1,
     chipReward: 0,
     diamondReward: 10,
@@ -398,10 +397,10 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     icon: '',
   },
   {
-    id: 'friends_added_2_12',
-    name: 'Social 2',
-    description: 'Add 2 friends today',
-    type: 'friends_added',
+    id: 'big_pots_2b_12',
+    name: 'Double Stacker',
+    description: 'Win 2 pots of 500 or more today',
+    type: 'big_pots',
     requirement: 2,
     chipReward: 0,
     diamondReward: 12,
@@ -558,11 +557,11 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     icon: '',
   },
   {
-    id: 'friends_added_3_15',
-    name: 'Social 3',
-    description: 'Add 3 friends today',
-    type: 'friends_added',
-    requirement: 3,
+    id: 'showdowns_7b_15',
+    name: 'Showdown Streak',
+    description: 'Reach showdown in 7 hands today',
+    type: 'showdowns',
+    requirement: 7,
     chipReward: 0,
     diamondReward: 15,
     icon: '',

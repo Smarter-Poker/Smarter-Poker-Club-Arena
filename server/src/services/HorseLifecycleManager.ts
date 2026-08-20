@@ -14,6 +14,7 @@
  */
 
 import { supabase, atomicCashout } from './supabase.js';
+import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -177,12 +178,22 @@ export class HorseLifecycleManager {
         Date.now() - STUCK_HORSE_THRESHOLD_HOURS * 60 * 60 * 1000
       ).toISOString();
 
-      const { data: stuckHorses } = await supabase
-        .from('profiles')
-        .select('id, display_name, horse_status, updated_at')
-        .eq('is_horse', true)
-        .neq('horse_status', 'available')
-        .lt('updated_at', thresholdTime);
+      const stuckHorses = await fetchAllRows<{
+        id: string;
+        display_name: string | null;
+        horse_status: string | null;
+        updated_at: string;
+      }>(
+        () =>
+          supabase
+            .from('profiles')
+            .select('id, display_name, horse_status, updated_at')
+            .eq('is_horse', true)
+            .neq('horse_status', 'available')
+            .lt('updated_at', thresholdTime)
+            .order('id'),
+        { label: 'HorseLifecycle.stuckHorses', maxRows: 50_000 }
+      );
 
       if (!stuckHorses || stuckHorses.length === 0) return;
 
@@ -410,13 +421,29 @@ export class HorseLifecycleManager {
         Date.now() - STALE_SEAT_THRESHOLD_HOURS * 60 * 60 * 1000
       ).toISOString();
 
-      const { data: staleSeats } = await supabase
-        .from('table_seats')
-        .select('id, table_id, user_id, seat_number, stack, joined_at')
-        .is('left_at', null)
-        .lt('joined_at', thresholdTime);
+      // 2026-08-20: paged. This is a whole-table read across every open seat on
+      // the platform (1,428 today, mostly tournament seats). PostgREST caps a
+      // response at db-max-rows (1,000) WITHOUT erroring, so the sweep that
+      // exists to reap orphaned seats was capable of never seeing the orphans.
+      const staleSeats = await fetchAllRows<{
+        id: string;
+        table_id: string;
+        user_id: string;
+        seat_number: number;
+        stack: number;
+        joined_at: string;
+      }>(
+        () =>
+          supabase
+            .from('table_seats')
+            .select('id, table_id, user_id, seat_number, stack, joined_at')
+            .is('left_at', null)
+            .lt('joined_at', thresholdTime)
+            .order('id'),
+        { label: 'HorseLifecycle.staleSeats', maxRows: 50_000 }
+      );
 
-      if (!staleSeats || staleSeats.length === 0) return;
+      if (staleSeats.length === 0) return;
 
       let cleaned = 0;
       // SWEEP #4 P0-1 FIX (2026-07-23): this loop previously force-cashed-out

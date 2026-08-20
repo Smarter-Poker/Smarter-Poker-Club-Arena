@@ -944,6 +944,7 @@ export const SeatSlot = memo(
             {showAvatar && !avatarBroken ? (
               <img
                 src={avatarUrl}
+                srcSet={`${avatarUrl} 1x, ${avatarUrl.replace(/\.webp$/, '@2x.webp')} 2x`}
                 alt=""
                 className="seat__avatar-img"
                 /* Hero eager + high priority: it is the largest avatar on the

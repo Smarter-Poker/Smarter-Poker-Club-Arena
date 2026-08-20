@@ -340,10 +340,6 @@
    one. Scoping also split the contract across two files, so the clip and the
    --sp-bust-clip that compensates for it could silently drift apart. One rule,
    one place, both values together. Change one, change the other. */
-.seat__avatar--bust .seat__avatar-img[src*='/avatars/table/'] {
-  clip-path: inset(0 0 26.5% 0);
-  --sp-bust-clip: 26.5%;
-}
 
 /* Hover zoom must compose with the base bust scale (was scale(1.08) alone,
    which would SHRINK a bust from 1.45 back to 1.08) AND keep the

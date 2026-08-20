@@ -238,6 +238,29 @@
     0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
+/* Dan 2026-08-20 (audit): the avatar carries a real action (throwables +
+   Player Notes targeting) and now says so — `role="button"` is set in the TSX
+   only when there is a handler, so this selector is exactly "this avatar does
+   something". The cursor used to be an inline style on the same condition;
+   keeping it here means the hit affordance and the focus ring cannot get out
+   of step with each other. `:focus-visible`, not `:focus`, so a mouse click
+   never paints a ring. */
+.seat__avatar[role='button'] {
+  cursor: pointer;
+}
+
+.seat__avatar[role='button']:focus-visible {
+  outline: 2px solid var(--timer-color, #ffd700);
+  outline-offset: 3px;
+  border-radius: var(--radius-circle);
+}
+
+/* Bust art has no circle to outline — square the ring to the art box instead
+   so it does not float around a transparent PNG. */
+.seat__avatar--bust[role='button']:focus-visible {
+  border-radius: 6px;
+}
+
 .seat__avatar-initial {
   width: 100%;
   height: 100%;

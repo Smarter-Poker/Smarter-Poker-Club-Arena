@@ -10,6 +10,7 @@
  */
 
 import { supabase } from './client.js';
+import { reportError } from '../errorReporter.js';
 
 /**
  * Log hand history — every hand documented for audit and replay.
@@ -230,7 +231,32 @@ export async function logHandHistory(params: {
       }
       return { handId: fbData?.id ?? null };
     }
-    console.warn(`[DB] Failed to log hand history #${params.handNumber}:`, error.message);
+    /**
+     * FIX 2026-08-20: this failure used to be a bare console.warn, and it is
+     * anything but cosmetic.
+     *
+     * A null handId propagates into atomic_distribute_rake and
+     * bbj_record_contribution as p_hand_id = NULL, and BOTH of those dedupe on
+     * a partial index predicated on `hand_id IS NOT NULL`. Until today that
+     * meant a hand with no history row had no idempotency at all on its rake or
+     * its jackpot contribution: 527 such rows exist, 55 of them banked more
+     * than once, 237.95 chips of rake over-credited. The RPCs now key off
+     * (table_id, hand_number) instead, so a null id is no longer dangerous —
+     * but it is still a real failure that was invisible, logged at a level
+     * nothing alerts on, on a path nothing retried.
+     *
+     * Report it properly. The rate is low (527 of ~1.01M cash rake rows over 30
+     * days, 0.05%) which is exactly the profile of a transient write failure
+     * worth retrying rather than a systematic one.
+     */
+    reportError(
+      new Error(
+        `[DB] Failed to log hand history #${params.handNumber} for table ${params.tableId}: ` +
+          `${error.message}. The hand has NO history row, so its rake and BBJ contribution ` +
+          `will be keyed on (table_id, hand_number) rather than hand_id.`
+      ),
+      'logHandHistory.insert_failed'
+    );
     return { handId: null };
   }
   return { handId: data?.id ?? null };

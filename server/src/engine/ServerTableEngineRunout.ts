@@ -913,12 +913,6 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * Updates each street as new board cards are dealt.
    */
   /**
-   * Compute the insurance leader's pot-win equity (percent) against the KNOWN
-   * opponent hands. Offloaded to the EquityWorkerPool when workers are available;
-   * otherwise falls back to the synchronous EXACT enumeration (insuranceEquity),
-   * keeping money-pricing accuracy in the degraded mode.
-   */
-  /**
    * PRICING FIX 2026-08-18: insurance is priced by EXACT enumeration against
    * the KNOWN all-in hands (InsuranceEquity), returning the contract's real
    * outcome probabilities (pot-share equity for display, strict-loss and

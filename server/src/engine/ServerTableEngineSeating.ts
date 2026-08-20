@@ -17,6 +17,7 @@ import {
 } from '../services/supabase.js';
 import type { SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { randomUUID } from 'node:crypto';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 
 export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
@@ -63,19 +64,50 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       return { success: false, error: 'Already at the maximum buy-in for this table' };
     }
 
-    // Debit the wallet atomically. apply_to_seat only between hands.
-    const { error } = await supabase.rpc('atomic_table_addon', {
-      p_user_id: userId,
-      p_table_id: this.tableId,
-      p_amount: applied,
-      p_apply_to_seat: !midHand,
-    });
-    if (error) {
-      const msg = String(error.message || '');
+    /**
+     * FIX 2026-08-20 [P1]: retry the debit under a STABLE idempotency key.
+     *
+     * The between-hands branch applies the chips to table_seats inside the RPC,
+     * and the engine only mirrors that into `player.stack` on success. So a
+     * transaction that COMMITTED but whose response never arrived left the
+     * player charged, the seat credited, and the engine unaware — and the next
+     * syncStacks, which writes `stack` ABSOLUTELY from engine memory, erased
+     * the chips while the wallet stayed debited. The mid-hand branch has been
+     * covered by the table_pending_addons ledger since the A2 fix; this branch
+     * had nothing.
+     *
+     * One key, generated once, used for every attempt: if the first attempt
+     * actually committed, the second is a DB-side no-op that returns the
+     * current balance, so we learn the chips landed instead of dropping them.
+     */
+    const addOnKey = `addon:${this.tableId}:${userId}:${randomUUID()}`;
+    let lastError: { message?: string } | null = null;
+    let debited = false;
+    for (let attempt = 1; attempt <= 2 && !debited; attempt++) {
+      const { error } = await supabase.rpc('atomic_table_addon', {
+        p_user_id: userId,
+        p_table_id: this.tableId,
+        p_amount: applied,
+        p_apply_to_seat: !midHand,
+        p_idempotency_key: addOnKey,
+      });
+      if (!error) {
+        debited = true;
+        break;
+      }
+      lastError = error;
+      // "Insufficient balance" is a verdict, not a transport failure — retrying
+      // it just asks the same question twice.
+      if (/insufficient/i.test(String(error.message || ''))) break;
+      if (attempt === 1) await new Promise((r) => setTimeout(r, 250));
+    }
+    if (!debited) {
+      const msg = String(lastError?.message || '');
       const clean = /insufficient/i.test(msg) ? 'Insufficient wallet balance' : 'Add-on failed';
-      reportError(error, `ServerTableEngine.${this.tableId}.addChips_debit_failed`, {
+      reportError(lastError, `ServerTableEngine.${this.tableId}.addChips_debit_failed`, {
         userId,
         amount: applied,
+        idempotencyKey: addOnKey,
       });
       return { success: false, error: clean };
     }

@@ -44,7 +44,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    * Bible V8 §1.9 settlement pipeline. Extracted verbatim (2026-08-08 file
    * split) from the `HAND_COMPLETE` case of `handleHandEvent`. The body is
    * unchanged apart from a uniform 4-space dedent for its new nesting level
-   * (re-indent it and you get the monolith back line-for-line); the trailing
+   * (that was exactly true when it was extracted on 2026-08-08; the body has
+   * since been changed by later work, so diff against git history rather than
+   * against the old monolith); the trailing
    * `break;` became the caller’s own `break;`.
    */
   protected async handleHandCompleteEvent(

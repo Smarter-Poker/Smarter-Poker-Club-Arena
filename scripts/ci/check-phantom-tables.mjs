@@ -210,6 +210,82 @@ if (phantomTables.length === 0 && phantomRpcs.length === 0) {
   process.exit(0);
 }
 
+/**
+ * ─── Stale-snapshot rescue ──────────────────────────────────────────────────
+ * Dan 2026-08-20: this gate broke CI THREE times in one day, every time on a
+ * commit that had nothing to do with the reference it flagged. The cause was
+ * never a bad reference — it was the snapshot. Schema is applied straight to
+ * prod via the Supabase MCP, the manifest is refreshed by a DAILY job, so any
+ * RPC added between refreshes fails everyone else's build until somebody
+ * hand-regenerates it. A gate that goes red when a colleague does the right
+ * thing is a gate people learn to ignore.
+ *
+ * So: before failing, ASK THE LIVE SCHEMA (the same fn_schema_manifest() RPC
+ * the generator uses) when credentials are available. Anything that really
+ * exists means the snapshot is stale, not the code — say so clearly and pass.
+ * Anything still missing is a genuine phantom and still fails the build. With
+ * no credentials (forks, local runs) behavior is exactly as before.
+ */
+async function liveSchema() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  try {
+    const res = await fetch(`${url}/rest/v1/rpc/fn_schema_manifest`, {
+      method: 'POST',
+      headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: '{}',
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) {
+      console.log(`[check-phantom-refs] live re-check unavailable (HTTP ${res.status})`);
+      return null;
+    }
+    const data = await res.json();
+    return {
+      tables: new Set(data?.tables || []),
+      functions: new Set(data?.functions || []),
+    };
+  } catch (err) {
+    console.log(`[check-phantom-refs] live re-check unavailable (${err.message})`);
+    return null;
+  }
+}
+
+const live = await liveSchema();
+if (live) {
+  const stale = [];
+  const keepTables = [];
+  const keepRpcs = [];
+  for (const entry of phantomTables) {
+    if (live.tables.has(entry.name)) stale.push(entry.name);
+    else keepTables.push(entry);
+  }
+  for (const entry of phantomRpcs) {
+    if (live.functions.has(entry.name)) stale.push(entry.name);
+    else keepRpcs.push(entry);
+  }
+  if (stale.length) {
+    console.log('');
+    console.log(
+      `[check-phantom-refs] ${stale.length} reference(s) are MISSING FROM THE SNAPSHOT but ` +
+        `PRESENT IN THE LIVE SCHEMA — the manifest is stale, the code is fine:`
+    );
+    for (const n of stale) console.log(`    ${n}`);
+    console.log('    Refresh it with:  node scripts/ci/gen-schema-manifest.mjs');
+    console.log('    (the Schema Manifest Refresh workflow does this daily)');
+    phantomTables.length = 0;
+    phantomTables.push(...keepTables);
+    phantomRpcs.length = 0;
+    phantomRpcs.push(...keepRpcs);
+    if (phantomTables.length === 0 && phantomRpcs.length === 0) {
+      console.log('');
+      console.log('OK — every reference resolves against the LIVE schema.');
+      process.exit(0);
+    }
+  }
+}
+
 const printGroup = (title, arr, kind) => {
   if (!arr.length) return;
   console.log('');

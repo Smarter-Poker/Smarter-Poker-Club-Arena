@@ -8,13 +8,23 @@
   "redirects": [
     {
       "source": "/:path*",
-      "has": [{ "type": "host", "value": "club.smarter.poker" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "club.smarter.poker"
+        }
+      ],
       "destination": "https://smarter.poker/hub/club-arena/:path*",
       "permanent": false
     },
     {
       "source": "/:path*",
-      "has": [{ "type": "host", "value": "club-engine.vercel.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "club-engine.vercel.app"
+        }
+      ],
       "destination": "https://smarter.poker/hub/club-arena/:path*",
       "permanent": false
     },
@@ -216,5 +226,15 @@
         }
       ]
     }
-  ]
+  ],
+  "experimentalServices": {
+    "frontend": {
+      "routePrefix": "/",
+      "framework": "vite"
+    },
+    "sentry-autofix": {
+      "entrypoint": "services/sentry-autofix",
+      "routePrefix": "/_/sentry-autofix"
+    }
+  }
 }

@@ -32,11 +32,22 @@
   color: #e2e8f0;
   text-transform: capitalize;
   font-family: 'Orbitron', 'Rajdhani', 'Exo 2', sans-serif;
+  min-height: 100dvh;
+  position: relative;
+  z-index: 1;
+}
+
+.page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   background-image: url('/hub/club-arena/poker-table-bg.webp');
   background-size: cover;
   background-position: center;
-  background-attachment: fixed;
-  min-height: 100vh;
+  background-color: rgba(10, 10, 21, 0.85); /* metal-dark with opacity */
+  background-blend-mode: multiply;
+  pointer-events: none;
 }
 
 /* ── Header ── */

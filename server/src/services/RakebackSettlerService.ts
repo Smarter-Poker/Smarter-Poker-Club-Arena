@@ -731,6 +731,9 @@ export class RakebackSettlerService {
    * detected by record-count mismatch and recomputed live at read time. This
    * is purely to keep that work OUT of the Monday settlement transaction.
    */
+  // Deploy note: the run for 43a7ce579 failed in 4s with zero steps executed
+  // (GitHub runner startup failure, not a code failure — tsc clean and 848/848
+  // server tests green at that commit). Re-triggered by this touch.
   private async runUnionRakeRollupCatchup(): Promise<void> {
     try {
       const { data, error } = await supabase.rpc('fn_union_rake_rollup_catchup_all', {

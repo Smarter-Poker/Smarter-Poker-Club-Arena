@@ -69,7 +69,28 @@ const DAEMON_KEY = 'rakeback_settler';
  * can build a dataset that genuinely straddles the LIMIT boundary rather than
  * hard-coding a number that could drift away from the real one.
  */
-export const FETCH_LIMIT = 2000;
+export const FETCH_LIMIT = 1000;
+/*
+ * ═══ THIS NUMBER MUST NOT EXCEED PostgREST's db-max-rows (1000) ═══
+ *
+ * THE bug behind the 2-day backlog, found 2026-08-20 by measuring three
+ * consecutive pages: each advanced the cursor by EXACTLY 999 rows, whatever
+ * FETCH_LIMIT said. PostgREST caps a response at 1,000 rows, so asking for
+ * 2,000 (or the previous 10,000) returns ~1,000 — and the drain loop then
+ * evaluates `rawPageSize >= FETCH_LIMIT` as FALSE, concludes "fewer rows than
+ * I asked for, therefore I am fully caught up", returns 'idle', and sleeps the
+ * full 30-minute interval. With 287,000 rows outstanding.
+ *
+ * So the settler could never drain more than ~1,000 rows per 30 minutes
+ * (~2,000/hour) against ~2,900/hour arriving: a permanent structural deficit
+ * that no amount of per-call speed could fix, which is why batching the
+ * credits and shrinking the page from 10,000 to 2,000 both failed to move it.
+ *
+ * At 1,000 a full page now reports 'more' truthfully, so the loop drains
+ * MAX_DRAIN_BATCHES pages per cycle and scheduleCatchUp() re-arms in 60s while
+ * backlog remains. If PostgREST's cap ever drops below this, the same silent
+ * stall returns — keep them equal.
+ */
 /*
  * AUDIT PASS 3 (2026-08-19) — page size reduced 10,000 -> 2,000.
  *

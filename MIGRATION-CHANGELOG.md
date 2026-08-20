@@ -8133,3 +8133,20 @@ server, and re-running an overlapping window double-added, producing 113% of
 truth. Rebuilt the staging table with ON CONFLICT DO UPDATE SET x = EXCLUDED.x
 (replace, not add) so re-running a batch is idempotent. Worth remembering for
 any future MCP-driven backfill: a timeout is not proof the statement did not run.
+
+17. THE settler backlog root cause (2026-08-20). Measured three consecutive
+    pages: each advanced the cursor by EXACTLY 999 rows regardless of
+    FETCH_LIMIT. PostgREST caps a response at 1,000 rows (db-max-rows), so
+    asking for 2,000 — or the original 10,000 — returns ~1,000, and the drain
+    loop's `rawPageSize >= FETCH_LIMIT` test then reads FALSE and concludes
+    "fewer rows than requested, therefore fully caught up". It returned 'idle'
+    and slept the full 30-minute interval with 287,000 rows outstanding.
+    The settler could therefore never drain more than ~1,000 rows per 30 min
+    (~2,000/hour) against ~2,900/hour arriving — a permanent structural
+    deficit, and the reason neither batching the credits (#14/#16) nor
+    shrinking the page 10,000 -> 2,000 (#15) moved the backlog at all. Those
+    two changes were still necessary (the per-call latency and the restart
+    treadmill were real), but this is the one that makes it converge.
+    FETCH_LIMIT is now 1,000 = the cap, so a full page reports 'more'
+    truthfully, the loop drains MAX_DRAIN_BATCHES pages per cycle, and the 60s
+    catch-up keeps pages running back-to-back while backlog remains.

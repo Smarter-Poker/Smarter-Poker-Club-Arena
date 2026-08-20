@@ -358,36 +358,67 @@ export function RunItTwiceResult({
           </span>
         </div>
 
-        {data.boards.map((board, bi) => (
-          <div key={`b-${bi}`} className="rit-board__run">
-            <span className="rit-board__run-label">Run {bi + 1}</span>
-            {data.perBoardWinners?.[bi] && data.perBoardWinners[bi].length > 0 && (
-              <span className="rit-result__board-winner">
-                {data.perBoardWinners[bi].map(resolveName).join(' & ')}
+        {data.boards.map((board, bi) => {
+          /* ANIMATION AUDIT 2026-08-20 — per-board equity.
+             The overlay showed the boards and it showed the payouts, but
+             nothing connected the two: a player saw five cards, then a number,
+             and had to work out for themselves which run earned what. That is
+             the one question run-it-twice creates and the only place it can be
+             answered.
+             Every run is worth an equal slice of the pot by definition, so the
+             share is derived, not guessed — and when a board is split it is
+             divided again among that board's winners. Rounded down per winner
+             so the displayed parts can never sum to more than the pot. */
+          const runs = data.runs || data.boards.length || 1;
+          const boardValue = Math.floor(data.potTotal / runs);
+          const winners = data.perBoardWinners?.[bi] ?? [];
+          const perWinner = winners.length > 1 ? Math.floor(boardValue / winners.length) : boardValue;
+          const sharePct = data.potTotal > 0 ? Math.round((boardValue / data.potTotal) * 100) : 0;
+
+          return (
+            <div key={`b-${bi}`} className="rit-board__run">
+              <span className="rit-board__run-label">Run {bi + 1}</span>
+              {winners.length > 0 && (
+                <span className="rit-result__board-winner">
+                  {winners.map(resolveName).join(' & ')}
+                </span>
+              )}
+              <span
+                className="rit-result__board-equity"
+                title={
+                  winners.length > 1
+                    ? `This run was worth ${sharePct}% of the pot, split ${winners.length} ways`
+                    : `This run was worth ${sharePct}% of the pot`
+                }
+              >
+                {currency}
+                {perWinner.toLocaleString()}
+                {winners.length > 1 ? ` each` : ''}
+                <span className="rit-result__board-pct">{sharePct}%</span>
               </span>
-            )}
-            <div className="rit-board__cards">
-              {board.map((raw, ci) => {
-                const card = parseRitCard(raw);
-                /* ANIMATION AUDIT 2026-08-19: all 10-15 cards used to appear
-                   in one frame. Each card now flips in with a stagger — board
-                   1 first, board 2 after it, so the runs read as separate
-                   deals (see .rit-board__card animation in RunItTwice.css). */
-                return card ? (
-                  <span
-                    key={`c-${bi}-${ci}`}
-                    className="rit-board__card"
-                    style={
-                      { animationDelay: `${bi * 900 + ci * 140}ms` } as React.CSSProperties
-                    }
-                  >
-                    <CardImage card={toCardImage(card)} size="xs" />
-                  </span>
-                ) : null;
-              })}
+              <div className="rit-board__cards">
+                {board.map((raw, ci) => {
+                  const card = parseRitCard(raw);
+                  /* ANIMATION AUDIT 2026-08-19: all 10-15 cards used to appear
+                     in one frame. Each card now flips in with a stagger — board
+                     1 first, board 2 after it, so the runs read as separate
+                     deals (see .rit-board__card animation in RunItTwice.css). */
+                  return card ? (
+                    <span
+                      key={`c-${bi}-${ci}`}
+                      className="rit-board__card"
+                      style={
+                        { animationDelay: `${bi * 900 + ci * 140}ms` } as React.CSSProperties
+                      }
+                    >
+                      <CardImage card={toCardImage(card)} size="xs" />
+                    </span>
+                  ) : null;
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         <div className="rit-result__payouts">
           {payouts.map(([uid, amt]) => (

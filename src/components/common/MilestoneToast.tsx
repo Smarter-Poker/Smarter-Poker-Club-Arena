@@ -46,8 +46,16 @@ export const MilestoneToast: React.FC = () => {
 
     setNotifications((prev) => [...prev.slice(-4), notification]); // Max 5 at a time
 
-    // Enhancement #2: Play unlock chime + haptic on milestone
-    soundService.playTimeBankActivated();
+    // ANIMATION/SOUND AUDIT 2026-08-20: this played playTimeBankActivated —
+    // the URGENT chime that means "your clock ran out and your time bank just
+    // started burning". Hearing your own stress cue at the moment you unlock an
+    // achievement is not a small mismatch; it is the wrong emotion entirely,
+    // and at a table it reads as a time-bank alarm for a hand you are not even
+    // in. playAchievement is the bright celebratory sparkle written for this.
+    //
+    // The haptic stays, but the gate coalesces it with playAchievement's own,
+    // so this is one buzz rather than two (see src/utils/vibrationGate.ts).
+    soundService.playAchievement();
     haptic.medium();
 
     // Auto-dismiss after 5 seconds

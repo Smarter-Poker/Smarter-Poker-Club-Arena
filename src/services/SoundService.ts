@@ -1349,6 +1349,43 @@ class SoundService {
   }
 
   /**
+   * Throwable Launch — the whoosh of the object leaving the hand.
+   *
+   * ANIMATION/SOUND AUDIT 2026-08-20: the picker used to play the IMPACT thud
+   * at the moment you chose an emoji — a full 1200ms flight before the thing
+   * actually hit anything, so the sound described an event that had not
+   * happened yet. The impact moved to the end of the flight (and to every
+   * viewer, not just the sender); this is what the launch moment gets instead.
+   *
+   * Rising, short, and quieter than the impact, so the pair reads as
+   * throw-then-land rather than as two thuds.
+   */
+  playThrowableLaunch() {
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Upward whoosh — filtered noise sweeping up as the object accelerates.
+    const noise = this.createNoiseBurst(t, 0.14, 0.09, 900);
+    void noise;
+
+    // Faint rising tone under it for the sense of travel.
+    const osc = this.ctx!.createOscillator();
+    const gain = this.ctx!.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(180, t);
+    osc.frequency.exponentialRampToValueAtTime(420, t + 0.14);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.06, t + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    osc.connect(gain);
+    gain.connect(this.out);
+    osc.start(t);
+    osc.stop(t + 0.17);
+
+    haptic.light();
+  }
+
+  /**
    * Throwable Impact — sharp comedic impact thud
    */
   playThrowableImpact() {

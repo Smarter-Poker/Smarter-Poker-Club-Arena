@@ -88,19 +88,16 @@
     }
 }
 
-@keyframes announcePulse {
-    0% {
-        transform: scale(0.5);
-        opacity: 0;
-    }
-    60% {
-        transform: scale(1.08);
-    }
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
+/* ANIMATION AUDIT 2026-08-20: `announcePulse` was defined here and referenced
+   by nothing — no stylesheet, no inline style, no JS. Removed rather than
+   wired to something, because the overlay it belonged to already animates in
+   via announceIn; a second competing entrance would fight it.
+
+   Two other keyframes were on my orphan list and turned out NOT to be orphans:
+   `activeAvatarPulse` (Avatar.css) and `spectatorFloating`, which is applied
+   via an INLINE STYLE in SpectatorBadge.tsx and so is invisible to any scan
+   that only reads .css files. Worth remembering before deleting or renaming a
+   keyframe: a CSS-only search is not proof that nothing uses it. */
 
 @media (max-width: 640px) {
     .announcementIcon {

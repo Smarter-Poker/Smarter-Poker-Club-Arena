@@ -399,6 +399,35 @@
   cursor: pointer;
 }
 
+/* Per-board equity (2026-08-20). The overlay showed boards and it showed
+   payouts, but nothing tied the two together — this is the line that says what
+   each run was actually worth. Deliberately quieter than the payout total: it
+   explains the number, it is not the number. */
+.rit-result__board-equity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.rit-result__board-pct {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.rit-board__run--won .rit-result__board-equity {
+  color: #4ade80;
+}
+
 .rit-result__board-winner {
   margin-left: 8px;
   font-size: 11px;

@@ -100,8 +100,15 @@ export const ThrowablePicker: React.FC<ThrowablePickerProps> = ({
               key={emoji.id}
               className="throwable-item"
               onClick={() => {
-                haptic.heavy();
-                soundService.playThrowableImpact();
+                // ANIMATION/SOUND AUDIT 2026-08-20: this used to play the
+                // IMPACT thud here — at the instant of PICKING, a full
+                // ANIMATION_DURATION_MS before the object hit anything. The
+                // impact now fires when the flight ends (see FlyingEmoji), for
+                // everyone watching rather than only the sender. This moment
+                // gets the launch whoosh, and a light tap instead of `heavy`
+                // so the emphasis lands on the impact where it belongs.
+                haptic.light();
+                soundService.playThrowableLaunch();
                 onSelect(emoji);
                 onClose();
               }}
@@ -154,11 +161,30 @@ const FlyingEmoji: React.FC<FlyingEmojiProps> = ({ throwable, onComplete }) => {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // ANIMATION/SOUND AUDIT 2026-08-20: the flight used to be SILENT for
+    // everyone. The impact thud was played by the picker, which only the
+    // sender ever opens — so every other player at the table watched the
+    // object land with no sound at all, and the sender heard it ~1.2s early.
+    //
+    // The impact belongs here: this component renders for every viewer, and
+    // this is the moment the object actually arrives. Fired a beat before the
+    // element is removed so the sound lands with the visual, not after it.
+    const IMPACT_LEAD_MS = 60;
+    const impactTimer = setTimeout(
+      () => {
+        soundService.playThrowableImpact();
+      },
+      Math.max(0, ANIMATION_DURATION_MS - IMPACT_LEAD_MS)
+    );
+
     const timer = setTimeout(() => {
       onComplete(throwable.id);
     }, ANIMATION_DURATION_MS);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(impactTimer);
+      clearTimeout(timer);
+    };
   }, [throwable.id, onComplete]);
 
   const dx = throwable.toX - throwable.fromX;

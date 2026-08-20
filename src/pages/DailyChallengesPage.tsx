@@ -92,7 +92,7 @@ function msUntilUtcMidnight(): number {
 function msUntilNextMondayUtc(): number {
   const now = new Date();
   const day = now.getUTCDay(); // 0 = Sun
-  const daysToMonday = ((8 - day) % 7) || 7;
+  const daysToMonday = (8 - day) % 7 || 7;
   const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + daysToMonday);
   return next - now.getTime();
 }
@@ -159,7 +159,6 @@ function ChallengeCard({
                 {'\u25C6'} {c.diamondReward.toLocaleString()}
               </span>
             )}
-            <span className={styles.rewardChips}>+{c.chipReward.toLocaleString()} chips</span>
           </span>
         </div>
         <span className={styles.cardDesc}>{c.description}</span>
@@ -590,8 +589,7 @@ export default function DailyChallengesPage() {
               </div>
               <span className={styles.milestoneText}>
                 {(streak?.streak ?? stats.currentStreak).toLocaleString()}/
-                {stats.nextMilestone.toLocaleString()} days to +
-                {stats.milestoneReward.toLocaleString()} chips
+                {stats.nextMilestone.toLocaleString()} days
               </span>
             </>
           )}
@@ -617,7 +615,9 @@ export default function DailyChallengesPage() {
           <span className={styles.summaryLabel}>Today</span>
         </div>
         <div className={styles.summaryTile}>
-          <span className={styles.summaryValue}>{(stats?.totalCompleted || 0).toLocaleString()}</span>
+          <span className={styles.summaryValue}>
+            {(stats?.totalCompleted || 0).toLocaleString()}
+          </span>
           <span className={styles.summaryLabel}>All-Time Completed</span>
         </div>
         <div className={styles.summaryTile}>
@@ -626,31 +626,18 @@ export default function DailyChallengesPage() {
           </span>
           <span className={styles.summaryLabel}>Diamonds Earned</span>
         </div>
-        <div className={styles.summaryTile}>
-          <span className={`${styles.summaryValue} ${styles.gold}`}>
-            {(stats?.totalChipsEarned || 0).toLocaleString()}
-          </span>
-          <span className={styles.summaryLabel}>Chips Earned</span>
-        </div>
       </section>
 
       {/* Unclaimed rewards callout */}
       {unclaimed.count > 0 && (
         <div className={styles.unclaimedBar}>
           <span>
-            {[
-              unclaimed.diamonds > 0 ? `${'◆'} ${unclaimed.diamonds.toLocaleString()}` : '',
-              unclaimed.chips > 0 ? `${unclaimed.chips.toLocaleString()} chips` : '',
-            ]
+            {[unclaimed.diamonds > 0 ? `${'◆'} ${unclaimed.diamonds.toLocaleString()}` : '']
               .filter(Boolean)
               .join('  +  ')}{' '}
             ready to claim
           </span>
-          <button
-            className={styles.claimAllButton}
-            onClick={handleClaimAll}
-            disabled={claimingAll}
-          >
+          <button className={styles.claimAllButton} onClick={handleClaimAll} disabled={claimingAll}>
             {claimingAll
               ? 'Claiming...'
               : `Claim ${unclaimed.count === 1 ? 'It' : `All ${unclaimed.count}`}`}
@@ -714,7 +701,6 @@ export default function DailyChallengesPage() {
           aria-label={[
             `Challenge complete: ${reward.name}.`,
             reward.diamonds > 0 ? `You earned ${reward.diamonds} diamonds.` : '',
-            reward.chips > 0 ? `You earned ${reward.chips} chips.` : '',
           ]
             .filter(Boolean)
             .join(' ')}
@@ -738,23 +724,13 @@ export default function DailyChallengesPage() {
               </div>
             )}
 
-            {reward.chips > 0 && (
-              <p className={styles.celebrateChips}>
-                +{reward.chips.toLocaleString()} chips
-              </p>
-            )}
-
             {reward.diamonds > 0 && (
               <p className={styles.celebrateBalance}>
                 New balance: {reward.diamondBalance.toLocaleString()} diamonds
               </p>
             )}
 
-            <button
-              className={styles.celebrateButton}
-              onClick={() => setReward(null)}
-              autoFocus
-            >
+            <button className={styles.celebrateButton} onClick={() => setReward(null)} autoFocus>
               Nice
             </button>
           </div>
@@ -764,9 +740,9 @@ export default function DailyChallengesPage() {
       {/* How it works */}
       <footer className={styles.footer}>
         <p>
-          A new set of daily challenges arrives every day at midnight UTC. Weekly challenges
-          reset each Monday, monthly challenges on the 1st. Play hands, win pots, hit
-          showdowns, and enter tournaments to make progress automatically.
+          A new set of daily challenges arrives every day at midnight UTC. Weekly challenges reset
+          each Monday, monthly challenges on the 1st. Play hands, win pots, hit showdowns, and enter
+          tournaments to make progress automatically.
         </p>
         <button className={styles.playButton} onClick={() => navigate('/')}>
           Go Play

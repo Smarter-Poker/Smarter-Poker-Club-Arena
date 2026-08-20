@@ -47,4 +47,11 @@ Env knobs: `E2E_AUTH` (storageState path, default /tmp/e2e-work/auth.json),
 4. Empty seats are `div[role="button"][aria-label="Seat N: open - click to
 sit"]`; the buy-in confirm is `button.buy-in-modal__confirm` ("BUY CHIPS").
 5. Always leave tables at the end of a run — a stranded seat blocks the
-   4-cap for the test account and skews later runs.
+   4-cap for the test account and skews later runs. If a run dies mid-walk,
+   `node e2e-live/cleanup-seats.mjs` sweeps every live seat by following the
+   dock from the arena route until it stops appearing (DB-verify with:
+   table_seats where user_id=<hero> and left_at is null).
+6. The dock's idle CTA is "Return to game →" but the urgent variant says
+   "Action needed … Act now →" — match /Return to game|Act now/i.
+7. The hamburger nav drawer sometimes restores open over the arena and hides
+   the club list — dismiss with the Close control + Escape before asserting.

@@ -43,6 +43,16 @@ async function acceptTermsIfShown(){
 async function gotoArena(){
   await page.goto('https://smarter.poker/hub/club-arena/',{waitUntil:'domcontentloaded',timeout:45000});
   await page.waitForTimeout(9000);
+  // the hamburger nav drawer sometimes restores open and covers the club
+  // list -- dismiss it (Close control, then Escape as belt-and-braces)
+  const b=await page.innerText('body').catch(()=>'');
+  if(/GAME MODES/i.test(b) && /View Profile/i.test(b)){
+    console.log('NOTE: nav drawer open on arrival -- closing');
+    const close=page.locator('button:has-text("Close"), [aria-label*="close" i]').first();
+    if(await close.isVisible().catch(()=>false)) await close.click().catch(()=>{});
+    await page.keyboard.press('Escape').catch(()=>{});
+    await page.waitForTimeout(2000);
+  }
 }
 try{
   await gotoArena();
@@ -196,15 +206,18 @@ try{
     return null;
   }
   let leaves=0;
-  for (let i=0;i<4;i++){
+  for (let i=0;i<6;i++){
     if (!page.url().includes('/table/')) {
-      const r2=page.locator('text=/Return to game|Act now/i').first();
-      if (await r2.isVisible().catch(()=>false)) {
-        const ok=await r2.click({timeout:8000}).then(()=>true).catch(()=>false);
-        if(!ok) break;
+      // the dock re-renders for a beat after a leave -- give it two chances
+      let r2ok=false;
+      for(let w=0;w<2 && !r2ok;w++){
         await page.waitForTimeout(4000);
+        const r2=page.locator('text=/Return to game|Act now/i').first();
+        if (await r2.isVisible().catch(()=>false))
+          r2ok=await r2.click({timeout:8000}).then(()=>true).catch(()=>false);
       }
-      else break;
+      if(!r2ok) break;
+      await page.waitForTimeout(4000);
     }
     const foot=await page.locator('.action-panel-wrapper, [class*="spectator-footer"]').first().innerText().catch(()=>'');
     if (/Spectating, Tap An Open Seat/i.test(foot)) {

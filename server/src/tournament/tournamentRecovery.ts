@@ -9,6 +9,7 @@
  */
 
 import { supabase } from '../services/supabase.js';
+import { computePlacePrize } from './payoutMath.js';
 import { reportError } from '../services/errorReporter.js';
 
 
@@ -203,17 +204,15 @@ export async function recoverStuckCompletingTournaments(
         } catch {
           payouts = [];
         }
-        const pctSum = payouts.reduce((s, p) => s + Number(p.percentage || 0), 0);
-        const norm = pctSum > 0 ? 100 / pctSum : 0;
-        const prizeFor = (place: number): number => {
-          const entry = payouts.find((p) => p.place === place);
-          if (!entry || norm === 0) return 0;
-          return (
-            Math.round(
-              ((Number(t.prize_pool || 0) * Number(entry.percentage) * norm) / 100) * 100
-            ) / 100
-          );
-        };
+        // PAYOUT-INTEGRITY 2026-08-20: this used to be a THIRD independent
+        // prize formula (alongside eliminatePlayer and finishTournament), so a
+        // tournament rescued here could be paid a cent differently from one
+        // that finished normally -- and differently again from what
+        // fn_tournament_payout_reconcile expects, which would then report a
+        // false overpay. All three now share computePlacePrize: normalise to
+        // 100%, round each place, last paid place absorbs the residual.
+        const prizeFor = (place: number): number =>
+          computePlacePrize(Number(t.prize_pool || 0), payouts, place);
 
         const { data: players } = await supabase
           .from('tournament_players')

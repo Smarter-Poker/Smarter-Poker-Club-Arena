@@ -43,6 +43,10 @@ const DEPRECATED = {
   rake_history: 'rake_records',
   hand_players: 'hand_history (or the ca_player_stats_full RPC for aggregates)',
   rake_attributions: 'rake_records.player_contributions',
+  // hands / hand_actions: zero rows ever. saveHand inserts into `hands` first
+  // and returns early when it fails, so everything below it is unreachable.
+  hands: 'hand_history',
+  hand_actions: 'hand_history.actions (jsonb)',
 };
 
 /** "<path>:<table>" entries that are deliberately permitted, with a reason. */

@@ -606,11 +606,14 @@ class TableService {
    * Get average pot size for a table
    */
   async getAveragePot(tableId: string): Promise<number> {
-    // Query hand history for average pot size (last 100 hands)
+    // 2026-08-19: read `hands`, a table with ZERO rows ever, so this always
+    // returned 0 no matter how the table was playing. hand_history is the live
+    // ledger the engine writes, and carries pot_size directly.
     const { data, error } = await supabase
-      .from('hands')
-      .select('pot_size:pot')
+      .from('hand_history')
+      .select('pot_size')
       .eq('table_id', tableId)
+      .order('created_at', { ascending: false })
       .limit(100);
 
     if (error || !data?.length) return 0;

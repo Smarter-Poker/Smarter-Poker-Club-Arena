@@ -444,20 +444,48 @@ class HandPersistenceServiceClass extends HandPersistence {
    * Load hand history for a table
    */
   async getTableHandHistory(tableId: string, limit = 20): Promise<HandRecord[]> {
+    // 2026-08-19: read `hands`, which has ZERO rows ever, so a table's hand
+    // history was always empty. hand_history is what the server-authoritative
+    // engine writes. Column names differ: pot -> pot_size, rake -> rake_amount,
+    // winner_ids -> winners (jsonb). club_id/stakes/street/status/
+    // dealer_position do not exist there and are dropped rather than aliased
+    // to something that only looks right.
     const { data, error } = await supabase
-      .from('hands')
+      .from('hand_history')
       .select(
-        'id, table_id, club_id, hand_number, game_variant, stakes, pot, rake, community_cards, board, winner_ids, players, actions, street, status, dealer_position, started_at, ended_at, created_at'
+        'id, table_id, hand_number, game_variant, pot_size, rake_amount, community_cards, board, winners, players, actions, started_at, ended_at, created_at'
       )
       .eq('table_id', tableId)
-      .order('ended_at', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) {
       reportError(error, 'HandPersistence.getTableHandHistory');
       return [];
     }
-    return data || [];
+
+    // hand_history uses different names to the legacy `hands` table this used
+    // to read. Map explicitly rather than widening HandRecord: the fields that
+    // genuinely do not exist there (club_id, stakes) are surfaced as empty
+    // rather than invented, so a caller can tell "not recorded" from a value.
+    return (data || []).map((h: any) => ({
+      id: h.id,
+      table_id: h.table_id,
+      club_id: '',
+      hand_number: h.hand_number,
+      game_variant: h.game_variant,
+      stakes: '',
+      pot: Number(h.pot_size) || 0,
+      rake: Number(h.rake_amount) || 0,
+      community_cards: h.community_cards || h.board || [],
+      winner_ids: Array.isArray(h.winners)
+        ? h.winners.map((w: any) => w?.userId).filter(Boolean)
+        : [],
+      players: h.players || {},
+      actions: h.actions || [],
+      started_at: h.started_at || h.created_at,
+      ended_at: h.ended_at ?? undefined,
+    }));
   }
 
   /**

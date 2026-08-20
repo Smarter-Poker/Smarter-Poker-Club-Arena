@@ -103,37 +103,48 @@ export default function HandReplayViewer({
   const loadHand = async () => {
     setLoading(true);
     try {
+      // 2026-08-19: this read `hands`, a table with ZERO rows ever, so hand
+      // replay could never load a hand — it silently rendered nothing. The
+      // server-authoritative engine writes hand_history. Field names differ,
+      // and `table_name` / `blinds` do not exist there, so the table name is
+      // resolved through the FK and blinds are composed from the stored
+      // small/big blind rather than aliased to something that merely looks
+      // right.
       const { data, error } = await supabase
-        .from('hands')
+        .from('hand_history')
         .select(
           `
                     id,
-                    table_name,
-                    game_type,
-                    blinds,
-                    pot,
+                    game_variant,
+                    small_blind,
+                    big_blind,
+                    pot_size,
                     community_cards,
                     players,
                     actions,
                     winners,
-                    played_at
+                    created_at,
+                    tables:table_id ( name )
                 `
         )
         .eq('id', handId)
         .maybeSingle();
 
       if (!error && data) {
+        const d = data as any;
+        const sb = d.small_blind ?? null;
+        const bb = d.big_blind ?? null;
         setHand({
-          id: data.id,
-          tableName: data.table_name,
-          gameType: data.game_type,
-          blinds: data.blinds,
-          pot: data.pot,
-          communityCards: data.community_cards || [],
-          players: data.players || [],
-          actions: data.actions || [],
-          winners: data.winners || [],
-          playedAt: data.played_at,
+          id: d.id,
+          tableName: d.tables?.name ?? 'Table',
+          gameType: d.game_variant,
+          blinds: sb != null && bb != null ? `${sb}/${bb}` : '',
+          pot: d.pot_size,
+          communityCards: d.community_cards || [],
+          players: d.players || [],
+          actions: d.actions || [],
+          winners: d.winners || [],
+          playedAt: d.created_at,
         });
       }
     } catch (error) {

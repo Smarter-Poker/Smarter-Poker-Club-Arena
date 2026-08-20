@@ -64,6 +64,15 @@ export default defineConfig({
   define: {
     // Prevent process errors in browser
     'process.env': {},
+    /**
+     * Sentry ships its debug-logging paths behind these flags precisely so
+     * bundlers can drop them. vendor-sentry is the largest single script the
+     * app serves — 441 KB transferred, more than React (226 KB) and Supabase
+     * (168 KB) combined — so every kilobyte that is dead code in production is
+     * worth removing. Documented at
+     * https://docs.sentry.io/platforms/javascript/configuration/tree-shaking/
+     */
+    __SENTRY_DEBUG__: false,
   },
   // Strip console.log/debug/debugger in production builds.
   // console.warn and console.error are preserved for Sentry error reporting.

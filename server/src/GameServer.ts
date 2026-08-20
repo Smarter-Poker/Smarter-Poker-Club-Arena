@@ -27,6 +27,7 @@ import {
   repairUnbankedBBJFees,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
+import { fetchAllRows } from './services/supabase/pagination.js';
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
 
@@ -785,11 +786,22 @@ export class GameServer {
       // rebuilds its table from table_seats on boot, which is the whole point
       // of persisting them). Genuinely orphaned human seats are still handled
       // by HorseLifecycleManager's 4-hour sweep, which has activity guards.
-      const { data: horseRows, error: horseErr } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('is_horse', true);
-      const horseIdList = (horseRows || []).map((h: { id: string }) => h.id);
+      // 2026-08-20: paged. PostgREST caps every response at db-max-rows (1,000)
+      // WITHOUT erroring — the truncation that made HorseFleetManager treat 428
+      // occupied seats as empty and fire ~150,000 duplicate-key buy-ins a day.
+      // Here the consequence would be worse than waste: a horse past the cap
+      // reads as "not a horse", and this sweep's whole job is to reap ONLY
+      // horse seats. Under-reading is safe (fail-closed), but it would leave
+      // orphaned seats forever with no signal.
+      let horseErr: Error | null = null;
+      const horseRows = await fetchAllRows<{ id: string }>(
+        () => supabase.from('profiles').select('id').eq('is_horse', true).order('id'),
+        { label: 'GameServer.staleSweep.horses', maxRows: 50_000 }
+      ).catch((e: unknown) => {
+        horseErr = e instanceof Error ? e : new Error(String(e));
+        return [] as { id: string }[];
+      });
+      const horseIdList = horseRows.map((h: { id: string }) => h.id);
 
       // FAIL CLOSED (2026-08-19 audit). The first version of this guard applied
       // the horse filter only `if (horseIdList.length > 0)`, so a failed or
@@ -800,7 +812,7 @@ export class GameServer {
       if (horseErr || horseIdList.length === 0) {
         console.warn(
           '[GameServer] Stale-seat sweep SKIPPED — could not resolve the horse list:',
-          horseErr?.message ?? '(no horses returned)'
+          (horseErr as Error | null)?.message ?? '(no horses returned)'
         );
         return;
       }
@@ -814,7 +826,7 @@ export class GameServer {
       if (protectedTableId) {
         seatsQuery = seatsQuery.neq('table_id', protectedTableId);
       }
-      const { data: activeSeats } = await seatsQuery;
+      const { data: activeSeats } = await seatsQuery.range(0, 4999);
 
       if (activeSeats && activeSeats.length > 0) {
         // Aggregate total stack per user

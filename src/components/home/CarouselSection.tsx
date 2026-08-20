@@ -268,7 +268,12 @@ export default function CarouselSection({
                 clubLevel={stats?.clubLevel ?? 1}
                 activePlayers={stats?.activePlayers ?? 0}
                 clubId={club.club_id}
-                cardImageUrl={club.card_image_url}
+                cardImageUrl={
+                  club.card_image_url ||
+                  (Number(club.club_id) === SHARK_CLUB_ID
+                    ? `${MEDIA_BASE}images/shark-club-card-v25.jpg`
+                    : undefined)
+                }
                 logoUrl={club.logo_url}
                 entityType={club.entity_type || 'club'}
               />

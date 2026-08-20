@@ -38,6 +38,12 @@ export abstract class TournamentManagerBase {
   protected currentLevel: number = 0;
   // Add-on period
   protected addOnPeriodTriggered: boolean = false;
+  /**
+   * When the add-on was last offered to the field. The window is offered
+   * REPEATEDLY, not once, so a player who was between seats at the moment it
+   * opened still gets theirs -- see tryTournamentAddOns.
+   */
+  protected lastAddOnOfferAt: number = 0;
   protected pendingAddOnPeriod: boolean = false;
   // Hand-for-hand bubble
   protected handForHandActive: boolean = false;
@@ -1440,12 +1446,16 @@ export abstract class TournamentManagerBase {
         if ((data as { success?: boolean } | null)?.success === true) taken++;
       }
 
-      console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ONS: ${taken} taken` +
-          (declined.size > 0
-            ? ` — declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
-            : '')
-      );
+      // Quiet when nothing happened: this is called repeatedly across the
+      // window, so an unconditional line would be pure noise.
+      if (taken > 0 || declined.size > 0) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ONS: ${taken} taken` +
+            (declined.size > 0
+              ? ` — declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
+              : '')
+        );
+      }
     } catch (err) {
       reportError(err, 'Tournament.tournament_addon_threw');
     }

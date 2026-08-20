@@ -225,6 +225,34 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spawns a table and the balancer redraws. No player ever waits.
         await this.ensureLateRegSeated();
 
+        // ADD-ONS MUST ALWAYS LAND 2026-08-20. Dan: an add-on must always
+        // award its chips to the stack when purchased.
+        //
+        // process_tournament_rebuy now refuses to charge a player who has no
+        // live seat, because granting chips to a seatless player is what let
+        // the seat sync erase them (103 add-ons charged on the first window
+        // ever run, ~91 delivering nothing). That closes the money hole, but
+        // on its own it would COST those players their add-on: the offer used
+        // to be made exactly once, when the window opened, and a player who
+        // happened to be mid-table-move at that instant was simply skipped
+        // forever.
+        //
+        // So the offer repeats for as long as the window is open. Anyone who
+        // was between seats gets theirs on a later pass, the moment they are
+        // seated again. Re-offering is safe by construction: the add-on
+        // carries a wallet idempotency key of
+        // `tourney:{id}:addon:{user}` and the RPC also rejects a second one
+        // with 'Add-on already taken', so nobody can buy twice.
+        //
+        // Throttled to 20s because the sweep itself runs every 5s.
+        if (this.addOnPeriodTriggered && !this.prizePoolFinalized) {
+          const nowMs = Date.now();
+          if (nowMs - this.lastAddOnOfferAt >= 20_000) {
+            this.lastAddOnOfferAt = nowMs;
+            await this.tryTournamentAddOns();
+          }
+        }
+
         await this.checkTableBalance();
 
         // FIX 155: Check if new tables need to be created during rebuy/late-reg period

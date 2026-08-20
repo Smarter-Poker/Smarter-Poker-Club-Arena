@@ -282,8 +282,50 @@ export class TournamentManager extends TournamentManagerEliminations {
         }
 
         if (seatWriteErr) {
-          // Roll back: re-activate the source seat so the player stays seated
-          // at the (not yet closed) source table and the next cycle retries.
+          // DUPLICATE-SEAT FIX 2026-08-20: do NOT restore the source seat
+          // without first checking whether the destination write actually
+          // landed.
+          //
+          // A write that fails CLIENT-side may well have COMMITTED
+          // server-side -- a statement timeout or a dropped connection
+          // returns an error for a transaction the database already
+          // applied. Restoring the source seat on top of a destination
+          // seat that exists leaves the player holding TWO live seats.
+          //
+          // Five players in production are in exactly that state, and the
+          // signature is unmistakable: both rows carry the SAME stack
+          // (Late Night Grind 1113/1113, 796/796, 1950/1950), i.e. the
+          // destination copy succeeded and the source was revived anyway.
+          //
+          // Two live seats is not cosmetic. The chip sync and the rebuy /
+          // add-on RPC both had to pick one, and picking the stale one
+          // either erases a purchase or reports the wrong stack outright --
+          // in Union Grand Championship the stale seat held 15,000 against
+          // a real stack of 2,728,737.
+          const { data: destSeat } = await supabase
+            .from('table_seats')
+            .select('id')
+            .eq('table_id', move.toTableId)
+            .eq('seat_number', move.toSeat)
+            .eq('user_id', move.playerId)
+            .is('left_at', null)
+            .maybeSingle();
+
+          if (destSeat) {
+            // The write did land. The move is complete; leave the source
+            // seat closed and carry on rather than manufacturing a duplicate.
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Destination seat write for ${move.playerId.slice(0, 8)} reported an error (${seatWriteErr.message ?? 'unknown'}) but COMMITTED. Treating the move as successful and leaving the source seat closed, so the player is not left holding two live seats.`
+              ),
+              'Tournament.Move_dest_seat_write_false_negative'
+            );
+            continue;
+          }
+
+          // Genuinely not written. Re-activate the source seat so the player
+          // stays seated at the (not yet closed) source table and the next
+          // cycle retries.
           await supabase
             .from('table_seats')
             .update({ left_at: null })

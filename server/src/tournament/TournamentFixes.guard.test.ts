@@ -36,6 +36,7 @@ const BASE = read('src/tournament/TournamentManagerBase.ts');
 const SETTLER = read('src/services/RakebackSettlerService.ts');
 const PAYOUT_MATH = read('src/tournament/payoutMath.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
+const MANAGER = read('src/tournament/TournamentManager.ts');
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) =>
@@ -195,5 +196,67 @@ describe('ESM: every relative import carries its .js extension', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('add-ons must always award their chips to the stack', () => {
+  /**
+   * process_tournament_rebuy now REFUSES to charge a player who has no live
+   * seat, because a grant to a seatless player is erased by the chip sync.
+   * That closes the money hole, but on its own it costs those players their
+   * add-on: the offer used to be made exactly once, when the window opened,
+   * so a player mid-table-move at that instant was skipped forever.
+   *
+   * Defect measured 2026-08-20 on the first add-on window ever run: 103
+   * add-ons charged, ~91 delivered nothing.
+   */
+  it('re-offers add-ons for as long as the window is open, not once', () => {
+    const src = code(ELIM);
+    expect(src).toMatch(/addOnPeriodTriggered\s*&&\s*!this\.prizePoolFinalized/);
+    expect(src).toMatch(/lastAddOnOfferAt/);
+    expect(src).toMatch(/tryTournamentAddOns\(\)/);
+  });
+
+  it('throttles the repeat offer so the 5s sweep does not hammer it', () => {
+    expect(code(ELIM)).toMatch(/lastAddOnOfferAt\s*>=\s*20_000|20_000\s*<=/);
+  });
+
+  it('only offers add-ons to players who currently hold a seat', () => {
+    // A seatless player would be charged for chips the sync then erases.
+    expect(code(BASE)).toMatch(/seated\.has\(/);
+  });
+});
+
+describe('a table move must never leave a player holding two live seats', () => {
+  /**
+   * The rollback used to re-activate the source seat whenever the destination
+   * write returned an error - including the case where the write had actually
+   * COMMITTED and only the client saw a failure. Five players in production
+   * ended up with two live seats, each pair carrying an identical stack.
+   *
+   * Two live seats means the chip sync and the rebuy/add-on RPC must pick one,
+   * and picking the stale row erases purchases or reports the wrong stack
+   * (15,000 against a true 2,728,737 in Union Grand Championship).
+   */
+  it('checks the destination seat actually failed before restoring the source', () => {
+    const src = code(MANAGER);
+    const idx = src.indexOf('if (seatWriteErr)');
+    expect(idx).toBeGreaterThan(-1);
+    const restore = src.indexOf('update({ left_at: null })', idx);
+    expect(restore).toBeGreaterThan(-1);
+    // Structural, not name-based: between entering the error branch and
+    // restoring the source seat there must be a READ of the DESTINATION seat
+    // and an early exit for the case where it turns out to be present.
+    // (Keying this on a variable name made it pass when the name alone was
+    // changed -- caught by mutation testing.)
+    const window = src.slice(idx, restore);
+    expect(window).toContain('move.toTableId');
+    expect(window).toContain('move.toSeat');
+    expect(window).toMatch(/is\('left_at',\s*null\)/);
+    expect(window).toMatch(/\bcontinue;/);
+  });
+
+  it('treats a committed-but-errored destination write as a completed move', () => {
+    expect(code(MANAGER)).toMatch(/Move_dest_seat_write_false_negative/);
   });
 });

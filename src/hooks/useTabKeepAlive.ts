@@ -35,7 +35,9 @@ function getTimerWorker(): Worker {
             };
         `;
     const blob = new Blob([code], { type: 'application/javascript' });
-    _timerWorker = new Worker(URL.createObjectURL(blob));
+    const url = URL.createObjectURL(blob);
+    _timerWorker = new Worker(url);
+    URL.revokeObjectURL(url); // Worker holds its own handle once constructed
     _timerWorker.onmessage = (e: MessageEvent) => {
       const cb = _callbacks.get(e.data.id);
       if (cb) {
@@ -82,40 +84,115 @@ export function cancelWorkerTimeout(id: number): void {
 
 // ─── React Hook ──────────────────────────────────────────────────────────────
 
+// ─── Shared keepalive resources (refcounted singletons) ──────────────────────
+//
+// ANIMATION/SOUND AUDIT 2026-08-20 — AUDIO EXHAUSTION FIX.
+//
+// This hook used to build a PER-MOUNT AudioContext and a PER-MOUNT Worker.
+// MultiTablePage keeps up to MAX_TABLES (4) TablePage instances mounted
+// SIMULTANEOUSLY — by design, so every EngineStateClient socket stays live —
+// so four tables meant four keepalive contexts. Add the SoundService context
+// (constructed at module import, so it always exists), the PremiumSFX context,
+// and a VoiceRecorder context, and a 4-table session reaches SEVEN concurrent
+// AudioContexts against Chrome's hard cap of SIX per document. The seventh
+// throws on construction, and because SoundService/PremiumSFX build theirs
+// LAZILY they are the ones that lose the race — the failure mode is the whole
+// table going SILENT, which is precisely the outcome the animation/sound work
+// exists to prevent.
+//
+// The keepalive context's job is "keep THIS TAB unthrottled". That is a
+// per-DOCUMENT concern, not a per-table one: four of them do nothing that one
+// does. Both resources are now refcounted module singletons — the first mount
+// creates, the last unmount tears down. Ceiling drops 7 -> 4, permanently
+// clear of the cap.
+//
+// The blob URLs are revoked immediately after construction (the Worker keeps
+// its own handle once created); previously each table open leaked one for the
+// lifetime of the document.
+
+let _keepAliveRefs = 0;
+let _keepAliveCtx: AudioContext | null = null;
+let _keepAliveWorker: Worker | null = null;
+
+function acquireKeepAlive(): void {
+  _keepAliveRefs += 1;
+  if (_keepAliveRefs > 1) return; // already running — just count the new holder
+
+  // 1. Web Worker keepalive — pings every 3 seconds from a worker thread
+  try {
+    const blob = new Blob(['setInterval(function(){postMessage("k")},3000)'], {
+      type: 'application/javascript',
+    });
+    const url = URL.createObjectURL(blob);
+    const worker = new Worker(url);
+    URL.revokeObjectURL(url);
+    worker.onmessage = () => {
+      (window as any).__keepAliveTs = Date.now();
+    };
+    _keepAliveWorker = worker;
+  } catch (e) {
+    console.warn('[KeepAlive] Web Worker failed:', e);
+  }
+
+  // 2. Silent AudioContext — Chrome won't throttle tabs playing audio
+  try {
+    _keepAliveCtx = new AudioContext();
+    const osc = _keepAliveCtx.createOscillator();
+    const gain = _keepAliveCtx.createGain();
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(_keepAliveCtx.destination);
+    osc.start();
+  } catch (e) {
+    // Non-fatal by design: if we are already at the cap the tab simply keeps
+    // its Worker-based throttle protection, which covers horse think-timers.
+    _keepAliveCtx = null;
+    console.warn('[KeepAlive] AudioContext failed:', e);
+  }
+}
+
+function releaseKeepAlive(): void {
+  _keepAliveRefs = Math.max(0, _keepAliveRefs - 1);
+  if (_keepAliveRefs > 0) return; // another table is still holding it open
+
+  if (_keepAliveWorker) {
+    _keepAliveWorker.terminate();
+    _keepAliveWorker = null;
+  }
+  if (_keepAliveCtx) {
+    _keepAliveCtx
+      .close()
+      .catch((e) => console.warn('[KeepAlive] Failed to close AudioContext:', e));
+    _keepAliveCtx = null;
+  }
+}
+
+/** Test-only: current refcount + whether the shared resources are live. */
+export function __keepAliveDebugState(): {
+  refs: number;
+  hasCtx: boolean;
+  hasWorker: boolean;
+} {
+  return {
+    refs: _keepAliveRefs,
+    hasCtx: _keepAliveCtx !== null,
+    hasWorker: _keepAliveWorker !== null,
+  };
+}
+
 export function useTabKeepAlive(): void {
-  const workerRef = useRef<Worker | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const heldRef = useRef(false);
 
   useEffect(() => {
-    // 1. Web Worker keepalive — pings every 3 seconds from a worker thread
-    try {
-      const blob = new Blob(['setInterval(function(){postMessage("k")},3000)'], {
-        type: 'application/javascript',
-      });
-      const worker = new Worker(URL.createObjectURL(blob));
-      worker.onmessage = () => {
-        (window as any).__keepAliveTs = Date.now();
-      };
-      workerRef.current = worker;
-    } catch (e) {
-      console.warn('[KeepAlive] Web Worker failed:', e);
-    }
+    // StrictMode double-invoke and re-render safety: never acquire twice for
+    // the same mount, or the refcount would never fall back to zero.
+    if (heldRef.current) return;
+    heldRef.current = true;
 
-    // 2. Silent AudioContext — Chrome won't throttle tabs playing audio
-    try {
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      audioCtxRef.current = ctx;
-    } catch (e) {
-      console.warn('[KeepAlive] AudioContext failed:', e);
-    }
+    acquireKeepAlive();
 
-    // 3. Pre-warm the timer worker so first horse decision doesn't lag
+    // Pre-warm the timer worker so the first horse decision doesn't lag.
+    // Already a module singleton, so this is idempotent across tables.
     try {
       getTimerWorker();
     } catch (e) {
@@ -123,20 +200,15 @@ export function useTabKeepAlive(): void {
       /* ok */
     }
 
-    console.debug('[KeepAlive] Tab keepalive active (Worker + AudioContext + WorkerTimeout)');
+    console.debug(
+      `[KeepAlive] Tab keepalive active (shared, refs=${_keepAliveRefs})`
+    );
 
     return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-        workerRef.current = null;
-      }
-      if (audioCtxRef.current) {
-        audioCtxRef.current
-          .close()
-          .catch((e) => console.warn('[KeepAlive] Failed to close AudioContext:', e));
-        audioCtxRef.current = null;
-      }
-      console.debug('[KeepAlive] Tab keepalive stopped');
+      if (!heldRef.current) return;
+      heldRef.current = false;
+      releaseKeepAlive();
+      console.debug(`[KeepAlive] Tab keepalive released (refs=${_keepAliveRefs})`);
     };
   }, []);
 }

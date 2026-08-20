@@ -172,9 +172,7 @@ the pause rather than after.
 
 Ordered by user impact:
 
-1. **Three extra `AudioContext`s**, one created **per table mount**
-   (`useTabKeepAlive`). Chrome caps ~6 per document, so **4+ simultaneous tables
-   can exhaust them and silence all audio.** Highest-impact item left.
+1. ~~**AudioContext exhaustion**~~ — **FIXED 2026-08-20, see Section 7.**
 2. **Hero card wrapper breaks `:nth-child`** sizing for PLO4/5/6 hole cards
    (pre-existing, from the per-card show feature).
 3. **~17 double-firing haptics**; **three inconsistent haptic implementations**,
@@ -187,3 +185,59 @@ Ordered by user impact:
    announcement pacing (unreachable: 0 tables have `bomb_pot_enabled`).
 7. **Not verifiable by me:** whether the pacing *feels* right in a seated
    session. Every value is a named constant and trivially retunable.
+
+---
+
+## 7. FIXED: AudioContext exhaustion could silence a 4-table session
+
+Every fix above is about making sounds play. This one is about them being
+**able** to play at all, so it outranked the rest of Section 6.
+
+### The arithmetic
+Chrome caps concurrent `AudioContext`s at **6 per document** and throws
+`NotSupportedError` on the 7th. Club Arena's real ceiling was **7**:
+
+| Consumer | Count | When created |
+|---|---|---|
+| `useTabKeepAlive` (silent anti-throttle osc) | **1 per mounted TablePage, up to 4** | eagerly, on table open |
+| `SoundService` | 1 | **at module import** — always exists |
+| `PremiumSFX` | 1 | lazily, first premium cue |
+| `VoiceRecorder` | 1 | lazily, voice message |
+
+The per-table multiplier is not hypothetical: `MAX_TABLES = 4` and
+`PersistentTableLayer` deliberately keeps **every** TablePage mounted so each
+`EngineStateClient` socket stays live.
+
+### Why the failure mode was so bad
+The keepalive contexts are created **eagerly** at table open; SoundService's is
+eager at import but `PremiumSFX` and `VoiceRecorder` build **lazily**. So the
+lazy ones lose the race and the observable symptom is not "keepalive stopped
+working" — it is **the table going silent**, exactly what all the sound work
+above exists to prevent. Table churn made it worse: `ctx.close()` is async, so
+rapidly closing and reopening tables pushed the live count transiently higher
+still.
+
+### Fix
+The keepalive context's job is *"keep THIS TAB unthrottled"* — a
+**per-document** concern, not a per-table one. Four of them accomplish nothing
+that one does. Both the context and the keepalive Worker are now **refcounted
+module singletons**: first mount creates, last unmount tears down, with a
+`heldRef` so StrictMode's double-invoke cannot leak a count.
+
+Ceiling: **7 → 4**. Permanently clear of the cap even with voice messages.
+
+Also fixed alongside: every keepalive table open leaked a blob URL for the life
+of the document (`createObjectURL` with no matching revoke, in both the
+keepalive worker and the timer worker). Now revoked immediately after
+construction — the Worker keeps its own handle.
+
+Construction failure is deliberately non-fatal: if the cap is somehow reached
+anyway, the tab keeps its Worker-based throttle protection, which is what
+actually guards horse think-timers.
+
+### Guard
+`tests/hooks/useTabKeepAlive.test.tsx` — 6 tests with a fake AudioContext that
+**enforces the real cap of 6 and throws the real `NotSupportedError`**.
+Confirmed to catch the regression: against the pre-fix code **4 of 6 fail**,
+`expected 4 to be 1`, and the cap test reproduces the live DOMException. All 6
+pass after the fix. Full client suite: 181 passed, `tsc --noEmit` 0 errors.

@@ -857,8 +857,29 @@ export default function TablePage({
     });
   }, [engineSnapshot, USE_ENGINE_WS, userId, tableState.maxPlayers]);
 
-  const [raiseAmount, setRaiseAmount] = useState(20);
-  const [showRaiseSlider, setShowRaiseSlider] = useState(false);
+  /**
+   * Keyboard entry into the ActionPanel's raise UI.
+   *
+   * This replaces `showRaiseSlider`, which was state that nothing rendered.
+   * `handleRaise` and `onBetPreset` both set it true, no component ever
+   * read it, and it fed `isModalOpen` below — so the documented R / E hotkey and
+   * the 1/2/3/4 pot-fraction keys did nothing visible AND disabled F, C and A
+   * until the player pressed Escape. Hero could be facing a bet, press the
+   * shortcut the UI advertises, and lose every shortcut they had.
+   *
+   * ActionPanel owns the sizing UI, so the intent is handed to it there.
+   */
+  const [raiseIntent, setRaiseIntent] = useState<{
+    nonce: number;
+    open: boolean;
+    amount?: number;
+  }>({ nonce: 0, open: false });
+  const openRaisePanel = useCallback((amount?: number) => {
+    setRaiseIntent((prev) => ({ nonce: prev.nonce + 1, open: true, amount }));
+  }, []);
+  const closeRaisePanel = useCallback(() => {
+    setRaiseIntent((prev) => ({ nonce: prev.nonce + 1, open: false }));
+  }, []);
   const [actionError, setActionError] = useState<ActionErrorData | null>(null);
   /** FIX 185: Bible V8 §4.15 — Added 'call' (auto_call) distinct from 'callAny' (auto_call_any) */
   const [preAction, setPreAction] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
@@ -975,9 +996,29 @@ export default function TablePage({
                 : 'auto_call_any';
         // Tell server about pre-action so it can auto-execute on player's turn
         hadPreActionRef.current = true;
-        serverSetPreAction(tableId, serverAction).catch((e) =>
-          reportError(e, 'TablePage.Failed_to_set')
-        );
+        // 2026-08-20: `setPreAction` NEVER throws — it resolves
+        // `{ success: false }` on a non-OK status, on an unreachable engine, and
+        // for a full 30s whenever GameServerAPI's circuit breaker is open. The
+        // `.catch` was dead code and the result was discarded, so the bar lit up
+        // whether or not the engine had armed anything.
+        //
+        // Both directions cost the player a hand. A failed SET means they arm
+        // "call any", walk away, and get folded on the shot clock instead. A
+        // failed CLEAR (below) means they change their mind, the bar goes dark,
+        // and the engine still folds the hand they wanted to play — pre-actions
+        // are only disposed at hand end, so the whole rest of the hand is
+        // exposed.
+        void serverSetPreAction(tableId, serverAction).then((res) => {
+          if (!res?.success) {
+            reportError(
+              new Error(res?.error || 'setPreAction rejected by engine'),
+              'TablePage.PreAction_set_refused'
+            );
+            hadPreActionRef.current = false;
+            setPreAction(null); // the bar must not claim something the engine has not armed
+            toast?.error?.(res?.error || 'Could not arm that pre-action — play it manually.');
+          }
+        });
         // Also emit to MasterBus for local telemetry
         masterBus.emit('PRE_ACTION_SET', {
           tableId,
@@ -988,24 +1029,62 @@ export default function TablePage({
         // Clear pre-action on server (only if one was previously armed —
         // P2-1: avoids a junk clear request on initial mount when null).
         hadPreActionRef.current = false;
-        serverSetPreAction(tableId, 'clear').catch((e) =>
-          reportError(e, 'TablePage.Failed_to_clear')
-        );
+        void serverSetPreAction(tableId, 'clear').then((res) => {
+          if (!res?.success) {
+            // The engine still holds the old pre-action and WILL execute it.
+            // Say so plainly — this is the direction that folds a live hand.
+            reportError(
+              new Error(res?.error || 'clear pre-action rejected by engine'),
+              'TablePage.PreAction_clear_refused'
+            );
+            hadPreActionRef.current = true;
+            toast?.error?.('Could not cancel your pre-action — it may still run this hand.');
+          }
+        });
       }
     }
-  }, [preAction, tableId, userId]);
+  }, [preAction, tableId, userId, toast]);
 
   // Bible V8 §6.3: Heartbeat every 5 seconds while at the table
   // Server uses this to detect disconnected players and trigger auto-fold/sit-out
   useEffect(() => {
     if (!tableId || !userId) return;
-    // Send initial heartbeat immediately
-    sendHeartbeat(tableId).catch(() => {});
-    const heartbeatInterval = setInterval(() => {
-      sendHeartbeat(tableId).catch((e) => reportError(e, 'TablePage.Failed'));
-    }, 5000);
+    // 2026-08-20: both `.catch`es here were dead — `sendHeartbeat` resolves
+    // `{ success: false }` rather than throwing — and the result was discarded,
+    // so heartbeat loss was completely invisible.
+    //
+    // This is not telemetry. Bible V8 §6.3 heartbeats are what stop
+    // DisconnectEngine treating the player as gone: when they stop landing the
+    // server auto-folds their hands and eventually forces a sit-out. The player
+    // meanwhile sees a perfectly normal table. Tell them.
+    let consecutiveMisses = 0;
+    let warned = false;
+    const beat = async () => {
+      const res = await sendHeartbeat(tableId);
+      if (res?.success) {
+        if (warned) {
+          toast?.success?.('Reconnected to the table.');
+          warned = false;
+        }
+        consecutiveMisses = 0;
+        return;
+      }
+      consecutiveMisses += 1;
+      // Three misses is 15s of silence — well before the server's own
+      // disconnect thresholds, so the warning arrives while it still helps.
+      if (consecutiveMisses >= 3 && !warned) {
+        warned = true;
+        reportError(
+          new Error(`heartbeat missed ${consecutiveMisses}x`),
+          'TablePage.Heartbeat_lost'
+        );
+        toast?.error?.('Connection lost — the server may fold for you. Check your connection.');
+      }
+    };
+    void beat();
+    const heartbeatInterval = setInterval(() => void beat(), 5000);
     return () => clearInterval(heartbeatInterval);
-  }, [tableId, userId]);
+  }, [tableId, userId, toast]);
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
@@ -2129,8 +2208,6 @@ export default function TablePage({
     setIsSoundEnabled,
     isVibrationEnabled,
     setIsVibrationEnabled,
-    isAutoRebuyEnabled,
-    setIsAutoRebuyEnabled,
     playTurnAlert,
   } = useTableSound();
 
@@ -2686,8 +2763,26 @@ export default function TablePage({
         masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
         return;
       }
-      // Force cashout instantly without triggering the UI summary
-      await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      // Force cashout instantly without triggering the UI summary.
+      //
+      // 2026-08-20: this discarded the result. `leaveTable` never throws — its
+      // own outer catch resolves `{ success: false, chipsReturned: 0 }` — so the
+      // catch below was dead too. On a failed cash-out the tab still closed and
+      // TABLE_LEFT / SESSION_ENDED still fired, so the player landed in the
+      // lobby believing they had cashed out while their seat stayed active and
+      // kept posting blinds with their chips in it. The sibling handler at the
+      // normal leave path already checks this; the tab X did not.
+      const forced = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      if (!forced?.success) {
+        reportError(
+          new Error(forced?.error || 'force leave rejected'),
+          'TablePage.handleForceLeaveTable.refused'
+        );
+        setLeaveNotice(
+          forced?.error || 'Could not leave the table — your chips are still in your seat.'
+        );
+        return; // stay on the table; the seat is still live
+      }
       heroSeatRef.current = 0; // FIX 132: Clear on force leave
       masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
       masterBus.emit('SESSION_ENDED', { tableId, userId });
@@ -6638,7 +6733,7 @@ export default function TablePage({
     setTimeout(() => {
       actionLockRef.current = false;
     }, 300);
-    setShowRaiseSlider(false);
+    closeRaisePanel();
     soundService.playFold(); // Bible V8 §5.4 — fold = light haptic
     // BUG 026: optimistic update for instant visual feedback
     const revert = applyOptimisticHeroAction('fold');
@@ -6666,8 +6761,7 @@ export default function TablePage({
     setTimeout(() => {
       actionLockRef.current = false;
     }, 300);
-    const heroSeat = tableState.heroSeat;
-    setShowRaiseSlider(false);
+    closeRaisePanel();
     //Local engine call removed — server is authoritative
     soundService.playCheck(); // SoundService handles haptic (light) per Bible V8 §5.4
     // BUG 026: optimistic update for instant visual feedback
@@ -6685,8 +6779,7 @@ export default function TablePage({
     setTimeout(() => {
       actionLockRef.current = false;
     }, 300);
-    const heroSeat = tableState.heroSeat;
-    setShowRaiseSlider(false);
+    closeRaisePanel();
     //Local engine call removed — server is authoritative
     soundService.playChips(); // SoundService handles haptic (light) per Bible V8 §5.4
     // BUG 026: optimistic update for instant visual feedback
@@ -6698,12 +6791,8 @@ export default function TablePage({
     }
   };
 
-  const handleBet = () => {
-    setShowRaiseSlider(true);
-  };
-
   const handleRaise = () => {
-    setShowRaiseSlider(true);
+    openRaisePanel();
   };
 
   /**
@@ -6914,46 +7003,11 @@ export default function TablePage({
     [tableState.heroSeat, tableId, userId, submitActionWithToast, canCheckRightNow]
   );
 
-  const handleConfirmRaise = async () => {
-    const heroSeat = tableState.heroSeat;
-    const hero = getPlayerAtSeat(heroSeat);
-    const heroStack = hero?.stack || 0;
-
-    // Clamp raise to hero's stack (can't bet more than you have)
-    const clampedRaise = Math.min(raiseAmount, heroStack);
-    if (clampedRaise <= 0) return;
-
-    // Validate before executing
-    if (actionLockRef.current) return;
-    if (!validateAndExecuteAction('raise', clampedRaise)) return;
-    actionLockRef.current = true;
-    setTimeout(() => {
-      actionLockRef.current = false;
-    }, 300);
-
-    // Close slider immediately
-    setShowRaiseSlider(false);
-    try {
-      //Local engine call removed — server is authoritative
-      // SOUND AUDIT 2026-08-19: amount-scaled raise sound (Bible V8 §5.3).
-      soundService.playRaise(clampedRaise, safeBB(tableStateRef.current.blinds, 1)); // haptic (medium) per §5.4
-      // BUG 026: optimistic update for instant visual feedback
-      const revert = applyOptimisticHeroAction('raise', clampedRaise);
-      if (tableId) {
-        const ok = await submitActionWithToast(
-          tableId,
-          userId,
-          'raise',
-          clampedRaise,
-          'confirmRaise'
-        );
-        if (!ok) revert();
-      }
-    } catch (err) {
-      console.warn('[TablePage] Raise error:', err);
-    }
-  };
-
+  // handleConfirmRaise was removed on 2026-08-20. It was the confirm handler for
+  // the slider that never existed, so nothing could reach it; the live path is
+  // ActionPanel's own confirm -> handleActionPanelAction('raise', amount), which
+  // does the same clamping and optimistic update. Two copies of a money-moving
+  // path, one of them unreachable, is how they drift.
   const handleAllIn = async () => {
     if (actionLockRef.current) return;
     const heroSeat = tableState.heroSeat;
@@ -7017,7 +7071,6 @@ export default function TablePage({
       showHandHistory ||
       showPlayerNotes ||
       showWaitList ||
-      showRaiseSlider ||
       isSideMenuOpen,
     onFold: handleFold,
     onCallCheck: () => {
@@ -7042,8 +7095,7 @@ export default function TablePage({
       const fractions = [1 / 3, 1 / 2, 3 / 4, 1];
       const fraction = fractions[preset] ?? 0.5;
       const betAmount = Math.max(safeBB(tableState.blinds), Math.round(pot * fraction * 100) / 100);
-      setRaiseAmount(betAmount);
-      setShowRaiseSlider(true);
+      openRaisePanel(betAmount);
     },
     onClosePanel: () => {
       // Escape key → close ALL open modals/overlays
@@ -7053,7 +7105,7 @@ export default function TablePage({
       setShowHandHistory(false);
       setShowPlayerNotes(false);
       setShowWaitList(false);
-      setShowRaiseSlider(false);
+      closeRaisePanel();
       setShowBuyInModal(false);
       setIsSideMenuOpen(false);
     },
@@ -7452,25 +7504,12 @@ export default function TablePage({
                             onClick: () => setShowCashier(true),
                           },
                         ]),
-                    // Auto-Rebuy toggle (moved from QuickActionsBar to hamburger menu)
-                    ...(!tableState.isTournament
-                      ? [
-                          {
-                            id: 'auto-rebuy',
-                            label: isAutoRebuyEnabled ? 'Auto-Rebuy: ON' : 'Auto-Rebuy: OFF',
-                            icon: <RebuyIcon />,
-                            onClick: () => {
-                              const next = !isAutoRebuyEnabled;
-                              setIsAutoRebuyEnabled(next);
-                              try {
-                                localStorage.setItem('ca_auto_rebuy', String(next));
-                              } catch {
-                                /* */
-                              }
-                            },
-                          },
-                        ]
-                      : []),
+                    // AUTO-REBUY TOGGLE REMOVED 2026-08-20. It set React state and
+                    // a localStorage key and nothing else: `isAutoRebuyEnabled`
+                    // had no consumers anywhere in the repo, and no server code
+                    // reads `table_seats.auto_rebuy` either (see the note in
+                    // BuyInModal). The menu displayed a persistent "Auto-Rebuy:
+                    // ON" badge that changed nothing about how the table behaved.
                   ],
                 },
                 {
@@ -8350,6 +8389,10 @@ export default function TablePage({
                            same number. See ActionPanel presets. */
                         currentBet={serverCurrentBet}
                         onAction={handleActionPanelAction}
+                        /* The documented R / E hotkey and the 1/2/3/4 pot-fraction
+                           keys arrive here. Before 2026-08-20 they set a
+                           `showRaiseSlider` flag that nothing rendered. */
+                        raiseIntent={raiseIntent}
                         isMyTurn={true}
                         isPreflop={tableState.boardStage === 'preflop'}
                         /* Dan 2026-08-19 item 4b: PLO must always offer
@@ -8470,6 +8513,23 @@ export default function TablePage({
             >
               <span className="menu-item-icon">+</span>
               <span className="menu-item-label">Top Up</span>
+              <span className="menu-item-arrow">›</span>
+            </button>
+            {/* 2026-08-20: DiamondWalletModal was mounted in TableModalsLayer and
+                `setShowDiamondWallet(true)` was never called anywhere, so the
+                wallet was unreachable from the table — while diamonds are spent
+                AT the table for throwables, emoji and rabbit hunts, each of which
+                can fail with "Insufficient diamonds". Players could spend the
+                currency but not check or top up the balance. */}
+            <button
+              className="menu-item"
+              onClick={() => {
+                setShowDiamondWallet(true);
+                setIsSideMenuOpen(false);
+              }}
+            >
+              <span className="menu-item-icon">◆</span>
+              <span className="menu-item-label">Diamonds</span>
               <span className="menu-item-arrow">›</span>
             </button>
             <button
@@ -8782,6 +8842,8 @@ export default function TablePage({
         showWaitList={showWaitList}
         waitListPlayers={waitListPlayers}
         onCloseWaitList={() => setShowWaitList(false)}
+        onWaitListError={(m) => toast?.error?.(m)}
+        onTopUpAccount={() => navigate('/cashier')}
         // Insurance
         showInsurance={showInsurance}
         insuranceOffer={insuranceOffer}

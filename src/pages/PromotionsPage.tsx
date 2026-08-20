@@ -412,10 +412,11 @@ export default function PromotionsPage() {
             </button>
             <DailyBonusWheel
               onSpin={async () => {
-                // The wheel is presentation; the SERVER decides what a daily
-                // bonus pays (fn_claim_daily_bonus derives the user from
-                // auth.uid() and the amount from the streak schedule). Report
-                // what was actually credited rather than the segment shown.
+                // The SERVER decides what a daily bonus pays — fn_claim_daily_bonus
+                // reads a fixed 7-day ladder out of daily_bonus_rewards; there is
+                // no randomness anywhere in it. Hand the real outcome back so the
+                // wheel stops on the day that was actually credited instead of a
+                // segment picked by Math.random() in the browser.
                 try {
                   const res = await bonusService.claimDailyBonus(user?.id || '');
                   toast.success(
@@ -423,10 +424,15 @@ export default function PromotionsPage() {
                       ? `Daily bonus: ${res.reward.toLocaleString()} VIP points (day ${res.day})`
                       : `Daily bonus: ${res.reward.toLocaleString()} chips (day ${res.day})`
                   );
+                  return {
+                    day: res.day,
+                    reward: res.reward,
+                    rewardType: res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
+                  };
                 } catch (err) {
                   toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');
-                } finally {
                   setShowBonusWheel(false);
+                  return null;
                 }
               }}
             />

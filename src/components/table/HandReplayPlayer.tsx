@@ -449,7 +449,9 @@ export function HandReplayPlayer({
               >
                 <div className="replay-player__player-info">
                   <span className="replay-player__name">{player.name}</span>
-                  <span className="replay-player__stack">{player.stack.toLocaleString()}</span>
+                  {player.stack !== undefined && (
+                    <span className="replay-player__stack">{player.stack.toLocaleString()}</span>
+                  )}
                 </div>
 
                 {/* Hole Cards — Custom PNG Deck */}

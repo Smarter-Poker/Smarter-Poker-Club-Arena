@@ -133,6 +133,10 @@ export interface TableModalsLayerProps {
   showWaitList: boolean;
   waitListPlayers: any[];
   onCloseWaitList: () => void;
+  /** Sends the player to the cashier from a buy-in they cannot afford. */
+  onTopUpAccount?: () => void;
+  /** Surfaced when leaving the wait list is refused — the player is still queued. */
+  onWaitListError?: (message: string) => void;
 
   // Insurance Modal
   showInsurance: boolean;
@@ -409,6 +413,8 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     showWaitList,
     waitListPlayers,
     onCloseWaitList,
+    onWaitListError,
+    onTopUpAccount,
     // Insurance
     showInsurance,
     insuranceOffer,
@@ -674,10 +680,23 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
             onCloseWaitList();
             return;
           }
-          void waitlistService
-            .leaveWaitlist(tableId)
-            .catch((e) => reportError(e, 'TableModalsLayer.Leave_waitlist_failed'))
-            .finally(() => onCloseWaitList());
+          // `leaveWaitlist` never throws — it reports its own Supabase error and
+          // resolves. The old `.catch(...).finally(close)` was therefore dead
+          // code wrapped around an unconditional close: the modal shut as though
+          // the player had left the queue whether or not the row was cancelled.
+          void waitlistService.leaveWaitlist(tableId).then((res) => {
+            if (res?.success) {
+              onCloseWaitList();
+              return;
+            }
+            reportError(
+              new Error(res?.error || 'leaveWaitlist failed'),
+              'TableModalsLayer.Leave_waitlist_failed'
+            );
+            // Stay open. Closing here is what put players back in a queue they
+            // believed they had left.
+            onWaitListError?.(res?.error || 'Could not leave the wait list — you are still queued.');
+          });
         }}
       />
 
@@ -915,6 +934,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         accountBalance={bustWalletBalance ?? 0}
         bigBlind={safeBB(blinds)}
         countdown={undefined}
+        onTopUp={onTopUpAccount}
       />
 
       {/* Buy-In Modal */}
@@ -932,6 +952,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         accountBalance={accountBalance}
         bigBlind={safeBB(blinds)}
         cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
+        onTopUp={onTopUpAccount}
       />
 
       {/* Rabbit Hunt (post-hand) */}

@@ -383,16 +383,40 @@ class TableService {
     tableId: string,
     seatNumber: number,
     userId: string
-  ): Promise<{ success: boolean; chipsReturned: number }> {
+  ): Promise<{ success: boolean; chipsReturned: number; error?: string }> {
     try {
       // Step 1: Notify the game server engine — it will auto-fold if mid-hand
       // This is critical: without this, the engine keeps the player in-memory
       // and the game freezes waiting for their action
-      try {
-        await notifyServerLeave(tableId);
-      } catch (serverErr) {
-        // Non-fatal — continue with client-side cleanup
-        console.warn('[TableService] Server leave notification failed:', serverErr);
+      // 2026-08-20: `notifyServerLeave` NEVER throws — it resolves
+      // `{ success: false }` on a non-OK status, on an unreachable engine and
+      // whenever GameServerAPI's circuit breaker is open. So the catch below was
+      // dead code and the result was discarded, and we fell straight through to
+      // `atomic_table_cashout`.
+      //
+      // That combination is the dangerous one. The comment above states the
+      // stakes: without this notification the engine keeps the player seated
+      // in memory with a live stack. Cashing out anyway credits their wallet and
+      // clears the seat row while the engine still holds them — engine memory
+      // and the database now disagree about real chips, and every other player
+      // at the table waits on the action clock of someone who has gone.
+      //
+      // Refuse to cash out unless the engine has acknowledged the departure. The
+      // caller surfaces this and the player stays seated, which is recoverable;
+      // a desynced stack is not.
+      const serverLeave = await notifyServerLeave(tableId);
+      if (!serverLeave?.success) {
+        reportError(
+          new Error(serverLeave?.error || 'notifyServerLeave rejected'),
+          'TableService.leaveTable.serverRefused'
+        );
+        return {
+          success: false,
+          chipsReturned: 0,
+          error:
+            serverLeave?.error ||
+            'Could not reach the game server — your chips were not moved. Please try again.',
+        };
       }
 
       // Get the player's current seat data.

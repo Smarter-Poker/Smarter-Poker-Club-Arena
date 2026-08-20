@@ -285,7 +285,9 @@ export default function HandReplayerPage() {
                   <div className="player-avatar">{player.avatar || player.name.charAt(0)}</div>
                   <div className="player-info-pod">
                     <span className="player-name">{player.name}</span>
-                    <span className="player-stack">{player.stack.toLocaleString()}</span>
+                    {player.stack !== undefined && (
+                      <span className="player-stack">{player.stack.toLocaleString()}</span>
+                    )}
                   </div>
                   {player.cards && (
                     <div className="player-cards">

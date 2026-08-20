@@ -33,6 +33,8 @@ export interface BuyInModalProps {
   countdown?: number; // Seconds remaining to buy in
   /** FIX 136: If set, player recently cashed out and must buy in for at least this amount */
   cashoutRestriction?: number;
+  /** Takes the player to the cashier. Without it the "Top Up Account" button is not rendered. */
+  onTopUp?: () => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -64,14 +66,17 @@ export function BuyInModal({
   currency = '',
   countdown,
   cashoutRestriction,
+  onTopUp,
 }: BuyInModalProps) {
   // State
   // Default to MAX buy-in (capped by account balance) — Dan's directive
   const effectiveDefault = defaultBuyIn || Math.min(maxBuyIn, accountBalance);
   const [buyInAmount, setBuyInAmount] = useState(effectiveDefault);
-  const [autoRebuy, setAutoRebuy] = useState(false);
-  // FIX 191: rebuyThreshold was always 0 — default to 50% (half the buy-in)
-  const [rebuyThreshold, setRebuyThreshold] = useState(50);
+  // Auto-rebuy was removed on 2026-08-20 (see the note in the render below).
+  // `onConfirm` keeps its second parameter so callers and the atomic_table_buyin
+  // signature are untouched; it is now always false rather than a promise the
+  // platform does not keep.
+  const autoRebuy = false;
   const [displayAmount, setDisplayAmount] = useState(effectiveDefault);
   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -307,22 +312,20 @@ export function BuyInModal({
           <span className="buy-in-modal__balance-label">)</span>
         </div>
 
-        {/* Auto Rebuy */}
-        <div className="buy-in-modal__auto-rebuy">
-          <label className="buy-in-modal__toggle">
-            <input
-              type="checkbox"
-              checked={autoRebuy}
-              onChange={(e) => setAutoRebuy(e.target.checked)}
-            />
-            <span className="buy-in-modal__toggle-slider" />
-            <span className="buy-in-modal__toggle-label">Auto Rebuy</span>
-          </label>
-          <p className="buy-in-modal__auto-rebuy-info">
-            When your stack drops to <strong>{rebuyThreshold}%</strong> of the initial buy-in, it
-            will be automatically replenished.
-          </p>
-        </div>
+        {/* AUTO REBUY REMOVED 2026-08-20.
+            The checkbox told the player: "When your stack drops to 50% of the
+            initial buy-in, it will be automatically replenished." Nothing
+            implemented that. `atomic_table_buyin` writes `table_seats.auto_rebuy`
+            and NO code anywhere — SQL function, engine, or client — ever reads
+            the column back; verified in production, 0 of 38,390 seat rows had it
+            set. The one server-side auto-rebuy path is horse-only and its body is
+            an explicit no-op. The threshold was a hardcoded `50` whose setter had
+            no call sites.
+            So a player could tick it, bust, and sit at zero waiting for a top-up
+            that was never coming. Promising to protect someone's seat and then
+            not doing it is worse than not offering it. If this is wanted, it
+            needs a real server-side implementation and a product decision about
+            automatically spending a player's wallet while they are away. */}
 
         {/* Confirm Button */}
         <button
@@ -333,8 +336,16 @@ export function BuyInModal({
           {isProcessing ? 'Joining...' : hasEnoughBalance ? 'Buy Chips' : 'Insufficient Balance'}
         </button>
 
-        {/* Top Up Link */}
-        {!hasEnoughBalance && <button className="buy-in-modal__top-up">Top Up Account</button>}
+        {/* Top Up Link.
+            2026-08-20: this had no onClick at all. It only renders when the
+            player has too little to sit down, so the single moment they need to
+            add funds was the one moment the button was inert — and the modal's
+            own container calls stopPropagation, so nothing bubbled either. */}
+        {!hasEnoughBalance && onTopUp && (
+          <button className="buy-in-modal__top-up" onClick={onTopUp}>
+            Top Up Account
+          </button>
+        )}
       </div>
     </div>
   );

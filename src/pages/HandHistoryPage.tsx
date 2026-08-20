@@ -417,11 +417,17 @@ export default function HandHistoryPage() {
                           : 'NLH') as ShareableHand['variant'],
                         stakes: hand.stakes,
                         timestamp: new Date(hand.played_at).getTime(),
-                        buttonSeat: 0, // Default, actual info in players' positions
+                        // 2026-08-20: this was `buttonSeat: 0` with a comment
+                        // pointing at the positions it never actually read, and
+                        // `stack: 1000` for every seat. Both were presented to
+                        // whoever received the shared hand as fact. The button
+                        // IS derivable — HandPlayer.position carries 'BTN' — and
+                        // the stack simply is not stored, so it is now omitted
+                        // rather than invented.
+                        buttonSeat: hand.players.find((p) => p.position === 'BTN')?.seat ?? 0,
                         players: hand.players.map((p, i) => ({
                           seat: p.seat || i,
                           name: p.username || `Player ${i + 1}`,
-                          stack: 1000, // Default stack
                           isHero: p.user_id === user?.id,
                           isWinner: p.is_winner,
                         })),

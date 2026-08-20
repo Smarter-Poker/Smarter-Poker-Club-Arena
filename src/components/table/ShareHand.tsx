@@ -34,7 +34,14 @@ export interface ShareableAction {
 export interface ShareablePlayer {
   seat: number;
   name: string;
-  stack: number;
+  /**
+   * Chips in front of the player. OPTIONAL because not every source knows it —
+   * `HandRecord.players` (the saved hand history) carries no stack at all, and
+   * HandHistoryPage used to fill in a literal `1000` for every seat, so every
+   * shared hand showed fabricated chip counts as if they were fact. Leave it
+   * undefined rather than inventing a number; the replayer omits the figure.
+   */
+  stack?: number;
   cards?: ShareableCard[];
   isWinner?: boolean;
   isHero?: boolean;

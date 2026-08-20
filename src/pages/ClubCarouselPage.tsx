@@ -127,8 +127,41 @@ export default function ClubCarouselPage() {
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
 
-  // #9: Connection health
-  const [wsConnected, setWsConnected] = useState(true);
+  // #9: Connection health.
+  //
+  // 2026-08-20: `setWsConnected` had ZERO call sites, so this was initialised to
+  // `true` and could never become anything else. The dot rendered below always
+  // read "Live connection", including with the network off. A status indicator
+  // that can only ever report health is worse than no indicator, because people
+  // use it to rule the connection out.
+  //
+  // It now reflects two real things: whether the browser thinks it is online,
+  // and whether a Supabase realtime channel can actually stay subscribed.
+  const [wsConnected, setWsConnected] = useState(
+    typeof navigator === 'undefined' || navigator.onLine !== false
+  );
+
+  useEffect(() => {
+    const goOnline = () => setWsConnected(true);
+    const goOffline = () => setWsConnected(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+
+    // A channel with no listeners: we only care about the transport status.
+    const health = supabase.channel('club-carousel-health').subscribe((status) => {
+      if (!isMounted.current) return;
+      if (status === 'SUBSCRIBED') setWsConnected(true);
+      else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        setWsConnected(false);
+      }
+    });
+
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+      void supabase.removeChannel(health);
+    };
+  }, []);
 
   // #8: Notification badges per club
   const [clubBadges, setClubBadges] = useState<Record<string, number>>({});

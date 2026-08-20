@@ -51,6 +51,24 @@ interface ActionPanelProps {
    */
   currentBet?: number;
   /**
+   * Keyboard entry point into raise mode.
+   *
+   * The documented F / C / R / A shortcuts and the 1/2/3/4 bet-preset keys used
+   * to call `setShowRaiseSlider(true)` in TablePage — state that NOTHING
+   * rendered. Pressing R on hero's turn therefore did nothing visible, and
+   * worse, `showRaiseSlider` fed TablePage's `isModalOpen`, which disables the
+   * whole keyboard handler: the key that appeared to do nothing also silently
+   * killed F, C and A until Escape. This panel owns the sizing UI, so the
+   * hotkeys have to arrive here.
+   *
+   * Bump `nonce` to act. `open: true` enters raise mode; pass `amount` to
+   * preselect a size (the pot-fraction preset keys), clamped to the legal range.
+   * `open: false` leaves it — the parent closes the panel on fold/check/call and
+   * on Escape. A nonce rather than a plain boolean so pressing the same preset
+   * twice re-opens the panel.
+   */
+  raiseIntent?: { nonce: number; open: boolean; amount?: number };
+  /**
    * Phase 2 T1-02: render the slider vertically on the right side per spec §5.2
    * "Vertical or angled slider on the RIGHT side of the screen". When false,
    * the legacy horizontal slider sits between amount-row and preset-row.
@@ -222,6 +240,7 @@ export default function ActionPanel({
   isPreflop = false,
   isPotLimit = false,
   currentBet = 0,
+  raiseIntent,
   verticalSlider = true,
 }: ActionPanelProps) {
   const smallestChip = Math.max(bigBlind / 2, 0.01);
@@ -268,6 +287,35 @@ export default function ActionPanel({
       setIsRaiseMode(false);
     }
   }, [isMyTurn]);
+
+  // Keyboard-driven raise. Only meaningful on hero's turn and only when a raise
+  // is actually legal, so the hotkey can never open a panel whose confirm button
+  // the server would refuse.
+  const raiseIntentNonce = raiseIntent?.nonce;
+  const raiseIntentOpen = raiseIntent?.open;
+  const raiseIntentAmount = raiseIntent?.amount;
+  const firstIntentRef = useRef(true);
+  useEffect(() => {
+    if (raiseIntentNonce === undefined) return;
+    // Do not spring open on mount just because a nonce exists.
+    if (firstIntentRef.current) {
+      firstIntentRef.current = false;
+      return;
+    }
+    if (!raiseIntentOpen) {
+      setIsRaiseMode(false);
+      return;
+    }
+    if (!isMyTurn || (!canRaise && !canAllIn)) return;
+    const target =
+      raiseIntentAmount === undefined
+        ? minRaise
+        : Math.min(Math.max(raiseIntentAmount, minRaise), maxRaise);
+    haptic.light();
+    setIsRaiseMode(true);
+    setRaiseAmount(roundToChip(target, smallestChip, minRaise, maxRaise));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [raiseIntentNonce]);
 
   useEffect(() => {
     if (isMyTurn && !prevTurnRef.current) {

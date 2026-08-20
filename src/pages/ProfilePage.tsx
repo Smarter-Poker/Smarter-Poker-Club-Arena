@@ -333,7 +333,7 @@ export default function ProfilePage() {
             id: profile.id,
             username: profile.username || 'Player',
             displayName: profile.display_name || profile.username || 'Player',
-            playerNumber: profile.player_number || Math.floor(Math.random() * 9999) + 1,
+            playerNumber: profile.player_number || 0,
             avatarUrl: profile.avatar_url || '',
             vipLevel: profile.tier || 'bronze',
             memberSince: profile.created_at,
@@ -356,7 +356,7 @@ export default function ProfilePage() {
                   id: profile.id,
                   username: profile.username || 'Player',
                   displayName: profile.display_name || profile.username || 'Player',
-                  playerNumber: profile.player_number || Math.floor(Math.random() * 9999) + 1,
+                  playerNumber: profile.player_number || 0,
                   avatarUrl: profile.avatar_url || '',
                   vipLevel: profile.tier || 'bronze',
                   memberSince: profile.created_at,
@@ -697,8 +697,7 @@ export default function ProfilePage() {
                   id: updatedProfile.id,
                   username: updatedProfile.username || 'Player',
                   displayName: updatedProfile.display_name || updatedProfile.username || 'Player',
-                  playerNumber:
-                    updatedProfile.player_number || Math.floor(Math.random() * 9999) + 1,
+                  playerNumber: updatedProfile.player_number || 0,
                   avatarUrl: updatedProfile.avatar_url || '',
                   vipLevel: updatedProfile.tier || 'bronze',
                   memberSince: updatedProfile.created_at,
@@ -801,7 +800,16 @@ export default function ProfilePage() {
               <StreakMultiplier streak={dailyStreak} multiplier={1 + dailyStreak * 0.1} size="sm" />
             )}
           </h1>
-          <p className={styles.playerNumber}>Player #{user.playerNumber}</p>
+          {/* 2026-08-20: this was `profile.player_number || Math.floor(Math.random() * 9999) + 1`
+              in three separate places in this file. When a profile had no
+              player_number the page invented one — a DIFFERENT one on every load,
+              and a different one again depending on which of the three code paths
+              produced it. A player's own ID visibly changing between refreshes is
+              not a cosmetic issue in a card room. Show nothing when there is no
+              number rather than something untrue. */}
+          {user.playerNumber > 0 && (
+            <p className={styles.playerNumber}>Player #{user.playerNumber}</p>
+          )}
           <div className={styles.statChipsContainer}>
             <div className={styles.statChip}>
               <span className={styles.chipLabel}>Member</span>
@@ -1340,10 +1348,11 @@ export default function ProfilePage() {
             </button>
             <DailyBonusWheel
               onSpin={async () => {
-                // The wheel is presentation; the SERVER decides what a daily
-                // bonus pays (fn_claim_daily_bonus derives the user from
-                // auth.uid() and the amount from the streak schedule). Report
-                // what was actually credited rather than the segment shown.
+                // The SERVER decides what a daily bonus pays — fn_claim_daily_bonus
+                // reads a fixed 7-day ladder out of daily_bonus_rewards; there is
+                // no randomness anywhere in it. Hand the real outcome back so the
+                // wheel stops on the day that was actually credited instead of a
+                // segment picked by Math.random() in the browser.
                 try {
                   const res = await bonusService.claimDailyBonus(user!.id);
                   toast.success(
@@ -1351,10 +1360,15 @@ export default function ProfilePage() {
                       ? `Daily bonus: ${res.reward.toLocaleString()} VIP points (day ${res.day})`
                       : `Daily bonus: ${res.reward.toLocaleString()} chips (day ${res.day})`
                   );
+                  return {
+                    day: res.day,
+                    reward: res.reward,
+                    rewardType: res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
+                  };
                 } catch (err) {
                   toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');
-                } finally {
                   setShowBonusWheel(false);
+                  return null;
                 }
               }}
             />

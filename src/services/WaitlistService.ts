@@ -166,11 +166,23 @@ export const WaitlistService = {
 
   /**
    * Leave the waitlist for a table (cancels all active rows for this user+table).
-   * Returns the number of rows cancelled.
+   *
+   * 2026-08-20: this used to return `number`, and returned `0` both when the
+   * update FAILED and when there was simply nothing to cancel. The caller could
+   * not tell those apart, so the "leave the wait list" modal closed as if it had
+   * worked either way — and a player who thought they had left stayed queued and
+   * was later offered a seat at a table they had walked away from.
+   *
+   * `success` is the outcome of the write; `cancelled` is how many rows it
+   * touched. Cancelling zero rows is still a success (already left, double-tap).
    */
-  async leaveWaitlist(tableId: string): Promise<number> {
+  async leaveWaitlist(
+    tableId: string
+  ): Promise<{ success: boolean; cancelled: number; error?: string }> {
     const userId = await currentUserId();
-    if (!userId) return 0;
+    if (!userId) {
+      return { success: false, cancelled: 0, error: 'You are not signed in.' };
+    }
     const { data, error } = await supabase
       .from('table_waitlists')
       .update({ status: 'cancelled' })
@@ -180,9 +192,9 @@ export const WaitlistService = {
       .select('id');
     if (error) {
       reportError(error, 'WaitlistService.leaveWaitlist', { tableId, userId });
-      return 0;
+      return { success: false, cancelled: 0, error: error.message };
     }
-    return data?.length ?? 0;
+    return { success: true, cancelled: data?.length ?? 0 };
   },
 
   /**

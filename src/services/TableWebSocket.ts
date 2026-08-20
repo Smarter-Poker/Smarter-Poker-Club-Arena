@@ -84,6 +84,10 @@ export class TableWebSocket {
   private userId: string;
   private username: string;
 
+  /** Resync attempts before we accept the gap. getTableState resolves null on failure. */
+  private static readonly RESYNC_ATTEMPTS = 3;
+  private static readonly RESYNC_BASE_DELAY_MS = 400;
+
   private eventHandlers: Set<EventHandler> = new Set();
   private presenceHandlers: Set<PresenceHandler> = new Set();
   private connectionHandlers: Set<ConnectionHandler> = new Set();
@@ -412,37 +416,98 @@ export class TableWebSocket {
     } as PlayerPresence);
   }
 
-  private async requestResync(): Promise<void> {
-    // Request full state from server via Supabase RPC
+  /**
+   * Fill a gap in the event sequence by pulling authoritative state.
+   *
+   * ── WHY THIS WAS REWRITTEN (2026-08-20) ──────────────────────────────────
+   * The previous version was `retryAsync(() => GameServerAPI.getTableState(id), 3)`
+   * inside a try/catch, and it could wedge a table permanently and silently.
+   *
+   * `getTableState` NEVER throws: it resolves `null` on a non-OK status, on an
+   * unreachable engine, and whenever GameServerAPI's circuit breaker is open.
+   * `retryAsync` only retries a THROWN retryable error, so "3 retries" bought
+   * exactly one attempt, and the surrounding `catch` was dead code.
+   *
+   * The failure mode that follows is the bad part. `handleGameEvent` queues the
+   * gapped event, calls this, and returns WITHOUT advancing `lastSequence`. If
+   * the resync resolved `null`, the `if (data)` block was skipped and nothing
+   * repaired the sequence — so every subsequent event was also a gap, was also
+   * queued, and `processPendingEvents` (which only drains strictly in order)
+   * could never run. Pot, stacks, board and the turn indicator freeze at the
+   * moment of the gap. No error, no banner, no reconnect. The only way out was
+   * for the player to reload the page, mid-hand, with money committed.
+   *
+   * So: retry on the null, and if it still fails, ACCEPT THE GAP rather than
+   * freeze. A client that is one event stale still tracks the hand and is
+   * repaired by the engine's next full-state broadcast. A frozen one never
+   * recovers.
+   */
+  private resyncInFlight: Promise<void> | null = null;
 
+  private requestResync(): Promise<void> {
+    // A burst of gapped events would otherwise fire a resync per event.
+    if (this.resyncInFlight) return this.resyncInFlight;
+    this.resyncInFlight = this.runResync().finally(() => {
+      this.resyncInFlight = null;
+    });
+    return this.resyncInFlight;
+  }
+
+  private async runResync(): Promise<void> {
     if (!this.supabase) {
       reportError('Cannot resync: Supabase not configured', 'TableWS.resync.noSupabase');
+      this.acceptGap('supabase not configured');
       return;
     }
 
-    try {
-      // FIX: Call authoritative Node.js Engine to get live state instead of static DB
-      const data = await retryAsync(() => GameServerAPI.getTableState(this.tableId), 3);
-
-      if (data) {
-        // Broadcast the synced state to all handlers
-        // IMPORTANT: Bypass handleGameEvent's sequence check — resync is authoritative
-        const syncEvent: GameEvent = {
-          type: 'GAME_START', // Use as full state sync
-          tableId: this.tableId,
-          data: data,
-          timestamp: Date.now(),
-          sequence: (data.sequence as number) || this.lastSequence + 1,
-        };
-        // Dispatch directly (skip sequence ordering — resync IS the truth)
-        this.dispatchEvent(syncEvent);
-        // Update sequence tracking AFTER dispatch
-        this.lastSequence = syncEvent.sequence;
-        // Clear any pending events — resync supersedes them
-        this.pendingEvents = [];
+    let data: Record<string, unknown> | null = null;
+    for (let attempt = 0; attempt < TableWebSocket.RESYNC_ATTEMPTS; attempt++) {
+      data = await GameServerAPI.getTableState(this.tableId);
+      if (data) break;
+      if (attempt < TableWebSocket.RESYNC_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, TableWebSocket.RESYNC_BASE_DELAY_MS * 2 ** attempt));
       }
-    } catch (err: unknown) {
-      reportError(err, 'TableWS.resync.failed');
+    }
+
+    if (!data) {
+      this.acceptGap(`getTableState returned null ${TableWebSocket.RESYNC_ATTEMPTS}x`);
+      return;
+    }
+
+    // Broadcast the synced state to all handlers.
+    // IMPORTANT: bypass handleGameEvent's sequence check — resync is authoritative.
+    const syncEvent: GameEvent = {
+      type: 'GAME_START', // Use as full state sync
+      tableId: this.tableId,
+      data: data,
+      timestamp: Date.now(),
+      sequence: (data.sequence as number) || this.lastSequence + 1,
+    };
+    this.dispatchEvent(syncEvent);
+    this.lastSequence = syncEvent.sequence;
+    // Resync supersedes anything queued behind the gap.
+    this.pendingEvents = [];
+  }
+
+  /**
+   * Resync could not be completed. Rather than sit on a queue that can never
+   * drain, take the queued events at face value: dispatch them in sequence
+   * order and move `lastSequence` to the newest one, so the live stream flows
+   * again. We may have missed one event's worth of state; the engine's next
+   * full broadcast repairs that. Freezing does not repair itself.
+   */
+  private acceptGap(reason: string): void {
+    reportError(
+      new Error(`resync failed (${reason}) — accepting the sequence gap to avoid a frozen table`),
+      'TableWS.resync.acceptedGap'
+    );
+    if (this.pendingEvents.length === 0) return;
+
+    const queued = [...this.pendingEvents].sort((a, b) => a.sequence - b.sequence);
+    this.pendingEvents = [];
+    for (const ev of queued) {
+      this.lastSequence = ev.sequence;
+      this.dispatchEvent(ev);
     }
   }
 
@@ -483,7 +548,6 @@ export class TableWebSocket {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { retryAsync } from '../utils/retryAsync';
 
 export interface UseTableWebSocketResult {
   isConnected: boolean;

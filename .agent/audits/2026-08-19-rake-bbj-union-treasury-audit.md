@@ -175,3 +175,72 @@ contain that SHA's code — its assets lacked `fn_club_money_panel` entirely,
 i.e. it was built from a stale working tree and tagged with current HEAD.
 Always verify a built asset contains the change before calling it shipped:
 `grep -l <new symbol> dist/assets/*.js`.
+
+
+---
+
+## Pass 5 — the two biggest money bugs of the whole engagement
+
+Both found by measuring rather than reading, both pre-existing, both silent.
+
+### 20. CRITICAL — rake was credited to the Union Bank *as well as* the Rake Treasury
+
+Dan, from the live panel: *"RAKE IS STILL GOING TO THE UNION BANK INSTEAD OF THE
+RAKE TREASURY."* Correct. Every credit incremented **both** `chip_balance` and
+`rake_wallet`, because the treasury was modelled as a sub-account *inside* the
+bank — so the bank climbed with every raked hand.
+
+The rule is that rake is held by the union **only** under the Rake Treasury,
+for the week, then 90% back to clubs with the union keeping 10%. That makes them
+separate pots. `atomic_distribute_rake`, `increment_union_wallet` and
+`record_tournament_buyin_rake` now credit the treasury only; the weekly close
+pays clubs **out of** the treasury and moves just the retained share into the
+bank; the solvency guard follows the chips.
+
+One-time correction in the same transaction as the function swap (so a
+concurrent credit is counted either the old way before the row lock or the new
+way after commit): `chip_balance -= rake_wallet`. Union Bank
+**630,802.14 → 120,895.24**; the 509,906.90 removed was never the union's to
+spend. Verified live: over two minutes Union Bank moved **0.00** while the
+treasury took **+342.03**.
+
+The sentinel's `rake_wallet <= chip_balance` invariant described the old nested
+model and would now fire on every healthy union — replaced with non-negativity.
+
+### 21. CRITICAL — rakeback periods were computed from ~1% of each week
+
+The settler derived `rake_generated` by FETCHING a club's week of `rake_records`
+with `.limit(50000)` and summing in JavaScript. **PostgREST caps a response at
+1000 rows**, so it saw ~1000 records of a week holding **81,000–180,000**.
+
+Measured on live pending periods:
+
+| user | stored | actual | recorded |
+|---|---|---|---|
+| 1c1c12c2… | 23.17 | 377.01 | 6% |
+| 00bc0957… | 24.54 | 387.38 | 6% |
+
+and entire club-weeks (122–310 player rows each) recorded **0.00**.
+
+It is worse than a proportional shortfall, because `rake_generated` also selects
+the rakeback **tier** (5/10/15/20/30% at 100/500/2000/10000) — understated rake
+drops a player into a lower band, compounding the loss.
+
+The cap cannot be lifted from the client, so the computation moved into the
+database (`fn_rakeback_recompute_periods`), reproducing `equalShareCents`
+exactly: same integer-cents base, same remainder-to-the-first-keys rule (jsonb
+sorts equal-length UUID keys lexicographically — the order the engine sees),
+same tier ladder, paid weeks left immutable.
+
+**Backfilled every pending period.** Money owed to players went from
+effectively nothing to **119,039.91** across 1,927 rows (907,001.40 of rake
+now correctly attributed), with **zero** rows still reading 0.00.
+
+Funding after the correction: SHARK CLUB is covered (801,675 treasury against
+50,392 owed). Club JAQK owes 68,646 against a 12.58 treasury, so its payouts
+will **defer with a financial alert** — which is the designed behaviour from
+finding #3 — and clear when the Monday close pays JAQK its 90%.
+
+> Note the interaction: #20 and #21 are why the union looked rich and the
+> players looked owed nothing. The bank was inflated by money held in trust,
+> and the players' ledger was computed from a truncated sample.

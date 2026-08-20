@@ -8150,3 +8150,19 @@ any future MCP-driven backfill: a timeout is not proof the statement did not run
     FETCH_LIMIT is now 1,000 = the cap, so a full page reports 'more'
     truthfully, the loop drains MAX_DRAIN_BATCHES pages per cycle, and the 60s
     catch-up keeps pages running back-to-back while backlog remains.
+
+18. RAKE ONLY TO THE TREASURY (Dan-reported). Rake was credited to BOTH
+    union_wallets.chip_balance and rake_wallet — the treasury was a sub-account
+    inside the bank, so the bank grew with every hand. Now separate pots: rake
+    credits the treasury only, the weekly close pays clubs out of it and moves
+    just the retained share to the bank. One-time chip_balance -= rake_wallet
+    (630,802.14 -> 120,895.24). Verified: bank moved 0.00 while the treasury
+    took +342.03 over two minutes. Sentinel invariant updated.
+19. RAKEBACK PERIODS FROM ~1% OF A WEEK. The settler summed a club's week
+    client-side with .limit(50000), but PostgREST caps at 1000 rows, so weeks of
+    81k-180k records were scored on ~1000. Users showed 23.17 against a real
+    377.01, and whole club-weeks read 0.00 — and since rake_generated picks the
+    rakeback tier, players were also dropped a band. Moved server-side into
+    fn_rakeback_recompute_periods (exact equalShareCents + tier parity, paid
+    weeks immutable) and backfilled every pending period: owed-to-players went
+    from ~nothing to 119,039.91 across 1,927 rows, none still zero.

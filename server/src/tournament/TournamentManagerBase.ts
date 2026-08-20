@@ -1301,6 +1301,75 @@ export abstract class TournamentManagerBase {
     }
   }
 
+  /**
+   * Horses take their add-on when the add-on period opens.
+   *
+   * Like tournament rebuys, add-ons had NEVER executed in production - the
+   * 'addon' wallet_transactions category has no rows in all of history -
+   * because process_tournament_rebuy's only caller was the SPA and there are
+   * no human players yet. The period opened, the broadcast fired, and nothing
+   * ever bought one.
+   *
+   * Every rule (add-ons offered, not already taken, inside the add-on level
+   * window, sufficient club chips) is enforced inside
+   * process_tournament_rebuy, together with the chip debit and the prize-pool
+   * increment, in one transaction. Add-ons are NOT raked, per Dan's rule, so
+   * that call books no rake row and the whole amount reaches the pool.
+   *
+   * Horses only; a real player's add-on stays their own decision.
+   */
+  protected async tryTournamentAddOns(): Promise<void> {
+    if (!this.tournamentCache?.add_on_available) return;
+    try {
+      const { data: rows, error: rowsErr } = await supabase
+        .from('tournament_players')
+        .select('user_id, add_on')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'playing');
+      if (rowsErr || !rows || rows.length === 0) return;
+
+      const candidates = rows
+        .filter((r: { add_on?: boolean | null }) => !r.add_on)
+        .map((r: { user_id: string }) => r.user_id);
+      if (candidates.length === 0) return;
+
+      const { data: horseRows } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('id', candidates)
+        .eq('is_horse', true);
+      if (!horseRows || horseRows.length === 0) return;
+
+      let taken = 0;
+      const declined = new Map<string, number>();
+      for (const h of horseRows) {
+        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
+          p_tournament_id: this.tournamentId,
+          p_user_id: h.id,
+          p_rebuy_type: 'addon',
+          // null: let the server price it (add-ons are charged at face value).
+          p_cost: null,
+          p_chips: null,
+          p_current_level: this.currentLevel,
+        });
+        if (error) {
+          declined.set(error.message, (declined.get(error.message) || 0) + 1);
+          continue;
+        }
+        if ((data as { success?: boolean } | null)?.success === true) taken++;
+      }
+
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ONS: ${taken} taken` +
+          (declined.size > 0
+            ? ` — declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
+            : '')
+      );
+    } catch (err) {
+      reportError(err, 'Tournament.tournament_addon_threw');
+    }
+  }
+
   protected async triggerAddOnPeriod(): Promise<void> {
     if (this.addOnPeriodTriggered) return;
     this.addOnPeriodTriggered = true;
@@ -1346,6 +1415,9 @@ export abstract class TournamentManagerBase {
       startLevel: rebuyLevelCap,
       endLevel: rebuyLevelCap + addonLevels,
     });
+
+    // Offer the add-on to the field now that the window is open.
+    await this.tryTournamentAddOns();
 
     // NOTE: Add-on period end is now handled by the level-up handler (finalizeAfterAddOn)
     // No more hardcoded 60-second timer!

@@ -20,6 +20,7 @@ import LiveTablesBar from '../components/table/LiveTablesBar';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
 import './MultiTablePage.css';
 
@@ -93,7 +94,12 @@ const MAX_TABLES = 4;
  * - Tables merely running -> 'return': a quiet re-entry affordance.
  * - On /table/* the container itself is visible -> 'none' (no dock).
  */
-const dockStateFor = (tabs: TableInstance[], hidden: boolean, nowMs: number) => {
+const dockStateFor = (
+  tabs: TableInstance[],
+  hidden: boolean,
+  nowMs: number,
+  lastActiveId?: string
+) => {
   if (!hidden) return { kind: 'none' as const };
   const live = tabs.filter((t) => !isLobbyTab(t));
   if (live.length === 0) return { kind: 'none' as const };
@@ -111,7 +117,13 @@ const dockStateFor = (tabs: TableInstance[], hidden: boolean, nowMs: number) => 
           : undefined,
     };
   }
-  return { kind: 'return' as const, count: live.length, targetId: live[0].id };
+  /**
+   * Dan 2026-08-20: the quiet dock used to hand back live[0] — the OLDEST tab —
+   * so a player browsing away from table 4 was returned to table 1 and had to
+   * find their way back. Prefer the tab they were last looking at.
+   */
+  const preferred = live.find((t) => t.id === lastActiveId) ?? live[0];
+  return { kind: 'return' as const, count: live.length, targetId: preferred.id };
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -141,6 +153,38 @@ export default function MultiTablePage() {
   const clubLookupCacheRef = useRef<Map<string, string>>(new Map());
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const toast = useToast();
+
+  /**
+   * Dan 2026-08-20 (E2E audit): the 4-table device cap used to fail SILENTLY in
+   * three places — the route effect, TABLE_SEATED and OPEN_LOBBY_TAB each just
+   * `return`ed. Tapping "+" at four tables did nothing at all, and (worst case)
+   * a TOURNAMENT table the player was already seated at by the engine could not
+   * be opened, so they blinded out of a game they had paid to enter.
+   *
+   * The cap itself is correct and stays: 4 concurrent tables per device, which
+   * is exactly what the server enforces for CASH seats (atomic_table_buyin,
+   * v_max_tables = 4, tournament_id IS NULL). Tournament REGISTRATIONS are
+   * never capped — thousands are fine — so the only thing the client must do
+   * when a fifth table shows up is SAY SO, loudly and specifically, instead of
+   * swallowing it. Never auto-close a table to make room: that would cash a
+   * player out of a live game without consent.
+   */
+  const capNoticeAtRef = useRef(0);
+  const notifyCapReached = useCallback(
+    (reason: 'add' | 'route' | 'seated') => {
+      // One notice per 4s: the route effect and a bus event can fire together.
+      const now = Date.now();
+      if (now - capNoticeAtRef.current < 4000) return;
+      capNoticeAtRef.current = now;
+      const msg =
+        reason === 'seated'
+          ? `You are already playing ${MAX_TABLES} tables. Close one to open the table you were just seated at.`
+          : `You are playing the maximum of ${MAX_TABLES} tables. Close one first.`;
+      toast.warning(msg, 6000);
+    },
+    [toast]
+  );
 
   // ─── State ───────────────────────────────────────────────────────────
   // FIX: sessionStorage persistence removed — it caused "zombie" tabs to resurrect
@@ -175,10 +219,19 @@ export default function MultiTablePage() {
   // Keep a ref to tables for use in bus handlers that may fire between renders
   const tablesRef = useRef(tables);
   tablesRef.current = tables;
+  // Same for the active index: the route effect intentionally does not depend
+  // on it (re-running on every tab switch would fight the router), so it reads
+  // the live value through a ref instead of closing over a stale one.
+  const activeIndexRef = useRef(0);
 
   // Swipe tracking refs
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const lastActiveTableIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
 
   // Tab entrance animation — only used for multi-table mode with tab bar
   useEffect(() => {
@@ -296,7 +349,13 @@ export default function MultiTablePage() {
         return next;
       }
 
-      if (prev.length >= MAX_TABLES) return prev;
+      if (prev.length >= MAX_TABLES) {
+        // Engine seated us (tournament start, waitlist promotion) but the
+        // device is full. Say so — silently dropping this used to leave the
+        // player blinding out of a table they could not see.
+        notifyCapReached('seated');
+        return prev;
+      }
       return [...prev, seatedTab];
     });
   });
@@ -334,10 +393,17 @@ export default function MultiTablePage() {
         // somewhere to go next.
         setTables([
           {
+            // Dan 2026-08-20: this literal was `as TableInstance` with three
+            // required fields missing, so `pot`/`stakes`/`isMyTurn` arrived at
+            // TableTabBar as undefined. Construct it whole and drop the cast —
+            // the cast was the only reason the compiler stayed quiet.
             id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
             kind: 'lobby',
             name: 'Lobby',
-          } as TableInstance,
+            stakes: '',
+            isMyTurn: false,
+            pot: 0,
+          },
         ]);
         setActiveIndex(0);
         return;
@@ -368,7 +434,10 @@ export default function MultiTablePage() {
       setActiveIndex(existingLobby);
       return;
     }
-    if (prev.length >= MAX_TABLES) return;
+    if (prev.length >= MAX_TABLES) {
+      notifyCapReached('add');
+      return;
+    }
     setTables([
       ...prev,
       {
@@ -472,13 +541,16 @@ export default function MultiTablePage() {
   );
 
   const handleAddTable = useCallback(() => {
-    if (tables.length >= MAX_TABLES) return;
+    if (tables.length >= MAX_TABLES) {
+      notifyCapReached('add');
+      return;
+    }
     // Dan 2026-08-15: was `navigate('/?returnToMulti=true')`. Nothing in the
     // app ever read `returnToMulti`, so this unmounted MultiTablePage and tore
     // down every open game just to browse the lobby. Route it through the same
     // bus event the in-table "+" uses so both entry points behave identically.
     masterBus.emit('OPEN_LOBBY_TAB', {});
-  }, [tables.length]);
+  }, [tables.length, notifyCapReached]);
 
   // ─── Update table info (called by child TablePage instances) ─────────
   // P1-2 FIX: bail out when nothing actually changed so setTables returns the
@@ -654,8 +726,9 @@ export default function MultiTablePage() {
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      // Number keys 1-4 to switch tables
-      if (e.key >= '1' && e.key <= '4') {
+      // Number keys 1..MAX_TABLES to switch tables. Derived from the constant
+      // rather than a hardcoded '4' so the cap has exactly one definition.
+      if (e.key >= '1' && e.key <= String(MAX_TABLES)) {
         const idx = parseInt(e.key) - 1;
         if (idx < tables.length) {
           setActiveIndex(idx);
@@ -783,15 +856,44 @@ export default function MultiTablePage() {
     } else if (prev.length < MAX_TABLES) {
       setTables([...prev, fromUrl]);
       setActiveIndex(prev.length); // Switch to new table
+    } else {
+      /**
+       * Dan 2026-08-20 (E2E audit) — THE worst silent failure in this file.
+       * At four open tables this branch did not exist: the effect just ended.
+       * The URL had already changed to /table/<new>, `hidden` was therefore
+       * false, and the container kept rendering whatever tab was active. The
+       * player saw a different table than the address bar claimed, with no
+       * error and no explanation.
+       *
+       * It bit tournaments hardest: TournamentDetails sends a player to their
+       * seat with navigate(`/table/${myEntry.table_id}`), and the engine seats
+       * tournament players without any cap (correct — registrations are
+       * uncapped by design). A player at four cash tables therefore could not
+       * reach the tournament they had paid to enter, and blinded out.
+       *
+       * Now: say exactly what is wrong, and put the URL back on the table the
+       * player is actually looking at so the two can never disagree.
+       */
+      notifyCapReached('route');
+      const current = prev[activeIndexRef.current] ?? prev[0];
+      if (current && !isLobbyTab(current)) navigate(`/table/${current.id}`, { replace: true });
     }
   }, [routeTableId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Remember the last REAL table the player had on screen, so the dock can
+  // send them back to it rather than to whichever tab happens to be oldest.
+  useEffect(() => {
+    if (hidden) return;
+    const cur = tables[activeIndex];
+    if (cur && !isLobbyTab(cur)) lastActiveTableIdRef.current = cur.id;
+  }, [hidden, tables, activeIndex]);
 
   // ─── Global dock (Dan 2026-08-19) ────────────────────────────────────
   // While hidden on another route, the LiveTablesBar dock is the ONE global
   // affordance: "Return to game" when tables are quietly running, "Action
   // needed" (with the live countdown — nowMs already ticks whenever any
   // turn clock runs) when a hidden table waits on the hero.
-  const dock = dockStateFor(tables, hidden, nowMs);
+  const dock = dockStateFor(tables, hidden, nowMs, lastActiveTableIdRef.current);
   const handleDockReturn = useCallback(
     (tableId: string) => {
       const idx = tablesRef.current.findIndex((t) => t.id === tableId);
@@ -836,163 +938,103 @@ export default function MultiTablePage() {
         />
       )}
       <div className="multi-table-page" style={hidden ? { display: 'none' } : undefined}>
-      {/* Tab Bar */}
-      {tables.length > 1 && (
-        <div className="multi-table-page__tab-bar-wrapper">
-          <TableTabBar
-            tabs={tabInfos}
-            activeTabId={activeTableId}
-            onTabSelect={handleTabSelect}
-            onAddTable={handleAddTable}
-          />
-          {tables.length > 1 && (
-            <button
-              className="tile-toggle-btn"
-              onClick={() => setIsTileView((prev) => !prev)}
-              title={isTileView ? 'Single view' : 'Tile view'}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                {isTileView ? (
-                  <rect
-                    x="2"
-                    y="2"
-                    width="12"
-                    height="12"
-                    rx="2"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                  />
-                ) : (
-                  <>
+        {/* Tab Bar */}
+        {tables.length > 1 && (
+          <div className="multi-table-page__tab-bar-wrapper">
+            <TableTabBar
+              tabs={tabInfos}
+              activeTabId={activeTableId}
+              onTabSelect={handleTabSelect}
+              onAddTable={handleAddTable}
+              maxTables={MAX_TABLES}
+            />
+            {tables.length > 1 && (
+              <button
+                className="tile-toggle-btn"
+                onClick={() => setIsTileView((prev) => !prev)}
+                title={isTileView ? 'Single view' : 'Tile view'}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  {isTileView ? (
                     <rect
                       x="2"
                       y="2"
-                      width="5"
-                      height="5"
-                      rx="1"
+                      width="12"
+                      height="12"
+                      rx="2"
                       stroke="currentColor"
-                      strokeWidth="1.2"
+                      strokeWidth="1.5"
                     />
-                    <rect
-                      x="9"
-                      y="2"
-                      width="5"
-                      height="5"
-                      rx="1"
-                      stroke="currentColor"
-                      strokeWidth="1.2"
-                    />
-                    <rect
-                      x="2"
-                      y="9"
-                      width="5"
-                      height="5"
-                      rx="1"
-                      stroke="currentColor"
-                      strokeWidth="1.2"
-                    />
-                    <rect
-                      x="9"
-                      y="9"
-                      width="5"
-                      height="5"
-                      rx="1"
-                      stroke="currentColor"
-                      strokeWidth="1.2"
-                    />
-                  </>
-                )}
-              </svg>
-            </button>
-          )}
-        </div>
-      )}
+                  ) : (
+                    <>
+                      <rect
+                        x="2"
+                        y="2"
+                        width="5"
+                        height="5"
+                        rx="1"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                      />
+                      <rect
+                        x="9"
+                        y="2"
+                        width="5"
+                        height="5"
+                        rx="1"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                      />
+                      <rect
+                        x="2"
+                        y="9"
+                        width="5"
+                        height="5"
+                        rx="1"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                      />
+                      <rect
+                        x="9"
+                        y="9"
+                        width="5"
+                        height="5"
+                        rx="1"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                      />
+                    </>
+                  )}
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
 
-      {/* Tile View Grid or Swipe Container */}
-      {isTileView && tables.length > 1 ? (
-        <div
-          className="multi-table-grid"
-          style={{
-            opacity: tabEntranceComplete ? 1 : 0,
-            transform: tabEntranceComplete ? 'translateY(0)' : 'translateY(12px)',
-            transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          {tables.map((table, idx) => (
-            <div
-              key={table.id}
-              className={`multi-table-grid__cell ${idx === activeIndex ? 'multi-table-grid__cell--active' : ''}`}
-              onClick={() => {
-                setActiveIndex(idx);
-                setIsTileView(false);
-              }}
-              style={{
-                boxShadow: idx === activeIndex ? '0 0 20px rgba(0, 212, 255, 0.3)' : 'none',
-                transition: 'box-shadow 0.3s ease',
-              }}
-            >
-              <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
-                {isLobbyTab(table) ? (
-                  renderLobbyTab(table)
-                ) : (
-                  <TablePage
-                    key={table.id}
-                    embeddedTableId={table.id}
-                    onTableInfoUpdate={getTableInfoCb(table.id)}
-                    isMultiTable={true}
-                    isActive={idx === activeIndex && !hidden}
-                  />
-                )}
-              </Suspense>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div
-          ref={containerRef}
-          className={`multi-table-page__container ${isTransitioning ? 'multi-table-page__container--transitioning' : ''}`}
-          style={{
-            transform: containerTransform,
-            // Single-table: always visible. Multi-table: fade in after tab bar renders.
-            opacity: tables.length <= 1 ? 1 : tabEntranceComplete ? 1 : 0,
-            transition:
-              tabEntranceComplete && !isTransitioning && tables.length > 1
-                ? 'opacity 0.4s ease'
-                : 'none',
-          }}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {tables.map((table, idx) => {
-            // FIX-214: When not swiping, only render the active slot.
-            // During swipe, render adjacent slots for the swipe animation.
-            const isActive = idx === activeIndex;
-            const isAdjacent = Math.abs(idx - activeIndex) <= 1;
-            const shouldRender = isActivelySwiping ? isAdjacent : isActive;
-
-            return (
+        {/* Tile View Grid or Swipe Container */}
+        {isTileView && tables.length > 1 ? (
+          <div
+            className="multi-table-grid"
+            style={{
+              opacity: tabEntranceComplete ? 1 : 0,
+              transform: tabEntranceComplete ? 'translateY(0)' : 'translateY(12px)',
+              transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+            }}
+          >
+            {tables.map((table, idx) => (
               <div
                 key={table.id}
-                className={`multi-table-page__table-slot ${isActive ? 'multi-table-page__table-slot--active' : ''}`}
-                style={shouldRender ? undefined : { display: 'none' }}
+                className={`multi-table-grid__cell ${idx === activeIndex ? 'multi-table-grid__cell--active' : ''}`}
+                onClick={() => {
+                  setActiveIndex(idx);
+                  setIsTileView(false);
+                }}
+                style={{
+                  boxShadow: idx === activeIndex ? '0 0 20px rgba(0, 212, 255, 0.3)' : 'none',
+                  transition: 'box-shadow 0.3s ease',
+                }}
               >
-                <Suspense
-                  fallback={
-                    <div className="multi-table-page__loading">
-                      <div className="multi-table-page__spinner" />
-                      <span
-                        style={{
-                          color: 'rgba(255,255,255,0.5)',
-                          fontSize: '0.85rem',
-                          marginTop: 12,
-                        }}
-                      >
-                        Loading table…
-                      </span>
-                    </div>
-                  }
-                >
+                <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
                   {isLobbyTab(table) ? (
                     renderLobbyTab(table)
                   ) : (
@@ -1000,20 +1042,81 @@ export default function MultiTablePage() {
                       key={table.id}
                       embeddedTableId={table.id}
                       onTableInfoUpdate={getTableInfoCb(table.id)}
-                      // Dan 2026-08-19: while hidden on another route no tab is
-                      // "active" — ambient table sounds must not follow the
-                      // player into the cashier (isMultiTable true when hidden
-                      // so single-table mode is muted too).
-                      isMultiTable={tables.length > 1 || hidden}
+                      isMultiTable={true}
                       isActive={idx === activeIndex && !hidden}
                     />
                   )}
                 </Suspense>
               </div>
-            );
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        ) : (
+          <div
+            ref={containerRef}
+            className={`multi-table-page__container ${isTransitioning ? 'multi-table-page__container--transitioning' : ''}`}
+            style={{
+              transform: containerTransform,
+              // Single-table: always visible. Multi-table: fade in after tab bar renders.
+              opacity: tables.length <= 1 ? 1 : tabEntranceComplete ? 1 : 0,
+              transition:
+                tabEntranceComplete && !isTransitioning && tables.length > 1
+                  ? 'opacity 0.4s ease'
+                  : 'none',
+            }}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
+            {tables.map((table, idx) => {
+              // FIX-214: When not swiping, only render the active slot.
+              // During swipe, render adjacent slots for the swipe animation.
+              const isActive = idx === activeIndex;
+              const isAdjacent = Math.abs(idx - activeIndex) <= 1;
+              const shouldRender = isActivelySwiping ? isAdjacent : isActive;
+
+              return (
+                <div
+                  key={table.id}
+                  className={`multi-table-page__table-slot ${isActive ? 'multi-table-page__table-slot--active' : ''}`}
+                  style={shouldRender ? undefined : { display: 'none' }}
+                >
+                  <Suspense
+                    fallback={
+                      <div className="multi-table-page__loading">
+                        <div className="multi-table-page__spinner" />
+                        <span
+                          style={{
+                            color: 'rgba(255,255,255,0.5)',
+                            fontSize: '0.85rem',
+                            marginTop: 12,
+                          }}
+                        >
+                          Loading table…
+                        </span>
+                      </div>
+                    }
+                  >
+                    {isLobbyTab(table) ? (
+                      renderLobbyTab(table)
+                    ) : (
+                      <TablePage
+                        key={table.id}
+                        embeddedTableId={table.id}
+                        onTableInfoUpdate={getTableInfoCb(table.id)}
+                        // Dan 2026-08-19: while hidden on another route no tab is
+                        // "active" — ambient table sounds must not follow the
+                        // player into the cashier (isMultiTable true when hidden
+                        // so single-table mode is muted too).
+                        isMultiTable={tables.length > 1 || hidden}
+                        isActive={idx === activeIndex && !hidden}
+                      />
+                    )}
+                  </Suspense>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </>
   );

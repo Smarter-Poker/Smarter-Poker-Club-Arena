@@ -108,14 +108,22 @@ const MAX_TABLES = (() => {
 const LOBBY_TAB_PREFIX = 'lobby:';
 const isLobbyTab = (t) => t.kind === 'lobby' || t.id.startsWith(LOBBY_TAB_PREFIX);
 const setHomeClubId = () => {};
+// Dan 2026-08-20: the cap no longer fails silently — every refusal calls
+// notifyCapReached(reason). Record the calls so the harness can PROVE the
+// player is told, instead of only proving the fifth table was refused.
+const capNotices = [];
+const notifyCapReached = (reason) => capNotices.push(reason);
+const activeIndexRef = { current: 0 };
 
 check('MAX_TABLES is 4 (spec: up to 4 concurrent tables)', MAX_TABLES === 4, 'got ' + MAX_TABLES);
 
 // ── lift each handler verbatim ───────────────────────────────────────────────
 const ENV = ['tablesRef', 'setTables', 'setActiveIndex', 'MAX_TABLES', 'LOBBY_TAB_PREFIX',
-             'isLobbyTab', 'user', 'goToLobby', 'navigate', 'searchParams'];
+             'isLobbyTab', 'user', 'goToLobby', 'navigate', 'searchParams',
+             'notifyCapReached', 'activeIndexRef'];
 const envArgs = [tablesRef, setTables, setActiveIndex, MAX_TABLES, LOBBY_TAB_PREFIX,
-                 isLobbyTab, user, goToLobby, navigate, searchParams];
+                 isLobbyTab, user, goToLobby, navigate, searchParams,
+                 notifyCapReached, activeIndexRef];
 
 const onSeated = liftHandler("useMasterBusSubscription('TABLE_SEATED', (", ENV)(...envArgs);
 const onOpenLobby = liftHandler("useMasterBusSubscription('OPEN_LOBBY_TAB', (", ENV)(...envArgs);
@@ -210,13 +218,32 @@ onSeated({ tableId: 'T4', userId: 'me' });
 check('join 4: TABLE_SEATED converts the open lobby tab',
   ids().join(',') === 'T1,T2,T3,T4', ids().join(','));
 
-// 6. attempt a 5th — every entry point must refuse
+// 6. attempt a 5th — every entry point must refuse AND SAY SO.
+// Dan 2026-08-20: refusing silently is the bug, not the fix. A player at four
+// tables who taps "+" (or is engine-seated into a tournament, or follows a
+// tournament deep link) must be told why nothing opened; the old code just
+// `return`ed and left them staring at the wrong table.
+capNotices.length = 0;
 onOpenLobby({});
 check('cap: + at 4 tables is a no-op', ids().join(',') === 'T1,T2,T3,T4', ids().join(','));
+check('cap: + at 4 tables TELLS the player', capNotices.includes('add'),
+  'notices=' + JSON.stringify(capNotices));
+
+capNotices.length = 0;
 onSeated({ tableId: 'T5', userId: 'me' });
 check('cap: TABLE_SEATED for a 5th table refused', ids().join(',') === 'T1,T2,T3,T4', ids().join(','));
+check('cap: engine-seated 5th table TELLS the player (tournament blind-out guard)',
+  capNotices.includes('seated'), 'notices=' + JSON.stringify(capNotices));
+
+capNotices.length = 0;
+navCalls.length = 0;
+activeIndexRef.current = 1; // player is looking at T2
 runRoute('T5');
 check('cap: deep link to a 5th table refused', ids().join(',') === 'T1,T2,T3,T4', ids().join(','));
+check('cap: deep link to a 5th table TELLS the player', capNotices.includes('route'),
+  'notices=' + JSON.stringify(capNotices));
+check('cap: deep link puts the URL back on the table actually on screen',
+  navCalls.includes('/table/T2'), 'nav=' + JSON.stringify(navCalls));
 
 // other users' seats never spawn tabs
 onSeated({ tableId: 'TX', userId: 'someone-else' });
@@ -397,6 +424,16 @@ const twoTurns = [
 ];
 check('dock: most pressing deadline wins when several tables want action',
   dockStateFor(twoTurns, true, 1000).targetId === 'T2');
+// Dan 2026-08-20: the quiet dock used to always hand back the OLDEST tab, so a
+// player who wandered off table 4 was dropped onto table 1 and had to find
+// their way back. It now prefers the last table they actually had on screen.
+check('dock: quiet return goes to the LAST-VIEWED table, not the oldest tab',
+  dockStateFor(quiet, true, 1000, 'T2').targetId === 'T2',
+  JSON.stringify(dockStateFor(quiet, true, 1000, 'T2')));
+check('dock: last-viewed falls back to the first live tab when that table is gone',
+  dockStateFor(quiet, true, 1000, 'T-closed').targetId === 'T1');
+check('dock: an urgent table still outranks the last-viewed one',
+  dockStateFor(withTurn, true, 1000, 'T1').targetId === 'T2');
 check('dock: rendered through LiveTablesBar with the urgent payload wired',
   SRC.includes('hidden && dock.kind !== \'none\'') && SRC.includes('<LiveTablesBar') &&
   SRC.includes('onReturn={handleDockReturn}'));

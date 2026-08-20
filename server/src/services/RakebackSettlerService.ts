@@ -731,9 +731,12 @@ export class RakebackSettlerService {
    * detected by record-count mismatch and recomputed live at read time. This
    * is purely to keep that work OUT of the Monday settlement transaction.
    */
-  // Deploy note: the run for 43a7ce579 failed in 4s with zero steps executed
-  // (GitHub runner startup failure, not a code failure — tsc clean and 848/848
-  // server tests green at that commit). Re-triggered by this touch.
+  // Deploy note: runs for 43a7ce579 and f0a61596f both failed in ~4s with zero
+  // steps executed. Cause was account-level: GitHub Actions was blocked by the
+  // billing/spending limit from ~12:22 to ~12:55 UTC on 2026-08-20, which
+  // failed every workflow in every repo instantly. Not a code failure — tsc
+  // clean and 848/848 server tests green throughout. Deployed once the budget
+  // was raised.
   private async runUnionRakeRollupCatchup(): Promise<void> {
     try {
       const { data, error } = await supabase.rpc('fn_union_rake_rollup_catchup_all', {

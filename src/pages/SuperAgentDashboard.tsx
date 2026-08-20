@@ -20,8 +20,9 @@ import ClubBottomNav from '../components/club/ClubBottomNav';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './SuperAgentDashboard.css';
 import { reportError } from '../utils/errorReporter';
+import AgentBackOffice from '../components/agent/AgentBackOffice';
 
-type DashboardTab = 'overview' | 'agents' | 'players' | 'commissions' | 'transfers';
+type DashboardTab = 'overview' | 'agents' | 'players' | 'commissions' | 'transfers' | 'backoffice';
 
 export default function SuperAgentDashboard() {
   const navigate = useNavigate();
@@ -333,17 +334,24 @@ export default function SuperAgentDashboard() {
 
       {/* Tabs */}
       <div className="dashboard-tabs">
-        {(['overview', 'agents', 'players', 'commissions', 'transfers'] as DashboardTab[]).map(
-          (tab) => (
-            <button
-              key={tab}
-              className={activeTab === tab ? 'active' : ''}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          )
-        )}
+        {(
+          [
+            'overview',
+            'agents',
+            'players',
+            'commissions',
+            'transfers',
+            'backoffice',
+          ] as DashboardTab[]
+        ).map((tab) => (
+          <button
+            key={tab}
+            className={activeTab === tab ? 'active' : ''}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab === 'backoffice' ? 'Back Office' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        ))}
       </div>
 
       {/* Content */}
@@ -519,6 +527,12 @@ export default function SuperAgentDashboard() {
                 {isTransferring ? 'Sending...' : 'Send Chips'}
               </button>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'backoffice' && (
+          <div className="backoffice-section">
+            <AgentBackOffice />
           </div>
         )}
       </div>

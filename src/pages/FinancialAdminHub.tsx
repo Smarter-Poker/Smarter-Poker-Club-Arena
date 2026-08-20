@@ -17,6 +17,7 @@ import { useToast } from '../components/common/Toast';
 import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip } from 'recharts';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import UnionOpsPanel from '../components/union/UnionOpsPanel';
 
 interface HubStats {
   totalAlerts: number;
@@ -625,6 +626,22 @@ export default function FinancialAdminHub() {
       </div>
 
       {/* Footer Status */}
+      {/* Union integrity: law self-test + hourly sweep */}
+      <div
+        style={{
+          marginTop: '24px',
+          background: 'rgba(255,255,255,0.02)',
+          borderRadius: '12px',
+          padding: '16px',
+          border: '1px solid rgba(255,255,255,0.06)',
+        }}
+      >
+        <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
+          Union Integrity & Law
+        </h3>
+        <UnionOpsPanel canRun />
+      </div>
+
       <div
         style={{
           marginTop: '24px',

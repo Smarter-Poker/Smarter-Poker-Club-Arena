@@ -28,6 +28,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import AgentBackOffice from '../components/agent/AgentBackOffice';
 
 type AgentTab =
   | 'overview'
@@ -37,7 +38,8 @@ type AgentTab =
   | 'score'
   | 'analytics'
   | 'promo'
-  | 'credit';
+  | 'credit'
+  | 'statement';
 
 // ── Agent Dashboard Types ──────────────────────────────────────
 interface AgentProfile {
@@ -476,7 +478,10 @@ export default function AgentDashboardPage() {
 
   const denyCashout = async (cashoutId: string) => {
     if (
-      !(await confirmDialog({ message: 'Deny and refund this cashout request?', variant: 'danger' }))
+      !(await confirmDialog({
+        message: 'Deny and refund this cashout request?',
+        variant: 'danger',
+      }))
     )
       return;
     setProcessing(true);
@@ -758,6 +763,7 @@ export default function AgentDashboardPage() {
               badge: pendingCashouts.length || undefined,
             },
             { id: 'commissions' as AgentTab, label: 'Commissions' },
+            { id: 'statement' as AgentTab, label: 'Statement' },
             { id: 'analytics' as AgentTab, label: 'Analytics' },
             { id: 'score' as AgentTab, label: 'Score' },
             ...(isOwnerOrAdmin ? [{ id: 'promo' as AgentTab, label: 'Promo' }] : []),
@@ -1472,6 +1478,21 @@ export default function AgentDashboardPage() {
           </div>
         )}
       </div>
+
+      {tab === 'statement' && (
+        <div style={{ padding: '0 16px 16px', maxWidth: '1100px', margin: '0 auto' }}>
+          <div
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '12px',
+              padding: '16px',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
+            <AgentBackOffice title="Weekly Statement & Roster" />
+          </div>
+        </div>
+      )}
 
       {/* TRANSACTION HISTORY — chip_ledger entries for this agent */}
       <div style={{ padding: '0 16px 16px', maxWidth: '800px', margin: '0 auto' }}>

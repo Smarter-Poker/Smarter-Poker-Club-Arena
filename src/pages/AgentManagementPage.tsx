@@ -31,6 +31,7 @@ import { PermissionService } from '@/services/PermissionService';
 import { AgentFinancialPortal } from '@/components/dashboard/AgentFinancialPortal';
 import AgentCommissionDashboard from '@/components/agent/AgentCommissionDashboard';
 import { useToast } from '@/components/common/Toast';
+import AgentAssignmentPanel from '@/components/agent/AgentAssignmentPanel';
 import AgentCashoutPanel from '@/components/agent/AgentCashoutPanel';
 import ClubBottomNav from '@/components/club/ClubBottomNav';
 import { PlayerSearch } from '@/components/admin/PlayerSearch';
@@ -1012,6 +1013,12 @@ export default function AgentManagementPage() {
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
         {/* HIERARCHY TAB — Visual Tree View */}
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'hierarchy' && clubId && (
+          <div style={{ marginBottom: 20 }}>
+            <AgentAssignmentPanel clubId={clubId} />
+          </div>
+        )}
+
         {activeTab === 'hierarchy' && clubId && (
           <AgentTree
             clubId={clubId}

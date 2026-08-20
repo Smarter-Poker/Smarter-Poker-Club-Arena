@@ -22,6 +22,7 @@ import { SettlementService } from '../services/SettlementService';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { getUnionLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
+import UnionOpsPanel from '../components/union/UnionOpsPanel';
 
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
@@ -34,6 +35,7 @@ type UnionTab =
   | 'treasury'
   | 'analytics'
   | 'applications'
+  | 'operations'
   | 'settings';
 
 // ── Union Dashboard Types ────────────────────────────────────
@@ -154,7 +156,13 @@ export default function UnionDashboardPage() {
   /** Weekly union<->club player win/loss settlements (union_pnl_settlements). */
   const [pnlSettlements, setPnlSettlements] = useState<any[]>([]);
   const [rakebackHistory, setRakebackHistory] = useState<
-    { id: string; period_start: string; period_end: string; total_rakeback: number; executed_at: string }[]
+    {
+      id: string;
+      period_start: string;
+      period_end: string;
+      total_rakeback: number;
+      executed_at: string;
+    }[]
   >([]);
   const [rakebackRunning, setRakebackRunning] = useState(false);
 
@@ -911,6 +919,7 @@ export default function UnionDashboardPage() {
                 label: 'Applications',
                 badge: pendingAppsCount || undefined,
               },
+              { id: 'operations' as UnionTab, label: 'Operations' },
               { id: 'settings' as UnionTab, label: 'Settings' },
             ] as { id: UnionTab; label: string; badge?: number }[]
           ).map((t) => (
@@ -2133,6 +2142,12 @@ export default function UnionDashboardPage() {
         )}
 
         {/* ══════ TAB: SETTINGS ══════ */}
+        {tab === 'operations' && (
+          <div style={{ padding: '16px' }}>
+            <UnionOpsPanel unionId={unionId ?? undefined} canRun={isLead} />
+          </div>
+        )}
+
         {tab === 'settings' && (
           <div className="admin-tab-content">
             {isLead ? (

@@ -29,6 +29,7 @@ import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
 import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
+import UnionClubGovernance from '../components/union/UnionClubGovernance';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -1108,23 +1109,25 @@ export default function UnionDetailPage() {
                         )}
                       </span>
                     </div>
-                    {union?.ownerId === user?.id && (
-                      <button
-                        className={styles.removeClubBtn}
+                    {union?.ownerId === user?.id && unionId && (
+                      // Governance, not a delete: exit blockers are read first so the
+                      // owner sees live seats, open entries, unsettled rake and agent
+                      // credit before anything is unwound.
+                      <span
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (!unionId || removingClubId) return;
-                          setRemoveConfirm({
-                            show: true,
-                            clubId: club.clubId,
-                            clubName: club.clubName,
-                          });
                         }}
-                        disabled={removingClubId === club.clubId}
                       >
-                        {removingClubId === club.clubId ? 'Removing...' : '✕ Remove'}
-                      </button>
+                        <UnionClubGovernance
+                          unionId={unionId}
+                          clubId={club.clubId}
+                          clubName={club.clubName}
+                          onExpelled={(id) =>
+                            setClubs((prev) => prev.filter((c) => c.clubId !== id))
+                          }
+                        />
+                      </span>
                     )}
                   </Link>
                 );

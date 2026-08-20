@@ -24,6 +24,8 @@ import TransactionLedgerView from '../components/common/TransactionLedgerView';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import UnionOpsPanel from '../components/union/UnionOpsPanel';
+import UnionAgentStatements from '../components/union/UnionAgentStatements';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -341,8 +343,10 @@ export default function SettlementDashboardPage() {
     const channelKey = 'settlement-dashboard-rt';
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'agent_commissions' }, () =>
-        loadData()
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'agent_commissions' },
+        () => loadData()
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
@@ -438,7 +442,9 @@ export default function SettlementDashboardPage() {
       if (!isMounted.current) return;
       toast.success(
         `Settled ${result.periodsSettled} period(s) across ${result.clubsProcessed} club(s): ${result.totalPayout.toLocaleString()} chips paid.` +
-          (result.clubsRemaining > 0 ? ` ${result.clubsRemaining} club(s) still pending — run again.` : '')
+          (result.clubsRemaining > 0
+            ? ` ${result.clubsRemaining} club(s) still pending — run again.`
+            : '')
       );
       loadRakebackStatus();
       loadData();
@@ -1224,6 +1230,40 @@ export default function SettlementDashboardPage() {
         }}
       >
         Settlement Engine v3.0 • Sunday 11:59 PM snapshot • Monday 4:00 AM execution
+      </div>
+
+      {/* Cascaded settlement: union to clubs, clubs to agents, agents to players */}
+      <div style={{ padding: '0 16px 16px', marginTop: '16px' }}>
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.02)',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(255,255,255,0.06)',
+          }}
+        >
+          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
+            Union Settlement Cascade
+          </h3>
+          <UnionOpsPanel canRun />
+        </div>
+      </div>
+
+      {/* Per-agent settlement positions for the period */}
+      <div style={{ padding: '0 16px 16px' }}>
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.02)',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(255,255,255,0.06)',
+          }}
+        >
+          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
+            Agent Statements
+          </h3>
+          <UnionAgentStatements />
+        </div>
       </div>
 
       {/* Settlement Chip Audit Trail */}

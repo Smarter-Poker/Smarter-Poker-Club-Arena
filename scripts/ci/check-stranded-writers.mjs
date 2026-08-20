@@ -54,6 +54,10 @@ const ALLOWLIST = new Set([
   //   avatar_unlocks         2 writer functions, 1 row.   Read: marketplaceShared.ts:352
   'union_pnl_settlements',
   'avatar_unlocks',
+  //   union_settlement_rounds  written by the SECURITY DEFINER function
+  //   `fn_union_settlement_cascade`; 3 rows in production. Verified 2026-08-20
+  //   via the Supabase MCP. Read: src/services/UnionOpsService.ts:260.
+  'union_settlement_rounds',
   // Cross-orb tables (tracked in ~/Documents/Smarter-Poker-World-Hub/supabase/migrations)
   'diamond_ledger', // Diamond Arena orb
   'user_avatars', // Identity DNA Engine

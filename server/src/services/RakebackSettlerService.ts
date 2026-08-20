@@ -52,10 +52,16 @@ const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
  * hour of pure network latency for a page whose SQL takes seconds.
  *
  * The credits now go server-side in chunks, so a page costs a handful of
- * round trips. 500 keeps each request body small and each server transaction
- * short while removing ~99.8% of the latency.
+ * round trips instead of ~24,000, removing ~99% of the latency.
+ *
+ * SIZED FROM PRODUCTION, not guessed: the first deploy used 500 and hit the
+ * ~8s statement timeout on the commission batch (five 500s, five
+ * "canceling statement due to statement timeout" entries at 23:38). A timeout
+ * aborts the whole call, so those items were skipped and the cursor advanced
+ * past them. The functions now set their own 300s timeout AND the chunk is
+ * 150, so a chunk is comfortably inside even a slow window with headroom.
  */
-const CREDIT_BATCH_SIZE = 500;
+const CREDIT_BATCH_SIZE = 150;
 const DAEMON_KEY = 'rakeback_settler';
 
 /**

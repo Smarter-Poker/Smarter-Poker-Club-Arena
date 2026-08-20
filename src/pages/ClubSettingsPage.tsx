@@ -1100,9 +1100,15 @@ export default function ClubSettingsPage() {
             <small className="form-hint">
               Most that can be raked from one pot, in big blinds. Blank uses the house cap for each
               stake ($3–$20 depending on blinds).{' '}
-              {settings.rake_cap < 0
-                ? 'Currently: house cap.'
-                : `Currently: ${settings.rake_cap} BB.`}
+              {settings.rake_cap < 0 ? (
+                'Currently: house cap.'
+              ) : (
+                <>
+                  {`Currently ${settings.rake_cap} BB — that is `}
+                  {`$${(settings.rake_cap * 2).toFixed(2)} per pot at 1/2 and `}
+                  {`$${(settings.rake_cap * 10).toFixed(2)} at 5/10.`}
+                </>
+              )}
             </small>
           </div>
           {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It

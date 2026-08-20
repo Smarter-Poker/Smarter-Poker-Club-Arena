@@ -8101,3 +8101,35 @@ changed.
     is, with the amount and date of the next 90% payback; club owners see what
     they are owed at the close; reconnect timers no longer stack; aria-live no
     longer fires on every animation frame. Migration mirror: 20260819i.
+
+## 2026-08-19 (enhancements) — bb/100, pagination, honest windows (Cowork/Claude)
+
+- **bb/100 win rate.** Chip profit is not comparable across stakes; a losing
+  15/30 player could outrank a winning 1/2 grinder. New
+  player_stats.sum_big_blind accumulates one big_blind per seated player per
+  cash hand in the same trigger statement as hands_dealt (no extra cost), and
+  bb/100 = 100*(winnings-losses)/sum_big_blind. Backfilled from hand_history and
+  reconciled at 100.000% (20,079,332 vs 20,079,296 true big blinds).
+  Verified: club board returns 141.94 / 120.92 / 113.90 / 100.11 / 95.44,
+  strictly descending, all qualified.
+- **Pagination.** p_offset on both RPCs plus rank and total_ranked in the
+  result. rank now comes from the RPC - it was the array index, which is only
+  correct on page 1. "Show more (50 of 575)" button appends pages.
+- **Honest period windows.** RPCs return baseline_date and the UI shows the span
+  it actually measured. This matters: the daily snapshot job HAS missed a day
+  (2026-08-09 failed - confirmed in cron.job_run_details, 1 failure in 21 runs),
+  and on a miss the functions fall back to an older snapshot, silently turning
+  "This Week" into 8 days. The label now says so.
+- **fn_leaderboard_snapshot_gaps(days)** lists missing snapshot dates so the
+  condition is detectable at all. Currently returns exactly 2026-08-09.
+- **Counter documentation.** COMMENTs now distinguish hands_dealt (true, per
+  seat, what the leaderboard uses) from the rakeback-owned hands_played (13.4%
+  of reality). update_player_hand_stats is annotated in-body: it is named as if
+  it records hand stats but only increments profiles.total_hands_played and
+  discards every other argument - the reason profit read 0.00 platform-wide.
+
+Backfill note: a batch that timed out CLIENT-side had actually committed on the
+server, and re-running an overlapping window double-added, producing 113% of
+truth. Rebuilt the staging table with ON CONFLICT DO UPDATE SET x = EXCLUDED.x
+(replace, not add) so re-running a batch is idempotent. Worth remembering for
+any future MCP-driven backfill: a timeout is not proof the statement did not run.

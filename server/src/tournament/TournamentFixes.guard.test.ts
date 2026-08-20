@@ -127,6 +127,19 @@ describe('rebuys and add-ons actually happen', () => {
   });
 });
 
+describe('a rebuy or add-on lands in the seat, or does not happen', () => {
+  it('add-ons are only offered to players holding a live seat', () => {
+    // Defect: process_tournament_rebuy updated the seat behind `IF FOUND` with
+    // no ELSE, so a player between seats during table consolidation was
+    // charged and had the grant erased by the chip sync. On the first add-on
+    // window ever run, 103 were charged and ~91 delivered nothing.
+    // The database now refuses those outright; this keeps the engine from
+    // generating a refusal per player.
+    expect(code(BASE)).toMatch(/left_at.*is\(|is\('left_at'/s);
+    expect(code(BASE)).toMatch(/seated\.has\(/);
+  });
+});
+
 describe('the settler keeps running every sentinel it is meant to', () => {
   // Defect: runUnionEcoRecord was deleted by a stale-copy rewrite and nobody
   // noticed until the running build was grepped by hand.

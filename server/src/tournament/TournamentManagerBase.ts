@@ -1364,9 +1364,24 @@ export abstract class TournamentManagerBase {
         .eq('status', 'playing');
       if (rowsErr || !rows || rows.length === 0) return;
 
-      const candidates = rows
+      const withoutAddOn = rows
         .filter((r: { add_on?: boolean | null }) => !r.add_on)
         .map((r: { user_id: string }) => r.user_id);
+      if (withoutAddOn.length === 0) return;
+
+      // Only offer to players who actually hold a LIVE SEAT. A player between
+      // seats during table consolidation has none, and process_tournament_rebuy
+      // now refuses those outright - because charging them used to grant chips
+      // that the seat sync immediately erased (103 add-ons charged on the first
+      // window ever run, ~91 of them delivering nothing). Filtering here keeps
+      // the refusals out of the log instead of generating one per player.
+      const { data: seatRows } = await supabase
+        .from('table_seats')
+        .select('user_id, tables!inner(tournament_id)')
+        .is('left_at', null)
+        .eq('tables.tournament_id', this.tournamentId);
+      const seated = new Set((seatRows ?? []).map((r: { user_id: string }) => r.user_id));
+      const candidates = withoutAddOn.filter((id) => seated.has(id));
       if (candidates.length === 0) return;
 
       const { data: horseRows } = await supabase

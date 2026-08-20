@@ -130,6 +130,30 @@ describe('the SAME bug class, everywhere it occurs — nothing is superseded in 
   });
 });
 
+describe('celebrations are not superseded by the next hand either', () => {
+  const runout = read('ServerTableEngineRunout.ts');
+  const dealing = read('ServerTableEngineDealing.ts');
+
+  it('the ALL IN banner finishes before the first runout card lands', () => {
+    // The client's allInBannerSlam runs 1800ms and fires on the first
+    // all_in_equity broadcast, which goes out with this pause. A shorter pause
+    // starts dealing the board while "ALL IN" is still slamming in.
+    const m = runout.match(/allInFirstPauseMs\s*=\s*(\d+)/);
+    expect(m).toBeTruthy();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(1800);
+  });
+
+  it('a BAD BEAT JACKPOT pauses the table for its whole celebration', () => {
+    // BBJCelebration phases at 3.5s, fades at 8s, completes at ~8.5s. Without
+    // this the next hand was dealt underneath it at ~2.6-6s.
+    expect(dealing).toContain('BBJ_CELEBRATION_MS');
+    const m = dealing.match(/BBJ_CELEBRATION_MS\s*=\s*(\d+)/);
+    expect(Number(m![1])).toBeGreaterThanOrEqual(8500);
+    // and it must actually be selected when a jackpot hit
+    expect(dealing).toContain('this.currentHandBBJHit?.hit');
+  });
+});
+
 describe('the end of a hand is not rushed either', () => {
   const dealing = read('ServerTableEngineDealing.ts');
 

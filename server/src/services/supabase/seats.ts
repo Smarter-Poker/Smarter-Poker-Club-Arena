@@ -12,6 +12,55 @@
 import { supabase } from './client.js';
 
 /**
+ * REVIEW FIX (2026-08-20): the cash-out idempotency key must identify an
+ * OCCUPANCY, not a seat.
+ *
+ * `table_seats` has UNIQUE (table_id, seat_number) — one row per physical seat,
+ * forever. On cash tables that is harmless because `atomic_table_buyin` deletes
+ * the vacated row and inserts a new one, so every occupancy gets a fresh id.
+ * The tournament balancer does NOT: it moves a player in by UPDATE-ing the
+ * existing row's `left_at` back to null, so the id is REUSED across occupants.
+ *
+ * With a key of `cashout:<seat.id>` that meant the first player ever to cash
+ * out of a tournament seat permanently poisoned the key. The next occupant's
+ * cash-out would hit ON CONFLICT DO NOTHING, return with NO error, be treated
+ * as credited, and have their seat cleared — silently destroying their whole
+ * stack. Not yet triggered in production (zero seats have been re-joined after
+ * their key was written), which is exactly why it is worth closing now.
+ *
+ * `joined_at` distinguishes occupancies of the same row.
+ */
+function cashoutKey(seat: { id: string; joined_at?: string | null }): string {
+  return seat.joined_at ? `cashout:${seat.id}:${seat.joined_at}` : `cashout:${seat.id}`;
+}
+
+/**
+ * Transition guard for the key-format change above.
+ *
+ * A cash-out whose credit COMMITTED but whose response timed out before this
+ * change would have written `cashout:<id>`; the retry after it lands would ask
+ * for `cashout:<id>:<joined_at>`, match nothing, and pay a second time — the
+ * fix causing the exact bug it exists to prevent, for a window of minutes.
+ *
+ * So: if the legacy key is already present, this seat was credited under the
+ * old format and must not be credited again. One indexed point-read on a path
+ * that runs per cash-out, not per hand.
+ */
+async function alreadyCreditedUnderLegacyKey(seatId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('wallet_credit_idempotency')
+      .select('key')
+      .eq('key', `cashout:${seatId}`)
+      .maybeSingle();
+    if (error) return false; // unknown -> fall through to the normal keyed path
+    return !!data;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Mark a horse as having left the table, cash them out atomically, and sync players count.
  * FIX 208: Replaced RPC with direct queries to avoid PostgREST schema cache "text = uuid" errors
  */
@@ -24,7 +73,7 @@ export async function markSeatAsLeft(
     // 1. Get the active seat and its stack
     const { data: seat } = await supabase
       .from('table_seats')
-      .select('id, stack')
+      .select('id, stack, joined_at')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .eq('seat_number', seatNumber)
@@ -51,6 +100,15 @@ export async function markSeatAsLeft(
     //    seat below, so the player's stack is never destroyed — a retry re-runs
     //    the leave and re-attempts the credit.
     if (stack > 0) {
+      // Transition guard for the key-format change (see cashoutKey above): a
+      // cash-out credited under the legacy `cashout:<id>` key must not be paid
+      // again just because this retry asks under the new occupancy-scoped key.
+      if (await alreadyCreditedUnderLegacyKey(seat.id)) {
+        console.warn(
+          `[markSeatAsLeft] Seat ${seat.id} was already credited under the legacy cash-out key — skipping credit`
+        );
+        return;
+      }
       const { error: creditErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
         p_user_id: userId,
         p_amount: stack,
@@ -59,11 +117,11 @@ export async function markSeatAsLeft(
         p_table_id: tableId,
         p_hand_id: null,
         p_related_entity_id: null,
-        // P1-2 FIX: idempotency key keyed on the seat-occupancy row id, IDENTICAL
-        // to the atomicCashout fix (`cashout:<seat.id>`), so a committed-but-
-        // timed-out credit here is a DB-side no-op on retry (no double-credit),
-        // and a seat cashed out by either path dedupes against the other.
-        p_idempotency_key: `cashout:${seat.id}`,
+        // P1-2 FIX: keyed on the seat OCCUPANCY (see cashoutKey), IDENTICAL to
+        // the key atomicCashout writes, so a committed-but-timed-out credit here
+        // is a DB-side no-op on retry (no double-credit), and a seat cashed out
+        // by either path dedupes against the other.
+        p_idempotency_key: cashoutKey(seat),
       });
       if (creditErr) {
         console.error(
@@ -125,7 +183,7 @@ export async function atomicCashout(
     // 1. Find active seat
     let query = supabase
       .from('table_seats')
-      .select('id, stack, seat_number')
+      .select('id, stack, seat_number, joined_at')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .is('left_at', null);
@@ -147,17 +205,24 @@ export async function atomicCashout(
     // not credited, unrecoverable). Sibling markSeatAsLeft already returns early
     // on credit failure "to avoid chip loss"; mirror that here. On failure we
     // preserve the seat (left_at stays null) so the cashout is retried next pass.
-    if (stack > 0) {
+    if (stack > 0 && (await alreadyCreditedUnderLegacyKey(seat.id))) {
+      // Legacy-key transition guard (see cashoutKey above). Already paid under
+      // the old format — clear the seat, do not credit a second time.
+      console.warn(
+        `[atomicCashout] Seat ${seat.id} was already credited under the legacy cash-out key — skipping credit`
+      );
+      safeToClearSeat = true;
+    } else if (stack > 0) {
       const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
         p_user_id: userId,
         p_amount: stack,
         // A3 site 11: this credit is retried (the failure path below deliberately
         // preserves the seat "for retry"), so a credit that COMMITTED but timed
-        // out was being paid twice. Key the credit on the seat-occupancy row id.
-        // Sibling markSeatAsLeft writes the IDENTICAL `cashout:<seat.id>` key for
-        // the same row, so the two cash-out paths dedupe against each other too —
-        // whichever runs second is a DB-side no-op.
-        p_idempotency_key: `cashout:${seat.id}`,
+        // out was being paid twice. Keyed on the seat OCCUPANCY (see cashoutKey).
+        // Sibling markSeatAsLeft writes the IDENTICAL key for the same occupancy,
+        // so the two cash-out paths dedupe against each other too — whichever
+        // runs second is a DB-side no-op.
+        p_idempotency_key: cashoutKey(seat),
       });
       if (walletErr) {
         console.warn(

@@ -276,6 +276,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   }
 
   /**
+   * @deprecated DEAD as of the A2 durable ledger — zero callers repo-wide.
+   *
+   * Refunds now happen inside resolve_pending_addon, keyed `addon_refund:<row
+   * id>`, in the same transaction that resolves the ledger row. This helper is
+   * retained only because a future non-ledger add-on path might need it, and it
+   * is documented as dead so nobody calls it ALONGSIDE the RPC and refunds the
+   * same chips twice. If you reach for this, pass an idempotency key.
+   *
    * Refund unused add-on chips back to the player's PLAYER wallet (the same
    * balance atomic_table_addon debited). Uses atomic_credit_wallet_and_log so
    * the refund is logged and matches the debit side.

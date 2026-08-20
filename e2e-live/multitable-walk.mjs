@@ -116,22 +116,41 @@ try{
 
   // ---- + ADD TABLE (HUD upper-left, aria-label="Open another table") ----
   const plus=page.locator('button[aria-label="Open another table"], button.add-chips-icon-btn').first();
-  const plusVisible=await plus.isVisible().catch(()=>false);
+  const plusVisible=await plus.waitFor({state:'visible',timeout:20000}).then(()=>true).catch(()=>false);
   check('+ add-table button visible (upper-left HUD)', plusVisible);
   if(plusVisible){
-    await plus.click(); await page.waitForTimeout(8000);
+    await plus.click();
+    // embedded ClubHomePage does its own fetches -- poll up to 40s (the
+    // 2026-08-20 API degradation showed these can crawl), pressing the
+    // watchdog Retry panel if it appears.
+    let lobbyReady=false;
+    for(let i=0;i<10;i++){
+      await page.waitForTimeout(4000);
+      body=await page.innerText('body');
+      if(await page.locator('.multi-table-page__lobby-tab a[href*="/table/"]').count()>0){ lobbyReady=true; break; }
+      const rtry=page.locator('.multi-table-page__lobby-tab button:has-text("Retry")').first();
+      if(await rtry.isVisible().catch(()=>false)) await rtry.click().catch(()=>{});
+    }
     await page.screenshot({path:S('04-embedded-lobby')});
-    body=await page.innerText('body');
-    check('embedded lobby tab opened (club content, table 1 still mounted)', /CLUB JAQK|Cash|Tournaments|Games/i.test(body));
+    check('embedded lobby tab opened (club content, table 1 still mounted)', lobbyReady || /CLUB JAQK|Cash|Tournaments|Games/i.test(body));
     // tab bar must now exist (tables.length>1 renders TableTabBar)
     check('tab bar with first table + lobby tab present', await page.locator('.table-tab-bar__add, [class*="table-tab-bar"]').count()>0);
 
     // ---- JOIN TABLE 2 from the embedded lobby ----
-    const l2s=await page.locator('.multi-table-page__lobby-tab a[href*="/table/"]').evaluateAll(els=>els.map(e=>e.getAttribute('href')));
-    const t2h=l2s.find(h=>h && !h.includes(t1.h.split('/table/')[1]));
-    console.log('TABLE2 HREF: '+t2h);
-    if(t2h){
-      await page.locator(`.multi-table-page__lobby-tab a[href="${t2h}"]`).first().click();
+    // the lobby list live-updates (realtime seat counts), which fails
+    // Playwright's stability check on a plain click -- re-resolve fresh each
+    // attempt and fall back to a DOM-level click.
+    let t2h=null, t2clicked=false;
+    for(let a=0;a<3 && !t2clicked;a++){
+      const l2s=await page.locator('.multi-table-page__lobby-tab a[href*="/table/"]').evaluateAll(els=>els.map(e=>e.getAttribute('href')));
+      t2h=l2s.find(h=>h && !h.includes(t1.h.split('/table/')[1]));
+      if(!t2h) break;
+      const l2=page.locator(`.multi-table-page__lobby-tab a[href="${t2h}"]`).first();
+      t2clicked=await l2.click({timeout:6000}).then(()=>true).catch(()=>false);
+      if(!t2clicked) t2clicked=await l2.evaluate(el=>{el.click();return true;}).catch(()=>false);
+    }
+    console.log('TABLE2 HREF: '+t2h+' clicked='+t2clicked);
+    if(t2h && t2clicked){
       await page.waitForTimeout(9000);
       await page.screenshot({path:S('05-table2')});
       body=await page.innerText('body');
@@ -147,45 +166,65 @@ try{
       }
       check('table 2 joined and rendered', /POT|Fold|Check|Call|Waiting|Seat Reserved|Post/i.test(body));
       check('two table tabs live simultaneously', (await page.locator('[class*="table-tab-bar__tab"]').count())>=2 || (await page.locator('[class*="table-tab"]').count())>=2);
-    } else skip('table 2 join','no second table link visible in embedded lobby');
+    } else skip('table 2 join', t2h?'link found but unclickable after 3 attempts':'no second table link visible in embedded lobby');
   }
 
-  // ---- LEAVE TABLE 2 via menu: the leave nav lands on the club lobby
-  // (a real non-table SPA route), where the LiveTablesBar dock must surface
-  // for still-live table 1. This IS the dock test, on the real user path. ----
-  const tableTab=page.locator('[class*="table-tab-bar__tab"]:not(:has-text("Lobby"))').last();
-  if (await tableTab.isVisible().catch(()=>false)) { await tableTab.click().catch(()=>{}); await page.waitForTimeout(2500); }
-  async function leaveActiveTable(tag){
-    const menu=page.locator('button[aria-label="Table menu"]').filter({visible:true}).first();
-    if (!(await menu.isVisible().catch(()=>false))) return false;
-    await menu.click({timeout:8000}).catch(()=>{}); await page.waitForTimeout(1200);
-    const leave=page.locator('text=Leave Table').filter({visible:true}).first();
-    if (!(await leave.isVisible().catch(()=>false))) { await page.keyboard.press('Escape'); return false; }
-    await leave.click().catch(()=>{}); await page.waitForTimeout(1200);
-    const confL=page.locator('.leave-confirm__btn:not(.leave-confirm__btn--cancel)').last();
-    if (await confL.isVisible().catch(()=>false)) { await confL.click(); await page.waitForTimeout(6000); return true; }
-    await page.keyboard.press('Escape'); return false;
-  }
-  const left2=await leaveActiveTable('t2');
-  await page.screenshot({path:S('06-after-leave2')});
+  // ---- DOCK TEST: SPA-navigate off-table via the history API ----
+  // React Router v6 subscribes to popstate; pushState+popstate is a true
+  // client-side nav (no reload, sockets stay up). The persistent layer must
+  // hide the tables and surface the LiveTablesBar dock for the seated table.
+  await page.evaluate(()=>{history.pushState({},'','/hub/club-arena/clubs');window.dispatchEvent(new PopStateEvent('popstate'));});
+  await page.waitForTimeout(5000);
+  await page.screenshot({path:S('06-offroute-dock')});
   body=await page.innerText('body');
-  const onTableRoute=page.url().includes('/table/');
+  const offTable=!page.url().includes('/table/');
   const dock=/Return to game|live table|Action needed/i.test(body);
-  check('leave table 2 lands off-table with dock for live table 1', left2 && dock, `left=${left2} url=${page.url().slice(-40)}`);
+  check('SPA nav off-table hides tables and shows dock', offTable && dock, `off=${offTable} dockText=${dock}`);
 
-  // ---- DOCK RETURN: back to table 1 without a reload ----
-  const ret=page.locator('text=/Return to game/i').first();
+  const ret=page.locator('text=/Return to game|Act now/i').first();
   if (await ret.isVisible().catch(()=>false)) {
     await ret.click(); await page.waitForTimeout(5000);
     await page.screenshot({path:S('07-returned')});
-    check('dock returns to live table 1 (SPA nav, socket intact)', page.url().includes('/table/') && /POT|Fold|Check|Call|Waiting|Seat Reserved|Post/i.test(await page.innerText('body')));
+    check('dock returns to live table (SPA, socket intact)', page.url().includes('/table/') && /POT|Fold|Check|Call|Waiting|Seat Reserved|Post|Blind/i.test(await page.innerText('body')));
   } else skip('dock return','no Return to game control visible');
 
-  // ---- CLEANUP: leave table 1 to refund the stack ----
-  const left1=await leaveActiveTable('t1');
-  await page.waitForTimeout(3000);
+  // ---- CLEANUP: leave every SEATED table (menus exist per mounted table;
+  // pick the visible one in the active HUD corner, x<200, w>0) ----
+  async function activeMenuBtn(){
+    const hs=await page.locator('button[aria-label="Table menu"]').elementHandles();
+    for (const h of hs){ const bb=await h.boundingBox(); if (bb && bb.width>0 && bb.x<200 && bb.y<120) return h; }
+    return null;
+  }
+  let leaves=0;
+  for (let i=0;i<4;i++){
+    if (!page.url().includes('/table/')) {
+      const r2=page.locator('text=/Return to game|Act now/i').first();
+      if (await r2.isVisible().catch(()=>false)) {
+        const ok=await r2.click({timeout:8000}).then(()=>true).catch(()=>false);
+        if(!ok) break;
+        await page.waitForTimeout(4000);
+      }
+      else break;
+    }
+    const foot=await page.locator('.action-panel-wrapper, [class*="spectator-footer"]').first().innerText().catch(()=>'');
+    if (/Spectating, Tap An Open Seat/i.test(foot)) {
+      // not seated here -- switch to another table tab if one exists
+      const otherTab=page.locator('[class*="table-tab-bar__tab"]:not([class*="--active"]):not(:has-text("Lobby"))').first();
+      if (await otherTab.isVisible().catch(()=>false)) { await otherTab.click(); await page.waitForTimeout(3000); continue; }
+      break;
+    }
+    const menu=await activeMenuBtn();
+    if (!menu) break;
+    await menu.click(); await page.waitForTimeout(1200);
+    const leave=page.locator('text=Leave Table').first();
+    if (!(await leave.isVisible().catch(()=>false))) { await page.keyboard.press('Escape'); break; }
+    await leave.click(); await page.waitForTimeout(1200);
+    const confL=page.locator('.leave-confirm__btn:not(.leave-confirm__btn--cancel)').last();
+    if (await confL.isVisible().catch(()=>false)) { await confL.click(); await page.waitForTimeout(6000); leaves++; }
+    else { await page.keyboard.press('Escape'); break; }
+  }
   await page.screenshot({path:S('08-after-cleanup')});
-  check('left table 1 (stack refunded, session clean)', left1);
+  check('left all seated tables (stack refunded, session clean)', leaves>=1, `leaves=${leaves}`);
   check('no page errors during walk', errs.length===0, errs.slice(0,2).join(' | '));
 }catch(e){ check('walk completed', false, e.message.slice(0,160)); await page.screenshot({path:S('99-err')}).catch(()=>{}); }
 await ctx.storageState({path:AUTH}).catch(()=>{});

@@ -294,7 +294,13 @@ export async function repairUnbankedBBJFees(
 export async function auditBBJDrift(
   windowDays = 1,
   toleranceChips = 0.05
-): Promise<{ booked: number; received: number; drift: number } | null> {
+): Promise<{
+  booked: number;
+  received: number;
+  drift: number;
+  unlinkableRows: number;
+  unlinkableChips: number;
+} | null> {
   try {
     const since = new Date(Date.now() - windowDays * 86_400_000).toISOString();
 
@@ -308,6 +314,35 @@ export async function auditBBJDrift(
     const received = Number(row?.received ?? 0);
     const drift = Math.round((booked - received) * 100) / 100;
 
+    /**
+     * REVIEW FIX (2026-08-20): the alarm was structurally blind to the exact
+     * population where the real bug lived.
+     *
+     * Both sides of the comparison join on hand_id, so a rake_records row with
+     * NO hand id contributes to neither `booked` nor `received` — it is simply
+     * invisible. That is not a rare corner: over 30 days 7,317 rake rows carry
+     * no hand id, and it was precisely those rows that
+     * atomic_distribute_rake / bbj_record_contribution failed to dedupe,
+     * banking 237.95 chips of rake and 16.38 of BBJ more than once. An alarm
+     * whose blind spot is congruent with the defect it exists to catch reads
+     * 0.00 while money moves.
+     *
+     * The RPC already reports the unlinkable population; read it and say so.
+     */
+    const unlinkableRows = Number(row?.unlinkable_rows ?? 0);
+    const unlinkableChips = Number(row?.unlinkable_chips ?? 0);
+    if (unlinkableChips > toleranceChips) {
+      reportError(
+        new Error(
+          `[A5] ${unlinkableChips} chips of BBJ contribution over the last ${windowDays}d sit on ` +
+            `${unlinkableRows} rake_records row(s) with NO hand_id, so they can be reconciled ` +
+            `against the jackpot pool by neither this audit nor fn_bbj_repair_unbanked. ` +
+            `Rising numbers here mean logHandHistory is failing and returning a null id.`
+        ),
+        'FeeReconciler.bbj_unlinkable'
+      );
+    }
+
     if (Math.abs(drift) > toleranceChips) {
       reportError(
         new Error(
@@ -318,7 +353,7 @@ export async function auditBBJDrift(
         'FeeReconciler.bbj_drift'
       );
     }
-    return { booked, received, drift };
+    return { booked, received, drift, unlinkableRows, unlinkableChips };
   } catch (err) {
     reportError(err, 'FeeReconciler.drift_threw');
     return null;

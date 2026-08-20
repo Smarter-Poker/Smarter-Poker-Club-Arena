@@ -21,8 +21,8 @@
 
   /* Lighting Effects */
   --glow-cyan: 0 0 10px var(--neon-cyan), 0 0 20px var(--neon-cyan-glow);
-  --glow-intense:
-    0 0 5px var(--neon-cyan), 0 0 15px var(--neon-cyan), 0 0 30px var(--neon-cyan-glow);
+  --glow-intense: 
+;
 }
 
 .page {
@@ -42,7 +42,7 @@
   position: fixed;
   inset: 0;
   z-index: -1;
-  background-image: url('/hub/club-arena/poker-table-bg.webp');
+  background-image: url('/hub/club-arena/images/bg_digital_matrix.jpg');
   background-size: cover;
   background-position: center;
   background-color: rgba(10, 10, 21, 0.85); /* metal-dark with opacity */

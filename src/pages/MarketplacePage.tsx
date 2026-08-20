@@ -422,6 +422,22 @@ export default function MarketplacePage() {
   };
 
   /* ═══ Render ═══ */
+  // FAILSAFE: ensure skeleton does not display indefinitely.
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (loading) {
+      timer = setTimeout(() => {
+        if (mountedRef.current) {
+          setLoading(false);
+          // If we hit this failsafe, we didn't receive items in time.
+          // Don't overwrite a shop error if one exists.
+          setShopError((prev) => prev || 'Failed to load shop (timeout)');
+        }
+      }, 5000);
+    }
+    return () => clearTimeout(timer);
+  }, [loading, mountedRef]);
+
   if (loading && items.length === 0 && !shopError) {
     return <PageSkeleton variant="dashboard" />;
   }

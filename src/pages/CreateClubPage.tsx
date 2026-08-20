@@ -537,8 +537,7 @@ export default function CreateClubPage() {
         form.iconId !== 'custom' && selectedIcon
           ? `images/club-icons/icon-${form.iconId}.png`
           : null;
-      const logoUrlValue =
-        form.iconId !== 'custom' && selectedIcon ? selectedIcon.src : null;
+      const logoUrlValue = form.iconId !== 'custom' && selectedIcon ? selectedIcon.src : null;
 
       // Insert club with collision retry for random club_id
       let data: any = null;

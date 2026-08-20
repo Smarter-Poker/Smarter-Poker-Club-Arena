@@ -111,12 +111,6 @@ export default function UnionDetailPage() {
     show: false,
     club: null,
   });
-  const [removeConfirm, setRemoveConfirm] = useState<{
-    show: boolean;
-    clubId: string | null;
-    clubName: string | null;
-  }>({ show: false, clubId: null, clubName: null });
-  const [removingClubId, setRemovingClubId] = useState<string | null>(null);
   const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
   const [showXmttModal, setShowXmttModal] = useState(false);
   const [settingsForm, setSettingsForm] = useState({
@@ -184,8 +178,6 @@ export default function UnionDetailPage() {
     setApplying(false);
     setVisibleClubs(new Set());
     setConfirmJoin({ show: false, club: null });
-    setRemoveConfirm({ show: false, clubId: null, clubName: null });
-    setRemovingClubId(null);
     setIsUpdatingSettings(false);
     setShowXmttModal(false);
     setOnlineCount(0);
@@ -1538,30 +1530,6 @@ export default function UnionDetailPage() {
         }}
         onCancel={() => setConfirmJoin({ show: false, club: null })}
         loading={applying}
-      />
-
-      {/* Remove Club Confirm Modal */}
-      <ConfirmModal
-        isOpen={removeConfirm.show}
-        title="Remove Club"
-        message={`Remove ${removeConfirm.clubName || 'this club'} from the union? This action cannot be undone.`}
-        variant="danger"
-        confirmText="Remove"
-        onConfirm={async () => {
-          if (removeConfirm.clubId && unionId) {
-            setRemovingClubId(removeConfirm.clubId);
-            const success = await unionService.removeClub(unionId, removeConfirm.clubId);
-            if (success) {
-              setClubs((prev) => prev.filter((c) => c.clubId !== removeConfirm.clubId));
-              toast.success('Club removed from union');
-            } else {
-              toast.error('Failed to remove club');
-            }
-            setRemovingClubId(null);
-          }
-          setRemoveConfirm({ show: false, clubId: null, clubName: null });
-        }}
-        onCancel={() => setRemoveConfirm({ show: false, clubId: null, clubName: null })}
       />
     </div>
   );

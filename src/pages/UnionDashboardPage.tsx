@@ -23,6 +23,7 @@ import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { getUnionLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
 import UnionOpsPanel from '../components/union/UnionOpsPanel';
+import UnionClubGovernance from '../components/union/UnionClubGovernance';
 
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
@@ -1124,38 +1125,22 @@ export default function UnionDashboardPage() {
                       >
                         Edit Rate
                       </button>
-                      <button
-                        className="admin-btn admin-btn-danger admin-btn-sm"
-                        disabled={processing}
-                        onClick={async () => {
-                          if (
-                            !(await confirmDialog({
-                              title: 'Remove club',
-                              message: `Remove ${club.name} from the union?`,
-                              confirmText: 'Remove',
-                              variant: 'danger',
-                            }))
-                          )
-                            return;
-                          setProcessing(true);
-                          setError(null);
-                          try {
-                            // union_clubs is service-role-write-only under RLS — a direct
-                            // browser delete silently affects 0 rows. Route through the
-                            // World Hub API (SECURITY DEFINER), which throws on failure.
-                            await unionApi.removeClub(unionId || '', club.id);
-                            masterBus.emit('CLUB_UPDATED', { clubId: club.id });
-                            setSuccess(`${club.name} removed`);
+                      {/* Removal reads the exit blockers first. The previous
+                          button called unionApi.removeClub straight from a
+                          confirm dialog, so a club could be dropped while its
+                          players were still seated in union games and its rake
+                          and agent credit were unsettled. */}
+                      {unionId && (
+                        <UnionClubGovernance
+                          unionId={unionId}
+                          clubId={club.id}
+                          clubName={club.name ?? 'this club'}
+                          onExpelled={(id) => {
+                            masterBus.emit('CLUB_UPDATED', { clubId: id });
                             loadDashboard(unionId);
-                          } catch (err: any) {
-                            setError(err.message);
-                          } finally {
-                            setProcessing(false);
-                          }
-                        }}
-                      >
-                        Remove
-                      </button>
+                          }}
+                        />
+                      )}
                     </div>
                   )}
                 </div>

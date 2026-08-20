@@ -420,3 +420,33 @@ uses the Rake Cap field this audit made functional.
 Server engine suite: 76 files / 815 tests. Client rake suites: 96 tests.
 Pre-existing and unrelated: two server TEST files fail `tsc` identically on
 pristine main (TimeBankEngine.manualcountdown, HorseFleetNoDuplicateTables).
+
+## Pass 11 — two defects in my own recent work
+
+1. **The delete guard could not see the money it was guarding.** Pass 7 read
+   `club_wallets` from the client. That table has **RLS enabled with zero
+   policies**, so an owner's SELECT returns no rows — not an error. Every club
+   therefore reported "0 chips" while `club_wallets.club_id` is ON DELETE
+   CASCADE. Measured: Midway Union holds **40,352 chips**, and the guard built
+   to prevent their destruction was blind to them. It also only summed
+   `chip_balance`, ignoring `insurance_balance`.
+   Replaced with `fn_club_deletion_impact()` — SECURITY DEFINER, STABLE,
+   owner-gated, counts both columns, one round trip instead of three.
+   Verified in production: owner sees {327 members, 49 running tables,
+   40352.78 chips}; a non-owner is refused; `anon` has no EXECUTE.
+
+2. **The rake hint I added in pass 9 became a lie in pass 10.** It computed
+   `capBB * bb` locally, so after the ceiling landed it advertised "$20.00 per
+   pot at 1/2" for a 10 BB cap the engine now caps at $5. It was also the only
+   place in the codebase converting a BB cap to money outside RakeConfig — a
+   fourth copy of the rule. It now calls `getRakeConfig()`, the same function
+   the engine mirrors, and says when the house cap is what is binding:
+     1 BB  -> $2.00 at 1/2, $10.00 at 5/10
+     3 BB  -> $5.00 at 1/2, $12.50 at 5/10, "held down by the house cap"
+     10 BB -> $5.00 at 1/2, $12.50 at 5/10, "held down by the house cap"
+
+Also folded in: six RPCs other agents added straight to prod
+(`ca_player_hands`, `ca_club_revenue`, `ca_club_tournaments`,
+`get_challenge_streak`, `bump_challenge_progress`, plus the new
+`fn_club_deletion_impact`), all verified present, so the phantom gate stays
+green rather than going red on this PR.

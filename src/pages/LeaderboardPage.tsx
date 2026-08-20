@@ -122,7 +122,6 @@ const METRIC_OPTIONS: {
 ];
 
 const PAGE_SIZE = 50;
-const ROI_MIN_HANDS = 20; // mirrors v_min_hands in fn_*_leaderboard_period*
 
 const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
   { value: 'daily', label: 'Today' },
@@ -514,7 +513,10 @@ export default function LeaderboardPage() {
       bits.push(`${entry.hands.toLocaleString('en-US')} hands`);
     }
     if ((metric === 'roi' || metric === 'bb100') && entry.qualified === false) {
-      bits.push(`under ${ROI_MIN_HANDS} hands - unranked`);
+      // The threshold itself lives only in SQL (v_min_hands). Restating it here
+      // would be a second source of truth with nothing keeping the two in step,
+      // so the row reports the RPC's `qualified` verdict rather than the number.
+      bits.push('too few hands - unranked');
     }
     if (bits.length === 0) return null;
     return <span className="entry-subline">{bits.join(' \u00B7 ')}</span>;

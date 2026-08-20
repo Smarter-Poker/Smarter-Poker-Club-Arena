@@ -269,13 +269,60 @@ export function spinEconomics(
  */
 export function eligibleSpinTiers(
   reserveBalance: number,
-  highestStake: number
+  highestStake: number,
+  /**
+   * This game's buy-in, needed for the affordability check below. Defaults to
+   * highestStake so an omitted value errs on the CAUTIOUS side (a larger
+   * buy-in means a larger prize, so fewer tiers qualify).
+   */
+  buyIn: number = highestStake,
+  seats: number = SPIN_SEATS
 ): SpinTierSpec[] {
+  // What this game itself puts into the pool, which is available to fund its
+  // own prize.
+  const contribution = buyIn * seats * (1 - spinRakeRate(buyIn));
+
   return SPIN_TIERS.filter((t) => {
+    // ── Affordability. ───────────────────────────────────────────────────
+    // AUDIT FIX 2026-08-20: this check did not exist, and its absence was a
+    // real production defect rather than a theoretical one.
+    //
+    // The jackpot thresholds below only ever guarded 100x and 500x. But ANY
+    // tier above ~2.76x pays out more than the three buy-ins bring in — a 4x
+    // pays 4B against a 2.76B contribution — so on a pool without a cushion
+    // even a 4x cannot be covered. In production this aborted the settlement
+    // on the non-negative CHECK constraint and left the game UNBOOKED: no
+    // ledger row, no rake record, exactly the class of hole this whole system
+    // was built to close.
+    //
+    // Over volume E[prize] = contribution, so this only bites on a thin pool
+    // — which is precisely when it must.
+    const prize = buyIn * t.multiplier;
+    if (reserveBalance + contribution < prize) return false;
+
+    // ── Jackpot thresholds. ──────────────────────────────────────────────
+    // A stricter gate on top: the pool must not merely afford one jackpot, it
+    // must hold a multiple of it, measured against the biggest stake running.
     if (t.reserveThresholdX <= 0) return true;
     const fullJackpot = highestStake * t.multiplier;
     return reserveBalance >= fullJackpot * t.reserveThresholdX;
   });
+}
+
+/**
+ * The pool balance below which even a 2x cannot be guaranteed. Used to warn an
+ * operator that a club's Spins are running on fumes: nothing breaks, but the
+ * ladder silently collapses toward 2x/3x, which players WILL notice long
+ * before any alert fires.
+ */
+export function isReserveThin(
+  reserveBalance: number,
+  highestStake: number,
+  seats: number = SPIN_SEATS
+): boolean {
+  // Fewer than half the tiers reachable is "thin".
+  const eligible = eligibleSpinTiers(reserveBalance, highestStake, highestStake, seats);
+  return eligible.length < Math.ceil(SPIN_TIERS.length / 2);
 }
 
 /**

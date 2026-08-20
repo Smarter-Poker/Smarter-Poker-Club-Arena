@@ -31,6 +31,7 @@ import {
   unlockThreshold,
   requiredSeed,
   reserveCeiling,
+  isReserveThin,
 } from '../../src/config/spinSpec';
 
 describe('the spec is mirrored, not forked', () => {
@@ -225,45 +226,86 @@ describe('structure scales with the multiplier', () => {
 });
 
 describe('reserve gating — an unpayable jackpot must be impossible', () => {
-  it('always allows 2x through 50x', () => {
-    const tiers = eligibleSpinTiers(0, 100);
-    expect(tiers.map((t) => t.multiplier)).toEqual([2, 3, 4, 5, 10, 25, 50]);
+  it('allows 2x through 50x when the pool can afford them', () => {
+    // Well-funded pool at a $100 stake: everything below the jackpot gates.
+    const tiers = eligibleSpinTiers(1_000_000, 100, 100);
+    expect(tiers.map((t) => t.multiplier)).toEqual([2, 3, 4, 5, 10, 25, 50, 100, 500]);
+  });
+
+  it('THE REGRESSION: an unaffordable 4x must not be selectable', () => {
+    // Found in production. A 4x pays 4B while three buy-ins bring in only
+    // 2.76B, so on a thin pool it CANNOT be covered. The original gate only
+    // guarded 100x/500x, so a 4x was offered, settlement aborted on the
+    // non-negative constraint, and the game ran UNBOOKED — no ledger row, no
+    // rake record. Three live spins hit this within 20 minutes of cutover.
+    const thin = eligibleSpinTiers(0, 10, 10);
+    // 10 x 3 x 0.93 = 27.9 available; a 4x needs 40.
+    expect(thin.some((t) => t.multiplier === 4)).toBe(false);
+    // ...but a 2x (needs 20) is affordable from the contribution alone.
+    expect(thin.some((t) => t.multiplier === 2)).toBe(true);
+  });
+
+  it('counts the game OWN contribution as available to fund its prize', () => {
+    // 10 x 3 x 0.93 = 27.9. A 2x needs 20 and must pass on an empty pool.
+    expect(eligibleSpinTiers(0, 10, 10).some((t) => t.multiplier === 2)).toBe(true);
+    // A tiny top-up should unlock the 3x (needs 30).
+    expect(eligibleSpinTiers(0, 10, 10).some((t) => t.multiplier === 3)).toBe(false);
+    expect(eligibleSpinTiers(3, 10, 10).some((t) => t.multiplier === 3)).toBe(true);
+  });
+
+  it('never offers a tier the pool plus contribution cannot pay, at any balance', () => {
+    for (const balance of [0, 5, 50, 500, 5000, 50000]) {
+      for (const buyIn of [1, 5, 25, 100]) {
+        const contribution = buyIn * 3 * (1 - (buyIn <= 5 ? 0.08 : buyIn <= 10 ? 0.07 : buyIn <= 50 ? 0.06 : 0.05));
+        for (const t of eligibleSpinTiers(balance, buyIn, buyIn)) {
+          expect(
+            balance + contribution,
+            `balance ${balance} @ ${buyIn} cannot pay ${t.multiplier}x`
+          ).toBeGreaterThanOrEqual(buyIn * t.multiplier);
+        }
+      }
+    }
   });
 
   it('locks 100x and 500x out of the DRAW when the pool is empty', () => {
-    const tiers = eligibleSpinTiers(0, 10);
+    const tiers = eligibleSpinTiers(0, 10, 10);
     expect(tiers.some((t) => t.multiplier === 100)).toBe(false);
     expect(tiers.some((t) => t.multiplier === 500)).toBe(false);
+  });
+
+  it('flags a thin pool before players notice the ladder shrinking', () => {
+    expect(isReserveThin(0, 10)).toBe(true);
+    expect(isReserveThin(1_000_000, 10)).toBe(false);
   });
 
   it('unlocks 100x at 1.5x its own jackpot, and not before', () => {
     const stake = 10;
     const need = unlockThreshold(spinTier(100)!, stake); // 10 * 100 * 1.5
     expect(need).toBe(1500);
-    expect(eligibleSpinTiers(need - 0.01, stake).some((t) => t.multiplier === 100)).toBe(false);
-    expect(eligibleSpinTiers(need, stake).some((t) => t.multiplier === 100)).toBe(true);
+    expect(eligibleSpinTiers(need - 0.01, stake, stake).some((t) => t.multiplier === 100)).toBe(false);
+    expect(eligibleSpinTiers(need, stake, stake).some((t) => t.multiplier === 100)).toBe(true);
   });
 
   it('unlocks 500x at 2.0x its own jackpot, and not before', () => {
     const stake = 10;
     const need = unlockThreshold(spinTier(500)!, stake); // 10 * 500 * 2
     expect(need).toBe(10000);
-    expect(eligibleSpinTiers(need - 0.01, stake).some((t) => t.multiplier === 500)).toBe(false);
-    expect(eligibleSpinTiers(need, stake).some((t) => t.multiplier === 500)).toBe(true);
+    expect(eligibleSpinTiers(need - 0.01, stake, stake).some((t) => t.multiplier === 500)).toBe(false);
+    expect(eligibleSpinTiers(need, stake, stake).some((t) => t.multiplier === 500)).toBe(true);
   });
 
   it('measures the threshold against the HIGHEST stake running, not this table', () => {
     // The pool must be able to pay the jackpot at the biggest table open.
     // 1500 covers 100x at a $10 stake but not at a $100 stake.
-    expect(eligibleSpinTiers(1500, 10).some((t) => t.multiplier === 100)).toBe(true);
-    expect(eligibleSpinTiers(1500, 100).some((t) => t.multiplier === 100)).toBe(false);
+    expect(eligibleSpinTiers(1500, 10, 10).some((t) => t.multiplier === 100)).toBe(true);
+    expect(eligibleSpinTiers(1500, 100, 100).some((t) => t.multiplier === 100)).toBe(false);
   });
 
   it('a gated ladder still has a valid, house-positive expectation', () => {
     // Redistribution must not accidentally make a locked-down ladder
     // house-negative — that would turn an empty pool into a bleeding one.
     for (const balance of [0, 100, 1000, 5000, 50000]) {
-      const tiers = eligibleSpinTiers(balance, 10);
+      const tiers = eligibleSpinTiers(balance, 10, 10);
       expect(tiers.length).toBeGreaterThan(0);
       expect(expectedMultiplier(tiers)).toBeLessThan(SPIN_SEATS);
       expect(impliedHouseEdge(tiers)).toBeGreaterThan(0);
@@ -272,7 +314,7 @@ describe('reserve gating — an unpayable jackpot must be impossible', () => {
 
   it('locking the top tiers makes the house edge LARGER, never smaller', () => {
     const full = impliedHouseEdge(SPIN_TIERS);
-    const gated = impliedHouseEdge(eligibleSpinTiers(0, 100));
+    const gated = impliedHouseEdge(eligibleSpinTiers(0, 100, 100));
     expect(gated).toBeGreaterThan(full);
   });
 });

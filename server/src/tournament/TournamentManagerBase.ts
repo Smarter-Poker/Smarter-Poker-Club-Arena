@@ -18,7 +18,7 @@ import {
   SPIN_SEATS as SPEC_SPIN_SEATS,
   spinTier,
   spinRakeRate,
-} from '../config/spinSpec.js';
+} from '../config/spinSpec';
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
@@ -484,6 +484,8 @@ export abstract class TournamentManagerBase {
                 freq: t.freq,
                 reserveThresholdX: t.reserveThresholdX,
               })),
+              p_rake_rate: spinRakeRate(tournament.buy_in_amount || 0),
+              p_seats: tournament.current_players || SPEC_SPIN_SEATS,
             });
             spinMultiplier = Number(draw?.multiplier) || 0;
           } catch {
@@ -505,31 +507,57 @@ export abstract class TournamentManagerBase {
         const tier = spinTier(spinMultiplier);
         const prizePool = Math.round(buyIn * spinMultiplier * 100) / 100;
 
-        // Book it. This is the row that does not exist today.
-        try {
-          const { data: settle, error: settleErr } = await supabase.rpc('fn_spin_settle_game', {
-            p_tournament_id: this.tournamentId,
-            p_club_id: tournament.club_id,
-            p_buy_in: buyIn,
-            p_seats: seats,
-            p_multiplier: spinMultiplier,
-            p_rake_rate: spinRakeRate(buyIn),
-          });
-          if (settleErr || !settle?.ok) {
-            throw new Error(settleErr?.message || settle?.reason || 'settle_failed');
+        // Book it. This is the row that did not exist before the cutover.
+        //
+        // RETRIED. Settlement is idempotent (it returns already_settled on a
+        // second call), so retrying is free, and a single attempt proved
+        // insufficient in production: three spins ran unbooked within twenty
+        // minutes of the cutover because one transient failure was enough to
+        // lose the row permanently. Lock contention on a busy club's pool is
+        // the expected cause; a couple of short retries covers it.
+        let settled = false;
+        for (let attempt = 1; attempt <= 3 && !settled; attempt++) {
+          try {
+            const { data: settle, error: settleErr } = await supabase.rpc('fn_spin_settle_game', {
+              p_tournament_id: this.tournamentId,
+              p_club_id: tournament.club_id,
+              p_buy_in: buyIn,
+              p_seats: seats,
+              p_multiplier: spinMultiplier,
+              p_rake_rate: spinRakeRate(buyIn),
+            });
+            if (settleErr || !settle?.ok) {
+              throw new Error(settleErr?.message || settle?.reason || 'settle_failed');
+            }
+            settled = true;
+            if (Number(settle.operator_shortfall) > 0) {
+              // The pool was too thin to cover the prize. Players are paid in
+              // full regardless; this says the club needs seeding.
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin pool SHORTFALL ${settle.operator_shortfall} on a ${spinMultiplier}x — club ${tournament.club_id} needs a larger reserve seed`
+                ),
+                'Tournament.spin_pool_shortfall'
+              );
+            }
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x — pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
+            );
+          } catch (settleErr: any) {
+            if (attempt === 3) {
+              // The game still runs and players are still paid; what is lost is
+              // the ledger row, so it is reported loudly rather than swallowed.
+              // fn_spin_sweep_unbooked() will catch it on the next pass.
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED after 3 attempts (${settleErr?.message}) — prize pool is correct but this game is unbooked`
+                ),
+                'Tournament.spin_settle_failed'
+              );
+            } else {
+              await new Promise((r) => setTimeout(r, 250 * attempt));
+            }
           }
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x — pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
-          );
-        } catch (settleErr: any) {
-          // The game still runs and players are still paid; what is lost is the
-          // ledger row, so it is reported loudly rather than swallowed.
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED (${settleErr?.message}) — prize pool is correct but this game is unbooked`
-            ),
-            'Tournament.spin_settle_failed'
-          );
         }
 
         await supabase
@@ -1337,90 +1365,6 @@ export abstract class TournamentManagerBase {
     }
   }
 
-  /**
-   * Horses take their add-on when the add-on period opens.
-   *
-   * Add-ons had NEVER executed in production - the 'addon'
-   * wallet_transactions category has no rows in all of history - because
-   * process_tournament_rebuy's only caller was the SPA and there are no human
-   * players yet. The period opened, ADDON_PERIOD_START fired, and nothing
-   * ever bought one.
-   *
-   * Every rule (add-ons offered, not already taken, inside the add-on level
-   * window, sufficient club chips) is enforced inside
-   * process_tournament_rebuy, together with the chip debit and the prize-pool
-   * increment, in one transaction. Add-ons are NOT raked, per Dan's rule, so
-   * that call books no rake row and the whole amount reaches the pool.
-   *
-   * Horses only; a real player's add-on stays their own decision.
-   */
-  protected async tryTournamentAddOns(): Promise<void> {
-    if (!this.tournamentCache?.add_on_available) return;
-    try {
-      const { data: rows, error: rowsErr } = await supabase
-        .from('tournament_players')
-        .select('user_id, add_on')
-        .eq('tournament_id', this.tournamentId)
-        .eq('status', 'playing');
-      if (rowsErr || !rows || rows.length === 0) return;
-
-      const withoutAddOn = rows
-        .filter((r: { add_on?: boolean | null }) => !r.add_on)
-        .map((r: { user_id: string }) => r.user_id);
-      if (withoutAddOn.length === 0) return;
-
-      // Only offer to players who actually hold a LIVE SEAT. A player between
-      // seats during table consolidation has none, and process_tournament_rebuy
-      // now refuses those outright - because charging them used to grant chips
-      // that the seat sync immediately erased (103 add-ons charged on the first
-      // window ever run, ~91 of them delivering nothing). Filtering here keeps
-      // the refusals out of the log instead of generating one per player.
-      const { data: seatRows } = await supabase
-        .from('table_seats')
-        .select('user_id, tables!inner(tournament_id)')
-        .is('left_at', null)
-        .eq('tables.tournament_id', this.tournamentId);
-      const seated = new Set((seatRows ?? []).map((r: { user_id: string }) => r.user_id));
-      const candidates = withoutAddOn.filter((id) => seated.has(id));
-      if (candidates.length === 0) return;
-
-      const { data: horseRows } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('id', candidates)
-        .eq('is_horse', true);
-      if (!horseRows || horseRows.length === 0) return;
-
-      let taken = 0;
-      const declined = new Map<string, number>();
-      for (const h of horseRows) {
-        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-          p_tournament_id: this.tournamentId,
-          p_user_id: h.id,
-          p_rebuy_type: 'addon',
-          // null: let the server price it (add-ons are charged at face value).
-          p_cost: null,
-          p_chips: null,
-          p_current_level: this.currentLevel,
-        });
-        if (error) {
-          declined.set(error.message, (declined.get(error.message) || 0) + 1);
-          continue;
-        }
-        if ((data as { success?: boolean } | null)?.success === true) taken++;
-      }
-
-      console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ONS: ${taken} taken` +
-          (declined.size > 0
-            ? ` — declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
-            : '')
-      );
-    } catch (err) {
-      reportError(err, 'Tournament.tournament_addon_threw');
-    }
-  }
-
   protected async triggerAddOnPeriod(): Promise<void> {
     if (this.addOnPeriodTriggered) return;
     this.addOnPeriodTriggered = true;
@@ -1466,9 +1410,6 @@ export abstract class TournamentManagerBase {
       startLevel: rebuyLevelCap,
       endLevel: rebuyLevelCap + addonLevels,
     });
-
-    // Offer the add-on to the field now that the window is open.
-    await this.tryTournamentAddOns();
 
     // NOTE: Add-on period end is now handled by the level-up handler (finalizeAfterAddOn)
     // No more hardcoded 60-second timer!

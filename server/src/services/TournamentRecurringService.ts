@@ -206,7 +206,7 @@ import {
   spinTier,
   spinRakeRate,
   spinBlindsForLevel,
-} from '../config/spinSpec.js';
+} from '../config/spinSpec';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SPIN MULTIPLIERS — Dan's spec, 2026-08-20.
@@ -1419,6 +1419,13 @@ export class TournamentRecurringService {
             freq: t.freq,
             reserveThresholdX: t.reserveThresholdX,
           })),
+          // AUDIT FIX 2026-08-20: the gate needs these to work out what this
+          // game itself contributes, which is what makes a tier affordable.
+          // Without them it assumed the defaults and could offer a 4x the pool
+          // could not actually pay — which aborted settlement and left the
+          // game unbooked. Observed on 3 live spins after the cutover.
+          p_rake_rate: spinRakeRate(config.buyIn),
+          p_seats: SPEC_SPIN_SEATS,
         });
         if (drawErr || !draw?.ok) throw new Error(drawErr?.message || draw?.reason || 'draw_failed');
         multiplier = Number(draw.multiplier);

@@ -29,7 +29,7 @@ import { PageErrorBoundary } from '../common/PageErrorBoundary';
 import { reportError } from '../../utils/errorReporter';
 
 // Lazy-load heavy component
-const ClubStatsPanel = lazy(() => import('../club/ClubStatsPanel'));
+
 const ClubCardPanel = lazy(() => import('../club/ClubCardPanel'));
 
 // ── Types ─────────────────────────────────────────
@@ -87,7 +87,7 @@ export default function CarouselSection({
   onOpenCreateModal,
 }: CarouselSectionProps) {
   const carouselRef = useRef<HTMLDivElement>(null);
-  const sharkCardRef = useRef<HTMLDivElement>(null);
+
   // True only while the user is the one scrolling. Programmatic scrolls
   // (the centring below) must not trigger the snap haptic/SFX.
   const userScrollRef = useRef(false);
@@ -122,66 +122,6 @@ export default function CarouselSection({
       setOrderedClubs(displayClubs);
     }
   }, [displayClubs, pinnedClubIds]);
-
-  // Split user clubs into left half and right half around the Shark Club
-  const leftClubs = useMemo(() => {
-    const half = Math.ceil(orderedClubs.length / 2);
-    return orderedClubs.slice(0, half);
-  }, [orderedClubs]);
-
-  const rightClubs = useMemo(() => {
-    const half = Math.ceil(orderedClubs.length / 2);
-    return orderedClubs.slice(half);
-  }, [orderedClubs]);
-
-  // Centre the featured Shark Club card.
-  //
-  // This used to be a useEffect with [] deps, so it fired exactly once on the
-  // FIRST render — at which point `orderedClubs` is still the initial
-  // `displayClubs` (empty while the parent is fetching). With no left-hand
-  // cards the featured card IS the first element, so "centre it" resolves to
-  // scrollLeft ~ 0 and does nothing visible. A one-shot ref then latched, so
-  // when the clubs finally arrived and pushed the card rightwards nothing ever
-  // re-centred it. The row sat left-aligned until `scroll-snap-type: x
-  // mandatory` re-snapped to the nearest snap point — which is the reported
-  // "everything is shifted left, then jumps to normal after a few seconds".
-  //
-  // Three changes:
-  //   * useLayoutEffect, so the scroll lands BEFORE the browser paints and
-  //     there is no frame at the wrong offset;
-  //   * keyed on the card count, so it re-centres when the clubs actually
-  //     arrive rather than only on the empty first pass;
-  //   * scrollLeft set directly rather than scrollIntoView, which also scrolls
-  //     ancestors and can drag the whole page vertically on mount.
-  useLayoutEffect(() => {
-    const centre = () => {
-      const wrap = carouselRef.current;
-      const card = sharkCardRef.current;
-      if (!wrap || !card) return;
-      // .clubCarousel is position: relative, so it is the offsetParent and
-      // offsetLeft is already relative to the scroll container.
-      const target = card.offsetLeft - (wrap.clientWidth - card.offsetWidth) / 2;
-      wrap.scrollLeft = Math.max(0, target);
-    };
-
-    centre();
-
-    // Re-centre on resize/orientation change. Without this the featured card
-    // drifts off-centre the moment the viewport width changes, because the
-    // offset was computed against the old clientWidth.
-    let raf = 0;
-    const onResize = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(centre);
-    };
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onResize);
-    };
-  }, [orderedClubs.length]);
 
   // Haptic + SFX when a scroll SNAP settles.
   //
@@ -424,36 +364,7 @@ export default function CarouselSection({
         </div>
       )}
 
-      {leftClubs.map((club) => renderClubCard(club))}
-
-      {/* SHARK CLUB — featured center card */}
-      <div
-        className={styles.carouselCardFeatured}
-        ref={sharkCardRef}
-        role="button"
-        aria-label="Shark Club — Click to enter lobby"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            handleSharkClick();
-          }
-        }}
-        onClick={handleSharkClick}
-      >
-        <div className={styles.carouselFeaturedPedestal}></div>
-        <Suspense fallback={<div className={styles.cardSkeleton} />}>
-          <PageErrorBoundary pageName="Shark Club">
-            <ClubStatsPanel
-              totalMembers={sharkClubStats.totalMembers}
-              clubLevel={sharkClubStats.clubLevel}
-              activePlayers={sharkClubStats.activePlayers}
-            />
-          </PageErrorBoundary>
-        </Suspense>
-      </div>
-
-      {rightClubs.map((club) => renderClubCard(club))}
+      {orderedClubs.map((club) => renderClubCard(club))}
 
       {orderedClubs.length === 0 && (
         <div

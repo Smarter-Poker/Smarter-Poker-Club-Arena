@@ -61,7 +61,7 @@ const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
  * past them. The functions now set their own 300s timeout AND the chunk is
  * 150, so a chunk is comfortably inside even a slow window with headroom.
  */
-const CREDIT_BATCH_SIZE = 500;
+const CREDIT_BATCH_SIZE = 150;
 const DAEMON_KEY = 'rakeback_settler';
 
 /**
@@ -132,7 +132,7 @@ export const FETCH_LIMIT = 1000;
  * cap is hit we LOG it — a silently truncated drain reads exactly like a
  * finished one.
  */
-export const MAX_DRAIN_BATCHES = 20;
+export const MAX_DRAIN_BATCHES = 3;
 
 /**
  * AUDIT M6 — the settler's resume position in rake_records.

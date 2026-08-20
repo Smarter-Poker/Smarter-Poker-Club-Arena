@@ -58,22 +58,13 @@
   border-width: 0 !important;
 }
 
-/* ── 2. Clip the baked gold nameplate off table-variant bust art ────────── */
-/* Dan 2026-08-20: the clip alone left the art hanging ~25px above the name
-   box, because the transform in SeatSlot.css was still anchored to the slot's
-   real bottom edge — which the clip had just made invisible. Publishing the
-   clip amount as --sp-bust-clip lets the transform re-anchor to the VISIBLE
-   bottom and drop the art back onto the name box. Keep the two values equal:
-   change one, change the other. */
-/* 26.5%, measured not guessed: every /avatars/table/ asset is 125x170 and the
-   baked plate starts at row 125, so it occupies the bottom 45/170 = 26.47% of
-   the art (checked across all 76 files). The old 24.5% left a ~2% gold sliver,
-   which was invisible while the art floated in dead space and became an
-   obvious stray line the moment the art sat down on the name box. */
-.table-page .seat__avatar--bust .seat__avatar-img[src*='/avatars/table/'] {
-  clip-path: inset(0 0 26.5% 0);
-  --sp-bust-clip: 26.5%;
-}
+/* ── 2. Clip the baked gold nameplate off table-variant bust art ──────────
+   MOVED 2026-08-20 to SeatSlot.css, unscoped. It is a fact about the asset
+   family (/avatars/table/ art is 125x170 with the plate baked into the bottom
+   26.47%), not about the table page — SimPage renders <SeatSlot> outside
+   `.table-page` and was drawing the plate on top of the real name box. It also
+   has to stay welded to the --sp-bust-clip that compensates for it, and that
+   lives in SeatSlot.css. Nothing to do here; do not re-add a scoped copy. */
 
 /* ── 3. Bet chips rest ON the felt, ~40% of the way to the pot ────────────
    LIVE E2E FIX 2026-08-15: the 1.82 multiplier alone pushed the SIDE seats'

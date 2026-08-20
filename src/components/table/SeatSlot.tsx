@@ -208,6 +208,24 @@ function formatStackAsBB(stack: number, bigBlind: number): string {
   return `${bb.toFixed(1)} BB`;
 }
 
+/**
+ * CSS pixel size of the avatar slot, mirrored from `--seat-avatar-size` in
+ * design-tokens.css (villain) and the `.seat--hero` override in SeatSlot.css.
+ *
+ * Dan 2026-08-20 (audit): these were hardcoded as `56` at the call site, which
+ * was correct until 2026-08-15 — the day the token went 56px -> 84px and hero
+ * got its own 112px. The number was never updated, so Storage kept returning
+ * 112px images (the helper doubles for retina) for a box drawn at 84 CSS px,
+ * i.e. 168 device px on a retina phone: every uploaded photo was being
+ * upscaled 1.5x, and the hero's 2x. That is why photo avatars read soft.
+ *
+ * If `--seat-avatar-size` changes again, change these with it. They are only
+ * a request hint — nothing lays out from them — so being a little generous is
+ * cheap and being too small is visible.
+ */
+const SEAT_AVATAR_PX = 84;
+const SEAT_AVATAR_PX_HERO = 112;
+
 /** Returns CSS class for stack depth color coding */
 function getStackDepthClass(stack: number, bigBlind: number): string {
   if (bigBlind <= 0) return '';
@@ -661,11 +679,16 @@ export const SeatSlot = memo(
 
     // ─── OCCUPIED SEAT ─────────────────────────────────────────────────────
     // Use deterministic SVG avatar (colorful, unique per player) when no real image exists
-    // 56 CSS px is the seat avatar box; the helper doubles it for retina and
-    // asks Storage to do the resizing. Before this every seat pulled the user's
-    // full-resolution upload — 263 KB each on the owner account, nine of them
-    // on a full table.
-    const avatarUrl = getAvatarWithFallback(player.avatar || null, player.id, player.name, 56);
+    // The helper doubles this for retina and asks Storage to resize, so it must
+    // be the CSS box the photo is actually drawn in. Before the sizing existed,
+    // every seat pulled the user's full-resolution upload — 263 KB each on the
+    // owner account, nine of them on a full table.
+    const avatarUrl = getAvatarWithFallback(
+      player.avatar || null,
+      player.id,
+      player.name,
+      player.isHero ? SEAT_AVATAR_PX_HERO : SEAT_AVATAR_PX
+    );
     // 2026-08-04 PokerBros-style: library bust art (/avatars/table|free|vip/*)
     // is a transparent-background character PNG — render it free-floating
     // (no circle crop, no ring, larger) like the reference client. Uploaded

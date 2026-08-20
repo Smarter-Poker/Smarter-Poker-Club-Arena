@@ -453,6 +453,35 @@ interface TablePageProps {
   isActive?: boolean;
 }
 
+/**
+ * The ticking half of masthead line 2 (Dan 2026-08-20: "Level #, Blinds, and
+ * the clock"). Its own component so the 1-second tick re-renders ~40 bytes of
+ * DOM instead of the whole table page. Shows mm:ss remaining in the level;
+ * clamps at 0:00 while waiting for the engine's level_up broadcast rather than
+ * counting negative.
+ */
+function MastheadLevelClock({
+  startedAtMs,
+  durationSec,
+}: {
+  startedAtMs: number;
+  durationSec: number;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const remaining = Math.max(0, durationSec - Math.floor((now - startedAtMs) / 1000));
+  const mm = Math.floor(remaining / 60);
+  const ss = String(remaining % 60).padStart(2, '0');
+  return (
+    <span className="table-brand__clock">
+      {mm}:{ss}
+    </span>
+  );
+}
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -1394,6 +1423,30 @@ export default function TablePage({
   // FIX 132: Persistent hero seat ref — set IMMEDIATELY on buy-in, never stale
   // Prevents race condition where tableState.heroSeat is 0 during DB query but user tries to sit again
   const heroSeatRef = useRef(0);
+
+  // ── Tournament masthead data (Dan 2026-08-20, from a seat at a live table:
+  //    "1st line Date, (game type) Poker Spins, Club Name, Union Name. 2nd
+  //    line Level #, Blinds, and the clock. 3rd line hand number.") ──
+  // Which tournament family this table belongs to — drives the format word on
+  // masthead line 1. null = cash table, which keeps its own layout.
+  const [tournamentFormat, setTournamentFormat] = useState<'spin' | 'sng' | 'mtt' | null>(null);
+  // The running level countdown. Kept OUT of tableState on purpose: the clock
+  // ticks every second, and a per-second re-render belongs in the tiny
+  // MastheadLevelClock component, not in a 9,000-line page.
+  const [levelClock, setLevelClock] = useState<{
+    startedAtMs: number;
+    durationSec: number;
+  } | null>(null);
+  // Blind structure kept for level_up events, whose payload names the new
+  // level but not its duration.
+  const blindStructRef = useRef<
+    Array<{
+      level?: number;
+      duration?: number;
+      duration_minutes?: number;
+      durationMinutes?: number;
+    }>
+  >([]);
 
   // ─── MEASURED TABLE SCALER ────────────────────────────────────────────────
   // Dan 2026-07-28: bet-chip travel used to be computed with two magic numbers
@@ -3667,7 +3720,7 @@ export default function TablePage({
           const { data: tournData } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, blind_structure, current_level, started_at'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, blind_structure, current_level, level_started_at, started_at, variant, tournament_type'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -3683,13 +3736,42 @@ export default function TablePage({
               bigBlind?: number;
               big_blind?: number;
               ante?: number;
+              duration?: number;
+              duration_minutes?: number;
+              durationMinutes?: number;
             }> | null;
             const currentLevel = (tournData.current_level as number) ?? 1;
+            // The masthead level clock (Dan 2026-08-20, from the table: line 2
+            // is "Level #, Blinds, and the clock"). Blind structures store the
+            // level length as `duration` (seconds) on engine-written rows and
+            // `duration_minutes`/`durationMinutes` on older configs.
+            blindStructRef.current = blindStructure || [];
+            const entryFor = (lvl: number) =>
+              (blindStructure || []).find((bl) => bl.level === lvl) ||
+              (blindStructure || [])[Math.min(lvl - 1, (blindStructure || []).length - 1)];
+            const levelEntry = entryFor(currentLevel);
+            const durSec = levelEntry
+              ? Number(levelEntry.duration) ||
+                (Number(levelEntry.duration_minutes ?? levelEntry.durationMinutes) || 0) * 60
+              : 0;
+            if (durSec > 0) {
+              const startedAtMs = tournData.level_started_at
+                ? Date.parse(tournData.level_started_at as string)
+                : Date.now();
+              setLevelClock({
+                startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+                durationSec: durSec,
+              });
+            }
+            const fmt =
+              String(tournData.variant ?? '').toLowerCase() === 'spin' ||
+              String(tournData.tournament_type ?? '').toUpperCase() === 'SPIN'
+                ? ('spin' as const)
+                : String(tournData.tournament_type ?? '').toUpperCase() === 'SNG'
+                  ? ('sng' as const)
+                  : ('mtt' as const);
+            setTournamentFormat(fmt);
             if (blindStructure && blindStructure.length > 0) {
-              // Find the matching level (1-indexed) or fall back to first entry
-              const levelEntry =
-                blindStructure.find((bl) => bl.level === currentLevel) ||
-                blindStructure[Math.min(currentLevel - 1, blindStructure.length - 1)];
               if (levelEntry) {
                 const sb = levelEntry.smallBlind ?? levelEntry.small_blind ?? 0;
                 const bbl = levelEntry.bigBlind ?? levelEntry.big_blind ?? 0;
@@ -4182,6 +4264,21 @@ export default function TablePage({
                   currentLevel: levelData.level,
                   blinds: levelData.blinds,
                 }));
+                // Restart the masthead level clock. The broadcast names the
+                // new level but not its duration, so that comes from the
+                // structure captured at load.
+                {
+                  const lvl = Number(levelData.level) || 0;
+                  const struct = blindStructRef.current;
+                  const entry =
+                    struct.find((bl) => bl.level === lvl) ||
+                    struct[Math.min(Math.max(lvl - 1, 0), Math.max(struct.length - 1, 0))];
+                  const durSec = entry
+                    ? Number(entry.duration) ||
+                      (Number(entry.duration_minutes ?? entry.durationMinutes) || 0) * 60
+                    : 0;
+                  if (durSec > 0) setLevelClock({ startedAtMs: Date.now(), durationSec: durSec });
+                }
                 setAnnouncement({ type: 'level_up', data: levelData });
                 // COMPETITOR-PARITY 2026-08-19: the level-up banner animated
                 // in silence — give it its fanfare.
@@ -5026,6 +5123,52 @@ export default function TablePage({
   useEffect(() => {
     tableStateRef.current = tableState;
   }, [tableState]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HERO SEAT INVARIANT — heroSeat must agree with the players array.
+  //
+  // Dan 2026-08-20, live at a Spin table: seated, DEALT IN, hole cards visible,
+  // hero glow on — rendered at TOP-RIGHT with no action buttons, blind-folded
+  // hand after hand. Both symptoms are one variable: `players[i].isHero` comes
+  // from several mappers that each match `user_id === userId` per player, but
+  // `heroSeat` — which drives the bottom-centre rotation AND the entire action
+  // panel (`currentPlayerSeat === heroSeat`) — is only written by a handful of
+  // load paths, each of which can lose a race:
+  //
+  //   - the table_seats mount load can run in the seconds between the engine
+  //     creating the table and it seating the players (a tournament player
+  //     navigates at the exact moment the game starts — the normal Spin flow);
+  //   - the WS GAME_START reconciliation only helps if that event arrives
+  //     after this client's auth resolved and its socket subscribed;
+  //   - nothing else ever sets it, so losing both races is permanent for the
+  //     session. You are a ghost at your own seat.
+  //
+  // The repair is the invariant, not another patched race: whenever the
+  // players array holds a live player whose id is the signed-in user and
+  // heroSeat disagrees, adopt that seat. SET-only, on proof — clearing
+  // remains the job of the existing paths that demand proof of eviction
+  // (seat stolen, snapshot without hero), so this can never fight them.
+  useEffect(() => {
+    if (!userId || userId === 'guest') return;
+    const idx = tableState.players.findIndex((p) => p && p.id === userId);
+    if (idx < 0) return; // not seated — nothing to assert
+    const seatNum = idx + 1;
+    if (tableState.heroSeat === seatNum) return; // invariant holds
+    console.warn(
+      `[Seat] heroSeat=${tableState.heroSeat} disagrees with players[] (hero at seat ${seatNum}) — reconciling`
+    );
+    heroSeatRef.current = seatNum;
+    setTableState((prev) => {
+      // Re-check against fresh state; also stamp isHero so the seat renders
+      // hero styling even when the mapper that placed the row predates auth.
+      const liveIdx = prev.players.findIndex((p) => p && p.id === userId);
+      if (liveIdx < 0 || prev.heroSeat === liveIdx + 1) return prev;
+      const players = [...prev.players];
+      const row = players[liveIdx];
+      if (row && !row.isHero) players[liveIdx] = { ...row, isHero: true };
+      return { ...prev, players, heroSeat: liveIdx + 1 };
+    });
+  }, [tableState.players, tableState.heroSeat, userId]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   //startNextHand removed — server manages the game loop
@@ -7831,55 +7974,114 @@ export default function TablePage({
                       under the wordmark, and line 2 is the hand number, which
                       used to float alone in the top-right corner. */}
                   <div className="table-brand__meta">
-                    <span className="table-brand__line">
-                      {/* Dan 2026-08-18: this was `new Date()` evaluated on every
-                          render, so the felt always showed TODAY rather than the
-                          day the hand was played — wrong on any replay or
-                          screenshot, which is exactly where this masthead is
-                          read. Now pinned to when this table session started. */}
-                      {tableSessionDate.toLocaleDateString(undefined, {
+                    {(() => {
+                      // Shared: the short game label. Dan 2026-08-17 (audit):
+                      // raw DB enums like OFC_PINEAPPLE printed verbatim on
+                      // the felt -- format enums for display.
+                      const gameShort = (
+                        tableState.gameType === "No Limit Hold'em"
+                          ? 'NLH'
+                          : tableState.gameType === 'Pot Limit Omaha'
+                            ? 'PLO'
+                            : tableState.gameType === "Fixed Limit Hold'em"
+                              ? 'FLH'
+                              : (tableState.gameType || 'NLH').replace(/_/g, ' ')
+                      ).toUpperCase();
+                      // Dan 2026-08-18: date pinned to when this table session
+                      // started, never `new Date()` per render -- a replay or
+                      // screenshot must show the day the hand was played.
+                      const dateLabel = tableSessionDate.toLocaleDateString(undefined, {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric',
-                      })}
-                      {(tableState.clubName || tableState.unionName) && (
-                        <>
-                          {' \u00B7 '}
-                          <span className="table-brand__club">
-                            {tableState.clubName}
-                            {/* Union name sits beside the club when the club is
-                                attached to one (Dan 2026-08-18). Dan 2026-08-20:
-                                clubName is now the VIEWER's club and is omitted
-                                entirely when it would duplicate the union name,
-                                so the union renders standalone in that case. */}
-                            {tableState.unionName && (
-                              <span className="table-brand__union">
-                                {tableState.clubName ? ' \u2022 ' : ''}
-                                {tableState.unionName}
+                      });
+
+                      if (tableState.isTournament) {
+                        // Dan 2026-08-20, from a seat at a live Spin: "1st
+                        // line Date, (game type) Poker Spins, Club Name,
+                        // Union Name. 2nd line Level #, Blinds, and the
+                        // clock. 3rd line hand number."
+                        const formatWord =
+                          tournamentFormat === 'spin'
+                            ? 'Poker Spins'
+                            : tournamentFormat === 'sng'
+                              ? 'Poker Sit & Go'
+                              : 'Poker Tournament';
+                        return (
+                          <>
+                            <span className="table-brand__line">
+                              {dateLabel}
+                              {' \u00B7 '}
+                              {gameShort} {formatWord}
+                              {tableState.clubName && (
+                                <span className="table-brand__club">
+                                  {' \u00B7 '}
+                                  {tableState.clubName}
+                                </span>
+                              )}
+                              {tableState.unionName && (
+                                <span className="table-brand__union">
+                                  {' \u00B7 '}
+                                  {tableState.unionName}
+                                </span>
+                              )}
+                            </span>
+                            <span className="table-brand__line table-brand__line--level">
+                              Level {tableState.currentLevel || 1}
+                              {' \u00B7 '}
+                              {tableState.blinds || '10/20'}
+                              {levelClock && (
+                                <>
+                                  {' \u00B7 '}
+                                  <MastheadLevelClock
+                                    startedAtMs={levelClock.startedAtMs}
+                                    durationSec={levelClock.durationSec}
+                                  />
+                                </>
+                              )}
+                            </span>
+                            {(tableState.handNumber ?? 0) > 0 && (
+                              <span className="table-brand__line table-brand__line--hand">
+                                Hand #{tableState.handNumber}
                               </span>
                             )}
+                          </>
+                        );
+                      }
+
+                      // Cash tables keep the two-line masthead.
+                      return (
+                        <>
+                          <span className="table-brand__line">
+                            {dateLabel}
+                            {(tableState.clubName || tableState.unionName) && (
+                              <>
+                                {' \u00B7 '}
+                                <span className="table-brand__club">
+                                  {tableState.clubName}
+                                  {/* Union beside club (Dan 2026-08-18); club
+                                      omitted when it would duplicate the
+                                      union (Dan 2026-08-20). */}
+                                  {tableState.unionName && (
+                                    <span className="table-brand__union">
+                                      {tableState.clubName ? ' \u2022 ' : ''}
+                                      {tableState.unionName}
+                                    </span>
+                                  )}
+                                </span>
+                              </>
+                            )}
+                            {' \u00B7 '}
+                            {gameShort} {tableState.blinds || '1/2'}
                           </span>
+                          {(tableState.handNumber ?? 0) > 0 && (
+                            <span className="table-brand__line table-brand__line--hand">
+                              Hand #{tableState.handNumber}
+                            </span>
+                          )}
                         </>
-                      )}
-                      {' \u00B7 '}
-                      {(tableState.gameType === "No Limit Hold'em"
-                        ? 'NLH'
-                        : tableState.gameType === 'Pot Limit Omaha'
-                          ? 'PLO'
-                          : tableState.gameType === "Fixed Limit Hold'em"
-                            ? 'FLH'
-                            : // Dan 2026-08-17 (audit): raw DB enums like
-                              // OFC_PINEAPPLE printed verbatim on the felt.
-                              // Known bug pattern 9: format enums for display.
-                              (tableState.gameType || 'NLH').replace(/_/g, ' ')
-                      ).toUpperCase()}{' '}
-                      {tableState.blinds || '1/2'}
-                    </span>
-                    {(tableState.handNumber ?? 0) > 0 && (
-                      <span className="table-brand__line table-brand__line--hand">
-                        Hand #{tableState.handNumber}
-                      </span>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
                 {/* Dan 2026-08-19 item 15: the pot moved OUT of .table-surface.

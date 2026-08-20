@@ -834,6 +834,26 @@
   color: rgba(198, 210, 228, 0.34);
 }
 
+/* Tournament masthead line 2 (Dan 2026-08-20): Level # · blinds · clock.
+   Slightly brighter than line 1 — it is the one row that changes while you
+   play, so it earns a touch more presence without shouting over the felt. */
+.table-brand__line--level {
+  color: rgba(198, 210, 228, 0.55);
+  font-weight: 700;
+}
+
+.table-brand__clock {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  color: rgba(134, 239, 172, 0.6);
+}
+
+/* Union name after the club on masthead line 1 — cooler tone than the club's
+   gold so the two read as different things at a glance. */
+.table-brand__union {
+  color: rgba(148, 197, 255, 0.45);
+}
+
 @media (max-width: 380px) {
   .table-brand {
     width: 56%;

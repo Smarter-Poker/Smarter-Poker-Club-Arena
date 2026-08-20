@@ -1,45 +1,38 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SPIN WHEEL — the multiplier draw (2026-08-20)
+ *  SPIN-IT INTRO — the multiplier draw, PokerBros grammar (2026-08-20, v2)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * In a Spin, the draw IS the product. The poker is how the money gets
- * delivered; the three seconds where the wheel decides whether you are playing
- * for 2× or 100× is the reason anyone opens the format. Until now our Spins
- * simply appeared with a multiplier already stamped on them — the single most
- * exciting moment in the game was a number in a tournament name.
+ * Rebuilt against frame-by-frame study of Dan's PokerBros reference capture
+ * ("spin it intro.MOV", 17.7s). Their sequence, beat by beat:
  *
- * ─── How the majors do it ───────────────────────────────────────────────────
- * PokerStars puts a spinning wheel at the centre of the table before the cards
- * are dealt; GGPoker runs a reel. Both share the same three-part grammar, and
- * it is the grammar rather than the shape that does the work:
+ *   1. The TABLE STAYS VISIBLE. No full-screen takeover: the felt dims and a
+ *      spotlight beam falls from the top of the screen onto the table.
+ *   2. A big gold COUNTDOWN (3·2·1) pops centre-felt.
+ *   3. A gold-rimmed DISC sits on the felt — a pie of coloured segments with
+ *      the format wordmark in the hub. It does NOT rotate: the segments
+ *      LIGHT UP one at a time, a chase that runs fast and decelerates, each
+ *      lit segment fading behind the runner.
+ *   4. The chase settles on the winner. That segment stays lit and flashes;
+ *      every other segment desaturates to grey.
+ *   5. The disc fades away, the table brightens, and the masthead now carries
+ *      the prize pool.
  *
- *   1. ACCELERATE — fast enough that you cannot read it. You are not being
- *      shown information yet, you are being shown that it is out of anyone's
- *      hands.
- *   2. DECELERATE — slow enough to read the tiers going past, so you can see
- *      what you might have got. This is where the tension actually lives.
- *   3. NEAR-MISS — the pointer creeps past a big tier before settling. Both
- *      rooms do this and it is the single most important beat: landing on 2×
- *      having just crawled past 100× is a *story*, and landing on 2× flat is a
- *      shrug.
+ * The chase reads better than a rotating wheel at table scale — nothing
+ * spins under a pointer, so there is no moment where the eye loses the
+ * geometry — and the decelerating runner gives the same genuine near-miss:
+ * it walks THROUGH the big tiers on its way to the result.
  *
- * ─── Honesty ────────────────────────────────────────────────────────────────
- * The result is decided by the SERVER (crypto-grade draw, see
- * TournamentRecurringService.rollSpinMultiplier) and handed to this component
- * as a fact. Nothing here influences the outcome — the wheel is told where to
- * stop and works backwards to get there.
+ * ─── Honesty (unchanged from v1) ────────────────────────────────────────────
+ * The result is decided by the SERVER (reserve-gated draw at game start) and
+ * handed to this component as a fact. No Math.random touches the outcome —
+ * the chase is told where to stop and works backwards to get there. Locked
+ * tiers (Reserve Pool cannot fund them) render dark with their unlock note;
+ * the engine excluded them from the draw, so the chase can pass over them
+ * but never end on one.
  *
- * That matters for the near-miss too: we do not manufacture one. The wheel is
- * laid out so tiers alternate small/large, so passing close to a big number on
- * the way to a small one is a genuine property of the layout rather than a
- * staged tease. A fake near-miss is a slot-machine trick and this is a poker
- * room.
- *
- * ─── Shared in real time ────────────────────────────────────────────────────
- * All three seats see the same wheel land on the same value at the same moment,
- * because the multiplier is a server fact delivered to every client. No
- * client-side randomness anywhere in this file.
+ * All three seats watch the same chase land on the same segment at the same
+ * moment, because the multiplier is a server fact delivered to every client.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -51,39 +44,31 @@ import './SpinWheel.css';
 
 export interface SpinTier {
   multiplier: number;
-  /** Relative weight. Only used to size the segment, never to pick a winner. */
+  /** Relative weight. Only used for ordering context, never to pick a winner. */
   weight?: number;
 }
 
 export interface SpinWheelData {
   /** The SERVER's result. This component never decides it. */
   multiplier: number;
-  /** One buy-in, so the wheel can show real money rather than a bare multiple. */
+  /** One buy-in, so the disc can show real money rather than a bare multiple. */
   buyIn: number;
   /** Tier ladder for this Spin type, biggest last. */
   tiers: SpinTier[];
   currency?: string;
-  /** Names of the three players, shown while the wheel decides. */
+  /** Names of the three players, shown while the chase decides. */
   playerNames?: string[];
   /**
-   * Multipliers the Reserve Pool cannot currently fund. They are shown on the
-   * wheel as LOCKED rather than hidden: a visible 500x you cannot win yet is
-   * anticipation and is honest about the format, where silently shrinking the
-   * wheel makes the ceiling look lower than it is.
-   *
-   * The engine excludes these from the draw entirely, so a locked tier can
-   * never be the result.
+   * Multipliers the Reserve Pool cannot currently fund. Shown on the disc as
+   * LOCKED rather than hidden: a visible 500x you cannot win yet is
+   * anticipation and is honest about the ceiling. The engine excludes these
+   * from the draw entirely, so a locked tier can never be the result.
    */
   lockedMultipliers?: number[];
   /**
    * The same information with the reason and the unlock threshold attached,
    * exactly as `fn_spin_draw_multiplier` recorded it for THIS draw. Preferred
-   * over `lockedMultipliers` when present, because "500x unlocks at 5,000" is
-   * anticipation where a bare dimmed segment is just an absence.
-   *
-   * `reason` is 'unaffordable' (the pool plus this game's own contribution
-   * cannot cover the prize) or 'threshold' (affordable, but not yet backed by
-   * the required multiple of its own jackpot at the biggest stake running).
+   * over `lockedMultipliers` when present.
    */
   lockedTiers?: SpinLockedTier[];
 }
@@ -101,10 +86,10 @@ export interface SpinWheelProps {
   playSounds?: boolean;
 }
 
-type Phase = 'idle' | 'intro' | 'spinning' | 'settling' | 'result';
+type Phase = 'idle' | 'countdown' | 'chase' | 'result';
 
 /**
- * The ladder shown on the wheel, derived from the canonical spec so the wheel
+ * The ladder shown on the disc, derived from the canonical spec so the disc
  * can never advertise a tier the engine cannot draw (or omit one it can).
  */
 export const DEFAULT_SPIN_TIERS: SpinTier[] = SPIN_TIERS.map((t) => ({
@@ -112,17 +97,21 @@ export const DEFAULT_SPIN_TIERS: SpinTier[] = SPIN_TIERS.map((t) => ({
   weight: t.freq,
 }));
 
-const INTRO_MS = 900;
-const SPIN_MS = 4200;
+// ── Timing (PokerBros reference: ~10s countdown-to-fade) ────────────────────
+const COUNTDOWN_FROM = 3;
+const COUNTDOWN_STEP_MS = 750;
+const CHASE_MS = 4200;
+/** Chase loops before the runner starts caring where it lands. */
+const CHASE_LOOPS = 3;
 const RESULT_MS = 4200;
 
 /**
- * Order the tiers around the wheel so small and large ALTERNATE.
+ * Order the tiers around the disc so small and large ALTERNATE.
  *
  * Laid out in ladder order, every big multiplier sits next to another big one
- * and a 2× result never passes near anything exciting. Interleaving from both
- * ends of the ladder means the pointer genuinely travels past a big tier on its
- * way to most small ones — a real near-miss rather than a staged one.
+ * and a 2x result never passes near anything exciting. Interleaving from both
+ * ends of the ladder means the chase runner genuinely walks through a big
+ * tier on its way to most small ones — a real near-miss, not a staged one.
  */
 export function buildWheelOrder(tiers: SpinTier[]): SpinTier[] {
   const asc = [...tiers].sort((a, b) => a.multiplier - b.multiplier);
@@ -141,11 +130,11 @@ export function buildWheelOrder(tiers: SpinTier[]): SpinTier[] {
 /**
  * Read `tournaments.spin_locked_tiers` into the shape this component wants.
  *
- * The column is jsonb and PostgREST may hand it back as a parsed array or, in
- * some client configurations, as a string. It is also NULL on every Spin
- * created before the column existed. Anything unrecognisable yields an empty
- * list: a wheel that fails to dim a segment is a small loss, and a wheel that
- * throws while a player is watching their prize be decided is a large one.
+ * The column is jsonb and PostgREST may hand it back as a parsed array or a
+ * string, and it is NULL on every Spin created before the column existed.
+ * Anything unrecognisable yields an empty list: a disc that fails to dim a
+ * segment is a small loss, and a disc that throws while a player is watching
+ * their prize be decided is a large one.
  */
 export function parseLockedTiers(raw: unknown): SpinLockedTier[] {
   let value = raw;
@@ -179,12 +168,31 @@ export function tierClass(multiplier: number): string {
   return 'sw--base';
 }
 
+/**
+ * Chase schedule: when (ms from chase start) each step fires. Ease-out — the
+ * runner sprints its early laps and crawls the final segments, so the last
+ * few are readable one at a time exactly like the reference. The LAST step is
+ * the target segment by construction.
+ */
+export function chaseSchedule(
+  segmentCount: number,
+  targetIndex: number,
+  totalMs: number
+): number[] {
+  const n = Math.max(1, segmentCount);
+  const steps = CHASE_LOOPS * n + ((targetIndex % n) + 1);
+  const times: number[] = [];
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    // Convex curve: step TIMES cluster early and spread late, so the gaps
+    // between steps strictly grow — the runner sprints its opening laps and
+    // crawls the final segments one readable beat at a time.
+    times.push(Math.round(totalMs * Math.pow(t, 2.6)));
+  }
+  return times;
+}
+
 export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheelProps) {
-  /**
-   * `lockedTiers` wins when both are given — it is the richer form of the same
-   * fact. `lockedMultipliers` stays supported so a caller with only the bare
-   * numbers still dims the right segments.
-   */
   const lockedDetail = useMemo(() => {
     const map = new Map<number, SpinLockedTier>();
     for (const m of data?.lockedMultipliers ?? []) map.set(m, { multiplier: m });
@@ -198,9 +206,8 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
   /**
    * The cheapest unlock we can honestly advertise: the smallest threshold
-   * among the locked tiers that told us one. Shown while the wheel decides,
-   * where it reads as "there is more on this wheel than you can win today" —
-   * which is true, and is the strongest thing this format has to say.
+   * among the locked tiers that told us one. "500x unlocks at 5,000" is
+   * anticipation; a bare dimmed segment is just an absence.
    */
   const nextUnlock = useMemo(() => {
     const withThreshold = [...lockedDetail.values()].filter(
@@ -209,8 +216,11 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
     if (withThreshold.length === 0) return null;
     return withThreshold.sort((a, b) => (a.unlocksAt as number) - (b.unlocksAt as number))[0];
   }, [lockedDetail]);
+
   const [phase, setPhase] = useState<Phase>('idle');
-  const [rotation, setRotation] = useState(0);
+  const [count, setCount] = useState(COUNTDOWN_FROM);
+  /** Index of the currently lit segment; -1 = nothing lit yet. */
+  const [litIndex, setLitIndex] = useState(-1);
   const [displayPrize, setDisplayPrize] = useState(0);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const rafRef = useRef<number | null>(null);
@@ -220,7 +230,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
   const order = useMemo(() => buildWheelOrder(data?.tiers ?? DEFAULT_SPIN_TIERS), [data?.tiers]);
   const segmentAngle = 360 / Math.max(1, order.length);
 
-  /** Where the winning segment sits, and therefore where the wheel must stop. */
+  /** Where the winning segment sits — where the chase must stop. */
   const targetIndex = useMemo(() => {
     if (!data) return 0;
     const i = order.findIndex((t) => t.multiplier === data.multiplier);
@@ -250,16 +260,19 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
     if (!data) {
       setPhase('idle');
-      setRotation(0);
+      setLitIndex(-1);
+      setCount(COUNTDOWN_FROM);
       setDisplayPrize(0);
       return;
     }
 
     const speed = getAnimationSpeed();
     const reduced = prefersReducedMotion();
+    const timers: ReturnType<typeof setTimeout>[] = [];
 
-    setPhase('intro');
-    setRotation(0);
+    setPhase('countdown');
+    setCount(COUNTDOWN_FROM);
+    setLitIndex(-1);
     setDisplayPrize(0);
 
     if (playSounds) {
@@ -270,72 +283,90 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       }
     }
 
-    // Work backwards from the server's answer: land the CENTRE of the winning
-    // segment under the pointer at 12 o'clock, after a whole number of turns.
-    // Six full turns is long enough to lose track of position — the point of
-    // the accelerate phase — without outstaying its welcome.
-    const TURNS = 6;
-    const landing = 360 * TURNS - (targetIndex * segmentAngle + segmentAngle / 2);
-
-    const introAt = (reduced ? 100 : INTRO_MS) * speed;
-    const spinFor = (reduced ? 400 : SPIN_MS) * speed;
-
-    const toSpin = setTimeout(() => {
-      setPhase('spinning');
-      setRotation(landing);
-      if (playSounds) {
-        try {
-          soundService.playSpinTicking(spinFor);
-        } catch {
-          /* best effort */
-        }
+    // ── 1. Countdown: 3 · 2 · 1 ─────────────────────────────────────────────
+    const countdownMs = (reduced ? 200 : COUNTDOWN_FROM * COUNTDOWN_STEP_MS) * speed;
+    if (!reduced) {
+      for (let c = COUNTDOWN_FROM - 1; c >= 1; c--) {
+        timers.push(
+          setTimeout(() => setCount(c), (COUNTDOWN_FROM - c) * COUNTDOWN_STEP_MS * speed)
+        );
       }
-    }, introAt);
+    }
 
-    const toSettle = setTimeout(() => setPhase('settling'), introAt + spinFor - 260 * speed);
-
-    const toResult = setTimeout(() => {
-      setPhase('result');
-      if (playSounds) {
-        try {
-          soundService.playSpinMultiplierResult(data.multiplier);
-        } catch {
-          /* best effort */
-        }
-      }
-      fireVibration(data.multiplier >= 25 ? [50, 30, 80] : [25, 20, 40]);
-
-      // Count the PRIZE up, not the multiplier. "You are playing for $30" is
-      // the fact that matters; the multiple is how it was arrived at.
-      if (reduced) {
-        setDisplayPrize(prize);
-      } else {
-        const started = performance.now();
-        const durationMs = 900 * speed;
-        const step = (now: number) => {
-          const t = Math.min(1, (now - started) / durationMs);
-          const eased = 1 - Math.pow(1 - t, 3);
-          setDisplayPrize(Math.round(prize * eased * 100) / 100);
-          if (t < 1) {
-            rafRef.current = requestAnimationFrame(step);
-          } else {
-            rafRef.current = null;
-            setDisplayPrize(prize);
+    // ── 2. The chase ────────────────────────────────────────────────────────
+    const chaseMs = (reduced ? 400 : CHASE_MS) * speed;
+    timers.push(
+      setTimeout(() => {
+        setPhase('chase');
+        if (playSounds) {
+          try {
+            // The ticking is scheduled on the same deceleration curve as the
+            // chase steps, so the sound slows with the light.
+            soundService.playSpinTicking(chaseMs);
+          } catch {
+            /* best effort */
           }
-        };
-        rafRef.current = requestAnimationFrame(step);
-      }
-    }, introAt + spinFor);
-
-    const toEnd = setTimeout(
-      () => {
-        setPhase('idle');
-        onDoneRef.current();
-      },
-      introAt + spinFor + (reduced ? 1800 : RESULT_MS) * speed
+        }
+        if (reduced) {
+          setLitIndex(targetIndex);
+        } else {
+          const schedule = chaseSchedule(order.length, targetIndex, chaseMs);
+          schedule.forEach((at, stepIdx) => {
+            timers.push(setTimeout(() => setLitIndex(stepIdx % order.length), at));
+          });
+        }
+      }, countdownMs)
     );
 
-    timersRef.current = [toSpin, toSettle, toResult, toEnd];
+    // ── 3. Result ───────────────────────────────────────────────────────────
+    timers.push(
+      setTimeout(() => {
+        setPhase('result');
+        setLitIndex(targetIndex);
+        if (playSounds) {
+          try {
+            soundService.playSpinMultiplierResult(data.multiplier);
+          } catch {
+            /* best effort */
+          }
+        }
+        fireVibration(data.multiplier >= 25 ? [50, 30, 80] : [25, 20, 40]);
+
+        // Count the PRIZE up, not the multiplier. "You are playing for $30"
+        // is the fact that matters; the multiple is how it was arrived at.
+        if (reduced) {
+          setDisplayPrize(prize);
+        } else {
+          const started = performance.now();
+          const durationMs = 900 * speed;
+          const step = (now: number) => {
+            const t = Math.min(1, (now - started) / durationMs);
+            const eased = 1 - Math.pow(1 - t, 3);
+            setDisplayPrize(Math.round(prize * eased * 100) / 100);
+            if (t < 1) {
+              rafRef.current = requestAnimationFrame(step);
+            } else {
+              rafRef.current = null;
+              setDisplayPrize(prize);
+            }
+          };
+          rafRef.current = requestAnimationFrame(step);
+        }
+      }, countdownMs + chaseMs)
+    );
+
+    // ── 4. Fade out, hand the felt back ────────────────────────────────────
+    timers.push(
+      setTimeout(
+        () => {
+          setPhase('idle');
+          onDoneRef.current();
+        },
+        countdownMs + chaseMs + (reduced ? 1800 : RESULT_MS) * speed
+      )
+    );
+
+    timersRef.current = timers;
     return () => {
       timersRef.current.forEach(clearTimeout);
       timersRef.current = [];
@@ -344,12 +375,11 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
         rafRef.current = null;
       }
     };
-  }, [data, playSounds, targetIndex, segmentAngle, prize]);
+  }, [data, playSounds, targetIndex, order.length, prize]);
 
   if (!data || phase === 'idle') return null;
 
   const currency = data.currency ?? '';
-  const spinning = phase === 'spinning' || phase === 'settling';
   const won = order[targetIndex];
 
   return (
@@ -359,82 +389,79 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       aria-modal="true"
       aria-label="Spin multiplier draw"
     >
-      <div className="sw__backdrop" />
+      {/* The table stays visible: a vignette dims it and a spotlight beam
+          falls from the top of the screen, exactly like the reference. */}
+      <div className="sw__dim" />
+      <div className="sw__beam" aria-hidden="true" />
 
       <div className="sw__stage">
-        <div className="sw__eyebrow">PRIZE POOL</div>
-
-        {data.playerNames && data.playerNames.length > 0 && (
-          <div className="sw__players">{data.playerNames.join('  ·  ')}</div>
+        {phase === 'countdown' && (
+          <div className="sw__count" key={count} aria-hidden="true">
+            {count}
+          </div>
         )}
 
-        {/* ── The wheel ── */}
-        <div className="sw__wheel-wrap">
-          <div className="sw__glow" aria-hidden="true" />
-
-          {/* Pointer at 12 o'clock. It flicks as segments pass beneath it. */}
-          <div className={`sw__pointer${spinning ? ' sw__pointer--live' : ''}`} aria-hidden="true">
-            <span className="sw__pointer-tip" />
-          </div>
-
-          <div
-            className="sw__wheel"
-            style={{
-              transform: `rotate(${rotation}deg)`,
-              // The whole illusion is in this curve: a long fast middle and a
-              // very slow tail, so the last few segments crawl past and can be
-              // read. A plain ease-out stops being interesting halfway through.
-              transitionDuration: `${(phase === 'intro' ? 0 : SPIN_MS) * getAnimationSpeed()}ms`,
-            }}
-            aria-hidden="true"
-          >
-            {order.map((tier, i) => (
-              <div
-                key={`${tier.multiplier}-${i}`}
-                className={`sw__seg ${tierClass(tier.multiplier)}${
-                  locked.has(tier.multiplier) ? ' sw__seg--locked' : ''
-                }`}
-                style={{
-                  ['--sw-i' as string]: i,
-                  ['--sw-angle' as string]: `${segmentAngle}deg`,
-                  transform: `rotate(${i * segmentAngle}deg)`,
-                }}
-                title={
-                  lockedDetail.get(tier.multiplier)?.unlocksAt
-                    ? `${tier.multiplier}x unlocks at a ${currency}${Number(
-                        lockedDetail.get(tier.multiplier)!.unlocksAt
-                      ).toLocaleString(undefined, { maximumFractionDigits: 0 })} reserve`
-                    : undefined
-                }
-              >
-                <span className="sw__seg-label">
-                  {tier.multiplier}×{locked.has(tier.multiplier) ? ' \u00B7' : ''}
-                </span>
+        {(phase === 'chase' || phase === 'result') && (
+          <div className="sw__disc-wrap">
+            <div className={`sw__disc${phase === 'result' ? ' sw__disc--settled' : ''}`}>
+              {order.map((tier, i) => {
+                const isLit = i === litIndex;
+                // The segment the runner JUST left keeps a fading ember, so
+                // the chase reads as motion rather than a blinking light.
+                const wasLit =
+                  phase === 'chase' &&
+                  litIndex >= 0 &&
+                  i === (litIndex - 1 + order.length) % order.length;
+                const isWinner = phase === 'result' && i === targetIndex;
+                return (
+                  <div
+                    key={`${tier.multiplier}-${i}`}
+                    className={[
+                      'sw__seg',
+                      `sw__seg--c${i % 9}`,
+                      isLit ? 'sw__seg--lit' : '',
+                      wasLit ? 'sw__seg--trail' : '',
+                      isWinner ? 'sw__seg--winner' : '',
+                      phase === 'result' && !isWinner ? 'sw__seg--spent' : '',
+                      locked.has(tier.multiplier) ? 'sw__seg--locked' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    style={{
+                      ['--sw-i' as string]: i,
+                      ['--sw-angle' as string]: `${segmentAngle}deg`,
+                      transform: `rotate(${i * segmentAngle}deg)`,
+                    }}
+                    title={
+                      lockedDetail.get(tier.multiplier)?.unlocksAt
+                        ? `${tier.multiplier}x unlocks at a ${currency}${Number(
+                            lockedDetail.get(tier.multiplier)!.unlocksAt
+                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} reserve`
+                        : undefined
+                    }
+                  >
+                    <span className="sw__seg-label">{tier.multiplier}</span>
+                  </div>
+                );
+              })}
+              <div className="sw__hub">
+                {phase === 'result' ? (
+                  <span className="sw__hub-mult">{won?.multiplier ?? data.multiplier}×</span>
+                ) : (
+                  <span className="sw__hub-brand">SPIN-IT</span>
+                )}
               </div>
-            ))}
-            <div className="sw__hub" />
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* ── Status / result ── */}
-        {phase !== 'result' ? (
+        {/* ── Below the disc ── */}
+        {phase === 'chase' && (
           <div className="sw__status">
-            <span className="sw__status-main">
-              {phase === 'intro' ? 'Drawing your prize pool' : 'Spinning'}
-              <span className="sw__dots">
-                <i />
-                <i />
-                <i />
-              </span>
-            </span>
             <span className="sw__status-sub">
               {currency}
-              {data.buyIn.toLocaleString()} buy-in · winner takes the pool
+              {data.buyIn.toLocaleString()} buy-in
             </span>
-            {/* An honest note about the ceiling. A dimmed segment on its own
-                just looks like an absence; naming the number it unlocks at
-                turns it into something to come back for, and states plainly
-                that it is not in play right now rather than implying it is. */}
             {nextUnlock && (
               <span className="sw__status-locked">
                 {nextUnlock.multiplier}× unlocks when the club reserve reaches {currency}
@@ -444,9 +471,10 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
               </span>
             )}
           </div>
-        ) : (
+        )}
+
+        {phase === 'result' && (
           <div className="sw__result">
-            <div className="sw__mult">{won?.multiplier ?? data.multiplier}×</div>
             <div className="sw__prize">
               {currency}
               {displayPrize.toLocaleString(undefined, {

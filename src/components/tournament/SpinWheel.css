@@ -1,12 +1,17 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SPIN WHEEL — styles (2026-08-20)
+ *  SPIN-IT INTRO — styles (2026-08-20 v2, PokerBros grammar)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
+ * Rebuilt from Dan's PokerBros reference capture: the table stays visible
+ * under a vignette + spotlight beam, a gold countdown pops, then a gold-rimmed
+ * disc on the felt runs a decelerating chase-light through vividly coloured
+ * segments until the winner stays lit and the rest go grey.
+ *
  * Every class and keyframe is prefixed `sw`. @keyframes is a GLOBAL namespace
- * and this app carries 900+ of them; two definitions of one name resolve by
- * load order, silently, for both consumers. The prefix is what keeps a new
- * component out of that failure mode.
+ * and this app carries ~900 of them; two definitions of one name resolve by
+ * load order, silently, for both consumers. The prefix keeps this component
+ * out of that failure mode.
  */
 
 .sw {
@@ -20,118 +25,139 @@
   pointer-events: auto;
 }
 
-.sw__backdrop {
+/* ── The table stays visible: vignette, not blackout ─────────────────────── */
+
+.sw__dim {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse at 50% 42%, rgba(30, 64, 120, 0.5), rgba(0, 0, 0, 0) 62%),
-    rgba(3, 5, 12, 0.93);
-  backdrop-filter: blur(8px) saturate(1.15);
-  -webkit-backdrop-filter: blur(8px) saturate(1.15);
-  animation: swBackdropIn 0.4s ease-out both;
+  background: radial-gradient(
+    ellipse at 50% 45%,
+    rgba(2, 4, 9, 0.42) 0%,
+    rgba(2, 4, 9, 0.66) 62%,
+    rgba(2, 4, 9, 0.8) 100%
+  );
+  animation: swDimIn 0.5s ease-out both;
 }
 
-@keyframes swBackdropIn {
+@keyframes swDimIn {
   from {
     opacity: 0;
   }
   to {
     opacity: 1;
+  }
+}
+
+/* Spotlight beam from the top of the screen — the reference's signature.
+   A narrow warm cone, blurred so it reads as light through air. */
+.sw__beam {
+  position: absolute;
+  top: -4%;
+  left: 50%;
+  width: 34vmin;
+  height: 62vh;
+  transform: translateX(-50%);
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 226, 156, 0.5),
+    rgba(255, 226, 156, 0.16) 55%,
+    rgba(255, 226, 156, 0) 100%
+  );
+  clip-path: polygon(44% 0%, 56% 0%, 100% 100%, 0% 100%);
+  filter: blur(10px);
+  animation: swBeamIn 0.7s ease-out both;
+  pointer-events: none;
+}
+
+@keyframes swBeamIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scaleY(0.6);
+    transform-origin: top center;
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scaleY(1);
   }
 }
 
 .sw__stage {
   position: relative;
-  width: min(340px, 90vw);
+  width: min(340px, 92vw);
   text-align: center;
 }
 
-.sw__eyebrow {
-  font-size: 11px;
+/* ── Countdown: 3 · 2 · 1, big and gold, centre felt ─────────────────────── */
+
+.sw__count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 108px;
   font-weight: 900;
-  letter-spacing: 4px;
-  color: #60a5fa;
-  text-shadow: 0 0 18px rgba(96, 165, 250, 0.7);
-  animation: swFadeDown 0.5s ease-out both;
+  color: #ffe14d;
+  text-shadow:
+    0 0 30px rgba(255, 225, 77, 0.55),
+    0 4px 14px rgba(0, 0, 0, 0.8);
+  animation: swCountPop 0.72s cubic-bezier(0.2, 1.4, 0.35, 1) both;
 }
 
-.sw__players {
-  margin-top: 5px;
-  font-size: 12px;
-  color: #94a3b8;
-  animation: swFadeDown 0.5s ease-out 0.08s both;
+@keyframes swCountPop {
+  0% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.88);
+  }
 }
 
-@keyframes swFadeDown {
+/* ── The disc ─────────────────────────────────────────────────────────────── */
+
+.sw__disc-wrap {
+  position: relative;
+  width: 262px;
+  height: 262px;
+  margin: 0 auto;
+  animation: swDiscIn 0.5s cubic-bezier(0.3, 1.3, 0.4, 1) both;
+}
+
+@keyframes swDiscIn {
   from {
     opacity: 0;
-    transform: translateY(-8px);
+    transform: scale(0.78) translateY(-14px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1) translateY(0);
   }
 }
 
-/* ── Wheel ────────────────────────────────────────────────────────────────── */
-
-.sw__wheel-wrap {
-  position: relative;
-  width: 252px;
-  height: 252px;
-  margin: 22px auto 0;
-}
-
-.sw__glow {
-  position: absolute;
-  inset: -30px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(96, 165, 250, 0.28), rgba(96, 165, 250, 0) 68%);
-  animation: swGlowPulse 2.2s ease-in-out infinite;
-}
-
-/* The glow tracks the tier once it lands — a mega result should not look like
-   a 2×. Colour comes from the tier class on the root. */
-.sw--mid .sw__glow {
-  background: radial-gradient(circle, rgba(52, 211, 153, 0.3), rgba(0, 0, 0, 0) 68%);
-}
-.sw--big .sw__glow {
-  background: radial-gradient(circle, rgba(249, 115, 22, 0.36), rgba(0, 0, 0, 0) 68%);
-}
-.sw--mega .sw__glow {
-  background: radial-gradient(circle, rgba(255, 215, 0, 0.42), rgba(0, 0, 0, 0) 68%);
-}
-
-@keyframes swGlowPulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(0.95);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.06);
-  }
-}
-
-.sw__wheel {
+.sw__disc {
   position: absolute;
   inset: 0;
   border-radius: 50%;
   overflow: hidden;
-  border: 5px solid rgba(255, 255, 255, 0.14);
+  /* The reference's rim: warm gold, doubled, over a dark metal base. */
+  border: 6px solid #c9a24b;
   box-shadow:
-    0 18px 50px rgba(0, 0, 0, 0.65),
-    inset 0 0 40px rgba(0, 0, 0, 0.55);
-  /* THE CURVE. A long fast middle and a very slow tail, so the last few
-     segments crawl past the pointer and can actually be read. A plain ease-out
-     stops being interesting halfway through and gives away the answer early. */
-  transition-property: transform;
-  transition-timing-function: cubic-bezier(0.12, 0.72, 0.06, 1);
-  will-change: transform;
+    0 0 0 3px rgba(60, 46, 18, 0.9),
+    0 0 26px rgba(201, 162, 75, 0.35),
+    0 18px 46px rgba(0, 0, 0, 0.7),
+    inset 0 0 34px rgba(0, 0, 0, 0.65);
+  background: #17130d;
 }
 
-/* Each segment is a rotated wedge built with a conic slice. */
+/* Each segment is a rotated conic wedge. Colour lives in --sw-seg; unlit
+   segments show it heavily muted (the reference keeps the hue readable in
+   the dark), the chase lights it to full. */
 .sw__seg {
   position: absolute;
   inset: 0;
@@ -145,400 +171,368 @@
   inset: 0;
   background: conic-gradient(
     from 0deg,
-    var(--sw-seg-a) 0deg,
-    var(--sw-seg-b) var(--sw-angle),
+    var(--sw-seg) 0deg,
+    var(--sw-seg-deep, var(--sw-seg)) var(--sw-angle),
     transparent var(--sw-angle)
   );
+  filter: saturate(0.28) brightness(0.42);
+  transition:
+    filter 0.12s linear,
+    opacity 0.12s linear;
 }
 
-.sw__seg.sw--base {
-  --sw-seg-a: #1e3a5f;
-  --sw-seg-b: #16304f;
+/* Nine distinct hues, PokerBros-style — neighbouring segments never share. */
+.sw__seg--c0 {
+  --sw-seg: #1fb6a6;
+  --sw-seg-deep: #14877c;
+} /* teal    */
+.sw__seg--c1 {
+  --sw-seg: #e33b52;
+  --sw-seg-deep: #a82036;
+} /* crimson */
+.sw__seg--c2 {
+  --sw-seg: #3f8fe8;
+  --sw-seg-deep: #2764ad;
+} /* blue    */
+.sw__seg--c3 {
+  --sw-seg: #9b59d0;
+  --sw-seg-deep: #6f3a9c;
+} /* violet  */
+.sw__seg--c4 {
+  --sw-seg: #43c465;
+  --sw-seg-deep: #2b8f46;
+} /* green   */
+.sw__seg--c5 {
+  --sw-seg: #e8a13c;
+  --sw-seg-deep: #b57320;
+} /* amber   */
+.sw__seg--c6 {
+  --sw-seg: #d84fa4;
+  --sw-seg-deep: #a12f78;
+} /* magenta */
+.sw__seg--c7 {
+  --sw-seg: #e8d23c;
+  --sw-seg-deep: #b3a01f;
+} /* gold    */
+.sw__seg--c8 {
+  --sw-seg: #e8633c;
+  --sw-seg-deep: #b03f20;
+} /* flame   */
+
+/* The chase runner: full colour + a glow that spills past the wedge. */
+.sw__seg--lit::before {
+  filter: saturate(1.15) brightness(1.25);
 }
-.sw__seg.sw--mid {
-  --sw-seg-a: #14532d;
-  --sw-seg-b: #10452a;
+.sw__seg--lit .sw__seg-label {
+  color: #ffffff;
+  text-shadow:
+    0 0 12px rgba(255, 255, 255, 0.9),
+    0 1px 4px rgba(0, 0, 0, 0.8);
 }
-.sw__seg.sw--big {
-  --sw-seg-a: #7c2d12;
-  --sw-seg-b: #6b2410;
+
+/* Fading ember one step behind the runner — motion, not a blinking light. */
+.sw__seg--trail::before {
+  filter: saturate(0.8) brightness(0.75);
+  transition:
+    filter 0.34s ease-out,
+    opacity 0.34s ease-out;
 }
-.sw__seg.sw--mega {
-  --sw-seg-a: #78350f;
-  --sw-seg-b: #a16207;
+
+/* Result: the winner holds full colour and FLASHES… */
+.sw__seg--winner::before {
+  filter: saturate(1.2) brightness(1.3);
+  animation: swWinFlash 0.5s ease-in-out 3;
+}
+.sw__seg--winner .sw__seg-label {
+  color: #ffffff;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.95);
+}
+
+@keyframes swWinFlash {
+  0%,
+  100% {
+    filter: saturate(1.2) brightness(1.3);
+  }
+  50% {
+    filter: saturate(1.35) brightness(1.75);
+  }
+}
+
+/* …and everything that lost drains to grey, exactly like the reference. */
+.sw__seg--spent::before {
+  filter: saturate(0.05) brightness(0.3);
+  transition: filter 0.6s ease-out;
+}
+
+/* A tier the Reserve Pool cannot fund yet. Shown, not hidden — darker than
+   unlit, and its label carries the padlock dot. The engine never draws it. */
+.sw__seg--locked::before {
+  filter: saturate(0.1) brightness(0.22);
+}
+.sw__seg--locked .sw__seg-label {
+  color: #5b6675;
+  text-shadow: none;
 }
 
 .sw__seg-label {
   position: absolute;
-  top: 16px;
+  top: 15px;
   left: 50%;
   transform: translateX(-50%) rotate(calc(var(--sw-angle) / 2));
-  transform-origin: center 110px;
+  transform-origin: center 116px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 900;
-  color: #e2e8f0;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  color: #e8edf4;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
   white-space: nowrap;
 }
 
-.sw__seg.sw--mega .sw__seg-label {
-  color: #fde68a;
-  text-shadow: 0 0 10px rgba(253, 230, 138, 0.8);
-}
-
-/* ── Locked tiers ─────────────────────────────────────────────────────────── */
-/* A multiplier the Reserve Pool cannot yet fund. Shown, not hidden: a visible
-   500x you cannot win yet is anticipation and is honest about the ceiling,
-   where silently shrinking the wheel makes the format look smaller than it is.
-   Dimmed and desaturated so it reads as unavailable at a glance without
-   needing a legend. */
-.sw__seg--locked::before {
-  filter: grayscale(0.9) brightness(0.45);
-}
-
-.sw__seg--locked .sw__seg-label {
-  color: #64748b;
-  text-shadow: none;
-  opacity: 0.75;
-}
+/* ── Hub: gold wordmark while chasing, the result once settled ───────────── */
 
 .sw__hub {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 54px;
-  height: 54px;
-  margin: -27px 0 0 -27px;
+  width: 82px;
+  height: 82px;
+  margin: -41px 0 0 -41px;
   border-radius: 50%;
-  background: linear-gradient(160deg, #1e293b, #0b1220);
-  border: 3px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 40% 32%, #2a2417, #14100a 70%);
+  border: 3px solid #c9a24b;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.75),
+    inset 0 0 14px rgba(0, 0, 0, 0.6);
 }
 
-/* ── Pointer ──────────────────────────────────────────────────────────────── */
-
-.sw__pointer {
-  position: absolute;
-  top: -14px;
-  left: 50%;
-  margin-left: -13px;
-  width: 26px;
-  height: 34px;
-  z-index: 3;
-  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.7));
+.sw__hub-brand {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #e7c76a;
+  text-shadow: 0 0 10px rgba(231, 199, 106, 0.5);
 }
 
-.sw__pointer-tip {
-  display: block;
-  width: 0;
-  height: 0;
-  border-left: 13px solid transparent;
-  border-right: 13px solid transparent;
-  border-top: 30px solid #fbbf24;
+.sw__hub-mult {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 24px;
+  font-weight: 900;
+  color: #ffe14d;
+  text-shadow: 0 0 14px rgba(255, 225, 77, 0.6);
+  animation: swHubPop 0.45s cubic-bezier(0.2, 1.5, 0.35, 1) both;
 }
 
-/* Flicks as segments pass beneath — the visual half of the ticking. */
-.sw__pointer--live {
-  animation: swPointerFlick 0.09s linear infinite;
-  transform-origin: top center;
-}
-
-@keyframes swPointerFlick {
-  0%,
-  100% {
-    transform: rotate(0deg);
+@keyframes swHubPop {
+  from {
+    opacity: 0;
+    transform: scale(1.8);
   }
-  50% {
-    transform: rotate(-9deg);
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
-/* The tick slows as the wheel does, so the last segments feel heavy. */
-.sw--settling .sw__pointer--live {
-  animation-duration: 0.26s;
-}
-
-/* ── Status ───────────────────────────────────────────────────────────────── */
+/* ── Under the disc ──────────────────────────────────────────────────────── */
 
 .sw__status {
-  margin-top: 22px;
+  margin-top: 18px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  animation: swFadeDown 0.4s ease-out both;
-}
-
-.sw__status-main {
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  color: #e2e8f0;
-  display: inline-flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 2px;
+  animation: swFadeUp 0.4s ease-out both;
 }
 
 .sw__status-sub {
   font-size: 11px;
-  color: #94a3b8;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #b8c4d4;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
-/* The unlock note under the status line. Deliberately quieter than the
-   status itself: it is context about the ceiling, not part of the draw, and
-   it must not compete with the wheel for attention while the wheel is the
-   whole point. */
+/* The unlock note. Quieter than the status — context about the ceiling,
+   not part of the draw. */
 .sw__status-locked {
   display: block;
-  margin-top: 4px;
   font-size: 10px;
   letter-spacing: 0.02em;
-  color: #64748b;
+  color: #7d8ba0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
-.sw__dots i {
-  display: inline-block;
-  width: 3px;
-  height: 3px;
-  margin-left: 2px;
-  border-radius: 50%;
-  background: #94a3b8;
-  animation: swDot 1.3s ease-in-out infinite;
-}
-
-.sw__dots i:nth-child(2) {
-  animation-delay: 0.18s;
-}
-.sw__dots i:nth-child(3) {
-  animation-delay: 0.36s;
-}
-
-@keyframes swDot {
-  0%,
-  60%,
-  100% {
-    opacity: 0.25;
+@keyframes swFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
     transform: translateY(0);
   }
-  30% {
-    opacity: 1;
-    transform: translateY(-3px);
-  }
 }
 
-/* ── Result ───────────────────────────────────────────────────────────────── */
+/* ── Result block ────────────────────────────────────────────────────────── */
 
 .sw__result {
-  margin-top: 20px;
+  margin-top: 16px;
   animation: swResultIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes swResultIn {
-  0% {
+  from {
     opacity: 0;
-    transform: scale(0.6) translateY(14px);
-    filter: blur(7px);
+    transform: translateY(12px) scale(0.94);
   }
-  60% {
+  to {
     opacity: 1;
-    transform: scale(1.1) translateY(0);
-    filter: blur(0);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
-.sw__mult {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: clamp(28px, 9vw, 42px);
-  font-weight: 900;
-  line-height: 1;
-  color: #60a5fa;
-  text-shadow: 0 0 24px currentColor;
-}
-
-.sw--mid .sw__mult {
-  color: #34d399;
-}
-.sw--big .sw__mult {
-  color: #fb923c;
-}
-.sw--mega .sw__mult {
-  color: #fbbf24;
-}
-
-/* The PRIZE is the headline, not the multiple. "You are playing for $30" is
-   the fact that matters; the multiple is how it was arrived at. */
 .sw__prize {
-  margin-top: 2px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: clamp(34px, 12vw, 56px);
+  font-size: 40px;
   font-weight: 900;
-  line-height: 1.05;
-  color: #fff;
+  color: #ffe14d;
   text-shadow:
-    0 0 26px rgba(255, 255, 255, 0.35),
-    0 2px 0 rgba(0, 0, 0, 0.5);
+    0 0 24px rgba(255, 225, 77, 0.45),
+    0 3px 10px rgba(0, 0, 0, 0.8);
 }
 
 .sw__prize-label {
   margin-top: 2px;
   font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 3px;
-  color: #94a3b8;
+  font-weight: 900;
+  letter-spacing: 0.34em;
+  color: #b8c4d4;
 }
 
-/* ── Payout split ─────────────────────────────────────────────────────────── */
-/* At 2x-5x only first place cashes. Saying so on the reveal is kinder than
-   letting second place discover it at the end of a three-minute tournament. */
 .sw__splits {
-  margin-top: 12px;
+  margin-top: 10px;
   display: flex;
-  align-items: stretch;
   justify-content: center;
-  gap: 8px;
+  gap: 14px;
 }
 
 .sw__split {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 1px;
-  padding: 5px 12px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.sw__split:first-child {
-  background: rgba(251, 191, 36, 0.13);
-  border-color: rgba(251, 191, 36, 0.4);
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: rgba(10, 16, 26, 0.72);
+  border: 1px solid rgba(201, 162, 75, 0.3);
 }
 
 .sw__split-place {
   font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  color: #94a3b8;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: #93a3b8;
 }
 
 .sw__split-amt {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 800;
-  color: #e2e8f0;
-}
-
-.sw__split:first-child .sw__split-amt {
-  color: #fbbf24;
+  color: #ffe9a1;
 }
 
 .sw__hype {
   margin-top: 10px;
-  display: inline-block;
-  padding: 5px 14px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.22), rgba(249, 115, 22, 0.14));
-  border: 1px solid rgba(251, 191, 36, 0.6);
-  font-size: 11px;
+  font-size: 15px;
   font-weight: 900;
-  letter-spacing: 2px;
-  color: #fbbf24;
+  letter-spacing: 0.3em;
+  color: #ffd700;
+  text-shadow: 0 0 18px rgba(255, 215, 0, 0.7);
   animation: swHype 1.4s ease-in-out infinite;
 }
 
 @keyframes swHype {
   0%,
   100% {
+    opacity: 0.85;
     transform: scale(1);
-    filter: brightness(1);
   }
   50% {
-    transform: scale(1.06);
-    filter: brightness(1.25);
+    opacity: 1;
+    transform: scale(1.05);
   }
 }
 
-/* ── Confetti (big results only) ──────────────────────────────────────────── */
+/* ── Confetti (25x and up) ───────────────────────────────────────────────── */
 
 .sw__confetti {
   position: absolute;
-  top: 34%;
-  left: 50%;
-  width: 0;
-  height: 0;
+  inset: 0;
   pointer-events: none;
+  overflow: hidden;
 }
 
 .sw__conf {
   position: absolute;
+  top: -4%;
+  left: calc((var(--sw-c) * 4.16%) + 2%);
   width: 7px;
   height: 12px;
   border-radius: 2px;
-  background: #fbbf24;
-  --sw-conf-x: calc((var(--sw-c) - 11.5) * 22px);
+  background: hsl(calc(var(--sw-c) * 47deg), 90%, 62%);
   animation: swConfFall 1.8s cubic-bezier(0.2, 0.6, 0.35, 1) both;
-  animation-delay: calc(var(--sw-c) * 34ms);
-}
-
-.sw__conf:nth-child(3n) {
-  background: #60a5fa;
-}
-.sw__conf:nth-child(3n + 1) {
-  background: #34d399;
+  animation-delay: calc(var(--sw-c) * 55ms);
 }
 
 @keyframes swConfFall {
-  0% {
-    transform: translate(0, 0) rotate(0deg) scale(0.4);
-    opacity: 0;
+  from {
+    opacity: 1;
+    transform: translateY(-6vh) rotate(0deg);
   }
-  15% {
+  to {
+    opacity: 0;
+    transform: translateY(104vh) rotate(540deg);
+  }
+}
+
+/* ── Exit: the whole overlay hands the felt back ─────────────────────────── */
+
+.sw--result .sw__dim {
+  animation:
+    swDimIn 0.5s ease-out both,
+    swDimOut 0.8s ease-in 3.4s both;
+}
+
+@keyframes swDimOut {
+  from {
     opacity: 1;
   }
-  100% {
-    transform: translate(var(--sw-conf-x), 300px) rotate(680deg) scale(1);
-    opacity: 0;
+  to {
+    opacity: 0.55;
   }
 }
 
-/* ── Reduced motion ───────────────────────────────────────────────────────── */
-/* The wheel STILL TURNS and still lands on the result — a player who asked for
-   less motion is owed the draw, which is the entire product. What goes is the
-   flicking pointer, the confetti, the pulsing, and most of the duration. */
+/* ── Reduced motion: information without motion ──────────────────────────── */
+
 @media (prefers-reduced-motion: reduce) {
-  .sw__confetti,
-  .sw__pointer--live {
-    animation: none;
-  }
-  .sw__glow,
-  .sw__hype,
-  .sw__dots i {
-    animation: none;
-  }
-  .sw__wheel {
-    transition-duration: 400ms !important;
-    transition-timing-function: ease-out;
-  }
-  .sw__result,
+  .sw__dim,
+  .sw__beam,
+  .sw__count,
+  .sw__disc-wrap,
+  .sw__hub-mult,
   .sw__status,
-  .sw__eyebrow,
-  .sw__players {
+  .sw__result,
+  .sw__conf,
+  .sw__hype {
     animation: none;
   }
-}
-
-@media (max-width: 380px) {
-  .sw__wheel-wrap {
-    width: 216px;
-    height: 216px;
+  .sw__seg::before,
+  .sw__seg--spent::before,
+  .sw__seg--trail::before {
+    transition: none;
   }
-  .sw__seg-label {
-    font-size: 11px;
-    transform-origin: center 92px;
+  .sw__seg--winner::before {
+    animation: none;
   }
 }

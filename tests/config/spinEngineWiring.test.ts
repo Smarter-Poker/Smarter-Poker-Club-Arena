@@ -78,7 +78,11 @@ describe('a Spin is not priced like an MTT', () => {
     const i = recurring.indexOf("tournament_type: 'SNG',");
     expect(i).toBeGreaterThan(-1);
     const end = recurring.indexOf('.select()', i);
-    expect(recurring.slice(i, end)).toMatch(/buy_in_fee:\s*config\.rake/);
+    // 2026-08-20 (parallel agent): the SNG fee moved from a literal
+    // `buy_in_fee: config.rake` into the shared buyInColumns() split. Either
+    // shape satisfies this guard — what it pins is that an SNG CARRIES a fee
+    // path at all, unlike a Spin which must not.
+    expect(recurring.slice(i, end)).toMatch(/buy_in_fee:\s*config\.rake|\.\.\.buyInColumns\(/);
   });
 });
 

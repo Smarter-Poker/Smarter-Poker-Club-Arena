@@ -76,7 +76,7 @@ async function mountTable(page: Page) {
 async function beat(page: Page, mutate: string): Promise<Record<string, number>> {
   return page.evaluate(async (src) => {
     const $ = (id: string) => document.getElementById(id)!;
-     
+
     new Function('$', 'document', src)($, document);
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     const out: Record<string, number> = {};
@@ -222,36 +222,52 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     expect(b.equityPop, 'the win% must pop on every change').toBe(450);
   });
 
-  test('the SPIN WHEEL: backdrop, glow, live pointer, result, confetti', async ({ page }) => {
-    // The draw is the entire product of the Spin format, and until 2026-08-20
-    // no human had ever confirmed its beats run outside jsdom. These are the
-    // production keyframes, asserted at their shipped durations.
-    const spinning = await beat(
+  test('the SPIN-IT intro: dim + beam, countdown, disc, winner flash, confetti', async ({
+    page,
+  }) => {
+    // v2 (2026-08-20): rebuilt to the PokerBros grammar from Dan's reference
+    // capture — vignette + spotlight beam over a visible table, gold 3-2-1
+    // countdown, chase-lit disc, winner flash. Production keyframes at their
+    // shipped durations.
+    const opening = await beat(
       page,
-      `const sw=document.createElement('div');sw.className='sw';
-       sw.innerHTML='<div class="sw__backdrop"></div>'+
-         '<div class="sw__stage"><div class="sw__eyebrow">SPIN</div>'+
-         '<div class="sw__wheel-wrap"><div class="sw__glow"></div>'+
-         '<div class="sw__pointer sw__pointer--live"><span class="sw__pointer-tip"></span></div>'+
-         '<div class="sw__wheel"><div class="sw__seg sw--base"><span class="sw__seg-label">2×</span></div>'+
-         '<div class="sw__seg sw--mega sw__seg--locked"><span class="sw__seg-label">500×</span></div></div></div>'+
-         '<div class="sw__status"><span class="sw__status-main">Spinning</span>'+
-         '<span class="sw__status-locked">500× unlocks at 5,000</span></div></div>';
+      `const sw=document.createElement('div');sw.className='sw sw--countdown';
+       sw.innerHTML='<div class="sw__dim"></div><div class="sw__beam"></div>'+
+         '<div class="sw__stage"><div class="sw__count">3</div></div>';
        document.querySelector('.table-page').appendChild(sw);`
     );
-    expect(spinning.swBackdropIn, 'the takeover must fade in').toBe(400);
-    expect(spinning.swGlowPulse, 'the wheel must glow while deciding').toBe(2200);
-    expect(spinning.swPointerFlick, 'the pointer must tick as segments pass').toBe(90);
+    expect(opening.swDimIn, 'the vignette must fade in over the felt').toBe(500);
+    expect(opening.swBeamIn, 'the spotlight beam must descend').toBe(700);
+    expect(opening.swCountPop, 'the countdown digit must pop').toBe(720);
+
+    const chase = await beat(
+      page,
+      `const st=document.querySelector('.sw__stage');st.innerHTML='';
+       const w=document.createElement('div');w.className='sw__disc-wrap';
+       w.innerHTML='<div class="sw__disc">'+
+         '<div class="sw__seg sw__seg--c0 sw__seg--lit"><span class="sw__seg-label">2</span></div>'+
+         '<div class="sw__seg sw__seg--c1 sw__seg--locked"><span class="sw__seg-label">500</span></div>'+
+         '<div class="sw__hub"><span class="sw__hub-brand">SPIN-IT</span></div></div>';
+       st.appendChild(w);
+       const s=document.createElement('div');s.className='sw__status';
+       s.innerHTML='<span class="sw__status-locked">500× unlocks at 5,000</span>';st.appendChild(s);`
+    );
+    expect(chase.swDiscIn, 'the disc must land on the felt').toBe(500);
 
     const result = await beat(
       page,
-      `const st=document.querySelector('.sw__stage');
+      `const w=document.querySelector('.sw__disc');
+       w.querySelector('.sw__seg--lit').className='sw__seg sw__seg--c0 sw__seg--winner';
+       w.querySelector('.sw__hub').innerHTML='<span class="sw__hub-mult">25×</span>';
+       const st=document.querySelector('.sw__stage');
        const r=document.createElement('div');r.className='sw__result';
-       r.innerHTML='<div class="sw__mult">25×</div>';st.appendChild(r);
+       r.innerHTML='<div class="sw__prize">25</div>';st.appendChild(r);
        const cf=document.createElement('div');cf.className='sw__confetti';
        cf.innerHTML='<span class="sw__conf" style="--sw-c:0"></span>';st.appendChild(cf);`
     );
-    expect(result.swResultIn, 'the result must land, not appear').toBe(550);
+    expect(result.swWinFlash, 'the winning segment must flash').toBe(500);
+    expect(result.swHubPop, 'the hub must pop to the multiplier').toBe(450);
+    expect(result.swResultIn, 'the prize must land, not appear').toBe(550);
     expect(result.swConfFall, 'a big multiplier must rain confetti').toBe(1800);
   });
 

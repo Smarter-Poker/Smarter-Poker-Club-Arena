@@ -128,15 +128,83 @@ export const SPIN_FREQ_DENOMINATOR = 10_000_000;
  * up for.
  */
 export const SPIN_TIERS: SpinTierSpec[] = [
-  { multiplier: 2,   freq: 4_772_497, payouts: [1],              startingStack: 300, levelMinutes: 1, reserveThresholdX: 0 },
-  { multiplier: 3,   freq: 3_968_502, payouts: [1],              startingStack: 300, levelMinutes: 2, reserveThresholdX: 0 },
-  { multiplier: 4,   freq:   900_000, payouts: [1],              startingStack: 400, levelMinutes: 2, reserveThresholdX: 0 },
-  { multiplier: 5,   freq:   250_000, payouts: [1],              startingStack: 400, levelMinutes: 3, reserveThresholdX: 0 },
-  { multiplier: 10,  freq:   100_000, payouts: [0.8, 0.2],       startingStack: 500, levelMinutes: 3, reserveThresholdX: 0 },
-  { multiplier: 25,  freq:     7_500, payouts: [0.8, 0.12, 0.08], startingStack: 500, levelMinutes: 3, reserveThresholdX: 0 },
-  { multiplier: 50,  freq:     1_000, payouts: [0.8, 0.12, 0.08], startingStack: 500, levelMinutes: 4, reserveThresholdX: 0 },
-  { multiplier: 100, freq:       500, payouts: [0.8, 0.12, 0.08], startingStack: 500, levelMinutes: 5, reserveThresholdX: 1.5 },
-  { multiplier: 500, freq:       100, payouts: [0.8, 0.12, 0.08], startingStack: 500, levelMinutes: 5, reserveThresholdX: 2.0 },
+  // Dan 2026-08-20, from a seat at a live table, twice in one session: first
+  // "change them to 2 min levels", then minutes later "change spins to 3 min
+  // levels". The later instruction wins and is FLAT: every tier runs 3-minute
+  // levels. Tier identity now lives in stack depth and payout shape alone —
+  // the level clock is one number a player can internalise across the ladder.
+  {
+    multiplier: 2,
+    freq: 4_772_497,
+    payouts: [1],
+    startingStack: 300,
+    levelMinutes: 3,
+    reserveThresholdX: 0,
+  },
+  {
+    multiplier: 3,
+    freq: 3_968_502,
+    payouts: [1],
+    startingStack: 300,
+    levelMinutes: 3,
+    reserveThresholdX: 0,
+  },
+  {
+    multiplier: 4,
+    freq: 900_000,
+    payouts: [1],
+    startingStack: 400,
+    levelMinutes: 3,
+    reserveThresholdX: 0,
+  },
+  {
+    multiplier: 5,
+    freq: 250_000,
+    payouts: [1],
+    startingStack: 400,
+    levelMinutes: 3,
+    reserveThresholdX: 0,
+  },
+  {
+    multiplier: 10,
+    freq: 100_000,
+    payouts: [0.8, 0.2],
+    startingStack: 500,
+    levelMinutes: 3,
+    reserveThresholdX: 0,
+  },
+  {
+    multiplier: 25,
+    freq: 7_500,
+    payouts: [0.8, 0.12, 0.08],
+    startingStack: 500,
+    levelMinutes: 3,
+    reserveThresholdX: 0,
+  },
+  {
+    multiplier: 50,
+    freq: 1_000,
+    payouts: [0.8, 0.12, 0.08],
+    startingStack: 500,
+    levelMinutes: 3,
+    reserveThresholdX: 0,
+  },
+  {
+    multiplier: 100,
+    freq: 500,
+    payouts: [0.8, 0.12, 0.08],
+    startingStack: 500,
+    levelMinutes: 3,
+    reserveThresholdX: 1.5,
+  },
+  {
+    multiplier: 500,
+    freq: 100,
+    payouts: [0.8, 0.12, 0.08],
+    startingStack: 500,
+    levelMinutes: 3,
+    reserveThresholdX: 2.0,
+  },
 ];
 
 /**

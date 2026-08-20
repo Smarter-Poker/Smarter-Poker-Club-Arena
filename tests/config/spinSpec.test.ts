@@ -37,10 +37,7 @@ import {
 describe('the spec is mirrored, not forked', () => {
   it('client and server copies are byte-identical', () => {
     const client = readFileSync(resolve(__dirname, '../../src/config/spinSpec.ts'), 'utf8');
-    const server = readFileSync(
-      resolve(__dirname, '../../server/src/config/spinSpec.ts'),
-      'utf8'
-    );
+    const server = readFileSync(resolve(__dirname, '../../server/src/config/spinSpec.ts'), 'utf8');
     expect(
       server,
       'server/src/config/spinSpec.ts has drifted from src/config/spinSpec.ts — ' +
@@ -174,16 +171,19 @@ describe('per-game economics', () => {
 
 describe('structure scales with the multiplier', () => {
   it('matches the published stack and level table', () => {
+    // Dan 2026-08-20, from a seat at a live table: "change spins to 3 min
+    // levels" — FLAT across the ladder. Tier identity lives in stack depth
+    // and payout shape; the level clock is one number everywhere.
     const expected: Array<[number, number, number]> = [
-      [2, 300, 1],
-      [3, 300, 2],
-      [4, 400, 2],
+      [2, 300, 3],
+      [3, 300, 3],
+      [4, 400, 3],
       [5, 400, 3],
       [10, 500, 3],
       [25, 500, 3],
-      [50, 500, 4],
-      [100, 500, 5],
-      [500, 500, 5],
+      [50, 500, 3],
+      [100, 500, 3],
+      [500, 500, 3],
     ];
     for (const [mult, stack, mins] of expected) {
       const t = spinTier(mult)!;
@@ -194,12 +194,8 @@ describe('structure scales with the multiplier', () => {
 
   it('gives bigger prizes more poker, never less', () => {
     for (let i = 1; i < SPIN_TIERS.length; i++) {
-      expect(SPIN_TIERS[i].startingStack).toBeGreaterThanOrEqual(
-        SPIN_TIERS[i - 1].startingStack
-      );
-      expect(SPIN_TIERS[i].levelMinutes).toBeGreaterThanOrEqual(
-        SPIN_TIERS[i - 1].levelMinutes
-      );
+      expect(SPIN_TIERS[i].startingStack).toBeGreaterThanOrEqual(SPIN_TIERS[i - 1].startingStack);
+      expect(SPIN_TIERS[i].levelMinutes).toBeGreaterThanOrEqual(SPIN_TIERS[i - 1].levelMinutes);
     }
   });
 
@@ -256,7 +252,8 @@ describe('reserve gating — an unpayable jackpot must be impossible', () => {
   it('never offers a tier the pool plus contribution cannot pay, at any balance', () => {
     for (const balance of [0, 5, 50, 500, 5000, 50000]) {
       for (const buyIn of [1, 5, 25, 100]) {
-        const contribution = buyIn * 3 * (1 - (buyIn <= 5 ? 0.08 : buyIn <= 10 ? 0.07 : buyIn <= 50 ? 0.06 : 0.05));
+        const contribution =
+          buyIn * 3 * (1 - (buyIn <= 5 ? 0.08 : buyIn <= 10 ? 0.07 : buyIn <= 50 ? 0.06 : 0.05));
         for (const t of eligibleSpinTiers(balance, buyIn, buyIn)) {
           expect(
             balance + contribution,
@@ -282,7 +279,9 @@ describe('reserve gating — an unpayable jackpot must be impossible', () => {
     const stake = 10;
     const need = unlockThreshold(spinTier(100)!, stake); // 10 * 100 * 1.5
     expect(need).toBe(1500);
-    expect(eligibleSpinTiers(need - 0.01, stake, stake).some((t) => t.multiplier === 100)).toBe(false);
+    expect(eligibleSpinTiers(need - 0.01, stake, stake).some((t) => t.multiplier === 100)).toBe(
+      false
+    );
     expect(eligibleSpinTiers(need, stake, stake).some((t) => t.multiplier === 100)).toBe(true);
   });
 
@@ -290,7 +289,9 @@ describe('reserve gating — an unpayable jackpot must be impossible', () => {
     const stake = 10;
     const need = unlockThreshold(spinTier(500)!, stake); // 10 * 500 * 2
     expect(need).toBe(10000);
-    expect(eligibleSpinTiers(need - 0.01, stake, stake).some((t) => t.multiplier === 500)).toBe(false);
+    expect(eligibleSpinTiers(need - 0.01, stake, stake).some((t) => t.multiplier === 500)).toBe(
+      false
+    );
     expect(eligibleSpinTiers(need, stake, stake).some((t) => t.multiplier === 500)).toBe(true);
   });
 

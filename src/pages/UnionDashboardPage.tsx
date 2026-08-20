@@ -535,15 +535,25 @@ export default function UnionDashboardPage() {
   // idempotent (one payout per union+period), so a double-click is safe.
   const runUnionRakeback = useCallback(async () => {
     if (!unionId || rakebackRunning) return;
-    // Previous ISO week: [last Monday 00:00, this Monday 00:00).
+    // Previous ISO week: [last Monday 00:00 UTC, this Monday 00:00 UTC).
+    //
+    // TIMEZONE BUG (fixed 2026-08-20): this used getDay()/setHours(0,0,0,0)/
+    // setDate(), which are LOCAL-time operations, and then serialised with
+    // toISOString(). From Central Time that produced Monday 05:00Z — not an
+    // ISO-week boundary at all. The window therefore straddled two real weeks,
+    // did not match the periods the automated Monday close writes, and the
+    // idempotency log (unique on the EXACT period) could not recognise it as
+    // already paid — so a manual run could pay days the automated close had
+    // already settled. fn_execute_union_rakeback now rejects non-week-aligned
+    // periods outright, which is what surfaced this. All UTC now, so the manual
+    // button and the automated close address the identical period.
     const now = new Date();
-    const day = now.getDay(); // 0=Sun..6=Sat
-    const daysSinceMonday = (day + 6) % 7;
-    const thisMonday = new Date(now);
-    thisMonday.setHours(0, 0, 0, 0);
-    thisMonday.setDate(thisMonday.getDate() - daysSinceMonday);
+    const daysSinceMonday = (now.getUTCDay() + 6) % 7; // 0=Sun..6=Sat -> Mon=0
+    const thisMonday = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday)
+    );
     const lastMonday = new Date(thisMonday);
-    lastMonday.setDate(lastMonday.getDate() - 7);
+    lastMonday.setUTCDate(lastMonday.getUTCDate() - 7);
     const periodStart = lastMonday.toISOString();
     const periodEnd = thisMonday.toISOString();
     const label = `${lastMonday.toLocaleDateString()} – ${new Date(thisMonday.getTime() - 1).toLocaleDateString()}`;

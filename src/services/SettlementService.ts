@@ -461,6 +461,33 @@ export const SettlementService = {
         });
         return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
       }
+      // The close is now funded from the union TREASURY (union_wallets), not
+      // the owner's personal wallet, so it can report a treasury shortfall.
+      if (res.error === 'insufficient_treasury') {
+        try {
+          const { FinancialAlertService } = await import('./FinancialAlertService');
+          await FinancialAlertService.logCritical(
+            'SettlementService.executeUnionRakeBack',
+            'Union rake treasury cannot cover the weekly rakeback payout',
+            { unionId, periodStart, periodEnd }
+          );
+        } catch (e) {
+          reportError(e, 'SettlementService');
+        }
+        throw new Error(
+          'Union rakeback failed: the rake treasury cannot cover this payout. ' +
+            'It was NOT partially paid — investigate before retrying.'
+        );
+      }
+      // Periods must be whole ISO weeks so a manual run addresses exactly the
+      // same window as the automated Monday close (otherwise the idempotency
+      // log cannot tell they are the same period, and days can be paid twice).
+      if (res.error === 'period_must_be_iso_weeks') {
+        throw new Error(
+          'Union rakeback failed: the period must be whole ISO weeks ' +
+            '(Monday 00:00 UTC to Monday 00:00 UTC).'
+        );
+      }
       // not_authorized / union_not_found / missing_params / a failed transfer
       // (which rolled the whole txn back — nothing was paid).
       reportError(res.error || 'unknown', 'SettlementService.executeUnionRakeBack.failed', {

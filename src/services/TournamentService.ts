@@ -1358,14 +1358,10 @@ class TournamentService {
       throw error;
     }
 
-    // RAKE-AUDIT 2026-07-24: record the collected rebuy fee in the rake ledger
-    await this.recordTournamentFee(
-      tournament,
-      tournamentId,
-      userId,
-      rebuyFee,
-      'tournament_rebuy_fee'
-    );
+    // 2026-08-20: the fee is booked by process_tournament_rebuy inside the
+    // same transaction as the chip deduction. This used to ALSO insert a
+    // rake_records row and increment total_rake here, so every fee was
+    // counted twice in union rake revenue and in rakeback.
 
     // Emit AFTER confirmed success — never optimistically before RPC
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy', userId });
@@ -1433,9 +1429,11 @@ class TournamentService {
 
     const addonChips = tournament.addon_chips || tournament.starting_chips;
     const addonCost = tournament.addon_cost || tournament.buy_in_amount;
-    // RAKE-AUDIT 2026-07-24: 10% house fee on add-ons (previously fee-free)
-    const addonFee = this.calcTournamentFee(tournament, addonCost);
-    const addonTotalCost = Math.round((addonCost + addonFee) * 100) / 100;
+    // Dan 2026-08-20 (binding): "ADD ON'S AREN'T RAKED. ONLY REBUYS."
+    // This reverses the 2026-07-24 change that put a 10% house fee on add-ons.
+    // process_tournament_rebuy now charges an add-on at face value and books
+    // no rake for it; the whole add-on goes to the prize pool.
+    const addonTotalCost = Math.round(addonCost * 100) / 100;
 
     // Check if player already used their add-on (each player gets max 1 add-on)
     const { data: existingAddon } = await supabase
@@ -1459,7 +1457,7 @@ class TournamentService {
 
     if (!addonWallet || (addonWallet.balance || 0) < addonTotalCost) {
       throw new Error(
-        `Insufficient chips for add-on. Need ${addonTotalCost} (incl. ${addonFee} fee), have ${addonWallet?.balance || 0}`
+        `Insufficient chips for add-on. Need ${addonTotalCost}, have ${addonWallet?.balance || 0}`
       );
     }
 
@@ -1483,14 +1481,10 @@ class TournamentService {
       throw error;
     }
 
-    // RAKE-AUDIT 2026-07-24: record the collected add-on fee in the rake ledger
-    await this.recordTournamentFee(
-      tournament,
-      tournamentId,
-      userId,
-      addonFee,
-      'tournament_addon_fee'
-    );
+    // 2026-08-20: the fee is booked by process_tournament_rebuy inside the
+    // same transaction as the chip deduction. This used to ALSO insert a
+    // rake_records row and increment total_rake here, so every fee was
+    // counted twice in union rake revenue and in rakeback.
 
     // Emit AFTER confirmed success — never optimistically before RPC
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_addon', userId });
@@ -1603,14 +1597,10 @@ class TournamentService {
       throw error;
     }
 
-    // RAKE-AUDIT 2026-07-24: record the collected re-entry fee in the rake ledger
-    await this.recordTournamentFee(
-      tournament,
-      tournamentId,
-      userId,
-      reentryFee,
-      'tournament_reentry_fee'
-    );
+    // 2026-08-20: the fee is booked by process_tournament_rebuy inside the
+    // same transaction as the chip deduction. This used to ALSO insert a
+    // rake_records row and increment total_rake here, so every fee was
+    // counted twice in union rake revenue and in rakeback.
 
     // Emit AFTER confirmed success
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_reentry', userId });

@@ -139,3 +139,39 @@ refunds, limited stock, the admin purchase ledger all landed within hours).
 Sweeping edits there would have collided with in-flight work for marginal
 gain, so the storefront changes here are deliberately small and surgical. The
 substantive win from this review is the diamond-minting hole above.
+
+---
+
+# Storefront pass 2 — refunds were invisible in purchase history
+
+Reviewed the tabs not covered in pass 1 (`MyItemsTab`, `MembershipTab`,
+`DiamondsTab`, `PurchaseLedger`, `ShopAnalytics`) line by line.
+
+**Found:** `/api/club-arena/marketplace-items` selected the caller's purchases
+WITHOUT `refunded_at`, and `ShopPurchase` had no such field. So the My Items
+purchase history rendered a reversed purchase identically to a live one:
+
+* the member saw chips they had **already been given back**, listed as a
+  normal purchase with no indication;
+* an admin got an **enabled Refund button** on it, whose only possible answer
+  was "already refunded" after a server round trip.
+
+The column was already understood in that endpoint — line 84 uses
+`.is('refunded_at', null)` to compute `my_purchase_count` for per-user limits.
+It simply was never surfaced.
+
+Fixed across both repos:
+* WH `marketplace-items.js` — `refunded_at` added to the FK-join select AND
+  the fallback select, and passed through in both mappers so the response
+  shape does not depend on which path ran. (WH PR #614, merged.)
+* CA `ShopPurchase` gains `refunded_at`; the history table gains a
+  Paid/Refunded status badge (with the refund time on hover), and the Refund
+  action becomes a dash once the purchase is reversed rather than an enabled
+  button that cannot work.
+
+**Checked and found correct** in the same pass, so deliberately untouched:
+`MyItemsTab` redemption (confirm dialog, per-row disabled state, grant-aware
+success messages, sr-only actions header, distinct empty states), the
+entitlement strip, `isOwnedRow()` fail-safe status vocabulary, and
+`PurchaseLedger`, which already reads `refunded`/`refundedAt` from
+`/api/club-arena/shop-purchases` and renders them.

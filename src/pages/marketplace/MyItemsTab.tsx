@@ -246,6 +246,7 @@ export default function MyItemsTab({
                     <th>Category</th>
                     <th>Paid</th>
                     <th>When</th>
+                    <th>Status</th>
                     {isAdmin && (
                       <th>
                         <span className={styles.srOnly}>Actions</span>
@@ -266,15 +267,39 @@ export default function MyItemsTab({
                       <td style={{ fontSize: '12px', color: '#8b8d91' }}>
                         {timeAgo(p.created_at)}
                       </td>
+                      <td>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: '8px',
+                            color: p.refunded_at ? '#8b8d91' : '#31A24C',
+                            background: p.refunded_at
+                              ? 'rgba(139,141,145,0.12)'
+                              : 'rgba(49,162,76,0.12)',
+                          }}
+                          title={p.refunded_at ? `Refunded ${timeAgo(p.refunded_at)}` : undefined}
+                        >
+                          {p.refunded_at ? 'Refunded' : 'Paid'}
+                        </span>
+                      </td>
                       {isAdmin && (
                         <td>
-                          <button
-                            className={styles.btnDeleteSmall}
-                            onClick={() => handleRefund(p.id, p.item_name || 'this item')}
-                            disabled={refunding !== null}
-                          >
-                            {refunding === p.id ? '...' : 'Refund'}
-                          </button>
+                          {/* A refunded purchase cannot be refunded again — the
+                              server answers "already refunded". Say so here
+                              instead of offering the action. */}
+                          {p.refunded_at ? (
+                            <span style={{ fontSize: '11px', color: '#8b8d91' }}>—</span>
+                          ) : (
+                            <button
+                              className={styles.btnDeleteSmall}
+                              onClick={() => handleRefund(p.id, p.item_name || 'this item')}
+                              disabled={refunding !== null}
+                            >
+                              {refunding === p.id ? '...' : 'Refund'}
+                            </button>
+                          )}
                         </td>
                       )}
                     </tr>

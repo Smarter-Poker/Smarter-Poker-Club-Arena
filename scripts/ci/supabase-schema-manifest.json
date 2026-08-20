@@ -1348,6 +1348,7 @@
     "fn_queue_video_transcode",
     "fn_raise_financial_alert",
     "fn_raise_server_financial_alert",
+    "fn_rakeback_periods_bulk_upsert",
     "fn_rakeback_settlement_status",
     "fn_rate_limit_blocked",
     "fn_rate_limit_hit",

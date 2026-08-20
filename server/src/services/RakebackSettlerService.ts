@@ -491,6 +491,14 @@ export class RakebackSettlerService {
       // migration keeps setting tables.union_id on existing tables, which
       // pulls historical rake_records into scope after a day was finalized).
       await this.runUnionRakeRollupCatchup();
+      // 2026-08-20: persist this week's ECO (union win tax / loss rebate) so an
+      // invoice issued today can be reproduced tomorrow after live data moves
+      // on. Idempotent per (union, club, week) and a complete no-op while ECO
+      // is disabled, which it is by default. Deliberately NOT inside the
+      // settlement transaction: it reads the reconciliation report (~7s over a
+      // week) and that must never run while FOR UPDATE locks are held on
+      // union_wallets and clubs.chip_treasury.
+      await this.runUnionEcoRecord();
       // PAYOUT-INTEGRITY 2026-08-20: continuous prize-pool reconciliation.
       // TournamentManagerEliminations now reconciles each event at its
       // COMPLETED transition, but that call lives in the same process that
@@ -502,51 +510,6 @@ export class RakebackSettlerService {
       await this.runTournamentPayoutSweep();
     } finally {
       this.isSettling = false;
-    }
-  }
-
-  /**
-   * PAYOUT-INTEGRITY sweep — reconcile recently completed tournaments.
-   *
-   * Prizes are emitted incrementally (places 2..N as players bust, place 1 at
-   * finish), so before this existed nothing ever verified that a prize pool
-   * had actually been disbursed in full. Across all history that left 113 of
-   * 951 multi-place tournaments under-paid, 79 of them paying ONLY first
-   * place, while single-place Spins were 2,058 for 2,058 perfect.
-   *
-   * fn_tournament_payout_sweep is bounded by a lookback window and a row
-   * limit so it can never become the kind of unbounded scan that took the
-   * treasury sentinel offline. It tops up only places with exactly one
-   * recorded finisher, reports overpayment rather than clawing it back, and
-   * is idempotent (verified: first apply credits the shortfall, further
-   * applies credit nothing).
-   */
-  private async runTournamentPayoutSweep(): Promise<void> {
-    try {
-      const { data, error } = await supabase.rpc('fn_tournament_payout_sweep', {
-        p_days: 1,
-        p_apply: true,
-        p_limit: 200,
-      });
-      if (error) {
-        reportError(
-          new Error(`fn_tournament_payout_sweep failed: ${error.message}`),
-          'RakebackSettler.tournament_payout_sweep_rpc'
-        );
-        return;
-      }
-      const findings = Number((data as any)?.tournaments_with_findings ?? 0);
-      if (findings > 0) {
-        const topUp = (data as any)?.total_top_up ?? 0;
-        reportError(
-          new Error(
-            `TOURNAMENT PAYOUT: ${findings} completed tournament(s) did not reconcile; topped up ${topUp}. Details: ${JSON.stringify((data as any)?.findings ?? []).slice(0, 1500)}`
-          ),
-          'RakebackSettler.tournament_payout_unreconciled'
-        );
-      }
-    } catch (err) {
-      reportError(err, 'RakebackSettler.tournament_payout_sweep_threw');
     }
   }
 
@@ -771,6 +734,92 @@ export class RakebackSettlerService {
       reportError(
         new Error((e as { message?: string })?.message || String(e)),
         'RakebackSettler.treasury_selftest_threw'
+      );
+    }
+  }
+
+  /**
+   * Persist the current week's ECO adjustment (2026-08-20).
+   *
+   * ECO is an INVOICE ADJUSTMENT with no automatic chip distribution; this
+   * only writes the computed figure to union_eco_ledger so the weekly invoice
+   * stays reproducible. No-ops entirely unless a union has eco_enabled set.
+   */
+  /**
+   * PAYOUT-INTEGRITY sweep -- reconcile recently completed tournaments.
+   *
+   * Prizes are emitted incrementally (places 2..N as players bust, place 1 at
+   * finish), so before this existed nothing ever verified that a prize pool
+   * had actually been disbursed in full. Across all history that left 113 of
+   * 951 multi-place tournaments under-paid, 79 of them paying ONLY first
+   * place, while single-place Spins were 2,058 for 2,058 perfect.
+   *
+   * fn_tournament_payout_sweep is bounded by a lookback window and a row
+   * limit so it can never become the kind of unbounded scan that took the
+   * treasury sentinel offline. It tops up only places with exactly one
+   * recorded finisher, reports overpayment rather than clawing it back, and
+   * is idempotent (verified: first apply credits the shortfall, further
+   * applies credit nothing).
+   */
+  private async runTournamentPayoutSweep(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_tournament_payout_sweep', {
+        p_days: 1,
+        p_apply: true,
+        p_limit: 200,
+      });
+      if (error) {
+        reportError(
+          new Error(`fn_tournament_payout_sweep failed: ${error.message}`),
+          'RakebackSettler.tournament_payout_sweep_rpc'
+        );
+        return;
+      }
+      const findings = Number((data as { tournaments_with_findings?: number } | null)?.tournaments_with_findings ?? 0);
+      if (findings > 0) {
+        const payload = data as { total_top_up?: number; findings?: unknown } | null;
+        reportError(
+          new Error(
+            `TOURNAMENT PAYOUT: ${findings} completed tournament(s) did not reconcile; topped up ${payload?.total_top_up ?? 0}. Details: ${JSON.stringify(payload?.findings ?? []).slice(0, 1500)}`
+          ),
+          'RakebackSettler.tournament_payout_unreconciled'
+        );
+      }
+    } catch (err) {
+      reportError(err, 'RakebackSettler.tournament_payout_sweep_threw');
+    }
+  }
+
+  private async runUnionEcoRecord(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_union_eco_record_current_week', {});
+      if (error) {
+        reportError(
+          new Error(`fn_union_eco_record_current_week failed: ${error.message}`),
+          'RakebackSettler.eco_record_rpc'
+        );
+        return;
+      }
+      const unions = ((data as { unions?: unknown[] } | null)?.unions ?? []) as Array<{
+        success?: boolean;
+        clubs?: number;
+        error?: string;
+        union_id?: string;
+      }>;
+      for (const u of unions) {
+        if (u?.success === false) {
+          reportError(
+            new Error(`ECO record failed for ${u.union_id}: ${u.error}`),
+            'RakebackSettler.eco_record_failed'
+          );
+        } else if ((u?.clubs ?? 0) > 0) {
+          console.log(`[RakebackSettler] ECO recorded for ${u.clubs} club(s)`);
+        }
+      }
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'RakebackSettler.eco_record_threw'
       );
     }
   }

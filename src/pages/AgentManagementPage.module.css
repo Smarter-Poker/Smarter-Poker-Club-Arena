@@ -1367,3 +1367,12 @@
 .fadeInUp {
   animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
+
+/* Wrapper for the Players tab. Undefined until now, so the tab's contents sat
+   flush against the panel edge with no rhythm between them. */
+.playersSection {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 0;
+}

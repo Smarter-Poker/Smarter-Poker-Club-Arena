@@ -504,3 +504,45 @@
   border: none;
   color: #1a1a1a;
 }
+
+/* Count beside the downline search. aria-hidden, because the input's own
+   aria-label already says "Search N members"; this is the visual echo. */
+.memberCount {
+  flex: 0 0 auto;
+  min-width: 1.5rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Retry, inside the .empty error notice. It rendered as a bare browser button
+   in the middle of the message: default grey chrome on a dark panel, which
+   read as a rendering fault rather than an action. */
+.retryBtn {
+  margin-left: 6px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: rgba(24, 119, 242, 0.15);
+  border: 1px solid rgba(24, 119, 242, 0.5);
+  color: #4599ff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.retryBtn:hover {
+  background: rgba(24, 119, 242, 0.3);
+  color: #fff;
+}
+
+.retryBtn:focus-visible {
+  outline: 2px solid #4599ff;
+  outline-offset: 2px;
+}

@@ -1509,3 +1509,38 @@
     display: none;
   }
 }
+
+/* ── Classes the page referenced but this file never defined ───────────────
+   All three shipped as className={undefined}. .tableCardBody is a
+   space-between row, so its two undefined children collapsed to their
+   content width and the variant/stakes pair ran together as one string
+   ("NLH1/2") instead of reading as two fields. */
+.tableInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tableInfo span:first-child {
+  color: #9aa5b6;
+  font-weight: 600;
+}
+
+.tableSeats {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: #7cffb0;
+  font-weight: 600;
+}
+
+/* Wrapper for the Members tab. Undefined, so the tab had no padding of its
+   own and its header sat flush against the panel edge. */
+.membersContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 0;
+}

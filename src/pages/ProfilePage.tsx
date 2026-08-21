@@ -788,7 +788,6 @@ export default function ProfilePage() {
     return (
       <div className={styles.page}>
         <div className={styles.emptyProfile}>
-          <span style={{ fontSize: '3rem' }}></span>
           <p>Profile not found</p>
         </div>
       </div>
@@ -1227,7 +1226,6 @@ export default function ProfilePage() {
               </>
             ) : (
               <div className={styles.emptyAchievements}>
-                <span style={{ fontSize: '3rem' }}></span>
                 <p>No achievements yet. Start playing to unlock achievements!</p>
               </div>
             )}
@@ -1387,7 +1385,8 @@ export default function ProfilePage() {
                   return {
                     day: res.day,
                     reward: res.reward,
-                    rewardType: res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
+                    rewardType:
+                      res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
                   };
                 } catch (err) {
                   toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');

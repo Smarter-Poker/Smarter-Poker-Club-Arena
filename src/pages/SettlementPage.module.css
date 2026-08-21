@@ -589,3 +589,21 @@
 .fadeInUp {
   animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
+
+/* Referenced by the page since it was written, never defined, so it shipped
+   as className={undefined}: "No settlement periods found" rendered as bare
+   unstyled text against the page background. Matches .metricCard's surface so
+   it reads as a deliberate notice rather than a rendering failure. */
+.error {
+  max-width: 32rem;
+  margin: 3rem auto;
+  padding: 1.5rem;
+  text-align: center;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}

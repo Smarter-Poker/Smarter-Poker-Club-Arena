@@ -670,3 +670,122 @@
     font-size: 1rem;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLASSES THE PAGE USED BUT THIS FILE NEVER DEFINED
+   ─────────────────────────────────────────────────────────────────────────
+   Seven of them, all resolving to className={undefined}. The worst was the
+   Daily Bonus wheel: overlay, panel and close button were ALL undefined, so
+   the wheel rendered inline at the bottom of the profile with no backdrop and
+   no way to see it was a dialog, and its close button was default browser
+   chrome. The two empty states rendered as bare centred-nothing.
+
+   Matched to .emptyHistory and .editButton so they belong to this page.
+═══════════════════════════════════════════════════════════════════════════ */
+.emptyProfile,
+.emptyAchievements {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 4rem 2rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.emptyProfile p,
+.emptyAchievements p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* Wrapper for the Social tab's friend list. */
+.socialContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 0;
+}
+
+.bonusButton {
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bonusButton:hover {
+  background: var(--accent);
+  color: #000;
+}
+
+.bonusButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bonusWheelOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.bonusWheelModal {
+  position: relative;
+  width: 100%;
+  max-width: 30rem;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 1.5rem;
+  background: linear-gradient(145deg, #1a2332 0%, #0d1520 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+.modalClose {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.modalClose:hover {
+  background: rgba(255, 92, 92, 0.2);
+  color: #fff;
+}
+
+.modalClose:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

@@ -896,4 +896,64 @@
   min-height: 44px;
 }
 
-.statementsLink:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+.statementsLink:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UNION TOURNAMENTS TAB
+   ─────────────────────────────────────────────────────────────────────────
+   These three were referenced as `styles.x || styles.fallback`, which looks
+   defensive but silently produced the WRONG layout: the container fell back
+   to .tablesGrid, so a section header and an empty state were laid out as
+   220px grid cells beside each other instead of stacking. Defining them
+   properly lets the JSX drop the fallbacks and the inline flex styles that
+   were compensating.
+═══════════════════════════════════════════════════════════════════════════ */
+.tournamentsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 1.5rem;
+}
+
+.sectionHeader h3 {
+  margin: 0 0 0.25rem;
+  color: #fff;
+}
+
+.sectionHeader p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 3rem 2rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.emptyState p {
+  margin: 0;
+  font-size: 0.9rem;
+}

@@ -29,46 +29,20 @@ import { dirname, resolve, join, relative, sep } from 'node:path';
 const ROOT = resolve(process.cwd(), 'src');
 
 /**
- * KNOWN OFFENDERS, frozen 2026-08-21.
+ * KNOWN OFFENDERS.
  *
- * Turning this check on surfaced 25 pre-existing instances of the same bug on
- * nine other pages. They are listed rather than fixed here because inventing a
- * design for someone else's modal or empty state is a worse outcome than
- * leaving it visibly unstyled and recorded -- and because a check that lands
- * red is a check somebody disables.
+ * EMPTY, and it should stay that way.
  *
- * The list may only ever SHRINK. Anything not on it fails the build today, so
- * no new instance can land while these are worked off. Delete each entry as
- * its class is defined; the check fails if an entry here is already fixed, so
- * the list cannot rot into a permanent excuse.
+ * Turning this check on surfaced 25 pre-existing instances across nine pages,
+ * which were frozen here rather than fixed in the same commit so the check
+ * could land green instead of red (a check that lands red is a check somebody
+ * disables). All 25 were then fixed and removed, on 2026-08-21.
+ *
+ * The list may only ever SHRINK. Anything not on it fails the build, and an
+ * entry that no longer reproduces also fails, so this cannot rot into a
+ * permanent excuse. Adding to it is not a fix; define the class.
  */
-const BASELINE = new Set([
-  'pages/AgentManagementPage.tsx:playersSection',
-  'pages/CashierTradePage.tsx:memberCount',
-  'pages/CashierTradePage.tsx:retryBtn',
-  'pages/ClubDetailPage.tsx:membersContainer',
-  'pages/ClubDetailPage.tsx:tableInfo',
-  'pages/ClubDetailPage.tsx:tableSeats',
-  'pages/ProfilePage.tsx:bonusButton',
-  'pages/ProfilePage.tsx:bonusWheelModal',
-  'pages/ProfilePage.tsx:bonusWheelOverlay',
-  'pages/ProfilePage.tsx:emptyAchievements',
-  'pages/ProfilePage.tsx:emptyProfile',
-  'pages/ProfilePage.tsx:modalClose',
-  'pages/ProfilePage.tsx:socialContainer',
-  'pages/SettingsPage.tsx:cancelBtn',
-  'pages/SettingsPage.tsx:input',
-  'pages/SettingsPage.tsx:modal',
-  'pages/SettingsPage.tsx:modalActions',
-  'pages/SettingsPage.tsx:modalOverlay',
-  'pages/SettingsPage.tsx:saveBtn',
-  'pages/SettingsPage.tsx:statusBadge',
-  'pages/SettlementPage.tsx:error',
-  'pages/UnionDetailPage.tsx:emptyState',
-  'pages/UnionDetailPage.tsx:sectionHeader',
-  'pages/UnionDetailPage.tsx:tournamentsContainer',
-  'pages/tournament/TournamentLobbyPage.tsx:skeletonGrid',
-]);
+const BASELINE = new Set([]);
 
 function walk(dir, out = []) {
   for (const e of readdirSync(dir)) {
@@ -140,6 +114,8 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `check-css-modules: OK - every styles.* key has a matching class ` +
-    `(${BASELINE.size} known pre-existing offenders still on the baseline).`
+  BASELINE.size === 0
+    ? 'check-css-modules: OK - every styles.* key has a matching class.'
+    : `check-css-modules: OK - every styles.* key has a matching class ` +
+        `(${BASELINE.size} known pre-existing offenders still on the baseline).`
 );

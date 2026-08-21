@@ -1215,13 +1215,10 @@ export default function UnionDetailPage() {
 
         {/* Tournaments Tab */}
         {activeTab === 'tournaments' && union?.settings?.crossClubTournaments && (
-          <div className={styles.tournamentsContainer || styles.tablesGrid}>
-            <div
-              className={styles.sectionHeader || styles.card}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-            >
+          <div className={styles.tournamentsContainer}>
+            <div className={styles.sectionHeader}>
               <div>
-                <h3> Union Tournaments (XMTT)</h3>
+                <h3>Union Tournaments (XMTT)</h3>
                 <p>Tournaments open to all member clubs</p>
               </div>
               {union?.ownerId === user?.id && clubs.length > 0 && (
@@ -1239,9 +1236,8 @@ export default function UnionDetailPage() {
               )}
             </div>
             {unionTournaments.length === 0 ? (
-              <div className={styles.emptyState || styles.emptyText}>
-                <span>T</span>
-                <p>No union-wide tournaments scheduled</p>
+              <div className={styles.emptyState}>
+                <p>No Union Wide Tournaments Scheduled</p>
                 {union?.ownerId === user?.id && (
                   <button
                     className={styles.joinButton}

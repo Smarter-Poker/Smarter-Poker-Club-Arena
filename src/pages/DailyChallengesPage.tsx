@@ -578,7 +578,7 @@ export default function DailyChallengesPage() {
       <header className={styles.header}>
         <div className={styles.headerTitles}>
           <h1 className={styles.title}>Daily Challenges</h1>
-          <p className={styles.subtitle}>Complete goals to earn chips and diamonds</p>
+          <p className={styles.subtitle}>Complete Goals To Earn Chips And Diamonds</p>
         </div>
         <button
           className={styles.closeButton}
@@ -598,8 +598,8 @@ export default function DailyChallengesPage() {
               {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Day Streak
             </span>
             <span className={styles.streakDesc}>
-              Play every day to earn streak bonuses. Next reward at{' '}
-              {stats?.nextMilestone.toLocaleString()} days.
+              Play Every Day To Earn Streak Bonuses. Next Reward At{' '}
+              {stats?.nextMilestone.toLocaleString()} Days.
             </span>
           </div>
         </div>

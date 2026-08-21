@@ -508,6 +508,25 @@ export const SPIN_REVEAL = {
   WINNER_FLASH_MS: 1600,
   /** The prize is read. Long enough that the choral landing is not cut off. */
   RESULT_HOLD_MS: 3200,
+  /**
+   * AFTER the wheel: the stacks arrive. Dan 2026-08-21: "AFTER THE SPIN
+   * COMPLETES, CHIP STACKS GET ADDED, BUTTON RANDOMLY ASSIGNED AND THE SPIN
+   * STARTS."
+   *
+   * This beat exists because a seat is a RESERVATION until the multiplier is
+   * known — a player holds it at zero chips, since the stack depth is a
+   * property of the tier that has not been drawn yet (spins run 300/400/500).
+   * Crediting the seats before the reveal, which is what used to happen, meant
+   * stacks appeared on the felt while the wheel was still turning: the table
+   * had quietly answered the question the wheel was in the middle of asking.
+   */
+  CHIP_DROP_MS: 900,
+  /**
+   * Then the button is drawn. Randomly, and visibly — the first button used to
+   * be the lowest-numbered occupied seat, which is deterministic and therefore
+   * a real (if small) positional edge for whoever sat first.
+   */
+  BUTTON_DRAW_MS: 900,
 } as const;
 
 /** Total wall time from the last buy-in to the first card being dealt. */
@@ -522,4 +541,21 @@ export const SPIN_REVEAL = {
 export function spinRevealTotalMs(): number {
   const R = SPIN_REVEAL;
   return R.LEAD_IN_MS + R.COUNTDOWN_MS + R.SPIN_MS + R.WINNER_FLASH_MS + R.RESULT_HOLD_MS;
+}
+
+/** Chips land, then the button is drawn. */
+export function spinPostRevealMs(): number {
+  return SPIN_REVEAL.CHIP_DROP_MS + SPIN_REVEAL.BUTTON_DRAW_MS;
+}
+
+/**
+ * Wheel to first card: everything the player must see before a hand may start.
+ *
+ * This is what the engine holds for. It has to include the post-reveal beats,
+ * not just the wheel — hold only for the wheel and the engine is free to deal
+ * in the same instant the chips are being written, which is a race the deal
+ * usually wins.
+ */
+export function spinRevealToDealMs(): number {
+  return spinRevealTotalMs() + spinPostRevealMs();
 }

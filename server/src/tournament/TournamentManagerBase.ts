@@ -15,6 +15,8 @@ import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
 import { TableBalancer } from '../engine/TableBalancer.js';
 import {
   SPIN_TIERS,
+  SPIN_REVEAL,
+  spinRevealToDealMs,
   spinRevealTotalMs,
   SPIN_SEATS as SPEC_SPIN_SEATS,
   spinTier,
@@ -743,46 +745,22 @@ export abstract class TournamentManagerBase {
         .eq('status', 'registered');
 
       /**
-       * SEAT-FIRST STACK SYNC (Dan 2026-08-21, seat-first spins).
+       * SEAT-FIRST STACK SYNC — but NOT yet, if a wheel is about to turn.
        *
-       * A player who SAT DOWN before the game started was seated with the
-       * placeholder starting stack (the smallest tier's, the only honest
-       * value before the draw). The draw above may have landed on a tier with
-       * a different stack — spin tiers run 300/400/500 — and the seat row
-       * would have kept the placeholder, so an early sitter could start a 500
-       * -chip Spin holding 300. The migration above fixes tournament_players;
-       * this fixes the SEATS, which is what the engine actually deals from.
-       * Cheap and idempotent: it only ever writes the value start already
-       * decided, and only for seats that disagree.
+       * A player who sat down before the game started holds a RESERVATION at
+       * zero chips: stack depth is a property of the tier, and spin tiers run
+       * 300/400/500, so there is no honest number to seat them with until the
+       * draw lands.
+       *
+       * Dan 2026-08-21: "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED,
+       * BUTTON RANDOMLY ASSIGNED AND THE SPIN STARTS." Crediting here — which
+       * is what used to happen — put the stacks on the felt while the wheel
+       * was still turning, so the table had already answered the question the
+       * wheel was in the middle of asking. For a Spin the credit is scheduled
+       * after the reveal instead; everything else is credited now.
        */
-      if (tournament.starting_chips > 0) {
-        const { data: seatRows } = await supabase
-          .from('table_seats')
-          .select('id, stack, tables!inner(tournament_id)')
-          .is('left_at', null)
-          .eq('tables.tournament_id', this.tournamentId);
-        const stale = (seatRows ?? []).filter(
-          (r: any) => Number(r.stack) !== Number(tournament.starting_chips)
-        );
-        if (stale.length > 0) {
-          const { error: syncErr } = await supabase
-            .from('table_seats')
-            .update({ stack: tournament.starting_chips })
-            .in(
-              'id',
-              stale.map((r: any) => r.id)
-            );
-          if (syncErr) {
-            reportError(
-              new Error(`seat stack sync failed: ${syncErr.message}`),
-              'Tournament.' + this.tournamentId.slice(0, 8) + '.seat_stack_sync_failed'
-            );
-          } else {
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Synced ${stale.length} pre-seated stack(s) to ${tournament.starting_chips}`
-            );
-          }
-        }
+      if (!(await this.deferStacksForSpinReveal(tournament))) {
+        await this.creditSeatStacks(tournament);
       }
 
       // Create tables and seat players
@@ -815,7 +793,13 @@ export abstract class TournamentManagerBase {
       const revealMultiplier = Number(tournament.spin_multiplier) || 0;
       if (revealIsSpin && revealMultiplier > 0) {
         const revealAt = Date.now();
-        const holdUntil = revealAt + spinRevealTotalMs();
+        /**
+         * Held until the first CARD may legally be dealt — which is later than
+         * the wheel stopping. The hold has to cover the chip drop and the
+         * button draw too, or the engine is free to deal in the same instant
+         * the stacks are still being written, and the deal wins that race.
+         */
+        const holdUntil = revealAt + spinRevealToDealMs();
         for (const [tableId, engine] of this.tableEngines) {
           try {
             engine.holdDealingUntil(holdUntil);
@@ -836,8 +820,9 @@ export abstract class TournamentManagerBase {
             reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_reveal_emit');
           }
         }
+        this.scheduleSpinPostReveal(tournament, revealAt);
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast — ${revealMultiplier}x, dealing held ${spinRevealTotalMs()}ms`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast — ${revealMultiplier}x, dealing held ${spinRevealToDealMs()}ms`
         );
       }
 
@@ -1167,6 +1152,159 @@ export abstract class TournamentManagerBase {
    * Calling it twice is now a no-op, which is the property the boot path
    * needed all along.
    */
+  /**
+   * Is this a Spin whose stacks must wait for the wheel?
+   *
+   * Only true when there is actually going to BE a reveal — a spin with a
+   * drawn multiplier. A spin that somehow reached start without one still gets
+   * credited immediately, because the alternative is a table of players
+   * holding zero chips forever waiting on a wheel that will never turn.
+   */
+  private async deferStacksForSpinReveal(tournament: any): Promise<boolean> {
+    const variant = String(tournament?.variant ?? '').toLowerCase();
+    const isSpin =
+      variant === 'spin' || String(tournament?.tournament_type ?? '').toUpperCase() === 'SPIN';
+    return isSpin && Number(tournament?.spin_multiplier) > 0;
+  }
+
+  /**
+   * Write the tier's starting stack onto every occupied seat.
+   *
+   * Idempotent by construction: it only writes the value start already decided,
+   * and only to seats that disagree. That matters because it runs from a timer
+   * — a restart between the reveal and the credit must be recoverable by
+   * simply calling it again.
+   */
+  protected async creditSeatStacks(tournament: any): Promise<number> {
+    const target = Number(tournament?.starting_chips) || 0;
+    if (target <= 0) return 0;
+    const { data: seatRows } = await supabase
+      .from('table_seats')
+      .select('id, stack, tables!inner(tournament_id)')
+      .is('left_at', null)
+      .eq('tables.tournament_id', this.tournamentId);
+    const stale = (seatRows ?? []).filter((r: any) => Number(r.stack) !== target);
+    if (stale.length === 0) return 0;
+    const { error } = await supabase
+      .from('table_seats')
+      .update({ stack: target })
+      .in(
+        'id',
+        stale.map((r: any) => r.id)
+      );
+    if (error) {
+      reportError(
+        new Error(`seat stack credit failed: ${error.message}`),
+        'Tournament.' + this.tournamentId.slice(0, 8) + '.seat_stack_credit_failed'
+      );
+      return 0;
+    }
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Credited ${stale.length} seat(s) to ${target}`
+    );
+    return stale.length;
+  }
+
+  /**
+   * THE ORDER AFTER THE WHEEL (Dan 2026-08-21).
+   *
+   *   "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED, BUTTON RANDOMLY
+   *    ASSIGNED AND THE SPIN STARTS!"
+   *
+   * Three beats, each with its own broadcast so the client can animate them
+   * rather than discovering them in a state diff:
+   *
+   *   reveal ends  ->  spin_chips   stacks land on the felt
+   *   +CHIP_DROP   ->  spin_button  the button is drawn, at random
+   *   +BUTTON_DRAW ->  the hold expires and the engine deals
+   *
+   * The timers are fire-and-forget but every one of them re-checks that the
+   * tournament is still live, because a cancelled or completed game must not
+   * have chips written into it seconds later.
+   */
+  private scheduleSpinPostReveal(tournament: any, revealAt: number): void {
+    const chipsAt = revealAt + spinRevealTotalMs();
+    const buttonAt = chipsAt + SPIN_REVEAL.CHIP_DROP_MS;
+    const stillLive = () => this.isRunning() && this.tableEngines.size > 0;
+
+    const later = (whenMs: number, fn: () => Promise<void>) => {
+      const delay = Math.max(0, whenMs - Date.now());
+      const timer = setTimeout(() => {
+        if (!stillLive()) return;
+        void fn().catch((err) =>
+          reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_post_reveal')
+        );
+      }, delay);
+      // Never hold the process open for theatre.
+      if (typeof (timer as any)?.unref === 'function') (timer as any).unref();
+    };
+
+    // ── Beat 1: the chips arrive. ──────────────────────────────────────────
+    later(chipsAt, async () => {
+      const credited = await this.creditSeatStacks(tournament);
+      const stack = Number(tournament?.starting_chips) || 0;
+      for (const [tableId] of this.tableEngines) {
+        try {
+          tableStateHub.emitEvent(tableId, {
+            type: 'spin_chips',
+            table_id: tableId,
+            tournament_id: this.tournamentId,
+            starting_stack: stack,
+            seats_credited: credited,
+            timestamp: Date.now(),
+          });
+        } catch {
+          /* theatre */
+        }
+      }
+    });
+
+    // ── Beat 2: the button is DRAWN. ───────────────────────────────────────
+    later(buttonAt, async () => {
+      for (const [tableId, engine] of this.tableEngines) {
+        try {
+          const seats = engine.getOccupiedSeatNumbers();
+          if (seats.length === 0) continue;
+          /**
+           * Random, not lowest-seat. The default first button was
+           * `sortedSeats[0]`, which on a 3-handed Spin quietly hands a
+           * positional edge to whoever took the low seat — and in a seat-first
+           * format that is whoever clicked first.
+           */
+          const seat = seats[Math.floor(Math.random() * seats.length)];
+          engine.setFirstButtonSeat(seat);
+          tableStateHub.emitEvent(tableId, {
+            type: 'spin_button',
+            table_id: tableId,
+            tournament_id: this.tournamentId,
+            dealer_seat: seat,
+            timestamp: Date.now(),
+          });
+        } catch (err) {
+          // A missing button draw is survivable: the engine falls back to its
+          // normal rotation. A throw here is not.
+          reportError(
+            err,
+            'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_button_draw'
+          );
+        }
+      }
+    });
+
+    // ── Safety net. ────────────────────────────────────────────────────────
+    // If beat 1 was missed (restart, transient DB error) the table would sit
+    // with zero-chip seats and no hand could ever start. Re-credit shortly
+    // after dealing is due; idempotent, so a healthy table writes nothing.
+    later(buttonAt + SPIN_REVEAL.BUTTON_DRAW_MS + 1500, async () => {
+      const healed = await this.creditSeatStacks(tournament);
+      if (healed > 0) {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Post-reveal safety net credited ${healed} seat(s)`
+        );
+      }
+    });
+  }
+
   protected async createTablesAndSeatPlayers(tournament: any): Promise<void> {
     const { data: players } = await supabase
       .from('tournament_players')

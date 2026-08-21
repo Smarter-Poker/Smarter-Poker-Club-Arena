@@ -220,6 +220,17 @@ class SoundService {
   private masterVolume: number = 0.7;
   private effectsVolume: number = 0.5;
   private masterGain: GainNode | null = null;
+  /**
+   * The idling engine under the starting tree. Retained because it must be
+   * stoppable: a bed that outlived its reveal would idle under the first hand.
+   */
+  private spinBed: {
+    o1: OscillatorNode;
+    o2: OscillatorNode;
+    lfo: OscillatorNode;
+    gain: GainNode;
+    lp: BiquadFilterNode;
+  } | null = null;
   private timerWarningInterval: number | null = null;
 
   // Sound priority system: tracks the highest-priority sound played this frame
@@ -1598,110 +1609,313 @@ class SoundService {
    */
 
   /** Release — a mechanical clunk and a rising sweep as the wheel is let go. */
+  /**
+   * THE STARTING GRID. Dan 2026-08-21: "THE 3, 2, 1 SHOULD FEEL LIKE A NASCAR
+   * COUNT DOWN" — so the reveal opens on an idling engine, not a fanfare.
+   *
+   * The bed is deliberately a LOOP with no pitch envelope. The previous
+   * version swept a sawtooth from 90Hz to 300Hz as the wheel launched, and
+   * Dan's note on it was exact: "REMOVE THE SPRING SOUND BEFORE THE WHEEL
+   * SPINS." A rising pitch glide IS a boing; nothing in this sequence changes
+   * pitch any more. The engine only ever opens and closes a filter.
+   *
+   * It runs until `playSpinTicking` fades it out, so it must be stoppable —
+   * hence the retained nodes. A bed that outlived its reveal would idle under
+   * the whole first hand.
+   */
   playSpinStart() {
     if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
-    // The lever
+    // The lever: a dry mechanical thunk, no tail.
     this.createNoiseBurst(t, 0.06, 0.22, 2600);
     this.playTone(160, 0.1, 0.0, 'square', 0.16);
 
-    // Wheel picking up speed
-    const osc = this.ctx!.createOscillator();
-    const gain = this.ctx!.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(90, t + 0.05);
-    osc.frequency.exponentialRampToValueAtTime(300, t + 0.75);
+    this.stopSpinBed(0);
+
+    // Two detuned saws under a closed lowpass = an engine at idle. The slow
+    // LFO on the fundamental is the lope; without it this is just a drone.
+    const o1 = this.ctx!.createOscillator();
+    const o2 = this.ctx!.createOscillator();
+    const lfo = this.ctx!.createOscillator();
+    const lfoGain = this.ctx!.createGain();
     const lp = this.ctx!.createBiquadFilter();
+    const gain = this.ctx!.createGain();
+
+    o1.type = 'sawtooth';
+    o1.frequency.setValueAtTime(52, t);
+    o2.type = 'sawtooth';
+    o2.frequency.setValueAtTime(78, t);
+    o2.detune.setValueAtTime(-14, t);
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(7.5, t);
+    lfoGain.gain.setValueAtTime(9, t);
     lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(500, t + 0.05);
-    lp.frequency.linearRampToValueAtTime(2200, t + 0.75);
-    gain.gain.setValueAtTime(0.0001, t + 0.05);
-    gain.gain.exponentialRampToValueAtTime(0.07, t + 0.4);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
-    osc.connect(lp);
+    lp.frequency.setValueAtTime(240, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(0.085, t + 0.5);
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(o1.frequency);
+    o1.connect(lp);
+    o2.connect(lp);
     lp.connect(gain);
     gain.connect(this.out);
-    osc.start(t + 0.05);
-    osc.stop(t + 0.9);
+    o1.start(t);
+    o2.start(t);
+    lfo.start(t);
 
+    this.spinBed = { o1, o2, lfo, gain, lp };
     haptic.medium();
   }
 
   /**
-   * The ticking, scheduled across the whole spin.
-   *
-   * Ticks are spaced on the SAME easing curve as the wheel's rotation, so the
-   * sound decelerates with the visual instead of running at a constant rate
-   * beside it. That coupling is what makes the last few segments feel heavy —
-   * a metronome under a decelerating wheel reads as broken.
+   * One light on the tree: red, then yellow, then green. Rising by a fifth and
+   * then an octave, so the ear knows which lamp lit without looking, and the
+   * engine blips underneath each one.
    */
-  playSpinTicking(durationMs: number) {
+  playSpinCountdownLight(step: number) {
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
+    const f = [330, 392, 784][Math.max(0, Math.min(2, Math.floor(step)))];
+    this.playTone(f, 0.22, 0, 'square', 0.13);
+    this.playTone(f * 1.5, 0.16, 0.01, 'triangle', 0.06);
+    this.createNoiseBurst(this.ctx!.currentTime, 0.04, 0.09, 1800);
+
+    // Throttle blip. Filter and gain only — see playSpinStart on why nothing
+    // here is allowed to change pitch.
+    const bed = this.spinBed;
+    if (bed) {
+      const t = this.ctx!.currentTime;
+      bed.lp.frequency.cancelScheduledValues(t);
+      bed.lp.frequency.setValueAtTime(240, t);
+      bed.lp.frequency.linearRampToValueAtTime(900, t + 0.16);
+      bed.lp.frequency.linearRampToValueAtTime(260, t + 0.5);
+      bed.gain.gain.cancelScheduledValues(t);
+      bed.gain.gain.setValueAtTime(bed.gain.gain.value, t);
+      bed.gain.gain.linearRampToValueAtTime(0.17, t + 0.14);
+      bed.gain.gain.linearRampToValueAtTime(0.085, t + 0.5);
+    }
+    haptic.light();
+  }
+
+  /** Fade the idle bed out and free its oscillators. */
+  private stopSpinBed(fadeSec = 0.4) {
+    const bed = this.spinBed;
+    this.spinBed = null;
+    if (!bed || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    try {
+      bed.gain.gain.cancelScheduledValues(t);
+      bed.gain.gain.setValueAtTime(Math.max(0.0001, bed.gain.gain.value), t);
+      bed.gain.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(0.01, fadeSec));
+      bed.o1.stop(t + fadeSec + 0.05);
+      bed.o2.stop(t + fadeSec + 0.05);
+      bed.lfo.stop(t + fadeSec + 0.05);
+    } catch {
+      /* already stopped */
+    }
+  }
+
+
+  /**
+   * THE FLAPPER. Dan 2026-08-21: "I WANT THE SOUND EFFECT WHILE ITS SPINNING
+   * TO SOUND LIKE A REAL WHEEL SPIN WITH CLICKING SOUNDS AS IT PASSES."
+   *
+   * "As it passes" is the whole specification, and it is why this takes the
+   * chase's OWN schedule. The previous version invented 46 evenly-inverted
+   * ticks and hoped they tracked the light; pass `stepOffsetsMs` and every
+   * click lands on the exact millisecond the light crosses a peg, because it
+   * is literally the same array the component animates from.
+   *
+   * A real flapper is a bandpass noise transient plus a short ring, both
+   * randomised — identical clicks read as a machine gun. Velocity RISES with
+   * progress: a peg struck by a slowing wheel is a heavier, louder knock.
+   */
+  playSpinTicking(durationMs: number, stepOffsetsMs?: number[]) {
     if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const t0 = this.ctx!.currentTime;
     const dur = Math.max(0.4, durationMs / 1000);
 
-    // Position along the same cubic-bezier-ish ease as the wheel. Solving the
-    // real bezier is overkill; an ease-out cubic tracks it closely enough that
-    // the ear cannot tell, and the tick count falls out of the inverse.
-    const TICKS = 46;
-    for (let i = 0; i < TICKS; i++) {
-      const p = i / TICKS;
-      // Inverse of ease-out-cubic: time at which the wheel has covered p.
-      const at = dur * (1 - Math.pow(1 - p, 1 / 3));
-      const remaining = 1 - p;
-      // Late ticks are louder and lower — the wheel is heavier near the end.
-      const vol = 0.035 + 0.05 * (1 - remaining);
-      this.playTone(1500 - 380 * (1 - remaining), 0.035, at, 'square', vol);
-      if (this.ctx) this.createNoiseBurst(t0 + at, 0.018, vol * 0.7, 5200);
-    }
+    // The launch is the bed LEAVING, not a pitch sweep. See playSpinStart.
+    this.stopSpinBed(0.4);
+
+    // Air under the whole chase: broadband, closing from bright to dark as the
+    // wheel loses speed.
+    const noise = this.ctx!.createBufferSource();
+    noise.buffer = this.noiseBuffer(dur + 0.4);
+    const lp = this.ctx!.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(1600, t0);
+    lp.frequency.exponentialRampToValueAtTime(160, t0 + dur);
+    const ng = this.ctx!.createGain();
+    ng.gain.setValueAtTime(0.0001, t0);
+    ng.gain.linearRampToValueAtTime(0.075, t0 + 0.18);
+    ng.gain.setValueAtTime(0.075, t0 + dur * 0.55);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.25);
+    noise.connect(lp);
+    lp.connect(ng);
+    ng.connect(this.out);
+    noise.start(t0);
+    noise.stop(t0 + dur + 0.4);
+
+    // One click per peg the light actually crosses.
+    const offsets =
+      stepOffsetsMs && stepOffsetsMs.length > 0
+        ? stepOffsetsMs
+        : Array.from({ length: 46 }, (_, i) => durationMs * Math.pow((i + 1) / 46, 2.35));
+
+    const last = Math.max(1, offsets.length - 1);
+    offsets.forEach((ms, i) => {
+      this.spinPegClick(t0 + ms / 1000, 0.5 + 0.5 * (i / last));
+    });
+  }
+
+  /** A single peg strike: noise transient + a short randomised ring. */
+  private spinPegClick(at: number, velocity: number) {
+    if (!this.ctx) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer(0.03);
+    const bp = this.ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(2100 + Math.random() * 1500, at);
+    bp.Q.value = 3.2;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(0.26 * velocity, at + 0.0016);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.026);
+    src.connect(bp);
+    bp.connect(g);
+    g.connect(this.out);
+    src.start(at);
+    src.stop(at + 0.04);
+
+    const ring = this.ctx.createOscillator();
+    const rg = this.ctx.createGain();
+    ring.type = 'triangle';
+    ring.frequency.setValueAtTime(1750 + Math.random() * 550, at);
+    rg.gain.setValueAtTime(0.085 * velocity, at);
+    rg.gain.exponentialRampToValueAtTime(0.0001, at + 0.033);
+    ring.connect(rg);
+    rg.connect(this.out);
+    ring.start(at);
+    ring.stop(at + 0.05);
+  }
+
+  /** White noise of a given length. */
+  private noiseBuffer(seconds: number): AudioBuffer {
+    const ctx = this.ctx!;
+    const n = Math.max(1, Math.floor(ctx.sampleRate * seconds));
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) ch[i] = Math.random() * 2 - 1;
+    return buf;
   }
 
   /**
-   * The landing. Scales with the result — a 2× gets a clean stop, a jackpot
-   * gets the full fanfare. Same event, three different sizes of moment.
+   * THE LANDING. Dan 2026-08-21: "THE WINNING SQUARE SHOULD HAVE AN ANGELIC
+   * LIKE SOUND EFFECT", and then, of the first attempt at it: "THE WINNING
+   * SOUND AT THE END NEEDS TO SOUND LIKE AN ANGELIC AHHHH TYPE OF SOUND, WHAT
+   * IS THERE NOW IS ANNOYING."
+   *
+   * What was there was a bell arpeggio and a coin shower — bright, metallic,
+   * and on a 100x it fired twelve randomised pings on top of a sustained
+   * chord. Loud is not the same as triumphant.
+   *
+   * A vowel is not a chord. It is a buzzy source shaped by the resonances of a
+   * throat, so this is built the way a voice is: sawtooth voices on a C-E-G-C,
+   * each doubled at plus and minus nine cents, fed through three parallel
+   * bandpass filters tuned to the formants of "ah" (730 / 1090 / 2440 Hz).
+   * That filter trio is the entire difference between a synth pad and a choir.
+   *
+   * Two details do most of the work. The vibrato fades IN over the first
+   * second rather than starting on it, which is what makes it read as breath
+   * instead of an LFO. And the swell is slow — three quarters of a second up,
+   * three and a half down — which is why SPIN_REVEAL.RESULT_HOLD_MS is 3200:
+   * a shorter hold would cut the voices off mid-word.
+   *
+   * The tier only scales LOUDNESS and haptics. Every spin gets the same
+   * sound, because ~87% of them are 2x or 3x and giving the common case a
+   * lesser noise teaches players that most of the format is a disappointment.
    */
   playSpinMultiplierResult(multiplier: number) {
     if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
-    const t = this.ctx!.currentTime;
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
 
-    // The stop — always present.
-    this.createNoiseBurst(t, 0.08, 0.3, 2200);
-    this.playTone(150, 0.16, 0.0, 'sine', 0.3);
+    // The stop: the wheel seating against its last peg.
+    this.createNoiseBurst(t, 0.08, 0.26, 2200);
+    this.playTone(150, 0.16, 0.0, 'sine', 0.26);
 
-    if (multiplier >= 25) {
-      // Jackpot: rising fanfare, then a bright sustained chord.
-      [523.25, 659.25, 783.99, 1046.5, 1318.51].forEach((f, i) => {
-        this.playTone(f, 0.7, 0.08 + i * 0.07, 'triangle', 0.16);
+    const level = multiplier >= 100 ? 1 : multiplier >= 25 ? 0.9 : multiplier >= 5 ? 0.8 : 0.72;
+
+    const bus = ctx.createGain();
+    bus.gain.setValueAtTime(0.0001, t);
+    bus.gain.linearRampToValueAtTime(0.85 * level, t + 0.75);
+    bus.gain.linearRampToValueAtTime(0.72 * level, t + 1.9);
+    bus.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
+    bus.connect(this.out);
+
+    /** F1, F2, F3 of "ah": centre frequency, relative gain, Q. */
+    const FORMANTS: Array<[number, number, number]> = [
+      [730, 1.0, 9],
+      [1090, 0.55, 11],
+      [2440, 0.22, 13],
+    ];
+    const CHORD = [261.63, 329.63, 392.0, 523.25];
+
+    CHORD.forEach((f, vi) => {
+      [-9, 9].forEach((cents, di) => {
+        const osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(f, t);
+        osc.detune.setValueAtTime(cents, t);
+
+        // Vibrato that ARRIVES rather than starts. This is the breath.
+        const vib = ctx.createOscillator();
+        const vibGain = ctx.createGain();
+        vib.type = 'sine';
+        vib.frequency.setValueAtTime(4.3 + vi * 0.35 + di * 0.2, t);
+        vibGain.gain.setValueAtTime(0, t);
+        vibGain.gain.linearRampToValueAtTime(5.5, t + 0.9);
+        vib.connect(vibGain);
+        vibGain.connect(osc.detune);
+        vib.start(t);
+        vib.stop(t + 3.8);
+
+        // Higher voices sit back, or the top C dominates the vowel.
+        const voice = ctx.createGain();
+        voice.gain.value = 0.055 / (1 + vi * 0.35);
+        osc.connect(voice);
+
+        FORMANTS.forEach(([freq, amp, q]) => {
+          const bp = ctx.createBiquadFilter();
+          bp.type = 'bandpass';
+          bp.frequency.setValueAtTime(freq, t);
+          bp.Q.value = q;
+          const fg = ctx.createGain();
+          fg.gain.value = amp;
+          voice.connect(bp);
+          bp.connect(fg);
+          fg.connect(bus);
+        });
+
+        // A trace of unfiltered source keeps it from sounding hollow.
+        const dry = ctx.createGain();
+        dry.gain.value = 0.05;
+        voice.connect(dry);
+        dry.connect(bus);
+
+        osc.start(t);
+        osc.stop(t + 3.8);
       });
-      [1046.5, 1318.51, 1567.98].forEach((f, i) => {
-        this.playTone(f, 1.1, 0.5 + i * 0.04, 'sine', 0.12);
-      });
-      // Coin shower for the biggest tiers
-      if (multiplier >= 100) {
-        for (let i = 0; i < 12; i++) {
-          this.playTone(
-            2093 * (0.92 + Math.random() * 0.16),
-            0.14,
-            0.55 + Math.random() * 0.7,
-            'triangle',
-            0.05
-          );
-        }
-      }
-      haptic.jackpot();
-    } else if (multiplier >= 5) {
-      // Mid: a confident two-note lift. Something happened.
-      this.playTone(523.25, 0.34, 0.06, 'triangle', 0.18);
-      this.playTone(783.99, 0.42, 0.16, 'triangle', 0.16);
-      haptic.strong();
-    } else {
-      // Base: a clean, unfussy settle. Not a sad trombone — most spins are 2×
-      // and making the common case feel like a loss poisons the format.
-      this.playTone(392.0, 0.26, 0.06, 'sine', 0.14);
-      this.playTone(523.25, 0.3, 0.13, 'sine', 0.11);
-      haptic.medium();
-    }
+    });
+
+    // The intake before the note.
+    this.createNoiseBurst(t, 0.08, 0.14, 1200);
+
+    if (multiplier >= 100) haptic.jackpot();
+    else if (multiplier >= 25) haptic.strong();
+    else haptic.medium();
   }
 
   /**

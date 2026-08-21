@@ -194,6 +194,49 @@ export function parseLockedTiers(raw: unknown): SpinLockedTier[] {
   return out;
 }
 
+/**
+ * SVG geometry for the disc.
+ *
+ * The disc was DOM divs with rotated ::before triangles until 2026-08-21.
+ * Dan's verdict on that version was "FLAT AND BORING, WITH NO DEPTH OR 3D LOOK
+ * AND FEEL", and the technique was the reason: a CSS triangle cannot carry a
+ * radial gradient, so every wedge was one flat colour and no amount of shadow
+ * on top rescued it. Real paths take real fills.
+ */
+export const SW_VIEWBOX = 240;
+const SW_CX = 120;
+const SW_CY = 120;
+const SW_R = 116;
+
+/**
+ * One wedge, centred on 12 o'clock. Segment i spans from (i - 0.5) to
+ * (i + 0.5) segment-widths, so the LABEL sits on the segment's centreline
+ * rather than its edge — off-by-half here is the difference between a number
+ * in its slice and a number straddling two.
+ */
+export function wedgePath(index: number, segmentCount: number, radius: number = SW_R): string {
+  const seg = 360 / Math.max(1, segmentCount);
+  const a0 = ((index * seg - 90 - seg / 2) * Math.PI) / 180;
+  const a1 = (((index + 1) * seg - 90 - seg / 2) * Math.PI) / 180;
+  const x0 = SW_CX + radius * Math.cos(a0);
+  const y0 = SW_CY + radius * Math.sin(a0);
+  const x1 = SW_CX + radius * Math.cos(a1);
+  const y1 = SW_CY + radius * Math.sin(a1);
+  const sweep = seg > 180 ? 1 : 0;
+  return `M${SW_CX} ${SW_CY} L${x0} ${y0} A${radius} ${radius} 0 ${sweep} 1 ${x1} ${y1} Z`;
+}
+
+/** Where a segment's label and its rim peg sit. */
+export function segmentPoint(
+  index: number,
+  segmentCount: number,
+  radius: number
+): { x: number; y: number } {
+  const seg = 360 / Math.max(1, segmentCount);
+  const a = ((index * seg - 90) * Math.PI) / 180;
+  return { x: SW_CX + radius * Math.cos(a), y: SW_CY + radius * Math.sin(a) };
+}
+
 /** Tier styling band. Bigger prizes read hotter. */
 export function tierClass(multiplier: number): string {
   if (multiplier >= 100) return 'sw--mega';
@@ -255,6 +298,13 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [count, setCount] = useState(COUNTDOWN_FROM);
+  /**
+   * How many lamps on the starting tree are lit (0-3). Dan 2026-08-21 wanted
+   * the count to "FEEL LIKE A NASCAR COUNT DOWN", and a drag tree fills
+   * DOWNWARD one lamp at a time rather than replacing a number — the numeral
+   * is the readout, the tree is the clock.
+   */
+  const [treeLit, setTreeLit] = useState(0);
   /** Index of the currently lit segment; -1 = nothing lit yet. */
   const [litIndex, setLitIndex] = useState(-1);
   const [displayPrize, setDisplayPrize] = useState(0);
@@ -264,7 +314,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
   onDoneRef.current = onDone;
 
   const order = useMemo(() => buildWheelOrder(data?.tiers ?? DEFAULT_SPIN_TIERS), [data?.tiers]);
-  const segmentAngle = 360 / Math.max(1, order.length);
+  // segmentAngle is gone: wedge geometry is computed in SVG user units now.
 
   /** Where the winning segment sits — where the chase must stop. */
   const targetIndex = useMemo(() => {
@@ -300,6 +350,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       setPhase('idle');
       setLitIndex(-1);
       setCount(COUNTDOWN_FROM);
+      setTreeLit(0);
       setDisplayPrize(0);
       return;
     }
@@ -321,6 +372,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
     setPhase('countdown');
     setCount(COUNTDOWN_FROM);
+    setTreeLit(0);
     setLitIndex(-1);
     setDisplayPrize(0);
 
@@ -335,14 +387,27 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
     // ── 1. Countdown: 3 · 2 · 1 ─────────────────────────────────────────────
     const countdownMs = (reduced ? 200 : COUNTDOWN_FROM * COUNTDOWN_STEP_MS) * speed;
     if (!reduced) {
-      for (let c = COUNTDOWN_FROM - 1; c >= 1; c--) {
+      // One lamp per step: red, yellow, green. Step 0 lights on Dan's
+      // one-second beat and keeps the numeral already on screen; steps 1 and 2
+      // advance it. The beep is fired here rather than from a render effect so
+      // it cannot double up when React re-renders for another reason.
+      for (let k = 0; k < COUNTDOWN_FROM; k++) {
         timers.push(
-          setTimeout(
-            () => setCount(c),
-            at(leadInMs + (COUNTDOWN_FROM - c) * COUNTDOWN_STEP_MS * speed)
-          )
+          setTimeout(() => {
+            setTreeLit(k + 1);
+            if (k > 0) setCount(COUNTDOWN_FROM - k);
+            if (playSounds) {
+              try {
+                soundService.playSpinCountdownLight(k);
+              } catch {
+                /* audio is best-effort */
+              }
+            }
+          }, at(leadInMs + k * COUNTDOWN_STEP_MS * speed))
         );
       }
+    } else {
+      setTreeLit(COUNTDOWN_FROM);
     }
 
     // ── 2. The chase ────────────────────────────────────────────────────────
@@ -352,9 +417,15 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
         setPhase('chase');
         if (playSounds) {
           try {
-            // The ticking is scheduled on the same deceleration curve as the
-            // chase steps, so the sound slows with the light.
-            soundService.playSpinTicking(chaseMs);
+            // Dan: "CLICKING SOUNDS AS IT PASSES." Handing the sound the
+            // light's OWN schedule is what makes that literally true — one
+            // peg strike per segment crossed, on the same millisecond,
+            // because it is the same array. Passing only a duration left the
+            // two to drift apart on any easing change.
+            soundService.playSpinTicking(
+              chaseMs,
+              reduced ? [] : chaseSchedule(order.length, targetIndex, chaseMs)
+            );
           } catch {
             /* best effort */
           }
@@ -363,8 +434,8 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
           setLitIndex(targetIndex);
         } else {
           const schedule = chaseSchedule(order.length, targetIndex, chaseMs);
-          schedule.forEach((at, stepIdx) => {
-            timers.push(setTimeout(() => setLitIndex(stepIdx % order.length), at));
+          schedule.forEach((offset, stepIdx) => {
+            timers.push(setTimeout(() => setLitIndex(stepIdx % order.length), offset));
           });
         }
       }, at(leadInMs + countdownMs))
@@ -448,54 +519,146 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
       <div className="sw__stage">
         {phase === 'countdown' && (
-          <div className="sw__count" key={count} aria-hidden="true">
-            {count}
-          </div>
+          <>
+            {/* The tree sits ABOVE the numeral, not behind it. Dan 2026-08-21:
+                "MOVE THE RED LIGHT, UP HIGHER SO ITS NOT BEING OVERLAPPED BY
+                THE NUMBERS COUNTING DOWN." */}
+            <div className="sw__tree" aria-hidden="true">
+              {[0, 1, 2].map((k) => (
+                <i
+                  key={k}
+                  className={`sw__lamp sw__lamp--${k}${treeLit > k ? ' sw__lamp--on' : ''}`}
+                />
+              ))}
+            </div>
+            <div
+              className={`sw__count sw__count--${count}`}
+              key={count}
+              aria-hidden="true"
+            >
+              {count}
+            </div>
+          </>
         )}
 
         {(phase === 'chase' || phase === 'result') && (
           <div className="sw__disc-wrap">
             <div className={`sw__disc${phase === 'result' ? ' sw__disc--settled' : ''}`}>
-              {order.map((tier, i) => {
-                const isLit = i === litIndex;
-                // The segment the runner JUST left keeps a fading ember, so
-                // the chase reads as motion rather than a blinking light.
-                const wasLit =
-                  phase === 'chase' &&
-                  litIndex >= 0 &&
-                  i === (litIndex - 1 + order.length) % order.length;
-                const isWinner = phase === 'result' && i === targetIndex;
-                return (
-                  <div
-                    key={`${tier.multiplier}-${i}`}
-                    className={[
-                      'sw__seg',
-                      `sw__seg--c${i % 9}`,
-                      isLit ? 'sw__seg--lit' : '',
-                      wasLit ? 'sw__seg--trail' : '',
-                      isWinner ? 'sw__seg--winner' : '',
-                      phase === 'result' && !isWinner ? 'sw__seg--spent' : '',
-                      locked.has(tier.multiplier) ? 'sw__seg--locked' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    style={{
-                      ['--sw-i' as string]: i,
-                      ['--sw-angle' as string]: `${segmentAngle}deg`,
-                      transform: `rotate(${i * segmentAngle}deg)`,
-                    }}
-                    title={
-                      lockedDetail.get(tier.multiplier)?.unlocksAt
-                        ? `${tier.multiplier}x unlocks at a ${currency}${Number(
-                            lockedDetail.get(tier.multiplier)!.unlocksAt
-                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} reserve`
-                        : undefined
-                    }
-                  >
-                    <span className="sw__seg-label">{tier.multiplier}</span>
-                  </div>
-                );
-              })}
+              {/* Dark carbon, one flat colour. Dan 2026-08-21: "REMOVE THE
+                  GRADIENT ON THE OUTSIDE OF THE WHEEL... KEEP IT A SOLID
+                  COLOR", then "CHANGE THE OUTSIDE OF THE WHEEL TO DARK CARBON
+                  FIBER COLOR." The eight-stop conic gold it replaced was the
+                  busiest thing on screen and fought the segments for
+                  attention. */}
+              <div className="sw__rim" aria-hidden="true" />
+
+              <svg
+                className="sw__svg"
+                viewBox={`0 0 ${SW_VIEWBOX} ${SW_VIEWBOX}`}
+                aria-hidden="true"
+              >
+                <defs>
+                  {/* Two blur radii on purpose. The travelling chase light is
+                      allowed to bloom; the winner's outline is NOT, because a
+                      wide blur bleeds onto its neighbours and Dan's note was
+                      exact: "DON'T HIGHLIGHT THE ENTIRE WHEEL. JUST THE
+                      WINNING MULTIPLIER." */}
+                  <filter id="swGlowWide" x="-70%" y="-70%" width="240%" height="240%">
+                    <feGaussianBlur stdDeviation="7" result="b" />
+                    <feMerge>
+                      <feMergeNode in="b" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                  <filter id="swGlowTight" x="-70%" y="-70%" width="240%" height="240%">
+                    <feGaussianBlur stdDeviation="3.5" result="b" />
+                    <feMerge>
+                      <feMergeNode in="b" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                </defs>
+
+                {order.map((tier, i) => {
+                  const isLit = i === litIndex;
+                  // The segment the runner JUST left keeps a fading ember, so
+                  // the chase reads as motion rather than a blinking light.
+                  const wasLit =
+                    phase === 'chase' &&
+                    litIndex >= 0 &&
+                    i === (litIndex - 1 + order.length) % order.length;
+                  const isWinner = phase === 'result' && i === targetIndex;
+                  const label = segmentPoint(i, order.length, 78);
+                  const unlocksAt = lockedDetail.get(tier.multiplier)?.unlocksAt;
+                  return (
+                    <g
+                      key={`${tier.multiplier}-${i}`}
+                      className={[
+                        'sw__seg',
+                        `sw__seg--c${i % 9}`,
+                        isLit ? 'sw__seg--lit' : '',
+                        wasLit ? 'sw__seg--trail' : '',
+                        isWinner ? 'sw__seg--winner' : '',
+                        locked.has(tier.multiplier) ? 'sw__seg--locked' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      <path className="sw__seg-face" d={wedgePath(i, order.length)} />
+                      <text className="sw__seg-label" x={label.x} y={label.y + 7}>
+                        {tier.multiplier}
+                      </text>
+                      {unlocksAt ? (
+                        <title>
+                          {`${tier.multiplier}x unlocks at a ${currency}${Number(
+                            unlocksAt
+                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} reserve`}
+                        </title>
+                      ) : null}
+                    </g>
+                  );
+                })}
+
+                {/* Gold pegs on the rim: the things the flapper is striking.
+                    Without something visible to hit, the clicking has no
+                    source and reads as a sound effect laid over a picture. */}
+                {order.map((_, i) => {
+                  const seg = 360 / order.length;
+                  const a = (((i + 0.5) * seg - 90 - seg / 2) * Math.PI) / 180;
+                  return (
+                    <circle
+                      key={`peg-${i}`}
+                      className="sw__peg"
+                      cx={SW_CX + (SW_R - 4) * Math.cos(a)}
+                      cy={SW_CY + (SW_R - 4) * Math.sin(a)}
+                      r={3.2}
+                    />
+                  );
+                })}
+
+                {/* The winner's outline: a wide gold halo under a hot white
+                    core, tracing the WHOLE wedge. Dan: "THE OUTLINE OF THE
+                    WINNING CARD NEEDS TO BE HIGHLIGHTED WITH NEON AND
+                    FLASHING, NOT JUST THE TOP" — an arc along the rim alone
+                    was the version that earned that note. Two stacked strokes
+                    is what makes a stroke read as neon rather than as a
+                    border. */}
+                {phase === 'result' && (
+                  <>
+                    <path
+                      className="sw__edge sw__edge--halo"
+                      d={wedgePath(targetIndex, order.length, SW_R - 4)}
+                      filter="url(#swGlowTight)"
+                    />
+                    <path
+                      className="sw__edge sw__edge--core"
+                      d={wedgePath(targetIndex, order.length, SW_R - 4)}
+                    />
+                  </>
+                )}
+              </svg>
+
+              <div className="sw__gloss" aria-hidden="true" />
               <div className="sw__hub">
                 {phase === 'result' ? (
                   <span className="sw__hub-mult">{won?.multiplier ?? data.multiplier}×</span>

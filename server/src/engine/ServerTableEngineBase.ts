@@ -123,6 +123,15 @@ export abstract class ServerTableEngineBase {
   protected tableInfo: TableInfo | null = null;
   protected seatedPlayers: SeatedPlayer[] = [];
   protected dealerSeatIndex: number = 0;
+  /**
+   * A button seat drawn for the FIRST hand and consumed by it.
+   *
+   * The first hand's button used to be `sortedSeats[0]` — the lowest occupied
+   * seat. Deterministic, and on a 3-handed Spin that is a real positional edge
+   * handed to whoever happened to take the low seat. Dan 2026-08-21: "BUTTON
+   * RANDOMLY ASSIGNED". Null once used; rotation is unchanged from hand two on.
+   */
+  protected forcedFirstButtonSeat: number | null = null;
   // AUDIT FIX 2026-07-19: the button is tracked by SEAT NUMBER (not an array
   // index) so roster changes (bust/leave/join) can't move it backward, skip a
   // seat, or double-post a blind. 0 = no hand dealt yet.
@@ -167,6 +176,30 @@ export abstract class ServerTableEngineBase {
   protected dealHoldUntilMs: number = 0;
 
   /** Hold dealing until `atMs`. Only ever extends the hold, never shortens it. */
+  /**
+   * Seed the first hand's button. Ignored if that seat is not occupied when
+   * the hand actually starts, so a player leaving between the draw and the
+   * deal degrades to normal rotation rather than stranding the button on an
+   * empty seat.
+   */
+  /**
+   * The seat numbers currently holding a player, ascending.
+   *
+   * Exposed so the tournament layer can DRAW a button without reaching into
+   * engine internals — the alternative was re-querying table_seats, which
+   * would have been a second source of truth for who is sitting where.
+   */
+  public getOccupiedSeatNumbers(): number[] {
+    return (this.seatedPlayers ?? [])
+      .map((p) => Number(p.seat_number))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .sort((a, b) => a - b);
+  }
+
+  public setFirstButtonSeat(seat: number): void {
+    this.forcedFirstButtonSeat = Number.isFinite(seat) && seat > 0 ? Math.floor(seat) : null;
+  }
+
   public holdDealingUntil(atMs: number): void {
     if (atMs > this.dealHoldUntilMs) this.dealHoldUntilMs = atMs;
   }

@@ -82,8 +82,23 @@ beforeEach(() => {
   constructed = 0;
   onLoadCb = null;
   __resetRiveManifestCache();
+  /**
+   * VITE_RIVE_RIGS gates the runtime OUT OF THE BUILD while no .riv exists
+   * (2026-08-21) — Vite inlines the literal, so rollup drops the dynamic
+   * import and the artefact loses 182kB raw / 52kB gzipped.
+   *
+   * These tests exist precisely to prove the integration WITHOUT art, so they
+   * turn the flag on. The shipped default is covered explicitly below: with
+   * the flag off, nothing loads at all. Both states are pinned, because
+   * testing only the flag-on path would leave the behaviour every player
+   * actually gets unasserted.
+   */
+  vi.stubEnv('VITE_RIVE_RIGS', 'on');
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 /** Manifest fetch returning 404 — today's real state. */
 function stubNoManifest() {
@@ -154,6 +169,35 @@ describe('RiveAvatar — the unrigged case, which is every avatar today', () => 
     // An uploaded photo has nothing to rig, so it must not even look.
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(constructed).toBe(0);
+  });
+});
+
+describe('RiveAvatar — the shipped default, with the runtime gated out', () => {
+  it('loads nothing at all when VITE_RIVE_RIGS is off, even WITH a manifest', async () => {
+    // This is what every player gets today. The flag is what keeps the 4.7MB
+    // package out of the build entirely rather than merely out of the
+    // critical path, and it must hold even if a manifest somehow answers.
+    vi.stubEnv('VITE_RIVE_RIGS', '');
+    const fetchSpy = stubManifest();
+    const onRigActive = vi.fn();
+    render(
+      <RiveAvatar
+        avatarUrl={AVATAR}
+        gesture={null}
+        isActive={false}
+        isFolded={false}
+        size={84}
+        onRigActive={onRigActive}
+      />
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(constructed, 'the gated-out runtime must never be constructed').toBe(0);
+    expect(onRigActive).not.toHaveBeenCalledWith(true);
+    // It returns before touching the network too: a build with no rig support
+    // should not be asking for a manifest it could not use.
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 

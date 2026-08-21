@@ -42,6 +42,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { fireVibration } from '../../utils/vibrationGate';
+import CoinShower from './CoinShower';
 import './MysteryBountyChest.css';
 
 export interface MysteryChestData {
@@ -103,7 +104,9 @@ const TIER_COLORS: Record<string, string> = {
 export function getTier(amount: number, avgBounty: number): { label: string; color: string } {
   if (!avgBounty || avgBounty <= 0) return { label: 'Prize', color: '#60a5fa' };
   const ratio = amount / avgBounty;
-  if (ratio >= 50) return { label: 'JACKPOT', color: TIER_COLORS.jackpot };
+  // Dan 2026-08-21: "capitalize the first letter of very word" — the house
+  // rule already binding on popups now applies to every label the chest shows.
+  if (ratio >= 50) return { label: 'Jackpot', color: TIER_COLORS.jackpot };
   if (ratio >= 20) return { label: 'Grand Prize', color: TIER_COLORS.grand };
   if (ratio >= 10) return { label: 'Mega Prize', color: TIER_COLORS.mega };
   if (ratio >= 5) return { label: 'Huge Prize', color: TIER_COLORS.huge };
@@ -157,14 +160,24 @@ function fireConfetti(isJackpot: boolean) {
         confettiTimers.add(
           setTimeout(
             () =>
-              confetti({ particleCount: 150, spread: 120, origin: { y: 0.2, x: 0.2 }, colors: gold }),
+              confetti({
+                particleCount: 150,
+                spread: 120,
+                origin: { y: 0.2, x: 0.2 },
+                colors: gold,
+              }),
             200
           )
         );
         confettiTimers.add(
           setTimeout(
             () =>
-              confetti({ particleCount: 150, spread: 120, origin: { y: 0.2, x: 0.8 }, colors: gold }),
+              confetti({
+                particleCount: 150,
+                spread: 120,
+                origin: { y: 0.2, x: 0.8 },
+                colors: gold,
+              }),
             380
           )
         );
@@ -208,7 +221,7 @@ export default function MysteryBountyChest({
   const tier = data?.tierLabel
     ? { label: data.tierLabel, color: TIER_COLORS[data.tierLabel.toLowerCase()] || '#60a5fa' }
     : getTier(data?.amount ?? 0, data?.avgBounty ?? data?.amount ?? 0);
-  const isJackpot = data?.isJackpot || tier.label === 'JACKPOT';
+  const isJackpot = data?.isJackpot || tier.label.toLowerCase() === 'jackpot';
 
   const clearTimers = () => {
     timersRef.current.forEach(clearTimeout);
@@ -388,11 +401,10 @@ export default function MysteryBountyChest({
 
   const currency = data.currency ?? '';
   const canTap = isWinner && phase === 'locked';
-  // "50x the average bounty" tells you what the number MEANS. A big figure with
-  // no reference point is just a big figure — this is what makes a jackpot read
-  // as a jackpot rather than as an unusually long number.
-  const multiple =
-    data.avgBounty && data.avgBounty > 0 ? data.amount / data.avgBounty : null;
+  // Dan 2026-08-21: 'you should never have "50x the average bounty" — it's
+  // just a random payout prize.' Mystery bounties are drawn from a prize
+  // table; framing one as a multiple of the average implies the player earned
+  // a ratio, which is not what happened. The figure stands on its own.
 
   return (
     <div
@@ -417,10 +429,10 @@ export default function MysteryBountyChest({
       )}
 
       <div className="mbc__stage">
-        <div className="mbc__eyebrow">MYSTERY BOUNTY</div>
+        <div className="mbc__eyebrow">Mystery Bounty</div>
         <div className="mbc__subject">
           <span className="mbc__winner-name">{data.knockerName}</span>
-          <span className="mbc__subject-verb"> eliminated </span>
+          <span className="mbc__subject-verb"> Eliminated </span>
           <span className="mbc__loser-name">{data.eliminatedName}</span>
         </div>
 
@@ -452,10 +464,27 @@ export default function MysteryBountyChest({
             </span>
           )}
 
-          <span className="mbc__chest-lid" aria-hidden="true">
-            <span className="mbc__lid-band" />
-            <span className="mbc__lid-stud mbc__lid-stud--l" />
-            <span className="mbc__lid-stud mbc__lid-stud--r" />
+          {/* ── The lid, as an actual box ──────────────────────────────
+              Dan 2026-08-21: "it needs to feel premium and dynamic with depth
+              and the 3D look and feel to it."
+
+              A single rotating rectangle is a flap, not a lid — you see it is
+              flat the moment it turns. This is a preserve-3d group with a top
+              face, a front face and two end caps, hinged at its back edge, so
+              as it swings the front face sweeps away and you look INTO the
+              box. The wood grain and the brass bands are painted on the faces
+              that carry them, which is what sells the thickness. */}
+          <span className="mbc__lid" aria-hidden="true">
+            <span className="mbc__lid-top">
+              <span className="mbc__lid-band" />
+              <span className="mbc__lid-stud mbc__lid-stud--l" />
+              <span className="mbc__lid-stud mbc__lid-stud--r" />
+            </span>
+            <span className="mbc__lid-front">
+              <span className="mbc__lid-front-band" />
+            </span>
+            <span className="mbc__lid-end mbc__lid-end--l" />
+            <span className="mbc__lid-end mbc__lid-end--r" />
           </span>
 
           {/* The light escaping from inside, revealed as the lid lifts. */}
@@ -472,12 +501,24 @@ export default function MysteryBountyChest({
             </span>
           )}
 
-          <span className="mbc__chest-base" aria-hidden="true">
-            <span className="mbc__base-band" />
-            <span className="mbc__lock" />
-            <span className="mbc__base-stud mbc__base-stud--l" />
-            <span className="mbc__base-stud mbc__base-stud--r" />
+          <span className="mbc__base" aria-hidden="true">
+            {/* The cavity is drawn BEHIND the front wall, so when the lid
+                lifts there is a dark interior with gold light in it rather
+                than a flat panel that changed colour. */}
+            <span className="mbc__cavity">
+              <span className="mbc__cavity-gold" />
+            </span>
+            <span className="mbc__base-front">
+              <span className="mbc__base-band" />
+              <span className="mbc__lock">
+                <span className="mbc__lock-hole" />
+              </span>
+              <span className="mbc__base-stud mbc__base-stud--l" />
+              <span className="mbc__base-stud mbc__base-stud--r" />
+            </span>
+            <span className="mbc__base-rim" />
           </span>
+          <span className="mbc__shadow" aria-hidden="true" />
 
           <span className="mbc__seam" aria-hidden="true" />
         </button>
@@ -488,11 +529,19 @@ export default function MysteryBountyChest({
             <div className="mbc__flash" aria-hidden="true" />
             <div className="mbc__shock" aria-hidden="true" />
             <div className="mbc__shock mbc__shock--2" aria-hidden="true" />
-            <div className="mbc__coins" aria-hidden="true">
-              {Array.from({ length: 18 }, (_, i) => (
-                <span key={i} className="mbc__coin" style={{ ['--mbc-c' as string]: i }} />
-              ))}
-            </div>
+            {/* Dan 2026-08-21: "the chest should explode with coins like a
+                coin shower when you hit a jackpot on a slot machine." Eighteen
+                DOM spans on CSS transitions could be counted; this is a real
+                particle system — hundreds of coins on ballistic arcs that
+                spin, foreshorten, land and bounce. See CoinShower.tsx. */}
+            <CoinShower
+              active
+              isJackpot={!!isJackpot}
+              originX={0.5}
+              originY={0.46}
+              speed={getAnimationSpeed()}
+              reduced={prefersReducedMotion()}
+            />
           </>
         )}
 
@@ -501,20 +550,20 @@ export default function MysteryBountyChest({
           <div className="mbc__prompt">
             {isWinner ? (
               <>
-                <span className="mbc__prompt-main">TAP THE CHEST TO OPEN</span>
-                <span className="mbc__prompt-sub">Your bounty is inside</span>
+                <span className="mbc__prompt-main">Tap The Chest To Open</span>
+                <span className="mbc__prompt-sub">Your Bounty Is Inside</span>
               </>
             ) : (
               <>
                 <span className="mbc__prompt-main mbc__prompt-main--waiting">
-                  {data.knockerName} is opening the chest
+                  {data.knockerName} Is Opening The Chest
                   <span className="mbc__dots">
                     <i />
                     <i />
                     <i />
                   </span>
                 </span>
-                <span className="mbc__prompt-sub">Watch the reveal</span>
+                <span className="mbc__prompt-sub">Watch The Reveal</span>
               </>
             )}
           </div>
@@ -530,25 +579,15 @@ export default function MysteryBountyChest({
               {currency}
               {displayAmount.toLocaleString()}
             </div>
-            {/* What the number MEANS. A big figure with no reference point is
-                just a big figure; "50x the average bounty" is what makes a
-                jackpot read as a jackpot. Only shown when it is actually
-                notable — 1.1x is noise. */}
-            {multiple !== null && multiple >= 2 && (
-              <div className="mbc__multiple">
-                {multiple >= 10 ? Math.round(multiple) : multiple.toFixed(1)}× the average bounty
-              </div>
-            )}
-
             <div className="mbc__won-by">
-              won by <strong>{data.knockerName}</strong>
+              Won By <strong>{data.knockerName}</strong>
             </div>
           </div>
         )}
 
         {queuedBehind > 0 && (
           <div className="mbc__queued">
-            +{queuedBehind} more bount{queuedBehind > 1 ? 'ies' : 'y'} to reveal
+            +{queuedBehind} More Bount{queuedBehind > 1 ? 'ies' : 'y'} To Reveal
           </div>
         )}
       </div>

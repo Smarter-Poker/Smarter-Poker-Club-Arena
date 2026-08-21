@@ -54,7 +54,7 @@ number that tells a player whether a club is worth opening.
 
 Subscribing to `table_seats` was the obvious fix and would have fired **zero
 times** — it is not in the `supabase_realtime` publication, verified against
-production before a line of it was written. `tables` *is* published, carries
+production before a line of it was written. `tables` _is_ published, carries
 `club_id`, and is touched whenever a table moves: the same signal an order of
 magnitude cheaper, one event per table instead of one per seat. That volume is
 what got the original listener removed "for write volume" in 2026-07.
@@ -68,15 +68,15 @@ what got the original listener removed "for write volume" in 2026-07.
 
 ### Defects found and fixed on the way
 
-| What | Why it mattered |
-| --- | --- |
-| Tournament result card was dead-wired | Sent to `/clubs/:clubId` (ClubHomePage) in router state; only ClubLobby (`/clubs/:clubId/lobby`) read it. Never rendered once. |
-| `22th Place` | Only 1/2/3 were special-cased; everything else got `th`. In a 128-runner field that is most of the table. |
-| Winner branch compared `=== 1` to untyped JSON | A string `"1"` would have skipped the champion's celebration and sent them out on the bust path. |
-| Entrants read off `current_players` | An entry counter that drifts; `TournamentClock` had already abandoned it. Now counts `tournament_players` rows. |
-| Empty club kept its old level | `getClubLevel` tested `pCount > 0`, so a club that lost its members kept the level it no longer had. |
-| Two dead round trips per club | HomePage still recomputed and re-read `clubs.level` on the hottest page. Nothing had read it since level became member-derived. |
-| `nl` / `pl` / `fl` / `hu` uppercased | Real abbreviations, also ordinary words. "Fl Keys Friday" and a host named Hu were being shouted at. |
+| What                                           | Why it mattered                                                                                                                 |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Tournament result card was dead-wired          | Sent to `/clubs/:clubId` (ClubHomePage) in router state; only ClubLobby (`/clubs/:clubId/lobby`) read it. Never rendered once.  |
+| `22th Place`                                   | Only 1/2/3 were special-cased; everything else got `th`. In a 128-runner field that is most of the table.                       |
+| Winner branch compared `=== 1` to untyped JSON | A string `"1"` would have skipped the champion's celebration and sent them out on the bust path.                                |
+| Entrants read off `current_players`            | An entry counter that drifts; `TournamentClock` had already abandoned it. Now counts `tournament_players` rows.                 |
+| Empty club kept its old level                  | `getClubLevel` tested `pCount > 0`, so a club that lost its members kept the level it no longer had.                            |
+| Two dead round trips per club                  | HomePage still recomputed and re-read `clubs.level` on the hottest page. Nothing had read it since level became member-derived. |
+| `nl` / `pl` / `fl` / `hu` uppercased           | Real abbreviations, also ordinary words. "Fl Keys Friday" and a host named Hu were being shouted at.                            |
 
 ### Still open
 
@@ -8590,9 +8590,10 @@ ENGINE (server/):
   vite prod build clean.
 
 CLIENT (src/):
+
 - mapEngineSnapshot + TablePage carry communityCards2 (never-shrink rule,
   reconnect sync, discrete street events, both new-hand clears).
-- Board 2 renders directly under board 1 (community-area__board2 — NOT the
+- Board 2 renders directly under board 1 (community-area\_\_board2 — NOT the
 
 - mapEngineSnapshot + TablePage carry communityCards2 (never-shrink rule,
   reconnect sync, discrete street events, both new-hand clears).
@@ -8697,6 +8698,7 @@ copies).
 **Session scope:** Dan: "1, how many animations are there for the cash games? ... make sure they are truly 1:1 clones ... 2, you need to keep bug hunting, improving and optimizing the tournament functionality until its perfect."
 
 ### Animation parity audit (question 1) — VERIFIED 1:1
+
 - Counted every `@keyframes` per CSS file, classified by mount surface, and audited all 31 `isTournament` gates in TablePage + table components.
 - **162 shared gameplay keyframes** render identically at cash AND tournament tables (SeatSlot 37, ThrowAnimation 25, TablePage 21, CommunityCards 12, PotDisplay 12, ChipPhysics 9, BombPot 9, TableTabBar 9, BBJ 8+5, BuyIn 6, Rebuy 3, others). Zero animations are gated away from tournaments — every gate audited is a poker-rule difference (straddle cash-only, tournament seats not sittable, separate rebuy flows), not a visual one.
 - Tournaments ADD 71 exclusive keyframes (MysteryBountyChest 22, KnockoutAnimation 16, SpinWheel 11, WinnerOverlay 9, FinalTable 5, Elimination 3, HandForHand 3, ResultCard 2). Cash-only: 7 (SessionHUD live stats + session summary; the tournament counterpart is the result card).
@@ -8755,6 +8757,7 @@ copies).
 4. **Floating pot-win amount (Dan's +243).** Gold "+share" launches from the pot in the same frame as each winner's chip fan, rides to their seat (first 30% of a 2.2s CSS animation), holds above the avatar, rises, fades — accurate per-winner share so chops read true. Reduced-motion variant static. `.pot-win-float` + potWinFloatRide keyframes in TablePage.css.
 
 ### Lifecycle sweep findings (no further action needed)
+
 - Late reg: fn_register_for_tournament gates by level/minutes window; ensureLateRegSeated self-heals seating with row reuse. Wired.
 - Table balancing: hand-safe move deferral, seat-reuse, source-seat restore on failure. Wired.
 - Eliminations: distinct positions by construction, double-pay guards, rebuy-before-elimination. Audited previously, sound.
@@ -8846,6 +8849,7 @@ deploy confirmed by the hand-count dip-and-recover at 02:47-02:51 UTC
 2. **Keyframe-collision guard (tests/styles/keyframeCollisions.test.ts).** @keyframes is a global namespace across plain CSS files; the parity audit counted 827 names and found zero differing collisions (nine byte-identical `shimmer`s). The guard makes that luck a law: any duplicate name across files with differing bodies fails the suite and names both files. Verified green on live code.
 
 3. **Lease forensics: the 02:57:11Z burst of 44 lease_lost was the deploy cutover working as designed** — the outgoing container (ed33d2374) logging its handoff to the incoming one (d12725af, which carries all this session's engine fixes). Multi-table MTT engine rebuilds in the same window are per-table cutover noise; post-cutover state verified healthy: 9 RUNNING tournaments, 0 stuck, 545 hands in 5 minutes, e43dbfbc's 5 tables all live with 35 playing.
+
 ## 2026-08-20 — Bomb Pot round 3: line-by-line audit — cadence bug, wrong equity, hot-reload, countdown
 
 Full audit of both bomb-pot rounds (marker sweep across all 23 touched
@@ -8962,6 +8966,7 @@ settings, their labels, and the ca_ws_mux mirror.
 **Publish verification:** every client-facing commit confirmed in the production bundle; engine confirmed serving f9191a381+ (RIT verifier fix live); migrations 20260821a/b/c all applied and listed.
 
 **LINE-BY-LINE REVIEW FINDINGS (all fixed, pushed d60065425 + 08bca5f8d):**
+
 1. **Dan's binding popup rule was DEAD in production.** A format pass mangled the literal em/en dashes in popupStyle.ts's regex classes into ASCII hyphens: em dashes passed through untouched and spaced hyphens were wrongly converted. Restored with formatter-proof \u2014/\u2013 escapes; 10/10 tests green.
 2. **Why it shipped: the client test gate never runs to completion.** ci.yml's unit job exists but push cadence outruns the ~6-min CI and cancel-in-progress kills every run, while build-for-world-hub publishes on push regardless. The ~15s client suite now runs INSIDE the sync workflow before the build — red suite, no bundle (the engine deploy's existing pattern).
 3. **19 stale client tests on main, all rewritten against current shipped contracts:** horsesFillAllSeats (now pins the open-board held-seat policy), clubLevels (member-threshold invariants), ThrowableService (structural pins + 25-item floor over the grown 49-item catalog), AvatarService (unified Hub /api/avatars mapping + fail-soft), ClubQuickLinkTile (title follows the no-em-dash rule), useMessageDraft (orphaned test removed with its deleted hook). Client suite: 2420/2420.
@@ -8984,6 +8989,7 @@ BATCH 7 — CHIP MINT (Dan directive, BINDING): "unions are where all the chips
 flow from... 100 diamonds equals 10,000 chips... mint inside all union
 wallets and all standalone clubs; a club that joins a union has its mint
 turned off and revoked."
+
 - fn_mint_chips_from_diamonds (migration 20260821): SECURITY DEFINER, rate
   locked 1 diamond = 100 chips, diamond burn through the whitelisted
   deduct_diamonds (profiles.diamonds is server-managed), standalone club ->
@@ -9042,12 +9048,14 @@ They were MTT-shaped: a registration list, a scheduled start, horses pre-seeded 
 **Client** — the tile OPENS THE TABLE (registering there would recreate the MTT shape). Tapping an empty seat at a not-yet-started spin/HU calls the RPC instead of the cash buy-in range, then reports "You Are In, Waiting For 1 More Player" or "Seats Full, Game Starting".
 
 **PROVEN LIVE (engine bc5ab3d60, spin 674e4fb5 "1 Chip Spin PLO4"):**
+
 - Spins now created as tables with 3 EMPTY seats, 0 players, status waiting (5 verified in the DB).
 - Test account sat at seat 2: charged 1.00, 300 chips, seats 1/3, starts_now false, game stayed REGISTERING.
 - Re-tapping seat 2 -> already_seated, NO second charge. Grabbing seat 3 while seated -> refused. Seat 9 -> invalid_seat.
 - Two more buy-ins landed -> engine started it automatically: RUNNING, 2x drawn through the reserve gate, ONE table (mine, ADOPTED not duplicated), my seat 2 preserved, all three stacks correct, first hand dealt.
 
 Pinned by tests/unit/seatFirstGames.test.ts (13 tests). Suites: client 2461, server 998, both green.
+
 ## 2026-08-21 — Bomb pot ART UPGRADE: the actual cherry bomb, a burning wick, and exploding letters
 
 Dan, on the shipped sequence: "you have to improve the graphics and
@@ -9121,10 +9129,11 @@ the code through the URL, and TablePage reports the authoritative value
 (it alone knows the tournament format).
 
 SWIPING IS A RING. Both ends were dead - the guards read `if (activeIndex
-> 0)` / `if (activeIndex < length - 1)`. Swiping left past the last table
-restarts at the first and right past the first lands on the last, so a
-player can keep flicking one way and cycle forever. The decision moved
-into a pure helper so the wrap is unit tested, not thumb tested.
+
+> 0)`/`if (activeIndex < length - 1)`. Swiping left past the last table
+> restarts at the first and right past the first lands on the last, so a
+> player can keep flicking one way and cycle forever. The decision moved
+> into a pure helper so the wrap is unit tested, not thumb tested.
 
 ONE PLUS BUTTON. It rendered up to TWO empty circles beside a single
 table. Now exactly one trailing plus: a new tab takes the spot it
@@ -9147,6 +9156,7 @@ confirmed to BE the main tip; engine cb2f0299 confirmed to contain both engine
 fixes; all four RPCs confirmed granted to authenticated).
 
 Defects found reviewing this session's own code, and fixed:
+
 - [P0 ECONOMY] /api/club-arena/mint-chips still called mint_club_chips, which
   credits the club pool and burns NOTHING. Two doors, two prices, one free:
   an owner could mint to the daily ceiling for free while the Chip Mint UI
@@ -9181,7 +9191,7 @@ the documented escape hatch. Live build-info ca_sha 43645f9d1 contains it.
 
 Dan, five items.
 
-1. **NO CHIPS UNTIL THE GAME IS DETERMINED.** "THEY ARE SIMPLY SECURING A SEAT, WHEN THEY BUY IN EARLY." The seat now carries stack 0 until the wheel decides the game — spin tiers run 300/400/500, so chips handed out before the draw were a guess, and a *visible* one since the seat renders its stack. Start assigns the real tier stack to every seat. Client says "Seat Reserved", never a fake number. (migration `20260821e`)
+1. **NO CHIPS UNTIL THE GAME IS DETERMINED.** "THEY ARE SIMPLY SECURING A SEAT, WHEN THEY BUY IN EARLY." The seat now carries stack 0 until the wheel decides the game — spin tiers run 300/400/500, so chips handed out before the draw were a guess, and a _visible_ one since the seat renders its stack. Start assigns the real tier stack to every seat. Client says "Seat Reserved", never a fake number. (migration `20260821e`)
 
 2. **LEAVING A SEAT REFUNDS IN FULL.** `fn_leave_seat_and_refund` returns the ENTIRE charge and unwinds every trace of the entry: prize pool, bounty pool, rake total, player count, rake record, the seat. Refundable only while seats are still selling. A "Leave Seat" control sits in the footer of a reserved seat.
    **Caught in live testing** (`20260821f`): the first version refunded via credit_player_wallet, but the buy-in debits the CLUB wallet (club_members.chip_balance) — it would have taken chips from one ledger and created them in another. Refunds now credit the same club wallet the debit resolved. Proven live: sit −2.00, leave +2.00, **NET 0.00**; a second leave refuses with `not_seated`.
@@ -9193,6 +9203,7 @@ Dan, five items.
 5. **FOLD IS A SWOOSH, NOT A DING.** The old fold swept a SAWTOOTH 900→80Hz; a sawtooth has a fundamental, so it carried pitch, and a short pitched tone is a ding whatever the code calls it. The tone is gone: broadband noise through a bandpass sweeping 2600→420Hz, soft attack, a second brush for the second card, peak 0.11 (was 0.18).
 
 ### Pipeline findings this round
+
 - **The client test gate was silently failing.** `vitest run tests/` exited 1 on clean main: canvas-confetti kept running rAF against a canvas jsdom had torn down, so an uncaught clearRect-on-null failed the run with every assertion green. Since that suite gates the bundle publish, it was blocking deploys. Confetti is mocked in the test that renders the chest, and the chest stops its own celebration on unmount. Client suite now exits 0.
 - **Every workflow died at ~15:12** (0 steps, 3s, no logs) — not billing, not YAML: a client TypeScript error landed on main (a ref callback returning a value in HandReplayerPage) and every workflow type-checks. Another agent fixed it; the pipeline recovered by 15:28 on its own.
 - **A manual engine deploy was attempted while CI was down and ROLLED BACK.** The hand-built image was missing /app/dist (wrong Docker context vs the workflow's), the container restart-looped, and :current had already been promoted. Restored :current to the last known-good image and restarted within a minute; production verified healthy immediately after (107 hands/3min, 62 running games, 41 cash tables). Lesson recorded: do not hand-roll the image build — the workflow's context is not reproducible from the repo root, and :current must never be promoted before the container is verified healthy.
@@ -9204,22 +9215,76 @@ Suites: client 202 files / 2528 tests, server 92 files / 998 tests, both green.
 Dan asked me to confirm the publish-concurrency fix stuck, that nothing was orphaned by it, and to fix the items I had flagged now that the GitHub budget is restored.
 
 ### 1. Publish concurrency — CORRECT, and nothing orphaned
+
 - `build-for-world-hub.yml` and `auto-deploy-hetzner.yml`: `cancel-in-progress: false` — an in-flight PUBLISH or DEPLOY can no longer be killed by the next push. Confirmed working: back-to-back successes at 15:39, 15:47, 15:56.
 - `ci.yml` and `silent-revert-guard.yml` keep `cancel-in-progress: true`, which is right — those are CHECKS, and only the newest commit's check matters. Leaving them cancellable is what keeps the queue clear for the two that publish.
 - The `cancelled` rows that still appear on the publish workflow are GitHub cancelling a superseded PENDING run, never a running one. That is the intended behaviour of `false`: at most one running + one queued.
 - No orphaned branches, no stranded sync branches, no half-written state.
 
 ### 2. The two flagged items — both already fixed and verified on main
+
 - Confetti gate: `vi.mock('canvas-confetti')` in BountyAnimations.test.tsx + `stopConfetti()` on chest unmount. Client suite exits 0.
 - The TypeScript break that killed every workflow at 15:12 was another agent's; fixed, pipeline recovered.
 
 ### 3. ORPHAN FOUND AND REMOVED (from my aborted manual deploy)
+
 The hand-built image `club-arena-engine:e0f707a09…` was still on the host: 926MB against the 563MB of every CI build, missing `/app/dist/index.js` — and tagged with a REAL COMMIT SHA. Any recovery path that resolved that commit would have booted a container that cannot start. Verified it was referenced by neither `:current` nor `:previous`, confirmed the missing entrypoint, removed it, pruned dangling layers, reclaimed ~1GB. `:current` verified to match the running container by image id.
 
 ### 4. BROKEN MAIN FOUND AND FIXED — every engine deploy was failing
+
 `833a34d9a` landed `handHistory.ts` and `TableStateHub.ts` importing `services/supabase/handFacts.js`, but the module itself was never committed — it existed only in a local working tree. Every deploy since failed at the typecheck gate (TS2307 x2), so nothing server-side could ship for anyone. The file was found intact and committed AS WRITTEN by its author (650 lines; no behavioural edits by me). Engine deployed clean immediately after.
 
 This is exactly the hazard the World Hub rules warn about: uncommitted work is invisible to CI and is destroyed by the periodic `reset --hard`. Swept the whole repo afterwards — zero untracked source files remain, and a full `tsc` reports zero TS2307, so every import on main resolves to a committed file.
 
 ### Final state
+
 Engine `51149a237` healthy and carrying every server change (spec-derived hand hold, heads-up-only board, seat-first creation, handFacts). Bundle publishing normally. Production: 423 hands/3min, 52 running games, 12 spins open as seat-first tables, 0 stuck games, both seat RPCs live, legacy 6-max SNGs fully drained to 0.
+
+## 2026-08-21 — Mystery bounty chest: real 3D, a slot-machine coin shower, Title Case, brand palette
+
+Dan: "the current animation is very cheap and cheesy, it needs to feel
+premium and dynamic with depth and the 3D look and feel to it... the chest
+should explode with coins like a coin shower when you hit a jackpot on a
+slot machine", plus "capitalize the first letter of very word", "use
+smarter.poker color schema for the fonts", and "you should never have '50x
+the average bounty' — it's just a random payout prize".
+
+- THE CHEST IS AN ACTUAL BOX NOW. It was two stacked rectangles with a
+  rotating flap, which read as flat because it was. It is a preserve-3d
+  assembly: a base with a dark CAVITY behind a front wall (so the lid
+  reveals an interior with gold light in it, not a panel that changed
+  colour), a top rim that gives the wall visible thickness, and a lid that
+  is its own box — top face, front face, two end caps — hinged at its BACK
+  edge and swung to -104deg so it lays back past vertical. Everything is lit
+  from the upper left, with a contact shadow on the floor; consistent
+  lighting is most of what makes a CSS object read as solid.
+- COIN SHOWER (new src/components/tournament/CoinShower.tsx, canvas): 220
+  coins on a jackpot (120 otherwise) launched in an upward-biased fountain,
+  each on a real ballistic arc with gravity, a floor line, and bouncing with
+  energy loss and horizontal scatter. Every coin spins on its own axis and
+  is drawn as an ellipse whose width is cos(spin), so it turns edge-on and
+  back — that foreshortening is what makes a flat disc look like a solid
+  object. Coins carry a z depth: far ones smaller/dimmer/slower, near ones
+  bigger/brighter/faster, drawn back-to-front. Plus a travelling specular
+  glint and a dark rim so the gold looks struck rather than filled. Canvas
+  is sized in device pixels so it stays sharp on retina. The old version
+  threw 18 DOM spans on CSS transitions — countable, and a transition moves
+  in a straight ease, which coins do not.
+- "50x THE AVERAGE BOUNTY" IS GONE, markup and CSS. Mystery bounties are
+  drawn from a prize table; framing one as a multiple of the average implies
+  the player earned a ratio, which is not what happened.
+- TITLE CASE everywhere the chest speaks: Mystery Bounty, Tap The Chest To
+  Open, Your Bounty Is Inside, <name> Is Opening The Chest, Watch The
+  Reveal, Won By, +N More Bounties To Reveal, and the tier labels (Jackpot,
+  not JACKPOT — the CSS text-transform:uppercase that would have shouted it
+  back into caps was removed with it).
+- BRAND PALETTE on the type: the eyebrow moved off purple onto the house
+  gold (--chip-gold / --shadow-glow-gold), and every hardcoded slate hex was
+  replaced with the design-tokens vars (--text-primary, --text-secondary,
+  --text-muted, --weight-extrabold) so the chest follows the same schema as
+  the rest of the product.
+- Sync, broadcast, auto-open and failsafe logic untouched — only the
+  presentation changed.
+- Verified: tsc clean, vite prod build clean, and the emitted bundle carries
+  preserve-3d, mbc**cavity-gold, mbc**coin-canvas, rotateX(-104deg) and the
+  chip-gold token.

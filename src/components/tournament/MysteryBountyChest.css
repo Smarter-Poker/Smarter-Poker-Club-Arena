@@ -95,18 +95,21 @@
 }
 
 .mbc__eyebrow {
+  /* Dan 2026-08-21: "use smarter.poker color schema for the fonts."
+     design-tokens.css is that schema — gold is the house accent
+     (--chip-gold / --shadow-glow-gold), not the purple this used. */
   font-size: 11px;
-  font-weight: 900;
+  font-weight: var(--weight-extrabold, 800);
   letter-spacing: 4px;
-  color: #c084fc;
-  text-shadow: 0 0 18px rgba(168, 85, 247, 0.75);
+  color: var(--chip-gold, #f59e0b);
+  text-shadow: 0 0 18px rgba(255, 215, 0, 0.55);
   animation: mbcFadeDown 0.5s ease-out both;
 }
 
 .mbc__subject {
   margin-top: 5px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary, #9ca3af);
   animation: mbcFadeDown 0.5s ease-out 0.08s both;
 }
 
@@ -116,7 +119,7 @@
 }
 
 .mbc__loser-name {
-  color: #cbd5e1;
+  color: var(--text-primary, #f3f4f6);
   font-weight: 700;
   text-decoration: line-through;
   text-decoration-color: rgba(255, 90, 60, 0.8);
@@ -237,7 +240,310 @@
   transform: scale(1.18);
 }
 
-.mbc--pressed .mbc__seam {
+.mbc--pressed /* ═══════════════════════════════════════════════════════════════════════════
+   THE CHEST, IN THREE DIMENSIONS  (Dan 2026-08-21)
+   ═══════════════════════════════════════════════════════════════════════════
+   The previous chest was two stacked rectangles with a rotating flap. It read
+   as flat because it WAS flat. This is a preserve-3d assembly:
+
+     base        cavity (dark interior + gold light) behind a front wall,
+                 with a top rim so you see the wall has thickness
+     lid         a box in its own right - top face, front face, two end caps -
+                 hinged at its BACK edge so it swings up and away
+
+   Everything is lit from the upper left: highlights on top faces, shadow on
+   front faces, a contact shadow on the floor. That consistency is most of
+   what makes a CSS object look solid.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Wood and brass, defined once. */
+.mbc {
+  --mbc-wood-lit: #a86a33;
+  --mbc-wood: #7c4a22;
+  --mbc-wood-dark: #4e2d13;
+  --mbc-wood-deep: #331c0b;
+  --mbc-brass-lit: #ffe9a8;
+  --mbc-brass: #e0a92e;
+  --mbc-brass-dark: #8a5f0d;
+}
+
+.mbc__chest {
+  transform-style: preserve-3d;
+  perspective: 900px;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+
+.mbc__base {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 58%;
+  transform-style: preserve-3d;
+}
+
+/* Dark interior, revealed as the lid lifts. */
+.mbc__cavity {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: -14%;
+  height: 62%;
+  border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(180deg, #150c04 0%, #0b0603 70%);
+  box-shadow: inset 0 10px 18px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+}
+
+/* The gold sitting in the chest. Invisible until the lid moves. */
+.mbc__cavity-gold {
+  position: absolute;
+  left: 50%;
+  bottom: -34%;
+  width: 130%;
+  height: 96%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    #fff6cf 0%,
+    var(--mbc-brass) 34%,
+    var(--mbc-brass-dark) 62%,
+    rgba(90, 60, 8, 0) 78%
+  );
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.mbc--opening .mbc__cavity-gold,
+.mbc--explosion .mbc__cavity-gold,
+.mbc--revealed .mbc__cavity-gold {
+  opacity: 1;
+}
+
+/* Front wall of the base — the face you actually look at. */
+.mbc__base-front {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px 4px 12px 12px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.11) 0 2px,
+      rgba(255, 255, 255, 0.03) 2px 5px,
+      rgba(0, 0, 0, 0) 5px 15px
+    ),
+    linear-gradient(
+      180deg,
+      var(--mbc-wood-lit) 0%,
+      var(--mbc-wood) 34%,
+      var(--mbc-wood-dark) 78%,
+      var(--mbc-wood-deep) 100%
+    );
+  border: 2px solid #2b1809;
+  box-shadow:
+    inset 0 -12px 22px rgba(0, 0, 0, 0.6),
+    inset 0 3px 0 rgba(255, 220, 170, 0.16);
+}
+
+/* The lip of the front wall, catching the light — this is the edge that
+   tells the eye the wall has thickness. */
+.mbc__base-rim {
+  position: absolute;
+  left: 1%;
+  right: 1%;
+  top: -5px;
+  height: 9px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #b9803f 0%, #6b3f1a 60%, #3a2110 100%);
+  box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Lid ──────────────────────────────────────────────────────────────── */
+
+.mbc__lid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 46%;
+  transform-style: preserve-3d;
+  transform-origin: 50% 100%;
+  /* The hinge line sits at the BACK of the box, not on the visible front
+     edge, so the lid rotates away from the viewer like a real one. */
+  transform: rotateX(0deg) translateZ(0);
+  transition: transform 0.9s cubic-bezier(0.32, 0.82, 0.28, 1);
+}
+
+.mbc__lid-top {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px 12px 3px 3px;
+  transform: rotateX(0deg) translateZ(0);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.1) 0 2px,
+      rgba(255, 255, 255, 0.04) 2px 5px,
+      rgba(0, 0, 0, 0) 5px 15px
+    ),
+    linear-gradient(180deg, #c07f3c 0%, var(--mbc-wood-lit) 40%, var(--mbc-wood) 100%);
+  border: 2px solid #2b1809;
+  box-shadow: inset 0 6px 14px rgba(255, 226, 180, 0.22);
+}
+
+/* The front face of the lid, standing perpendicular to the top. */
+.mbc__lid-front {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -9px;
+  height: 14px;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(180deg, var(--mbc-wood) 0%, var(--mbc-wood-dark) 100%);
+  border: 2px solid #2b1809;
+  border-top: 0;
+}
+
+.mbc__lid-front-band {
+  position: absolute;
+  left: 42%;
+  right: 42%;
+  top: -2px;
+  bottom: -2px;
+  background: linear-gradient(180deg, var(--mbc-brass) 0%, var(--mbc-brass-dark) 100%);
+}
+
+/* End caps — visible in the moment the lid turns. */
+.mbc__lid-end {
+  position: absolute;
+  top: 12%;
+  width: 12px;
+  height: 76%;
+  background: linear-gradient(180deg, #8d5525 0%, #4e2d13 100%);
+  border: 2px solid #2b1809;
+  border-radius: 3px;
+}
+
+.mbc__lid-end--l {
+  left: -6px;
+  transform: rotateY(-42deg);
+}
+
+.mbc__lid-end--r {
+  right: -6px;
+  transform: rotateY(42deg);
+}
+
+/* Brass bands + studs */
+.mbc__lid-band,
+.mbc__base-band {
+  position: absolute;
+  left: 42%;
+  right: 42%;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    var(--mbc-brass-dark) 0%,
+    var(--mbc-brass-lit) 28%,
+    var(--mbc-brass) 52%,
+    var(--mbc-brass-dark) 100%
+  );
+  box-shadow:
+    inset 1px 0 0 rgba(255, 245, 200, 0.5),
+    inset -1px 0 0 rgba(0, 0, 0, 0.45);
+}
+
+.mbc__lid-stud,
+.mbc__base-stud {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 34% 30%,
+    var(--mbc-brass-lit) 0%,
+    var(--mbc-brass-dark) 78%
+  );
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.4);
+}
+
+.mbc__lid-stud--l {
+  left: 12%;
+  top: 30%;
+}
+.mbc__lid-stud--r {
+  right: 12%;
+  top: 30%;
+}
+.mbc__base-stud--l {
+  left: 12%;
+  bottom: 18%;
+}
+.mbc__base-stud--r {
+  right: 12%;
+  bottom: 18%;
+}
+
+/* Lock plate */
+.mbc__lock {
+  position: absolute;
+  left: 50%;
+  top: 8%;
+  width: 34px;
+  height: 40px;
+  margin-left: -17px;
+  border-radius: 6px 6px 8px 8px;
+  background: linear-gradient(
+    180deg,
+    var(--mbc-brass-lit) 0%,
+    var(--mbc-brass) 42%,
+    var(--mbc-brass-dark) 100%
+  );
+  border: 2px solid #5c3f08;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.55),
+    inset 0 2px 3px rgba(255, 250, 220, 0.6);
+}
+
+.mbc__lock-hole {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 9px;
+  height: 12px;
+  margin-left: -4.5px;
+  border-radius: 50% 50% 40% 40%;
+  background: #241a04;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* Contact shadow — an object with no shadow floats. */
+.mbc__shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -16px;
+  width: 88%;
+  height: 20px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0) 72%);
+  filter: blur(2px);
+}
+
+/* The open swing. -104deg lays the lid back past vertical, so the cavity is
+   fully exposed and the underside of the lid catches the gold light. */
+.mbc--opening .mbc__lid,
+.mbc--explosion .mbc__lid,
+.mbc--revealed .mbc__lid {
+  transform: rotateX(-104deg) translateZ(6px);
+}
+
+.mbc__seam {
   opacity: 1;
   filter: blur(3.5px);
 }
@@ -280,127 +586,6 @@
 
 /* ── Chest body ───────────────────────────────────────────────────────────── */
 
-.mbc__chest-base {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 180px;
-  height: 84px;
-  margin-left: -90px;
-  border-radius: 8px 8px 10px 10px;
-  background:
-    linear-gradient(180deg, #8b5a2b 0%, #6b4423 55%, #4a2f18 100%),
-    repeating-linear-gradient(
-      90deg,
-      rgba(0, 0, 0, 0.14) 0 2px,
-      rgba(255, 255, 255, 0.03) 2px 26px
-    );
-  box-shadow:
-    inset 0 3px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -8px 14px rgba(0, 0, 0, 0.5),
-    0 16px 34px rgba(0, 0, 0, 0.62);
-}
-
-.mbc__chest-lid {
-  position: absolute;
-  left: 50%;
-  bottom: 82px;
-  width: 180px;
-  height: 62px;
-  margin-left: -90px;
-  border-radius: 90px 90px 6px 6px;
-  background:
-    linear-gradient(180deg, #a06a33 0%, #8b5a2b 48%, #6b4423 100%),
-    repeating-linear-gradient(
-      90deg,
-      rgba(0, 0, 0, 0.14) 0 2px,
-      rgba(255, 255, 255, 0.04) 2px 26px
-    );
-  box-shadow:
-    inset 0 3px 0 rgba(255, 255, 255, 0.16),
-    0 -3px 12px rgba(0, 0, 0, 0.4);
-  /* Hinged at the BACK EDGE — this is what makes it open like a chest instead
-     of like a lid sliding off a box. */
-  transform-origin: center bottom;
-  transform-style: preserve-3d;
-}
-
-/* Iron bands and studs — cheap detail that sells "treasure chest" instantly. */
-.mbc__lid-band,
-.mbc__base-band {
-  position: absolute;
-  left: 50%;
-  width: 22px;
-  margin-left: -11px;
-  background: linear-gradient(90deg, #6b7280, #cbd5e1 45%, #6b7280);
-  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.45);
-}
-
-.mbc__lid-band {
-  top: 0;
-  height: 100%;
-  border-radius: 11px 11px 0 0;
-}
-
-.mbc__base-band {
-  top: 0;
-  height: 100%;
-}
-
-.mbc__lock {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  width: 34px;
-  height: 30px;
-  margin-left: -17px;
-  border-radius: 5px;
-  background: linear-gradient(180deg, #ffd166, #d99a1f 60%, #a8750f);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-.mbc__lock::after {
-  content: '';
-  position: absolute;
-  top: 11px;
-  left: 50%;
-  width: 6px;
-  height: 11px;
-  margin-left: -3px;
-  border-radius: 3px;
-  background: #3b2a0c;
-}
-
-.mbc__lid-stud,
-.mbc__base-stud {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, #e2e8f0, #94a3b8 55%, #475569);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
-.mbc__lid-stud--l {
-  bottom: 8px;
-  left: 20px;
-}
-.mbc__lid-stud--r {
-  bottom: 8px;
-  right: 20px;
-}
-.mbc__base-stud--l {
-  bottom: 12px;
-  left: 18px;
-}
-.mbc__base-stud--r {
-  bottom: 12px;
-  right: 18px;
-}
-
-/* The seam: a hairline of light that intensifies while locked, promising. */
 .mbc__seam {
   position: absolute;
   left: 50%;
@@ -555,7 +740,7 @@
 
 /* ── OPENING ──────────────────────────────────────────────────────────────── */
 
-.mbc--opening .mbc__chest-lid {
+.mbc--opening .mbc__lid-DEPRECATED {
   animation: mbcLidOpen 0.9s cubic-bezier(0.3, 0.9, 0.25, 1.15) forwards;
 }
 
@@ -675,53 +860,14 @@
   }
 }
 
-.mbc__coins {
+.mbc__coin-canvas {
   position: absolute;
-  top: 46%;
-  left: 50%;
-  width: 0;
-  height: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
+  z-index: 6;
 }
-
-.mbc__coin {
-  position: absolute;
-  width: 15px;
-  height: 15px;
-  margin: -7.5px 0 0 -7.5px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, #fff6d5, #ffd166 45%, #c98f16 100%);
-  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.55);
-  /* Fountain: each coin gets its own angle and reach from its index, so the
-     burst reads as physics rather than as 18 copies of one path. */
-  --mbc-ang: calc(var(--mbc-c) * 20deg - 180deg);
-  --mbc-dist: calc(120px + (var(--mbc-c) * 9px));
-  animation: mbcCoinBurst 1.5s cubic-bezier(0.15, 0.6, 0.3, 1) both;
-  animation-delay: calc(var(--mbc-c) * 22ms);
-}
-
-@keyframes mbcCoinBurst {
-  0% {
-    transform: rotate(var(--mbc-ang)) translateX(0) rotate(calc(var(--mbc-ang) * -1)) scale(0.3);
-    opacity: 0;
-  }
-  15% {
-    opacity: 1;
-  }
-  60% {
-    transform: rotate(var(--mbc-ang)) translateX(var(--mbc-dist))
-      rotate(calc(var(--mbc-ang) * -1 + 360deg)) scale(1);
-    opacity: 1;
-  }
-  100% {
-    /* Gravity: the arc ends lower than it peaked. */
-    transform: rotate(var(--mbc-ang)) translateX(var(--mbc-dist))
-      rotate(calc(var(--mbc-ang) * -1 + 720deg)) translateY(150px) scale(0.85);
-    opacity: 0;
-  }
-}
-
-/* ── Prompt ───────────────────────────────────────────────────────────────── */
 
 .mbc__prompt {
   margin-top: 26px;
@@ -753,7 +899,7 @@
 
 /* A spectator is not being asked to do anything — no urgency pulse for them. */
 .mbc__prompt-main--waiting {
-  color: #cbd5e1;
+  color: var(--text-primary, #f3f4f6);
   font-size: 13px;
   letter-spacing: 0.6px;
   text-shadow: none;
@@ -778,7 +924,7 @@
 
 .mbc__prompt-sub {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-secondary, #9ca3af);
 }
 
 .mbc__dots i {
@@ -837,9 +983,10 @@
 
 .mbc__tier {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: var(--weight-extrabold, 800);
   letter-spacing: 3px;
-  text-transform: uppercase;
+  /* No uppercase transform: the label is Title Case by house rule and the
+     transform would shout it back into caps. */
   text-shadow: 0 0 20px currentColor;
 }
 
@@ -847,9 +994,9 @@
   margin-top: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-size: clamp(34px, 12vw, 58px);
-  font-weight: 900;
+  font-weight: var(--weight-extrabold, 800);
   line-height: 1.05;
-  color: #fff;
+  color: var(--text-primary, #f3f4f6);
   text-shadow:
     0 0 26px var(--mbc-tier, rgba(255, 209, 102, 0.9)),
     0 0 60px rgba(255, 209, 102, 0.45),
@@ -858,19 +1005,6 @@
 
 /* What the number MEANS. A big figure with no reference point is just a big
    figure — this line is what makes a jackpot read as a jackpot. */
-.mbc__multiple {
-  margin-top: 7px;
-  display: inline-block;
-  padding: 3px 11px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.4px;
-  color: var(--mbc-tier, #ffd166);
-  animation: mbcMultipleIn 0.4s ease-out 0.5s both;
-}
 
 @keyframes mbcMultipleIn {
   from {
@@ -886,7 +1020,7 @@
 .mbc__won-by {
   margin-top: 8px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-secondary, #9ca3af);
 }
 
 .mbc__won-by strong {
@@ -899,7 +1033,7 @@
   font-weight: 800;
   letter-spacing: 1.2px;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--text-muted, #6b7280);
 }
 
 /* ── Tier theming ─────────────────────────────────────────────────────────── */
@@ -979,7 +1113,7 @@
   .mbc__amount {
     animation: none !important;
   }
-  .mbc--opening .mbc__chest-lid {
+  .mbc--opening .mbc__lid-DEPRECATED {
     animation: none;
     transform: rotateX(-112deg);
     transition: transform 0.3s ease-out;

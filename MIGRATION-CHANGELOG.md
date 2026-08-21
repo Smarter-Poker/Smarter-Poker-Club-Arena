@@ -8898,3 +8898,16 @@ alone, so a stale value can never resurrect a zombie tab.
 Verified: prod bundle greps positive for round-3 markers on WH fd919979,
 and tests/e2e/multi-table.spec.ts ran 10/10 in real Chrome against that
 same deployment.
+
+## 2026-08-21 — Bomb pot cadence: live verification note
+
+Round 3's per-table counter verified on production (table c4874708): with
+hands flowing continuously, bombs land exactly every 3rd hand (hands
+1477171 -> 1477420 with exactly two non-bomb hands between; a fold-out
+bomb correctly recorded 3 board-2 cards). One nuance, observed and
+accepted: the counter counts DEALT hands — a hand that dies between deal
+and settlement (e.g. hole-card insert failure abandons the hand with no
+hand_history row) still consumed a tick, so a recorded-hand gap can read
+N+1 around such an abort. That is self-limiting (aborts are rare and the
+skew is one hand, not compounding) and arguably correct: a hand WAS dealt
+at the table. Not worth coupling the counter to settlement for.

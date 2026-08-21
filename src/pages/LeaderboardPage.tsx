@@ -174,6 +174,7 @@ export default function LeaderboardPage() {
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [clubsLoading, setClubsLoading] = useState(true);
+  const selectedClub = userClubs.find(c => c.id === selectedClubId);
 
   // Tournament stats (club-scoped)
   const [activeTab, setActiveTab] = useState<LeaderboardTab>('rankings');

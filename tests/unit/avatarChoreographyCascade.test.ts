@@ -145,6 +145,42 @@ describe('avatarChoreography.css cascade', () => {
     ).toBe(true);
   });
 
+  it('declares the rigged stop AFTER every gesture rule', () => {
+    // Mirror image of the idle-before-gestures rule. `.seat__avatar-wrap--rigged`
+    // is a single class, identical specificity to the five gesture classes, so
+    // it only wins by being declared LAST. Move it above them and a rigged
+    // avatar silently double-animates: its own Rive Push plus the wrap's lean.
+    const lines = CSS.split('\n');
+    const rigged = lines.findIndex((l) => l.trim() === '.seat__avatar-wrap--rigged {');
+    expect(rigged, 'no --rigged stop rule').toBeGreaterThan(-1);
+    for (const g of GESTURES) {
+      const gestureRule = lineOf((l) => l.trim() === `.seat__avatar-wrap--${g} {`);
+      expect(
+        rigged,
+        `--rigged must come after .seat__avatar-wrap--${g}, or the gesture wins ` +
+          `and a rigged avatar animates twice`
+      ).toBeGreaterThan(gestureRule);
+    }
+    // It must also switch off the INFINITE idle, which is not a gesture class
+    // and so is not covered by SeatSlot declining to apply gesture classes.
+    const block = CSS.slice(CSS.indexOf('.seat__avatar-wrap--rigged {'));
+    expect(block.slice(0, 120)).toContain('animation: none');
+  });
+
+  it('gives the rig canvas the same geometry as the bust it replaces', () => {
+    // Without this the canvas keeps only its inline attributes — an 84px SQUARE,
+    // unscaled — while the bust beside it renders ~90x122 after object-fit
+    // contain against a 125x170 artboard and then scale(1.45). The rig would
+    // look shrunken and would not sit on the name box.
+    expect(CSS).toContain('.seat__avatar-rive');
+    const rive = CSS.slice(CSS.indexOf('.seat__avatar--bust .seat__avatar-rive'));
+    expect(
+      rive.slice(0, 320),
+      'the rig canvas must reuse --sp-bust-scale so it cannot drift from the img'
+    ).toContain('var(--sp-bust-scale');
+    expect(rive.slice(0, 320)).toContain('transform-origin');
+  });
+
   it('keeps every gesture keyframe defined exactly once', () => {
     // @keyframes is a global namespace across all loaded stylesheets. This repo
     // has already been bitten: `winnerAvatarGlow` existed in two files with

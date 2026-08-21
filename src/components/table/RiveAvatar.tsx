@@ -175,11 +175,19 @@ export const RiveAvatar: React.FC<RiveAvatarProps> = ({
     <canvas
       ref={canvasRef}
       className="seat__avatar-rive"
+      /* ATTRIBUTES set the drawing buffer, CSS sets the displayed box, and they
+         are deliberately different things. The buffer is 2x for retina; the box
+         comes from `.seat__avatar-rive` in avatarChoreography.css so the canvas
+         inherits the SAME bust transform as the <img> it replaces.
+
+         Sizing the box inline here instead — which is what this did first —
+         pins it to an 84px SQUARE with no scale, while the bust beside it
+         renders about 90x122. The rig would look shrunken and would float off
+         the name box. Display size belongs to the stylesheet that owns the
+         geometry, not to this component. */
       width={size * 2}
       height={size * 2}
       style={{
-        width: size,
-        height: size,
         // Hidden until the rig is confirmed live, so a failed load never leaves
         // a blank canvas sitting on top of the static avatar underneath.
         display: live ? 'block' : 'none',

@@ -58,7 +58,7 @@ export function DealerButton({
   // Offset the button slightly toward the center of the table so it doesn't
   // overlap the player avatar. The factors live in tableGeometry so the bet
   // chips can position themselves relative to the button rather than guessing
-  // at it — see betChipFactor().
+  // at it — see betChipOffsetPx() in tableGeometry.
   const { x: btnX, y: btnY } = dealerButtonPosition(pos);
 
   // Only position is inlined — every other visual property lives on the

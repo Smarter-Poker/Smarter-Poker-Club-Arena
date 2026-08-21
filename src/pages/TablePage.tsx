@@ -135,7 +135,7 @@ import { tableService } from '../services/TableService';
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
 import { potSizedRaiseTo } from '../components/table/ActionPanel';
-import { betChipFactor, chipCollectFactor } from '../components/table/tableGeometry';
+import { betChipOffsetPx, chipCollectOffsetPx } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 // The ShareHand COMPONENT is rendered by TableModalsLayer, not here — the
 // default import this line used to carry was unused. TablePage builds the
@@ -9471,41 +9471,34 @@ export default function TablePage({
               } as any;
             }
 
-            // Compute bet-chip offset toward table center (50%, 50%).
-            // Mockup v3 spec: bet/call/raise chip rests ~22% of the way from the
-            // seat toward center — CLOSE to the player, not near the middle.
-            // Convert the percent delta into scaler-space px (scaler ~300x462).
+            // THE CHIP RAIL. Dan 2026-08-21: every player's chips sit the
+            // same distance from them, whatever seat they are in.
             //
-            // Dan 2026-08-19, bug list item 8: "chips must always be in front of
-            // the user (in front of the button if they're the button)." The
-            // dealer button travels 0.28 of the way toward centre horizontally
-            // while the chips travelled a flat 0.22, so on the side seats the
-            // BUTTON stood further out on the felt than the chips it was
-            // supposed to stand behind. The seat holding the button now steps
-            // its chips PAST it — see betChipFactor() in tableGeometry.
+            // This used to scale each axis independently by how far the seat
+            // was from centre ON THAT AXIS, so a top-centre seat's chips
+            // dropped straight down a long way, a side seat's slid inward a
+            // long way, and a corner seat's did a bit of both - three
+            // different distances. betChipOffsetPx() steps a fixed number of
+            // pixels along the line to the middle instead, which puts every
+            // seat's chips on one rail running parallel to the seats.
+            //
+            // The dealer's seat still steps out further so the order from the
+            // player remains: player, button, chips.
+            const isDealerSeat = idx === dealerVisualIndex;
+            // Still needed by the deal/muck keyframes below, which fly cards
+            // from and toward the centre and want the full run, not the rail.
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
-            // pos.x/pos.y are percentages of the scaler, so one percent equals
-            // scalerSize.w / 100 px horizontally and .h / 100 px vertically.
-            const isDealerSeat = idx === dealerVisualIndex;
-            const betTravel = betChipFactor(isDealerSeat);
-            const betOffsetX = Math.round((dx * scalerSize.w * betTravel.x) / 100);
-            const betOffsetY = Math.round((dy * scalerSize.h * betTravel.y) / 100);
+            const betOffset = betChipOffsetPx(pos, scalerSize, isDealerSeat);
+            const betOffsetX = betOffset.x;
+            const betOffsetY = betOffset.y;
             // Bible V8 §1.16 — on collect, bet chips fly from their resting
-            // spot the rest of the way toward the pot.
-            //
-            // AUDIT 2026-08-19: this was `betOffset * 2`, which puts the
-            // ENDPOINT at 3x the bet factor because the chip already sits one
-            // bet-offset from its seat and the keyframe translates it by a
-            // FURTHER --collect-dx. That landed at 0.66 only because every seat
-            // shared the same 0.22 factor. Moving the dealer seat's chips out
-            // to 0.38 (item 8) turned the same multiply into 3 x 0.38 = 1.14 —
-            // past the centre of the table and out the other side. The collect
-            // offset is derived from the bet offset now, so the endpoint is the
-            // same for every seat and the ordinary case is unchanged.
-            const collectTravel = chipCollectFactor(isDealerSeat);
-            const collectDx = Math.round((dx * scalerSize.w * collectTravel.x) / 100);
-            const collectDy = Math.round((dy * scalerSize.h * collectTravel.y) / 100);
+            // spot the rest of the way toward the pot. Expressed as the
+            // remainder to a common endpoint, so chips from every seat
+            // converge on the same place however far out they started.
+            const collectOffset = chipCollectOffsetPx(pos, scalerSize, isDealerSeat);
+            const collectDx = collectOffset.x;
+            const collectDy = collectOffset.y;
 
             return (
               <div
@@ -9818,16 +9811,15 @@ export default function TablePage({
               I'm Back
             </button>
           </div>
-        ) : !tableState.isHandInProgress && !isRabbitAvailable ? (
-          <div className="spectator-footer-bar" data-state="waiting">
-            <span className="spectator-footer-bar__label">Waiting For Next Hand…</span>
-          </div>
-        ) : tableState.isHandInProgress &&
+        ) : !tableState.isHandInProgress && !isRabbitAvailable ? null : tableState.isHandInProgress &&
           (getPlayerAtSeat(tableState.heroSeat)?.status === 'folded' ||
             getPlayerAtSeat(tableState.heroSeat)?.status === 'away') ? (
-          <div className="spectator-footer-bar" data-state="folded">
-            <span className="spectator-footer-bar__label">Folded, Waiting For Next Hand…</span>
-          </div>
+          /* Dan: "YOU DO NOT NEED TO HAVE THIS DISPLAY ON THE BOTTOM... ITS
+             POINTLESS. REMOVE THIS." Both bars said only that nothing was
+             happening, which the table already shows: your cards are gone and
+             no action buttons are up. They cost a permanent strip of screen on
+             a phone to repeat it. */
+          null
         ) : (
           <>
             {/* ─── CONTROL STRIP — Minimal: Time Bank + Timer during hand, Rabbit Hunt after hand ─── */}

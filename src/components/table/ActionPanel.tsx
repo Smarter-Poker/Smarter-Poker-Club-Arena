@@ -289,6 +289,29 @@ export default function ActionPanel({
   );
   const prevTurnRef = useRef(isMyTurn);
 
+  /**
+   * The vertical rail is a horizontal <input type="range"> rotated -90deg on
+   * WebKit, so its pre-rotation WIDTH is what you see as height. That was a
+   * hard-coded 240px: on a short panel the rail overran the panel, and on a
+   * tall one the thumb could not reach the top of its own track - which is
+   * where the all-in cap sits. Measured instead, and kept measured.
+   */
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [railLength, setRailLength] = useState(240);
+
+  useEffect(() => {
+    const el = railRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) setRailLength(h);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isRaiseMode]);
+
   useEffect(() => {
     setRaiseAmount(minRaise);
   }, [minRaise]);
@@ -710,22 +733,30 @@ export default function ActionPanel({
               Hidden when verticalSlider is false. */}
           {effectiveVerticalSlider && (
             <div className="raise-slider-vertical">
-              <div className="raise-slider-vertical__rail">
+              <div
+                className="raise-slider-vertical__rail"
+                ref={railRef}
+                style={{ ['--raise-rail-length' as string]: `${railLength}px` }}
+              >
                 {sliderEl}
                 <div className="raise-slider-vertical__ticks" aria-hidden="true">
                   {/* BB labels at 25/50/75/100% of the raise range */}
                   {[100, 75, 50, 25].map((pct) => {
+                    // Evenly spaced across the LEGAL range, which already ends
+                    // at the hero's stack - so the top tick is the all-in.
                     const val = minRaise + (maxRaise - minRaise) * (pct / 100);
-                    const bbLabel = bigBlind > 0 ? `${Math.round(val / bigBlind)}` : '';
+                    const isTop = pct === 100;
                     return (
                       <div
                         key={pct}
-                        className="raise-slider-vertical__tick"
+                        className={`raise-slider-vertical__tick${
+                          isTop ? ' raise-slider-vertical__tick--max' : ''
+                        }`}
                         style={{ bottom: `${pct}%` }}
                       >
-                        {bigBlind > 0 && (
-                          <span className="raise-slider-vertical__tick-label">{bbLabel}BB</span>
-                        )}
+                        <span className="raise-slider-vertical__tick-label">
+                          {isTop ? 'ALL IN' : formatChips(Math.round(val))}
+                        </span>
                       </div>
                     );
                   })}
@@ -733,10 +764,10 @@ export default function ActionPanel({
               </div>
               <div className="raise-slider-vertical__caps" aria-hidden="true">
                 <span className="raise-slider-vertical__cap raise-slider-vertical__cap--max">
-                  {formatChips(maxRaise)}
+                  {bigBlind > 0 ? `${Math.round(maxRaise / bigBlind)}BB` : formatChips(maxRaise)}
                 </span>
                 <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
-                  {formatChips(minRaise)}
+                  {bigBlind > 0 ? `${Math.round(minRaise / bigBlind)}BB` : formatChips(minRaise)}
                 </span>
               </div>
             </div>

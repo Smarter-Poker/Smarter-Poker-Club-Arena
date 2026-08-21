@@ -1,27 +1,42 @@
 /**
- * Dan 2026-08-19, bug list item 8: "chips must always be in front of the user
- * (in front of the button if they're the button)."
+ * CHIPS: EQUALLY SPACED, AND ALWAYS IN FRONT OF THE PLAYER.
  *
- * The dealer button travelled 0.28 of the way from a seat toward the centre
- * horizontally; the bet chips travelled a flat 0.22 on both axes. So on every
- * side seat the BUTTON sat further out on the felt than the chips it was meant
- * to stand behind, and the two collided.
+ * Two rules, both of them Dan's, and they pull in different directions - which
+ * is why they are tested together over every production ring.
+ *
+ * 2026-08-19, item 8: "chips must always be in front of the user (in front of
+ * the button if they're the button)." The dealer button travels 0.28 of the
+ * way toward centre horizontally; the chips used to travel a flat 0.22, so on
+ * every side seat the BUTTON sat further onto the felt than the chips it was
+ * meant to stand behind.
+ *
+ * 2026-08-21: "ALL CHIPS FOR ALL PLAYERS NEED TO BE PLACED THE SAME DISTANCE
+ * FROM THEM REGARDLESS OF SEAT POSITION." The factor-based maths could not do
+ * that - see THE CHIP RAIL in tableGeometry.ts - so the chips moved to a fixed
+ * pixel inset along the line to the middle.
  *
  * These tests walk every seat of every table size (2-max through 9-max, the
- * real production rings) and assert the reading order out from the player is
- * always: player, then button, then chips.
+ * real production rings) and assert both rules hold at once.
  */
 import { describe, it, expect } from 'vitest';
 import {
-  betChipFactor,
-  betChipPosition,
-  chipCollectFactor,
+  betChipOffsetPx,
+  chipCollectOffsetPx,
+  chipRailInset,
   dealerButtonPosition,
-  BET_CHIP_FACTOR,
-  CHIP_COLLECT_END_FACTOR,
-  DEALER_BUTTON_FACTOR,
+  CHIP_COLLECT_FRACTION,
   type Pos,
+  type Size,
 } from '../src/components/table/tableGeometry';
+
+/** A phone-shaped table: the tall oval where the old maths was worst. */
+const TABLE: Size = { w: 300, h: 462 };
+
+const toPx = (seat: Pos, p: Pos): Pos => ({
+  x: ((p.x - seat.x) * TABLE.w) / 100,
+  y: ((p.y - seat.y) * TABLE.h) / 100,
+});
+const mag = (p: Pos) => Math.hypot(p.x, p.y);
 
 /** The production seat rings, copied from TablePage.tsx. */
 const RINGS: Record<number, Pos[]> = {
@@ -87,112 +102,109 @@ const RINGS: Record<number, Pos[]> = {
   ],
 };
 
-/** Distance from the seat toward the centre, along one axis. */
-const travel = (seatV: number, markerV: number) => Math.abs(markerV - seatV);
 
-describe('bet chips vs the dealer button', () => {
+describe('every ring: chips sit in front of the player, at one distance', () => {
   for (const [size, ring] of Object.entries(RINGS)) {
     describe(`${size}-max`, () => {
+      it('every seat is the same distance from its chips', () => {
+        const d = ring.map((seat) => mag(betChipOffsetPx(seat, TABLE, false)));
+        expect(Math.max(...d) - Math.min(...d)).toBeLessThanOrEqual(1.5);
+      });
+
       ring.forEach((seat, i) => {
         it(`seat ${i + 1} holding the button: player -> button -> chips`, () => {
-          const btn = dealerButtonPosition(seat);
-          const chips = betChipPosition(seat, true);
-
-          // On each axis that actually has room to move, the chips must be
-          // further from the seat than the button is.
-          if (Math.abs(50 - seat.x) > 0.01) {
-            expect(travel(seat.x, chips.x)).toBeGreaterThan(travel(seat.x, btn.x));
-          }
-          if (Math.abs(50 - seat.y) > 0.01) {
-            expect(travel(seat.y, chips.y)).toBeGreaterThan(travel(seat.y, btn.y));
-          }
+          const btn = mag(toPx(seat, dealerButtonPosition(seat)));
+          const chips = mag(betChipOffsetPx(seat, TABLE, true));
+          expect(chips).toBeGreaterThan(btn);
         });
 
-        it(`seat ${i + 1} without the button: chips still in front of the player`, () => {
-          const chips = betChipPosition(seat, false);
-          // Strictly between the seat and the centre, never behind the player.
-          if (Math.abs(50 - seat.x) > 0.01) {
-            expect(travel(seat.x, chips.x)).toBeGreaterThan(0);
-            expect(travel(seat.x, chips.x)).toBeLessThan(travel(seat.x, 50));
-          }
-          if (Math.abs(50 - seat.y) > 0.01) {
-            expect(travel(seat.y, chips.y)).toBeGreaterThan(0);
-            expect(travel(seat.y, chips.y)).toBeLessThan(travel(seat.y, 50));
-          }
+        it(`seat ${i + 1} without the button: chips in front, never past centre`, () => {
+          const chips = betChipOffsetPx(seat, TABLE, false);
+          const toCentre = toPx(seat, { x: 50, y: 50 });
+          expect(mag(chips)).toBeGreaterThan(0);
+          expect(mag(chips)).toBeLessThan(mag(toCentre));
+          // and pointing at the middle, not away from it
+          if (Math.abs(toCentre.x) > 1) expect(Math.sign(chips.x)).toBe(Math.sign(toCentre.x));
+          if (Math.abs(toCentre.y) > 1) expect(Math.sign(chips.y)).toBe(Math.sign(toCentre.y));
         });
       });
     });
   }
 });
 
-describe('betChipFactor', () => {
-  it('leaves ordinary seats exactly where they were', () => {
-    expect(betChipFactor(false)).toEqual({ x: BET_CHIP_FACTOR.x, y: BET_CHIP_FACTOR.y });
+describe('CONTROL: the old maths really did vary by seat', () => {
+  it('a flat 0.22 factor put a top-centre seat and a side seat at different distances', () => {
+    // The 9-max ring: bottom-centre hero vs a left-side seat.
+    const top = { x: 50, y: 6 };
+    const side = { x: 10.5, y: 58 };
+    const oldOffset = (seat: Pos) => ({
+      x: ((50 - seat.x) * TABLE.w * 0.22) / 100,
+      y: ((50 - seat.y) * TABLE.h * 0.22) / 100,
+    });
+    const spreadOld = Math.abs(mag(oldOffset(top)) - mag(oldOffset(side)));
+    expect(spreadOld).toBeGreaterThan(10); // the bug: tens of px apart
+
+    const spreadNew = Math.abs(
+      mag(betChipOffsetPx(top, TABLE, false)) - mag(betChipOffsetPx(side, TABLE, false))
+    );
+    expect(spreadNew).toBeLessThanOrEqual(1.5); // the fix
   });
 
-  it('clears the button on both axes for the dealer seat', () => {
-    const f = betChipFactor(true);
-    expect(f.x).toBeGreaterThan(DEALER_BUTTON_FACTOR.x);
-    expect(f.y).toBeGreaterThan(DEALER_BUTTON_FACTOR.y);
-  });
-
-  it('never pulls the dealer seat chips back toward the player', () => {
-    const f = betChipFactor(true);
-    expect(f.x).toBeGreaterThanOrEqual(BET_CHIP_FACTOR.x);
-    expect(f.y).toBeGreaterThanOrEqual(BET_CHIP_FACTOR.y);
-  });
-
-  it('keeps the chips well short of the middle of the table', () => {
-    const f = betChipFactor(true);
-    expect(f.x).toBeLessThan(0.5);
-    expect(f.y).toBeLessThan(0.5);
-  });
-});
-
-describe('CONTROL: the old flat 0.22 really was behind the button', () => {
   it('a side seat put the button further onto the felt than its chips', () => {
     const seat = { x: 10.5, y: 66 };
-    const btn = dealerButtonPosition(seat);
-    const oldChipsX = seat.x + (50 - seat.x) * 0.22;
-    expect(travel(seat.x, oldChipsX)).toBeLessThan(travel(seat.x, btn.x));
+    const btn = mag(toPx(seat, dealerButtonPosition(seat)));
+    const oldChips = Math.abs(((50 - seat.x) * TABLE.w * 0.22) / 100);
+    expect(oldChips).toBeLessThan(btn);
+    // and no longer
+    expect(mag(betChipOffsetPx(seat, TABLE, true))).toBeGreaterThan(btn);
   });
 });
 
-describe('chip collect vector — must never overshoot the pot', () => {
-  it('lands every seat on the SAME endpoint, dealer or not', () => {
+describe('chip collect — must never overshoot the pot', () => {
+  const ring = RINGS[9];
+
+  it('lands every seat the same fraction short of centre, dealer or not', () => {
     for (const isDealer of [false, true]) {
-      const bet = betChipFactor(isDealer);
-      const collect = chipCollectFactor(isDealer);
-      expect(bet.x + collect.x).toBeCloseTo(CHIP_COLLECT_END_FACTOR, 6);
-      expect(bet.y + collect.y).toBeCloseTo(CHIP_COLLECT_END_FACTOR, 6);
+      for (const seat of ring) {
+        const rest = betChipOffsetPx(seat, TABLE, isDealer);
+        const travel = chipCollectOffsetPx(seat, TABLE, isDealer);
+        const toCentre = toPx(seat, { x: 50, y: 50 });
+        const landed = { x: rest.x + travel.x, y: rest.y + travel.y };
+        expect(mag(landed)).toBeCloseTo(mag(toCentre) * CHIP_COLLECT_FRACTION, 0);
+      }
     }
   });
 
   it('never carries a chip past the centre of the table', () => {
     for (const isDealer of [false, true]) {
-      const bet = betChipFactor(isDealer);
-      const collect = chipCollectFactor(isDealer);
-      // A factor of 1 IS the centre. Anything above it flies out the far side.
-      expect(bet.x + collect.x).toBeLessThan(1);
-      expect(bet.y + collect.y).toBeLessThan(1);
+      for (const seat of ring) {
+        const rest = betChipOffsetPx(seat, TABLE, isDealer);
+        const travel = chipCollectOffsetPx(seat, TABLE, isDealer);
+        const landed = { x: rest.x + travel.x, y: rest.y + travel.y };
+        expect(mag(landed)).toBeLessThan(mag(toPx(seat, { x: 50, y: 50 })));
+      }
     }
   });
 
-  it('reproduces the old 0.44 offset exactly for an ordinary seat', () => {
-    // Regression guard: the ordinary seat must not move at all. The old code
-    // was betOffset * 2 with a 0.22 factor, i.e. 0.44.
-    const collect = chipCollectFactor(false);
-    expect(collect.x).toBeCloseTo(0.44, 6);
-    expect(collect.y).toBeCloseTo(0.44, 6);
-  });
-
-  it('CONTROL: the old betOffset*2 rule WOULD have overshot on the dealer seat', () => {
-    const bet = betChipFactor(true);
-    const oldEndpoint = bet.x * 3; // resting offset + 2x offset
-    expect(oldEndpoint).toBeGreaterThan(1); // past the centre — the bug
-  });
-
   it('shortens the remaining travel for the seat that starts further out', () => {
-    expect(chipCollectFactor(true).x).toBeLessThan(chipCollectFactor(false).x);
+    for (const seat of ring) {
+      expect(mag(chipCollectOffsetPx(seat, TABLE, true)))
+        .toBeLessThan(mag(chipCollectOffsetPx(seat, TABLE, false)));
+    }
+  });
+});
+
+describe('the rail inset itself', () => {
+  it('grows with the table but stays inside sane bounds', () => {
+    expect(chipRailInset({ w: 200, h: 200 }, false)).toBeGreaterThanOrEqual(30);
+    expect(chipRailInset({ w: 2000, h: 2000 }, false)).toBeLessThanOrEqual(64);
+    expect(chipRailInset({ w: 900, h: 900 }, false))
+      .toBeGreaterThan(chipRailInset({ w: 300, h: 300 }, false));
+  });
+
+  it('adds a constant clearance for the dealer, not a fraction', () => {
+    const a = chipRailInset({ w: 300, h: 462 }, true) - chipRailInset({ w: 300, h: 462 }, false);
+    const b = chipRailInset({ w: 900, h: 700 }, true) - chipRailInset({ w: 900, h: 700 }, false);
+    expect(a).toBe(b);
   });
 });

@@ -16,11 +16,56 @@ import type { DistributionRow } from '../src/services/StatsFactsService';
 
 /** Shaped like the real production distribution (which is horse-heavy). */
 const ROWS: DistributionRow[] = [
-  { cohort: 'field', metric: 'vpip', p10: 27.3, p25: 32, p50: 37.9, p75: 44, p90: 50, sample_size: 571 },
-  { cohort: 'field', metric: 'pfr', p10: 6.4, p25: 9, p50: 11.9, p75: 16, p90: 20.8, sample_size: 569 },
-  { cohort: 'field', metric: 'bb100', p10: -52.1, p25: -30, p50: -15.7, p75: 0, p90: 15.3, sample_size: 571 },
-  { cohort: 'field', metric: 'three_bet', p10: 1.2, p25: 1.7, p50: 2.2, p75: 3, p90: 3.8, sample_size: 571 },
-  { cohort: 'field', metric: 'win_rate', p10: 18.4, p25: 20, p50: 21.3, p75: 23, p90: 24.9, sample_size: 571 },
+  {
+    cohort: 'field',
+    metric: 'vpip',
+    p10: 27.3,
+    p25: 32,
+    p50: 37.9,
+    p75: 44,
+    p90: 50,
+    sample_size: 571,
+  },
+  {
+    cohort: 'field',
+    metric: 'pfr',
+    p10: 6.4,
+    p25: 9,
+    p50: 11.9,
+    p75: 16,
+    p90: 20.8,
+    sample_size: 569,
+  },
+  {
+    cohort: 'field',
+    metric: 'bb100',
+    p10: -52.1,
+    p25: -30,
+    p50: -15.7,
+    p75: 0,
+    p90: 15.3,
+    sample_size: 571,
+  },
+  {
+    cohort: 'field',
+    metric: 'three_bet',
+    p10: 1.2,
+    p25: 1.7,
+    p50: 2.2,
+    p75: 3,
+    p90: 3.8,
+    sample_size: 571,
+  },
+  {
+    cohort: 'field',
+    metric: 'win_rate',
+    p10: 18.4,
+    p25: 20,
+    p50: 21.3,
+    p75: 23,
+    p90: 24.9,
+    sample_size: 571,
+  },
 ];
 
 describe('metric definitions', () => {

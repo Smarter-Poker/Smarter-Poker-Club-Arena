@@ -461,12 +461,14 @@ export abstract class ServerTableEngineBase {
       // fire-and-forget, the UI write must never affect gameplay.
       if (event.type === 'PLAYER_SAT_OUT' || event.type === 'PLAYER_SAT_BACK') {
         const sittingOut = event.type === 'PLAYER_SAT_OUT';
-        void supabase
-          .from('table_seats')
-          .update({ is_sitting_out: sittingOut })
-          .eq('table_id', this.tableId)
-          .eq('user_id', event.playerId)
-          .is('left_at', null)
+        void Promise.resolve(
+          supabase
+            .from('table_seats')
+            .update({ is_sitting_out: sittingOut })
+            .eq('table_id', this.tableId)
+            .eq('user_id', event.playerId)
+            .is('left_at', null)
+        )
           .then(({ error }) => {
             if (error) {
               reportError(
@@ -474,6 +476,9 @@ export abstract class ServerTableEngineBase {
                 'ServerTableEngine.' + this.tableId + '.sitout_persist_failed'
               );
             }
+          })
+          .catch((err) => {
+            reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_persist_threw');
           });
       }
       if (event.type === 'PLAYER_RECONNECTED') {

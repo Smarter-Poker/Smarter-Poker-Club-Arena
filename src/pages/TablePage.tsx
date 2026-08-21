@@ -1157,6 +1157,29 @@ export default function TablePage({
    * Null between hands.
    */
   const [potCollectTo, setPotCollectTo] = useState<{ dx: number; dy: number } | null>(null);
+  // Dan 2026-08-21 (with PokerBros screenshot): "we need to add a moving
+  // number, that tells them the pot size they just won, that number is
+  // attached to the chips and pot that gets pushed to the player." Each float
+  // rides pot -> seat with the chip fan, then rises and fades as "+N" above
+  // the winner's avatar.
+  const [potWinFloats, setPotWinFloats] = useState<
+    Array<{ id: number; fromX: number; fromY: number; toX: number; toY: number; label: string }>
+  >([]);
+  const potWinFloatIdRef = useRef(0);
+  const spawnPotWinFloat = useCallback(
+    (fromX: number, fromY: number, toX: number, toY: number, amount: number) => {
+      if (!(amount > 0)) return;
+      const label =
+        '+' + (amount >= 1 ? Math.round(amount).toLocaleString('en-US') : amount.toFixed(2));
+      const id = ++potWinFloatIdRef.current;
+      setPotWinFloats((prev) => [...prev, { id, fromX, fromY, toX, toY, label }]);
+      // Self-clean after the CSS animation (2.2s) has fully played out.
+      setTimeout(() => {
+        setPotWinFloats((prev) => prev.filter((f) => f.id !== id));
+      }, 2400 * getAnimationSpeed());
+    },
+    []
+  );
   const potCollectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * Dan 2026-08-20: the pot ships in two ORDERED beats — bets sweep into the
@@ -6765,6 +6788,13 @@ export default function TablePage({
           // Resolve each winner's seat from the current player list (rotated
           // positions already account for hero-at-bottom view).
           const events: ChipAnimationEvent[] = [];
+          const potWinFloatPlans: Array<{
+            fromX: number;
+            fromY: number;
+            toX: number;
+            toY: number;
+            amount: number;
+          }> = [];
           for (const wid of winnerIds) {
             // SeatPlayer.id is the userId — players[] index = seatNumber - 1.
             const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
@@ -6780,10 +6810,25 @@ export default function TablePage({
             // createPotToWinnerEvent already returns a fan of 3-8 chips with
             // bezier arc, staggered 40ms each, 600ms duration — spec match.
             events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
+            // Dan 2026-08-21: the floating "+N" rides with this fan and ends
+            // above the winner's seat naming the exact share they won —
+            // accurate per winner, so chops read right too.
+            potWinFloatPlans.push({
+              fromX: potPos.x,
+              fromY: potPos.y,
+              toX: winnerPos.x,
+              toY: winnerPos.y,
+              amount: share,
+            });
           }
           if (events.length > 0) {
             const fireFan = () => {
               setChipAnimations((prev) => [...prev, ...events]);
+              // Dan 2026-08-21: launch each winner's floating "+N" in the same
+              // frame as their chip fan so the number travels WITH the pot.
+              for (const plan of potWinFloatPlans) {
+                spawnPotWinFloat(plan.fromX, plan.fromY, plan.toX, plan.toY, plan.amount);
+              }
               // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
               // #175 gated for multi-table: only play on the active tab
               if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
@@ -8835,6 +8880,27 @@ export default function TablePage({
             animations={chipAnimations}
             onAnimationComplete={handleAnimationComplete}
           />
+
+          {/* Dan 2026-08-21: floating pot-win amount — "+N" rides the pushed
+              pot to the winner, then rises and fades above their avatar
+              (PokerBros reference). Pure CSS animation, self-cleaning. */}
+          {potWinFloats.map((f) => (
+            <div
+              key={f.id}
+              className="pot-win-float"
+              style={
+                {
+                  '--pwf-from-x': `${f.fromX}px`,
+                  '--pwf-from-y': `${f.fromY}px`,
+                  '--pwf-to-x': `${f.toX}px`,
+                  '--pwf-to-y': `${f.toY}px`,
+                } as React.CSSProperties
+              }
+              aria-hidden="true"
+            >
+              {f.label}
+            </div>
+          ))}
 
           {/* COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner — fires
               once when the runout locks in (first equity broadcast). */}

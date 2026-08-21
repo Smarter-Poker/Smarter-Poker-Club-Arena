@@ -12,30 +12,32 @@
  * recognisable appears. The point is not to test behaviour — that is covered
  * elsewhere — it is to guarantee that no panel can throw during render again.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import type React from 'react';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 // The fact-layer service talks to Supabase. Every panel that uses it must
 // tolerate an empty payload, which is also the real state until hands
 // accumulate.
-const emptyEV = {
-  points: [],
-  summary: {
-    hands: 0,
-    all_in_hands: 0,
-    net_bb: 0,
-    ev_net_bb: 0,
-    luck_bb: 0,
-    luck_bb_per_100: 0,
-    biggest_suckout: 0,
-    biggest_beat: 0,
-    capped: false,
-  },
-  generated_at: '',
-};
-
 vi.mock('../../src/services/StatsFactsService', () => {
+  // Declared inside the factory: vi.mock is hoisted above any const at module
+  // scope, so referencing one from here is a TDZ error.
+  const emptyEV = {
+    points: [],
+    summary: {
+      hands: 0,
+      all_in_hands: 0,
+      net_bb: 0,
+      ev_net_bb: 0,
+      luck_bb: 0,
+      luck_bb_per_100: 0,
+      biggest_suckout: 0,
+      biggest_beat: 0,
+      capped: false,
+    },
+    generated_at: '',
+  };
   const svc = {
     getEVCurve: vi.fn().mockResolvedValue(emptyEV),
     getHandGrid: vi
@@ -111,15 +113,26 @@ const POSITIONS = [
 const TOURNAMENTS = { entries: 40, cashes: 6, wins: 1, best_finish: 1 };
 
 beforeEach(() => vi.clearAllMocks());
+// Without this, each render stacks into the same document and getByText finds
+// duplicates from previous tests.
+afterEach(() => cleanup());
+
+/** These four fetch on mount and render a skeleton first, so asserting on text
+ *  synchronously asserts on an empty body. What matters here is that mounting
+ *  does not THROW, and that the panel settles into real content. */
+async function mountsCleanly(ui: React.ReactElement) {
+  expect(() => render(ui)).not.toThrow();
+  await waitFor(() => expect(document.body.textContent).toBeTruthy());
+}
 
 describe('every stats panel mounts without throwing', () => {
   it('LeakPanel', () => {
     render(<LeakPanel overall={OVERALL} positions={POSITIONS} />);
-    expect(screen.getByText(/What To Work On/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /What To Work On/i })).toBeInTheDocument();
   });
 
-  it('BenchmarkPanel', () => {
-    render(
+  it('BenchmarkPanel', async () => {
+    await mountsCleanly(
       <BenchmarkPanel
         handsPlayed={OVERALL.total_hands}
         days={null}
@@ -132,32 +145,28 @@ describe('every stats panel mounts without throwing', () => {
         }}
       />
     );
-    expect(document.body.textContent).toBeTruthy();
   });
 
-  it('NemesisPanel', () => {
-    render(<NemesisPanel userId="u1" days={null} />);
-    expect(document.body.textContent).toBeTruthy();
+  it('NemesisPanel', async () => {
+    await mountsCleanly(<NemesisPanel userId="u1" days={null} />);
   });
 
   it('TrophyRoom', () => {
     render(<TrophyRoom overall={OVERALL} tournaments={TOURNAMENTS} />);
-    expect(screen.getByText(/Your Style/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Your Style/i })).toBeInTheDocument();
   });
 
   it('PositionalRadar', () => {
     render(<PositionalRadar positions={POSITIONS} />);
-    expect(screen.getByText(/Positional Shape/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Positional Shape/i })).toBeInTheDocument();
   });
 
-  it('EVLuckChart', () => {
-    render(<EVLuckChart userId="u1" days={null} />);
-    expect(document.body.textContent).toBeTruthy();
+  it('EVLuckChart', async () => {
+    await mountsCleanly(<EVLuckChart userId="u1" days={null} />);
   });
 
-  it('HoleCardHeatmap', () => {
-    render(<HoleCardHeatmap userId="u1" days={null} />);
-    expect(document.body.textContent).toBeTruthy();
+  it('HoleCardHeatmap', async () => {
+    await mountsCleanly(<HoleCardHeatmap userId="u1" days={null} />);
   });
 
   it('StatsShareCard', () => {
@@ -178,24 +187,24 @@ describe('every stats panel mounts without throwing', () => {
         styleColor="#ef4444"
       />
     );
-    expect(screen.getByText(/Share Your Stats/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Share Your Stats/i })).toBeInTheDocument();
   });
 });
 
 describe('panels survive empty and malformed data', () => {
   it('LeakPanel with nothing', () => {
     render(<LeakPanel overall={null} positions={null} />);
-    expect(screen.getByText(/What To Work On/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /What To Work On/i })).toBeInTheDocument();
   });
 
   it('TrophyRoom with nothing', () => {
     render(<TrophyRoom overall={null} tournaments={null} />);
-    expect(screen.getByText(/Trophy Room/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Trophy Room/i })).toBeInTheDocument();
   });
 
   it('PositionalRadar with too few positions', () => {
     render(<PositionalRadar positions={[POSITIONS[0]]} />);
-    expect(screen.getByText(/Positional Shape/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Positional Shape/i })).toBeInTheDocument();
   });
 
   it('BenchmarkPanel with no values at all', () => {

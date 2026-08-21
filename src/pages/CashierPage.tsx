@@ -545,7 +545,26 @@ export default function CashierPage() {
       // user-id shaped and none matches any agents.id. The lookup it needed
       // was also redundant, because userRole already established that this
       // person is an agent in this club.
-      const agentScoped = userRole === 'agent' || userRole === 'sub_agent';
+      // A SUPER AGENT used to fall through to the staff branch and see the
+      // WHOLE CLUB - every player of every other agent, as a chip recipient.
+      // Scope is now asked of the server, which walks club_members.agent_id
+      // downwards, so a super agent gets their agents AND those agents'
+      // players. On SHARK CLUB that is 429 people, not the 26 directly
+      // assigned to them.
+      const agentScoped = ['super_agent', 'agent', 'sub_agent'].includes(userRole);
+      let downlineIds: string[] | null = null;
+      if (agentScoped) {
+        const { data: dl } = await retryFetch(
+          () => supabase.rpc('ca_club_my_downline', { p_club_id: resolvedId }).then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
+        if (!isMounted.current || stale()) return;
+        const scope = dl as { scoped?: boolean; user_ids?: string[] | null } | null;
+        // `scoped: false` means no restriction; an empty array means an empty
+        // downline. Treating them the same is how an owner gets a blank
+        // cashier, so they are kept apart.
+        downlineIds = scope?.scoped === false ? null : (scope?.user_ids ?? []);
+      }
 
       // PostgREST caps a response at 1,000 rows and .limit(500) capped it lower
       // still, with no ORDER BY - so on a 588-member club, 88 people vanished
@@ -570,7 +589,10 @@ export default function CashierPage() {
           .order('joined_at', { ascending: true })
           .order('user_id', { ascending: true })
           .range(from, from + PAGE - 1);
-        if (agentScoped) query = query.eq('agent_id', user.id);
+        if (agentScoped && downlineIds !== null) {
+          if (downlineIds.length === 0) break;   // nobody beneath them
+          query = query.in('user_id', downlineIds);
+        }
 
         const { data: page } = await retryFetch(() => query.then((r) => r), {
           maxRetries: 2,

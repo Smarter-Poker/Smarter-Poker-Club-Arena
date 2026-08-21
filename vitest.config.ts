@@ -22,6 +22,10 @@ export default defineConfig({
       // Server-only dep — stubbed so client suites can import server services
       // (see tests/stubs/sentry-node.ts for why)
       '@sentry/node': path.resolve(__dirname, './tests/stubs/sentry-node.ts'),
+      // See tests/stubs/canvas-confetti.ts — the real library's rAF loop
+      // outlives jsdom's canvas and fails the whole run, which blocks the
+      // bundle publish. The import is dynamic, so only an alias catches it.
+      'canvas-confetti': path.resolve(__dirname, './tests/stubs/canvas-confetti.ts'),
       '@': path.resolve(__dirname, './src'),
       '@components': path.resolve(__dirname, './src/components'),
       '@lib': path.resolve(__dirname, './src/lib'),

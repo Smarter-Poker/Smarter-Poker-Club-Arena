@@ -296,6 +296,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           continue;
         }
 
+        // SPIN REVEAL HOLD (2026-08-21): the table may not deal while the
+        // shared wheel is still running. Re-checked in short slices so a
+        // resume is responsive and the loop stays interruptible.
+        if (this.dealHoldUntilMs > Date.now()) {
+          await this.sleep(Math.min(this.dealHoldUntilMs - Date.now(), 1000));
+          continue;
+        }
+
         // Bible V8 §3.1: Table FSM — waiting → seating → running (players returned)
         if (this.tableFSM.state === 'waiting') {
           this.tableFSM.transition('seating');

@@ -19,6 +19,7 @@
  */
 
 import React from 'react';
+import { SPIN_REVEAL } from '../../src/config/spinSpec';
 import { render, screen, act } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -51,6 +52,14 @@ const SPIN = {
 
 const COUNTDOWN_MS = 3 * 750;
 const CHASE_MS = 4200;
+/**
+ * Dan 2026-08-21: "ONE SECOND LATER, A 3...2...1... COUNT DOWN CLOCK MUST
+ * BEGIN WITH A WHEEL SPIN." The reveal now opens with a one-second beat before
+ * the count — the felt dims and the beam lands first (PokerBros reference) —
+ * so every timeline in this file starts one second later than it used to.
+ * Sourced from the spec rather than repeated as a literal.
+ */
+const LEAD_IN_MS = SPIN_REVEAL.LEAD_IN_MS;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -73,14 +82,14 @@ afterEach(() => vi.useRealTimers());
 /** Advance past countdown + chase into the result beat. */
 function runToResult() {
   act(() => {
-    vi.advanceTimersByTime(COUNTDOWN_MS + CHASE_MS + 50);
+    vi.advanceTimersByTime(LEAD_IN_MS + COUNTDOWN_MS + CHASE_MS + 50);
   });
 }
 
 /** Advance past the countdown so the disc is on screen and chasing. */
 function runToChase() {
   act(() => {
-    vi.advanceTimersByTime(COUNTDOWN_MS + 50);
+    vi.advanceTimersByTime(LEAD_IN_MS + COUNTDOWN_MS + 50);
   });
 }
 
@@ -185,7 +194,7 @@ describe('the chase is honest', () => {
     render(<SpinWheel data={{ ...SPIN, multiplier: 25, buyIn: 3 }} onDone={() => {}} />);
     runToResult();
     act(() => {
-      vi.advanceTimersByTime(1200);
+      vi.advanceTimersByTime(LEAD_IN_MS + 1200);
     });
     expect(screen.getByText('75')).toBeTruthy(); // 3 x 25
   });
@@ -224,7 +233,7 @@ describe('sequence', () => {
     expect(container.querySelector('.sw__disc')).toBeNull();
 
     act(() => {
-      vi.advanceTimersByTime(760);
+      vi.advanceTimersByTime(LEAD_IN_MS + 760);
     });
     expect(container.querySelector('.sw__count')?.textContent).toBe('2');
 
@@ -268,7 +277,7 @@ describe('sequence', () => {
     const { container } = render(<SpinWheel data={SPIN} onDone={onDone} />);
     runToResult();
     act(() => {
-      vi.advanceTimersByTime(4200 + 100);
+      vi.advanceTimersByTime(LEAD_IN_MS + 4200 + 100);
     });
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(container.firstChild).toBeNull();

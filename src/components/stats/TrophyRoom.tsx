@@ -352,15 +352,21 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
           </span>
         </div>
 
-        <motion.ul
+        {/* Plain <ul>/<li> with the animation on an inner motion.div.
+            motion.div is the only element wrapper this codebase has used in
+            production; motion.ul / motion.li were introduced here and are not
+            worth the risk for a stagger. Semantics unchanged. */}
+        <motion.div
           className="trophy-grid"
           variants={reduceMotion ? undefined : staggerContainer}
           initial="initial"
           animate="animate"
+          role="list"
         >
           {milestones.map((m) => (
-            <motion.li
+            <motion.div
               key={m.id}
+              role="listitem"
               className={`trophy-item${m.unlocked ? ' is-unlocked' : ''}`}
               variants={reduceMotion ? undefined : fadeUp}
               style={
@@ -393,9 +399,9 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
                   />
                 </div>
               )}
-            </motion.li>
+            </motion.div>
           ))}
-        </motion.ul>
+        </motion.div>
 
         <p className="trophy-note">
           Trophies Are Worked Out From Your Live Stats Each Time This Page Loads, So They Are Always

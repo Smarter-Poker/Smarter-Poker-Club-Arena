@@ -1,4 +1,20 @@
 import '@testing-library/jest-dom';
+import { cleanup } from '@testing-library/react';
+
+/**
+ * Unmount between tests.
+ *
+ * TEST-INFRA FIX 2026-08-21. React Testing Library only auto-cleans when it
+ * can see a global afterEach at import time; with this setup it does not, so
+ * every render() in a file PILED UP in the same document.body. The symptom is
+ * not an obvious leak, it is "Found multiple elements with the text ..." on a
+ * component that renders exactly one, which reads as a bug in the component
+ * and is a bug in the harness. It also means each test inherits the DOM of
+ * every test before it, so a passing test can be passing on the wrong element.
+ */
+afterEach(() => {
+  cleanup();
+});
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
@@ -176,17 +192,73 @@ vi.mock('../src/core/MasterBus', () => ({
   useMasterBusSubscription: vi.fn(),
 }));
 
-// Mock framer-motion with proper React.createElement
+// Mock framer-motion with proper React.createElement.
+//
+// This used to hardcode ONLY `motion.div` and `motion.button`. Every other
+// tag - motion.ol, motion.ul, motion.li, motion.path, motion.span - came back
+// `undefined`, so any component using one threw "Element type is invalid" the
+// moment a test tried to render it. The practical effect was that those
+// components could not be render-tested at all, which is why a page-level
+// crash could ship with a fully green suite.
+//
+// A Proxy covers every tag, present and future, so the harness can never
+// again be the reason a component is untested.
 vi.mock('framer-motion', async () => {
-  const React = await vi.importActual('react');
+  const React = (await vi.importActual('react')) as typeof import('react');
   const actual = await vi.importActual('framer-motion');
+
+  /** Props framer-motion consumes itself; forwarding them to the DOM makes
+   *  React warn about unknown attributes and pollutes every snapshot. */
+  const MOTION_ONLY = new Set([
+    'variants',
+    'initial',
+    'animate',
+    'exit',
+    'transition',
+    'whileHover',
+    'whileTap',
+    'whileFocus',
+    'whileDrag',
+    'whileInView',
+    'layout',
+    'layoutId',
+    'drag',
+    'dragConstraints',
+    'onAnimationStart',
+    'onAnimationComplete',
+    'viewport',
+    'custom',
+  ]);
+
+  const strip = (props: Record<string, unknown>) => {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(props ?? {})) {
+      if (!MOTION_ONLY.has(k)) out[k] = props[k];
+    }
+    return out;
+  };
+
+  const cache = new Map<string, unknown>();
+  const motionProxy = new Proxy(
+    {},
+    {
+      get(_target, tag: string) {
+        if (typeof tag !== 'string') return undefined;
+        if (!cache.has(tag)) {
+          const Component = React.forwardRef<unknown, Record<string, unknown>>((props, ref) =>
+            React.createElement(tag, { ...strip(props), ref })
+          );
+          Component.displayName = `motion.${tag}`;
+          cache.set(tag, Component);
+        }
+        return cache.get(tag);
+      },
+    }
+  );
 
   return {
     ...actual,
-    motion: {
-      div: (props: any) => React.createElement('div', { ...props }),
-      button: (props: any) => React.createElement('button', { ...props }),
-    },
+    motion: motionProxy,
     AnimatePresence: (props: any) => props.children,
   };
 });

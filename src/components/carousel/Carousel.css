@@ -19,8 +19,10 @@
 .sp-carousel__track {
   position: relative;
   width: 100%;
-  /* Tall enough for the card plus its shadow and hover lift. */
-  height: clamp(320px, 62vw, 430px);
+  /* Height comes from .sp-carousel__sizer, an invisible in-flow copy of a real
+     card. This used to be a hand-picked clamp, which is a guess about a card
+     whose height is content-driven: guess low and the card is clipped by the
+     overflow below, guess high and the section carries dead space. */
   cursor: grab;
   /* The horizontal gesture belongs to the carousel; vertical still scrolls
      the page. Without this, a swipe on a touch device pans the page instead. */
@@ -40,6 +42,15 @@
 
 .sp-carousel--grabbing {
   cursor: grabbing;
+}
+
+/* Gives the track its height and nothing else. visibility:hidden still takes
+   up layout, which is exactly what is wanted; display:none would not. */
+.sp-carousel__sizer {
+  visibility: hidden;
+  pointer-events: none;
+  width: var(--sp-carousel-item-w, 300px);
+  margin: 0 auto;
 }
 
 .sp-carousel__item {

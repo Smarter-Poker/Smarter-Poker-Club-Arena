@@ -1464,3 +1464,24 @@
     fill: #111827 !important;
   }
 }
+
+/* PanelBoundary fallback: one panel failing should read as a small, honest
+   gap in the page, not as a broken app. */
+.panel-boundary-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0 0.75rem 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.06);
+  color: rgba(253, 224, 171, 0.85);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.panel-boundary-fallback strong {
+  color: #fbbf24;
+  font-size: 0.82rem;
+}

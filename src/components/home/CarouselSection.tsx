@@ -83,13 +83,6 @@ export default function CarouselSection({
   onOpenJoinModal,
   onOpenCreateModal,
 }: CarouselSectionProps) {
-  const carouselRef = useRef<HTMLDivElement>(null);
-
-  // True only while the user is the one scrolling. Programmatic scrolls
-  // (browser scroll restoration, future auto-centring) must not trigger the
-  // snap haptic/SFX.
-  const userScrollRef = useRef(false);
-
   /* The drag-to-reorder state that lived here is gone with the handlers that
      wrote it. Nothing set it once the carousel took over the gesture, so the
      two "is this card being dragged" classes below were permanently false:
@@ -123,45 +116,21 @@ export default function CarouselSection({
     }
   }, [displayClubs, pinnedClubIds]);
 
-  // Haptic + SFX when a scroll SNAP settles.
-  //
-  // Gated on a real user gesture. The scroll event does not distinguish user
-  // scrolling from a programmatic one (the old mount-time auto-centring used
-  // to trip this handler and play the snap sound on page load, with the user
-  // having touched nothing). Feedback for "you snapped a card" must follow an
-  // actual input, so the flag is set by the input events that can start a
-  // scroll and cleared once the snap has been announced.
-  useEffect(() => {
-    const el = carouselRef.current;
-    if (!el) return;
-    let snapTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Snap feedback, from the carousel rather than from a scroll event.
+   *
+   * This used to listen for 'scroll' on the strip and fire once it went quiet.
+   * The strip is no longer a scroll container (the carousel positions its
+   * cards absolutely and moves them by transform), so that listener could
+   * never fire again and the haptic and the snap sound were silently dead.
+   * onIndexChange is the honest signal: it fires when a card has actually
+   * landed in the middle, and never on mount.
+   */
+  const getClubKey = useCallback((club: UserClub) => club.id, []);
 
-    const markUser = () => {
-      userScrollRef.current = true;
-    };
-    const handleScroll = () => {
-      if (!userScrollRef.current) return;
-      if (snapTimer) clearTimeout(snapTimer);
-      snapTimer = setTimeout(() => {
-        haptic.light();
-        PremiumSFX.scrollSnap();
-        userScrollRef.current = false;
-      }, 150);
-    };
-
-    el.addEventListener('pointerdown', markUser, { passive: true });
-    el.addEventListener('touchstart', markUser, { passive: true });
-    el.addEventListener('wheel', markUser, { passive: true });
-    el.addEventListener('keydown', markUser);
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      el.removeEventListener('pointerdown', markUser);
-      el.removeEventListener('touchstart', markUser);
-      el.removeEventListener('wheel', markUser);
-      el.removeEventListener('keydown', markUser);
-      el.removeEventListener('scroll', handleScroll);
-      if (snapTimer) clearTimeout(snapTimer);
-    };
+  const handleIndexChange = useCallback(() => {
+    haptic.light();
+    PremiumSFX.scrollSnap();
   }, []);
 
   // Enhancement #8: Drag handlers
@@ -260,7 +229,7 @@ export default function CarouselSection({
   );
 
   return (
-    <div className={styles.clubCarousel} ref={carouselRef}>
+    <div className={styles.clubCarousel}>
       {orderedClubs.length === 0 && (
         <div
           className={styles.ctaCard}
@@ -305,10 +274,21 @@ export default function CarouselSection({
            portable from a WebGL carousel and what was not. */
         <Carousel
           items={orderedClubs}
-          getKey={(club) => club.id}
-          onSelect={(club) => handleClubCardClick(club)}
+          /* Stable identities. The carousel memoises each rendered card on
+             (getKey, renderItem) so it does not re-render five heavy
+             ClubCardPanels on every frame of a drag; inline arrows here would
+             be new functions on every render and would defeat that entirely. */
+          getKey={getClubKey}
+          onSelect={handleClubCardClick}
+          /* A swipe must not also trigger the card's press-and-hold menu. The
+             context menu opens after 500ms of touch and a deliberate slow
+             swipe is easily longer than that, so without this the menu appears
+             mid-gesture and the swipe is lost. */
+          onDragStart={handleLongPressEnd}
+          onIndexChange={handleIndexChange}
           ariaLabel="Your Clubs"
-          renderItem={(club) => renderClubCard(club)}
+          itemNoun="Club"
+          renderItem={renderClubCard}
         />
       )}
 

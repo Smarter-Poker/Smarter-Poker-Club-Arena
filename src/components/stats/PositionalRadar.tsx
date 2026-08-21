@@ -269,18 +269,13 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
 
             {/* Data polygons */}
             {METRICS.filter((m) => visible[m.key]).map((m) => (
-              <motion.path
+              <path
                 key={`data-${m.key}`}
                 d={toPath(series[m.key])}
                 fill={`url(#pos-radar-grad-${m.key})`}
                 stroke={m.color}
                 strokeWidth={2}
                 strokeLinejoin="round"
-                initial={reduceMotion ? false : { opacity: 0, scale: 0.82 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={
-                  reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 160, damping: 20 }
-                }
                 style={{ transformOrigin: `${CX}px ${CY}px` }}
               />
             ))}

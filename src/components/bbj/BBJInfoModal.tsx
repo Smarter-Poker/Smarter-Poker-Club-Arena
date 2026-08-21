@@ -21,6 +21,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import BBJRecentHits from './BBJRecentHits';
 import BBJBasicPanel from './BBJBasicPanel';
 import BBJQualifyingHands from './BBJQualifyingHands';
@@ -130,11 +131,26 @@ export function BBJInfoModal({
       else onClose();
     };
     window.addEventListener('keydown', onKey);
+
+    /* THE SCROLLBAR IS PART OF THE LAYOUT (2026-08-21).
+     *
+     * Locking body overflow removes the scrollbar, and on a desktop browser
+     * that hands ~15px of width back to the page. Everything underneath
+     * re-lays-out sideways the instant the popup opens, and jumps back when it
+     * closes - which reads as the whole page glitching, because it is. Holding
+     * the width with padding keeps the page still. */
     const prevOverflow = document.body.style.overflow;
+    const prevPadding = document.body.style.paddingRight;
+    const gap = window.innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = 'hidden';
+    if (gap > 0) {
+      const current = parseFloat(window.getComputedStyle(document.body).paddingRight) || 0;
+      document.body.style.paddingRight = `${current + gap}px`;
+    }
     return () => {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPadding;
     };
   }, [isOpen, onClose, openHandPayoutId]);
 
@@ -177,7 +193,13 @@ export function BBJInfoModal({
     switchTab(TABS[next].key);
   };
 
-  return (
+  /* PORTALLED TO THE BODY, like every other overlay here (Modal, Dropdown,
+   * AdvancedFilters, TournamentRankingCard). This was the only one rendered
+   * inline in the page tree, which means a single `transform`, `filter` or
+   * `contain` on any ancestor turns it into that ancestor's containing block -
+   * and a "fixed" backdrop that is really positioned against a card in the
+   * lobby is exactly the kind of thing that looks like the page tearing. */
+  return createPortal(
     <div className="bbj-modal__backdrop" onClick={onClose} role="presentation">
       <div
         className="bbj-modal"
@@ -324,7 +346,8 @@ export function BBJInfoModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

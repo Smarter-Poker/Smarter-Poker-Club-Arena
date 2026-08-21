@@ -19,13 +19,14 @@ import { Carousel } from '../../src/components/carousel/Carousel';
 
 const CLUBS = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'];
 
-function renderCarousel(onSelect?: (v: string, i: number) => void) {
+function renderCarousel(onSelect?: (v: string, i: number) => void, onDragStart?: () => void) {
   return render(
     <Carousel
       items={CLUBS}
       getKey={(c) => c}
       itemWidth={300}
       onSelect={onSelect}
+      onDragStart={onDragStart}
       renderItem={(c, _i, isActive) => <div data-active={isActive}>{c}</div>}
     />
   );
@@ -84,6 +85,66 @@ async function swipe(dx: number, ms = 300) {
   });
   await settle();
 }
+
+describe('Carousel position indicator', () => {
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get: () => 1000,
+    });
+  });
+
+  it('shows one tappable dot per club for a short list', () => {
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        itemNoun="Club"
+        renderItem={(c) => <div>{c}</div>}
+      />
+    );
+    // 5 clubs, under MAX_DOTS.
+    expect(document.querySelectorAll('.carousel-dots .dot')).toHaveLength(CLUBS.length);
+    expect(document.querySelector('.dot.active')).not.toBeNull();
+  });
+
+  it('switches to a counter once dots stop being a control', () => {
+    // Thirty dots is a texture, not something anyone aims at.
+    const many = Array.from({ length: 30 }, (_, i) => `Club ${i + 1}`);
+    render(
+      <Carousel items={many} getKey={(c) => c} itemWidth={300} renderItem={(c) => <div>{c}</div>} />
+    );
+    expect(document.querySelectorAll('.carousel-dots .dot')).toHaveLength(0);
+    expect(document.querySelector('.carousel-counter')?.textContent).toBe('1 / 30');
+  });
+
+  it('shows nothing at all for a single club', () => {
+    render(
+      <Carousel
+        items={['Solo']}
+        getKey={(c) => c}
+        itemWidth={300}
+        renderItem={(c) => <div>{c}</div>}
+      />
+    );
+    expect(document.querySelector('.carousel-dots')).toBeNull();
+  });
+
+  it('labels every dot for a screen reader', () => {
+    render(
+      <Carousel
+        items={CLUBS}
+        getKey={(c) => c}
+        itemWidth={300}
+        itemNoun="Club"
+        renderItem={(c) => <div>{c}</div>}
+      />
+    );
+    expect(screen.getByRole('tab', { name: 'Club 1 Of 5' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Club 5 Of 5' })).toBeInTheDocument();
+  });
+});
 
 describe('Carousel swipe', () => {
   beforeEach(() => {
@@ -147,9 +208,56 @@ describe('Carousel swipe', () => {
     const onSelect = vi.fn();
     renderCarousel(onSelect);
     await act(async () => {
-      (screen.getByText('Alpha').closest('.sp-carousel__item') as HTMLElement).click();
+      // Target the ACTIVE item, not the text. .sp-carousel__sizer renders a
+      // second, invisible copy of the first card to give the track its height,
+      // so a text query legitimately matches twice.
+      (document.querySelector('.sp-carousel__item.is-active') as HTMLElement).click();
     });
     expect(onSelect).toHaveBeenCalledWith('Alpha', 0);
+  });
+
+  it('announces a drag so a card can cancel its press-and-hold', async () => {
+    /* The club cards open a context menu after 500ms of touch. A deliberate
+       slow swipe is easily longer than that, so without this signal the menu
+       opened in the middle of the gesture and the swipe was lost. The carousel
+       is the only thing that can tell a hold from a drag. */
+    const onDragStart = vi.fn();
+    renderCarousel(undefined, onDragStart);
+    await swipe(-333, 4000);
+    expect(onDragStart).toHaveBeenCalled();
+  });
+
+  it('does not announce a drag for a tap that never moved', async () => {
+    const onDragStart = vi.fn();
+    renderCarousel(undefined, onDragStart);
+    await swipe(-4, 200); // under the 10px slop
+    expect(onDragStart).not.toHaveBeenCalled();
+  });
+
+  it('announces the drag only ONCE per gesture', async () => {
+    // It cancels a timer; firing it on every touchmove would be 10 calls for
+    // one swipe and would mask a real double-gesture bug later.
+    const onDragStart = vi.fn();
+    renderCarousel(undefined, onDragStart);
+    await swipe(-333, 4000);
+    expect(onDragStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the height sizer out of the accessibility tree', () => {
+    renderCarousel();
+    const sizer = document.querySelector('.sp-carousel__sizer');
+    expect(sizer, 'no sizer, so the track has no height of its own').not.toBeNull();
+    expect(sizer?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('marks off-centre cards inert rather than aria-hidden', () => {
+    // The club card inside is focusable. aria-hidden on something reachable by
+    // Tab lands a keyboard user on a control screen readers were told is not
+    // there; inert removes it from both.
+    renderCarousel();
+    const inactive = document.querySelector('.sp-carousel__item:not(.is-active)');
+    expect(inactive?.hasAttribute('aria-hidden')).toBe(false);
+    expect(inactive?.hasAttribute('inert')).toBe(true);
   });
 
   it('does NOT open a club when the gesture was a swipe', async () => {

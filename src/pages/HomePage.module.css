@@ -409,19 +409,19 @@
    CLUB CAROUSEL — Horizontally Swipeable Row (Shark Club Center)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Now a plain wrapper. The scroller properties that used to live here
+   (overflow-x, scroll-snap-type, scroll-padding-inline, -webkit-overflow-
+   scrolling, scrollbar-width) are gone with the scroller: the carousel
+   positions its cards absolutely and moves them by transform, so there was
+   nothing left to scroll and they were inert declarations describing
+   behaviour the component no longer has. `display: flex` went with them for
+   the same reason: one absolutely-positioned child does not need a flex
+   context, and `align-items: flex-end` on it was actively wrong. */
 .clubCarousel {
-  display: flex;
-  align-items: flex-end;
-  gap: 20px;
   width: 100%;
   padding: 8px max(20px, 4vw) 10px max(20px, 4vw);
-  scroll-padding-inline: max(20px, 4vw);
   margin-top: -4px;
   box-sizing: border-box;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
   z-index: 10;
   position: relative;
   /* Entrance animation — fade in + slide up */

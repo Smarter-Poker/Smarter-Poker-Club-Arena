@@ -1,30 +1,61 @@
 .carousel-dots {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.3);
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .dot:hover {
-    background: rgba(255, 255, 255, 0.5);
-    transform: translateY(-2px);
-    box-shadow: 0 2px 8px rgba(255, 255, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 8px rgba(255, 255, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .dot.active {
-    width: 24px;
-    border-radius: 4px;
-    background: #ffd700;
+  width: 24px;
+  border-radius: 4px;
+  background: #ffd700;
+}
+/* Counter mode, for lists too long to dot. See MAX_DOTS. */
+.carousel-dots--counter {
+  gap: 0;
+}
+
+.carousel-counter {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The dots are real controls, so they need a visible focus ring and a target
+   bigger than 8px. The painted dot stays small; the hit area does not. */
+.dot {
+  position: relative;
+}
+
+.dot::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.dot:focus-visible {
+  outline: 2px solid rgba(255, 184, 0, 0.7);
+  outline-offset: 4px;
 }

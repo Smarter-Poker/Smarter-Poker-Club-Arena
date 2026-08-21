@@ -39,7 +39,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import { fireVibration } from '../../utils/vibrationGate';
-import { SPIN_TIERS, spinTier } from '../../config/spinSpec';
+import { SPIN_TIERS, spinTier, SPIN_REVEAL } from '../../config/spinSpec';
 import './SpinWheel.css';
 
 export interface SpinTier {
@@ -55,6 +55,19 @@ export interface SpinWheelData {
   buyIn: number;
   /** Tier ladder for this Spin type, biggest last. */
   tiers: SpinTier[];
+  /**
+   * THE SHARED CLOCK (Dan 2026-08-21). The wall-clock instant the ENGINE
+   * named for this reveal, broadcast to every seat.
+   *
+   * Without it each client began its own wheel whenever it finished loading,
+   * so three players watched three different wheels at three different
+   * moments. Animating against the engine's instant puts them in step, and
+   * a client that connects mid-sequence joins PARTWAY THROUGH rather than
+   * replaying the countdown after everyone else has seen the result.
+   *
+   * Omitted (older rows, tests) = start from the top, the previous behaviour.
+   */
+  revealAtMs?: number;
   currency?: string;
   /** Names of the three players, shown while the chase decides. */
   playerNames?: string[];
@@ -272,6 +285,17 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
     const reduced = prefersReducedMotion();
     const timers: ReturnType<typeof setTimeout>[] = [];
 
+    /**
+     * How far into the shared sequence this client already is. A player whose
+     * client was slow to load, or who refreshed mid-spin, picks the wheel up
+     * where everyone else is rather than starting it again.
+     */
+    const elapsed = data.revealAtMs ? Math.max(0, Date.now() - data.revealAtMs) : 0;
+    /** Dan: "ONE SECOND LATER, A 3...2...1... COUNT DOWN CLOCK MUST BEGIN". */
+    const leadInMs = (reduced ? 0 : SPIN_REVEAL.LEAD_IN_MS) * speed;
+    /** Schedule against the shared clock: anything already past fires now. */
+    const at = (offsetMs: number) => Math.max(0, offsetMs - elapsed);
+
     setPhase('countdown');
     setCount(COUNTDOWN_FROM);
     setLitIndex(-1);
@@ -290,7 +314,10 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
     if (!reduced) {
       for (let c = COUNTDOWN_FROM - 1; c >= 1; c--) {
         timers.push(
-          setTimeout(() => setCount(c), (COUNTDOWN_FROM - c) * COUNTDOWN_STEP_MS * speed)
+          setTimeout(
+            () => setCount(c),
+            at(leadInMs + (COUNTDOWN_FROM - c) * COUNTDOWN_STEP_MS * speed)
+          )
         );
       }
     }
@@ -317,7 +344,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
             timers.push(setTimeout(() => setLitIndex(stepIdx % order.length), at));
           });
         }
-      }, countdownMs)
+      }, at(leadInMs + countdownMs))
     );
 
     // ── 3. Result ───────────────────────────────────────────────────────────
@@ -354,7 +381,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
           };
           rafRef.current = requestAnimationFrame(step);
         }
-      }, countdownMs + chaseMs)
+      }, at(leadInMs + countdownMs + chaseMs))
     );
 
     // ── 4. Fade out, hand the felt back ────────────────────────────────────
@@ -364,7 +391,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
           setPhase('idle');
           onDoneRef.current();
         },
-        countdownMs + chaseMs + (reduced ? 1800 : RESULT_MS) * speed
+        at(leadInMs + countdownMs + chaseMs + (reduced ? 1800 : RESULT_MS) * speed)
       )
     );
 

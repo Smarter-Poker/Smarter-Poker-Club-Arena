@@ -4472,7 +4472,28 @@ export default function TablePage({
             const drawIsFresh = Number.isFinite(startedAtMs)
               ? Date.now() - startedAtMs < 90_000
               : true; // no started_at (older rows): keep the old behaviour
-            if (!alreadySeen && drawIsFresh) {
+            /**
+             * FALLBACK ONLY (Dan 2026-08-21). The wheel is now driven by the
+             * engine's SPIN_REVEAL broadcast so every seat sees one shared
+             * moment. This DB-derived path remains for a client that was not
+             * connected when the event went out — a refresh mid-reveal, or a
+             * socket that reconnected a second late. It marks the same
+             * sessionStorage key the event handler uses, so whichever arrives
+             * first wins and the wheel never plays twice.
+             */
+            const sharedKey = `spin-reveal-${table.tournament_id}`;
+            let sharedAlreadyShown = false;
+            try {
+              sharedAlreadyShown = !!sessionStorage.getItem(sharedKey);
+            } catch {
+              /* private mode */
+            }
+            if (!alreadySeen && drawIsFresh && !sharedAlreadyShown) {
+              try {
+                sessionStorage.setItem(sharedKey, '1');
+              } catch {
+                /* ignore */
+              }
               try {
                 sessionStorage.setItem(seenKey, '1');
               } catch {
@@ -5927,6 +5948,49 @@ export default function TablePage({
     void engineLastEvent;
 
     switch (evt.type) {
+      /**
+       * THE SHARED SPIN REVEAL (Dan 2026-08-21).
+       *
+       * "THE WHEEL STARTS SPINNING THE MOMENT THE 3RD PLAYER PAYS FOR HIS
+       *  SEAT... ONE SECOND LATER, A 3...2...1... COUNT DOWN CLOCK MUST BEGIN
+       *  WITH A WHEEL SPIN."
+       *
+       * The engine names the instant and holds the deal for it. Every seat
+       * animates against THAT timestamp, so the three players watch one wheel
+       * together instead of three private ones at three different moments —
+       * which is what happened while the wheel was started from each client's
+       * own page load.
+       */
+      case 'SPIN_REVEAL': {
+        const d = evt.data as {
+          multiplier?: number;
+          buy_in?: number;
+          locked_tiers?: unknown;
+          reveal_at?: number;
+        };
+        const mult = Number(d?.multiplier) || 0;
+        if (!mult) break;
+        // Only ever show it once per game, however many times the event is
+        // replayed by a reconnect.
+        const key = `spin-reveal-${(evt.data as { tournament_id?: string })?.tournament_id || tableState.tournamentId || tableId}`;
+        try {
+          if (sessionStorage.getItem(key)) break;
+          sessionStorage.setItem(key, '1');
+        } catch {
+          /* private mode — showing it twice is better than not at all */
+        }
+        setSpinDraw({
+          multiplier: mult,
+          buyIn: Number(d?.buy_in) || 0,
+          tiers: DEFAULT_SPIN_TIERS,
+          lockedTiers: parseLockedTiers(d?.locked_tiers),
+          // The shared clock. A client that joins mid-sequence starts partway
+          // through rather than replaying from the top.
+          revealAtMs: Number(d?.reveal_at) || Date.now(),
+        });
+        break;
+      }
+
       case 'GAME_START': {
         // Fast UI recovery via GameServerAPI.getTableState() full snapshot
         const syncData = evt.data as any;
@@ -7280,7 +7344,18 @@ export default function TablePage({
         break;
       }
       case 'POT_DISTRIBUTED': {
-        masterBus.emit('POT_DISTRIBUTED', evt.data as any);
+        /* Stamp the table on the way out.
+           This socket only ever carries THIS table, so the id is known here
+           for certain. The engine does put table_id in the payload today, but
+           useTableSession now scopes the session's biggest-pot to the table
+           that owns it, and an event that arrives without a table is dropped
+           rather than misattributed. Deriving the id here instead of trusting
+           the payload means a future engine change cannot quietly turn
+           "Biggest Pot" back into a zero. */
+        masterBus.emit('POT_DISTRIBUTED', {
+          ...(evt.data as Record<string, unknown>),
+          tableId: tableId || (evt.data as { table_id?: string })?.table_id,
+        } as any);
         break;
       }
       case 'SHOWDOWN_CARDS_REVEALED': {
@@ -9472,9 +9547,7 @@ export default function TablePage({
                  dealt yet — the only players who genuinely get no cards are
                  those sitting out or away. */
               activeSeats={tableState.players
-                .map((p, i) =>
-                  p && p.status !== 'sitting_out' && p.status !== 'away' ? i : -1
-                )
+                .map((p, i) => (p && p.status !== 'sitting_out' && p.status !== 'away' ? i : -1))
                 .filter((i) => i >= 0)}
               dealerSeatIndex={Math.max(0, tableState.dealerSeat - 1)}
               seatPositions={seatPositions}
@@ -10011,12 +10084,11 @@ export default function TablePage({
           !isRabbitAvailable ? null : tableState.isHandInProgress &&
           (getPlayerAtSeat(tableState.heroSeat)?.status === 'folded' ||
             getPlayerAtSeat(tableState.heroSeat)?.status ===
-              'away') ? /* Dan: "YOU DO NOT NEED TO HAVE THIS DISPLAY ON THE BOTTOM... ITS
+              'away') /* Dan: "YOU DO NOT NEED TO HAVE THIS DISPLAY ON THE BOTTOM... ITS
              POINTLESS. REMOVE THIS." Both bars said only that nothing was
              happening, which the table already shows: your cards are gone and
              no action buttons are up. They cost a permanent strip of screen on
-             a phone to repeat it. */
-        null : (
+             a phone to repeat it. */ ? null : (
           <>
             {/* ─── CONTROL STRIP — Minimal: Time Bank + Timer during hand, Rabbit Hunt after hand ─── */}
             {tableState.isHandInProgress &&

@@ -281,10 +281,19 @@ async function fetchTournamentResult(
   };
 
   try {
-    const [{ data: entry }, { data: tourney }] = await Promise.all([
+    /* AUDIT 2026-08-20 — entrants is COUNTED, not read off the tournament row.
+
+       `tournaments.current_players` is an entry counter incremented on register
+       and decremented only on UNregister; no elimination path touches it. It is
+       close to the field size and drifts from it, which is why TournamentClock
+       already stopped trusting it ("the clock showed the starting field for the
+       whole tournament"). Counting tournament_players is the same source the
+       clock uses, so the two agree, and it stays right for re-entry events.
+       current_players remains the fallback if the count cannot be read. */
+    const [{ data: entry }, { data: tourney }, { count: entryCount }] = await Promise.all([
       supabase
         .from('tournament_players')
-        .select('position, prize, bounty_winnings, bounties_collected, rebuys, add_on')
+        .select('position, prize, bounty_winnings, bounties_collected, rebuys, add_on, status')
         .eq('tournament_id', tournamentId)
         .eq('user_id', userId)
         .maybeSingle(),
@@ -293,12 +302,16 @@ async function fetchTournamentResult(
         .select('name, current_players')
         .eq('id', tournamentId)
         .maybeSingle(),
+      supabase
+        .from('tournament_players')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('tournament_id', tournamentId),
     ]);
 
     return {
       name: tourney?.name || undefined,
       finishPlace: entry?.position ?? null,
-      entrants: tourney?.current_players ?? null,
+      entrants: entryCount ?? tourney?.current_players ?? null,
       prize: Number(entry?.prize) || 0,
       bountyWinnings: Number(entry?.bounty_winnings) || 0,
       knockouts: Number(entry?.bounties_collected) || 0,

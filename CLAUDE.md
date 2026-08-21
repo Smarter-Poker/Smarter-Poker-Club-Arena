@@ -52,6 +52,28 @@ For post-deploy verification that production is serving your commit, follow up
 with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
 already exits non-zero on build/push failure.
 
+### 1.1.5 SERVER-SIDE PROTECTION (prepared, not yet active)
+
+`.husky/pre-push` is a seatbelt on an unlocked door: `--no-verify` skips it and
+a push made through the GitHub API never runs it. The lock is a ruleset, which
+GitHub enforces for every client. Private repos need GitHub Pro for that.
+
+`scripts/ci/apply-main-ruleset.mjs` applies it in one command the moment Pro is
+on, in two stages:
+
+    GH_PAT=... node scripts/ci/apply-main-ruleset.mjs --stage=1   # block force-push + deletion
+    GH_PAT=... node scripts/ci/apply-main-ruleset.mjs --stage=2   # + PR required, checks must pass
+
+Stage 1 changes nothing about how you work and would have prevented the
+2026-08-21 rewind that dropped four commits already serving in production.
+Stage 2 is the one that makes a red test impossible to land - and it ends
+direct pushes to main, so read section 1.3 again after it is applied. The two
+required checks (`TypeScript Check`, `Client Unit Tests (vitest)`) already exist
+in ci.yml and already run on pull_request.
+
+The token also needs `Administration: Read and write`; one that can push code
+cannot change protection rules. The script says which of the two is missing.
+
 ### 1.2 Vercel Project
 
 - `hub-vanguard` (`prj_op66GkZyZcygXQKm76iyycfVFAQx`) -- THE REAL ONE. Aliased to `smarter.poker`.

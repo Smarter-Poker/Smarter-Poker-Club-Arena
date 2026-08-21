@@ -21,6 +21,7 @@
  */
 
 import jsonPatch from 'fast-json-patch';
+import { engineSocketMux, isMuxEnabled } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
 
@@ -240,12 +241,25 @@ export class EngineStateClient {
 
     const wsUrl = this.opts.baseUrl.replace(/^http/, 'ws') + '/ws/table/' + this.opts.tableId;
     // Subprotocol carries auth. Two entries: the literal "bearer", then the JWT.
+    //
+    // Roadmap batch 6 (2026-08-21), DEFAULT OFF: with localStorage
+    // ca_ws_mux='1', all tables share ONE physical socket to /ws/multi via a
+    // WebSocket-shaped facade (see EngineSocketMux). Everything below —
+    // seq/RESYNC, watchdog, reconnect backoff — runs unchanged on top of it.
     let ws: WebSocket;
-    try {
-      ws = new WebSocket(wsUrl, ['bearer', token]);
-    } catch (err) {
-      this.scheduleReconnect();
-      return;
+    if (isMuxEnabled()) {
+      ws = engineSocketMux.acquire(
+        this.opts.baseUrl,
+        this.opts.tableId,
+        token
+      ) as unknown as WebSocket;
+    } else {
+      try {
+        ws = new WebSocket(wsUrl, ['bearer', token]);
+      } catch (err) {
+        this.scheduleReconnect();
+        return;
+      }
     }
     this.ws = ws;
 

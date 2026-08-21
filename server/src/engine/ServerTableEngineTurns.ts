@@ -11,6 +11,7 @@
 import { HandController } from './HandController.js';
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
+import { deadlineScheduler } from './DeadlineScheduler.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
 import { TimeBankEngine } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
@@ -392,6 +393,50 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // timer duration so the scheduler fires after the grace window.
     const GRACE_PERIOD_MS = 2000;
     const totalDurationMs = safeDurationSeconds * 1000 + GRACE_PERIOD_MS;
+
+    // ── Law 1.16 `timer_countdown` (roadmap batch 6, 2026-08-21) ─────────
+    // Authoritative countdown pulses at fixed thresholds of the DISPLAY
+    // deadline (start + duration, no grace - the same deadline the snapshot
+    // publishes as turn_deadline_ms), so clients can pin their ticking to
+    // the engine's clock instead of deriving it. Idempotent per table via
+    // eventId; thresholds beyond this turn's length are explicitly
+    // cancelled so a longer previous turn cannot leak a stale pulse. Each
+    // callback re-checks the turn identity (start stamp + seat) before
+    // emitting, and a stale fire is a silent no-op.
+    const displayDeadlineMs = this.playerTurnStartTime + safeDurationSeconds * 1000;
+    const countdownStartStamp = this.playerTurnStartTime;
+    const COUNTDOWN_THRESHOLDS_MS = [10_000, 5_000, 3_000, 2_000, 1_000];
+    for (const thresholdMs of COUNTDOWN_THRESHOLDS_MS) {
+      const eventId = `timer_countdown:${thresholdMs}`;
+      const fireAtMs = displayDeadlineMs - thresholdMs;
+      if (fireAtMs <= Date.now()) {
+        deadlineScheduler.cancel(this.tableId, eventId);
+        continue;
+      }
+      deadlineScheduler.schedule({
+        tableId: this.tableId,
+        eventId,
+        deadlineMs: fireAtMs,
+        callback: () => {
+          if (!this.running || !this.handController) return;
+          if (this.playerTurnStartTime !== countdownStartStamp) return; // newer turn owns the clock
+          const cdState = this.handController.getState();
+          if (cdState.currentPlayerSeat !== seat) return;
+          try {
+            this.hub?.emitEvent(this.tableId, {
+              type: 'timer_countdown',
+              table_id: this.tableId,
+              player_id: userId,
+              seat,
+              remaining_ms: Math.max(0, displayDeadlineMs - Date.now()),
+              timestamp: Date.now(),
+            });
+          } catch {
+            /* broadcast failure is non-fatal */
+          }
+        },
+      });
+    }
 
     this.preciseTimer.startTimer(this.tableId, userId, totalDurationMs, () => {
       // === onExpiry callback — fires when DeadlineScheduler tick reaches deadline ===

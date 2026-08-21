@@ -6107,6 +6107,34 @@ export default function TablePage({
         }
         break;
       }
+      case 'TIMER_COUNTDOWN': {
+        // Roadmap batch 6: authoritative countdown pulse from the engine
+        // (Law 1.16 timer_countdown). Both the pulse's timestamp and our
+        // turn_deadline_ms are engine-clock values, so comparing them needs
+        // no client-clock math at all. Re-pin the deadline only when it has
+        // actually drifted - the snapshot path is normally right, and a
+        // no-op setTableState skip keeps renders quiet.
+        const cd = evt.data as {
+          seat?: number;
+          remaining_ms?: number;
+          timestamp?: number;
+        };
+        const cdSeat = Number(cd?.seat);
+        const cdRemaining = Number(cd?.remaining_ms);
+        const cdTs = Number(cd?.timestamp);
+        if (!Number.isFinite(cdSeat) || !Number.isFinite(cdRemaining) || !Number.isFinite(cdTs)) {
+          break;
+        }
+        setTableState((prev) => {
+          if (prev.currentPlayerSeat !== cdSeat) return prev;
+          const pinned = cdTs + cdRemaining;
+          const current = prev.actionTimerDeadline ?? 0;
+          return Math.abs(pinned - current) > 750
+            ? { ...prev, actionTimerDeadline: pinned }
+            : prev;
+        });
+        break;
+      }
       case 'COMMUNITY_CARDS_DEALT': {
         // Slide the new community cards onto the board the millisecond the
         // engine flips them. The full board is also sent for safety.

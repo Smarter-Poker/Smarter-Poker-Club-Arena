@@ -120,6 +120,7 @@ export interface EngineWebSocketServerOptions {
 interface ConnectionState {
   id: string;
   userId: string;
+  /** Single-table path: the table from the upgrade URL. Mux path: ''. */
   tableId: string;
   ws: WebSocket;
   lastPongAt: number;
@@ -127,7 +128,19 @@ interface ConnectionState {
   inboundWindowStart: number;
   /** Client address from the x-forwarded-for chain; null when unknown. */
   clientIp: string | null;
+  /**
+   * Roadmap batch 6 (2026-08-21) — multiplexed connection (/ws/multi).
+   * One socket carries up to MUX_MAX_TABLES table subscriptions; every
+   * per-table gate (exists / blacklist / ip-restriction / audit) runs at
+   * SUBSCRIBE time instead of upgrade time. 'pending' marks an in-flight
+   * async subscribe so a repeated SUBSCRIBE cannot double-register.
+   */
+  isMux?: boolean;
+  subs?: Map<string, HubSubscriber | 'pending'>;
 }
+
+/** Mux cap — matches the client's 4-table device cap. */
+const MUX_MAX_TABLES = 4;
 
 // ─── Default JWT verification (Supabase) ──────────────────────────────────────
 
@@ -214,6 +227,43 @@ export class EngineWebSocketServer {
     httpServer.on('upgrade', (req, socket, head) => {
       // Parse URL relative to a dummy host — `req.url` is path+query only.
       const url = new URL(req.url || '/', 'http://localhost');
+
+      // ── Roadmap batch 6: multiplexed path ────────────────────────────
+      // Auth-only at upgrade; every table-scoped gate runs per SUBSCRIBE.
+      // Additive and OFF by default client-side (ca_ws_mux flag), so this
+      // path carries zero traffic until a client opts in.
+      if (url.pathname === '/ws/multi') {
+        const muxToken = extractBearerToken(req.headers['sec-websocket-protocol']);
+        if (!muxToken) {
+          socket.write(
+            'HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+          );
+          socket.destroy();
+          return;
+        }
+        const muxClientIp = extractClientIp(req);
+        this.verifyToken(muxToken)
+          .then((auth) => {
+            if (!auth) {
+              socket.write(
+                'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+              );
+              socket.destroy();
+              return;
+            }
+            this.wss.handleUpgrade(req, socket, head, (ws) => {
+              this.onUpgradedMux(ws, auth.userId, muxClientIp);
+            });
+          })
+          .catch(() => {
+            socket.write(
+              'HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+          });
+        return;
+      }
+
       if (!url.pathname.startsWith('/ws/table/')) return; // not ours
 
       const tableId = parseTableIdFromPath(url.pathname);
@@ -478,6 +528,7 @@ export class EngineWebSocketServer {
   private forgetTableIfEmpty(tableId: string): void {
     for (const conn of this.connections.values()) {
       if (conn.tableId === tableId) return; // someone is still here
+      if (conn.isMux && conn.subs?.has(tableId)) return; // mux viewer still here
     }
     this.ipRestrictionCache.delete(tableId);
   }
@@ -552,6 +603,143 @@ export class EngineWebSocketServer {
     ws.on('error', () => this.onClose(ws));
   }
 
+  // ─── Roadmap batch 6: mux connection lifecycle ──────────────────────────
+
+  private onUpgradedMux(ws: WebSocket, userId: string, clientIp: string | null): void {
+    const conn: ConnectionState = {
+      id: randomUUID(),
+      userId,
+      tableId: '',
+      ws,
+      lastPongAt: Date.now(),
+      inboundCount: 0,
+      inboundWindowStart: Date.now(),
+      clientIp,
+      isMux: true,
+      subs: new Map(),
+    };
+    this.connections.set(ws, conn);
+    ws.on('message', (raw) => this.onMessage(conn, raw));
+    ws.on('close', () => this.onClose(ws));
+    ws.on('error', () => this.onClose(ws));
+  }
+
+  private sendMuxError(conn: ConnectionState, tableId: string, code: string, message: string): void {
+    try {
+      conn.ws.send(JSON.stringify({ type: 'ERROR', tableId, code, message }));
+    } catch {
+      /* next close/sweep collects the socket */
+    }
+  }
+
+  private async handleMuxSubscribe(conn: ConnectionState, tableId: string): Promise<void> {
+    if (!conn.subs) return;
+    const existing = conn.subs.get(tableId);
+    if (existing === 'pending') return; // in flight - first one wins
+    if (existing) {
+      // Idempotent: already subscribed. Re-ack + resync so a client retry
+      // converges instead of erroring.
+      try {
+        conn.ws.send(JSON.stringify({ type: 'SUBSCRIBED', tableId }));
+      } catch {
+        /* ignore */
+      }
+      this.hub.resync(tableId, existing);
+      this.onResync?.(tableId, conn.userId);
+      return;
+    }
+    const realSubs = [...conn.subs.values()].filter((v) => v !== 'pending');
+    if (realSubs.length >= MUX_MAX_TABLES) {
+      this.sendMuxError(conn, tableId, 'SUB_LIMIT', `At most ${MUX_MAX_TABLES} tables per connection`);
+      return;
+    }
+    conn.subs.set(tableId, 'pending');
+    try {
+      if (!this.tableExists(tableId)) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
+        return;
+      }
+      try {
+        if (await this.isBannedFromTable(tableId, conn.userId)) {
+          conn.subs.delete(tableId);
+          this.sendMuxError(conn, tableId, 'BANNED', 'Not permitted at this table');
+          return;
+        }
+      } catch {
+        /* same rule as the single-table path: a failed CHECK never refuses */
+      }
+      try {
+        if (await this.isIpConflict(tableId, conn.userId, conn.clientIp)) {
+          conn.subs.delete(tableId);
+          this.sendMuxError(conn, tableId, 'IP_RESTRICTED', 'Another account is already connected from this address');
+          return;
+        }
+      } catch {
+        /* failed check never refuses */
+      }
+      // The socket may have closed while the async gates ran.
+      if (!this.connections.has(conn.ws) || conn.subs.get(tableId) !== 'pending') return;
+      this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
+      const ws = conn.ws;
+      const subscriber: HubSubscriber = {
+        id: `${conn.id}:${tableId}`,
+        get readyState() {
+          return ws.readyState;
+        },
+        get bufferedAmount() {
+          return ws.bufferedAmount;
+        },
+        send(data: string) {
+          ws.send(data);
+        },
+      };
+      conn.subs.set(tableId, subscriber);
+      try {
+        conn.ws.send(JSON.stringify({ type: 'SUBSCRIBED', tableId }));
+      } catch {
+        /* ignore */
+      }
+      this.hub.subscribe(tableId, subscriber);
+      this.onResync?.(tableId, conn.userId);
+    } catch (err) {
+      conn.subs.delete(tableId);
+      this.sendMuxError(conn, tableId, 'SUB_FAILED', 'Subscribe failed');
+    }
+  }
+
+  private handleMuxMessage(conn: ConnectionState, msg: { type?: string; tableId?: unknown }): void {
+    const tableId = typeof msg.tableId === 'string' ? msg.tableId : '';
+    switch (msg.type) {
+      case 'PONG':
+        conn.lastPongAt = Date.now();
+        return;
+      case 'SUBSCRIBE':
+        if (!tableId) return;
+        void this.handleMuxSubscribe(conn, tableId);
+        return;
+      case 'UNSUBSCRIBE': {
+        if (!tableId || !conn.subs) return;
+        const sub = conn.subs.get(tableId);
+        conn.subs.delete(tableId);
+        if (sub && sub !== 'pending') this.hub.unsubscribe(tableId, sub);
+        this.forgetTableIfEmpty(tableId);
+        return;
+      }
+      case 'RESYNC': {
+        if (!tableId || !conn.subs) return;
+        const sub = conn.subs.get(tableId);
+        if (sub && sub !== 'pending') {
+          this.hub.resync(tableId, sub);
+          this.onResync?.(tableId, conn.userId);
+        }
+        return;
+      }
+      default:
+        return; // action ingress stays REST-only, same as the single path
+    }
+  }
+
   private onMessage(conn: ConnectionState, raw: RawData): void {
     // Rate limit by sliding-window count.
     const now = Date.now();
@@ -592,6 +780,11 @@ export class EngineWebSocketServer {
     }
     if (!msg || typeof msg.type !== 'string') return;
 
+    if (conn.isMux) {
+      this.handleMuxMessage(conn, msg as { type?: string; tableId?: unknown });
+      return;
+    }
+
     switch (msg.type) {
       case 'PONG':
         conn.lastPongAt = Date.now();
@@ -615,6 +808,18 @@ export class EngineWebSocketServer {
   private onClose(ws: WebSocket): void {
     const conn = this.connections.get(ws);
     if (!conn) return;
+    if (conn.isMux) {
+      this.connections.delete(ws);
+      if (conn.subs) {
+        for (const [tableId, sub] of conn.subs) {
+          if (sub !== 'pending') this.hub.unsubscribe(tableId, sub);
+        }
+        const tableIds = [...conn.subs.keys()];
+        conn.subs.clear();
+        for (const tableId of tableIds) this.forgetTableIfEmpty(tableId);
+      }
+      return;
+    }
     const sub = (ws as unknown as { __sub?: HubSubscriber }).__sub;
     if (sub) this.hub.unsubscribe(conn.tableId, sub);
     this.connections.delete(ws);

@@ -420,3 +420,106 @@
   .tileLabel { font-size: 0.625rem; }
   .rowTime { width: 40px; }
 }
+
+/* ---- games / players tabs ---- */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem 0;
+}
+
+.tab {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.625rem 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 40px;
+}
+
+.tab.active {
+  background: rgba(240, 180, 41, 0.14);
+  border-color: rgba(240, 180, 41, 0.55);
+  color: #f0b429;
+}
+
+.tab:focus-visible { outline: 2px solid #f0b429; outline-offset: 2px; }
+
+/* ---- prior-period delta under a headline number ---- */
+.delta {
+  margin-top: 0.1875rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deltaUp { color: #35d07f; }
+.deltaDown { color: #ff5c6c; }
+.deltaFlat { color: rgba(255, 255, 255, 0.4); }
+
+.rangeTz {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* ---- players ---- */
+.playersPanel {
+  display: block;
+}
+
+.playerTotals {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.25rem 1rem 0;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.playerRow {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.playerRank {
+  flex: 0 0 1.5rem;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.32);
+  font-variant-numeric: tabular-nums;
+}
+
+.horseTag {
+  display: inline-block;
+  margin-left: 0.375rem;
+  padding: 0.0625rem 0.3125rem;
+  border-radius: 4px;
+  background: rgba(240, 180, 41, 0.16);
+  color: #f0b429;
+  font-size: 0.5625rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
